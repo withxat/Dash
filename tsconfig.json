@@ -1,0 +1,8 @@
+{
+	"extends": "@withxat/tsconfig",
+	"compilerOptions": {
+		"rootDir": "."
+	},
+	"include": ["**/*"],
+	"exclude": ["apps/**/*", "packages/**/*"]
+}

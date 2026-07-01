@@ -1,0 +1,103 @@
+// Folder-specific settings
+//
+// For a full list of overridable settings, and general information on folder-specific settings,
+// see the documentation: https://zed.dev/docs/configuring-zed#settings-files
+{
+	"show_whitespaces": "boundary",
+	"hard_tabs": true,
+	"tab_size": 2,
+	"prettier": {
+		"allowed": false
+	},
+	"format_on_save": "on",
+	"languages": {
+		"JavaScript": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"TSX": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"TypeScript": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"Markdown": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"JSON": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"JSONC": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"CSS": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"YAML": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		},
+		"HTML": {
+			"language_servers": [
+				"...",
+				"eslint"
+			],
+			"formatter": {
+				"code_action": "source.fixAll.eslint"
+			}
+		}
+	},
+	"lsp": {
+		"eslint": {
+			"settings": {
+				"onIgnoredFiles": "off"
+			}
+		}
+	}
+}

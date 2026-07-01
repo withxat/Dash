@@ -1,0 +1,15 @@
+{
+	"extends": "@withxat/tsconfig",
+	"compilerOptions": {
+		"jsx": "react-jsx",
+		"lib": ["es2025", "DOM"],
+		"paths": {
+			"ui": ["./src/components"],
+			"ui/utils": ["./src/lib/index.ts"],
+			"ui/hooks": ["./src/hooks/index.ts"],
+			"ui/icons": ["./src/icons.ts"],
+			"ui/sonner": ["./src/sonner.ts"],
+			"ui/*": ["./src/components/*"]
+		}
+	}
+}
