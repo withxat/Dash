@@ -1,6 +1,6 @@
-export { CloudflareClient } from './client.js'
-export type { CloudflareClientConfig, TokenStore } from './client.js'
-export { ApiError } from './errors.js'
+export { CloudflareClient } from './client'
+export type { CloudflareClientConfig, TokenStore } from './client'
+export { ApiError } from './errors'
 export {
 	CLOUDFLARE_API_BASE,
 	CLOUDFLARE_OAUTH_ENDPOINTS,
@@ -8,8 +8,8 @@ export {
 	OAuthError,
 	refreshAccessToken,
 	revokeToken,
-} from './oauth.js'
-export type { ExchangeCodeParams, OAuthEndpoints, RefreshParams, RevokeParams, TokenSet } from './oauth.js'
+} from './oauth'
+export type { ExchangeCodeParams, OAuthEndpoints, RefreshParams, RevokeParams, TokenSet } from './oauth'
 export {
 	DEFAULT_CLOUDFLARE_SCOPES,
 	SCOPE_ACCOUNT_READ,
@@ -21,8 +21,8 @@ export {
 	SCOPE_WORKERS_EDIT,
 	SCOPE_WORKERS_READ,
 	SCOPE_ZONE_READ,
-} from './scopes.js'
-export type { CloudflareScope } from './scopes.js'
+} from './scopes'
+export type { CloudflareScope } from './scopes'
 export type {
 	AccountAnalyticsPoint,
 	AccountAnalyticsResult,
@@ -42,4 +42,4 @@ export type {
 	ZoneAnalyticsDashboard,
 	ZoneAnalyticsPoint,
 	ZoneAnalyticsTotal,
-} from './types.js'
+} from './types'

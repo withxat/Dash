@@ -3,8 +3,11 @@ module.exports = function (api) {
 	return {
 		// jsxImportSource: 'nativewind' lets className on RN primitives be typed
 		// and processed by NativeWind's compiler.
-		presets: [['babel-preset-expo', { jsxImportSource: 'nativewind' }]],
+		presets: [
+			['babel-preset-expo', { jsxImportSource: 'nativewind' }],
+			'nativewind/babel',
+		],
 		// Reanimated's plugin must be last.
-		plugins: ['nativewind/babel', 'react-native-reanimated/plugin'],
+		plugins: ['react-native-reanimated/plugin'],
 	}
 }

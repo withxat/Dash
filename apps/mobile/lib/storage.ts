@@ -1,23 +1,50 @@
 import type { TokenSet, TokenStore } from '@cloudfx/api'
 
 import * as SecureStore from 'expo-secure-store'
+import { Platform } from 'react-native'
 
 const ACCESS_TOKEN_KEY = 'cloudfx.access_token'
 const ACTIVE_ACCOUNT_KEY = 'cloudfx.active_account_id'
 const REFRESH_TOKEN_KEY = 'cloudfx.refresh_token'
 const EXPIRES_AT_KEY = 'cloudfx.expires_at'
+const webStorage = new Map<string, string>()
+
+async function deleteItem(key: string): Promise<void> {
+	if (Platform.OS === 'web') {
+		webStorage.delete(key)
+		return
+	}
+
+	await SecureStore.deleteItemAsync(key)
+}
+
+async function getItem(key: string): Promise<null | string> {
+	if (Platform.OS === 'web')
+		return webStorage.get(key) ?? null
+
+	return (await SecureStore.getItemAsync(key)) ?? null
+}
+
+async function setItem(key: string, value: string): Promise<void> {
+	if (Platform.OS === 'web') {
+		webStorage.set(key, value)
+		return
+	}
+
+	await SecureStore.setItemAsync(key, value)
+}
 
 export async function getActiveAccountId(): Promise<null | string> {
-	return (await SecureStore.getItemAsync(ACTIVE_ACCOUNT_KEY)) ?? null
+	return getItem(ACTIVE_ACCOUNT_KEY)
 }
 
 export async function setActiveAccount(id: null | string): Promise<void> {
 	if (id) {
-		await SecureStore.setItemAsync(ACTIVE_ACCOUNT_KEY, id)
+		await setItem(ACTIVE_ACCOUNT_KEY, id)
 		return
 	}
 
-	await SecureStore.deleteItemAsync(ACTIVE_ACCOUNT_KEY)
+	await deleteItem(ACTIVE_ACCOUNT_KEY)
 }
 
 /**
@@ -27,25 +54,25 @@ export async function setActiveAccount(id: null | string): Promise<void> {
  */
 export const secureTokenStore: TokenStore = {
 	async clear() {
-		await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY)
-		await SecureStore.deleteItemAsync(ACTIVE_ACCOUNT_KEY)
-		await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY)
-		await SecureStore.deleteItemAsync(EXPIRES_AT_KEY)
+		await deleteItem(ACCESS_TOKEN_KEY)
+		await deleteItem(ACTIVE_ACCOUNT_KEY)
+		await deleteItem(REFRESH_TOKEN_KEY)
+		await deleteItem(EXPIRES_AT_KEY)
 	},
 	async getAccessToken() {
-		return (await SecureStore.getItemAsync(ACCESS_TOKEN_KEY)) ?? null
+		return getItem(ACCESS_TOKEN_KEY)
 	},
 	async getRefreshToken() {
-		return (await SecureStore.getItemAsync(REFRESH_TOKEN_KEY)) ?? null
+		return getItem(REFRESH_TOKEN_KEY)
 	},
 	async setTokens(tokens: TokenSet) {
-		await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, tokens.access_token)
+		await setItem(ACCESS_TOKEN_KEY, tokens.access_token)
 		if (tokens.refresh_token) {
-			await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refresh_token)
+			await setItem(REFRESH_TOKEN_KEY, tokens.refresh_token)
 		}
 		if (typeof tokens.expires_in === 'number') {
 			const expiresAt = Date.now() + tokens.expires_in * 1000
-			await SecureStore.setItemAsync(EXPIRES_AT_KEY, String(expiresAt))
+			await setItem(EXPIRES_AT_KEY, String(expiresAt))
 		}
 	},
 }

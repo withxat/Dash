@@ -152,9 +152,9 @@ apps/mobile/
 │   ├── config.ts        # Client id, redirect URI, scopes, discovery
 │   └── storage.ts       # SecureStore-backed token store
 ├── app.json             # Expo config (scheme: cloudfx, plugins)
-├── babel.config.js      # NativeWind + reanimated Babel plugins
-├── metro.config.js      # Monorepo + NativeWind + tsconfig paths
-├── tailwind.config.js
+├── babel.config.cjs     # NativeWind + reanimated Babel plugins
+├── metro.config.cjs     # Monorepo + NativeWind + tsconfig paths
+├── tailwind.config.cjs
 └── tsconfig.json
 ```
 

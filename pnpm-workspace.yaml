@@ -1,4 +1,5 @@
 linkWorkspacePackages: true
+nodeLinker: hoisted
 shellEmulator: true
 trustPolicy: no-downgrade
 packages:

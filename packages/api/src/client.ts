@@ -1,4 +1,4 @@
-import type { OAuthEndpoints, TokenSet } from './oauth.js'
+import type { OAuthEndpoints, TokenSet } from './oauth'
 import type {
 	AccountAnalyticsPoint,
 	AccountAnalyticsResult,
@@ -13,13 +13,13 @@ import type {
 	Paginated,
 	TokenVerifyResult,
 	ZoneAnalyticsDashboard,
-} from './types.js'
+} from './types'
 
-import { ApiError } from './errors.js'
-import { CLOUDFLARE_API_BASE, CLOUDFLARE_OAUTH_ENDPOINTS, refreshAccessToken } from './oauth.js'
+import { ApiError } from './errors'
+import { CLOUDFLARE_API_BASE, CLOUDFLARE_OAUTH_ENDPOINTS, refreshAccessToken } from './oauth'
 
 export { ApiError }
-export type { TokenSet } from './oauth.js'
+export type { TokenSet } from './oauth'
 
 /** Storage-agnostic token access the client needs. Implement over SecureStore (RN) or similar. */
 export interface TokenStore {

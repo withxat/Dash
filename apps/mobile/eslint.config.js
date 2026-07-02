@@ -14,9 +14,9 @@ const config = xat({
 		'android/**',
 		'ios/**',
 		'web-build/**',
-		'babel.config.js',
-		'metro.config.js',
-		'tailwind.config.js',
+		'babel.config.cjs',
+		'metro.config.cjs',
+		'tailwind.config.cjs',
 	],
 })
 
