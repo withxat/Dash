@@ -210,7 +210,7 @@ export class CloudflareClient {
 	/**
 	 * Account-wide HTTP analytics (daily buckets) via GraphQL. `since`/`until`
 	 * are ISO 8601 timestamps; the date part is used as the daily filter.
-	 * Requires the `analytics.read` scope.
+	 * Requires the `account-analytics.read` scope.
 	 */
 	async getAccountAnalytics(accountId: string, params: { since: string, until: string }): Promise<AccountAnalyticsResult> {
 		const dateGeq = params.since.slice(0, 10)

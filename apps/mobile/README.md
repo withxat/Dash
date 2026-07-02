@@ -40,8 +40,10 @@ dashboard:
 4. Add the **redirect URI** (see below).
 5. Enable the **Authorization Code (+ PKCE)** grant. Enable
    **Refresh tokens** if you want silent session restore.
-6. Select the scopes the app will request — at minimum `user.read`,
-   `account.read`, `zone.read`, `dns.read`.
+6. Select the scopes the app will request: `user-details.read`,
+   `account-settings.read`, `zone.read`, `dns.read`, `analytics.read`, and
+   `account-analytics.read`. The `offline_access` protocol scope is used for
+   refresh tokens.
 7. Save and copy the **Client ID**.
 
 > The Client ID is **not secret** for a PKCE public client and is safe to bundle
@@ -123,11 +125,11 @@ then open it — it will connect to the running Metro bundler.
 
 ### Scopes
 
-Cloudflare third-party OAuth uses **dot-delimited** scopes
-(`account.read`, `dns.edit`). Colon-delimited scopes (`account:read`) are only
-valid for the Wrangler CLI and are rejected. The default set lives in
+Cloudflare third-party OAuth uses the exact scope IDs assigned to the OAuth
+client. Colon-delimited scopes are rejected. The default set lives in
 [`packages/api/src/scopes.ts`](../../packages/api/src/scopes.ts) and is
-`user.read`, `account.read`, `zone.read`, `dns.read`.
+`user-details.read`, `account-settings.read`, `zone.read`, `dns.read`,
+`analytics.read`, `account-analytics.read`, and `offline_access`.
 
 ## Project layout
 
