@@ -143,3 +143,28 @@ vite.config.ts.timestamp-*
 
 # Turborepo
 .turbo
+
+# Expo / React Native
+.expo/
+dist/
+expo-env.d.ts
+*.tsbuildinfo
+
+# Expo native build outputs
+ios/
+android/
+web-build/
+
+# Expo local env
+.expo-shared/
+
+# Native build artifacts
+*.ipa
+*.apk
+*.aab
+
+# CocoaPods
+apps/mobile/ios/Pods/
+
+# Metro bundle cache
+.metro-cache/
