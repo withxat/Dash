@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 
 import { itemsStackScreenOptions } from '../../../lib/items-stack-screen-options'
-import { tabRootScreenOptions } from '../../../lib/tab-stack-header'
+import { useTabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 // eslint-disable-next-line react-refresh/only-export-components -- Expo Router reads this route config export.
@@ -19,12 +19,13 @@ const formSheetOptions = {
 
 export default function ItemsLayout() {
 	const theme = useTheme()
+	const itemsRootOptions = useTabRootScreenOptions(theme, 'Items')
 
 	return (
 		<Stack
 			screenOptions={({ route }) => itemsStackScreenOptions(theme, route.name)}
 		>
-			<Stack.Screen name="items" options={tabRootScreenOptions(theme, 'Items')} />
+			<Stack.Screen name="items" options={itemsRootOptions} />
 			<Stack.Screen name="profile" options={{ title: 'Profile' }} />
 			<Stack.Screen
 				name="zones/[id]/access-rule-new"

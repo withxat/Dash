@@ -1,38 +1,72 @@
-import type { Href } from 'expo-router'
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import { useQuery } from '@tanstack/react-query'
-import { router, useSegments } from 'expo-router'
-import { Pressable } from 'react-native'
+import { AVATAR_HEADER_SIZE, avatarHeaderPressableStyle } from '../lib/avatar-header'
+import { chillFaceStyle } from '../lib/fonts'
+import { emailInitial } from '../lib/gravatar'
+import { useTheme } from '../lib/theme'
 
-import { cloudflareClient } from '../lib/api'
-import { AVATAR_HEADER_SIZE } from '../lib/avatar-header'
-import { UserAvatar } from './user-avatar'
+interface AccountAvatarHeaderButtonProps {
+	email: string
+	onPress: () => void
+	uri?: string
+}
 
-export function AccountAvatarHeaderButton() {
-	const segments = useSegments() as readonly string[]
-	const userQuery = useQuery({
-		queryFn: () => cloudflareClient.getUser(),
-		queryKey: ['cf', 'user'],
-	})
+function squareAvatarFrame(size: number) {
+	const radius = size / 2
 
-	const email = userQuery.data?.email ?? ''
-	let profileHref: Href = '/profile'
-	if (segments[1] === 'home')
-		profileHref = '/home/profile'
-	else if (segments[1] === 'watchtower')
-		profileHref = '/watchtower/profile'
-	else if (segments[1] === 'search')
-		profileHref = '/search/profile'
+	return {
+		borderCurve: 'continuous' as const,
+		borderRadius: radius,
+		height: size,
+		maxHeight: size,
+		maxWidth: size,
+		minHeight: size,
+		minWidth: size,
+		overflow: 'hidden' as const,
+		width: size,
+	}
+}
+
+/** Tab-root profile avatar — fixed square slot so UIKit cannot stretch it into a capsule. */
+export function AccountAvatarHeaderButton({ email, onPress, uri }: AccountAvatarHeaderButtonProps) {
+	const theme = useTheme()
+	const size = AVATAR_HEADER_SIZE
+	const frame = {
+		...squareAvatarFrame(size),
+		borderColor: theme.line,
+		borderWidth: StyleSheet.hairlineWidth,
+	}
 
 	return (
 		<Pressable
 			accessibilityLabel="Open profile"
 			accessibilityRole="button"
 			className="active:opacity-80"
-			hitSlop={8}
-			onPress={() => router.push(profileHref)}
+			onPress={onPress}
+			style={avatarHeaderPressableStyle(size)}
 		>
-			<UserAvatar email={email} size={AVATAR_HEADER_SIZE} />
+			{uri
+				? (
+						<View style={frame}>
+							<Image
+								resizeMode="cover"
+								source={{ uri }}
+								style={{ height: size, width: size }}
+							/>
+						</View>
+					)
+				: (
+						<View className="items-center justify-center bg-accent" style={frame}>
+							<Text
+								style={chillFaceStyle('heavy', {
+									color: theme.inverse,
+									fontSize: size * 0.4,
+								})}
+							>
+								{emailInitial(email)}
+							</Text>
+						</View>
+					)}
 		</Pressable>
 	)
 }

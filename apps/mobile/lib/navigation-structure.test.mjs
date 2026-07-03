@@ -19,7 +19,7 @@ test('every tab root owns its native stack header', async () => {
 	for (const path of ['home/_layout.tsx', '(items)/_layout.tsx', 'watchtower/_layout.tsx', 'search/_layout.tsx']) {
 		const layout = await source(path)
 		assert.match(layout, /<Stack/)
-		assert.match(layout, /tabRootScreenOptions/)
+		assert.match(layout, /useTabRootScreenOptions/)
 	}
 })
 

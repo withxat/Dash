@@ -2,11 +2,9 @@ import type { ColorValue } from 'react-native'
 
 import type { ThemePalette } from './theme'
 
-import { AccountAvatarHeaderButton } from '../components/account-avatar-header-button'
 import { StackHeaderTitle } from '../components/stack-header-title'
-import { avatarHeaderSlotStyle } from './avatar-header'
 import { stackScreenOptions } from './navigation'
-import { SCREEN_GUTTER } from './screen-gutter'
+import { useAccountAvatarHeaderOptions } from './use-account-avatar-header-options'
 
 /** Shared stack defaults — native title so large-title collapse animations work. */
 export function tabStackScreenOptions(theme: ThemePalette) {
@@ -27,16 +25,14 @@ export function tabPushedStackScreenOptions(theme: ThemePalette) {
 	}
 }
 
-export function tabRootScreenOptions(theme: ThemePalette, title: string) {
+export function useTabRootScreenOptions(theme: ThemePalette, title: string) {
+	const avatarHeader = useAccountAvatarHeaderOptions()
+
 	return {
 		...tabStackScreenOptions(theme),
 		headerBackVisible: false,
 		headerLargeTitle: true,
-		headerLeft: () => <AccountAvatarHeaderButton />,
-		headerLeftContainerStyle: {
-			...avatarHeaderSlotStyle(),
-			paddingLeft: SCREEN_GUTTER,
-		},
 		title,
+		...avatarHeader,
 	}
 }
