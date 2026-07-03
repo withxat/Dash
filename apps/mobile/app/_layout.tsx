@@ -1,4 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query'
+import { useFonts } from 'expo-font'
 import { Stack } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
@@ -9,6 +10,7 @@ import { AppErrorBoundary } from '../components/app-error-boundary'
 import { ToastProvider } from '../components/toast'
 import { queryClient } from '../lib/api'
 import { AuthProvider } from '../lib/auth'
+import { chillFontAssets } from '../lib/fonts'
 import { useTheme } from '../lib/theme'
 import { useHideSplashWhenReady } from '../lib/use-hide-splash-when-ready'
 
@@ -36,6 +38,11 @@ function RootLayoutInner() {
 }
 
 export default function RootLayout() {
+	const [fontsLoaded] = useFonts(chillFontAssets)
+
+	if (!fontsLoaded)
+		return null
+
 	return (
 		<GestureHandlerRootView style={{ flex: 1 }}>
 			<SafeAreaProvider>

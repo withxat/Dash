@@ -5,6 +5,7 @@ import { Children, Fragment, isValidElement } from 'react'
 import { Pressable, Text, View } from 'react-native'
 
 import { cx } from '../lib/cx'
+import { chillFonts } from '../lib/fonts'
 import { useTheme } from '../lib/theme'
 import { Card } from './card'
 import { ChevronRightIcon } from './icons'
@@ -80,7 +81,7 @@ export function NavRow({
 		>
 			{leading ? <View className="mr-3">{leading}</View> : null}
 			<View className="min-w-0 flex-1 gap-0.5">
-				<Text className="text-default" numberOfLines={1} style={{ fontFamily: 'ChillRoundGothic_Regular' }}>
+				<Text className="text-default" numberOfLines={1} style={{ fontFamily: chillFonts.medium }}>
 					{title}
 				</Text>
 				{subtitle

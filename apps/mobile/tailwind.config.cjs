@@ -6,7 +6,7 @@ const plugin = require('tailwindcss/plugin')
 // asset file name). fontWeight is pinned to 400 so neither platform applies
 // synthetic bolding on top of the already-weighted face.
 const chill = {
-	regular: 'ChillRoundGothic_Regular',
+	medium: 'ChillRoundGothic_Medium',
 	bold: 'ChillRoundGothic_Bold',
 	heavy: 'ChillRoundGothic_Heavy',
 }
@@ -16,16 +16,16 @@ const chillFontPlugin = plugin(({ addUtilities, theme }) => {
 		// Default the app font via the text-size utilities (every Text in the
 		// app carries one). Weight/mono utilities below win when combined,
 		// because they come later in this utilities layer.
-		'.text-xs': { fontFamily: chill.regular },
-		'.text-sm': { fontFamily: chill.regular },
-		'.text-base': { fontFamily: chill.regular },
-		'.text-lg': { fontFamily: chill.regular },
-		'.text-xl': { fontFamily: chill.regular },
-		'.text-2xl': { fontFamily: chill.regular },
-		'.text-3xl': { fontFamily: chill.regular },
-		'.text-4xl': { fontFamily: chill.regular },
+		'.text-xs': { fontFamily: chill.medium },
+		'.text-sm': { fontFamily: chill.medium },
+		'.text-base': { fontFamily: chill.medium },
+		'.text-lg': { fontFamily: chill.medium },
+		'.text-xl': { fontFamily: chill.medium },
+		'.text-2xl': { fontFamily: chill.medium },
+		'.text-3xl': { fontFamily: chill.medium },
+		'.text-4xl': { fontFamily: chill.medium },
 		// Map the weight utilities to the matching static face.
-		'.font-normal': { fontFamily: chill.regular, fontWeight: '400' },
+		'.font-normal': { fontFamily: chill.medium, fontWeight: '400' },
 		'.font-medium': { fontFamily: chill.bold, fontWeight: '400' },
 		'.font-semibold': { fontFamily: chill.heavy, fontWeight: '400' },
 		'.font-bold': { fontFamily: chill.heavy, fontWeight: '400' },

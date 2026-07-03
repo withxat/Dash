@@ -3,6 +3,8 @@ import type { ComponentProps } from 'react'
 
 import type { ThemePalette } from './theme'
 
+import { chillFonts } from './fonts'
+
 type StackScreenOptions = NonNullable<ComponentProps<typeof Stack>['screenOptions']>
 
 /**
@@ -19,9 +21,9 @@ export function stackScreenOptions(theme: ThemePalette): StackScreenOptions {
 		// system; the canvas color is close enough to the system background.
 		headerLargeTitle: true,
 		headerLargeTitleShadowVisible: false,
-		headerLargeTitleStyle: { color: theme.default, fontFamily: 'ChillRoundGothic_Heavy' },
+		headerLargeTitleStyle: { color: theme.default, fontFamily: chillFonts.heavy },
 		headerShadowVisible: false,
 		headerTintColor: theme.default,
-		headerTitleStyle: { color: theme.default, fontFamily: 'ChillRoundGothic_Bold' },
+		headerTitleStyle: { color: theme.default, fontFamily: chillFonts.bold },
 	}
 }
