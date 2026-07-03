@@ -6,8 +6,8 @@ import { DEFAULT_HOME_SHORTCUT_IDS } from './app-catalog'
 const HOME_SHORTCUTS_KEY = 'cloudfx.home_shortcuts'
 const RECENT_ITEMS_KEY = 'cloudfx.recent_items'
 const FREQUENT_ITEMS_KEY = 'cloudfx.frequent_items'
-const MAX_RECENT_ITEMS = 3
-const MAX_FREQUENT_ITEMS = 8
+const MAX_RECENT_ITEMS = 6
+const MAX_FREQUENT_ITEMS = 4
 
 interface FrequentEntry {
 	count: number
