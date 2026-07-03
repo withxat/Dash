@@ -203,8 +203,12 @@ apps/mobile/
 │   │   └── login.tsx        # Sign-in screen (shows redirect URI when unconfigured)
 │   └── (app)/
 │       ├── _layout.tsx      # Authenticated guard + native tabs
-│       ├── home/            # Account overview + sign out
-│       ├── zones/
+│       ├── home/            # Home tab stack + shortcuts
+│       ├── watchtower/      # Watchtower tab stack
+│       ├── search/          # Native search tab stack
+│       └── (items)/         # URL-less Items stack; tab root + features
+│           ├── items.tsx    # Items catalog tab root
+│           ├── zones/
 │       │   ├── index.tsx    # Zone list (native search, infinite scroll)
 │       │   └── [id]/
 │       │       ├── index.tsx    # Overview, quick settings, cache, traffic
@@ -212,11 +216,11 @@ apps/mobile/
 │       │       ├── record.tsx   # Create/edit/delete record (form sheet)
 │       │       ├── security.tsx # Firewall events, last 24h
 │       │       └── routes.tsx   # Workers routes (add/delete)
-│       ├── analytics/       # Account analytics + Web Analytics (RUM)
-│       ├── workers/         # Workers + Pages lists, [name].tsx detail
+│           ├── account/     # Account analytics, members, and services
+│           ├── workers/     # Workers + Pages lists and detail screens
 │       │                    # (subdomain toggle, domains, deployments,
 │       │                    # source), pages/[project].tsx deployments
-│       └── storage/
+│           └── storage/
 │           ├── index.tsx        # Storage menu (R2, KV, D1, Queues, …)
 │           ├── r2/index.tsx     # R2 bucket list + create
 │           ├── r2/[bucket].tsx  # Object browser (upload/delete, prefix)

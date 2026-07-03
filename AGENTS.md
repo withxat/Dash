@@ -66,15 +66,15 @@ so unfixed issues will block commits anyway.
 
 ## Mobile app (`apps/mobile`)
 
-- **Routing:** expo-router file-based routes under `app/`. `(auth)` group holds
- the login screen; `(app)/_layout.tsx` is an outer native stack whose **single
- shared header** (`lib/app-shell-header.tsx`) covers native tabs and all pushed
- feature stacks: tab roots show the profile avatar on the left; every other
- screen shows a native back button in the same slot. `(tabs)` uses
- `expo-router/unstable-native-tabs` (home, items, watchtower, search); nested
- stacks under tabs and under `zones` / `workers` / `storage` / `account` /
- `profile` set `headerShown: false` so only the app shell draws a header (form
- sheets keep their own modal header). UI glyphs come from `@solar-icons/react-native` via
+- **Routing:** expo-router file-based routes under `app/`. `(auth)` holds the
+ login screen; `(app)/_layout.tsx` owns the native tabs (home, items,
+ watchtower, search). Each tab owns its own native Stack so its large title is
+ connected to that tab's ScrollView and preserves independent scroll state.
+ Tab roots show the profile avatar; pushed screens use the system back button.
+ The URL-less `(items)` route group owns Items plus `zones` / `workers` /
+ `storage` / `account`, keeping their public paths unchanged while ensuring
+ avatar-to-back transitions happen in one native stack. The tab bar is hidden
+ on pushed screens; form sheets keep their native modal header. UI glyphs come from `@solar-icons/react-native` via
  `components/icons.tsx`; catalog/product glyphs are Solar Linear icons mapped
  in `components/catalog-item-icon.tsx`.
 - **Styling:** NativeWind `className` strings (Tailwind v3 syntax) over

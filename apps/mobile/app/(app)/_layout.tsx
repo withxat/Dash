@@ -1,15 +1,20 @@
-import { Redirect, Stack } from 'expo-router'
+import { Redirect, useSegments } from 'expo-router'
+import { NativeTabs } from 'expo-router/unstable-native-tabs'
 import { ActivityIndicator, View } from 'react-native'
 
+import { nativeTabIconProps } from '../../components/native-tab-icon'
 import { AccountProvider } from '../../lib/account-provider'
-import { appShellHeaderOptions } from '../../lib/app-shell-header'
-import { stackScreenOptions } from '../../lib/navigation'
 import { useTheme } from '../../lib/theme'
 import { useAuth } from '../../lib/use-auth'
+
+function isTabRoot(segments: readonly string[]) {
+	return ['home', 'items', 'watchtower', 'search'].includes(segments.at(-1) ?? '')
+}
 
 export default function AppLayout() {
 	const { status } = useAuth()
 	const theme = useTheme()
+	const segments = useSegments()
 
 	if (status === 'loading') {
 		return (
@@ -23,14 +28,28 @@ export default function AppLayout() {
 
 	return (
 		<AccountProvider>
-			<Stack screenOptions={stackScreenOptions(theme)}>
-				<Stack.Screen name="(tabs)" options={appShellHeaderOptions(['(app)', '(tabs)', 'home'], theme)} />
-				<Stack.Screen name="zones" options={appShellHeaderOptions(['(app)', 'zones', 'index'], theme)} />
-				<Stack.Screen name="workers" options={appShellHeaderOptions(['(app)', 'workers', 'index'], theme)} />
-				<Stack.Screen name="storage" options={appShellHeaderOptions(['(app)', 'storage', 'index'], theme)} />
-				<Stack.Screen name="account" options={appShellHeaderOptions(['(app)', 'account', 'index'], theme)} />
-				<Stack.Screen name="profile" options={appShellHeaderOptions(['(app)', 'profile', 'index'], theme)} />
-			</Stack>
+			<NativeTabs
+				hidden={!isTabRoot(segments)}
+				iconColor={{ default: theme.subtle, selected: theme.brand }}
+				tintColor={theme.brand}
+			>
+				<NativeTabs.Trigger name="home">
+					<NativeTabs.Trigger.Label hidden />
+					<NativeTabs.Trigger.Icon {...nativeTabIconProps('home')} />
+				</NativeTabs.Trigger>
+				<NativeTabs.Trigger name="(items)">
+					<NativeTabs.Trigger.Label hidden />
+					<NativeTabs.Trigger.Icon {...nativeTabIconProps('items')} />
+				</NativeTabs.Trigger>
+				<NativeTabs.Trigger name="watchtower">
+					<NativeTabs.Trigger.Label hidden />
+					<NativeTabs.Trigger.Icon {...nativeTabIconProps('watchtower')} />
+				</NativeTabs.Trigger>
+				<NativeTabs.Trigger name="search" role="search">
+					<NativeTabs.Trigger.Label hidden />
+					<NativeTabs.Trigger.Icon {...nativeTabIconProps('search')} />
+				</NativeTabs.Trigger>
+			</NativeTabs>
 		</AccountProvider>
 	)
 }
