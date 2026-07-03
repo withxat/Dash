@@ -1,15 +1,15 @@
-import { Redirect, Stack, useSegments } from 'expo-router'
+import { Redirect, Stack } from 'expo-router'
 import { ActivityIndicator, View } from 'react-native'
 
 import { AccountProvider } from '../../lib/account-provider'
 import { appShellHeaderOptions } from '../../lib/app-shell-header'
+import { stackScreenOptions } from '../../lib/navigation'
 import { useTheme } from '../../lib/theme'
 import { useAuth } from '../../lib/use-auth'
 
 export default function AppLayout() {
 	const { status } = useAuth()
 	const theme = useTheme()
-	const segments = useSegments()
 
 	if (status === 'loading') {
 		return (
@@ -23,18 +23,13 @@ export default function AppLayout() {
 
 	return (
 		<AccountProvider>
-			<Stack
-				screenOptions={{
-					...appShellHeaderOptions(segments, theme),
-					contentStyle: { backgroundColor: theme.canvas },
-				}}
-			>
-				<Stack.Screen name="(tabs)" />
-				<Stack.Screen name="zones" />
-				<Stack.Screen name="workers" />
-				<Stack.Screen name="storage" />
-				<Stack.Screen name="account" />
-				<Stack.Screen name="profile" />
+			<Stack screenOptions={stackScreenOptions(theme)}>
+				<Stack.Screen name="(tabs)" options={appShellHeaderOptions(['(app)', '(tabs)', 'home'], theme)} />
+				<Stack.Screen name="zones" options={appShellHeaderOptions(['(app)', 'zones', 'index'], theme)} />
+				<Stack.Screen name="workers" options={appShellHeaderOptions(['(app)', 'workers', 'index'], theme)} />
+				<Stack.Screen name="storage" options={appShellHeaderOptions(['(app)', 'storage', 'index'], theme)} />
+				<Stack.Screen name="account" options={appShellHeaderOptions(['(app)', 'account', 'index'], theme)} />
+				<Stack.Screen name="profile" options={appShellHeaderOptions(['(app)', 'profile', 'index'], theme)} />
 			</Stack>
 		</AccountProvider>
 	)
