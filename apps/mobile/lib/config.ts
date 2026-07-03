@@ -14,12 +14,23 @@ export const CLOUDFLARE_CLIENT_ID
 	= process.env.EXPO_PUBLIC_CLOUDFLARE_CLIENT_ID ?? ''
 
 /**
- * Redirect URI computed for the current runtime. In a development build or
- * standalone build this resolves to `cloudfx://oauth/callback` (the app
- * scheme). Register the value printed on the login screen in your Cloudflare
- * OAuth client's allowed redirect URIs.
+ * Registered https redirect URI. Cloudflare OAuth clients only allow http(s)
+ * redirect URIs, so this points at the CloudFX relay Worker (apps/relay-worker)
+ * which 302-redirects the callback into the `cloudfx://` deep link the app
+ * captures. Deploy the worker, then set this to its /oauth/callback URL, e.g.
+ * https://cloudfx-relay.<subdomain>.workers.dev/oauth/callback.
+ *
+ * Sent as `redirect_uri` in both the authorize request and the token exchange.
  */
-export const CLOUDFLARE_REDIRECT_URI = makeRedirectUri({
+export const CLOUDFLARE_REDIRECT_URI
+	= process.env.EXPO_PUBLIC_CLOUDFLARE_REDIRECT_URI ?? ''
+
+/**
+ * Custom-scheme URI the app captures from the in-app browser. The relay Worker
+ * redirects the https callback here. In a dev/standalone build with the
+ * `cloudfx` scheme this resolves to `cloudfx://oauth/callback`.
+ */
+export const CLOUDFLARE_APP_CALLBACK = makeRedirectUri({
 	path: 'oauth/callback',
 	scheme: 'cloudfx',
 })
@@ -29,4 +40,5 @@ export const CLOUDFLARE_SCOPES = [...DEFAULT_CLOUDFLARE_SCOPES]
 
 export const CLOUDFLARE_DISCOVERY = CLOUDFLARE_OAUTH_ENDPOINTS
 
-export const isCloudflareConfigured = CLOUDFLARE_CLIENT_ID.length > 0
+export const isCloudflareConfigured
+	= CLOUDFLARE_CLIENT_ID.length > 0 && CLOUDFLARE_REDIRECT_URI.length > 0

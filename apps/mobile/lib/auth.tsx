@@ -8,7 +8,7 @@ import * as WebBrowser from 'expo-web-browser'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { AuthContext } from './auth-context'
-import { CLOUDFLARE_CLIENT_ID, CLOUDFLARE_DISCOVERY, CLOUDFLARE_REDIRECT_URI, CLOUDFLARE_SCOPES } from './config'
+import { CLOUDFLARE_APP_CALLBACK, CLOUDFLARE_CLIENT_ID, CLOUDFLARE_DISCOVERY, CLOUDFLARE_REDIRECT_URI, CLOUDFLARE_SCOPES } from './config'
 import { secureTokenStore } from './storage'
 
 // Closes the in-app browser once the OAuth redirect returns to the app.
@@ -19,7 +19,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [exchanging, setExchanging] = useState(false)
 	const [error, setError] = useState<null | string>(null)
 
-	const [request, , promptAsync] = useAuthRequest(
+	// expo-auth-session builds the authorize URL and manages PKCE
+	// (code_verifier + code_challenge) and state. We pass the registered https
+	// redirect URI (sent to Cloudflare) but capture the `cloudfx://` deep link
+	// the relay Worker redirects into — so signIn() calls
+	// `WebBrowser.openAuthSessionAsync(authUrl, CLOUDFLARE_APP_CALLBACK)` directly
+	// instead of the hook's promptAsync(), which would watch the https URI and
+	// never match the cloudfx:// capture.
+	const [request] = useAuthRequest(
 		{
 			clientId: CLOUDFLARE_CLIENT_ID,
 			redirectUri: CLOUDFLARE_REDIRECT_URI,
@@ -41,16 +48,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const signIn = useCallback(async () => {
 		setError(null)
 		if (!request) {
-			setError('Auth request not ready. Make sure CLOUDFLARE_CLIENT_ID is set.')
+			setError('Auth request not ready. Make sure CLOUDFLARE_CLIENT_ID and CLOUDFLARE_REDIRECT_URI are set.')
 			return
 		}
 		try {
-			const result = await promptAsync()
+			// Library generates the PKCE pair + state and builds the authorize URL
+			// with redirect_uri = the registered https relay Worker URL.
+			const authUrl = await request.makeAuthUrlAsync(CLOUDFLARE_DISCOVERY)
+			// The in-app browser watches for the `cloudfx://` deep link: Cloudflare
+			// redirects to the https Worker, which 302s into cloudfx://, captured here.
+			const result = await WebBrowser.openAuthSessionAsync(authUrl, CLOUDFLARE_APP_CALLBACK)
 			if (result.type === 'success') {
-				const code = result.params.code
+				const params = new URL(result.url).searchParams
+				const code = params.get('code')
+				const state = params.get('state')
+				if (!code) {
+					// Cloudflare redirected back with an error instead of a code
+					// (e.g. invalid_scope when a requested scope isn't enabled on
+					// the OAuth client in the dashboard). Surface the real reason.
+					const oauthError = params.get('error')
+					const oauthErrorDescription = params.get('error_description')
+					setError(
+						oauthError
+							? `OAuth error: ${oauthError}${oauthErrorDescription ? ` — ${oauthErrorDescription}` : ''}`
+							: 'OAuth response missing code.',
+					)
+					return
+				}
+				// CSRF guard — the state we sent must match the state returned.
+				if (!state || state !== request.state) {
+					setError('OAuth state mismatch — aborting.')
+					return
+				}
 				const codeVerifier = request.codeVerifier
-				if (!code || !codeVerifier) {
-					setError('OAuth response missing code or PKCE verifier.')
+				if (!codeVerifier) {
+					setError('PKCE verifier missing.')
 					return
 				}
 				setExchanging(true)
@@ -71,15 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 					setExchanging(false)
 				}
 			}
-			else if (result.type === 'error') {
-				setError(result.error?.description ?? result.error?.message ?? 'OAuth error')
-			}
-			// 'cancel' / 'dismiss' / 'locked' are no-ops.
+			// Non-success (cancel / dismiss / opened / locked): user backed out or a
+			// platform state — nothing to surface.
 		}
 		catch (err) {
 			setError(err instanceof Error ? err.message : String(err))
 		}
-	}, [request, promptAsync])
+	}, [request])
 
 	const signOut = useCallback(async () => {
 		const accessToken = await secureTokenStore.getAccessToken()
