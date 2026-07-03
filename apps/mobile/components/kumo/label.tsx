@@ -23,7 +23,10 @@ export function Label({ children, className }: LabelProps) {
 /** In-card section title for grouped lists (LayerCard header band). */
 export function ListCardLabel({ children, className }: LabelProps) {
 	return (
-		<Text className={cn('text-sm font-medium text-subtle', className)}>
+		<Text
+			className={cn('text-subtle', className)}
+			style={chillFaceStyle('bold', { fontSize: 16, lineHeight: 22 })}
+		>
 			{children}
 		</Text>
 	)
