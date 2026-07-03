@@ -22,7 +22,7 @@ export default function ItemsScreen() {
 	return (
 		<ScrollView
 			className="flex-1 bg-canvas"
-			contentContainerStyle={tabScrollContentStyle({ paddingBottom: tabScrollPadding })}
+			contentContainerStyle={tabScrollContentStyle({ paddingBottom: tabScrollPadding, tabRoot: true })}
 			contentInsetAdjustmentBehavior="automatic"
 		>
 			{APP_CATALOG.map(category => (

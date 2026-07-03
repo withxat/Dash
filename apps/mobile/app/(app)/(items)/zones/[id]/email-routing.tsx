@@ -7,8 +7,7 @@ import { RefreshControl, ScrollView, View } from 'react-native'
 
 import { Badge } from '../../../../../components/badge'
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { SettingRow } from '../../../../../components/setting-row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -80,75 +79,69 @@ export default function ZoneEmailRoutingScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Status</SectionLabel>
-				<ListSurface>
-					{settingsQuery.isLoading
+			<ListGroup title="Status">
+				{settingsQuery.isLoading
+					? (
+							<View className="py-3">
+								<Skeleton className="h-6 w-full" />
+							</View>
+						)
+					: settingsQuery.isError
 						? (
-								<View className="py-3">
-									<Skeleton className="h-6 w-full" />
-								</View>
+								<EmptyState onAction={() => void settingsQuery.refetch()}>
+									{isForbidden(settingsQuery.error)
+										? 'Needs the Email Routing Rules read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load Email Routing status.'}
+								</EmptyState>
 							)
-						: settingsQuery.isError
-							? (
-									<EmptyState onAction={() => void settingsQuery.refetch()}>
-										{isForbidden(settingsQuery.error)
-											? 'Needs the Email Routing Rules read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load Email Routing status.'}
-									</EmptyState>
-								)
-							: (
-									<Row
-										chevron={false}
-										right={<Badge variant={settingsQuery.data?.enabled ? 'success' : 'secondary'}>{settingsQuery.data?.status ?? (settingsQuery.data?.enabled ? 'enabled' : 'disabled')}</Badge>}
-										subtitle={settingsQuery.data?.name}
-										title="Email Routing"
-									/>
-								)}
-					<Row
-						onPress={() => router.push('/account/email-addresses')}
-						subtitle="Verified forwarding targets for the account"
-						title="Destination addresses"
-					/>
-				</ListSurface>
-			</View>
+						: (
+								<Row
+									chevron={false}
+									right={<Badge variant={settingsQuery.data?.enabled ? 'success' : 'secondary'}>{settingsQuery.data?.status ?? (settingsQuery.data?.enabled ? 'enabled' : 'disabled')}</Badge>}
+									subtitle={settingsQuery.data?.name}
+									title="Email Routing"
+								/>
+							)}
+				<Row
+					onPress={() => router.push('/account/email-addresses')}
+					subtitle="Verified forwarding targets for the account"
+					title="Destination addresses"
+				/>
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Routing rules</SectionLabel>
-				<ListSurface>
-					{rulesQuery.isLoading
+			<ListGroup title="Routing rules">
+				{rulesQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-6 w-full" />
+								<Skeleton className="h-6 w-full" />
+							</View>
+						)
+					: rulesQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-6 w-full" />
-									<Skeleton className="h-6 w-full" />
-								</View>
+								<EmptyState onAction={() => void rulesQuery.refetch()}>
+									{isForbidden(rulesQuery.error)
+										? 'Needs the Email Routing Rules read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load routing rules.'}
+								</EmptyState>
 							)
-						: rulesQuery.isError
-							? (
-									<EmptyState onAction={() => void rulesQuery.refetch()}>
-										{isForbidden(rulesQuery.error)
-											? 'Needs the Email Routing Rules read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load routing rules.'}
-									</EmptyState>
-								)
-							: rules.length === 0
-								? <EmptyState>No routing rules on this zone.</EmptyState>
-								: (
-										<View>
-											{rules.map(rule => (
-												<SettingRow
-													key={rule.id ?? rule.tag}
-													loading={toggleMutation.isPending && toggleMutation.variables?.rule.id === rule.id}
-													onValueChange={enabled => toggleMutation.mutate({ enabled, rule })}
-													subtitle={ruleSummary(rule) || undefined}
-													title={rule.name || 'Rule'}
-													value={rule.enabled ?? false}
-												/>
-											))}
-										</View>
-									)}
-				</ListSurface>
-			</View>
+						: rules.length === 0
+							? <EmptyState>No routing rules on this zone.</EmptyState>
+							: (
+									<View>
+										{rules.map(rule => (
+											<SettingRow
+												key={rule.id ?? rule.tag}
+												loading={toggleMutation.isPending && toggleMutation.variables?.rule.id === rule.id}
+												onValueChange={enabled => toggleMutation.mutate({ enabled, rule })}
+												subtitle={ruleSummary(rule) || undefined}
+												title={rule.name || 'Rule'}
+												value={rule.enabled ?? false}
+											/>
+										))}
+									</View>
+								)}
+			</ListGroup>
 		</ScrollView>
 	)
 }

@@ -8,8 +8,7 @@ import { RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { EmptyState } from '../../../../../components/empty-state'
 import { PickerSettingRow } from '../../../../../components/picker-setting-row'
-import { ListSurface } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup } from '../../../../../components/row'
 import { SettingRow } from '../../../../../components/setting-row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -229,14 +228,11 @@ export default function ZoneSettingsScreen() {
 				if (visible.length === 0)
 					return null
 				return (
-					<View className="gap-2" key={label}>
-						<SectionLabel>{label}</SectionLabel>
-						<ListSurface>
-							{visible.map(([key, child]) => (
-								<View key={key}>{child}</View>
-							))}
-						</ListSurface>
-					</View>
+					<ListGroup key={label} title={label}>
+						{visible.map(([key, child]) => (
+							<View key={key}>{child}</View>
+						))}
+					</ListGroup>
 				)
 			})}
 			{footer}

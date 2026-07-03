@@ -8,7 +8,7 @@ import { Badge } from '../../../../components/badge'
 import { Button, ButtonText } from '../../../../components/button'
 import { Input } from '../../../../components/input'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
+import { ListGroup, Row } from '../../../../components/row'
 import { SectionLabel } from '../../../../components/section-label'
 import { cloudflareClient } from '../../../../lib/api'
 import { isForbidden } from '../../../../lib/api-errors'
@@ -126,29 +126,26 @@ export default function EmailAddressesScreen() {
 				</Button>
 			</View>
 
-			<View className="gap-2">
-				<SectionLabel>Destination addresses</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={address => (
-							<Row
-								chevron={false}
-								onPress={() => confirmDelete(address)}
-								right={<Badge variant={address.verified ? 'success' : 'warning'}>{address.verified ? 'Verified' : 'Pending'}</Badge>}
-								title={address.email ?? address.id ?? 'Address'}
-							/>
-						)}
-						emptyText="No destination addresses on this account."
-						error={addressesQuery.error}
-						errorText="Failed to load addresses."
-						isError={addressesQuery.isError}
-						isLoading={addressesQuery.isLoading}
-						items={addressesQuery.data}
-						onRetry={() => void addressesQuery.refetch()}
-						scopeHint="Needs the Email Routing Addresses read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Destination addresses">
+				<QuerySection
+					renderItem={address => (
+						<Row
+							chevron={false}
+							onPress={() => confirmDelete(address)}
+							right={<Badge variant={address.verified ? 'success' : 'warning'}>{address.verified ? 'Verified' : 'Pending'}</Badge>}
+							title={address.email ?? address.id ?? 'Address'}
+						/>
+					)}
+					emptyText="No destination addresses on this account."
+					error={addressesQuery.error}
+					errorText="Failed to load addresses."
+					isError={addressesQuery.isError}
+					isLoading={addressesQuery.isLoading}
+					items={addressesQuery.data}
+					onRetry={() => void addressesQuery.refetch()}
+					scopeHint="Needs the Email Routing Addresses read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

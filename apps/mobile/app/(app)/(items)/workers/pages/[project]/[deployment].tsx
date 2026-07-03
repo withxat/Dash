@@ -8,7 +8,6 @@ import { Badge } from '../../../../../../components/badge'
 import { Button, ButtonText } from '../../../../../../components/button'
 import { Card } from '../../../../../../components/card'
 import { EmptyState } from '../../../../../../components/empty-state'
-import { SectionLabel } from '../../../../../../components/section-label'
 import { Skeleton } from '../../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../../lib/api'
 import { timeAgo } from '../../../../../../lib/format'
@@ -182,51 +181,45 @@ export default function PagesDeploymentScreen() {
 
 			{stages.length > 0
 				? (
-						<View className="gap-2">
-							<SectionLabel>Build stages</SectionLabel>
-							<Card>
-								<View className="gap-3">
-									{stages.map(stage => (
-										<View className="flex-row items-center justify-between gap-3" key={stage.name}>
-											<Text className="text-sm text-default">{stage.name ?? '—'}</Text>
-											<View className="flex-row items-center gap-2">
-												{stage.ended_on
-													? <Text className="text-[11px] text-placeholder">{timeAgo(stage.ended_on)}</Text>
-													: null}
-												<Badge variant={stageTone(stage.status)}>{stage.status ?? 'idle'}</Badge>
-											</View>
+						<Card title="Build stages">
+							<View className="gap-3">
+								{stages.map(stage => (
+									<View className="flex-row items-center justify-between gap-3" key={stage.name}>
+										<Text className="text-sm text-default">{stage.name ?? '—'}</Text>
+										<View className="flex-row items-center gap-2">
+											{stage.ended_on
+												? <Text className="text-[11px] text-placeholder">{timeAgo(stage.ended_on)}</Text>
+												: null}
+											<Badge variant={stageTone(stage.status)}>{stage.status ?? 'idle'}</Badge>
 										</View>
-									))}
-								</View>
-							</Card>
-						</View>
+									</View>
+								))}
+							</View>
+						</Card>
 					)
 				: null}
 
-			<View className="gap-2">
-				<SectionLabel>Actions</SectionLabel>
-				<Card>
-					<View className="gap-3">
-						{failed
-							? (
-									<Button loading={retryMutation.isPending} onPress={() => retryMutation.mutate()}>
-										<ButtonText>Retry deployment</ButtonText>
-									</Button>
-								)
-							: null}
-						{deployment.environment === 'production'
-							? (
-									<Button loading={rollbackMutation.isPending} onPress={confirmRollback} variant="outline">
-										<ButtonText>Roll back production to this deployment</ButtonText>
-									</Button>
-								)
-							: null}
-						<Button loading={deleteMutation.isPending} onPress={confirmDelete} variant="destructive">
-							<ButtonText>Delete deployment</ButtonText>
-						</Button>
-					</View>
-				</Card>
-			</View>
+			<Card title="Actions">
+				<View className="gap-3">
+					{failed
+						? (
+								<Button loading={retryMutation.isPending} onPress={() => retryMutation.mutate()}>
+									<ButtonText>Retry deployment</ButtonText>
+								</Button>
+							)
+						: null}
+					{deployment.environment === 'production'
+						? (
+								<Button loading={rollbackMutation.isPending} onPress={confirmRollback} variant="outline">
+									<ButtonText>Roll back production to this deployment</ButtonText>
+								</Button>
+							)
+						: null}
+					<Button loading={deleteMutation.isPending} onPress={confirmDelete} variant="destructive">
+						<ButtonText>Delete deployment</ButtonText>
+					</Button>
+				</View>
+			</Card>
 		</ScrollView>
 	)
 }

@@ -9,7 +9,6 @@ import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
 import { TrashIcon } from '../../../../../components/icons'
 import { Input } from '../../../../../components/input'
-import { SectionLabel } from '../../../../../components/section-label'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
 import { cx } from '../../../../../lib/cx'
@@ -122,100 +121,94 @@ export default function WorkerDomainsScreen() {
 			keyboardShouldPersistTaps="handled"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Attach a domain</SectionLabel>
-				<Card>
-					<View className="gap-3">
-						<Input
-							autoCapitalize="none"
-							autoCorrect={false}
-							keyboardType="url"
-							label="Hostname"
-							onChangeText={setHostname}
-							placeholder="worker.example.com"
-							value={hostname}
-							mono
-						/>
-						{zones.length > 0
-							? (
-									<View className="gap-1.5">
-										<Text className="text-sm font-medium text-subtle">Zone</Text>
-										<View className="flex-row flex-wrap gap-2">
-											{zones.map((zone) => {
-												const active = zone.id === selectedZoneId
-												return (
-													<Pressable
-														className={cx(
-															`
-																rounded-full px-3 py-1.5
-																active:opacity-80
-															`,
-															active ? 'bg-brand' : 'border border-line bg-base',
-														)}
-														accessibilityRole="button"
-														key={zone.id}
-														onPress={() => setZoneId(zone.id)}
-														style={{ borderCurve: 'continuous' }}
-													>
-														<Text className={cx('text-xs font-medium', active ? 'text-inverse' : 'text-subtle')}>
-															{zone.name}
-														</Text>
-													</Pressable>
-												)
-											})}
-										</View>
+			<Card title="Attach a domain">
+				<View className="gap-3">
+					<Input
+						autoCapitalize="none"
+						autoCorrect={false}
+						keyboardType="url"
+						label="Hostname"
+						onChangeText={setHostname}
+						placeholder="worker.example.com"
+						value={hostname}
+						mono
+					/>
+					{zones.length > 0
+						? (
+								<View className="gap-1.5">
+									<Text className="text-sm font-medium text-subtle">Zone</Text>
+									<View className="flex-row flex-wrap gap-2">
+										{zones.map((zone) => {
+											const active = zone.id === selectedZoneId
+											return (
+												<Pressable
+													className={cx(
+														`
+															rounded-full px-3 py-1.5
+															active:opacity-80
+														`,
+														active ? 'bg-brand' : 'border border-line bg-base',
+													)}
+													accessibilityRole="button"
+													key={zone.id}
+													onPress={() => setZoneId(zone.id)}
+													style={{ borderCurve: 'continuous' }}
+												>
+													<Text className={cx('text-xs font-medium', active ? 'text-inverse' : 'text-subtle')}>
+														{zone.name}
+													</Text>
+												</Pressable>
+											)
+										})}
 									</View>
-								)
-							: null}
-						<Button
-							disabled={!hostname.trim() || !selectedZoneId}
-							loading={attachMutation.isPending}
-							onPress={() => attachMutation.mutate()}
-						>
-							<ButtonText>Attach domain</ButtonText>
-						</Button>
-					</View>
-				</Card>
-			</View>
+								</View>
+							)
+						: null}
+					<Button
+						disabled={!hostname.trim() || !selectedZoneId}
+						loading={attachMutation.isPending}
+						onPress={() => attachMutation.mutate()}
+					>
+						<ButtonText>Attach domain</ButtonText>
+					</Button>
+				</View>
+			</Card>
 
-			<View className="gap-2">
-				<SectionLabel>Attached domains</SectionLabel>
-				<Card>
-					{domainsQuery.isLoading
-						? <Skeleton className="h-10 w-full" />
-						: domainsQuery.isError
-							? <EmptyState onAction={() => void domainsQuery.refetch()}>Custom domains unavailable.</EmptyState>
-							: domains.length === 0
-								? <EmptyState>No custom domains bound to this Worker.</EmptyState>
-								: (
-										<View className="gap-3">
-											{domains.map(domain => (
-												<View className="flex-row items-center gap-3" key={domain.id}>
-													<View className="min-w-0 flex-1 gap-0.5">
-														<Text className="font-mono text-sm text-default" numberOfLines={1}>
-															{domain.hostname}
-														</Text>
-														{domain.zone_name
-															? <Text className="text-xs text-placeholder">{domain.zone_name}</Text>
-															: null}
-													</View>
-													<Pressable
-														className="
-															rounded-kumo p-2
-															active:bg-elevated
-														"
-														accessibilityLabel={`Detach ${domain.hostname}`}
-														hitSlop={8}
-														onPress={() => domain.id && domain.hostname && confirmDetach(String(domain.id), domain.hostname)}
-													>
-														<TrashIcon color={theme.danger} size={18} />
-													</Pressable>
+			<Card title="Attached domains">
+				{domainsQuery.isLoading
+					? <Skeleton className="h-10 w-full" />
+					: domainsQuery.isError
+						? <EmptyState onAction={() => void domainsQuery.refetch()}>Custom domains unavailable.</EmptyState>
+						: domains.length === 0
+							? <EmptyState>No custom domains bound to this Worker.</EmptyState>
+							: (
+									<View className="gap-3">
+										{domains.map(domain => (
+											<View className="flex-row items-center gap-3" key={domain.id}>
+												<View className="min-w-0 flex-1 gap-0.5">
+													<Text className="font-mono text-sm text-default" numberOfLines={1}>
+														{domain.hostname}
+													</Text>
+													{domain.zone_name
+														? <Text className="text-xs text-placeholder">{domain.zone_name}</Text>
+														: null}
 												</View>
-											))}
-										</View>
-									)}
-				</Card>
-			</View>
+												<Pressable
+													className="
+														rounded-kumo p-2
+														active:bg-elevated
+													"
+													accessibilityLabel={`Detach ${domain.hostname}`}
+													hitSlop={8}
+													onPress={() => domain.id && domain.hostname && confirmDetach(String(domain.id), domain.hostname)}
+												>
+													<TrashIcon color={theme.danger} size={18} />
+												</Pressable>
+											</View>
+										))}
+									</View>
+								)}
+			</Card>
 		</ScrollView>
 	)
 }

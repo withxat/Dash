@@ -6,7 +6,6 @@ import { AccountSwitcher } from '../../../../components/account-switcher'
 import { BarChart } from '../../../../components/bar-chart'
 import { Card } from '../../../../components/card'
 import { EmptyState } from '../../../../components/empty-state'
-import { SectionLabel } from '../../../../components/section-label'
 import { Segmented } from '../../../../components/segmented'
 import { Select } from '../../../../components/select'
 import { Skeleton } from '../../../../components/skeleton'
@@ -200,90 +199,80 @@ export default function AnalyticsScreen() {
 
 			<Segmented onChange={setRange} options={RANGE_OPTIONS} value={range} />
 
-			<View className="gap-2">
-				<SectionLabel>Totals</SectionLabel>
-				<Card>
-					{!activeAccountId || activeQuery.isLoading
+			<Card title="Totals">
+				{!activeAccountId || activeQuery.isLoading
+					? (
+							<View className="gap-3">
+								<Skeleton className="h-6 w-2/3" />
+								<Skeleton className="h-6 w-1/2" />
+							</View>
+						)
+					: activeQuery.isError
 						? (
-								<View className="gap-3">
-									<Skeleton className="h-6 w-2/3" />
-									<Skeleton className="h-6 w-1/2" />
-								</View>
+								<EmptyState onAction={() => void activeQuery.refetch()}>
+									{`Analytics unavailable for this ${selectedZoneId ? 'zone' : 'account'}.\n${activeQuery.error instanceof Error ? activeQuery.error.message : ''}`.trim()}
+								</EmptyState>
 							)
-						: activeQuery.isError
-							? (
-									<EmptyState onAction={() => void activeQuery.refetch()}>
-										{`Analytics unavailable for this ${selectedZoneId ? 'zone' : 'account'}.\n${activeQuery.error instanceof Error ? activeQuery.error.message : ''}`.trim()}
-									</EmptyState>
-								)
+						: (
+								<View className="flex-row flex-wrap gap-x-8 gap-y-4">
+									<Stat
+										hint={`cached ${formatNumber(totals?.cachedRequests)}`}
+										label="Requests"
+										value={formatNumber(totals?.requests)}
+									/>
+									<Stat label="Cache rate" value={formatPercent(cacheRate)} />
+									<Stat label="Bandwidth" value={formatBytes(totals?.bandwidth)} />
+									<Stat label="Threats" value={formatNumber(totals?.threats)} />
+									{!selectedZoneId
+										? <Stat label="Page views" value={formatNumber(totals?.pageViews)} />
+										: null}
+								</View>
+							)}
+			</Card>
+
+			<Card title="Daily requests">
+				{activeQuery.isLoading
+					? <Skeleton className="h-32 w-full" />
+					: activeQuery.isError
+						? <EmptyState>No chart data.</EmptyState>
+						: points.length === 0
+							? <EmptyState>No data in this range.</EmptyState>
 							: (
-									<View className="flex-row flex-wrap gap-x-8 gap-y-4">
-										<Stat
-											hint={`cached ${formatNumber(totals?.cachedRequests)}`}
-											label="Requests"
-											value={formatNumber(totals?.requests)}
+									<View className="gap-3">
+										<BarChart
+											data={points.map(p => ({
+												label: dayLabel(p.date),
+												value: p.sum.requests ?? 0,
+											}))}
+											formatValue={formatNumber}
 										/>
-										<Stat label="Cache rate" value={formatPercent(cacheRate)} />
-										<Stat label="Bandwidth" value={formatBytes(totals?.bandwidth)} />
-										<Stat label="Threats" value={formatNumber(totals?.threats)} />
-										{!selectedZoneId
-											? <Stat label="Page views" value={formatNumber(totals?.pageViews)} />
-											: null}
+										<View className="flex-row justify-between">
+											<Text className="text-[10px] text-placeholder">{shortDate(points[0]?.date)}</Text>
+											<Text className="text-[10px] text-placeholder">{shortDate(points[points.length - 1]?.date)}</Text>
+										</View>
 									</View>
 								)}
-				</Card>
-			</View>
-
-			<View className="gap-2">
-				<SectionLabel>Daily requests</SectionLabel>
-				<Card>
-					{activeQuery.isLoading
-						? <Skeleton className="h-32 w-full" />
-						: activeQuery.isError
-							? <EmptyState>No chart data.</EmptyState>
-							: points.length === 0
-								? <EmptyState>No data in this range.</EmptyState>
-								: (
-										<View className="gap-3">
-											<BarChart
-												data={points.map(p => ({
-													label: dayLabel(p.date),
-													value: p.sum.requests ?? 0,
-												}))}
-												formatValue={formatNumber}
-											/>
-											<View className="flex-row justify-between">
-												<Text className="text-[10px] text-placeholder">{shortDate(points[0]?.date)}</Text>
-												<Text className="text-[10px] text-placeholder">{shortDate(points[points.length - 1]?.date)}</Text>
-											</View>
-										</View>
-									)}
-				</Card>
-			</View>
+			</Card>
 
 			{!activeQuery.isError && points.length > 0
 				? (
-						<View className="gap-2">
-							<SectionLabel>Daily bandwidth</SectionLabel>
-							<Card>
-								<BarChart
-									data={points.map(p => ({
-										label: dayLabel(p.date),
-										value: p.sum.bandwidth ?? 0,
-									}))}
-									formatValue={n => formatBytes(n)}
-									height={100}
-									opacity={0.5}
-								/>
-							</Card>
-						</View>
+						<Card title="Daily bandwidth">
+							<BarChart
+								data={points.map(p => ({
+									label: dayLabel(p.date),
+									value: p.sum.bandwidth ?? 0,
+								}))}
+								formatValue={n => formatBytes(n)}
+								height={100}
+								opacity={0.5}
+							/>
+						</Card>
 					)
 				: null}
 
 			{rumSite
 				? (
 						<View className="gap-2">
-							<SectionLabel>{`Web Analytics · ${rumSite.ruleset?.zone_name ?? rumSite.site_tag}`}</SectionLabel>
 							{scopedRumSites.length > 1
 								? (
 										<Select
@@ -297,7 +286,7 @@ export default function AnalyticsScreen() {
 										/>
 									)
 								: null}
-							<Card>
+							<Card title={`Web Analytics · ${rumSite.ruleset?.zone_name ?? rumSite.site_tag}`}>
 								{webQuery.isLoading
 									? (
 											<View className="gap-3">

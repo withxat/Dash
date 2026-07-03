@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { useTheme } from '../../../../lib/theme'
 import { useActiveAccount } from '../../../../lib/use-active-account'
@@ -38,29 +37,26 @@ export default function RegistrarScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Registered domains</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={domain => (
-							<Row
-								chevron={false}
-								right={<Badge variant={domain.auto_renew ? 'success' : 'secondary'}>{domain.auto_renew ? 'Auto-renew' : 'Manual'}</Badge>}
-								subtitle={domain.expires_at ? `Expires ${new Date(domain.expires_at).toLocaleDateString()}` : undefined}
-								title={domain.name ?? domain.id ?? 'Domain'}
-							/>
-						)}
-						emptyText="No domains registered with Cloudflare Registrar."
-						error={domainsQuery.error}
-						errorText="Failed to load registrar domains."
-						isError={domainsQuery.isError}
-						isLoading={domainsQuery.isLoading}
-						items={domainsQuery.data}
-						onRetry={() => void domainsQuery.refetch()}
-						scopeHint="Needs the Registrar Domains read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Registered domains">
+				<QuerySection
+					renderItem={domain => (
+						<Row
+							chevron={false}
+							right={<Badge variant={domain.auto_renew ? 'success' : 'secondary'}>{domain.auto_renew ? 'Auto-renew' : 'Manual'}</Badge>}
+							subtitle={domain.expires_at ? `Expires ${new Date(domain.expires_at).toLocaleDateString()}` : undefined}
+							title={domain.name ?? domain.id ?? 'Domain'}
+						/>
+					)}
+					emptyText="No domains registered with Cloudflare Registrar."
+					error={domainsQuery.error}
+					errorText="Failed to load registrar domains."
+					isError={domainsQuery.isError}
+					isLoading={domainsQuery.isLoading}
+					items={domainsQuery.data}
+					onRetry={() => void domainsQuery.refetch()}
+					scopeHint="Needs the Registrar Domains read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

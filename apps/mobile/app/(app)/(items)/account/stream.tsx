@@ -4,12 +4,11 @@ import type { BadgeTone } from '../../../../components/badge'
 
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { timeAgo } from '../../../../lib/format'
 import { useTheme } from '../../../../lib/theme'
@@ -67,29 +66,26 @@ export default function StreamScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Stream videos</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={video => (
-							<Row
-								chevron={false}
-								right={<Badge variant={videoTone(video.status?.state)}>{video.status?.state ?? 'unknown'}</Badge>}
-								subtitle={[videoDuration(video), video.created ? timeAgo(video.created) : undefined].filter(Boolean).join(' · ') || undefined}
-								title={videoTitle(video)}
-							/>
-						)}
-						emptyText="No videos on this account."
-						error={videosQuery.error}
-						errorText="Failed to load videos."
-						isError={videosQuery.isError}
-						isLoading={videosQuery.isLoading}
-						items={videosQuery.data}
-						onRetry={() => void videosQuery.refetch()}
-						scopeHint="Needs the Stream read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Stream videos">
+				<QuerySection
+					renderItem={video => (
+						<Row
+							chevron={false}
+							right={<Badge variant={videoTone(video.status?.state)}>{video.status?.state ?? 'unknown'}</Badge>}
+							subtitle={[videoDuration(video), video.created ? timeAgo(video.created) : undefined].filter(Boolean).join(' · ') || undefined}
+							title={videoTitle(video)}
+						/>
+					)}
+					emptyText="No videos on this account."
+					error={videosQuery.error}
+					errorText="Failed to load videos."
+					isError={videosQuery.isError}
+					isLoading={videosQuery.isLoading}
+					items={videosQuery.data}
+					onRetry={() => void videosQuery.refetch()}
+					scopeHint="Needs the Stream read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

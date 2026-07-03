@@ -6,7 +6,6 @@ import { RefreshControl, ScrollView, View } from 'react-native'
 import { BarChart } from '../../../../../components/bar-chart'
 import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
-import { SectionLabel } from '../../../../../components/section-label'
 import { Segmented } from '../../../../../components/segmented'
 import { Skeleton } from '../../../../../components/skeleton'
 import { Stat } from '../../../../../components/stat'
@@ -76,56 +75,53 @@ export default function ZoneAnalyticsScreen() {
 		>
 			<Segmented onChange={setRange} options={RANGE_OPTIONS} value={range} />
 
-			<View className="gap-2">
-				<SectionLabel>Traffic</SectionLabel>
-				<Card>
-					{analyticsQuery.isLoading
-						? (
-								<View className="gap-3">
-									<Skeleton className="h-6 w-2/3" />
-									<Skeleton className="h-32 w-full" />
-								</View>
-							)
-						: analyticsQuery.isError
-							? <EmptyState onAction={() => void analyticsQuery.refetch()}>Analytics unavailable for this zone.</EmptyState>
-							: (
-									<View className="gap-4">
-										<View className="flex-row flex-wrap gap-x-8 gap-y-4">
-											<Stat
-												hint={`cached ${formatNumber(totals?.requests?.cached)}`}
-												label="Requests"
-												value={formatNumber(totals?.requests?.all)}
-											/>
-											<Stat label="Bandwidth" value={formatBytes(totals?.bandwidth?.all)} />
-											<Stat label="Cache rate" value={formatPercent(cacheRate)} />
-											<Stat label="Threats" value={formatNumber(totals?.threats?.all)} />
-										</View>
-										{series.length > 0
-											? (
-													<View className="gap-4">
-														<BarChart
-															data={series.map(p => ({
-																label: bucketLabel(p.since, range),
-																value: p.requests?.all ?? 0,
-															}))}
-															formatValue={formatNumber}
-														/>
-														<BarChart
-															data={series.map(p => ({
-																label: bucketLabel(p.since, range),
-																value: p.bandwidth?.all ?? 0,
-															}))}
-															formatValue={n => formatBytes(n)}
-															height={80}
-															opacity={0.5}
-														/>
-													</View>
-												)
-											: null}
+			<Card title="Traffic">
+				{analyticsQuery.isLoading
+					? (
+							<View className="gap-3">
+								<Skeleton className="h-6 w-2/3" />
+								<Skeleton className="h-32 w-full" />
+							</View>
+						)
+					: analyticsQuery.isError
+						? <EmptyState onAction={() => void analyticsQuery.refetch()}>Analytics unavailable for this zone.</EmptyState>
+						: (
+								<View className="gap-4">
+									<View className="flex-row flex-wrap gap-x-8 gap-y-4">
+										<Stat
+											hint={`cached ${formatNumber(totals?.requests?.cached)}`}
+											label="Requests"
+											value={formatNumber(totals?.requests?.all)}
+										/>
+										<Stat label="Bandwidth" value={formatBytes(totals?.bandwidth?.all)} />
+										<Stat label="Cache rate" value={formatPercent(cacheRate)} />
+										<Stat label="Threats" value={formatNumber(totals?.threats?.all)} />
 									</View>
-								)}
-				</Card>
-			</View>
+									{series.length > 0
+										? (
+												<View className="gap-4">
+													<BarChart
+														data={series.map(p => ({
+															label: bucketLabel(p.since, range),
+															value: p.requests?.all ?? 0,
+														}))}
+														formatValue={formatNumber}
+													/>
+													<BarChart
+														data={series.map(p => ({
+															label: bucketLabel(p.since, range),
+															value: p.bandwidth?.all ?? 0,
+														}))}
+														formatValue={n => formatBytes(n)}
+														height={80}
+														opacity={0.5}
+													/>
+												</View>
+											)
+										: null}
+								</View>
+							)}
+			</Card>
 		</ScrollView>
 	)
 }

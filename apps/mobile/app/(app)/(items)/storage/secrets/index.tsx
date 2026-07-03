@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { AccountSwitcher } from '../../../../../components/account-switcher'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { formatDate } from '../../../../../lib/format'
 import { useTheme } from '../../../../../lib/theme'
@@ -39,31 +38,28 @@ export default function SecretsStoresScreen() {
 		>
 			<AccountSwitcher />
 
-			<View className="gap-2">
-				<SectionLabel>Stores</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={store => (
-							<Row
-								onPress={() => router.push({
-									params: { name: store.name, store: store.id },
-									pathname: '/storage/secrets/[store]',
-								})}
-								subtitle={store.created ? `Created ${formatDate(store.created)}` : store.id}
-								title={store.name ?? store.id ?? 'Store'}
-							/>
-						)}
-						emptyText="No secret stores in this account."
-						error={storesQuery.error}
-						errorText="Failed to load secret stores."
-						isError={storesQuery.isError}
-						isLoading={!activeAccountId || storesQuery.isLoading}
-						items={storesQuery.data}
-						onRetry={() => void storesQuery.refetch()}
-						scopeHint="Needs the Secrets Store read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Stores">
+				<QuerySection
+					renderItem={store => (
+						<Row
+							onPress={() => router.push({
+								params: { name: store.name, store: store.id },
+								pathname: '/storage/secrets/[store]',
+							})}
+							subtitle={store.created ? `Created ${formatDate(store.created)}` : store.id}
+							title={store.name ?? store.id ?? 'Store'}
+						/>
+					)}
+					emptyText="No secret stores in this account."
+					error={storesQuery.error}
+					errorText="Failed to load secret stores."
+					isError={storesQuery.isError}
+					isLoading={!activeAccountId || storesQuery.isLoading}
+					items={storesQuery.data}
+					onRetry={() => void storesQuery.refetch()}
+					scopeHint="Needs the Secrets Store read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

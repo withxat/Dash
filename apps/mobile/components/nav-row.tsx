@@ -5,11 +5,11 @@ import { Children, Fragment, isValidElement } from 'react'
 import { Pressable, Text, View } from 'react-native'
 
 import { cx } from '../lib/cx'
-import { chillFonts } from '../lib/fonts'
+import { chillFaceStyle } from '../lib/fonts'
 import { useTheme } from '../lib/theme'
 import { Card } from './card'
 import { ChevronRightIcon } from './icons'
-import { SectionLabel } from './section-label'
+import { LayerCardFrame, LayerCardHeader, LayerCardInsetBody } from './kumo/layer-card'
 
 /** Horizontal rule between grouped list rows — never use border utilities on rows. */
 export function ListDivider() {
@@ -31,14 +31,29 @@ function withListDividers(children: ReactNode) {
 interface ListSurfaceProps {
 	children: ReactNode
 	className?: string
+	/** Trailing control in the card header band (e.g. Edit). */
+	headerAction?: ReactNode
+	/** Title shown in the elevated header band inside the card. */
+	title?: string
 }
 
 /** Inset grouped list container — outer ring only; row dividers are separate Views. */
-export function ListSurface({ children, className }: ListSurfaceProps) {
+export function ListSurface({ children, className, headerAction, title }: ListSurfaceProps) {
+	if (!title) {
+		return (
+			<Card className={cx('overflow-hidden rounded-kumo bg-base px-4 py-0', className)} shadow={false}>
+				{withListDividers(children)}
+			</Card>
+		)
+	}
+
 	return (
-		<Card className={cx('overflow-hidden rounded-kumo bg-base px-4 py-0', className)} shadow={false}>
-			{withListDividers(children)}
-		</Card>
+		<LayerCardFrame className={className} shadow={false}>
+			<LayerCardHeader headerAction={headerAction} title={title} />
+			<LayerCardInsetBody className="px-4 py-0">
+				{withListDividers(children)}
+			</LayerCardInsetBody>
+		</LayerCardFrame>
 	)
 }
 
@@ -81,7 +96,7 @@ export function NavRow({
 		>
 			{leading ? <View className="mr-3">{leading}</View> : null}
 			<View className="min-w-0 flex-1 gap-0.5">
-				<Text className="text-default" numberOfLines={1} style={{ fontFamily: chillFonts.medium }}>
+				<Text className="text-default" numberOfLines={1} style={chillFaceStyle('medium')}>
 					{title}
 				</Text>
 				{subtitle
@@ -114,15 +129,16 @@ export function NavRow({
 
 interface ListGroupProps {
 	children: ReactNode
+	className?: string
+	headerAction?: ReactNode
 	title?: string
 }
 
-/** Grouped list section with a section label. */
-export function ListGroup({ children, title }: ListGroupProps) {
+/** Grouped list section with an in-card title band. */
+export function ListGroup({ children, className, headerAction, title }: ListGroupProps) {
 	return (
-		<View className="gap-2">
-			{title ? <SectionLabel>{title}</SectionLabel> : null}
-			<ListSurface>{children}</ListSurface>
-		</View>
+		<ListSurface className={className} headerAction={headerAction} title={title}>
+			{children}
+		</ListSurface>
 	)
 }

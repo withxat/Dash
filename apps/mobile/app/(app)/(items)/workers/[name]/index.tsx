@@ -7,8 +7,7 @@ import { RefreshControl, ScrollView, Text, View } from 'react-native'
 import { Badge } from '../../../../../components/badge'
 import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { SettingRow } from '../../../../../components/setting-row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { Stat } from '../../../../../components/stat'
@@ -129,67 +128,61 @@ export default function WorkerDetailScreen() {
 			</Card>
 
 			{/* Service availability */}
-			<View className="gap-2">
-				<SectionLabel>Service</SectionLabel>
-				<ListSurface>
-					{subdomainQuery.isLoading
+			<ListGroup title="Service">
+				{subdomainQuery.isLoading
+					? (
+							<View className="py-3">
+								<Skeleton className="h-6 w-full" />
+							</View>
+						)
+					: subdomainQuery.isError
 						? (
-								<View className="py-3">
-									<Skeleton className="h-6 w-full" />
-								</View>
+								<EmptyState>
+									{isForbidden(subdomainQuery.error)
+										? 'Needs the Workers Scripts write scope — enable it on your OAuth client and sign in again.'
+										: 'Subdomain status unavailable.'}
+								</EmptyState>
 							)
-						: subdomainQuery.isError
-							? (
-									<EmptyState>
-										{isForbidden(subdomainQuery.error)
-											? 'Needs the Workers Scripts write scope — enable it on your OAuth client and sign in again.'
-											: 'Subdomain status unavailable.'}
-									</EmptyState>
-								)
-							: (
-									<SettingRow
-										loading={subdomainMutation.isPending}
-										onValueChange={enabled => subdomainMutation.mutate(enabled)}
-										subtitle="Serve this Worker on its workers.dev URL"
-										title="workers.dev subdomain"
-										value={subdomainQuery.data?.enabled ?? false}
-									/>
-								)}
-				</ListSurface>
-			</View>
+						: (
+								<SettingRow
+									loading={subdomainMutation.isPending}
+									onValueChange={enabled => subdomainMutation.mutate(enabled)}
+									subtitle="Serve this Worker on its workers.dev URL"
+									title="workers.dev subdomain"
+									value={subdomainQuery.data?.enabled ?? false}
+								/>
+							)}
+			</ListGroup>
 
 			{/* Browse */}
-			<View className="gap-2">
-				<SectionLabel>Manage</SectionLabel>
-				<ListSurface>
-					<Row
-						onPress={() => router.push(`/workers/${encodeURIComponent(name)}/deployments`)}
-						subtitle={latestDeployment?.created_on ? `Last deployed ${timeAgo(latestDeployment.created_on)}` : 'Deployment history'}
-						title="Deployments"
-					/>
-					<Row
-						onPress={() => router.push(`/workers/${encodeURIComponent(name)}/domains`)}
-						right={domainCount != null ? String(domainCount) : undefined}
-						subtitle="Attach or detach hostnames"
-						title="Custom domains"
-					/>
-					<Row
-						onPress={() => router.push(`/workers/${encodeURIComponent(name)}/source`)}
-						subtitle="View the deployed script"
-						title="Source"
-					/>
-					<Row
-						onPress={() => router.push(`/workers/${encodeURIComponent(name)}/builds`)}
-						subtitle="Workers Builds history"
-						title="Builds"
-					/>
-					<Row
-						onPress={() => router.push(`/workers/${encodeURIComponent(name)}/logs`)}
-						subtitle="Recent logs and errors"
-						title="Logs"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Manage">
+				<Row
+					onPress={() => router.push(`/workers/${encodeURIComponent(name)}/deployments`)}
+					subtitle={latestDeployment?.created_on ? `Last deployed ${timeAgo(latestDeployment.created_on)}` : 'Deployment history'}
+					title="Deployments"
+				/>
+				<Row
+					onPress={() => router.push(`/workers/${encodeURIComponent(name)}/domains`)}
+					right={domainCount != null ? String(domainCount) : undefined}
+					subtitle="Attach or detach hostnames"
+					title="Custom domains"
+				/>
+				<Row
+					onPress={() => router.push(`/workers/${encodeURIComponent(name)}/source`)}
+					subtitle="View the deployed script"
+					title="Source"
+				/>
+				<Row
+					onPress={() => router.push(`/workers/${encodeURIComponent(name)}/builds`)}
+					subtitle="Workers Builds history"
+					title="Builds"
+				/>
+				<Row
+					onPress={() => router.push(`/workers/${encodeURIComponent(name)}/logs`)}
+					subtitle="Recent logs and errors"
+					title="Logs"
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

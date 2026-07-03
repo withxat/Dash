@@ -2,12 +2,11 @@ import type { AccessApplication } from '@cloudfx/api'
 
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { useTheme } from '../../../../lib/theme'
 import { useActiveAccount } from '../../../../lib/use-active-account'
@@ -52,32 +51,29 @@ export default function AccessAppsScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Zero Trust applications</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={(app) => {
-							const type = appType(app)
-							return (
-								<Row
-									chevron={false}
-									right={type ? <Badge variant="secondary">{type}</Badge> : undefined}
-									subtitle={appDomain(app)}
-									title={('name' in app ? app.name : undefined) ?? app.id ?? 'Application'}
-								/>
-							)
-						}}
-						emptyText="No Access applications on this account."
-						error={appsQuery.error}
-						errorText="Failed to load Access applications."
-						isError={appsQuery.isError}
-						isLoading={appsQuery.isLoading}
-						items={appsQuery.data}
-						onRetry={() => void appsQuery.refetch()}
-						scopeHint="Needs the Access Apps read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Zero Trust applications">
+				<QuerySection
+					renderItem={(app) => {
+						const type = appType(app)
+						return (
+							<Row
+								chevron={false}
+								right={type ? <Badge variant="secondary">{type}</Badge> : undefined}
+								subtitle={appDomain(app)}
+								title={('name' in app ? app.name : undefined) ?? app.id ?? 'Application'}
+							/>
+						)
+					}}
+					emptyText="No Access applications on this account."
+					error={appsQuery.error}
+					errorText="Failed to load Access applications."
+					isError={appsQuery.isError}
+					isLoading={appsQuery.isLoading}
+					items={appsQuery.data}
+					onRetry={() => void appsQuery.refetch()}
+					scopeHint="Needs the Access Apps read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

@@ -52,7 +52,7 @@ export default function SearchScreen() {
 	return (
 		<ScrollView
 			className="flex-1 bg-canvas"
-			contentContainerStyle={tabScrollContentStyle({ gap: 16, paddingBottom: tabScrollPadding })}
+			contentContainerStyle={tabScrollContentStyle({ gap: 16, paddingBottom: tabScrollPadding, tabRoot: true })}
 			contentInsetAdjustmentBehavior="automatic"
 			keyboardShouldPersistTaps="handled"
 		>

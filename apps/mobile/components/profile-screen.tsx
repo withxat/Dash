@@ -9,7 +9,6 @@ import { useAuth } from '../lib/use-auth'
 import { AccountSwitcher } from './account-switcher'
 import { Button, ButtonText } from './button'
 import { Card } from './card'
-import { SectionLabel } from './section-label'
 import { Skeleton } from './skeleton'
 import { Stat } from './stat'
 import { UserAvatar } from './user-avatar'
@@ -76,23 +75,20 @@ export default function AccountScreen() {
 				</View>
 			</Card>
 
-			<View className="gap-2">
-				<SectionLabel>At a glance</SectionLabel>
-				<Card>
-					<View className="flex-row gap-8">
-						<Stat
-							hint="in this account"
-							label="Zones"
-							value={zonesQuery.isPending ? '…' : String(zonesQuery.data ?? 0)}
-						/>
-						<Stat
-							hint="accessible"
-							label="Accounts"
-							value={String(accounts.length)}
-						/>
-					</View>
-				</Card>
-			</View>
+			<Card title="At a glance">
+				<View className="flex-row gap-8">
+					<Stat
+						hint="in this account"
+						label="Zones"
+						value={zonesQuery.isPending ? '…' : String(zonesQuery.data ?? 0)}
+					/>
+					<Stat
+						hint="accessible"
+						label="Accounts"
+						value={String(accounts.length)}
+					/>
+				</View>
+			</Card>
 
 			<View className="py-2">
 				<Button onPress={signOut} size="lg" variant="secondary-destructive">

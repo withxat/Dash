@@ -10,7 +10,6 @@ import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
 import { TrashIcon } from '../../../../../components/icons'
 import { Input } from '../../../../../components/input'
-import { SectionLabel } from '../../../../../components/section-label'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
 import { cx } from '../../../../../lib/cx'
@@ -128,103 +127,97 @@ export default function WorkerRoutesScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			keyboardShouldPersistTaps="handled"
 		>
-			<View className="gap-2">
-				<SectionLabel>{editingId ? 'Edit route' : 'Add route'}</SectionLabel>
-				<Card>
-					<View className="gap-3">
-						<Input
-							autoCapitalize="none"
-							autoCorrect={false}
-							label="Pattern"
-							onChangeText={setPattern}
-							placeholder="example.com/*"
-							value={pattern}
-							mono
-						/>
-						<Input
-							autoCapitalize="none"
-							autoCorrect={false}
-							label="Worker script (empty to disable the route)"
-							onChangeText={setScript}
-							placeholder="my-worker"
-							value={script}
-							mono
-						/>
-						<Button disabled={!pattern.trim()} loading={saveMutation.isPending} onPress={saveRoute}>
-							<ButtonText>{editingId ? 'Save changes' : 'Add route'}</ButtonText>
-						</Button>
-						{editingId
-							? (
-									<Button onPress={resetForm} variant="ghost">
-										<ButtonText>Cancel editing</ButtonText>
-									</Button>
-								)
-							: null}
-					</View>
-				</Card>
-			</View>
-
-			<View className="gap-2">
-				<SectionLabel>Routes</SectionLabel>
-				<Card>
-					{routesQuery.isLoading
+			<Card title={editingId ? 'Edit route' : 'Add route'}>
+				<View className="gap-3">
+					<Input
+						autoCapitalize="none"
+						autoCorrect={false}
+						label="Pattern"
+						onChangeText={setPattern}
+						placeholder="example.com/*"
+						value={pattern}
+						mono
+					/>
+					<Input
+						autoCapitalize="none"
+						autoCorrect={false}
+						label="Worker script (empty to disable the route)"
+						onChangeText={setScript}
+						placeholder="my-worker"
+						value={script}
+						mono
+					/>
+					<Button disabled={!pattern.trim()} loading={saveMutation.isPending} onPress={saveRoute}>
+						<ButtonText>{editingId ? 'Save changes' : 'Add route'}</ButtonText>
+					</Button>
+					{editingId
 						? (
-								<View className="gap-3">
-									<Skeleton className="h-8 w-full" />
-									<Skeleton className="h-8 w-full" />
-								</View>
+								<Button onPress={resetForm} variant="ghost">
+									<ButtonText>Cancel editing</ButtonText>
+								</Button>
 							)
-						: routesQuery.isError
-							? (
-									<EmptyState onAction={() => void routesQuery.refetch()}>
-										{isForbidden(routesQuery.error)
-											? 'Needs the Workers Routes scopes — enable them on your OAuth client and sign in again.'
-											: 'Failed to load routes.'}
-									</EmptyState>
-								)
-							: routes.length === 0
-								? <EmptyState>No Workers routes on this zone.</EmptyState>
-								: (
-										<View className="gap-4">
-											{routes.map(route => (
-												<View className="flex-row items-center gap-3" key={route.id}>
-													<Pressable
-														className={cx(
-															`
-																min-w-0 flex-1 gap-1 rounded-kumo
-																active:opacity-70
-															`,
-															route.id === editingId && 'opacity-60',
-														)}
-														accessibilityLabel={`Edit route ${route.pattern}`}
-														accessibilityRole="button"
-														onPress={() => startEditing(route.id, route.pattern, route.script)}
-													>
-														<Text className="font-mono text-sm text-default" numberOfLines={1}>
-															{route.pattern}
-														</Text>
-														{route.script
-															? <Badge variant="info" mono>{route.script}</Badge>
-															: <Badge variant="secondary">disabled</Badge>}
-													</Pressable>
-													<Pressable
-														className="
-															rounded-kumo p-2
-															active:bg-elevated
-														"
-														accessibilityLabel={`Delete route ${route.pattern}`}
-														hitSlop={8}
-														onPress={() => confirmDelete(route.id, route.pattern)}
-													>
-														<TrashIcon color={theme.danger} size={18} />
-													</Pressable>
-												</View>
-											))}
-											<Text className="text-[11px] text-placeholder">Tap a route to edit it in place.</Text>
-										</View>
-									)}
-				</Card>
-			</View>
+						: null}
+				</View>
+			</Card>
+
+			<Card title="Routes">
+				{routesQuery.isLoading
+					? (
+							<View className="gap-3">
+								<Skeleton className="h-8 w-full" />
+								<Skeleton className="h-8 w-full" />
+							</View>
+						)
+					: routesQuery.isError
+						? (
+								<EmptyState onAction={() => void routesQuery.refetch()}>
+									{isForbidden(routesQuery.error)
+										? 'Needs the Workers Routes scopes — enable them on your OAuth client and sign in again.'
+										: 'Failed to load routes.'}
+								</EmptyState>
+							)
+						: routes.length === 0
+							? <EmptyState>No Workers routes on this zone.</EmptyState>
+							: (
+									<View className="gap-4">
+										{routes.map(route => (
+											<View className="flex-row items-center gap-3" key={route.id}>
+												<Pressable
+													className={cx(
+														`
+															min-w-0 flex-1 gap-1 rounded-kumo
+															active:opacity-70
+														`,
+														route.id === editingId && 'opacity-60',
+													)}
+													accessibilityLabel={`Edit route ${route.pattern}`}
+													accessibilityRole="button"
+													onPress={() => startEditing(route.id, route.pattern, route.script)}
+												>
+													<Text className="font-mono text-sm text-default" numberOfLines={1}>
+														{route.pattern}
+													</Text>
+													{route.script
+														? <Badge variant="info" mono>{route.script}</Badge>
+														: <Badge variant="secondary">disabled</Badge>}
+												</Pressable>
+												<Pressable
+													className="
+														rounded-kumo p-2
+														active:bg-elevated
+													"
+													accessibilityLabel={`Delete route ${route.pattern}`}
+													hitSlop={8}
+													onPress={() => confirmDelete(route.id, route.pattern)}
+												>
+													<TrashIcon color={theme.danger} size={18} />
+												</Pressable>
+											</View>
+										))}
+										<Text className="text-[11px] text-placeholder">Tap a route to edit it in place.</Text>
+									</View>
+								)}
+			</Card>
 		</ScrollView>
 	)
 }

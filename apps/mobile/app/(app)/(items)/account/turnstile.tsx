@@ -2,12 +2,11 @@ import type { TurnstileWidget } from '@cloudfx/api'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, View } from 'react-native'
+import { Alert, RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { isForbidden } from '../../../../lib/api-errors'
 import { hapticError, hapticSuccess } from '../../../../lib/haptics'
@@ -76,30 +75,27 @@ export default function TurnstileScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Widgets</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={widget => (
-							<Row
-								chevron={false}
-								onPress={() => confirmRotate(widget)}
-								right={widget.mode ? <Badge variant="secondary">{widget.mode}</Badge> : undefined}
-								subtitle={[widget.sitekey, (widget.domains ?? []).join(', ')].filter(Boolean).join(' · ')}
-								title={widget.name ?? widget.sitekey ?? 'Widget'}
-							/>
-						)}
-						emptyText="No Turnstile widgets on this account."
-						error={widgetsQuery.error}
-						errorText="Failed to load Turnstile widgets."
-						isError={widgetsQuery.isError}
-						isLoading={widgetsQuery.isLoading}
-						items={widgetsQuery.data}
-						onRetry={() => void widgetsQuery.refetch()}
-						scopeHint="Needs the Challenge Widgets read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Widgets">
+				<QuerySection
+					renderItem={widget => (
+						<Row
+							chevron={false}
+							onPress={() => confirmRotate(widget)}
+							right={widget.mode ? <Badge variant="secondary">{widget.mode}</Badge> : undefined}
+							subtitle={[widget.sitekey, (widget.domains ?? []).join(', ')].filter(Boolean).join(' · ')}
+							title={widget.name ?? widget.sitekey ?? 'Widget'}
+						/>
+					)}
+					emptyText="No Turnstile widgets on this account."
+					error={widgetsQuery.error}
+					errorText="Failed to load Turnstile widgets."
+					isError={widgetsQuery.isError}
+					isLoading={widgetsQuery.isLoading}
+					items={widgetsQuery.data}
+					onRetry={() => void widgetsQuery.refetch()}
+					scopeHint="Needs the Challenge Widgets read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

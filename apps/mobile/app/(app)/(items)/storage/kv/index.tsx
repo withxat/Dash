@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { AccountSwitcher } from '../../../../../components/account-switcher'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { useTheme } from '../../../../../lib/theme'
 import { useActiveAccount } from '../../../../../lib/use-active-account'
@@ -38,36 +37,33 @@ export default function KvNamespacesScreen() {
 		>
 			<AccountSwitcher />
 
-			<View className="gap-2">
-				<SectionLabel>Namespaces</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={namespace => (
-							<Row
-								onPress={() => router.push({
-									params: { namespace: namespace.id, title: namespace.title },
-									pathname: '/storage/kv/[namespace]',
-								})}
-								subtitle={namespace.id}
-								title={namespace.title}
-							/>
-						)}
-						emptyText="No KV namespaces in this account."
-						error={namespacesQuery.error}
-						errorText="Failed to load KV namespaces."
-						isError={namespacesQuery.isError}
-						isLoading={!activeAccountId || namespacesQuery.isLoading}
-						items={namespacesQuery.data}
-						onRetry={() => void namespacesQuery.refetch()}
-						scopeHint="Needs the Workers KV scopes — enable them on your OAuth client and sign in again."
-					/>
-					<Row
-						onPress={() => router.push('/storage/namespace-edit')}
-						subtitle="Provision a new KV namespace"
-						title="Create namespace"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Namespaces">
+				<QuerySection
+					renderItem={namespace => (
+						<Row
+							onPress={() => router.push({
+								params: { namespace: namespace.id, title: namespace.title },
+								pathname: '/storage/kv/[namespace]',
+							})}
+							subtitle={namespace.id}
+							title={namespace.title}
+						/>
+					)}
+					emptyText="No KV namespaces in this account."
+					error={namespacesQuery.error}
+					errorText="Failed to load KV namespaces."
+					isError={namespacesQuery.isError}
+					isLoading={!activeAccountId || namespacesQuery.isLoading}
+					items={namespacesQuery.data}
+					onRetry={() => void namespacesQuery.refetch()}
+					scopeHint="Needs the Workers KV scopes — enable them on your OAuth client and sign in again."
+				/>
+				<Row
+					onPress={() => router.push('/storage/namespace-edit')}
+					subtitle="Provision a new KV namespace"
+					title="Create namespace"
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

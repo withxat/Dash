@@ -5,12 +5,11 @@ import type { BadgeTone } from '../../../../../components/badge'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { Alert, RefreshControl, ScrollView, View } from 'react-native'
+import { Alert, RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../../components/badge'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { isForbidden } from '../../../../../lib/api-errors'
 import { hapticError, hapticSuccess } from '../../../../../lib/haptics'
@@ -83,41 +82,35 @@ export default function ZoneAccessRulesScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Actions</SectionLabel>
-				<ListSurface>
-					<Row
-						onPress={() => router.push(`/zones/${id}/access-rule-new`)}
-						subtitle="Block, challenge, or allow an IP on this zone"
-						title="New rule"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Actions">
+				<Row
+					onPress={() => router.push(`/zones/${id}/access-rule-new`)}
+					subtitle="Block, challenge, or allow an IP on this zone"
+					title="New rule"
+				/>
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>IP Access Rules</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={rule => (
-							<Row
-								chevron={false}
-								onPress={() => confirmDelete(rule)}
-								right={<Badge variant={modeTone(rule.mode)}>{rule.mode}</Badge>}
-								subtitle={rule.notes || rule.configuration?.target}
-								title={rule.configuration?.value ?? rule.id}
-							/>
-						)}
-						emptyText="No IP Access Rules on this zone."
-						error={rulesQuery.error}
-						errorText="Failed to load IP Access Rules."
-						isError={rulesQuery.isError}
-						isLoading={rulesQuery.isLoading}
-						items={rulesQuery.data}
-						onRetry={() => void rulesQuery.refetch()}
-						scopeHint="Needs the Firewall Services read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="IP Access Rules">
+				<QuerySection
+					renderItem={rule => (
+						<Row
+							chevron={false}
+							onPress={() => confirmDelete(rule)}
+							right={<Badge variant={modeTone(rule.mode)}>{rule.mode}</Badge>}
+							subtitle={rule.notes || rule.configuration?.target}
+							title={rule.configuration?.value ?? rule.id}
+						/>
+					)}
+					emptyText="No IP Access Rules on this zone."
+					error={rulesQuery.error}
+					errorText="Failed to load IP Access Rules."
+					isError={rulesQuery.isError}
+					isLoading={rulesQuery.isLoading}
+					items={rulesQuery.data}
+					onRetry={() => void rulesQuery.refetch()}
+					scopeHint="Needs the Firewall Services read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

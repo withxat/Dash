@@ -29,6 +29,8 @@ import { useTheme } from '../lib/theme'
 interface CatalogItemIconProps {
 	icon: AppCatalogIcon
 	size?: number
+	/** `header` — compact glyph beside native stack inline titles. */
+	variant?: 'header' | 'list'
 }
 
 type IconTone = keyof Pick<ThemePalette, 'accent' | 'brand' | 'success' | 'warning'>
@@ -67,16 +69,21 @@ const CATALOG_ICONS: Record<AppCatalogIcon, { Glyph: ComponentType<SolarGlyphPro
 	zones: { Glyph: Global, tone: 'success' },
 }
 
-export function CatalogItemIcon({ icon, size = 28 }: CatalogItemIconProps) {
+export function CatalogItemIcon({ icon, size, variant = 'list' }: CatalogItemIconProps) {
 	const theme = useTheme()
 	const { Glyph, tone } = CATALOG_ICONS[icon]
+	const glyphSize = size ?? (variant === 'header' ? 18 : 28)
 
 	return (
 		<View
-			className={cx('size-11 items-center justify-center rounded-xl', TONE_CLASSES[tone])}
+			className={cx(
+				'items-center justify-center',
+				variant === 'header' ? 'size-7 rounded-lg' : 'size-11 rounded-xl',
+				TONE_CLASSES[tone],
+			)}
 			style={{ borderCurve: 'continuous' }}
 		>
-			<Glyph color={theme[tone]} size={size} />
+			<Glyph color={theme[tone]} size={glyphSize} />
 		</View>
 	)
 }

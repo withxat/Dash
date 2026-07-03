@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 
-import { itemsStackTitle } from '../../../lib/items-stack-title'
-import { tabRootScreenOptions, tabStackScreenOptions } from '../../../lib/tab-stack-header'
+import { itemsStackScreenOptions } from '../../../lib/items-stack-screen-options'
+import { tabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 // eslint-disable-next-line react-refresh/only-export-components -- Expo Router reads this route config export.
@@ -22,10 +22,7 @@ export default function ItemsLayout() {
 
 	return (
 		<Stack
-			screenOptions={({ route }) => ({
-				...tabStackScreenOptions(theme),
-				title: itemsStackTitle(route.name),
-			})}
+			screenOptions={({ route }) => itemsStackScreenOptions(theme, route.name)}
 		>
 			<Stack.Screen name="items" options={tabRootScreenOptions(theme, 'Items')} />
 			<Stack.Screen name="profile" options={{ title: 'Profile' }} />

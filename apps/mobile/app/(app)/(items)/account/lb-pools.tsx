@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { useTheme } from '../../../../lib/theme'
 import { useActiveAccount } from '../../../../lib/use-active-account'
@@ -38,29 +37,26 @@ export default function LbPoolsScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Origin pools</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={pool => (
-							<Row
-								chevron={false}
-								right={<Badge variant={pool.enabled === false ? 'secondary' : 'success'}>{pool.enabled === false ? 'Disabled' : 'Enabled'}</Badge>}
-								subtitle={`${pool.origins?.length ?? 0} origin${(pool.origins?.length ?? 0) === 1 ? '' : 's'}`}
-								title={pool.name ?? pool.id ?? 'Pool'}
-							/>
-						)}
-						emptyText="No load balancer pools on this account."
-						error={poolsQuery.error}
-						errorText="Failed to load pools."
-						isError={poolsQuery.isError}
-						isLoading={poolsQuery.isLoading}
-						items={poolsQuery.data}
-						onRetry={() => void poolsQuery.refetch()}
-						scopeHint="Needs the Load Balancing Monitors and Pools read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Origin pools">
+				<QuerySection
+					renderItem={pool => (
+						<Row
+							chevron={false}
+							right={<Badge variant={pool.enabled === false ? 'secondary' : 'success'}>{pool.enabled === false ? 'Disabled' : 'Enabled'}</Badge>}
+							subtitle={`${pool.origins?.length ?? 0} origin${(pool.origins?.length ?? 0) === 1 ? '' : 's'}`}
+							title={pool.name ?? pool.id ?? 'Pool'}
+						/>
+					)}
+					emptyText="No load balancer pools on this account."
+					error={poolsQuery.error}
+					errorText="Failed to load pools."
+					isError={poolsQuery.isError}
+					isLoading={poolsQuery.isLoading}
+					items={poolsQuery.data}
+					onRetry={() => void poolsQuery.refetch()}
+					scopeHint="Needs the Load Balancing Monitors and Pools read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

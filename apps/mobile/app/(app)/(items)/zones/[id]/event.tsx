@@ -9,8 +9,7 @@ import { ScrollView, Text, View } from 'react-native'
 import { Badge } from '../../../../../components/badge'
 import { Button, ButtonText } from '../../../../../components/button'
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup } from '../../../../../components/row'
 import { useTabScrollPadding } from '../../../../../lib/use-tab-scroll-padding'
 
 function actionTone(action: string): BadgeTone {
@@ -76,36 +75,27 @@ export default function FirewallEventScreen() {
 					: null}
 			</View>
 
-			<View className="gap-2">
-				<SectionLabel>Request</SectionLabel>
-				<ListSurface>
-					<DetailRow label="Request" value={requestLine} />
-					<DetailRow label="Protocol" value={event.clientRequestHTTPProtocol} />
-					<DetailRow label="Time" mono={false} value={new Date(event.datetime).toLocaleString()} />
-					<DetailRow label="Ray ID" value={event.rayName} />
-				</ListSurface>
-			</View>
+			<ListGroup title="Request">
+				<DetailRow label="Request" value={requestLine} />
+				<DetailRow label="Protocol" value={event.clientRequestHTTPProtocol} />
+				<DetailRow label="Time" mono={false} value={new Date(event.datetime).toLocaleString()} />
+				<DetailRow label="Ray ID" value={event.rayName} />
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Client</SectionLabel>
-				<ListSurface>
-					<DetailRow label="IP address" value={event.clientIP} />
-					<DetailRow label="Country" mono={false} value={event.clientCountryName} />
-					<DetailRow
-						label="ASN"
-						value={event.clientAsn ? `AS${event.clientAsn}${event.clientASNDescription ? ` · ${event.clientASNDescription}` : ''}` : undefined}
-					/>
-					<DetailRow label="User agent" value={event.userAgent} />
-				</ListSurface>
-			</View>
+			<ListGroup title="Client">
+				<DetailRow label="IP address" value={event.clientIP} />
+				<DetailRow label="Country" mono={false} value={event.clientCountryName} />
+				<DetailRow
+					label="ASN"
+					value={event.clientAsn ? `AS${event.clientAsn}${event.clientASNDescription ? ` · ${event.clientASNDescription}` : ''}` : undefined}
+				/>
+				<DetailRow label="User agent" value={event.userAgent} />
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Mitigation</SectionLabel>
-				<ListSurface>
-					<DetailRow label="Service" mono={false} value={event.source} />
-					<DetailRow label="Rule ID" value={event.ruleId} />
-				</ListSurface>
-			</View>
+			<ListGroup title="Mitigation">
+				<DetailRow label="Service" mono={false} value={event.source} />
+				<DetailRow label="Rule ID" value={event.ruleId} />
+			</ListGroup>
 
 			{event.clientIP
 				? (

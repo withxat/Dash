@@ -1,1 +1,1 @@
-export { Label, SectionLabel } from './kumo/label'
+export { Label, ListCardLabel, SectionLabel } from './kumo/label'

@@ -8,8 +8,7 @@ import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native'
 import { CatalogItemIcon } from '../../../components/catalog-item-icon'
 import { EmptyState } from '../../../components/empty-state'
 import { LayoutGroup, LayoutItem } from '../../../components/layout-motion'
-import { ListGroup, ListSurface, NavRow } from '../../../components/nav-row'
-import { SectionLabel } from '../../../components/section-label'
+import { ListGroup, NavRow } from '../../../components/nav-row'
 import { Skeleton } from '../../../components/skeleton'
 import { getCatalogItems } from '../../../lib/app-catalog'
 import { getFrequentItemIds, getHomeShortcutIds, getRecentItemIds, recordRecentItem } from '../../../lib/home-shortcuts'
@@ -68,72 +67,68 @@ export default function HomeScreen() {
 	return (
 		<ScrollView
 			className="flex-1 bg-canvas"
-			contentContainerStyle={tabScrollContentStyle({ paddingBottom: tabScrollPadding })}
+			contentContainerStyle={tabScrollContentStyle({ paddingBottom: tabScrollPadding, tabRoot: true })}
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<View className="flex-row items-center justify-between">
-					<SectionLabel>Shortcuts</SectionLabel>
+			<ListGroup
+				headerAction={(
 					<Pressable accessibilityRole="button" className="active:opacity-70" hitSlop={8} onPress={onEditShortcuts}>
 						<Text className="text-sm font-medium text-brand">Edit</Text>
 					</Pressable>
-				</View>
-				<ListSurface>
-					{shortcutsQuery.isPending
+				)}
+				title="Shortcuts"
+			>
+				{shortcutsQuery.isPending
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-12 w-full" />
+								<Skeleton className="h-12 w-full" />
+							</View>
+						)
+					: shortcuts.length === 0
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-12 w-full" />
-									<Skeleton className="h-12 w-full" />
+								<View className="py-3">
+									<EmptyState>No shortcuts yet. Tap Edit to add some.</EmptyState>
 								</View>
 							)
-						: shortcuts.length === 0
-							? (
-									<View className="py-3">
-										<EmptyState>No shortcuts yet. Tap Edit to add some.</EmptyState>
-									</View>
-								)
-							: shortcuts.map(item => (
-									<LayoutItem key={item.id}>
-										<NavRow
-											leading={<CatalogItemIcon icon={item.icon} />}
-											onPress={() => navigate(item.id, item.href)}
-											subtitle={item.description}
-											title={item.title}
-										/>
-									</LayoutItem>
-								))}
-				</ListSurface>
-			</View>
+						: shortcuts.map(item => (
+								<LayoutItem key={item.id}>
+									<NavRow
+										leading={<CatalogItemIcon icon={item.icon} />}
+										onPress={() => navigate(item.id, item.href)}
+										subtitle={item.description}
+										title={item.title}
+									/>
+								</LayoutItem>
+							))}
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Frequently used</SectionLabel>
-				<ListSurface>
-					{frequentQuery.isPending
+			<ListGroup title="Frequently used">
+				{frequentQuery.isPending
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-12 w-full" />
+								<Skeleton className="h-12 w-full" />
+							</View>
+						)
+					: frequentItems.length === 0
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-12 w-full" />
-									<Skeleton className="h-12 w-full" />
+								<View className="py-3">
+									<EmptyState>Features you open often will show up here.</EmptyState>
 								</View>
 							)
-						: frequentItems.length === 0
-							? (
-									<View className="py-3">
-										<EmptyState>Features you open often will show up here.</EmptyState>
-									</View>
-								)
-							: frequentItems.map(item => (
-									<LayoutItem key={item.id}>
-										<NavRow
-											leading={<CatalogItemIcon icon={item.icon} />}
-											onPress={() => navigate(item.id, item.href)}
-											subtitle={item.description}
-											title={item.title}
-										/>
-									</LayoutItem>
-								))}
-				</ListSurface>
-			</View>
+						: frequentItems.map(item => (
+								<LayoutItem key={item.id}>
+									<NavRow
+										leading={<CatalogItemIcon icon={item.icon} />}
+										onPress={() => navigate(item.id, item.href)}
+										subtitle={item.description}
+										title={item.title}
+									/>
+								</LayoutItem>
+							))}
+			</ListGroup>
 
 			{recentItems.length > 0
 				? (

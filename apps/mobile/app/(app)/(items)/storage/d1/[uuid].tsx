@@ -6,8 +6,7 @@ import { RefreshControl, ScrollView, View } from 'react-native'
 import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { Stat } from '../../../../../components/stat'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -80,45 +79,39 @@ export default function D1DatabaseScreen() {
 							)}
 			</Card>
 
-			<View className="gap-2">
-				<SectionLabel>Query</SectionLabel>
-				<ListSurface>
-					<Row
-						onPress={() => router.push({
-							params: { name: name ?? database?.name, uuid },
-							pathname: '/storage/d1/console',
-						})}
-						subtitle="Run read-only SQL against this database"
-						title="SQL console"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Query">
+				<Row
+					onPress={() => router.push({
+						params: { name: name ?? database?.name, uuid },
+						pathname: '/storage/d1/console',
+					})}
+					subtitle="Run read-only SQL against this database"
+					title="SQL console"
+				/>
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Tables</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={table => (
-							<Row
-								onPress={() => router.push({
-									params: { name: name ?? database?.name, sql: `SELECT * FROM "${table.name ?? ''}" LIMIT 25`, uuid },
-									pathname: '/storage/d1/console',
-								})}
-								subtitle="Preview first 25 rows"
-								title={table.name ?? 'table'}
-							/>
-						)}
-						emptyText="No tables in this database."
-						error={tablesQuery.error}
-						errorText="Failed to list tables."
-						isError={tablesQuery.isError}
-						isLoading={!activeAccountId || tablesQuery.isLoading}
-						items={tablesQuery.data}
-						onRetry={() => void tablesQuery.refetch()}
-						scopeHint="Needs the D1 read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Tables">
+				<QuerySection
+					renderItem={table => (
+						<Row
+							onPress={() => router.push({
+								params: { name: name ?? database?.name, sql: `SELECT * FROM "${table.name ?? ''}" LIMIT 25`, uuid },
+								pathname: '/storage/d1/console',
+							})}
+							subtitle="Preview first 25 rows"
+							title={table.name ?? 'table'}
+						/>
+					)}
+					emptyText="No tables in this database."
+					error={tablesQuery.error}
+					errorText="Failed to list tables."
+					isError={tablesQuery.isError}
+					isLoading={!activeAccountId || tablesQuery.isLoading}
+					items={tablesQuery.data}
+					onRetry={() => void tablesQuery.refetch()}
+					scopeHint="Needs the D1 read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

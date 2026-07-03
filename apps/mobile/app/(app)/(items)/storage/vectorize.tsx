@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { AccountSwitcher } from '../../../../components/account-switcher'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { formatDate } from '../../../../lib/format'
 import { useTheme } from '../../../../lib/theme'
@@ -38,29 +37,26 @@ export default function VectorizeScreen() {
 		>
 			<AccountSwitcher />
 
-			<View className="gap-2">
-				<SectionLabel>Vectorize indexes</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={index => (
-							<Row
-								chevron={false}
-								right={index.config ? `${index.config.dimensions}d · ${index.config.metric}` : undefined}
-								subtitle={index.created_on ? `Created ${formatDate(index.created_on)}` : index.description}
-								title={index.name ?? 'Index'}
-							/>
-						)}
-						emptyText="No Vectorize indexes in this account."
-						error={indexesQuery.error}
-						errorText="Failed to load Vectorize indexes."
-						isError={indexesQuery.isError}
-						isLoading={!activeAccountId || indexesQuery.isLoading}
-						items={indexesQuery.data}
-						onRetry={() => void indexesQuery.refetch()}
-						scopeHint="Needs the Vectorize read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Vectorize indexes">
+				<QuerySection
+					renderItem={index => (
+						<Row
+							chevron={false}
+							right={index.config ? `${index.config.dimensions}d · ${index.config.metric}` : undefined}
+							subtitle={index.created_on ? `Created ${formatDate(index.created_on)}` : index.description}
+							title={index.name ?? 'Index'}
+						/>
+					)}
+					emptyText="No Vectorize indexes in this account."
+					error={indexesQuery.error}
+					errorText="Failed to load Vectorize indexes."
+					isError={indexesQuery.isError}
+					isLoading={!activeAccountId || indexesQuery.isLoading}
+					items={indexesQuery.data}
+					onRetry={() => void indexesQuery.refetch()}
+					scopeHint="Needs the Vectorize read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

@@ -8,8 +8,7 @@ import { RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { AccountSwitcher } from '../../../../components/account-switcher'
 import { EmptyState } from '../../../../components/empty-state'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { Skeleton } from '../../../../components/skeleton'
 import { cloudflareClient } from '../../../../lib/api'
 import { timeAgo } from '../../../../lib/format'
@@ -130,188 +129,170 @@ export default function AccountScreen() {
 		>
 			<AccountSwitcher />
 
-			<View className="gap-2">
-				<SectionLabel>Account</SectionLabel>
-				<ListSurface>
-					<Row chevron={false} right={activeAccount?.type} subtitle={activeAccountId ?? undefined} title={activeAccount?.name ?? 'No account selected'} />
-				</ListSurface>
-			</View>
+			<ListGroup title="Account">
+				<Row chevron={false} right={activeAccount?.type} subtitle={activeAccountId ?? undefined} title={activeAccount?.name ?? 'No account selected'} />
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Services</SectionLabel>
-				<ListSurface>
-					<Row
-						onPress={() => router.push('/account/email-addresses')}
-						subtitle="Email Routing destination addresses"
-						title="Email addresses"
-					/>
-					<Row
-						onPress={() => router.push('/account/turnstile')}
-						subtitle="Widgets and secret rotation"
-						title="Turnstile"
-					/>
-					<Row
-						onPress={() => router.push('/account/lb-pools')}
-						subtitle="Load balancer origin pools"
-						title="LB Pools"
-					/>
-					<Row
-						onPress={() => router.push('/account/registrar')}
-						subtitle="Registered domains and renewals"
-						title="Registrar"
-					/>
-					<Row
-						onPress={() => router.push('/account/tunnels')}
-						subtitle="Cloudflare Tunnel health"
-						title="Tunnels"
-					/>
-					<Row
-						onPress={() => router.push('/account/access-apps')}
-						subtitle="Zero Trust applications"
-						title="Access apps"
-					/>
-					<Row
-						onPress={() => router.push('/account/images')}
-						subtitle="Cloudflare Images library"
-						title="Images"
-					/>
-					<Row
-						onPress={() => router.push('/account/stream')}
-						subtitle="Stream video library"
-						title="Stream"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Services">
+				<Row
+					onPress={() => router.push('/account/email-addresses')}
+					subtitle="Email Routing destination addresses"
+					title="Email addresses"
+				/>
+				<Row
+					onPress={() => router.push('/account/turnstile')}
+					subtitle="Widgets and secret rotation"
+					title="Turnstile"
+				/>
+				<Row
+					onPress={() => router.push('/account/lb-pools')}
+					subtitle="Load balancer origin pools"
+					title="LB Pools"
+				/>
+				<Row
+					onPress={() => router.push('/account/registrar')}
+					subtitle="Registered domains and renewals"
+					title="Registrar"
+				/>
+				<Row
+					onPress={() => router.push('/account/tunnels')}
+					subtitle="Cloudflare Tunnel health"
+					title="Tunnels"
+				/>
+				<Row
+					onPress={() => router.push('/account/access-apps')}
+					subtitle="Zero Trust applications"
+					title="Access apps"
+				/>
+				<Row
+					onPress={() => router.push('/account/images')}
+					subtitle="Cloudflare Images library"
+					title="Images"
+				/>
+				<Row
+					onPress={() => router.push('/account/stream')}
+					subtitle="Stream video library"
+					title="Stream"
+				/>
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Members</SectionLabel>
-				<ListSurface>
-					{!activeAccountId || membersQuery.isLoading
+			<ListGroup title="Members">
+				{!activeAccountId || membersQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: membersQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-								</View>
+								<EmptyState onAction={() => void membersQuery.refetch()}>
+									{isForbidden(membersQuery.error)
+										? 'Needs the Account Settings Read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load members.'}
+								</EmptyState>
 							)
-						: membersQuery.isError
-							? (
-									<EmptyState onAction={() => void membersQuery.refetch()}>
-										{isForbidden(membersQuery.error)
-											? 'Needs the Account Settings Read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load members.'}
-									</EmptyState>
-								)
-							: members.length === 0
-								? <EmptyState>No members in this account.</EmptyState>
-								: members.map(member => (
-										<Row
-											chevron={false}
-											key={member.id}
-											right={member.status === 'pending' ? 'Invited' : undefined}
-											subtitle={memberRoles(member) || member.user?.email}
-											title={memberName(member)}
-										/>
-									))}
-				</ListSurface>
-			</View>
+						: members.length === 0
+							? <EmptyState>No members in this account.</EmptyState>
+							: members.map(member => (
+									<Row
+										chevron={false}
+										key={member.id}
+										right={member.status === 'pending' ? 'Invited' : undefined}
+										subtitle={memberRoles(member) || member.user?.email}
+										title={memberName(member)}
+									/>
+								))}
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Notification policies</SectionLabel>
-				<ListSurface>
-					{!activeAccountId || policiesQuery.isLoading
+			<ListGroup title="Notification policies">
+				{!activeAccountId || policiesQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: policiesQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-								</View>
+								<EmptyState onAction={() => void policiesQuery.refetch()}>
+									{isForbidden(policiesQuery.error)
+										? 'Needs the Notifications Read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load notification policies.'}
+								</EmptyState>
 							)
-						: policiesQuery.isError
-							? (
-									<EmptyState onAction={() => void policiesQuery.refetch()}>
-										{isForbidden(policiesQuery.error)
-											? 'Needs the Notifications Read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load notification policies.'}
-									</EmptyState>
-								)
-							: policies.length === 0
-								? <EmptyState>No notification policies configured.</EmptyState>
-								: policies.map(policy => (
-										<Row
-											chevron={false}
-											key={policy.id ?? policy.name ?? 'policy'}
-											right={policy.enabled === false ? 'Off' : undefined}
-											subtitle={policySubtitle(policy)}
-											title={policy.name ?? alertTypeLabel(policy.alert_type) ?? 'Policy'}
-										/>
-									))}
-				</ListSurface>
-			</View>
+						: policies.length === 0
+							? <EmptyState>No notification policies configured.</EmptyState>
+							: policies.map(policy => (
+									<Row
+										chevron={false}
+										key={policy.id ?? policy.name ?? 'policy'}
+										right={policy.enabled === false ? 'Off' : undefined}
+										subtitle={policySubtitle(policy)}
+										title={policy.name ?? alertTypeLabel(policy.alert_type) ?? 'Policy'}
+									/>
+								))}
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Recent alerts</SectionLabel>
-				<ListSurface>
-					{!activeAccountId || alertHistoryQuery.isLoading
+			<ListGroup title="Recent alerts">
+				{!activeAccountId || alertHistoryQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: alertHistoryQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-								</View>
+								<EmptyState onAction={() => void alertHistoryQuery.refetch()}>
+									{isForbidden(alertHistoryQuery.error)
+										? 'Needs the Notifications Read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load notification history.'}
+								</EmptyState>
 							)
-						: alertHistoryQuery.isError
-							? (
-									<EmptyState onAction={() => void alertHistoryQuery.refetch()}>
-										{isForbidden(alertHistoryQuery.error)
-											? 'Needs the Notifications Read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load notification history.'}
-									</EmptyState>
-								)
-							: alertHistory.length === 0
-								? <EmptyState>No notifications sent recently.</EmptyState>
-								: alertHistory.map((entry, index) => (
-										<Row
-											chevron={false}
-											// eslint-disable-next-line react/no-array-index-key -- history entries can miss ids
-											key={entry.id ?? index}
-											right={timeAgo(entry.sent)}
-											subtitle={historySubtitle(entry)}
-											title={historyTitle(entry)}
-										/>
-									))}
-				</ListSurface>
-			</View>
+						: alertHistory.length === 0
+							? <EmptyState>No notifications sent recently.</EmptyState>
+							: alertHistory.map((entry, index) => (
+									<Row
+										chevron={false}
+										// eslint-disable-next-line react/no-array-index-key -- history entries can miss ids
+										key={entry.id ?? index}
+										right={timeAgo(entry.sent)}
+										subtitle={historySubtitle(entry)}
+										title={historyTitle(entry)}
+									/>
+								))}
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Recent activity</SectionLabel>
-				<ListSurface>
-					{!activeAccountId || auditQuery.isLoading
+			<ListGroup title="Recent activity">
+				{!activeAccountId || auditQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: auditQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-								</View>
+								<EmptyState onAction={() => void auditQuery.refetch()}>
+									{isForbidden(auditQuery.error)
+										? 'Needs the Account Settings Read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load audit logs.'}
+								</EmptyState>
 							)
-						: auditQuery.isError
-							? (
-									<EmptyState onAction={() => void auditQuery.refetch()}>
-										{isForbidden(auditQuery.error)
-											? 'Needs the Account Settings Read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load audit logs.'}
-									</EmptyState>
-								)
-							: auditLogs.length === 0
-								? <EmptyState>No recent account activity.</EmptyState>
-								: auditLogs.map((entry, index) => (
-										<Row
-											chevron={false}
-											// eslint-disable-next-line react/no-array-index-key -- audit entries can miss ids
-											key={entry.id ?? index}
-											right={timeAgo(entry.when)}
-											subtitle={auditLogSubtitle(entry)}
-											title={auditLogTitle(entry)}
-										/>
-									))}
-				</ListSurface>
-			</View>
+						: auditLogs.length === 0
+							? <EmptyState>No recent account activity.</EmptyState>
+							: auditLogs.map((entry, index) => (
+									<Row
+										chevron={false}
+										// eslint-disable-next-line react/no-array-index-key -- audit entries can miss ids
+										key={entry.id ?? index}
+										right={timeAgo(entry.when)}
+										subtitle={auditLogSubtitle(entry)}
+										title={auditLogTitle(entry)}
+									/>
+								))}
+			</ListGroup>
 
 			<Text className="text-center text-[11px] text-placeholder">
 				Audit logs cover changes made across this Cloudflare account.

@@ -1,11 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Stack, useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, Text, View } from 'react-native'
+import { RefreshControl, ScrollView, Text } from 'react-native'
 
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { timeAgo } from '../../../../../lib/format'
 import { useTheme } from '../../../../../lib/theme'
@@ -39,29 +38,26 @@ export default function SecretsStoreScreen() {
 		>
 			<Stack.Screen options={{ title: name ?? 'Store' }} />
 
-			<View className="gap-2">
-				<SectionLabel>Secrets</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={secret => (
-							<Row
-								chevron={false}
-								right={secret.status}
-								subtitle={`Updated ${timeAgo(secret.modified)}`}
-								title={secret.name}
-							/>
-						)}
-						emptyText="No secrets in this store."
-						error={secretsQuery.error}
-						errorText="Failed to load secrets."
-						isError={secretsQuery.isError}
-						isLoading={!activeAccountId || secretsQuery.isLoading}
-						items={secretsQuery.data}
-						onRetry={() => void secretsQuery.refetch()}
-						scopeHint="Needs the Secrets Store read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Secrets">
+				<QuerySection
+					renderItem={secret => (
+						<Row
+							chevron={false}
+							right={secret.status}
+							subtitle={`Updated ${timeAgo(secret.modified)}`}
+							title={secret.name}
+						/>
+					)}
+					emptyText="No secrets in this store."
+					error={secretsQuery.error}
+					errorText="Failed to load secrets."
+					isError={secretsQuery.isError}
+					isLoading={!activeAccountId || secretsQuery.isLoading}
+					items={secretsQuery.data}
+					onRetry={() => void secretsQuery.refetch()}
+					scopeHint="Needs the Secrets Store read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 
 			<Text className="text-center text-[11px] text-placeholder">
 				Secret values are write-only and can never be read back.

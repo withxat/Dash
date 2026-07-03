@@ -12,7 +12,6 @@ import { Card } from '../../../../../../components/card'
 import { EmptyState } from '../../../../../../components/empty-state'
 import { ChevronRightIcon, TrashIcon } from '../../../../../../components/icons'
 import { Input } from '../../../../../../components/input'
-import { SectionLabel } from '../../../../../../components/section-label'
 import { Skeleton } from '../../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../../lib/api'
 import { timeAgo } from '../../../../../../lib/format'
@@ -178,96 +177,90 @@ export default function PagesProjectScreen() {
 					)
 				: null}
 
-			<View className="gap-2">
-				<SectionLabel>Custom domains</SectionLabel>
-				<Card>
-					{domainsQuery.isLoading
-						? <Skeleton className="h-10 w-full" />
-						: (
-								<View className="gap-3">
-									{domains.length === 0
-										? <EmptyState>No custom domains configured.</EmptyState>
-										: domains.map(domain => (
-												<View className="flex-row items-center gap-3" key={domain.id ?? domain.name}>
-													<View className="min-w-0 flex-1 gap-0.5">
-														<Text className="font-mono text-sm text-default" numberOfLines={1}>
-															{domain.name}
-														</Text>
-														{domain.status
-															? <Text className="text-xs text-placeholder">{domain.status}</Text>
-															: null}
-													</View>
-													<Pressable
-														className="
-															rounded-kumo p-2
-															active:bg-elevated
-														"
-														accessibilityLabel={`Remove ${domain.name}`}
-														hitSlop={8}
-														onPress={() => domain.name && confirmDeleteDomain(domain.name)}
-													>
-														<TrashIcon color={theme.danger} size={18} />
-													</Pressable>
+			<Card title="Custom domains">
+				{domainsQuery.isLoading
+					? <Skeleton className="h-10 w-full" />
+					: (
+							<View className="gap-3">
+								{domains.length === 0
+									? <EmptyState>No custom domains configured.</EmptyState>
+									: domains.map(domain => (
+											<View className="flex-row items-center gap-3" key={domain.id ?? domain.name}>
+												<View className="min-w-0 flex-1 gap-0.5">
+													<Text className="font-mono text-sm text-default" numberOfLines={1}>
+														{domain.name}
+													</Text>
+													{domain.status
+														? <Text className="text-xs text-placeholder">{domain.status}</Text>
+														: null}
 												</View>
-											))}
-									<View className="gap-3">
-										<Input
-											autoCapitalize="none"
-											autoCorrect={false}
-											keyboardType="url"
-											onChangeText={setNewDomain}
-											placeholder="www.example.com"
-											value={newDomain}
-											mono
-										/>
-										<Button
-											disabled={!newDomain.trim()}
-											loading={addDomainMutation.isPending}
-											onPress={() => addDomainMutation.mutate(newDomain.trim().toLowerCase())}
-											variant="outline"
-										>
-											<ButtonText>Add domain</ButtonText>
-										</Button>
-									</View>
-								</View>
-							)}
-				</Card>
-			</View>
-
-			<View className="gap-2">
-				<SectionLabel>Deployments</SectionLabel>
-				<Card>
-					{deploymentsQuery.isLoading
-						? (
+												<Pressable
+													className="
+														rounded-kumo p-2
+														active:bg-elevated
+													"
+													accessibilityLabel={`Remove ${domain.name}`}
+													hitSlop={8}
+													onPress={() => domain.name && confirmDeleteDomain(domain.name)}
+												>
+													<TrashIcon color={theme.danger} size={18} />
+												</Pressable>
+											</View>
+										))}
 								<View className="gap-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
+									<Input
+										autoCapitalize="none"
+										autoCorrect={false}
+										keyboardType="url"
+										onChangeText={setNewDomain}
+										placeholder="www.example.com"
+										value={newDomain}
+										mono
+									/>
+									<Button
+										disabled={!newDomain.trim()}
+										loading={addDomainMutation.isPending}
+										onPress={() => addDomainMutation.mutate(newDomain.trim().toLowerCase())}
+										variant="outline"
+									>
+										<ButtonText>Add domain</ButtonText>
+									</Button>
 								</View>
+							</View>
+						)}
+			</Card>
+
+			<Card title="Deployments">
+				{deploymentsQuery.isLoading
+					? (
+							<View className="gap-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: deploymentsQuery.isError
+						? (
+								<EmptyState onAction={() => void deploymentsQuery.refetch()}>
+									Failed to load deployments — the Pages Read scope may be missing.
+								</EmptyState>
 							)
-						: deploymentsQuery.isError
-							? (
-									<EmptyState onAction={() => void deploymentsQuery.refetch()}>
-										Failed to load deployments — the Pages Read scope may be missing.
-									</EmptyState>
-								)
-							: deployments.length === 0
-								? <EmptyState>No deployments yet.</EmptyState>
-								: (
-										<View className="gap-4">
-											{deployments.slice(0, 20).map(deployment => (
-												<DeploymentRow
-													onPress={() => deployment.id && router.push(
-														`/workers/pages/${encodeURIComponent(project)}/${deployment.id}`,
-													)}
-													deployment={deployment}
-													key={deployment.id}
-												/>
-											))}
-										</View>
-									)}
-				</Card>
-			</View>
+						: deployments.length === 0
+							? <EmptyState>No deployments yet.</EmptyState>
+							: (
+									<View className="gap-4">
+										{deployments.slice(0, 20).map(deployment => (
+											<DeploymentRow
+												onPress={() => deployment.id && router.push(
+													`/workers/pages/${encodeURIComponent(project)}/${deployment.id}`,
+												)}
+												deployment={deployment}
+												key={deployment.id}
+											/>
+										))}
+									</View>
+								)}
+			</Card>
 		</ScrollView>
 	)
 }

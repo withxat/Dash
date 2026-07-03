@@ -41,12 +41,15 @@ export { Grid, GridItem } from './grid'
 export { Input } from './input'
 export { InputArea } from './input-area'
 export { InputGroup, InputGroupPrefix, InputGroupSuffix } from './input-group'
-export { Label, SectionLabel } from './label'
+export { Label, ListCardLabel, SectionLabel } from './label'
 export {
 	Card,
 	CardPrimary,
 	CardSecondary,
 	LayerCard,
+	LayerCardFrame,
+	LayerCardHeader,
+	LayerCardInsetBody,
 	LayerCardPrimary,
 	LayerCardSecondary,
 } from './layer-card'

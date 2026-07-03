@@ -6,8 +6,7 @@ import { Alert, RefreshControl, ScrollView, Text, View } from 'react-native'
 import { Button, ButtonText } from '../../../../../components/button'
 import { Card } from '../../../../../components/card'
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { Stat } from '../../../../../components/stat'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -103,39 +102,33 @@ export default function QueueDetailScreen() {
 
 			{producers.length > 0
 				? (
-						<View className="gap-2">
-							<SectionLabel>Producers</SectionLabel>
-							<ListSurface>
-								{producers.map((producer, index) => (
-									<Row
-										chevron={false}
-										// eslint-disable-next-line react/no-array-index-key -- producers have no id
-										key={index}
-										right={producer.type}
-										title={('script' in producer ? producer.script : 'bucket_name' in producer ? producer.bucket_name : undefined) ?? 'Producer'}
-									/>
-								))}
-							</ListSurface>
-						</View>
+						<ListGroup title="Producers">
+							{producers.map((producer, index) => (
+								<Row
+									chevron={false}
+									// eslint-disable-next-line react/no-array-index-key -- producers have no id
+									key={index}
+									right={producer.type}
+									title={('script' in producer ? producer.script : 'bucket_name' in producer ? producer.bucket_name : undefined) ?? 'Producer'}
+								/>
+							))}
+						</ListGroup>
 					)
 				: null}
 
 			{consumers.length > 0
 				? (
-						<View className="gap-2">
-							<SectionLabel>Consumers</SectionLabel>
-							<ListSurface>
-								{consumers.map((consumer, index) => (
-									<Row
-										chevron={false}
-										// eslint-disable-next-line react/no-array-index-key -- consumers may miss ids
-										key={consumer.consumer_id ?? index}
-										right={consumer.type}
-										title={('script_name' in consumer ? consumer.script_name : undefined) ?? consumer.consumer_id ?? 'Consumer'}
-									/>
-								))}
-							</ListSurface>
-						</View>
+						<ListGroup title="Consumers">
+							{consumers.map((consumer, index) => (
+								<Row
+									chevron={false}
+									// eslint-disable-next-line react/no-array-index-key -- consumers may miss ids
+									key={consumer.consumer_id ?? index}
+									right={consumer.type}
+									title={('script_name' in consumer ? consumer.script_name : undefined) ?? consumer.consumer_id ?? 'Consumer'}
+								/>
+							))}
+						</ListGroup>
 					)
 				: null}
 

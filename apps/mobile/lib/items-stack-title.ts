@@ -1,3 +1,7 @@
+import type { AppCatalogIcon } from './app-catalog'
+
+import { APP_CATALOG } from './app-catalog'
+
 const EXACT_TITLES: Record<string, string> = {
 	'account/index': 'Account',
 	'items': 'Items',
@@ -50,6 +54,32 @@ const LEAF_TITLES: Record<string, string> = {
 	'vectorize': 'Vectorize',
 	'waf': 'WAF rules',
 	'waiting-rooms': 'Waiting Rooms',
+}
+
+/** Routes under Items that are not catalog href prefixes. */
+const ROUTE_ICON_OVERRIDES: Record<string, AppCatalogIcon> = {
+	'storage/kv-entry': 'kv',
+	'storage/namespace-edit': 'kv',
+	'storage/new-bucket': 'r2',
+	'storage/r2-object': 'r2',
+	'storage/r2-upload': 'r2',
+}
+
+const CATALOG_ROUTE_PREFIXES = APP_CATALOG.flatMap(category => category.items)
+	.map(item => ({ icon: item.icon, prefix: String(item.href).replace(/^\//, '') }))
+	.sort((a, b) => b.prefix.length - a.prefix.length)
+
+export function itemsStackIcon(routeName: string): AppCatalogIcon | undefined {
+	if (routeName === 'items' || routeName === 'profile')
+		return undefined
+
+	const override = ROUTE_ICON_OVERRIDES[routeName]
+	if (override)
+		return override
+
+	const match = CATALOG_ROUTE_PREFIXES.find(({ prefix }) =>
+		routeName === prefix || routeName.startsWith(`${prefix}/`))
+	return match?.icon
 }
 
 export function itemsStackTitle(routeName: string): string {

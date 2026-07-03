@@ -10,8 +10,7 @@ import { RefreshControl, ScrollView, View } from 'react-native'
 import { Badge } from '../../../../../components/badge'
 import { EmptyState } from '../../../../../components/empty-state'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
 import { isForbidden } from '../../../../../lib/api-errors'
@@ -71,57 +70,51 @@ export default function ZoneSslScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Universal SSL</SectionLabel>
-				<ListSurface>
-					{universalQuery.isLoading
+			<ListGroup title="Universal SSL">
+				{universalQuery.isLoading
+					? (
+							<View className="py-3">
+								<Skeleton className="h-6 w-full" />
+							</View>
+						)
+					: universalQuery.isError
 						? (
-								<View className="py-3">
-									<Skeleton className="h-6 w-full" />
-								</View>
+								<EmptyState onAction={() => void universalQuery.refetch()}>
+									{isForbidden(universalQuery.error)
+										? 'Needs the SSL and Certificates read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load Universal SSL settings.'}
+								</EmptyState>
 							)
-						: universalQuery.isError
-							? (
-									<EmptyState onAction={() => void universalQuery.refetch()}>
-										{isForbidden(universalQuery.error)
-											? 'Needs the SSL and Certificates read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load Universal SSL settings.'}
-									</EmptyState>
-								)
-							: (
-									<Row
-										chevron={false}
-										right={<Badge variant={universalQuery.data?.enabled ? 'success' : 'secondary'}>{universalQuery.data?.enabled ? 'Enabled' : 'Disabled'}</Badge>}
-										subtitle="Free edge certificates issued by Cloudflare"
-										title="Universal SSL"
-									/>
-								)}
-				</ListSurface>
-			</View>
+						: (
+								<Row
+									chevron={false}
+									right={<Badge variant={universalQuery.data?.enabled ? 'success' : 'secondary'}>{universalQuery.data?.enabled ? 'Enabled' : 'Disabled'}</Badge>}
+									subtitle="Free edge certificates issued by Cloudflare"
+									title="Universal SSL"
+								/>
+							)}
+			</ListGroup>
 
-			<View className="gap-2">
-				<SectionLabel>Certificate packs</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={pack => (
-							<Row
-								chevron={false}
-								right={<Badge variant={packTone(pack.status)}>{pack.status}</Badge>}
-								subtitle={[packHosts(pack), packExpiry(pack)].filter(Boolean).join(' · ') || undefined}
-								title={pack.type}
-							/>
-						)}
-						emptyText="No certificate packs on this zone."
-						error={packsQuery.error}
-						errorText="Failed to load certificate packs."
-						isError={packsQuery.isError}
-						isLoading={packsQuery.isLoading}
-						items={packsQuery.data}
-						onRetry={() => void packsQuery.refetch()}
-						scopeHint="Needs the SSL and Certificates read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Certificate packs">
+				<QuerySection
+					renderItem={pack => (
+						<Row
+							chevron={false}
+							right={<Badge variant={packTone(pack.status)}>{pack.status}</Badge>}
+							subtitle={[packHosts(pack), packExpiry(pack)].filter(Boolean).join(' · ') || undefined}
+							title={pack.type}
+						/>
+					)}
+					emptyText="No certificate packs on this zone."
+					error={packsQuery.error}
+					errorText="Failed to load certificate packs."
+					isError={packsQuery.isError}
+					isLoading={packsQuery.isLoading}
+					items={packsQuery.data}
+					onRetry={() => void packsQuery.refetch()}
+					scopeHint="Needs the SSL and Certificates read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

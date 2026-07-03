@@ -7,7 +7,6 @@ import { Button, ButtonText } from '../../../../components/button'
 import { Card } from '../../../../components/card'
 import { EmptyState } from '../../../../components/empty-state'
 import { KUMO_RADIUS } from '../../../../components/kumo/radius'
-import { SectionLabel } from '../../../../components/section-label'
 import { Skeleton } from '../../../../components/skeleton'
 import { cloudflareClient } from '../../../../lib/api'
 import { formatBytes, timeAgo } from '../../../../lib/format'
@@ -138,56 +137,53 @@ export default function R2ObjectScreen() {
 				</View>
 			</Card>
 
-			<View className="gap-2">
-				<SectionLabel>Preview</SectionLabel>
-				<Card>
-					{previewQuery.isLoading
+			<Card title="Preview">
+				{previewQuery.isLoading
+					? (
+							<View className="gap-2">
+								<Skeleton className="h-4 w-full" />
+								<Skeleton className="h-4 w-5/6" />
+								<Skeleton className="h-4 w-2/3" />
+							</View>
+						)
+					: previewQuery.isError
 						? (
-								<View className="gap-2">
-									<Skeleton className="h-4 w-full" />
-									<Skeleton className="h-4 w-5/6" />
-									<Skeleton className="h-4 w-2/3" />
-								</View>
+								<EmptyState onAction={() => void previewQuery.refetch()}>
+									{isForbidden(previewQuery.error)
+										? 'Needs the R2 bucket item read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to download the object.'}
+								</EmptyState>
 							)
-						: previewQuery.isError
+						: preview?.kind === 'image' && preview.data
 							? (
-									<EmptyState onAction={() => void previewQuery.refetch()}>
-										{isForbidden(previewQuery.error)
-											? 'Needs the R2 bucket item read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to download the object.'}
-									</EmptyState>
+									<Image
+										accessibilityLabel={key}
+										resizeMode="contain"
+										source={{ uri: preview.data }}
+										style={{ borderRadius: KUMO_RADIUS, height: 280, width: '100%' }}
+									/>
 								)
-							: preview?.kind === 'image' && preview.data
+							: preview?.kind === 'text'
 								? (
-										<Image
-											accessibilityLabel={key}
-											resizeMode="contain"
-											source={{ uri: preview.data }}
-											style={{ borderRadius: KUMO_RADIUS, height: 280, width: '100%' }}
-										/>
+										<View className="gap-2">
+											<ScrollView showsHorizontalScrollIndicator={false} horizontal>
+												<Text className="font-mono text-xs leading-5 text-subtle" selectable>
+													{preview.data ?? ''}
+												</Text>
+											</ScrollView>
+											{preview.truncated
+												? <Text className="text-[11px] text-placeholder">Preview truncated.</Text>
+												: null}
+										</View>
 									)
-								: preview?.kind === 'text'
-									? (
-											<View className="gap-2">
-												<ScrollView showsHorizontalScrollIndicator={false} horizontal>
-													<Text className="font-mono text-xs leading-5 text-subtle" selectable>
-														{preview.data ?? ''}
-													</Text>
-												</ScrollView>
-												{preview.truncated
-													? <Text className="text-[11px] text-placeholder">Preview truncated.</Text>
-													: null}
-											</View>
-										)
-									: (
-											<EmptyState>
-												{sizeBytes != null && sizeBytes > MAX_PREVIEW_BYTES
-													? 'This object is too large to preview on device.'
-													: 'No preview available for this file type.'}
-											</EmptyState>
-										)}
-				</Card>
-			</View>
+								: (
+										<EmptyState>
+											{sizeBytes != null && sizeBytes > MAX_PREVIEW_BYTES
+												? 'This object is too large to preview on device.'
+												: 'No preview available for this file type.'}
+										</EmptyState>
+									)}
+			</Card>
 
 			<Button loading={deleteMutation.isPending} onPress={confirmDelete} variant="destructive">
 				<ButtonText>Delete object</ButtonText>

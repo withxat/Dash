@@ -9,8 +9,7 @@ import { RefreshControl, ScrollView, Text, View } from 'react-native'
 
 import { Badge } from '../../../../../components/badge'
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup } from '../../../../../components/row'
 import { Segmented } from '../../../../../components/segmented'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -102,48 +101,45 @@ export default function WorkerLogsScreen() {
 				</View>
 			</View>
 
-			<View className="gap-2">
-				<SectionLabel>Events</SectionLabel>
-				<ListSurface>
-					{!activeAccountId || logsQuery.isLoading
+			<ListGroup title="Events">
+				{!activeAccountId || logsQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						)
+					: logsQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-								</View>
+								<EmptyState onAction={() => void logsQuery.refetch()}>
+									{isForbidden(logsQuery.error)
+										? 'Needs the Workers Observability read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to query logs. Make sure observability is enabled for this Worker.'}
+								</EmptyState>
 							)
-						: logsQuery.isError
-							? (
-									<EmptyState onAction={() => void logsQuery.refetch()}>
-										{isForbidden(logsQuery.error)
-											? 'Needs the Workers Observability read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to query logs. Make sure observability is enabled for this Worker.'}
-									</EmptyState>
-								)
-							: events.length === 0
-								? <EmptyState>No log events in this window. Observability must be enabled on the Worker to collect logs.</EmptyState>
-								: events.map((event, index) => (
-										<View
-											className="gap-1 py-3"
-											// eslint-disable-next-line react/no-array-index-key -- events may miss metadata ids
-											key={event.$metadata.id ?? index}
-										>
-											<View className="flex-row items-center justify-between gap-2">
-												<Text className="text-xs text-subtle">
-													{timeFormatter.format(new Date(event.timestamp))}
-												</Text>
-												<Badge variant={levelTone(event.$metadata.level)}>
-													{event.$metadata.level ?? event.$metadata.trigger ?? 'log'}
-												</Badge>
-											</View>
-											<Text className="font-mono text-xs text-default" numberOfLines={4} selectable>
-												{eventMessage(event)}
+						: events.length === 0
+							? <EmptyState>No log events in this window. Observability must be enabled on the Worker to collect logs.</EmptyState>
+							: events.map((event, index) => (
+									<View
+										className="gap-1 py-3"
+										// eslint-disable-next-line react/no-array-index-key -- events may miss metadata ids
+										key={event.$metadata.id ?? index}
+									>
+										<View className="flex-row items-center justify-between gap-2">
+											<Text className="text-xs text-subtle">
+												{timeFormatter.format(new Date(event.timestamp))}
 											</Text>
+											<Badge variant={levelTone(event.$metadata.level)}>
+												{event.$metadata.level ?? event.$metadata.trigger ?? 'log'}
+											</Badge>
 										</View>
-									))}
-				</ListSurface>
-			</View>
+										<Text className="font-mono text-xs text-default" numberOfLines={4} selectable>
+											{eventMessage(event)}
+										</Text>
+									</View>
+								))}
+			</ListGroup>
 		</ScrollView>
 	)
 }

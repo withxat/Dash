@@ -1,12 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { router } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { AccountSwitcher } from '../../../../../components/account-switcher'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { formatDate } from '../../../../../lib/format'
 import { useTheme } from '../../../../../lib/theme'
@@ -39,37 +38,34 @@ export default function R2BucketsScreen() {
 		>
 			<AccountSwitcher />
 
-			<View className="gap-2">
-				<SectionLabel>Buckets</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={(bucket) => {
-							const name = bucket.name ?? '—'
-							return (
-								<Row
-									onPress={() => router.push(`/storage/r2/${encodeURIComponent(name)}`)}
-									right={bucket.location}
-									subtitle={bucket.creation_date ? `Created ${formatDate(bucket.creation_date)}` : undefined}
-									title={name}
-								/>
-							)
-						}}
-						emptyText="No R2 buckets in this account."
-						error={bucketsQuery.error}
-						errorText="Failed to load R2 buckets."
-						isError={bucketsQuery.isError}
-						isLoading={!activeAccountId || bucketsQuery.isLoading}
-						items={bucketsQuery.data}
-						onRetry={() => void bucketsQuery.refetch()}
-						scopeHint="Needs the R2 scopes — enable them on your OAuth client and sign in again."
-					/>
-					<Row
-						onPress={() => router.push('/storage/new-bucket')}
-						subtitle="Provision a new R2 bucket"
-						title="Create bucket"
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Buckets">
+				<QuerySection
+					renderItem={(bucket) => {
+						const name = bucket.name ?? '—'
+						return (
+							<Row
+								onPress={() => router.push(`/storage/r2/${encodeURIComponent(name)}`)}
+								right={bucket.location}
+								subtitle={bucket.creation_date ? `Created ${formatDate(bucket.creation_date)}` : undefined}
+								title={name}
+							/>
+						)
+					}}
+					emptyText="No R2 buckets in this account."
+					error={bucketsQuery.error}
+					errorText="Failed to load R2 buckets."
+					isError={bucketsQuery.isError}
+					isLoading={!activeAccountId || bucketsQuery.isLoading}
+					items={bucketsQuery.data}
+					onRetry={() => void bucketsQuery.refetch()}
+					scopeHint="Needs the R2 scopes — enable them on your OAuth client and sign in again."
+				/>
+				<Row
+					onPress={() => router.push('/storage/new-bucket')}
+					subtitle="Provision a new R2 bucket"
+					title="Create bucket"
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

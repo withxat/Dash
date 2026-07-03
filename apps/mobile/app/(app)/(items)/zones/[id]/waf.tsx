@@ -6,8 +6,7 @@ import { useCallback, useState } from 'react'
 import { RefreshControl, ScrollView, View } from 'react-native'
 
 import { EmptyState } from '../../../../../components/empty-state'
-import { ListSurface } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup } from '../../../../../components/row'
 import { SettingRow } from '../../../../../components/setting-row'
 import { Skeleton } from '../../../../../components/skeleton'
 import { cloudflareClient } from '../../../../../lib/api'
@@ -65,42 +64,39 @@ export default function ZoneWafScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Custom rules</SectionLabel>
-				<ListSurface>
-					{rulesetQuery.isLoading
+			<ListGroup title="Custom rules">
+				{rulesetQuery.isLoading
+					? (
+							<View className="gap-3 py-3">
+								<Skeleton className="h-6 w-full" />
+								<Skeleton className="h-6 w-full" />
+							</View>
+						)
+					: rulesetQuery.isError
 						? (
-								<View className="gap-3 py-3">
-									<Skeleton className="h-6 w-full" />
-									<Skeleton className="h-6 w-full" />
-								</View>
+								<EmptyState onAction={() => void rulesetQuery.refetch()}>
+									{isForbidden(rulesetQuery.error)
+										? 'Needs the Zone WAF read scope — enable it on your OAuth client and sign in again.'
+										: 'Failed to load WAF rules.'}
+								</EmptyState>
 							)
-						: rulesetQuery.isError
-							? (
-									<EmptyState onAction={() => void rulesetQuery.refetch()}>
-										{isForbidden(rulesetQuery.error)
-											? 'Needs the Zone WAF read scope — enable it on your OAuth client and sign in again.'
-											: 'Failed to load WAF rules.'}
-									</EmptyState>
-								)
-							: rules.length === 0
-								? <EmptyState>No custom WAF rules on this zone.</EmptyState>
-								: (
-										<View>
-											{rules.map(rule => (
-												<SettingRow
-													key={rule.id}
-													loading={toggleMutation.isPending && toggleMutation.variables?.rule.id === rule.id}
-													onValueChange={enabled => toggleMutation.mutate({ enabled, rule })}
-													subtitle={rule.action ? `Action: ${rule.action}` : rule.expression}
-													title={rule.description || rule.id || 'Rule'}
-													value={rule.enabled ?? false}
-												/>
-											))}
-										</View>
-									)}
-				</ListSurface>
-			</View>
+						: rules.length === 0
+							? <EmptyState>No custom WAF rules on this zone.</EmptyState>
+							: (
+									<View>
+										{rules.map(rule => (
+											<SettingRow
+												key={rule.id}
+												loading={toggleMutation.isPending && toggleMutation.variables?.rule.id === rule.id}
+												onValueChange={enabled => toggleMutation.mutate({ enabled, rule })}
+												subtitle={rule.action ? `Action: ${rule.action}` : rule.expression}
+												title={rule.description || rule.id || 'Rule'}
+												value={rule.enabled ?? false}
+											/>
+										))}
+									</View>
+								)}
+			</ListGroup>
 		</ScrollView>
 	)
 }

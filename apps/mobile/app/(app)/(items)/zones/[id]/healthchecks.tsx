@@ -5,12 +5,11 @@ import type { BadgeTone } from '../../../../../components/badge'
 import { useQuery } from '@tanstack/react-query'
 import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../../components/badge'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { useTheme } from '../../../../../lib/theme'
 import { useTabScrollPadding } from '../../../../../lib/use-tab-scroll-padding'
@@ -51,29 +50,26 @@ export default function ZoneHealthchecksScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Healthchecks</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={check => (
-							<Row
-								chevron={false}
-								right={<Badge variant={healthTone(check.status)}>{check.status ?? 'unknown'}</Badge>}
-								subtitle={[check.address, check.failure_reason].filter(Boolean).join(' · ')}
-								title={check.name ?? check.id ?? 'Healthcheck'}
-							/>
-						)}
-						emptyText="No healthchecks on this zone."
-						error={checksQuery.error}
-						errorText="Failed to load healthchecks."
-						isError={checksQuery.isError}
-						isLoading={checksQuery.isLoading}
-						items={checksQuery.data}
-						onRetry={() => void checksQuery.refetch()}
-						scopeHint="Needs the Healthchecks read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Healthchecks">
+				<QuerySection
+					renderItem={check => (
+						<Row
+							chevron={false}
+							right={<Badge variant={healthTone(check.status)}>{check.status ?? 'unknown'}</Badge>}
+							subtitle={[check.address, check.failure_reason].filter(Boolean).join(' · ')}
+							title={check.name ?? check.id ?? 'Healthcheck'}
+						/>
+					)}
+					emptyText="No healthchecks on this zone."
+					error={checksQuery.error}
+					errorText="Failed to load healthchecks."
+					isError={checksQuery.isError}
+					isLoading={checksQuery.isLoading}
+					items={checksQuery.data}
+					onRetry={() => void checksQuery.refetch()}
+					scopeHint="Needs the Healthchecks read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }

@@ -5,12 +5,11 @@ import type { BadgeTone } from '../../../../../components/badge'
 import { useQuery } from '@tanstack/react-query'
 import { useLocalSearchParams } from 'expo-router'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, Text, View } from 'react-native'
+import { RefreshControl, ScrollView, Text } from 'react-native'
 
 import { Badge } from '../../../../../components/badge'
 import { QuerySection } from '../../../../../components/query-section'
-import { ListSurface, Row } from '../../../../../components/row'
-import { SectionLabel } from '../../../../../components/section-label'
+import { ListGroup, Row } from '../../../../../components/row'
 import { cloudflareClient } from '../../../../../lib/api'
 import { timeAgo } from '../../../../../lib/format'
 import { useTheme } from '../../../../../lib/theme'
@@ -74,33 +73,30 @@ export default function WorkerBuildsScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Build history</SectionLabel>
-				<ListSurface>
-					{tagMissing
-						? <Text className="py-4 text-center text-sm text-subtle">Could not resolve this Worker's script tag.</Text>
-						: (
-								<QuerySection
-									renderItem={build => (
-										<Row
-											chevron={false}
-											right={<Badge variant={buildTone(build)}>{buildLabel(build)}</Badge>}
-											subtitle={buildSubtitle(build)}
-											title={timeAgo(build.created_on)}
-										/>
-									)}
-									emptyText="No builds yet — connect this Worker to a Git repository to use Workers Builds."
-									error={buildsQuery.error ?? scriptsQuery.error}
-									errorText="Failed to load builds."
-									isError={buildsQuery.isError || scriptsQuery.isError}
-									isLoading={!activeAccountId || scriptsQuery.isLoading || buildsQuery.isLoading}
-									items={buildsQuery.data}
-									onRetry={() => void buildsQuery.refetch()}
-									scopeHint="Needs the Workers Builds read scope — enable it on your OAuth client and sign in again."
-								/>
-							)}
-				</ListSurface>
-			</View>
+			<ListGroup title="Build history">
+				{tagMissing
+					? <Text className="py-4 text-center text-sm text-subtle">Could not resolve this Worker's script tag.</Text>
+					: (
+							<QuerySection
+								renderItem={build => (
+									<Row
+										chevron={false}
+										right={<Badge variant={buildTone(build)}>{buildLabel(build)}</Badge>}
+										subtitle={buildSubtitle(build)}
+										title={timeAgo(build.created_on)}
+									/>
+								)}
+								emptyText="No builds yet — connect this Worker to a Git repository to use Workers Builds."
+								error={buildsQuery.error ?? scriptsQuery.error}
+								errorText="Failed to load builds."
+								isError={buildsQuery.isError || scriptsQuery.isError}
+								isLoading={!activeAccountId || scriptsQuery.isLoading || buildsQuery.isLoading}
+								items={buildsQuery.data}
+								onRetry={() => void buildsQuery.refetch()}
+								scopeHint="Needs the Workers Builds read scope — enable it on your OAuth client and sign in again."
+							/>
+						)}
+			</ListGroup>
 		</ScrollView>
 	)
 }

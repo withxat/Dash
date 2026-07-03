@@ -4,12 +4,11 @@ import type { BadgeTone } from '../../../../components/badge'
 
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
-import { RefreshControl, ScrollView, View } from 'react-native'
+import { RefreshControl, ScrollView } from 'react-native'
 
 import { Badge } from '../../../../components/badge'
 import { QuerySection } from '../../../../components/query-section'
-import { ListSurface, Row } from '../../../../components/row'
-import { SectionLabel } from '../../../../components/section-label'
+import { ListGroup, Row } from '../../../../components/row'
 import { cloudflareClient } from '../../../../lib/api'
 import { useTheme } from '../../../../lib/theme'
 import { useActiveAccount } from '../../../../lib/use-active-account'
@@ -52,29 +51,26 @@ export default function TunnelsScreen() {
 			contentInsetAdjustmentBehavior="automatic"
 			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
 		>
-			<View className="gap-2">
-				<SectionLabel>Cloudflare Tunnels</SectionLabel>
-				<ListSurface>
-					<QuerySection
-						renderItem={tunnel => (
-							<Row
-								chevron={false}
-								right={<Badge variant={tunnelTone(tunnel.status)}>{tunnel.status ?? 'unknown'}</Badge>}
-								subtitle={`${tunnel.connections?.length ?? 0} connection${(tunnel.connections?.length ?? 0) === 1 ? '' : 's'}`}
-								title={tunnel.name ?? tunnel.id ?? 'Tunnel'}
-							/>
-						)}
-						emptyText="No tunnels on this account."
-						error={tunnelsQuery.error}
-						errorText="Failed to load tunnels."
-						isError={tunnelsQuery.isError}
-						isLoading={tunnelsQuery.isLoading}
-						items={tunnelsQuery.data}
-						onRetry={() => void tunnelsQuery.refetch()}
-						scopeHint="Needs the Argo Tunnel read scope — enable it on your OAuth client and sign in again."
-					/>
-				</ListSurface>
-			</View>
+			<ListGroup title="Cloudflare Tunnels">
+				<QuerySection
+					renderItem={tunnel => (
+						<Row
+							chevron={false}
+							right={<Badge variant={tunnelTone(tunnel.status)}>{tunnel.status ?? 'unknown'}</Badge>}
+							subtitle={`${tunnel.connections?.length ?? 0} connection${(tunnel.connections?.length ?? 0) === 1 ? '' : 's'}`}
+							title={tunnel.name ?? tunnel.id ?? 'Tunnel'}
+						/>
+					)}
+					emptyText="No tunnels on this account."
+					error={tunnelsQuery.error}
+					errorText="Failed to load tunnels."
+					isError={tunnelsQuery.isError}
+					isLoading={tunnelsQuery.isLoading}
+					items={tunnelsQuery.data}
+					onRetry={() => void tunnelsQuery.refetch()}
+					scopeHint="Needs the Argo Tunnel read scope — enable it on your OAuth client and sign in again."
+				/>
+			</ListGroup>
 		</ScrollView>
 	)
 }
