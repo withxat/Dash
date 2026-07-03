@@ -25,7 +25,7 @@ export function SectionLabel({ children, className }: LabelProps) {
 	return (
 		<Text
 			className={cn('text-default', className)}
-			style={{ fontFamily: 'ChillRoundGothic_Medium', fontSize: 22, lineHeight: 28 }}
+			style={{ fontFamily: 'ChillRoundGothic_Bold', fontSize: 22, lineHeight: 28 }}
 		>
 			{children}
 		</Text>

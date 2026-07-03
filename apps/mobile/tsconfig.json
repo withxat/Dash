@@ -12,6 +12,7 @@
 	},
 	"include": [
 		"app/**/*",
+		"assets.d.ts",
 		"components/**/*",
 		"lib/**/*",
 		"nativewind-env.d.ts"

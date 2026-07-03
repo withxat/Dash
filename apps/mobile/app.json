@@ -8,7 +8,7 @@
 		"scheme": "cloudfx",
 		"splash": {
 			"resizeMode": "contain",
-			"backgroundColor": "#0b0b0f"
+			"backgroundColor": "#1a1a1a"
 		},
 		"assetBundlePatterns": ["**/*"],
 		"ios": {
@@ -23,7 +23,18 @@
 			"output": "single"
 		},
 		"plugins": [
+			"expo-dev-client",
 			"expo-router",
+			[
+				"expo-font",
+				{
+					"fonts": [
+						"./assets/fonts/ChillRoundGothic_Regular.otf",
+						"./assets/fonts/ChillRoundGothic_Bold.otf",
+						"./assets/fonts/ChillRoundGothic_Heavy.otf"
+					]
+				}
+			],
 			[
 				"expo-secure-store",
 				{

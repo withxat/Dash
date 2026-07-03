@@ -7,8 +7,8 @@ const plugin = require('tailwindcss/plugin')
 // synthetic bolding on top of the already-weighted face.
 const chill = {
 	regular: 'ChillRoundGothic_Regular',
-	medium: 'ChillRoundGothic_Medium',
 	bold: 'ChillRoundGothic_Bold',
+	heavy: 'ChillRoundGothic_Heavy',
 }
 
 const chillFontPlugin = plugin(({ addUtilities, theme }) => {
@@ -26,9 +26,9 @@ const chillFontPlugin = plugin(({ addUtilities, theme }) => {
 		'.text-4xl': { fontFamily: chill.regular },
 		// Map the weight utilities to the matching static face.
 		'.font-normal': { fontFamily: chill.regular, fontWeight: '400' },
-		'.font-medium': { fontFamily: chill.medium, fontWeight: '400' },
-		'.font-semibold': { fontFamily: chill.bold, fontWeight: '400' },
-		'.font-bold': { fontFamily: chill.bold, fontWeight: '400' },
+		'.font-medium': { fontFamily: chill.bold, fontWeight: '400' },
+		'.font-semibold': { fontFamily: chill.heavy, fontWeight: '400' },
+		'.font-bold': { fontFamily: chill.heavy, fontWeight: '400' },
 		// Keep code/monospace text on the platform mono font.
 		'.font-mono': { fontFamily: theme('fontFamily.mono') },
 	})
