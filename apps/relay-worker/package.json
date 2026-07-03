@@ -1,0 +1,16 @@
+{
+  "name": "@cloudfx/relay-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CloudFX OAuth relay — converts Cloudflare's https OAuth callback into the cloudfx:// redirect the mobile app captures.",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "catalog:devtool",
+    "wrangler": "^4.0.0"
+  }
+}
