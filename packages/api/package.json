@@ -20,6 +20,7 @@
 	"devDependencies": {
 		"@withxat/eslint-config": "catalog:devtool",
 		"@withxat/tsconfig": "catalog:devtool",
+		"cloudflare": "6.5.0",
 		"eslint": "catalog:devtool",
 		"typescript": "catalog:devtool"
 	}
