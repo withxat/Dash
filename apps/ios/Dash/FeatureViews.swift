@@ -50,7 +50,7 @@ struct ZonesView: View {
         }
       }
     }
-    .listStyle(.insetGrouped).navigationTitle("Zones").searchable(
+    .dashGroupedList().navigationTitle("Zones").searchable(
       text: $search, prompt: "Search zones"
     )
     .refreshable { await load() }.task { await load() }.destinationRouting()
@@ -109,24 +109,27 @@ struct ZoneDetailView: View {
                   DashTheme.subtle)
                 ForEach(servers, id: \.self) { Text($0).font(.footnote.monospaced()) }
               }
-            }.padding(.vertical, 16)
+            }
           }
           LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             ForEach(tools, id: \.0) { title, symbol, endpoint in
-              NavigationLink(
-                value: endpoint == "dns"
-                  ? Destination.dns(zoneID)
-                  : Destination.zoneTool(
-                    zoneID: zoneID, title: title, path: "/zones/{zone}/\(endpoint)")
-              ) {
+              NavigationLink(value: destination(title: title, endpoint: endpoint)) {
                 VStack(alignment: .leading, spacing: 12) {
                   Image(systemName: symbol).font(.title3).foregroundStyle(DashTheme.brand)
                   Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).frame(
                     maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(14).frame(minHeight: 92).background(
-                  DashTheme.base, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .padding(16).frame(minHeight: 96).background(DashTheme.base)
+                .clipShape(
+                  RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+                )
+                .overlay {
+                  RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+                    .stroke(DashTheme.line, lineWidth: 0.5)
+                }
+                .dashCardShadow()
               }
+              .buttonStyle(DashOpacityButtonStyle())
             }
           }
         } else if let error {
@@ -143,6 +146,16 @@ struct ZoneDetailView: View {
   private func load() async {
     do { zone = try await model.client.getZone(zoneID) } catch {
       self.error = error.localizedDescription
+    }
+  }
+
+  private func destination(title: String, endpoint: String) -> Destination {
+    switch endpoint {
+    case "dns": .dns(zoneID)
+    case "cache": .cache(zoneID)
+    case "settings": .zoneSettings(zoneID)
+    default:
+      .zoneTool(zoneID: zoneID, title: title, path: "/zones/{zone}/\(endpoint)")
     }
   }
 }
@@ -199,6 +212,7 @@ struct DNSRecordsView: View {
         }
       }
     }
+    .dashGroupedList()
     .navigationTitle("DNS").searchable(text: $search, prompt: "Records")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -270,6 +284,7 @@ private struct DNSRecordEditor: View {
       }
       if let error { Section { Text(error).foregroundStyle(.red) } }
     }
+    .dashGroupedList()
     .navigationTitle(record == nil ? "New DNS record" : "DNS record").navigationBarTitleDisplayMode(
       .inline
     )
@@ -338,8 +353,10 @@ struct WorkersView: View {
           }
         }
       }
-    }.navigationTitle("Workers & Pages").refreshable { await load() }.task { await load() }
-      .destinationRouting()
+    }.dashGroupedList().navigationTitle("Workers & Pages").refreshable { await load() }.task {
+      await load()
+    }
+    .destinationRouting()
   }
 
   private func load() async {
@@ -360,10 +377,16 @@ struct WorkerDetailView: View {
   let name: String
   @State private var source = ""
   @State private var error: String?
+  @State private var loadedSubdomain = false
+  @State private var subdomainEnabled = false
 
   var body: some View {
     List {
       Section("Management") {
+        Toggle("workers.dev", isOn: $subdomainEnabled)
+          .onChange(of: subdomainEnabled) { _, enabled in
+            if loadedSubdomain { Task { await setSubdomain(enabled) } }
+          }
         NavigationLink(
           value: Destination.zoneTool(
             zoneID: "", title: "Deployments",
@@ -393,12 +416,119 @@ struct WorkerDetailView: View {
           }
         }
       }
-    }.navigationTitle(name).task { await load() }.destinationRouting()
+    }.dashGroupedList().navigationTitle(name).task { await load() }.destinationRouting()
   }
   private func load() async {
     guard let accountID = model.activeAccountID else { return }
-    do { source = try await model.client.getWorkerSource(accountID: accountID, name: name) } catch {
+    do {
+      async let fetchedSource = model.client.getWorkerSource(accountID: accountID, name: name)
+      async let fetchedSubdomain = model.client.getWorkerSubdomain(accountID: accountID, name: name)
+      source = try await fetchedSource
+      subdomainEnabled = try await fetchedSubdomain.enabled
+      loadedSubdomain = true
+    } catch {
       self.error = error.localizedDescription
     }
+  }
+
+  private func setSubdomain(_ enabled: Bool) async {
+    guard let accountID = model.activeAccountID else { return }
+    do {
+      let result = try await model.client.setWorkerSubdomain(
+        accountID: accountID, name: name, enabled: enabled)
+      subdomainEnabled = result.enabled
+    } catch {
+      subdomainEnabled.toggle()
+      self.error = error.localizedDescription
+    }
+  }
+}
+
+struct CachePurgeView: View {
+  @Environment(AppModel.self) private var model
+  let zoneID: String
+  @State private var url = ""
+  @State private var status: String?
+  @State private var working = false
+
+  var body: some View {
+    Form {
+      Section("Purge by URL") {
+        TextField("https://example.com/path", text: $url).textInputAutocapitalization(.never)
+          .keyboardType(.URL)
+        Button("Purge URL") { Task { await purge(files: [url]) } }
+          .disabled(url.isEmpty || working)
+      }
+      Section {
+        Button("Purge everything", role: .destructive) { Task { await purge(files: nil) } }
+          .disabled(working)
+      } header: {
+        Text("Entire zone")
+      } footer: {
+        Text("Purging everything removes all cached assets for this zone.")
+      }
+      if let status {
+        Section { Text(status).foregroundStyle(status == "Cache purged." ? .green : .red) }
+      }
+    }.dashGroupedList().navigationTitle("Cache")
+  }
+
+  private func purge(files: [String]?) async {
+    working = true
+    do {
+      try await model.client.purgeCache(zoneID: zoneID, files: files)
+      status = "Cache purged."
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+    } catch { status = error.localizedDescription }
+    working = false
+  }
+}
+
+struct ZoneSettingsView: View {
+  @Environment(AppModel.self) private var model
+  let zoneID: String
+  @State private var settings: [ZoneSetting] = []
+  @State private var error: String?
+
+  var body: some View {
+    List {
+      if let error {
+        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
+      }
+      ForEach(settings) { setting in
+        switch setting.value {
+        case .bool(let enabled):
+          Toggle(
+            setting.id.replacingOccurrences(of: "_", with: " ").capitalized,
+            isOn: Binding(
+              get: { enabled },
+              set: { value in Task { await update(setting, value: .bool(value)) } })
+          )
+          .disabled(setting.editable == false)
+        case .string(let value):
+          LabeledContent(
+            setting.id.replacingOccurrences(of: "_", with: " ").capitalized, value: value)
+        default:
+          LabeledContent(setting.id, value: String(describing: setting.value))
+        }
+      }
+    }.dashGroupedList().navigationTitle("Settings").refreshable { await load() }.task {
+      await load()
+    }
+  }
+
+  private func load() async {
+    do {
+      settings = try await model.client.listZoneSettings(zoneID: zoneID)
+      error = nil
+    } catch { self.error = error.localizedDescription }
+  }
+
+  private func update(_ setting: ZoneSetting, value: JSONValue) async {
+    do {
+      _ = try await model.client.updateZoneSetting(
+        zoneID: zoneID, settingID: setting.id, value: value)
+      await load()
+    } catch { self.error = error.localizedDescription }
   }
 }

@@ -24,44 +24,84 @@ private struct LoginView: View {
   var body: some View {
     ZStack {
       DashTheme.canvas.ignoresSafeArea()
-      VStack(spacing: 24) {
-        Spacer()
-        ZStack {
-          RoundedRectangle(cornerRadius: 28, style: .continuous).fill(DashTheme.accent.gradient)
-          Image(systemName: "cloud.fill").font(.system(size: 44, weight: .bold)).foregroundStyle(
-            .white)
-        }.frame(width: 96, height: 96).shadow(
-          color: DashTheme.accent.opacity(0.28), radius: 24, y: 12)
-        VStack(spacing: 8) {
-          Text("Dash").font(.chill(42, heavy: true))
-          Text("Cloudflare in your pocket").font(.subheadline).foregroundStyle(DashTheme.subtle)
-        }
-        Spacer()
-        VStack(spacing: 12) {
-          if let error = model.errorMessage {
-            Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+      ScrollView {
+        VStack(spacing: 32) {
+          Spacer(minLength: 80)
+          VStack(spacing: 12) {
+            ZStack {
+              RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+                .fill(DashTheme.accent)
+              Image(systemName: "cloud.fill")
+                .font(.system(size: 30, weight: .bold))
+                .foregroundStyle(DashTheme.inverse)
+            }
+            .frame(width: 64, height: 64)
+            Text("Dash")
+              .font(.chill(38, heavy: true))
+              .foregroundStyle(DashTheme.strong)
+            Text(
+              "Zones, DNS, cache, security and analytics, your Cloudflare account in your pocket."
+            )
+            .font(.system(size: 14))
+            .foregroundStyle(DashTheme.subtle)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
           }
+
+          if let error = model.errorMessage {
+            Text(error)
+              .font(.system(size: 13))
+              .foregroundStyle(DashTheme.danger)
+              .multilineTextAlignment(.center)
+          }
+
           Button {
             model.signIn()
           } label: {
-            HStack {
-              if model.isAuthenticating { ProgressView().tint(.white) }
-              Text("Continue with Cloudflare").fontWeight(.semibold)
+            HStack(spacing: 8) {
+              if model.isAuthenticating { ProgressView().tint(DashTheme.inverse) }
+              Text("Connect Cloudflare").font(.system(size: 14, weight: .medium))
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 14)
+            .foregroundStyle(DashTheme.inverse)
+            .frame(maxWidth: .infinity, minHeight: 40)
+            .background(DashTheme.brand)
+            .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
           }
-          .buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 14))
+          .buttonStyle(DashOpacityButtonStyle())
           .disabled(model.isAuthenticating || !model.configuration.isConfigured)
+          .opacity(model.isAuthenticating || !model.configuration.isConfigured ? 0.5 : 1)
+
           if !model.configuration.isConfigured {
-            Text("OAuth is not configured. Add Config/Secrets.xcconfig and rebuild.").font(.caption)
-              .foregroundStyle(DashTheme.subtle).multilineTextAlignment(.center)
+            DashCard {
+              VStack(alignment: .leading, spacing: 8) {
+                Text("Almost ready").font(.system(size: 14, weight: .semibold))
+                Text(
+                  "Add Config/Secrets.xcconfig with your OAuth client values, then rebuild Dash."
+                )
+                .font(.system(size: 13))
+                .foregroundStyle(DashTheme.subtle)
+                .fixedSize(horizontal: false, vertical: true)
+              }
+            }
           }
-          Text(
-            "Dash uses Cloudflare OAuth with PKCE. Your credentials never pass through the relay."
-          )
-          .font(.caption2).foregroundStyle(DashTheme.subtle).multilineTextAlignment(.center)
-        }.padding(.bottom, 24)
-      }.padding(.horizontal, 28)
+
+          DashCard {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Secure OAuth with PKCE")
+                .font(.system(size: 12))
+                .foregroundStyle(DashTheme.subtle)
+              Text("Your credentials never pass through the callback relay.")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(DashTheme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+          }
+          Spacer(minLength: 24)
+        }
+        .frame(maxWidth: 448)
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity)
+      }
     }
   }
 }
@@ -73,16 +113,19 @@ private struct MainTabView: View {
   var body: some View {
     TabView(selection: $selection) {
       NavigationStack { HomeView() }
-        .tabItem { Label("Home", systemImage: "house.fill") }
+        .tabItem { Image(systemName: "house.fill").accessibilityLabel("Home") }
         .tag(AppTab.home)
       NavigationStack { ItemsView() }
-        .tabItem { Label("Items", systemImage: "square.grid.2x2.fill") }
+        .tabItem { Image(systemName: "square.grid.2x2.fill").accessibilityLabel("Items") }
         .tag(AppTab.items)
       NavigationStack { WatchtowerView() }
-        .tabItem { Label("Watchtower", systemImage: "shield.lefthalf.filled") }
+        .tabItem {
+          Image(systemName: "shield.lefthalf.filled").accessibilityLabel("Watchtower")
+        }
         .tag(AppTab.watchtower)
     }
-    .toolbarBackground(.ultraThinMaterial, for: .tabBar)
+    .toolbarBackground(DashTheme.elevated, for: .tabBar)
+    .toolbarBackground(.visible, for: .tabBar)
   }
 }
 
@@ -96,9 +139,9 @@ struct AccountToolbar: ToolbarContent {
         showsProfile = true
       } label: {
         ZStack {
-          Circle().fill(DashTheme.brand.opacity(0.14))
+          Circle().fill(DashTheme.accent)
           Text(model.user?.displayName.prefix(1).uppercased() ?? "D").font(.caption.bold())
-            .foregroundStyle(DashTheme.brand)
+            .foregroundStyle(DashTheme.inverse)
         }.frame(width: 32, height: 32)
       }.accessibilityLabel("Profile").sheet(isPresented: $showsProfile) {
         NavigationStack { ProfileView() }
@@ -140,6 +183,7 @@ private struct ProfileView: View {
         }
       }
     }
+    .dashGroupedList()
     .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
   }
@@ -152,6 +196,8 @@ extension View {
       case .feature(let feature): FeatureRouterView(feature: feature)
       case .zone(let id): ZoneDetailView(zoneID: id)
       case .dns(let id): DNSRecordsView(zoneID: id)
+      case .cache(let id): CachePurgeView(zoneID: id)
+      case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
       case .zoneTool(let zoneID, let title, let path):
         GenericResourcesView(
           title: title, path: path.replacingOccurrences(of: "{zone}", with: zoneID))

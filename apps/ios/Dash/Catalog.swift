@@ -91,6 +91,8 @@ enum Destination: Hashable {
   case feature(FeatureID)
   case zone(String)
   case dns(String)
+  case cache(String)
+  case zoneSettings(String)
   case zoneTool(zoneID: String, title: String, path: String)
   case worker(String)
   case r2Bucket(String)

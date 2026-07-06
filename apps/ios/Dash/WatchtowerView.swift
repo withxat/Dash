@@ -10,14 +10,55 @@ struct WatchtowerView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
+        if model.accounts.count > 1 {
+          ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+              ForEach(model.accounts) { account in
+                let active = account.id == model.activeAccountID
+                Button {
+                  model.selectAccount(account)
+                  Task { await load() }
+                } label: {
+                  Text(account.name)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(active ? DashTheme.inverse : DashTheme.subtle)
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 36)
+                    .background(active ? DashTheme.brand : DashTheme.base)
+                    .clipShape(Capsule())
+                    .overlay {
+                      if !active { Capsule().stroke(DashTheme.line, lineWidth: 0.5) }
+                    }
+                }
+                .buttonStyle(DashOpacityButtonStyle())
+              }
+            }
+          }
+          .scrollIndicators(.hidden)
+        }
+
         if loading {
           LoadingStateView()
         } else if let error {
           ErrorStateView(message: error) { Task { await load() } }
         } else if resources.isEmpty {
-          ContentUnavailableView(
-            "All quiet", systemImage: "checkmark.shield",
-            description: Text("No recent Cloudflare alerts."))
+          DashCard {
+            HStack(spacing: 12) {
+              Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: 28))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(DashTheme.success)
+              VStack(alignment: .leading, spacing: 2) {
+                Text("All systems normal")
+                  .font(.system(size: 16, weight: .semibold))
+                  .foregroundStyle(DashTheme.text)
+                Text("No recent Cloudflare alerts.")
+                  .font(.system(size: 12))
+                  .foregroundStyle(DashTheme.subtle)
+              }
+              Spacer()
+            }
+          }
         } else {
           DashListGroup(title: "Recent alerts") {
             ForEach(Array(resources.enumerated()), id: \.element.id) { index, resource in
@@ -56,7 +97,10 @@ struct WatchtowerView: View {
   }
 
   private func load() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let accountID = model.activeAccountID else {
+      loading = false
+      return
+    }
     loading = true
     error = nil
     do {
