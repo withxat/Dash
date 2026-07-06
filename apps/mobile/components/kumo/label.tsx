@@ -2,7 +2,6 @@ import type { ReactNode } from 'react'
 
 import { Text } from 'react-native'
 
-import { chillFaceStyle } from '../../lib/fonts'
 import { cn } from './cn'
 
 interface LabelProps {
@@ -23,10 +22,7 @@ export function Label({ children, className }: LabelProps) {
 /** In-card section title for grouped lists (LayerCard header band). */
 export function ListCardLabel({ children, className }: LabelProps) {
 	return (
-		<Text
-			className={cn('text-subtle', className)}
-			style={chillFaceStyle('bold', { fontSize: 16, lineHeight: 22 })}
-		>
+		<Text className={cn('text-base font-medium text-subtle', className)}>
 			{children}
 		</Text>
 	)
@@ -34,12 +30,8 @@ export function ListCardLabel({ children, className }: LabelProps) {
 
 /** Section heading above grouped lists (Items categories, Home shortcuts, …). */
 export function SectionLabel({ children, className }: LabelProps) {
-	// Explicit family + size — tailwind text-* utilities only pick up fontFamily from chillFontPlugin.
 	return (
-		<Text
-			className={cn('text-default', className)}
-			style={chillFaceStyle('bold', { fontSize: 22, lineHeight: 28 })}
-		>
+		<Text className={cn('text-2xl font-semibold text-default', className)}>
 			{children}
 		</Text>
 	)

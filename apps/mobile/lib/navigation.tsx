@@ -4,18 +4,18 @@ import type { TextStyle } from 'react-native'
 
 import type { ThemePalette } from './theme'
 
-import { chillFaceStyle, chillFonts, chillNativeHeaderStyle } from './fonts'
+import { chillFontHeavy } from './fonts'
 
 type StackScreenOptions = NonNullable<ComponentProps<typeof Stack>['screenOptions']>
 
 /** Native inline title when a large title collapses (tab roots). */
 export function stackHeaderTitleStyle(theme: ThemePalette): TextStyle {
-	return chillNativeHeaderStyle('bold', { color: theme.default, fontSize: 17 })
+	return { color: theme.default, fontSize: 17, fontWeight: '600' }
 }
 
-/** Pushed sub-screen title — one Chill step below heavy (bold). */
+/** Pushed sub-screen title — system semibold, not Chill. */
 export function stackPushedHeaderTitleStyle(theme: ThemePalette): TextStyle {
-	return chillFaceStyle('bold', { color: theme.default, fontSize: 17 })
+	return { color: theme.default, fontSize: 17, fontWeight: '600' }
 }
 
 /**
@@ -32,7 +32,11 @@ export function stackScreenOptions(theme: ThemePalette): StackScreenOptions {
 		// system; the canvas color is close enough to the system background.
 		headerLargeTitle: true,
 		headerLargeTitleShadowVisible: false,
-		headerLargeTitleStyle: { color: theme.default, fontFamily: chillFonts.heavy, fontWeight: '800' },
+		headerLargeTitleStyle: {
+			color: theme.default,
+			fontFamily: chillFontHeavy,
+			fontWeight: '800',
+		},
 		headerShadowVisible: false,
 		headerTintColor: theme.default,
 		headerTitleStyle: stackHeaderTitleStyle(theme),

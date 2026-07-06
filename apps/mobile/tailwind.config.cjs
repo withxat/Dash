@@ -1,39 +1,3 @@
-const plugin = require('tailwindcss/plugin')
-
-// Chill Round Gothic (寒蝉圆黑体) is embedded natively via the expo-font config
-// plugin (see app.json). Static OTFs expose one face per family, so each
-// weight maps to its own fontFamily name (iOS PostScript name == Android
-// asset file name). fontWeight is pinned to 400 so neither platform applies
-// synthetic bolding on top of the already-weighted face.
-const chill = {
-	medium: 'ChillRoundGothic_Medium',
-	bold: 'ChillRoundGothic_Bold',
-	heavy: 'ChillRoundGothic_Heavy',
-}
-
-const chillFontPlugin = plugin(({ addUtilities, theme }) => {
-	addUtilities({
-		// Default the app font via the text-size utilities (every Text in the
-		// app carries one). Weight/mono utilities below win when combined,
-		// because they come later in this utilities layer.
-		'.text-xs': { fontFamily: chill.medium },
-		'.text-sm': { fontFamily: chill.medium },
-		'.text-base': { fontFamily: chill.medium },
-		'.text-lg': { fontFamily: chill.medium },
-		'.text-xl': { fontFamily: chill.medium },
-		'.text-2xl': { fontFamily: chill.medium },
-		'.text-3xl': { fontFamily: chill.medium },
-		'.text-4xl': { fontFamily: chill.medium },
-		// Map the weight utilities to the matching static face.
-		'.font-normal': { fontFamily: chill.medium, fontWeight: '400' },
-		'.font-medium': { fontFamily: chill.bold, fontWeight: '400' },
-		'.font-semibold': { fontFamily: chill.heavy, fontWeight: '400' },
-		'.font-bold': { fontFamily: chill.heavy, fontWeight: '400' },
-		// Keep code/monospace text on the platform mono font.
-		'.font-mono': { fontFamily: theme('fontFamily.mono') },
-	})
-})
-
 /** @type {import('tailwindcss').Config} */
 module.exports = {
 	content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
@@ -108,5 +72,4 @@ module.exports = {
 			},
 		},
 	},
-	plugins: [chillFontPlugin],
 }

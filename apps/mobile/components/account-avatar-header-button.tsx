@@ -1,7 +1,6 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { AVATAR_HEADER_SIZE, avatarHeaderPressableStyle } from '../lib/avatar-header'
-import { chillFaceStyle } from '../lib/fonts'
 import { emailInitial } from '../lib/gravatar'
 import { useTheme } from '../lib/theme'
 
@@ -58,10 +57,11 @@ export function AccountAvatarHeaderButton({ email, onPress, uri }: AccountAvatar
 				: (
 						<View className="items-center justify-center bg-accent" style={frame}>
 							<Text
-								style={chillFaceStyle('heavy', {
+								style={{
 									color: theme.inverse,
 									fontSize: size * 0.4,
-								})}
+									fontWeight: '600',
+								}}
 							>
 								{emailInitial(email)}
 							</Text>

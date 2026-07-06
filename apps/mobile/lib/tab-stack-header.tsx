@@ -15,7 +15,7 @@ export function tabStackScreenOptions(theme: ThemePalette) {
 	}
 }
 
-/** Pushed screens (no large title): HeaderTitle for Chill Heavy; no custom headerTitle on roots. */
+/** Pushed screens (no large title): custom Text title; no custom headerTitle on roots. */
 export function tabPushedStackScreenOptions(theme: ThemePalette) {
 	return {
 		...tabStackScreenOptions(theme),
