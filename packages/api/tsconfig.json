@@ -1,7 +1,0 @@
-{
-	"extends": "@withxat/tsconfig",
-	"compilerOptions": {
-		"lib": ["es2025", "DOM"]
-	},
-	"include": ["src/**/*"]
-}

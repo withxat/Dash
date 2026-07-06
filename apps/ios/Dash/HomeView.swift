@@ -14,16 +14,21 @@ struct HomeView: View {
 
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: 22) {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
         FeatureSection(title: "Shortcuts", items: shortcuts, actionTitle: "Edit") {
           editShortcuts = true
         }
         FeatureSection(
           title: "Frequently used", items: Array((recent + shortcuts).uniqued().prefix(4)))
         if !recent.isEmpty { FeatureSection(title: "Recently opened", items: recent) }
-        Text("Open Items to browse every feature by category.").font(.caption2).foregroundStyle(
-          DashTheme.subtle)
-      }.padding(.horizontal, 16).padding(.bottom, 100)
+        Text("Open Items to browse every feature by category.")
+          .font(.system(size: 11))
+          .foregroundStyle(DashTheme.placeholder)
+          .frame(maxWidth: .infinity)
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.screen)
+      .padding(.bottom, 100)
     }
     .background(DashTheme.canvas)
     .navigationTitle("Home").navigationBarTitleDisplayMode(.large)
@@ -51,20 +56,12 @@ struct FeatureSection: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text(title).font(.caption.weight(.semibold)).foregroundStyle(DashTheme.subtle)
-        Spacer()
-        if let actionTitle, let action {
-          Button(actionTitle, action: action).font(.subheadline.weight(.medium))
-        }
-      }
-      DashCard {
-        ForEach(Array(items.enumerated()), id: \.element) { index, item in
-          NavigationLink(value: Destination.feature(item)) { FeatureRow(feature: item) }
-            .simultaneousGesture(TapGesture().onEnded { record(item) })
-          if index < items.count - 1 { Divider().padding(.leading, 46) }
-        }
+    DashListGroup(title: title, actionTitle: actionTitle, action: action) {
+      ForEach(Array(items.enumerated()), id: \.element) { index, item in
+        NavigationLink(value: Destination.feature(item)) { FeatureRow(feature: item) }
+          .buttonStyle(DashOpacityButtonStyle())
+          .simultaneousGesture(TapGesture().onEnded { record(item) })
+        if index < items.count - 1 { Divider().overlay(DashTheme.hairline) }
       }
     }
   }
@@ -83,13 +80,24 @@ struct FeatureRow: View {
   let feature: FeatureID
   var body: some View {
     HStack(spacing: 12) {
-      Image(systemName: feature.symbol).font(.system(size: 20)).foregroundStyle(DashTheme.brand)
-        .frame(width: 32, height: 44)
+      CatalogFeatureIcon(feature: feature)
       VStack(alignment: .leading, spacing: 2) {
-        Text(feature.title).font(.body.weight(.medium))
-        Text(feature.subtitle).font(.caption).foregroundStyle(DashTheme.subtle).lineLimit(1)
+        Text(feature.title)
+          .font(.system(size: 14))
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(1)
+        Text(feature.subtitle)
+          .font(.system(size: 12))
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(1)
       }
+      Spacer(minLength: 8)
+      Image(systemName: "chevron.right")
+        .font(.system(size: 12, weight: .semibold))
+        .foregroundStyle(DashTheme.placeholder)
     }
+    .padding(.vertical, 10)
+    .contentShape(Rectangle())
   }
 }
 
@@ -115,6 +123,7 @@ private struct EditShortcutsView: View {
           }
         }.foregroundStyle(.primary)
       }
+      .dashGroupedList()
       .navigationTitle("Edit shortcuts").navigationBarTitleDisplayMode(.inline)
       .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
     }

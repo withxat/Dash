@@ -31,6 +31,7 @@ struct R2BucketsView: View {
         }
       }
     }
+    .dashGroupedList()
     .navigationTitle("R2").toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button {
@@ -103,7 +104,7 @@ struct R2BucketView: View {
           }.swipeActions { Button("Delete", role: .destructive) { Task { await delete(object) } } }
         }
       }
-    }.navigationTitle(bucket).searchable(text: $prefix, prompt: "Prefix")
+    }.dashGroupedList().navigationTitle(bucket).searchable(text: $prefix, prompt: "Prefix")
       .toolbar {
         ToolbarItem(placement: .topBarTrailing) {
           Button {
@@ -163,7 +164,8 @@ struct KVNamespacesView: View {
           }
         }
       }
-    }.navigationTitle("KV").refreshable { await load() }.task { await load() }.destinationRouting()
+    }.dashGroupedList().navigationTitle("KV").refreshable { await load() }.task { await load() }
+      .destinationRouting()
   }
   private func load() async {
     guard let id = model.activeAccountID else { return }
@@ -197,9 +199,10 @@ struct KVNamespaceView: View {
           }
         }
       }
-    }.navigationTitle("KV keys").searchable(text: $prefix, prompt: "Key prefix").task(id: prefix) {
-      await load()
-    }.refreshable { await load() }
+    }.dashGroupedList().navigationTitle("KV keys").searchable(text: $prefix, prompt: "Key prefix")
+      .task(id: prefix) {
+        await load()
+      }.refreshable { await load() }
       .sheet(item: $selected) { key in
         NavigationStack { KVValueEditor(namespaceID: namespaceID, keyName: key.name) }
       }
@@ -232,6 +235,7 @@ private struct KVValueEditor: View {
       Section(keyName) { TextEditor(text: $value).font(.body.monospaced()).frame(minHeight: 260) }
       if let error { Text(error).foregroundStyle(.red) }
     }
+    .dashGroupedList()
     .navigationTitle("KV entry").navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
@@ -285,6 +289,7 @@ struct D1DatabasesView: View {
         }
       }
     }
+    .dashGroupedList()
     .navigationTitle("D1").refreshable { await load() }.task { await load() }.destinationRouting()
   }
   private func load() async {
@@ -320,7 +325,7 @@ struct D1ConsoleView: View {
           }
         }
       }
-    }.navigationTitle(name)
+    }.dashGroupedList().navigationTitle(name)
   }
   private func run() async {
     guard let id = model.activeAccountID else { return }

@@ -14,12 +14,15 @@ struct ItemsView: View {
 
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: 22) {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
         ForEach(filtered, id: \.0) { title, features in
           FeatureSection(title: title, items: features)
         }
         if filtered.isEmpty { ContentUnavailableView.search(text: search) }
-      }.padding(.horizontal, 16).padding(.bottom, 100)
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.screen)
+      .padding(.bottom, 100)
     }
     .background(DashTheme.canvas)
     .navigationTitle("Items").navigationBarTitleDisplayMode(.large)

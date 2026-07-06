@@ -9,7 +9,7 @@ struct WatchtowerView: View {
 
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: 16) {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
         if loading {
           LoadingStateView()
         } else if let error {
@@ -19,21 +19,34 @@ struct WatchtowerView: View {
             "All quiet", systemImage: "checkmark.shield",
             description: Text("No recent Cloudflare alerts."))
         } else {
-          ForEach(resources) { resource in
-            DashCard {
+          DashListGroup(title: "Recent alerts") {
+            ForEach(Array(resources.enumerated()), id: \.element.id) { index, resource in
               HStack {
-                Image(systemName: "bell.badge").foregroundStyle(DashTheme.accent)
-                VStack(alignment: .leading) {
-                  Text(resource.name)
-                  Text(resource.detail ?? "Notification").font(.caption).foregroundStyle(
-                    DashTheme.subtle)
+                Image(systemName: "bell.badge.fill")
+                  .symbolRenderingMode(.hierarchical)
+                  .foregroundStyle(DashTheme.accent)
+                  .frame(width: 44, height: 44)
+                  .background(DashTheme.accent.opacity(0.15))
+                  .clipShape(
+                    RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(resource.name).font(.system(size: 14)).foregroundStyle(DashTheme.text)
+                  Text(resource.detail ?? "Notification")
+                    .font(.system(size: 12))
+                    .foregroundStyle(DashTheme.subtle)
+                    .lineLimit(1)
                 }
                 Spacer()
-              }.padding(.vertical, 12)
+              }
+              .padding(.vertical, 10)
+              if index < resources.count - 1 { Divider().overlay(DashTheme.hairline) }
             }
           }
         }
-      }.padding(16).padding(.bottom, 80)
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.screen)
+      .padding(.bottom, 80)
     }
     .background(DashTheme.canvas).navigationTitle("Watchtower").navigationBarTitleDisplayMode(
       .large

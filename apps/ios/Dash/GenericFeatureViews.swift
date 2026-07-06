@@ -62,7 +62,9 @@ struct GenericResourcesView: View {
           }
         }
       }
-    }.navigationTitle(title).refreshable { await load() }.task { await load() }
+    }
+    .dashGroupedList()
+    .navigationTitle(title).refreshable { await load() }.task { await load() }
   }
 
   private func load() async {
