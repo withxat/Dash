@@ -151,8 +151,8 @@ expo-env.d.ts
 *.tsbuildinfo
 
 # Expo native build outputs
-ios/
-android/
+/ios/
+/android/
 web-build/
 
 # Expo local env
@@ -164,6 +164,7 @@ web-build/
 *.aab
 .build/
 DerivedData/
+apps/ios/Config/Secrets.xcconfig
 
 # CocoaPods
 apps/mobile/ios/Pods/
