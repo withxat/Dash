@@ -162,6 +162,8 @@ web-build/
 *.ipa
 *.apk
 *.aab
+.build/
+DerivedData/
 
 # CocoaPods
 apps/mobile/ios/Pods/

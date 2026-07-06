@@ -6,6 +6,7 @@
   "description": "CloudFX OAuth relay — converts Cloudflare's https OAuth callback into the cloudfx:// redirect the mobile app captures.",
   "scripts": {
     "deploy": "wrangler deploy",
+	"lint": "eslint src",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
