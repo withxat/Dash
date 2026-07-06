@@ -1,11 +1,11 @@
 import { Stack } from 'expo-router'
 
-import { tabPushedStackScreenOptions, tabStackScreenOptions, useTabRootScreenOptions } from '../../../lib/tab-stack-header'
+import { tabPushedStackScreenOptions, tabRootScreenOptions, tabStackScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 export default function SearchLayout() {
 	const theme = useTheme()
-	const searchRootOptions = useTabRootScreenOptions(theme, 'Search')
+	const searchRootOptions = tabRootScreenOptions()
 
 	return (
 		<Stack

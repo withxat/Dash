@@ -4,9 +4,8 @@ import type { ThemePalette } from './theme'
 
 import { StackHeaderTitle } from '../components/stack-header-title'
 import { stackScreenOptions } from './navigation'
-import { useAccountAvatarHeaderOptions } from './use-account-avatar-header-options'
 
-/** Shared stack defaults — native title so large-title collapse animations work. */
+/** Shared stack defaults for tab stacks (pushed screens keep the native app bar). */
 export function tabStackScreenOptions(theme: ThemePalette) {
 	return {
 		...stackScreenOptions(theme),
@@ -15,7 +14,7 @@ export function tabStackScreenOptions(theme: ThemePalette) {
 	}
 }
 
-/** Pushed screens (no large title): custom Text title; no custom headerTitle on roots. */
+/** Pushed screens: custom Text title in the native app bar. */
 export function tabPushedStackScreenOptions(theme: ThemePalette) {
 	return {
 		...tabStackScreenOptions(theme),
@@ -25,14 +24,9 @@ export function tabPushedStackScreenOptions(theme: ThemePalette) {
 	}
 }
 
-export function useTabRootScreenOptions(theme: ThemePalette, title: string) {
-	const avatarHeader = useAccountAvatarHeaderOptions()
-
+/** Tab roots render avatar + title in-screen; hide the native stack header. */
+export function tabRootScreenOptions() {
 	return {
-		...tabStackScreenOptions(theme),
-		headerBackVisible: false,
-		headerLargeTitle: true,
-		title,
-		...avatarHeader,
+		headerShown: false as const,
 	}
 }

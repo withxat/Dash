@@ -28,7 +28,7 @@
 			[
 				"expo-font",
 				{
-					"fonts": ["./assets/fonts/ChillRoundGothic_Heavy.otf"]
+					"fonts": ["./assets/fonts/ChillRoundGothic_Bold.otf"]
 				}
 			],
 			[

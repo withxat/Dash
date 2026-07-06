@@ -15,11 +15,11 @@ test('native tabs do not own a shared stack header', async () => {
 	assert.doesNotMatch(layout, /appShellHeaderOptions|<Stack/)
 })
 
-test('every tab root owns its native stack header', async () => {
+test('every tab root hides the native stack header', async () => {
 	for (const path of ['home/_layout.tsx', '(items)/_layout.tsx', 'watchtower/_layout.tsx', 'search/_layout.tsx']) {
 		const layout = await source(path)
 		assert.match(layout, /<Stack/)
-		assert.match(layout, /useTabRootScreenOptions/)
+		assert.match(layout, /tabRootScreenOptions/)
 	}
 })
 

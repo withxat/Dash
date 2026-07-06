@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router'
 
 import { itemsStackScreenOptions } from '../../../lib/items-stack-screen-options'
-import { useTabRootScreenOptions } from '../../../lib/tab-stack-header'
+import { tabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 // eslint-disable-next-line react-refresh/only-export-components -- Expo Router reads this route config export.
@@ -19,7 +19,7 @@ const formSheetOptions = {
 
 export default function ItemsLayout() {
 	const theme = useTheme()
-	const itemsRootOptions = useTabRootScreenOptions(theme, 'Items')
+	const itemsRootOptions = tabRootScreenOptions()
 
 	return (
 		<Stack
