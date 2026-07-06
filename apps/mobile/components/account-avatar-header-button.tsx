@@ -1,6 +1,11 @@
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native'
 
-import { AVATAR_HEADER_SIZE, avatarHeaderPressableStyle } from '../lib/avatar-header'
+import {
+	AVATAR_HEADER_SIZE,
+	avatarHeaderPressableStyle,
+	avatarHeaderSlotStyle,
+	isIosLiquidGlassHeader,
+} from '../lib/avatar-header'
 import { emailInitial } from '../lib/gravatar'
 import { useTheme } from '../lib/theme'
 
@@ -10,31 +15,29 @@ interface AccountAvatarHeaderButtonProps {
 	uri?: string
 }
 
-function squareAvatarFrame(size: number) {
-	const radius = size / 2
-
+function circularContentStyle(size: number, borderColor?: string) {
 	return {
 		borderCurve: 'continuous' as const,
-		borderRadius: radius,
+		borderRadius: size / 2,
 		height: size,
-		maxHeight: size,
-		maxWidth: size,
-		minHeight: size,
-		minWidth: size,
-		overflow: 'hidden' as const,
 		width: size,
+		...(borderColor
+			? {
+					borderColor,
+					borderWidth: StyleSheet.hairlineWidth,
+				}
+			: null),
 	}
 }
 
-/** Tab-root profile avatar — fixed square slot so UIKit cannot stretch it into a capsule. */
+/**
+ * Tab-root profile avatar — fixed 44×44 slot for UIKit bar-button intrinsic size.
+ * Wrapped in avatarHeaderSlotStyle at the call site on iOS.
+ */
 export function AccountAvatarHeaderButton({ email, onPress, uri }: AccountAvatarHeaderButtonProps) {
 	const theme = useTheme()
 	const size = AVATAR_HEADER_SIZE
-	const frame = {
-		...squareAvatarFrame(size),
-		borderColor: theme.line,
-		borderWidth: StyleSheet.hairlineWidth,
-	}
+	const borderColor = isIosLiquidGlassHeader() ? undefined : theme.line
 
 	return (
 		<Pressable
@@ -46,16 +49,17 @@ export function AccountAvatarHeaderButton({ email, onPress, uri }: AccountAvatar
 		>
 			{uri
 				? (
-						<View style={frame}>
-							<Image
-								resizeMode="cover"
-								source={{ uri }}
-								style={{ height: size, width: size }}
-							/>
-						</View>
+						<Image
+							resizeMode="cover"
+							source={{ uri }}
+							style={circularContentStyle(size, borderColor)}
+						/>
 					)
 				: (
-						<View className="items-center justify-center bg-accent" style={frame}>
+						<View
+							className="items-center justify-center bg-accent"
+							style={circularContentStyle(size, borderColor)}
+						>
 							<Text
 								style={{
 									color: theme.inverse,
@@ -68,5 +72,14 @@ export function AccountAvatarHeaderButton({ email, onPress, uri }: AccountAvatar
 						</View>
 					)}
 		</Pressable>
+	)
+}
+
+/** Outermost wrapper — drives RN Screens / UIKit bar-button intrinsic content size. */
+export function AccountAvatarHeaderButtonSlot(props: AccountAvatarHeaderButtonProps) {
+	return (
+		<View style={avatarHeaderSlotStyle()}>
+			<AccountAvatarHeaderButton {...props} />
+		</View>
 	)
 }

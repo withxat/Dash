@@ -1,14 +1,20 @@
 /** Horizontal inset shared by native headers and scroll content. */
 export const SCREEN_GUTTER = 16
 
-/** Space below the tab-root in-screen header before scroll content. */
-export const TAB_ROOT_TITLE_GAP = 12
+/** Default vertical gap between grouped lists in tab scroll content. */
+export const TAB_SCROLL_GAP = 20
 
-export function tabScrollContentStyle(options: { gap?: number, paddingBottom: number, paddingTop?: number }) {
+/** Space below the tab-root large title before the first content row. */
+export const TAB_ROOT_CONTENT_PADDING_TOP = 16
+
+export function tabScrollContentStyle(options: { gap?: number, paddingBottom: number, paddingTop?: number, tabRoot?: boolean }) {
+	const gap = options.gap ?? TAB_SCROLL_GAP
+	const paddingTop = options.paddingTop ?? (options.tabRoot ? TAB_ROOT_CONTENT_PADDING_TOP : undefined)
+
 	return {
-		gap: options.gap ?? 20,
+		gap,
 		paddingBottom: options.paddingBottom,
 		paddingHorizontal: SCREEN_GUTTER,
-		...(options.paddingTop != null ? { paddingTop: options.paddingTop } : null),
+		...(paddingTop != null ? { paddingTop } : null),
 	}
 }

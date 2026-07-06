@@ -1,7 +1,10 @@
 import { Stack } from 'expo-router'
+import { useCallback } from 'react'
 
+import { TabRootHeaderSearchButton } from '../../../components/tab-root-header-search-button'
 import { itemsStackScreenOptions } from '../../../lib/items-stack-screen-options'
-import { tabRootScreenOptions } from '../../../lib/tab-stack-header'
+import { TAB_ROOT_TITLES } from '../../../lib/tab-root-titles'
+import { useTabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 // eslint-disable-next-line react-refresh/only-export-components -- Expo Router reads this route config export.
@@ -19,7 +22,10 @@ const formSheetOptions = {
 
 export default function ItemsLayout() {
 	const theme = useTheme()
-	const itemsRootOptions = tabRootScreenOptions()
+	const searchHeaderRight = useCallback(() => <TabRootHeaderSearchButton />, [])
+	const itemsRootOptions = useTabRootScreenOptions(theme, TAB_ROOT_TITLES.items, {
+		headerRight: searchHeaderRight,
+	})
 
 	return (
 		<Stack

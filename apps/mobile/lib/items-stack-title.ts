@@ -6,6 +6,8 @@ const EXACT_TITLES: Record<string, string> = {
 	'account/index': 'Account',
 	'items': 'Items',
 	'profile': 'Profile',
+	'search/index': 'Search',
+	'search/profile': 'Profile',
 	'storage/d1/[uuid]': 'Database',
 	'storage/d1/index': 'D1',
 	'storage/index': 'Storage',

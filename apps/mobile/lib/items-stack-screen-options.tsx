@@ -3,12 +3,24 @@ import type { ColorValue } from 'react-native'
 import type { ThemePalette } from './theme'
 
 import { ItemsStackHeaderTitle } from '../components/items-stack-header-title'
+import { TabRootStackHeaderTitle } from '../components/tab-root-stack-header-title'
 import { itemsStackIcon, itemsStackTitle } from './items-stack-title'
+import { TAB_ROOT_TITLES } from './tab-root-titles'
 import { tabPushedStackScreenOptions, tabStackScreenOptions } from './tab-stack-header'
 
 export function itemsStackScreenOptions(theme: ThemePalette, routeName: string) {
 	if (routeName === 'items')
 		return tabStackScreenOptions(theme)
+
+	if (routeName === 'search/index') {
+		return {
+			...tabPushedStackScreenOptions(theme),
+			headerTitle: ({ children, tintColor }: { children: string, tintColor?: ColorValue }) => (
+				<TabRootStackHeaderTitle tintColor={tintColor} title={String(children)} />
+			),
+			title: TAB_ROOT_TITLES.search,
+		}
+	}
 
 	const icon = itemsStackIcon(routeName)
 

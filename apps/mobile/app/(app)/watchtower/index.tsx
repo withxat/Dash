@@ -15,10 +15,8 @@ import { AlertTriangleIcon, ShieldIcon } from '../../../components/icons'
 import { LayoutGroup, LayoutItem } from '../../../components/layout-motion'
 import { ListGroup, NavRow } from '../../../components/nav-row'
 import { Skeleton } from '../../../components/skeleton'
-import { TabRootHeader } from '../../../components/tab-root-header'
 import { timeAgo } from '../../../lib/format'
 import { tabScrollContentStyle } from '../../../lib/screen-gutter'
-import { TAB_ROOT_TITLES } from '../../../lib/tab-root-titles'
 import { useTheme } from '../../../lib/theme'
 import { useActiveAccount } from '../../../lib/use-active-account'
 import { useTabScrollPadding } from '../../../lib/use-tab-scroll-padding'
@@ -81,114 +79,112 @@ export default function WatchtowerScreen() {
 	const allClear = issueCount === 0
 
 	return (
-		<View className="flex-1 bg-canvas">
-			<TabRootHeader title={TAB_ROOT_TITLES.watchtower} />
-			<ScrollView
-				className="flex-1 bg-canvas"
-				contentContainerStyle={tabScrollContentStyle({ gap: 16, paddingBottom: tabScrollPadding })}
-				refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
-			>
-				<AccountSwitcher />
+		<ScrollView
+			className="flex-1 bg-canvas"
+			contentContainerStyle={tabScrollContentStyle({ gap: 16, paddingBottom: tabScrollPadding, tabRoot: true })}
+			contentInsetAdjustmentBehavior="automatic"
+			refreshControl={<RefreshControl onRefresh={onRefresh} refreshing={refreshing} tintColor={theme.subtle} />}
+		>
+			<AccountSwitcher />
 
-				<Card>
-					{!activeAccountId
-						? <EmptyState>Select an account to start watching.</EmptyState>
-						: isLoading
-							? (
-									<View className="gap-3">
-										<Skeleton className="h-6 w-2/3" />
-										<Skeleton className="h-4 w-1/2" />
-									</View>
-								)
-							: signals.length === 0
-								? <EmptyState>Nothing to watch yet — no monitored resources found in this account.</EmptyState>
-								: (
-										<View className="flex-row items-center gap-3">
-											{allClear
-												? <ShieldIcon color={theme.success} size={28} />
-												: <AlertTriangleIcon color={summary.critical > 0 ? theme.danger : theme.warning} size={28} />}
-											<View className="min-w-0 flex-1 gap-0.5">
-												<Text className="text-base font-semibold text-default">
-													{allClear
-														? 'All systems normal'
-														: `${issueCount} issue${issueCount === 1 ? '' : 's'} need${issueCount === 1 ? 's' : ''} attention`}
-												</Text>
-												<Text className="text-xs text-subtle">
-													{`${signals.length} check${signals.length === 1 ? '' : 's'} · ${activeAccount?.name ?? 'account'}`}
-												</Text>
-											</View>
-										</View>
-									)}
-				</Card>
-
-				{isLoading && activeAccountId
-					? (
-							<Card>
-								<View className="gap-3 py-1">
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
-									<Skeleton className="h-10 w-full" />
+			<Card>
+				{!activeAccountId
+					? <EmptyState>Select an account to start watching.</EmptyState>
+					: isLoading
+						? (
+								<View className="gap-3">
+									<Skeleton className="h-6 w-2/3" />
+									<Skeleton className="h-4 w-1/2" />
 								</View>
-							</Card>
-						)
-					: null}
+							)
+						: signals.length === 0
+							? <EmptyState>Nothing to watch yet — no monitored resources found in this account.</EmptyState>
+							: (
+									<View className="flex-row items-center gap-3">
+										{allClear
+											? <ShieldIcon color={theme.success} size={28} />
+											: <AlertTriangleIcon color={summary.critical > 0 ? theme.danger : theme.warning} size={28} />}
+										<View className="min-w-0 flex-1 gap-0.5">
+											<Text className="text-base font-semibold text-default">
+												{allClear
+													? 'All systems normal'
+													: `${issueCount} issue${issueCount === 1 ? '' : 's'} need${issueCount === 1 ? 's' : ''} attention`}
+											</Text>
+											<Text className="text-xs text-subtle">
+												{`${signals.length} check${signals.length === 1 ? '' : 's'} · ${activeAccount?.name ?? 'account'}`}
+											</Text>
+										</View>
+									</View>
+								)}
+			</Card>
 
-				{!isLoading && issues.length > 0
-					? (
-							<LayoutGroup>
-								<ListGroup title="Needs attention">
-									{issues.map(signal => (
-										<LayoutItem key={signal.id}>
-											<SignalRow signal={signal} />
-										</LayoutItem>
-									))}
-								</ListGroup>
-							</LayoutGroup>
-						)
-					: null}
+			{isLoading && activeAccountId
+				? (
+						<Card>
+							<View className="gap-3 py-1">
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+								<Skeleton className="h-10 w-full" />
+							</View>
+						</Card>
+					)
+				: null}
 
-				{!isLoading && healthy.length > 0
-					? (
-							<LayoutGroup>
-								<ListGroup title="All clear">
-									{healthy.map(signal => (
-										<LayoutItem key={signal.id}>
-											<SignalRow signal={signal} />
-										</LayoutItem>
-									))}
-								</ListGroup>
-							</LayoutGroup>
-						)
-					: null}
-
-				{alertsStatus === 'ok'
-					? (
-							<ListGroup title="Recent alerts">
-								{alerts.length === 0
-									? <EmptyState>No notifications sent recently.</EmptyState>
-									: alerts.map((entry) => {
-											const alertKey = entry.id ?? `${entry.sent ?? ''}-${entry.alert_type ?? entry.name ?? ''}`
-											return (
-												<LayoutItem key={alertKey}>
-													<NavRow
-														chevron={false}
-														right={timeAgo(entry.sent)}
-														subtitle={alertSubtitle(entry)}
-														title={alertTitle(entry)}
-													/>
-												</LayoutItem>
-											)
-										})}
+			{!isLoading && issues.length > 0
+				? (
+						<LayoutGroup>
+							<ListGroup title="Needs attention">
+								{issues.map(signal => (
+									<LayoutItem key={signal.id}>
+										<SignalRow signal={signal} />
+									</LayoutItem>
+								))}
 							</ListGroup>
-						)
-					: null}
+						</LayoutGroup>
+					)
+				: null}
 
-				<Text className="text-center text-[11px] text-placeholder">
-					{unavailableCount > 0
-						? `Watching ${activeAccount?.name ?? 'this account'} · ${unavailableCount} check${unavailableCount === 1 ? '' : 's'} unavailable (missing scopes)`
-						: `Watching ${activeAccount?.name ?? 'this account'} across zones, tunnels, certificates, and deployments`}
-				</Text>
-			</ScrollView>
-		</View>
+			{!isLoading && healthy.length > 0
+				? (
+						<LayoutGroup>
+							<ListGroup title="All clear">
+								{healthy.map(signal => (
+									<LayoutItem key={signal.id}>
+										<SignalRow signal={signal} />
+									</LayoutItem>
+								))}
+							</ListGroup>
+						</LayoutGroup>
+					)
+				: null}
+
+			{alertsStatus === 'ok'
+				? (
+						<ListGroup title="Recent alerts">
+							{alerts.length === 0
+								? <EmptyState>No notifications sent recently.</EmptyState>
+								: alerts.map((entry) => {
+										const alertKey = entry.id ?? `${entry.sent ?? ''}-${entry.alert_type ?? entry.name ?? ''}`
+										return (
+											<LayoutItem key={alertKey}>
+												<NavRow
+													chevron={false}
+													right={timeAgo(entry.sent)}
+													subtitle={alertSubtitle(entry)}
+													title={alertTitle(entry)}
+												/>
+											</LayoutItem>
+										)
+									})}
+						</ListGroup>
+					)
+				: null}
+
+			<Text className="text-center text-[11px] text-placeholder">
+				{unavailableCount > 0
+					? `Watching ${activeAccount?.name ?? 'this account'} · ${unavailableCount} check${unavailableCount === 1 ? '' : 's'} unavailable (missing scopes)`
+					: `Watching ${activeAccount?.name ?? 'this account'} across zones, tunnels, certificates, and deployments`}
+			</Text>
+		</ScrollView>
 	)
 }

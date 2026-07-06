@@ -1,11 +1,12 @@
 import { Stack } from 'expo-router'
 
-import { tabPushedStackScreenOptions, tabRootScreenOptions, tabStackScreenOptions } from '../../../lib/tab-stack-header'
+import { TAB_ROOT_TITLES } from '../../../lib/tab-root-titles'
+import { tabPushedStackScreenOptions, tabStackScreenOptions, useTabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 export default function WatchtowerLayout() {
 	const theme = useTheme()
-	const watchtowerRootOptions = tabRootScreenOptions()
+	const watchtowerRootOptions = useTabRootScreenOptions(theme, TAB_ROOT_TITLES.watchtower)
 
 	return (
 		<Stack

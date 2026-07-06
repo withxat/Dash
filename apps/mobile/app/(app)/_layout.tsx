@@ -8,7 +8,7 @@ import { useTheme } from '../../lib/theme'
 import { useAuth } from '../../lib/use-auth'
 
 function isTabRoot(segments: readonly string[]) {
-	return ['home', 'items', 'watchtower', 'search'].includes(segments.at(-1) ?? '')
+	return ['home', 'items', 'watchtower'].includes(segments.at(-1) ?? '')
 }
 
 export default function AppLayout() {
@@ -44,10 +44,6 @@ export default function AppLayout() {
 				<NativeTabs.Trigger name="watchtower">
 					<NativeTabs.Trigger.Label hidden />
 					<NativeTabs.Trigger.Icon {...nativeTabIconProps('watchtower')} />
-				</NativeTabs.Trigger>
-				<NativeTabs.Trigger name="search" role="search">
-					<NativeTabs.Trigger.Label hidden />
-					<NativeTabs.Trigger.Icon {...nativeTabIconProps('search')} />
 				</NativeTabs.Trigger>
 			</NativeTabs>
 		</AccountProvider>

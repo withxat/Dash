@@ -15,12 +15,17 @@ test('native tabs do not own a shared stack header', async () => {
 	assert.doesNotMatch(layout, /appShellHeaderOptions|<Stack/)
 })
 
-test('every tab root hides the native stack header', async () => {
-	for (const path of ['home/_layout.tsx', '(items)/_layout.tsx', 'watchtower/_layout.tsx', 'search/_layout.tsx']) {
+test('every tab root uses native stack header with avatar slot', async () => {
+	for (const path of ['home/_layout.tsx', '(items)/_layout.tsx', 'watchtower/_layout.tsx']) {
 		const layout = await source(path)
 		assert.match(layout, /<Stack/)
-		assert.match(layout, /tabRootScreenOptions/)
+		assert.match(layout, /useTabRootScreenOptions/)
 	}
+})
+
+test('search lives in the items stack', async () => {
+	const layout = await source('(items)/search/index.tsx')
+	assert.doesNotMatch(layout, /TabRootHeader/)
 })
 
 test('item feature screens are flattened into the items stack', async () => {

@@ -3,20 +3,18 @@ import { router } from 'expo-router'
 import { useMemo, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 
-import { CatalogItemIcon } from '../../../components/catalog-item-icon'
-import { EmptyState } from '../../../components/empty-state'
-import { SearchInput } from '../../../components/kumo'
-import { LayoutGroup, LayoutItem } from '../../../components/layout-motion'
-import { ListGroup, NavRow } from '../../../components/nav-row'
-import { Skeleton } from '../../../components/skeleton'
-import { TabRootHeader } from '../../../components/tab-root-header'
-import { cloudflareClient } from '../../../lib/api'
-import { searchCatalogItems } from '../../../lib/app-catalog'
-import { recordRecentItem } from '../../../lib/home-shortcuts'
-import { SCREEN_GUTTER, tabScrollContentStyle } from '../../../lib/screen-gutter'
-import { TAB_ROOT_TITLES } from '../../../lib/tab-root-titles'
-import { useActiveAccount } from '../../../lib/use-active-account'
-import { useTabScrollPadding } from '../../../lib/use-tab-scroll-padding'
+import { CatalogItemIcon } from '../../../../components/catalog-item-icon'
+import { EmptyState } from '../../../../components/empty-state'
+import { SearchInput } from '../../../../components/kumo'
+import { LayoutGroup, LayoutItem } from '../../../../components/layout-motion'
+import { ListGroup, NavRow } from '../../../../components/nav-row'
+import { Skeleton } from '../../../../components/skeleton'
+import { cloudflareClient } from '../../../../lib/api'
+import { searchCatalogItems } from '../../../../lib/app-catalog'
+import { recordRecentItem } from '../../../../lib/home-shortcuts'
+import { SCREEN_GUTTER, tabScrollContentStyle } from '../../../../lib/screen-gutter'
+import { useActiveAccount } from '../../../../lib/use-active-account'
+import { useTabScrollPadding } from '../../../../lib/use-tab-scroll-padding'
 
 export default function SearchScreen() {
 	const tabScrollPadding = useTabScrollPadding()
@@ -47,8 +45,7 @@ export default function SearchScreen() {
 
 	return (
 		<View className="flex-1 bg-canvas">
-			<TabRootHeader title={TAB_ROOT_TITLES.search} />
-			<View style={{ paddingBottom: 12, paddingHorizontal: SCREEN_GUTTER }}>
+			<View style={{ paddingBottom: 16, paddingHorizontal: SCREEN_GUTTER, paddingTop: 12 }}>
 				<SearchInput
 					onChangeText={setQuery}
 					placeholder="Features, zones…"

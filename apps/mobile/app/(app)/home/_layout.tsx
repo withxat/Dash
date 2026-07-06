@@ -1,11 +1,12 @@
 import { Stack } from 'expo-router'
 
-import { tabPushedStackScreenOptions, tabRootScreenOptions, tabStackScreenOptions } from '../../../lib/tab-stack-header'
+import { TAB_ROOT_TITLES } from '../../../lib/tab-root-titles'
+import { tabPushedStackScreenOptions, tabStackScreenOptions, useTabRootScreenOptions } from '../../../lib/tab-stack-header'
 import { useTheme } from '../../../lib/theme'
 
 export default function HomeLayout() {
 	const theme = useTheme()
-	const homeRootOptions = tabRootScreenOptions()
+	const homeRootOptions = useTabRootScreenOptions(theme, TAB_ROOT_TITLES.home)
 
 	return (
 		<Stack
