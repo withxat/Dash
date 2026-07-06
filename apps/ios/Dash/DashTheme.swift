@@ -160,16 +160,20 @@ struct CatalogFeatureIcon: View {
   }
 
   var body: some View {
-    Image(systemName: feature.symbol)
-      .font(.system(size: compact ? 16 : 22, weight: .semibold))
-      .symbolRenderingMode(.hierarchical)
+    Image(feature.solarAssetName)
+      .resizable()
+      .renderingMode(.template)
+      .scaledToFit()
       .foregroundStyle(tone)
+      .frame(width: compact ? 18 : 28, height: compact ? 18 : 28)
       .frame(width: compact ? 28 : 44, height: compact ? 28 : 44)
       .background(tone.opacity(0.15))
       .clipShape(
         RoundedRectangle(
           cornerRadius: compact ? DashTheme.Radius.small : DashTheme.Radius.medium,
-          style: .continuous))
+          style: .continuous)
+      )
+      .accessibilityHidden(true)
   }
 }
 

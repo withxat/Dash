@@ -72,6 +72,28 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
     case .account: "person.2"
     }
   }
+  var solarAssetName: String {
+    switch self {
+    case .zones: "SolarGlobal"
+    case .workers: "SolarCodeSquare"
+    case .r2: "SolarBoxMinimalistic"
+    case .kv: "SolarKeyMinimalistic"
+    case .d1: "SolarDatabase"
+    case .queues: "SolarInbox"
+    case .vectorize: "SolarStructure"
+    case .secrets: "SolarLockKeyhole"
+    case .turnstile: "SolarShieldCheck"
+    case .accessApps: "SolarShieldUser"
+    case .emailAddresses: "SolarLetter"
+    case .registrar: "SolarGlobus"
+    case .tunnels: "SolarRouting"
+    case .loadBalancerPools: "SolarBranchingPathsUp"
+    case .images: "SolarGallery"
+    case .stream: "SolarVideoLibrary"
+    case .analytics: "SolarChart2"
+    case .account: "SolarSettingsMinimalistic"
+    }
+  }
   var category: String {
     switch self {
     case .zones: "Infrastructure"

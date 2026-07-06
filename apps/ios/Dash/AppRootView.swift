@@ -113,14 +113,26 @@ private struct MainTabView: View {
   var body: some View {
     TabView(selection: $selection) {
       NavigationStack { HomeView() }
-        .tabItem { Image(systemName: "house.fill").accessibilityLabel("Home") }
+        .tabItem {
+          Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+            .renderingMode(.template)
+            .accessibilityLabel("Home")
+        }
         .tag(AppTab.home)
       NavigationStack { ItemsView() }
-        .tabItem { Image(systemName: "square.grid.2x2.fill").accessibilityLabel("Items") }
+        .tabItem {
+          Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+            .renderingMode(.template)
+            .accessibilityLabel("Items")
+        }
         .tag(AppTab.items)
       NavigationStack { WatchtowerView() }
         .tabItem {
-          Image(systemName: "shield.lefthalf.filled").accessibilityLabel("Watchtower")
+          Image(
+            selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
+          )
+          .renderingMode(.template)
+          .accessibilityLabel("Watchtower")
         }
         .tag(AppTab.watchtower)
     }
@@ -181,6 +193,8 @@ private struct ProfileView: View {
             dismiss()
           }
         }
+      } footer: {
+        Text("Solar Icons by 480 Design, licensed under CC BY 4.0.")
       }
     }
     .dashGroupedList()
