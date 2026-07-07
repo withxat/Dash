@@ -105,74 +105,43 @@ private struct FeatureNavigationStack<Root: View>: View {
 }
 
 private struct MainTabView: View {
-  @Namespace private var featureHero
-  @State private var featureTransitionCoordinator = FeatureTransitionCoordinator()
   @State private var selection: AppTab = .home
   @State private var showsProfile = false
   @State private var showsEditShortcuts = false
   @State private var nestedTrayPresented = false
   @State private var tabBarExitHold = false
   @State private var tabBarHoldTask: Task<Void, Never>?
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  private var reduceMotionTransition: AnyTransition {
-    reduceMotion
-      ? .identity
-      : .asymmetric(
-        insertion: .opacity.combined(with: .scale(scale: 0.985)),
-        removal: .opacity.combined(with: .scale(scale: 0.992))
-      )
-  }
 
   private var hidesTabBar: Bool {
-    featureTransitionCoordinator.presentedFeature != nil
-      || showsProfile || showsEditShortcuts || nestedTrayPresented || tabBarExitHold
+    showsProfile || showsEditShortcuts || nestedTrayPresented || tabBarExitHold
   }
 
   var body: some View {
-    ZStack {
-      TabView(selection: $selection) {
-        FeatureNavigationStack { HomeView() }
-          .tabItem {
-            Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
-              .renderingMode(.template)
-              .accessibilityLabel("Home")
-          }
-          .tag(AppTab.home)
-        FeatureNavigationStack { ItemsView() }
-          .tabItem {
-            Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
-              .renderingMode(.template)
-              .accessibilityLabel("Items")
-          }
-          .tag(AppTab.items)
-        FeatureNavigationStack { WatchtowerView() }
-          .tabItem {
-            Image(
-              selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
-            )
+    TabView(selection: $selection) {
+      FeatureNavigationStack { HomeView() }
+        .tabItem {
+          Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
             .renderingMode(.template)
-            .accessibilityLabel("Watchtower")
-          }
-          .tag(AppTab.watchtower)
-      }
-      .zIndex(0)
-      .opacity(featureTransitionCoordinator.presentedFeature == nil ? 1 : 0.88)
-
-      if let feature = featureTransitionCoordinator.presentedFeature {
-        FeatureDetailOverlay(feature: feature) {
-          featureTransitionCoordinator.dismiss(reduceMotion: reduceMotion)
+            .accessibilityLabel("Home")
         }
-        .zIndex(
-          featureTransitionCoordinator.isAnimatingHero
-            ? FeatureHeroZIndex.heroShell
-            : FeatureHeroZIndex.detailShell
-        )
-        .transition(reduceMotionTransition)
-      }
+        .tag(AppTab.home)
+      FeatureNavigationStack { ItemsView() }
+        .tabItem {
+          Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+            .renderingMode(.template)
+            .accessibilityLabel("Items")
+        }
+        .tag(AppTab.items)
+      FeatureNavigationStack { WatchtowerView() }
+        .tabItem {
+          Image(
+            selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
+          )
+          .renderingMode(.template)
+          .accessibilityLabel("Watchtower")
+        }
+        .tag(AppTab.watchtower)
     }
-    .environment(\.featureZoomNamespace, featureHero)
-    .environment(featureTransitionCoordinator)
     .toolbar(hidesTabBar ? .hidden : .visible, for: .tabBar)
     .toolbarBackground(DashTheme.elevated, for: .tabBar)
     .toolbarBackground(hidesTabBar ? .hidden : .visible, for: .tabBar)
@@ -202,6 +171,9 @@ private struct MainTabView: View {
     .environment(\.showsEditShortcuts, $showsEditShortcuts)
     .dashTray(isPresented: $showsProfile, title: "Profile") {
       ProfileTrayContent()
+    }
+    .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
+      EditShortcutsView()
     }
   }
 
@@ -297,21 +269,26 @@ struct ProfileTrayContent: View {
 extension View {
   @ViewBuilder func destinationRouting() -> some View {
     navigationDestination(for: Destination.self) { destination in
-      switch destination {
-      case .feature:
-        EmptyView()
-      case .zone(let id): ZoneDetailView(zoneID: id)
-      case .dns(let id): DNSRecordsView(zoneID: id)
-      case .cache(let id): CachePurgeView(zoneID: id)
-      case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
-      case .zoneTool(let zoneID, let title, let path):
-        GenericResourcesView(
-          title: title, path: path.replacingOccurrences(of: "{zone}", with: zoneID))
-      case .worker(let name): WorkerDetailView(name: name)
-      case .r2Bucket(let name): R2BucketView(bucket: name)
-      case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
-      case .d1Database(let id, let name): D1ConsoleView(databaseID: id, name: name)
+      Group {
+        switch destination {
+        case .feature(let feature):
+          FeatureDetailChrome(feature: feature) {
+            FeatureRouterContent(feature: feature)
+          }
+        case .zone(let id): ZoneDetailView(zoneID: id)
+        case .dns(let id): DNSRecordsView(zoneID: id)
+        case .cache(let id): CachePurgeView(zoneID: id)
+        case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
+        case .zoneTool(let zoneID, let title, let path):
+          GenericResourcesView(
+            title: title, path: path.replacingOccurrences(of: "{zone}", with: zoneID))
+        case .worker(let name): WorkerDetailView(name: name)
+        case .r2Bucket(let name): R2BucketView(bucket: name)
+        case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
+        case .d1Database(let id, let name): D1ConsoleView(databaseID: id, name: name)
+        }
       }
+      .toolbar(.hidden, for: .tabBar)
     }
   }
 }

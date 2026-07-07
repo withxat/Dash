@@ -39,15 +39,6 @@ extension View {
         isPresented: isPresented, title: title, sizing: sizing, trayContent: content))
   }
 
-  /// In-tree bottom tray for hero transitions that must share a navigation namespace.
-  func dashOverlayTray<Content: View>(
-    isPresented: Binding<Bool>,
-    title: String,
-    @ViewBuilder content: @escaping () -> Content
-  ) -> some View {
-    modifier(DashOverlayTrayModifier(isPresented: isPresented, title: title, trayContent: content))
-  }
-
   func dashTray<Item: Identifiable & Equatable, Content: View>(
     item: Binding<Item?>,
     title: @escaping (Item) -> String,
@@ -105,7 +96,7 @@ private struct DashSheetContainer<Content: View>: View {
     }
     .modifier(DashSheetContentMeasurement(enabled: sizing == .content))
     .background(DashTheme.canvas)
-    .safeAreaPadding(.bottom, DashTheme.Sheet.outerBottom)
+    .modifier(DashSheetOuterBottomPadding(enabled: sizing == .content))
     .environment(\.dashTrayDismiss, { dismiss() })
     .dashSheetStyle(sizing: sizing)
   }
@@ -154,7 +145,19 @@ private struct DashSheetContainer<Content: View>: View {
     case .large:
       content()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.vertical, DashTheme.Sheet.bodyVertical)
+        .padding(.top, DashTheme.Sheet.bodyVertical)
+    }
+  }
+}
+
+private struct DashSheetOuterBottomPadding: ViewModifier {
+  let enabled: Bool
+
+  func body(content: Content) -> some View {
+    if enabled {
+      content.safeAreaPadding(.bottom, DashTheme.Sheet.outerBottom)
+    } else {
+      content
     }
   }
 }
@@ -205,80 +208,6 @@ private struct DashTrayModifier<TrayContent: View>: ViewModifier {
       .sheet(isPresented: $isPresented) {
         DashSheetContainer(title: title, sizing: sizing, content: trayContent)
       }
-  }
-}
-
-private struct DashOverlayTrayModifier<TrayContent: View>: ViewModifier {
-  @Binding var isPresented: Bool
-  let title: String
-  @ViewBuilder var trayContent: () -> TrayContent
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func body(content: Content) -> some View {
-    ZStack(alignment: .bottom) {
-      content
-      if isPresented {
-        Color.black.opacity(DashTheme.Sheet.scrimOpacity)
-          .ignoresSafeArea()
-          .onTapGesture { isPresented = false }
-          .transition(.opacity)
-
-        DashOverlayTrayContainer(
-          title: title,
-          onClose: { isPresented = false },
-          content: trayContent
-        )
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-      }
-    }
-    .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
-    .animation(reduceMotion ? nil : .easeOut(duration: 0.28), value: isPresented)
-  }
-}
-
-private struct DashOverlayTrayContainer<Content: View>: View {
-  let title: String
-  let onClose: () -> Void
-  @ViewBuilder var content: () -> Content
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      DashSheetGrabBar()
-      HStack(alignment: .center, spacing: 12) {
-        Text(title)
-          .font(.dashTitle(20))
-          .foregroundStyle(DashTheme.strong)
-        Spacer(minLength: 12)
-        Button(action: onClose) {
-          SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
-            .frame(width: 32, height: 32)
-            .background(DashTheme.recessed, in: Circle())
-        }
-        .padding(2)
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("Close")
-      }
-      .padding(.horizontal, DashTheme.Sheet.content)
-      .padding(.top, 12)
-      .padding(.bottom, DashTheme.Sheet.headerBottom)
-
-      Rectangle()
-        .fill(DashTheme.Sheet.headerBorder)
-        .frame(height: 1)
-        .padding(.horizontal, DashTheme.Sheet.content)
-
-      content()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.vertical, DashTheme.Sheet.bodyVertical)
-    }
-    .frame(maxWidth: .infinity)
-    .frame(maxHeight: UIScreen.main.bounds.height * 0.88)
-    .background(DashTheme.canvas)
-    .clipShape(
-      RoundedRectangle(cornerRadius: DashTheme.Radius.sheet, style: .continuous)
-    )
-    .safeAreaPadding(.bottom, DashTheme.Sheet.outerBottom)
-    .environment(\.dashTrayDismiss, onClose)
   }
 }
 

@@ -17,17 +17,16 @@ struct HomeView: View {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         DashRootHeader(title: "Home")
         FeatureSection(
-          title: "Shortcuts", items: shortcuts, heroOrigin: .shortcuts, actionTitle: "Edit"
+          title: "Shortcuts", items: shortcuts, actionTitle: "Edit"
         ) {
           showsEditShortcuts.wrappedValue = true
         }
         FeatureSection(
           title: "Frequently used",
-          items: Array((recent + shortcuts).uniqued().prefix(4)),
-          heroOrigin: .frequent
+          items: Array((recent + shortcuts).uniqued().prefix(4))
         )
         if !recent.isEmpty {
-          FeatureSection(title: "Recently opened", items: recent, heroOrigin: .recent)
+          FeatureSection(title: "Recently opened", items: recent)
         }
         Text("Open Items to browse every feature by category.")
           .font(.system(size: 11))
@@ -40,16 +39,12 @@ struct HomeView: View {
     }
     .background(DashTheme.canvas)
     .toolbar(.hidden, for: .navigationBar)
-    .dashOverlayTray(isPresented: showsEditShortcuts, title: "Edit shortcuts") {
-      EditShortcutsView()
-    }
   }
 }
 
 struct FeatureSection: View {
   let title: String
   let items: [FeatureID]
-  let heroOrigin: FeatureHeroOrigin
   var iconStyle: CatalogFeatureIcon.Style = .duotone
   var actionTitle: String?
   var action: (() -> Void)?
@@ -57,14 +52,12 @@ struct FeatureSection: View {
   init(
     title: String,
     items: [FeatureID],
-    heroOrigin: FeatureHeroOrigin,
     iconStyle: CatalogFeatureIcon.Style = .duotone,
     actionTitle: String? = nil,
     action: (() -> Void)? = nil
   ) {
     self.title = title
     self.items = items
-    self.heroOrigin = heroOrigin
     self.iconStyle = iconStyle
     self.actionTitle = actionTitle
     self.action = action
@@ -74,7 +67,7 @@ struct FeatureSection: View {
     DashListGroup(title: title, actionTitle: actionTitle, action: action) {
       ForEach(Array(items.enumerated()), id: \.element) { index, item in
         DashListGroupLink(
-          value: .feature(item), heroOrigin: heroOrigin, onNavigate: { record(item) }
+          value: .feature(item), onNavigate: { record(item) }
         ) {
           FeatureRow(feature: item, iconStyle: iconStyle)
         }
@@ -102,13 +95,11 @@ struct FeatureRow: View {
   var body: some View {
     HStack(spacing: 12) {
       CatalogFeatureIcon(feature: feature, style: iconStyle)
-        .featureHeroSource(feature, part: .icon)
       VStack(alignment: .leading, spacing: 2) {
         Text(feature.title)
           .font(.body)
           .foregroundStyle(DashTheme.text)
           .lineLimit(1)
-          .featureHeroSource(feature, part: .title)
         Text(feature.subtitle)
           .font(.caption)
           .foregroundStyle(DashTheme.subtle)
@@ -134,15 +125,13 @@ struct EditShortcutsView: View {
       VStack(spacing: 12) {
         ForEach(FeatureID.allCases) { feature in
           HStack(spacing: 12) {
-            DashListGroupLink(value: .feature(feature), heroOrigin: .editShortcuts) {
+            DashListGroupLink(value: .feature(feature)) {
               HStack(spacing: 12) {
                 CatalogFeatureIcon(feature: feature, size: .shortcut)
-                  .featureHeroSource(feature, part: .icon)
                 Text(feature.title)
                   .font(.system(size: 18, weight: .semibold))
                   .foregroundStyle(DashTheme.strong)
                   .lineLimit(1)
-                  .featureHeroSource(feature, part: .title)
               }
               .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -171,6 +160,7 @@ struct EditShortcutsView: View {
       .padding(.horizontal, DashTheme.Sheet.content)
       .padding(.bottom, DashTheme.Sheet.bodyBottom)
     }
+    .safeAreaPadding(.bottom)
   }
 
   private func toggle(_ feature: FeatureID) {
