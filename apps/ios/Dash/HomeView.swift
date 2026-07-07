@@ -15,7 +15,6 @@ struct HomeView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
-        DashRootHeader(title: "Home")
         FeatureSection(
           title: "Shortcuts", items: shortcuts, actionTitle: "Edit"
         ) {
@@ -34,11 +33,9 @@ struct HomeView: View {
           .frame(maxWidth: .infinity)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
       .padding(.bottom, 100)
     }
-    .background(DashTheme.canvas)
-    .toolbar(.hidden, for: .navigationBar)
+    .dashCatalogScreen("Home")
   }
 }
 
@@ -129,26 +126,16 @@ struct EditShortcutsView: View {
               HStack(spacing: 12) {
                 CatalogFeatureIcon(feature: feature, size: .shortcut)
                 Text(feature.title)
-                  .font(.system(size: 18, weight: .semibold))
-                  .foregroundStyle(DashTheme.strong)
+                  .font(.body)
+                  .foregroundStyle(DashTheme.text)
                   .lineLimit(1)
               }
               .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Button {
-              toggle(feature)
-            } label: {
-              Image(selection.contains(feature) ? SolarAsset.checkCircle : SolarAsset.circle)
-                .resizable()
-                .renderingMode(.template)
-                .scaledToFit()
-                .frame(width: 22, height: 22)
-                .foregroundStyle(
-                  selection.contains(feature) ? DashTheme.brand : DashTheme.placeholder)
-            }
-            .buttonStyle(DashPressButtonStyle())
-            .accessibilityLabel(
-              selection.contains(feature) ? "Remove from shortcuts" : "Add to shortcuts")
+            ShortcutSelectionToggle(
+              isSelected: selection.contains(feature),
+              action: { toggle(feature) }
+            )
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
@@ -170,7 +157,39 @@ struct EditShortcutsView: View {
     } else {
       items.append(feature)
     }
-    shortcutData = items.map(\.rawValue).joined(separator: ",")
+    withAnimation(DashTheme.Motion.quick) {
+      shortcutData = items.map(\.rawValue).joined(separator: ",")
+    }
+  }
+}
+
+private struct ShortcutSelectionToggle: View {
+  let isSelected: Bool
+  let action: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    Button(action: action) {
+      ZStack {
+        Image(SolarAsset.circle)
+          .resizable()
+          .renderingMode(.template)
+          .scaledToFit()
+          .foregroundStyle(DashTheme.placeholder)
+          .opacity(isSelected ? 0 : 1)
+
+        Image(SolarAsset.checkCircle)
+          .resizable()
+          .renderingMode(.template)
+          .scaledToFit()
+          .foregroundStyle(DashTheme.brand)
+          .opacity(isSelected ? 1 : 0)
+      }
+      .frame(width: 22, height: 22)
+      .animation(reduceMotion ? nil : DashTheme.Motion.quick, value: isSelected)
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(isSelected ? "Remove from shortcuts" : "Add to shortcuts")
   }
 }
 

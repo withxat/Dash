@@ -21,7 +21,7 @@ struct ItemsView: View {
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.bottom, 100)
-      .animation(.easeOut(duration: 0.2), value: trimmedSearch)
+      .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
     .dashCatalogScreen("Items")
     .dashCatalogSearch(

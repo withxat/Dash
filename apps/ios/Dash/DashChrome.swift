@@ -341,7 +341,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
 
   private var searchButton: some View {
     Button {
-      withAnimation(.easeOut(duration: 0.22)) { isExpanded = true }
+      withAnimation(DashTheme.Motion.enter) { isExpanded = true }
     } label: {
       ZStack {
         Circle().fill(DashTheme.elevated)
@@ -356,7 +356,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
 
   private func collapse() {
     isFocused = false
-    withAnimation(.easeOut(duration: 0.22)) {
+    withAnimation(DashTheme.Motion.exit) {
       isExpanded = false
       text = ""
     }

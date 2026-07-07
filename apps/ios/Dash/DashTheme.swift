@@ -58,6 +58,14 @@ enum DashTheme {
     static let listInset: CGFloat = 0
   }
 
+  /// Strong ease-out motion tokens — built-in easings feel soft, exits must
+  /// resolve faster than entrances, and frequent state flips stay the shortest.
+  enum Motion {
+    static let enter = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
+    static let exit = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
+    static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
+  }
+
   enum Sheet {
     static let horizontalInset: CGFloat = 12
     static let bottomInset: CGFloat = 0
@@ -110,6 +118,12 @@ enum DashTheme {
         UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
       })
   }
+
+  static var uiCanvas: UIColor {
+    UIColor { traits in
+      UIColor(hex: traits.userInterfaceStyle == .dark ? 0x1A1A1A : 0xFFFFFF)
+    }
+  }
 }
 
 extension UIColor {
@@ -123,10 +137,8 @@ extension UIColor {
 }
 
 extension UIFont {
-  static func dashRounded(size: CGFloat, weight: UIFont.Weight) -> UIFont {
-    let system = UIFont.systemFont(ofSize: size, weight: weight)
-    guard let descriptor = system.fontDescriptor.withDesign(.rounded) else { return system }
-    return UIFont(descriptor: descriptor, size: size)
+  static func dashTitle(size: CGFloat, weight: UIFont.Weight = .bold) -> UIFont {
+    .systemFont(ofSize: size, weight: weight)
   }
 }
 
@@ -138,7 +150,7 @@ extension Color {
 
 extension Font {
   static func dashTitle(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
-    .system(size: size, weight: weight, design: .rounded)
+    .system(size: size, weight: weight)
   }
 }
 
@@ -165,35 +177,18 @@ struct DashCard<Content: View>: View {
 
 struct DashListGroupLink<Label: View>: View {
   let value: Destination
-  var heroOrigin: FeatureHeroOrigin?
   var onNavigate: (() -> Void)?
   @ViewBuilder let label: () -> Label
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    switch value {
-    case .feature(let feature):
-      Button {
-        guard let heroOrigin else { return }
-        transitionCoordinator.present(feature, from: heroOrigin, reduceMotion: reduceMotion)
-        onNavigate?()
-      } label: {
-        label()
-          .environment(\.featureHeroOrigin, heroOrigin)
-          .featureCardSource(feature)
-      }
-      .buttonStyle(DashPressButtonStyle())
-    default:
-      NavigationLink(value: value) {
-        label()
-      }
-      .buttonStyle(DashPressButtonStyle())
-      .simultaneousGesture(
-        TapGesture().onEnded {
-          onNavigate?()
-        })
+    NavigationLink(value: value) {
+      label()
     }
+    .buttonStyle(DashPressButtonStyle())
+    .simultaneousGesture(
+      TapGesture().onEnded {
+        onNavigate?()
+      })
   }
 }
 
@@ -211,33 +206,17 @@ struct DashListNavigationLink<Value: Hashable, Label: View>: View {
   }
 }
 
-/// Routes `Destination` values; feature opens via overlay instead of push.
+/// Routes `Destination` values through the tab navigation stack.
 struct DashDestinationLink<Label: View>: View {
   let destination: Destination
-  var heroOrigin: FeatureHeroOrigin?
   @ViewBuilder let label: () -> Label
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    switch destination {
-    case .feature(let feature):
-      Button {
-        guard let heroOrigin else { return }
-        transitionCoordinator.present(feature, from: heroOrigin, reduceMotion: reduceMotion)
-      } label: {
-        label()
-          .environment(\.featureHeroOrigin, heroOrigin)
-          .featureCardSource(feature)
-      }
-      .buttonStyle(DashPressButtonStyle())
-    default:
-      NavigationLink(value: destination) {
-        label()
-      }
-      .listRowSeparator(.hidden)
-      .listSectionSeparator(.hidden)
+    NavigationLink(value: destination) {
+      label()
     }
+    .listRowSeparator(.hidden)
+    .listSectionSeparator(.hidden)
   }
 }
 
@@ -314,7 +293,7 @@ struct DashInlineSearch: View {
         .autocorrectionDisabled()
       if !text.isEmpty {
         Button {
-          withAnimation(.easeOut(duration: 0.16)) { text = "" }
+          withAnimation(DashTheme.Motion.quick) { text = "" }
         } label: {
           SolarIcon(asset: SolarAsset.close, size: 18, color: DashTheme.subtle)
         }
@@ -566,154 +545,7 @@ struct CatalogFeatureIcon: View {
   }
 }
 
-private struct FeatureZoomNamespaceKey: EnvironmentKey {
-  static let defaultValue: Namespace.ID? = nil
-}
-
-extension EnvironmentValues {
-  var featureZoomNamespace: Namespace.ID? {
-    get { self[FeatureZoomNamespaceKey.self] }
-    set { self[FeatureZoomNamespaceKey.self] = newValue }
-  }
-
-  /// Kept for call sites that already pass the shared namespace.
-  var featureHeroNamespace: Namespace.ID? {
-    get { featureZoomNamespace }
-    set { featureZoomNamespace = newValue }
-  }
-}
-
-// MARK: - Feature navigation transitions (overlay hero)
-
-/// Distinguishes duplicate features across Home sections and Items categories.
-enum FeatureHeroOrigin: Hashable {
-  case shortcuts
-  case frequent
-  case recent
-  case editShortcuts
-  case itemsCategory(String)
-  case itemsSearch
-  case watchtower
-
-  var stableID: String {
-    switch self {
-    case .shortcuts: "shortcuts"
-    case .frequent: "frequent"
-    case .recent: "recent"
-    case .editShortcuts: "edit-shortcuts"
-    case .itemsCategory(let name): "items-\(name)"
-    case .itemsSearch: "items-search"
-    case .watchtower: "watchtower"
-    }
-  }
-}
-
-struct SelectedFeature: Hashable {
-  let origin: FeatureHeroOrigin
-  let feature: FeatureID
-}
-
-private struct FeatureHeroOriginKey: EnvironmentKey {
-  static let defaultValue: FeatureHeroOrigin? = nil
-}
-
-extension EnvironmentValues {
-  var featureHeroOrigin: FeatureHeroOrigin? {
-    get { self[FeatureHeroOriginKey.self] }
-    set { self[FeatureHeroOriginKey.self] = newValue }
-  }
-}
-
-enum FeatureHeroPart {
-  case icon, title, card
-}
-
-enum FeatureHeroID {
-  static func icon(origin: FeatureHeroOrigin, _ feature: FeatureID) -> String {
-    "\(origin.stableID)-\(feature.id)-icon"
-  }
-
-  static func title(origin: FeatureHeroOrigin, _ feature: FeatureID) -> String {
-    "\(origin.stableID)-\(feature.id)-title"
-  }
-
-  static func card(origin: FeatureHeroOrigin, _ feature: FeatureID) -> String {
-    "\(origin.stableID)-\(feature.id)-card"
-  }
-}
-
-enum FeatureHeroZIndex {
-  static let listCard: Double = 100
-  static let detailCard: Double = 200
-  static let icon: Double = 300
-  static let title: Double = 301
-  static let detailShell: Double = 10
-  static let heroShell: Double = 999
-}
-
-enum FeatureTransitionMotion {
-  static let duration: TimeInterval = 0.38
-  static var hero: Animation { .smooth(duration: duration, extraBounce: 0) }
-}
-
-@MainActor
-@Observable
-final class FeatureTransitionCoordinator {
-  var selection: SelectedFeature?
-  var presentedFeature: FeatureID?
-  private(set) var isTransitioning = false
-  @ObservationIgnored private var transitionTask: Task<Void, Never>?
-
-  var isAnimatingHero: Bool { isTransitioning }
-
-  func present(_ feature: FeatureID, from origin: FeatureHeroOrigin, reduceMotion: Bool = false) {
-    transitionTask?.cancel()
-    selection = SelectedFeature(origin: origin, feature: feature)
-    guard !reduceMotion else {
-      isTransitioning = false
-      presentedFeature = feature
-      return
-    }
-    isTransitioning = true
-    withAnimation(FeatureTransitionMotion.hero) {
-      presentedFeature = feature
-    }
-    finishTransition(after: FeatureTransitionMotion.duration)
-  }
-
-  func dismiss(reduceMotion: Bool = false) {
-    transitionTask?.cancel()
-    guard !reduceMotion else {
-      isTransitioning = false
-      presentedFeature = nil
-      selection = nil
-      return
-    }
-    isTransitioning = true
-    withAnimation(FeatureTransitionMotion.hero) {
-      presentedFeature = nil
-    }
-    transitionTask = Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(Int(FeatureTransitionMotion.duration * 1000)))
-      guard !Task.isCancelled else { return }
-      isTransitioning = false
-      clearSelectionIfNeeded()
-    }
-  }
-
-  private func finishTransition(after duration: TimeInterval) {
-    transitionTask = Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(Int(duration * 1000)))
-      guard !Task.isCancelled else { return }
-      isTransitioning = false
-    }
-  }
-
-  func clearSelectionIfNeeded() {
-    guard presentedFeature == nil else { return }
-    selection = nil
-  }
-}
+// MARK: - Feature navigation
 
 /// Collapsed header title: compact icon before text.
 private struct FeatureInlineNavigationTitle: View {
@@ -723,284 +555,30 @@ private struct FeatureInlineNavigationTitle: View {
   var body: some View {
     HStack(spacing: 6) {
       CatalogFeatureIcon(feature: feature, size: .compact)
-        .featureHeroDestination(feature, part: .icon)
       Text(title)
         .font(.headline)
         .foregroundStyle(DashTheme.strong)
         .lineLimit(1)
-        .featureHeroDestination(feature, part: .title)
     }
   }
 }
 
-/// Custom in-tree navigation bar; hero targets live here instead of UIKit toolbar.
-struct FeatureHeroNavigationBar: View {
-  let feature: FeatureID
-  let title: String
-  let onDismiss: () -> Void
-
-  var body: some View {
-    ZStack {
-      HStack {
-        Button(action: onDismiss) {
-          SolarIcon(asset: SolarAsset.chevronLeft, size: 18, color: DashTheme.strong)
-            .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-            .background(DashTheme.base, in: Circle())
-            .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
-        }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("Back")
-
-        Spacer(minLength: 0)
-      }
-
-      FeatureInlineNavigationTitle(feature: feature, title: title)
-    }
-    .padding(.horizontal, DashTheme.Spacing.screen)
-    .frame(height: AvatarHeaderMetrics.barSize)
-    .background(DashTheme.canvas)
-  }
-}
-
-/// Feature drill-down shell: custom header above scrollable content.
+/// Feature drill-down shell with a custom principal title above scrollable content.
 struct FeatureDetailChrome<Content: View>: View {
   let feature: FeatureID
-  let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
 
   var body: some View {
-    VStack(spacing: 0) {
-      FeatureHeroNavigationBar(feature: feature, title: feature.title, onDismiss: onDismiss)
-      content()
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .background(DashTheme.canvas)
-    .safeAreaPadding(.top)
-    .toolbar(.hidden, for: .navigationBar)
-  }
-}
-
-/// Full-screen overlay detail; shares namespace with the list card for hero transitions.
-struct FeatureDetailOverlay: View {
-  let feature: FeatureID
-  let onDismiss: () -> Void
-
-  @Environment(\.showsEditShortcuts) private var showsEditShortcuts
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    NavigationStack {
-      FeatureDetailChrome(feature: feature, onDismiss: onDismiss) {
-        FeatureRouterContent(feature: feature)
+    content()
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background(DashTheme.canvas)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .principal) {
+          FeatureInlineNavigationTitle(feature: feature, title: feature.title)
+        }
       }
-      .destinationRouting()
-    }
-    .featureCardDestination(feature)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(DashTheme.canvas)
-    .clipShape(
-      RoundedRectangle(
-        cornerRadius: transitionCoordinator.presentedFeature == nil
-          ? DashTheme.Radius.card : 0,
-        style: .continuous
-      )
-    )
-    .ignoresSafeArea()
-    .onAppear {
-      showsEditShortcuts.wrappedValue = false
-    }
-    .onDisappear {
-      transitionCoordinator.clearSelectionIfNeeded()
-    }
-  }
-}
-
-extension View {
-  func featureCardSource(_ feature: FeatureID) -> some View {
-    modifier(FeatureCardSourceModifier(feature: feature))
-  }
-
-  func featureCardDestination(_ feature: FeatureID) -> some View {
-    modifier(FeatureCardDestinationModifier(feature: feature))
-  }
-
-  func featureHeroDestination(_ feature: FeatureID, part: FeatureHeroPart) -> some View {
-    modifier(FeatureHeroDestinationModifier(feature: feature, part: part))
-  }
-
-  func featureHeroSource(_ feature: FeatureID, part: FeatureHeroPart) -> some View {
-    modifier(FeatureHeroSourceModifier(feature: feature, part: part))
-  }
-}
-
-private struct FeatureCardSourceModifier: ViewModifier {
-  @Environment(\.featureZoomNamespace) private var namespace
-  @Environment(\.featureHeroOrigin) private var rowOrigin
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  let feature: FeatureID
-
-  func body(content: Content) -> some View {
-    if isActiveSource,
-      let rowOrigin,
-      let namespace,
-      !reduceMotion
-    {
-      content
-        .matchedGeometryEffect(
-          id: FeatureHeroID.card(origin: rowOrigin, feature),
-          in: namespace,
-          properties: .frame,
-          anchor: .center,
-          isSource: true
-        )
-        .zIndex(
-          transitionCoordinator.isAnimatingHero ? FeatureHeroZIndex.listCard : 0
-        )
-    } else {
-      content
-    }
-  }
-
-  private var isActiveSource: Bool {
-    guard transitionCoordinator.isAnimatingHero else { return false }
-    guard let rowOrigin,
-      let selection = transitionCoordinator.selection
-    else { return false }
-    return selection.origin == rowOrigin && selection.feature == feature
-  }
-}
-
-private struct FeatureCardDestinationModifier: ViewModifier {
-  @Environment(\.featureZoomNamespace) private var namespace
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  let feature: FeatureID
-
-  func body(content: Content) -> some View {
-    if transitionCoordinator.isAnimatingHero,
-      let selection = transitionCoordinator.selection,
-      selection.feature == feature,
-      let namespace,
-      !reduceMotion
-    {
-      content
-        .matchedGeometryEffect(
-          id: FeatureHeroID.card(origin: selection.origin, feature),
-          in: namespace,
-          properties: .frame,
-          anchor: .center,
-          isSource: false
-        )
-        .zIndex(FeatureHeroZIndex.detailCard)
-    } else {
-      content
-    }
-  }
-}
-
-private struct FeatureHeroDestinationModifier: ViewModifier {
-  @Environment(\.featureZoomNamespace) private var namespace
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  let feature: FeatureID
-  let part: FeatureHeroPart
-
-  func body(content: Content) -> some View {
-    if part == .card {
-      content
-    } else if transitionCoordinator.isAnimatingHero,
-      let selection = transitionCoordinator.selection,
-      selection.feature == feature,
-      let namespace,
-      !reduceMotion
-    {
-      content
-        .matchedGeometryEffect(
-          id: heroID(origin: selection.origin),
-          in: namespace,
-          properties: .frame,
-          anchor: .center,
-          isSource: false
-        )
-        .zIndex(
-          transitionCoordinator.isAnimatingHero ? zIndexForPart : 0
-        )
-    } else {
-      content
-    }
-  }
-
-  private var zIndexForPart: Double {
-    switch part {
-    case .icon: FeatureHeroZIndex.icon
-    case .title: FeatureHeroZIndex.title
-    case .card: FeatureHeroZIndex.detailCard
-    }
-  }
-
-  private func heroID(origin: FeatureHeroOrigin) -> String {
-    switch part {
-    case .icon: FeatureHeroID.icon(origin: origin, feature)
-    case .title: FeatureHeroID.title(origin: origin, feature)
-    case .card: FeatureHeroID.card(origin: origin, feature)
-    }
-  }
-}
-
-private struct FeatureHeroSourceModifier: ViewModifier {
-  @Environment(\.featureZoomNamespace) private var namespace
-  @Environment(\.featureHeroOrigin) private var rowOrigin
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(FeatureTransitionCoordinator.self) private var transitionCoordinator
-  let feature: FeatureID
-  let part: FeatureHeroPart
-
-  func body(content: Content) -> some View {
-    if isActiveSource,
-      let rowOrigin,
-      let namespace,
-      !reduceMotion
-    {
-      content
-        .matchedGeometryEffect(
-          id: heroID(origin: rowOrigin),
-          in: namespace,
-          properties: .frame,
-          anchor: .center,
-          isSource: true
-        )
-        .zIndex(
-          transitionCoordinator.isAnimatingHero ? zIndexForPart : 0
-        )
-    } else {
-      content
-    }
-  }
-
-  private var isActiveSource: Bool {
-    guard transitionCoordinator.isAnimatingHero else { return false }
-    guard let rowOrigin,
-      let selection = transitionCoordinator.selection
-    else { return false }
-    return selection.origin == rowOrigin && selection.feature == feature
-  }
-
-  private var zIndexForPart: Double {
-    switch part {
-    case .icon: FeatureHeroZIndex.icon
-    case .title: FeatureHeroZIndex.title
-    case .card: FeatureHeroZIndex.listCard
-    }
-  }
-
-  private func heroID(origin: FeatureHeroOrigin) -> String {
-    switch part {
-    case .icon: FeatureHeroID.icon(origin: origin, feature)
-    case .title: FeatureHeroID.title(origin: origin, feature)
-    case .card: FeatureHeroID.card(origin: origin, feature)
-    }
+      .toolbar(.hidden, for: .tabBar)
   }
 }
 
@@ -1069,7 +647,7 @@ struct DashPressButtonStyle: ButtonStyle {
     configuration.label
       .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
       .opacity(configuration.isPressed ? 0.82 : 1)
-      .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+      .animation(DashTheme.Motion.quick, value: configuration.isPressed)
   }
 }
 
@@ -1294,7 +872,7 @@ struct DashListButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .opacity(configuration.isPressed ? 0.58 : 1)
-      .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+      .animation(DashTheme.Motion.quick, value: configuration.isPressed)
   }
 }
 
@@ -1307,7 +885,7 @@ struct DashSectionHeader: View {
 
   var body: some View {
     Text(title)
-      .font(.system(size: 18, weight: .semibold, design: .rounded))
+      .font(.system(size: 18, weight: .semibold))
       .foregroundStyle(DashTheme.strong)
       .textCase(nil)
       .padding(.top, 12)
@@ -1337,12 +915,12 @@ struct DashTextTabs<Selection: Hashable>: View {
         ForEach(items.indices, id: \.self) { index in
           let item = items[index]
           Button {
-            withAnimation(.easeOut(duration: 0.22)) {
+            withAnimation(DashTheme.Motion.quick) {
               selection = item.value
             }
           } label: {
             Text(item.title)
-              .font(.system(size: 18, weight: .semibold, design: .rounded))
+              .font(.system(size: 18, weight: .semibold))
               .foregroundStyle(selection == item.value ? DashTheme.strong : DashTheme.placeholder)
               .contentTransition(.interpolate)
           }
