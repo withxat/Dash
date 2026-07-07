@@ -293,40 +293,85 @@ extension View {
       .background(DashTheme.canvas)
   }
 
-  func dashCatalogNativeSearch(
+  func dashCatalogSearch(
     text: Binding<String>,
     prompt: String
   ) -> some View {
     modifier(
-      DashCatalogNativeSearchModifier(text: text, prompt: prompt))
+      DashCatalogSearchModifier(text: text, prompt: prompt))
   }
 }
 
-// No `isPresented` binding here: combining it with `.searchToolbarBehavior(.minimize)`
-// keeps the field expanded on device (iOS 26). Callers must also not branch their
-// content on `\.isSearching` — hierarchy swaps during present/dismiss re-expand the
-// minimized field. Derive search UI from the text alone.
-private struct DashCatalogNativeSearchModifier: ViewModifier {
+// Hand-rolled header search. The system `.searchable` +
+// `.searchToolbarBehavior(.minimize)` + top-bar `DefaultToolbarItem` combo
+// re-presents the field after dismissal and hangs the first expansion on
+// iOS 26 hardware, so catalog screens draw their own button and field.
+private struct DashCatalogSearchModifier: ViewModifier {
   @Binding var text: String
   let prompt: String
+  @State private var isExpanded = false
+  @FocusState private var isFocused: Bool
 
   func body(content: Content) -> some View {
     content
-      .searchable(text: $text, prompt: prompt)
-      .modifier(DashCatalogSearchToolbarStyle())
-  }
-}
-
-private struct DashCatalogSearchToolbarStyle: ViewModifier {
-  func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content
-        .toolbar {
-          DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
+      .safeAreaInset(edge: .top, spacing: 0) {
+        if isExpanded {
+          searchBar
+            .transition(.move(edge: .top).combined(with: .opacity))
         }
-        .searchToolbarBehavior(.minimize)
+      }
+      .toolbar {
+        if !isExpanded {
+          searchToolbarItem
+        }
+      }
+  }
+
+  private var searchBar: some View {
+    HStack(spacing: 12) {
+      DashInlineSearch(prompt: prompt, text: $text, reportsFocus: $isFocused)
+      Button("Cancel") { collapse() }
+        .buttonStyle(DashPressButtonStyle())
+        .font(.system(size: 16, weight: .medium))
+        .foregroundStyle(DashTheme.brand)
+        .accessibilityLabel("Close search")
+    }
+    .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.bottom, 10)
+    .background(DashTheme.canvas)
+    .onAppear { isFocused = true }
+  }
+
+  @ToolbarContentBuilder
+  private var searchToolbarItem: some ToolbarContent {
+    if #available(iOS 26.0, *) {
+      ToolbarItem(placement: .topBarTrailing) { searchButton }
+        .sharedBackgroundVisibility(.hidden)
     } else {
-      content
+      ToolbarItem(placement: .topBarTrailing) { searchButton }
+    }
+  }
+
+  private var searchButton: some View {
+    Button {
+      withAnimation(.easeOut(duration: 0.22)) { isExpanded = true }
+    } label: {
+      ZStack {
+        Circle().fill(DashTheme.elevated)
+        SolarIcon(asset: SolarAsset.search, size: 20, color: DashTheme.strong)
+      }
+      .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
+      .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Search")
+  }
+
+  private func collapse() {
+    isFocused = false
+    withAnimation(.easeOut(duration: 0.22)) {
+      isExpanded = false
+      text = ""
     }
   }
 }

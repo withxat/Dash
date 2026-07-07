@@ -1,8 +1,5 @@
 import SwiftUI
 
-// Content must depend only on the search text, never on `\.isSearching`:
-// swapping the hierarchy while the minimized search field (iOS 26) is
-// presenting or dismissing re-triggers presentation and drops frames.
 struct ItemsView: View {
   @State private var search = ""
 
@@ -27,7 +24,7 @@ struct ItemsView: View {
       .animation(.easeOut(duration: 0.2), value: trimmedSearch)
     }
     .dashCatalogScreen("Items")
-    .dashCatalogNativeSearch(
+    .dashCatalogSearch(
       text: $search,
       prompt: "Features, zones…"
     )
