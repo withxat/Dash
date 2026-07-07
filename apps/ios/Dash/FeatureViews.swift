@@ -113,7 +113,7 @@ struct ZoneDetailView: View {
 
   var body: some View {
     ScrollView {
-      VStack(spacing: 20) {
+      VStack(spacing: DashTheme.Spacing.section) {
         if let zone {
           DashCard {
             VStack(alignment: .leading, spacing: 12) {
@@ -127,9 +127,11 @@ struct ZoneDetailView: View {
                 StatusBadge(text: zone.status ?? "unknown")
               }
               if let servers = zone.nameServers {
-                Text("Nameservers").font(.caption.weight(.semibold)).foregroundStyle(
+                Text("Nameservers").font(.system(size: 13, weight: .semibold)).foregroundStyle(
                   DashTheme.subtle)
-                ForEach(servers, id: \.self) { Text($0).font(.footnote.monospaced()) }
+                ForEach(servers, id: \.self) {
+                  Text($0).font(.system(size: 13, design: .monospaced))
+                }
               }
             }
           }
@@ -142,7 +144,7 @@ struct ZoneDetailView: View {
                     .frame(
                       maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(16)
+                .padding(DashTheme.Spacing.card)
                 .frame(minHeight: 96)
                 .background(DashTheme.base)
                 .clipShape(
@@ -162,7 +164,10 @@ struct ZoneDetailView: View {
         } else {
           LoadingStateView()
         }
-      }.padding(16).padding(.bottom, 60)
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, 12)
+      .padding(.bottom, 100)
     }.background(DashTheme.canvas).navigationTitle(zone?.name ?? "Zone")
       .navigationBarTitleDisplayMode(.inline)
       .refreshable { await load(force: true) }.task { await load() }
@@ -356,10 +361,7 @@ private struct DNSRecordEditor: View {
             .padding(.horizontal, 4)
 
           if let error {
-            Text(error)
-              .font(.system(size: 14))
-              .foregroundStyle(DashTheme.danger)
-              .frame(maxWidth: .infinity, alignment: .leading)
+            DashNotice(kind: .error, message: error)
           }
         }
       }
@@ -501,8 +503,7 @@ struct WorkerDetailView: View {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           if selectedTab == .management {
             DashListCard {
-              Toggle("workers.dev", isOn: $subdomainEnabled)
-                .padding(.vertical, 8)
+              DashToggleRow(title: "workers.dev", isOn: $subdomainEnabled)
                 .onChange(of: subdomainEnabled) { _, enabled in
                   if loadedSubdomain { Task { await setSubdomain(enabled) } }
                 }
@@ -535,18 +536,11 @@ struct WorkerDetailView: View {
               }
             }
           } else if let error {
-            Text(error).foregroundStyle(DashTheme.danger)
-              .frame(maxWidth: .infinity, alignment: .leading)
+            ErrorStateView(message: error) { Task { await load(force: true) } }
           } else if source.isEmpty {
-            ProgressView()
-              .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+            LoadingStateView()
           } else {
-            DashListCard {
-              ScrollView(.horizontal, showsIndicators: false) {
-                Text(source).font(.caption.monospaced()).textSelection(.enabled)
-              }
-              .padding(.vertical, 12)
-            }
+            DashCodeBlock(text: source)
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
@@ -610,7 +604,7 @@ struct CachePurgeView: View {
                 .font(.dashTitle(20, weight: .semibold))
                 .foregroundStyle(DashTheme.strong)
               Text("Remove one cached asset without disturbing the rest of the zone.")
-                .font(.subheadline)
+                .font(.system(size: 15))
                 .foregroundStyle(DashTheme.subtle)
             }
             DashFormField(label: "Asset URL", text: $url, keyboard: .URL)
@@ -629,7 +623,7 @@ struct CachePurgeView: View {
                 .font(.dashTitle(20, weight: .semibold))
                 .foregroundStyle(DashTheme.strong)
               Text("This removes every cached asset. Requests may temporarily reach your origin.")
-                .font(.subheadline)
+                .font(.system(size: 15))
                 .foregroundStyle(DashTheme.subtle)
             }
             DashActionRow(
@@ -651,6 +645,7 @@ struct CachePurgeView: View {
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.top, 12)
       .padding(.bottom, 100)
+      .animation(DashTheme.Motion.quick, value: status)
     }
     .background(DashTheme.canvas)
     .navigationTitle("Cache")
@@ -672,32 +667,28 @@ struct ZoneSettingsView: View {
   let zoneID: String
   @State private var settings: [ZoneSetting] = []
   @State private var error: String?
+  @State private var loading = true
 
   var body: some View {
-    DashFeatureList(error: error, retry: { Task { await load() } }) {
-      if settings.isEmpty, error == nil {
-        LoadingStateView()
-          .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
-      } else {
-        DashListGroup(title: "Zone configuration") {
-          ForEach(Array(settings.enumerated()), id: \.element.id) { index, setting in
-            switch setting.value {
-            case .bool(let enabled):
-              DashToggleRow(
-                title: setting.displayTitle,
-                subtitle: setting.editable == false ? "Read only" : nil,
-                isOn: Binding(
-                  get: { enabled },
-                  set: { value in Task { await update(setting, value: .bool(value)) } }),
-                isEnabled: setting.editable != false
-              )
-            case .string(let value):
-              DashValueRow(title: setting.displayTitle, value: value)
-            default:
-              DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
-            }
-            if index < settings.count - 1 { DashListGroupDivider() }
+    DashFeatureList(isLoading: loading, error: error, retry: { Task { await load() } }) {
+      DashListGroup(title: "Zone configuration") {
+        ForEach(Array(settings.enumerated()), id: \.element.id) { index, setting in
+          switch setting.value {
+          case .bool(let enabled):
+            DashToggleRow(
+              title: setting.displayTitle,
+              subtitle: setting.editable == false ? "Read only" : nil,
+              isOn: Binding(
+                get: { enabled },
+                set: { value in Task { await update(setting, value: .bool(value)) } }),
+              isEnabled: setting.editable != false
+            )
+          case .string(let value):
+            DashValueRow(title: setting.displayTitle, value: value)
+          default:
+            DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
           }
+          if index < settings.count - 1 { DashListGroupDivider() }
         }
       }
     }
@@ -711,6 +702,7 @@ struct ZoneSettingsView: View {
     if !force, let cached: [ZoneSetting] = model.featureCache.get(key) {
       settings = cached
       error = nil
+      loading = false
       return
     }
     do {
@@ -718,6 +710,7 @@ struct ZoneSettingsView: View {
       model.featureCache.set(key, settings)
       error = nil
     } catch { self.error = error.localizedDescription }
+    loading = false
   }
 
   private func update(_ setting: ZoneSetting, value: JSONValue) async {

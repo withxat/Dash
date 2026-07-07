@@ -16,17 +16,25 @@ struct R2BucketsView: View {
       error: error,
       retry: { Task { await load() } }
     ) {
-      DashListCard {
-        DashListCardRows(items: buckets) { bucket in
-          DashListGroupLink(value: .r2Bucket(bucket.name)) {
-            DashListRow(
-              title: bucket.name,
-              subtitle: bucket.creationDate,
-              icon: SolarAsset.box
-            )
-          }
-          .contextMenu {
-            Button("Delete", role: .destructive) { Task { await delete(bucket) } }
+      if buckets.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.box,
+          title: "No buckets yet",
+          message: "Create a bucket with the add button."
+        )
+      } else {
+        DashListCard {
+          DashListCardRows(items: buckets) { bucket in
+            DashListGroupLink(value: .r2Bucket(bucket.name)) {
+              DashListRow(
+                title: bucket.name,
+                subtitle: bucket.creationDate,
+                icon: SolarAsset.box
+              )
+            }
+            .contextMenu {
+              Button("Delete", role: .destructive) { Task { await delete(bucket) } }
+            }
           }
         }
       }
@@ -95,20 +103,26 @@ struct R2BucketView: View {
   @State private var objects: [R2Object] = []
   @State private var prefix = ""
   @State private var error: String?
+  // First load only — `.task(id: prefix)` reloads per keystroke, and
+  // re-arming this would flash the full-screen spinner while typing.
+  @State private var loading = true
   @State private var importsFile = false
 
   var body: some View {
     DashFeatureList(
       search: $prefix,
       prompt: "Filter by prefix",
+      isLoading: loading,
       error: error,
       retry: { Task { await load() } }
     ) {
       if objects.isEmpty {
         DashEmptyState(
           icon: SolarAsset.box,
-          title: "Empty bucket",
-          message: "Upload a file to get started."
+          title: prefix.isEmpty ? "Empty bucket" : "Nothing found",
+          message: prefix.isEmpty
+            ? "Upload a file to get started."
+            : "No object matches \(prefix)."
         )
       } else {
         DashListCard {
@@ -152,6 +166,7 @@ struct R2BucketView: View {
     if !force, let cached: [R2Object] = model.featureCache.get(key) {
       objects = cached
       error = nil
+      loading = false
       return
     }
     do {
@@ -161,6 +176,7 @@ struct R2BucketView: View {
       model.featureCache.set(key, objects)
       error = nil
     } catch { self.error = error.localizedDescription }
+    loading = false
   }
   private func upload(_ url: URL) async {
     guard let id = model.activeAccountID else { return }
@@ -242,24 +258,38 @@ struct KVNamespaceView: View {
   @State private var prefix = ""
   @State private var selected: KVKey?
   @State private var error: String?
+  // First load only — `.task(id: prefix)` reloads per keystroke, and
+  // re-arming this would flash the full-screen spinner while typing.
+  @State private var loading = true
 
   var body: some View {
     DashFeatureList(
       search: $prefix,
       prompt: "Filter by key prefix",
+      isLoading: loading,
       error: error,
       retry: { Task { await load() } }
     ) {
-      DashListCard {
-        DashListCardRows(items: keys) { key in
-          Button {
-            selected = key
-          } label: {
-            DashListRow(title: key.name, icon: SolarAsset.key)
-          }
-          .buttonStyle(DashPressButtonStyle())
-          .contextMenu {
-            Button("Delete", role: .destructive) { Task { await delete(key) } }
+      if keys.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.key,
+          title: prefix.isEmpty ? "No keys" : "Nothing found",
+          message: prefix.isEmpty
+            ? "Keys in this namespace will appear here."
+            : "No key matches \(prefix)."
+        )
+      } else {
+        DashListCard {
+          DashListCardRows(items: keys) { key in
+            Button {
+              selected = key
+            } label: {
+              DashListRow(title: key.name, icon: SolarAsset.key)
+            }
+            .buttonStyle(DashPressButtonStyle())
+            .contextMenu {
+              Button("Delete", role: .destructive) { Task { await delete(key) } }
+            }
           }
         }
       }
@@ -282,6 +312,7 @@ struct KVNamespaceView: View {
     if !force, let cached: [KVKey] = model.featureCache.get(key) {
       keys = cached
       error = nil
+      loading = false
       return
     }
     do {
@@ -291,6 +322,7 @@ struct KVNamespaceView: View {
       model.featureCache.set(key, keys)
       error = nil
     } catch { self.error = error.localizedDescription }
+    loading = false
   }
   private func delete(_ key: KVKey) async {
     guard let id = model.activeAccountID else { return }
@@ -308,24 +340,17 @@ private struct KVValueEditor: View {
   let keyName: String
   @State private var value = ""
   @State private var error: String?
+  // Saving before the fetch lands would overwrite the stored value with "".
+  @State private var loaded = false
   var body: some View {
     DashFormSheet(
+      canSave: loaded,
       onSave: { Task { await save() } },
       content: {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Value")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(DashTheme.subtle)
-          TextEditor(text: $value)
-            .font(.body.monospaced())
-            .frame(minHeight: 220)
-            .padding(12)
-            .background(DashTheme.recessed)
-            .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+        VStack(alignment: .leading, spacing: 14) {
+          DashFormCodeField(label: "Value", text: $value)
           if let error {
-            Text(error)
-              .font(.system(size: 14))
-              .foregroundStyle(DashTheme.danger)
+            DashNotice(kind: .error, message: error)
           }
         }
       }
@@ -338,6 +363,7 @@ private struct KVValueEditor: View {
       value = String(
         decoding: try await model.client.getKVValue(
           accountID: id, namespaceID: namespaceID, key: keyName), as: UTF8.self)
+      loaded = true
     } catch { self.error = error.localizedDescription }
   }
   private func save() async {
@@ -430,29 +456,17 @@ struct D1ConsoleView: View {
         if let error {
           DashNotice(kind: .error, message: error)
         } else {
-          DashCard {
-            VStack(alignment: .leading, spacing: 12) {
-              Text("Result")
-                .font(.dashTitle(18, weight: .semibold))
-                .foregroundStyle(DashTheme.strong)
-              ScrollView(.horizontal, showsIndicators: false) {
-                Text(result.isEmpty ? "Run a query to see results." : result)
-                  .font(.system(size: 13, design: .monospaced))
-                  .foregroundStyle(result.isEmpty ? DashTheme.subtle : DashTheme.text)
-                  .textSelection(.enabled)
-                  .padding(14)
-              }
-              .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
-              .background(DashTheme.recessed)
-              .clipShape(
-                RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-            }
-          }
+          DashCodeBlock(
+            title: "Result",
+            text: result,
+            placeholder: "Run a query to see results."
+          )
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.top, 12)
       .padding(.bottom, 100)
+      .animation(DashTheme.Motion.quick, value: error)
     }
     .background(DashTheme.canvas)
     .navigationTitle(name)

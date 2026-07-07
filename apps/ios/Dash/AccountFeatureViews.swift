@@ -232,22 +232,19 @@ struct AccountView: View {
           )
         } else {
           DashListCard {
-            ForEach(Array(policies.enumerated()), id: \.element.id) { index, policy in
+            DashListCardRows(items: policies) { policy in
               DashListRow(title: policy.title, icon: SolarAsset.bolt, showsChevron: false)
-              if index < policies.count - 1 || !history.isEmpty {
-                DashListGroupDivider()
-              }
             }
-            ForEach(Array(history.enumerated()), id: \.element.id) { index, entry in
+            if !policies.isEmpty && !history.isEmpty {
+              DashListGroupDivider()
+            }
+            DashListCardRows(items: history) { entry in
               DashListRow(
                 title: entry.title,
                 subtitle: entry.subtitle,
                 icon: SolarAsset.clock,
                 showsChevron: false
               )
-              if index < history.count - 1 {
-                DashListGroupDivider()
-              }
             }
           }
         }

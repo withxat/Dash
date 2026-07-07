@@ -62,6 +62,7 @@ struct GenericResourcesView: View {
         }
       }
     }
+    .navigationTitle(title)
     .refreshable { await load(force: true) }.task { await load() }
   }
 
