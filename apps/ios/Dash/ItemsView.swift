@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ItemsView: View {
   @State private var search = ""
+  @State private var searchActive = false
 
   private var trimmedSearch: String {
     search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -15,19 +16,30 @@ struct ItemsView: View {
   }
 
   var body: some View {
-    ScrollView {
-      LazyVStack(spacing: DashTheme.Spacing.section) {
-        listContent
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(spacing: DashTheme.Spacing.section) {
+          listContent
+        }
+        .id("catalogTop")
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 100)
+        .animation(DashTheme.Motion.quick, value: trimmedSearch)
       }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
-      .animation(DashTheme.Motion.quick, value: trimmedSearch)
+      .dashCatalogScreen("Items")
+      .dashCatalogSearch(
+        text: $search,
+        isActive: $searchActive,
+        prompt: "Features, zones…"
+      )
+      .onChange(of: searchActive) { _, active in
+        if active {
+          withAnimation(DashTheme.Motion.enter) {
+            proxy.scrollTo("catalogTop", anchor: .top)
+          }
+        }
+      }
     }
-    .dashCatalogScreen("Items")
-    .dashCatalogSearch(
-      text: $search,
-      prompt: "Features, zones…"
-    )
   }
 
   @ViewBuilder

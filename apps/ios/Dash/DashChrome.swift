@@ -286,10 +286,11 @@ extension View {
 
   func dashCatalogSearch(
     text: Binding<String>,
+    isActive: Binding<Bool>,
     prompt: String
   ) -> some View {
     modifier(
-      DashCatalogSearchModifier(text: text, prompt: prompt))
+      DashCatalogSearchModifier(text: text, isActive: isActive, prompt: prompt))
   }
 }
 
@@ -297,25 +298,27 @@ extension View {
 // `.searchToolbarBehavior(.minimize)` + top-bar `DefaultToolbarItem` combo
 // re-presents the field after dismissal and hangs the first expansion on
 // iOS 26 hardware, so catalog screens draw their own button and field.
+// While active, the search bar replaces the navigation bar entirely.
 private struct DashCatalogSearchModifier: ViewModifier {
   @Binding var text: String
+  @Binding var isActive: Bool
   let prompt: String
-  @State private var isExpanded = false
   @FocusState private var isFocused: Bool
 
   func body(content: Content) -> some View {
     content
       .safeAreaInset(edge: .top, spacing: 0) {
-        if isExpanded {
+        if isActive {
           searchBar
             .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
       .toolbar {
-        if !isExpanded {
+        if !isActive {
           searchToolbarItem
         }
       }
+      .toolbar(isActive ? .hidden : .visible, for: .navigationBar)
   }
 
   private var searchBar: some View {
@@ -324,6 +327,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
       DashCloseButton(accessibilityLabel: "Close search") { collapse() }
     }
     .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.top, 8)
     .padding(.bottom, 10)
     .background(DashTheme.canvas)
     .onAppear { isFocused = true }
@@ -341,7 +345,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
 
   private var searchButton: some View {
     Button {
-      withAnimation(DashTheme.Motion.enter) { isExpanded = true }
+      withAnimation(DashTheme.Motion.enter) { isActive = true }
     } label: {
       ZStack {
         Circle().fill(DashTheme.elevated)
@@ -357,7 +361,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
   private func collapse() {
     isFocused = false
     withAnimation(DashTheme.Motion.exit) {
-      isExpanded = false
+      isActive = false
       text = ""
     }
   }
