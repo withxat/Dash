@@ -303,7 +303,9 @@ extension View {
 }
 
 // No `isPresented` binding here: combining it with `.searchToolbarBehavior(.minimize)`
-// keeps the field expanded on device (iOS 26). Read `\.isSearching` in content instead.
+// keeps the field expanded on device (iOS 26). Callers must also not branch their
+// content on `\.isSearching` — hierarchy swaps during present/dismiss re-expand the
+// minimized field. Derive search UI from the text alone.
 private struct DashCatalogNativeSearchModifier: ViewModifier {
   @Binding var text: String
   let prompt: String

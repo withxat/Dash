@@ -1,34 +1,13 @@
 import SwiftUI
 
+// Content must depend only on the search text, never on `\.isSearching`:
+// swapping the hierarchy while the minimized search field (iOS 26) is
+// presenting or dismissing re-triggers presentation and drops frames.
 struct ItemsView: View {
   @State private var search = ""
 
-  var body: some View {
-    ScrollView {
-      ItemsListContent(search: search)
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, 100)
-    }
-    .dashCatalogScreen("Items")
-    .dashCatalogNativeSearch(
-      text: $search,
-      prompt: "Features, zones…"
-    )
-  }
-}
-
-// `\.isSearching` only resolves below the `.searchable` view, so the
-// search-dependent content lives in this child rather than in ItemsView.
-private struct ItemsListContent: View {
-  let search: String
-  @Environment(\.isSearching) private var isSearching
-
   private var trimmedSearch: String {
     search.trimmingCharacters(in: .whitespacesAndNewlines)
-  }
-
-  private var showsSearchResults: Bool {
-    isSearching || !trimmedSearch.isEmpty
   }
 
   private var searchResults: [FeatureID] {
@@ -39,41 +18,41 @@ private struct ItemsListContent: View {
   }
 
   var body: some View {
-    LazyVStack(spacing: DashTheme.Spacing.section) {
-      listContent
+    ScrollView {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
+        listContent
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.bottom, 100)
+      .animation(.easeOut(duration: 0.2), value: trimmedSearch)
     }
-    .animation(.easeOut(duration: 0.2), value: showsSearchResults)
-    .animation(.easeOut(duration: 0.2), value: trimmedSearch)
+    .dashCatalogScreen("Items")
+    .dashCatalogNativeSearch(
+      text: $search,
+      prompt: "Features, zones…"
+    )
   }
 
   @ViewBuilder
   private var listContent: some View {
-    if showsSearchResults {
-      if trimmedSearch.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.search,
-          title: "Search features",
-          message: "Enter a product or service name — DNS, Workers, R2, and more."
-        )
-      } else if trimmedSearch.count < 2 {
-        DashEmptyState(
-          icon: SolarAsset.search,
-          title: "Keep typing",
-          message: "Enter at least two characters to search."
-        )
-      } else if searchResults.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.search,
-          title: "Nothing found",
-          message: "No feature matches \(trimmedSearch). Try a service or product name."
-        )
-      } else {
-        searchResultsList
-      }
-    } else {
+    if trimmedSearch.isEmpty {
       ForEach(FeatureCatalog.grouped, id: \.0) { title, features in
         FeatureSection(title: title, items: features)
       }
+    } else if trimmedSearch.count < 2 {
+      DashEmptyState(
+        icon: SolarAsset.search,
+        title: "Keep typing",
+        message: "Enter at least two characters to search."
+      )
+    } else if searchResults.isEmpty {
+      DashEmptyState(
+        icon: SolarAsset.search,
+        title: "Nothing found",
+        message: "No feature matches \(trimmedSearch). Try a service or product name."
+      )
+    } else {
+      searchResultsList
     }
   }
 
