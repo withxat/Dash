@@ -61,36 +61,47 @@ public enum OAuth {
 
   public static func exchangeCode(
     clientID: String, code: String, verifier: String, redirectURI: String,
-    session: URLSession = .shared
+    session: URLSession = .shared, tokenURL: URL = CloudflareEndpoints.token
   ) async throws -> TokenSet {
     try await postForm(
       [
         "client_id": clientID, "code": code, "code_verifier": verifier,
         "grant_type": "authorization_code", "redirect_uri": redirectURI,
-      ], to: CloudflareEndpoints.token, session: session)
+      ], to: tokenURL, session: session)
   }
 
-  public static func refresh(clientID: String, refreshToken: String, session: URLSession = .shared)
-    async throws -> TokenSet
-  {
+  public static func refresh(
+    clientID: String, refreshToken: String, session: URLSession = .shared,
+    tokenURL: URL = CloudflareEndpoints.token
+  ) async throws -> TokenSet {
     try await postForm(
       [
         "client_id": clientID, "grant_type": "refresh_token", "refresh_token": refreshToken,
-      ], to: CloudflareEndpoints.token, session: session)
+      ], to: tokenURL, session: session)
   }
 
-  public static func revoke(clientID: String, token: String, session: URLSession = .shared)
-    async throws
-  {
-    let _: TokenSet? = try? await postForm(
+  public static func revoke(
+    clientID: String, token: String, session: URLSession = .shared,
+    revokeURL: URL = CloudflareEndpoints.revoke
+  ) async throws {
+    _ = try await postFormData(
       [
         "client_id": clientID, "token": token, "token_type_hint": "access_token",
-      ], to: CloudflareEndpoints.revoke, session: session)
+      ], to: revokeURL, session: session)
   }
 
   private static func postForm<T: Decodable & Sendable>(
     _ values: [String: String], to url: URL, session: URLSession
   ) async throws -> T {
+    let data = try await postFormData(values, to: url, session: session)
+    do { return try JSONDecoder().decode(T.self, from: data) } catch {
+      throw CloudflareAPIError.oauth("Invalid OAuth response: \(error.localizedDescription)")
+    }
+  }
+
+  private static func postFormData(
+    _ values: [String: String], to url: URL, session: URLSession
+  ) async throws -> Data {
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -108,9 +119,7 @@ public enum OAuth {
       throw CloudflareAPIError.oauth(
         payload?.errorDescription ?? payload?.error ?? "OAuth HTTP \(response.statusCode)")
     }
-    do { return try JSONDecoder().decode(T.self, from: data) } catch {
-      throw CloudflareAPIError.oauth("Invalid OAuth response: \(error.localizedDescription)")
-    }
+    return data
   }
 }
 

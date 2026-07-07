@@ -56,6 +56,11 @@ public enum CloudflareAPIError: Error, LocalizedError, Sendable {
     case .request(let status, let errors): errors.first?.message ?? "HTTP \(status)"
     }
   }
+
+  public var isPermissionDenied: Bool {
+    if case .request(let status, _) = self { return status == 401 || status == 403 }
+    return false
+  }
 }
 
 public struct ResultInfo: Codable, Hashable, Sendable {
@@ -233,16 +238,52 @@ public struct WorkerScript: CloudflareResource, Hashable {
   }
 }
 
+public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
+  public let enabled: Bool
+  public let previewsEnabled: Bool?
+
+  enum CodingKeys: String, CodingKey {
+    case enabled
+    case previewsEnabled = "previews_enabled"
+  }
+}
+
+public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let value: JSONValue
+  public let editable: Bool?
+  public let modifiedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, value, editable
+    case modifiedOn = "modified_on"
+  }
+}
+
 public struct PagesProject: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let subdomain: String?
   public let createdOn: String?
+  public let latestDeployment: PagesDeploymentSummary?
 
   enum CodingKeys: String, CodingKey {
     case id, name, subdomain
     case createdOn = "created_on"
+    case latestDeployment = "latest_deployment"
   }
+}
+
+public struct PagesDeploymentSummary: Codable, Hashable, Sendable {
+  public let latestStage: PagesDeploymentStage?
+
+  enum CodingKeys: String, CodingKey {
+    case latestStage = "latest_stage"
+  }
+}
+
+public struct PagesDeploymentStage: Codable, Hashable, Sendable {
+  public let status: String?
 }
 
 public struct R2Bucket: CloudflareResource, Hashable {
@@ -296,6 +337,217 @@ public struct D1QueryResult: Codable, Hashable, Sendable {
   public let results: [[String: JSONValue]]?
   public let success: Bool?
   public let meta: [String: JSONValue]?
+}
+
+public struct CloudflareImage: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let filename: String?
+  public let uploaded: String?
+  public let requireSignedURLs: Bool?
+
+  public var name: String { filename ?? id }
+}
+
+public struct StreamVideo: Codable, Hashable, Identifiable, Sendable {
+  public let uid: String
+  public let created: String?
+  public let meta: StreamVideoMeta?
+
+  public var id: String { uid }
+  public var name: String { meta?.name ?? uid }
+}
+
+public struct StreamVideoMeta: Codable, Hashable, Sendable {
+  public let name: String?
+}
+
+public struct AccountMember: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let user: AccountMemberUser?
+  public let roles: [AccountMemberRole]?
+
+  public var displayName: String {
+    let parts = [user?.firstName, user?.lastName].compactMap { $0 }.filter { !$0.isEmpty }
+    let full = parts.joined(separator: " ")
+    return full.nilIfEmpty ?? user?.email ?? "Member"
+  }
+
+  public var roleSummary: String? {
+    roles?.compactMap(\.name).joined(separator: ", ").nilIfEmpty
+  }
+}
+
+public struct AccountMemberUser: Codable, Hashable, Sendable {
+  public let email: String?
+  public let firstName: String?
+  public let lastName: String?
+
+  enum CodingKeys: String, CodingKey {
+    case email
+    case firstName = "first_name"
+    case lastName = "last_name"
+  }
+}
+
+public struct AccountMemberRole: Codable, Hashable, Sendable {
+  public let name: String?
+}
+
+public struct RumSite: Codable, Hashable, Identifiable, Sendable {
+  public let siteTag: String?
+  public let host: String?
+
+  public var id: String { siteTag ?? host ?? UUID().uuidString }
+  public var name: String { host ?? siteTag ?? "Site" }
+
+  enum CodingKeys: String, CodingKey {
+    case host
+    case siteTag = "site_tag"
+  }
+}
+
+public struct NotificationPolicy: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String?
+  public let alertType: String?
+
+  public var title: String {
+    name ?? alertType?.replacingOccurrences(of: "_", with: " ") ?? id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id, name
+    case alertType = "alert_type"
+  }
+}
+
+public struct NotificationHistoryEntry: Codable, Hashable, Identifiable, Sendable {
+  public let policyID: String?
+  public let name: String?
+  public let alertType: String?
+  public let mechanism: String?
+  public let alertBody: String?
+  public let description: String?
+  public let sent: String?
+
+  public var id: String {
+    [policyID, sent, name, alertType].compactMap { $0 }.joined(separator: "|").nilIfEmpty
+      ?? UUID().uuidString
+  }
+  public var title: String {
+    name ?? alertType?.replacingOccurrences(of: "_", with: " ") ?? "Notification"
+  }
+  public var subtitle: String? { alertBody ?? mechanism ?? description }
+
+  enum CodingKeys: String, CodingKey {
+    case name, mechanism, description, sent
+    case policyID = "policy_id"
+    case alertType = "alert_type"
+    case alertBody = "alert_body"
+  }
+}
+
+public struct AuditLogEntry: Codable, Hashable, Sendable {
+  public let logID: String?
+  public let action: AuditLogAction?
+  public let actor: AuditLogActor?
+  public let resource: AuditLogResource?
+
+  public var title: String { action?.type ?? "Action" }
+  public var subtitle: String? {
+    [actor?.email ?? actor?.type, resource?.type].compactMap { $0 }.joined(separator: " · ")
+      .nilIfEmpty
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case logID = "id"
+    case action, actor, resource
+  }
+}
+
+extension AuditLogEntry: Identifiable {
+  public var id: String {
+    logID ?? [title, subtitle].compactMap { $0 }.joined(separator: "|")
+  }
+}
+
+public struct AuditLogAction: Codable, Hashable, Sendable {
+  public let type: String?
+}
+
+public struct AuditLogActor: Codable, Hashable, Sendable {
+  public let email: String?
+  public let type: String?
+}
+
+public struct AuditLogResource: Codable, Hashable, Sendable {
+  public let type: String?
+}
+
+public struct CloudflareTunnel: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String?
+  public let status: String?
+}
+
+public struct LoadBalancerPool: CloudflareResource, Hashable {
+  public let id: String
+  public let name: String
+  public let enabled: Bool?
+}
+
+public struct RegistrarDomain: CloudflareResource, Hashable {
+  public let id: String
+  public let name: String
+  public let expiresAt: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name
+    case expiresAt = "expires_at"
+  }
+}
+
+public struct CertificatePack: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let status: String
+  public let certificates: [CertificatePackCertificate]?
+
+  enum CodingKeys: String, CodingKey {
+    case id, status, certificates
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+    status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+    certificates = try container.decodeIfPresent(
+      [CertificatePackCertificate].self, forKey: .certificates)
+  }
+}
+
+public struct CertificatePackCertificate: Codable, Hashable, Sendable {
+  public let expiresOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case expiresOn = "expires_on"
+  }
+}
+
+public struct Healthcheck: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String?
+  public let status: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, status
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+    name = try container.decodeIfPresent(String.self, forKey: .name)
+    status = try container.decodeIfPresent(String.self, forKey: .status)
+  }
 }
 
 public struct GenericResource: CloudflareResource, Hashable {

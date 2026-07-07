@@ -5,16 +5,18 @@ public actor CloudflareClient {
   private let clientID: String
   private let session: URLSession
   private let tokenStore: any TokenStore
+  private let tokenURL: URL
   private var refreshTask: Task<TokenSet?, Error>?
 
   public init(
     clientID: String, tokenStore: any TokenStore, apiBase: URL = CloudflareEndpoints.api,
-    session: URLSession = .shared
+    session: URLSession = .shared, tokenURL: URL = CloudflareEndpoints.token
   ) {
     self.clientID = clientID
     self.tokenStore = tokenStore
     self.apiBase = apiBase
     self.session = session
+    self.tokenURL = tokenURL
   }
 
   public func getUser() async throws -> CloudflareUser { try await request("/user") }
@@ -56,6 +58,15 @@ public actor CloudflareClient {
       files.map { ["files": .array($0.map(JSONValue.string))] } ?? ["purge_everything": .bool(true)]
     let _: JSONValue = try await request("/zones/\(zoneID)/purge_cache", method: "POST", body: body)
   }
+  public func listZoneSettings(zoneID: String) async throws -> [ZoneSetting] {
+    try await list("/zones/\(zoneID)/settings").items
+  }
+  public func updateZoneSetting(zoneID: String, settingID: String, value: JSONValue) async throws
+    -> ZoneSetting
+  {
+    try await request(
+      "/zones/\(zoneID)/settings/\(settingID)", method: "PATCH", body: ["value": value])
+  }
   public func listWorkers(accountID: String) async throws -> [WorkerScript] {
     try await list("/accounts/\(accountID)/workers/scripts").items
   }
@@ -63,11 +74,25 @@ public actor CloudflareClient {
     let data = try await raw("/accounts/\(accountID)/workers/scripts/\(name)")
     return String(decoding: data, as: UTF8.self)
   }
+  public func getWorkerSubdomain(accountID: String, name: String) async throws
+    -> WorkerSubdomainStatus
+  {
+    try await request(
+      "/accounts/\(accountID)/workers/services/\(name)/environments/production/subdomain")
+  }
+  public func setWorkerSubdomain(accountID: String, name: String, enabled: Bool) async throws
+    -> WorkerSubdomainStatus
+  {
+    try await request(
+      "/accounts/\(accountID)/workers/services/\(name)/environments/production/subdomain",
+      method: "POST", body: ["enabled": enabled])
+  }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
     try await list("/accounts/\(accountID)/pages/projects").items
   }
   public func listR2Buckets(accountID: String) async throws -> [R2Bucket] {
-    try await list("/accounts/\(accountID)/r2/buckets").items
+    let result: R2BucketResult = try await request("/accounts/\(accountID)/r2/buckets")
+    return result.buckets
   }
   public func createR2Bucket(accountID: String, name: String) async throws -> R2Bucket {
     try await request("/accounts/\(accountID)/r2/buckets", method: "POST", body: ["name": name])
@@ -79,10 +104,10 @@ public actor CloudflareClient {
   public func listR2Objects(
     accountID: String, bucket: String, cursor: String? = nil, prefix: String? = nil
   ) async throws -> CursorPage<R2Object> {
-    let page: Page<R2Object> = try await list(
+    let result: R2ObjectResult = try await request(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects",
       query: ["cursor": cursor, "prefix": prefix])
-    return CursorPage(items: page.items, cursor: page.resultInfo?.cursor)
+    return CursorPage(items: result.objects, cursor: result.cursor)
   }
   public func putR2Object(
     accountID: String, bucket: String, key: String, data: Data, contentType: String?
@@ -132,6 +157,62 @@ public actor CloudflareClient {
     try await request(
       "/accounts/\(accountID)/d1/database/\(databaseID)/query", method: "POST", body: ["sql": sql])
   }
+  public func listImages(accountID: String, page: Int = 1, perPage: Int = 50) async throws
+    -> [CloudflareImage]
+  {
+    let result: ImagesListResult = try await request(
+      "/accounts/\(accountID)/images/v1",
+      query: ["page": String(page), "per_page": String(perPage)])
+    return result.images ?? []
+  }
+  public func listStreamVideos(accountID: String) async throws -> [StreamVideo] {
+    try await list("/accounts/\(accountID)/stream").items
+  }
+  public func listAccountMembers(accountID: String, page: Int = 1, perPage: Int = 25) async throws
+    -> Page<AccountMember>
+  {
+    try await list(
+      "/accounts/\(accountID)/members",
+      query: ["page": String(page), "per_page": String(perPage)])
+  }
+  public func listNotificationPolicies(accountID: String) async throws -> [NotificationPolicy] {
+    try await list("/accounts/\(accountID)/alerting/v3/policies").items
+  }
+  public func listNotificationHistory(accountID: String, perPage: Int = 10) async throws
+    -> [NotificationHistoryEntry]
+  {
+    try await list(
+      "/accounts/\(accountID)/alerting/v3/history", query: ["per_page": String(perPage)]
+    ).items
+  }
+  public func listAuditLogs(accountID: String, perPage: Int = 10) async throws -> [AuditLogEntry] {
+    try await list(
+      "/accounts/\(accountID)/audit_logs",
+      query: ["direction": "desc", "per_page": String(perPage)]
+    ).items
+  }
+  public func listRumSites(accountID: String) async throws -> [RumSite] {
+    try await list("/accounts/\(accountID)/rum/site_info/list").items
+  }
+  public func listTunnels(accountID: String, isDeleted: Bool = false) async throws
+    -> [CloudflareTunnel]
+  {
+    try await list(
+      "/accounts/\(accountID)/cfd_tunnel", query: ["is_deleted": String(isDeleted)]
+    ).items
+  }
+  public func listLoadBalancerPools(accountID: String) async throws -> [LoadBalancerPool] {
+    try await list("/accounts/\(accountID)/load_balancers/pools").items
+  }
+  public func listRegistrarDomains(accountID: String) async throws -> [RegistrarDomain] {
+    try await list("/accounts/\(accountID)/registrar/domains").items
+  }
+  public func listCertificatePacks(zoneID: String) async throws -> [CertificatePack] {
+    try await list("/zones/\(zoneID)/ssl/certificate_packs", query: ["status": "all"]).items
+  }
+  public func listHealthchecks(zoneID: String) async throws -> [Healthcheck] {
+    try await list("/zones/\(zoneID)/healthchecks").items
+  }
   public func listResources(path: String, query: [String: String?] = [:]) async throws -> Page<
     GenericResource
   > {
@@ -152,11 +233,13 @@ public actor CloudflareClient {
   }
 
   private func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
-    _ path: String, method: String = "GET", body: Body? = Optional<String>.none
+    _ path: String, method: String = "GET", query: [String: String?] = [:],
+    body: Body? = Optional<String>.none
   ) async throws -> Value {
     let data = try body.map { try JSONEncoder().encode($0) }
     let response = try await raw(
-      path, method: method, data: data, contentType: data == nil ? nil : "application/json")
+      path, method: method, query: query, data: data,
+      contentType: data == nil ? nil : "application/json")
     let envelope = try JSONDecoder().decode(APIEnvelope<Value>.self, from: response)
     guard envelope.success else {
       throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
@@ -194,8 +277,9 @@ public actor CloudflareClient {
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.httpBody = data
-    if let token = try await tokenStore.getAccessToken() {
-      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    let requestToken = try await tokenStore.getAccessToken()
+    if let requestToken {
+      request.setValue("Bearer \(requestToken)", forHTTPHeaderField: "Authorization")
     }
     if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
     do {
@@ -203,9 +287,18 @@ public actor CloudflareClient {
       guard let response = response as? HTTPURLResponse else {
         throw CloudflareAPIError.invalidResponse
       }
-      if response.statusCode == 401, attempt == 0, try await refresh() != nil {
-        return try await raw(
-          url: url, method: method, data: data, contentType: contentType, attempt: 1)
+      if response.statusCode == 401, attempt == 0 {
+        let currentToken = try await tokenStore.getAccessToken()
+        let canRetry: Bool
+        if currentToken != nil, currentToken != requestToken {
+          canRetry = true
+        } else {
+          canRetry = try await refresh() != nil
+        }
+        if canRetry {
+          return try await raw(
+            url: url, method: method, data: data, contentType: contentType, attempt: 1)
+        }
       }
       guard (200..<300).contains(response.statusCode) else {
         let errors = (try? JSONDecoder().decode(ErrorEnvelope.self, from: body).errors) ?? []
@@ -225,7 +318,7 @@ public actor CloudflareClient {
     let store = tokenStore
     let task = Task<TokenSet?, Error> {
       let tokens = try await OAuth.refresh(
-        clientID: clientID, refreshToken: refreshToken, session: session)
+        clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
       try await store.setTokens(tokens)
       return tokens
     }
@@ -236,3 +329,9 @@ public actor CloudflareClient {
 }
 
 private struct ErrorEnvelope: Decodable { let errors: [APIErrorItem] }
+private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
+private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
+private struct R2ObjectResult: Decodable, Sendable {
+  let objects: [R2Object]
+  let cursor: String?
+}

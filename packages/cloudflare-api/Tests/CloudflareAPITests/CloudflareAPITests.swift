@@ -39,3 +39,111 @@ import Testing
   #expect(envelope.result.first?.name == "example.com")
   #expect(envelope.resultInfo?.totalCount == 1)
 }
+
+@Suite(.serialized)
+struct NetworkTests {
+  @Test func decodesImagesListEnvelope() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body =
+        #"{"success":true,"result":{"images":[{"id":"img","filename":"hero.png","requireSignedURLs":false}]}}"#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let images = try await client.listImages(accountID: "account")
+    #expect(images.first?.filename == "hero.png")
+  }
+
+  @Test func decodesR2ResponseWrappers() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body =
+        #"{"success":true,"result":{"buckets":[{"name":"assets","creation_date":"2026-07-06"}]}}"#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let buckets = try await client.listR2Buckets(accountID: "account")
+    #expect(buckets.map(\.name) == ["assets"])
+  }
+
+  @Test func concurrent401ResponsesShareOneRefresh() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "old", refresh: "refresh")
+    let session = mockSession { request in
+      if request.url?.path == "/token" {
+        recorder.recordRefresh()
+        return (200, Data(#"{"access_token":"new","refresh_token":"refresh"}"#.utf8))
+      }
+      if request.value(forHTTPHeaderField: "Authorization") == "Bearer new" {
+        return (200, Data(#"{"success":true,"result":[{"id":"account","name":"Example"}]}"#.utf8))
+      }
+      return (401, Data(#"{"success":false,"errors":[{"code":1000,"message":"expired"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
+
+    async let first = client.listAccounts()
+    async let second = client.listAccounts()
+    let values = try await (first, second)
+    #expect(values.0.first?.name == "Example")
+    #expect(values.1.first?.name == "Example")
+    #expect(recorder.refreshCount == 1)
+  }
+}
+
+private actor MemoryTokenStore: TokenStore {
+  var access: String?
+  var refresh: String?
+  init(access: String?, refresh: String?) {
+    self.access = access
+    self.refresh = refresh
+  }
+  func clear() {
+    access = nil
+    refresh = nil
+  }
+  func getAccessToken() -> String? { access }
+  func getRefreshToken() -> String? { refresh }
+  func setTokens(_ tokens: TokenSet) {
+    access = tokens.accessToken
+    refresh = tokens.refreshToken
+  }
+}
+
+private final class RequestRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var count = 0
+  var refreshCount: Int { lock.withLock { count } }
+  func recordRefresh() { lock.withLock { count += 1 } }
+}
+
+private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+  nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
+  override class func canInit(with _: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {
+    do {
+      let (status, data) = try Self.handler?(request) ?? (500, Data())
+      let response = HTTPURLResponse(
+        url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: data)
+      client?.urlProtocolDidFinishLoading(self)
+    } catch { client?.urlProtocol(self, didFailWithError: error) }
+  }
+  override func stopLoading() {}
+}
+
+private func mockSession(
+  handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)
+) -> URLSession {
+  MockURLProtocol.handler = handler
+  let configuration = URLSessionConfiguration.ephemeral
+  configuration.protocolClasses = [MockURLProtocol.self]
+  return URLSession(configuration: configuration)
+}
