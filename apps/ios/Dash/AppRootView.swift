@@ -91,7 +91,7 @@ private struct LoginView: View {
   }
 }
 
-private enum AppTab: Hashable { case home, items, watchtower }
+private enum AppTab: Hashable { case home, items, watchtower, search }
 
 private struct FeatureNavigationStack<Root: View>: View {
   @ViewBuilder let root: () -> Root
@@ -117,64 +117,103 @@ private struct MainTabView: View {
   }
 
   var body: some View {
-    TabView(selection: $selection) {
-      FeatureNavigationStack { HomeView() }
-        .tabItem {
-          Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
-            .renderingMode(.template)
-            .accessibilityLabel("Home")
+    tabContainer
+      .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
+      .onChange(of: showsProfile) { _, presented in
+        if presented {
+          cancelTabBarHold()
+        } else {
+          scheduleTabBarRestore()
         }
-        .tag(AppTab.home)
-      FeatureNavigationStack { ItemsView() }
-        .tabItem {
-          Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
-            .renderingMode(.template)
-            .accessibilityLabel("Items")
+      }
+      .onChange(of: showsEditShortcuts) { _, presented in
+        if presented {
+          cancelTabBarHold()
+        } else {
+          scheduleTabBarRestore()
         }
-        .tag(AppTab.items)
-      FeatureNavigationStack { WatchtowerView() }
-        .tabItem {
-          Image(
-            selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
-          )
-          .renderingMode(.template)
-          .accessibilityLabel("Watchtower")
+      }
+      .onChange(of: nestedTrayPresented) { _, presented in
+        if presented {
+          cancelTabBarHold()
+        } else {
+          scheduleTabBarRestore()
         }
-        .tag(AppTab.watchtower)
-    }
-    .toolbar(hidesTabBar ? .hidden : .visible, for: .tabBar)
-    .toolbarBackground(DashTheme.elevated, for: .tabBar)
-    .toolbarBackground(hidesTabBar ? .hidden : .visible, for: .tabBar)
-    .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
-    .onChange(of: showsProfile) { _, presented in
-      if presented {
-        cancelTabBarHold()
-      } else {
-        scheduleTabBarRestore()
       }
-    }
-    .onChange(of: showsEditShortcuts) { _, presented in
-      if presented {
-        cancelTabBarHold()
-      } else {
-        scheduleTabBarRestore()
+      .environment(\.showsProfile, $showsProfile)
+      .environment(\.showsEditShortcuts, $showsEditShortcuts)
+      .dashTray(isPresented: $showsProfile, title: "Profile") {
+        ProfileTrayContent()
       }
-    }
-    .onChange(of: nestedTrayPresented) { _, presented in
-      if presented {
-        cancelTabBarHold()
-      } else {
-        scheduleTabBarRestore()
+      .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
+        EditShortcutsView()
       }
+  }
+
+  // Tab(role: .search) detaches the search button beside the tab bar on
+  // iOS 26; on 18–25 it renders as a regular trailing tab.
+  @ViewBuilder
+  private var tabContainer: some View {
+    if #available(iOS 18.0, *) {
+      TabView(selection: $selection) {
+        Tab(value: AppTab.home) {
+          FeatureNavigationStack { HomeView() }
+        } label: {
+          tabLabel("Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+        }
+        Tab(value: AppTab.items) {
+          FeatureNavigationStack { ItemsView() }
+        } label: {
+          tabLabel("Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+        }
+        Tab(value: AppTab.watchtower) {
+          FeatureNavigationStack { WatchtowerView() }
+        } label: {
+          tabLabel(
+            "Watchtower",
+            asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine")
+        }
+        Tab(value: AppTab.search, role: .search) {
+          FeatureNavigationStack { SearchView() }
+        } label: {
+          tabLabel("Search", asset: SolarAsset.search)
+        }
+      }
+      .modifier(TabBarChrome(hidden: hidesTabBar))
+    } else {
+      TabView(selection: $selection) {
+        FeatureNavigationStack { HomeView() }
+          .tabItem {
+            tabLabel("Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+          }
+          .tag(AppTab.home)
+        FeatureNavigationStack { ItemsView() }
+          .tabItem {
+            tabLabel(
+              "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+          }
+          .tag(AppTab.items)
+        FeatureNavigationStack { WatchtowerView() }
+          .tabItem {
+            tabLabel(
+              "Watchtower",
+              asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine")
+          }
+          .tag(AppTab.watchtower)
+        FeatureNavigationStack { SearchView() }
+          .tabItem {
+            tabLabel("Search", asset: SolarAsset.search)
+          }
+          .tag(AppTab.search)
+      }
+      .modifier(TabBarChrome(hidden: hidesTabBar))
     }
-    .environment(\.showsProfile, $showsProfile)
-    .environment(\.showsEditShortcuts, $showsEditShortcuts)
-    .dashTray(isPresented: $showsProfile, title: "Profile") {
-      ProfileTrayContent()
-    }
-    .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
-      EditShortcutsView()
-    }
+  }
+
+  private func tabLabel(_ title: String, asset: String) -> some View {
+    Image(asset)
+      .renderingMode(.template)
+      .accessibilityLabel(title)
   }
 
   private func cancelTabBarHold() {
@@ -193,6 +232,17 @@ private struct MainTabView: View {
       tabBarExitHold = false
       tabBarHoldTask = nil
     }
+  }
+}
+
+private struct TabBarChrome: ViewModifier {
+  let hidden: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .toolbar(hidden ? .hidden : .visible, for: .tabBar)
+      .toolbarBackground(DashTheme.elevated, for: .tabBar)
+      .toolbarBackground(hidden ? .hidden : .visible, for: .tabBar)
   }
 }
 
