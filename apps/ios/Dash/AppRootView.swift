@@ -299,6 +299,7 @@ extension View {
         case .zone(let id): ZoneDetailView(zoneID: id)
         case .dns(let id): DNSRecordsView(zoneID: id)
         case .cache(let id): CachePurgeView(zoneID: id)
+        case .zoneAnalytics(let id): ZoneAnalyticsView(zoneID: id)
         case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
         case .zoneTool(let zoneID, let title, let path):
           GenericResourcesView(

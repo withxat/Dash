@@ -136,6 +136,7 @@ enum Destination: Hashable {
   case zone(String)
   case dns(String)
   case cache(String)
+  case zoneAnalytics(String)
   case zoneSettings(String)
   case zoneTool(zoneID: String, title: String, path: String)
   case worker(String)

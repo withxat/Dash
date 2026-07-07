@@ -97,19 +97,34 @@ struct ZoneDetailView: View {
   @State private var zone: CloudflareZone?
   @State private var error: String?
 
-  private let tools: [(String, String, String)] = [
-    ("DNS", SolarAsset.globus, "dns"), ("Analytics", SolarAsset.chart, "analytics"),
-    ("Cache", SolarAsset.bolt, "cache"), ("Settings", SolarAsset.slider, "settings"),
-    ("Security events", SolarAsset.shield, "security"), ("SSL/TLS", SolarAsset.lock, "ssl"),
-    ("IP access rules", "SolarShieldUserOutline", "firewall/access_rules/rules"),
-    ("WAF", SolarAsset.shield, "rulesets/phases/http_request_firewall_custom/entrypoint"),
-    ("Health checks", SolarAsset.heartPulse, "healthchecks"),
-    ("Waiting rooms", SolarAsset.users, "waiting_rooms"),
-    ("Load balancers", SolarAsset.branching, "load_balancers"),
-    ("Page rules", SolarAsset.file, "pagerules"),
-    ("Email routing", SolarAsset.letter, "email/routing/rules"),
-    ("Worker routes", SolarAsset.routing, "workers/routes"),
+  private let tools: [ZoneTool] = [
+    ZoneTool(title: "DNS", icon: SolarAsset.globus, endpoint: "dns"),
+    ZoneTool(title: "Analytics", icon: SolarAsset.chart, endpoint: "analytics"),
+    ZoneTool(title: "Cache", icon: SolarAsset.bolt, endpoint: "cache"),
+    ZoneTool(title: "Settings", icon: SolarAsset.slider, endpoint: "settings"),
+    ZoneTool(title: "SSL/TLS", icon: SolarAsset.lock, endpoint: "ssl/certificate_packs?status=all"),
+    ZoneTool(
+      title: "IP access rules", icon: "SolarShieldUserOutline",
+      endpoint: "firewall/access_rules/rules"),
+    ZoneTool(title: "WAF rulesets", icon: SolarAsset.shield, endpoint: "rulesets"),
+    ZoneTool(
+      title: "Health checks", icon: SolarAsset.heartPulse, endpoint: "healthchecks",
+      minTier: .pro),
+    ZoneTool(
+      title: "Waiting rooms", icon: SolarAsset.users, endpoint: "waiting_rooms",
+      minTier: .business),
+    ZoneTool(title: "Load balancers", icon: SolarAsset.branching, endpoint: "load_balancers"),
+    ZoneTool(title: "Page rules", icon: SolarAsset.file, endpoint: "pagerules"),
+    ZoneTool(title: "Email routing", icon: SolarAsset.letter, endpoint: "email/routing/rules"),
+    ZoneTool(title: "Worker routes", icon: SolarAsset.routing, endpoint: "workers/routes"),
   ]
+
+  private func visibleTools(for zone: CloudflareZone) -> [ZoneTool] {
+    // Fail open when the plan is missing from the response.
+    guard let plan = zone.plan else { return tools }
+    let tier = ZonePlanTier(plan: plan)
+    return tools.filter { tier >= $0.minTier }
+  }
 
   var body: some View {
     ScrollView {
@@ -122,6 +137,11 @@ struct ZoneDetailView: View {
                 VStack(alignment: .leading) {
                   Text(zone.name).font(.dashTitle(21))
                   Text(zone.status ?? "unknown").foregroundStyle(DashTheme.subtle)
+                  if let planName = zone.plan?.name {
+                    Text(planName)
+                      .font(.system(size: 13))
+                      .foregroundStyle(DashTheme.placeholder)
+                  }
                 }
                 Spacer()
                 StatusBadge(text: zone.status ?? "unknown")
@@ -136,13 +156,15 @@ struct ZoneDetailView: View {
             }
           }
           LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            ForEach(tools, id: \.0) { title, symbol, endpoint in
-              NavigationLink(value: destination(title: title, endpoint: endpoint)) {
+            ForEach(visibleTools(for: zone), id: \.title) { tool in
+              NavigationLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
                 VStack(alignment: .leading, spacing: 12) {
-                  SolarIcon(asset: symbol, size: 22, color: DashTheme.brand)
-                  Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(DashTheme.text)
-                    .frame(
-                      maxWidth: .infinity, alignment: .leading)
+                  SolarIcon(asset: tool.icon, size: 22, color: DashTheme.brand)
+                  Text(tool.title).font(.subheadline.weight(.semibold)).foregroundStyle(
+                    DashTheme.text
+                  )
+                  .frame(
+                    maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(DashTheme.Spacing.card)
                 .frame(minHeight: 96)
@@ -193,12 +215,40 @@ struct ZoneDetailView: View {
   private func destination(title: String, endpoint: String) -> Destination {
     switch endpoint {
     case "dns": .dns(zoneID)
+    case "analytics": .zoneAnalytics(zoneID)
     case "cache": .cache(zoneID)
     case "settings": .zoneSettings(zoneID)
     default:
       .zoneTool(zoneID: zoneID, title: title, path: "/zones/{zone}/\(endpoint)")
     }
   }
+}
+
+private struct ZoneTool {
+  let title: String
+  let icon: String
+  let endpoint: String
+  var minTier: ZonePlanTier = .free
+}
+
+enum ZonePlanTier: Int, Comparable {
+  case free = 0
+  case pro, business, enterprise
+
+  init(plan: ZonePlan) {
+    let id = plan.legacyId ?? plan.name?.lowercased() ?? ""
+    if id.contains("enterprise") {
+      self = .enterprise
+    } else if id.contains("business") {
+      self = .business
+    } else if id.contains("pro") {
+      self = .pro
+    } else {
+      self = .free
+    }
+  }
+
+  static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }
 
 struct DNSRecordsView: View {
