@@ -116,7 +116,12 @@ private struct MainTabView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var reduceMotionTransition: AnyTransition {
-    reduceMotion ? .identity : .opacity
+    reduceMotion
+      ? .identity
+      : .asymmetric(
+        insertion: .opacity.combined(with: .scale(scale: 0.985)),
+        removal: .opacity.combined(with: .scale(scale: 0.992))
+      )
   }
 
   private var hidesTabBar: Bool {
@@ -152,7 +157,7 @@ private struct MainTabView: View {
           .tag(AppTab.watchtower)
       }
       .zIndex(0)
-      .opacity(featureTransitionCoordinator.presentedFeature == nil ? 1 : 0.94)
+      .opacity(featureTransitionCoordinator.presentedFeature == nil ? 1 : 0.88)
 
       if let feature = featureTransitionCoordinator.presentedFeature {
         FeatureDetailOverlay(feature: feature) {

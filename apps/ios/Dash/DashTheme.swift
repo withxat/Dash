@@ -326,9 +326,9 @@ struct DashInlineSearch: View {
     .padding(.horizontal, 16)
     .frame(minHeight: 52)
     .background(DashTheme.base)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
     .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
         .stroke(
           focusBinding.wrappedValue ? DashTheme.brand.opacity(0.45) : DashTheme.line,
           lineWidth: focusBinding.wrappedValue ? 1.5 : 0.5
@@ -652,8 +652,8 @@ enum FeatureHeroZIndex {
 }
 
 enum FeatureTransitionMotion {
-  static let duration: TimeInterval = 0.32
-  static var hero: Animation { .smooth(duration: duration) }
+  static let duration: TimeInterval = 0.38
+  static var hero: Animation { .smooth(duration: duration, extraBounce: 0) }
 }
 
 @MainActor
@@ -661,32 +661,51 @@ enum FeatureTransitionMotion {
 final class FeatureTransitionCoordinator {
   var selection: SelectedFeature?
   var presentedFeature: FeatureID?
+  private(set) var isTransitioning = false
+  @ObservationIgnored private var transitionTask: Task<Void, Never>?
 
-  var isAnimatingHero: Bool { selection != nil }
+  var isAnimatingHero: Bool { isTransitioning }
 
   func present(_ feature: FeatureID, from origin: FeatureHeroOrigin, reduceMotion: Bool = false) {
+    transitionTask?.cancel()
     selection = SelectedFeature(origin: origin, feature: feature)
     guard !reduceMotion else {
+      isTransitioning = false
       presentedFeature = feature
       return
     }
+    isTransitioning = true
     withAnimation(FeatureTransitionMotion.hero) {
       presentedFeature = feature
     }
+    finishTransition(after: FeatureTransitionMotion.duration)
   }
 
   func dismiss(reduceMotion: Bool = false) {
+    transitionTask?.cancel()
     guard !reduceMotion else {
+      isTransitioning = false
       presentedFeature = nil
       selection = nil
       return
     }
+    isTransitioning = true
     withAnimation(FeatureTransitionMotion.hero) {
       presentedFeature = nil
     }
-    Task { @MainActor in
+    transitionTask = Task { @MainActor in
       try? await Task.sleep(for: .milliseconds(Int(FeatureTransitionMotion.duration * 1000)))
+      guard !Task.isCancelled else { return }
+      isTransitioning = false
       clearSelectionIfNeeded()
+    }
+  }
+
+  private func finishTransition(after duration: TimeInterval) {
+    transitionTask = Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(Int(duration * 1000)))
+      guard !Task.isCancelled else { return }
+      isTransitioning = false
     }
   }
 
@@ -831,7 +850,10 @@ private struct FeatureCardSourceModifier: ViewModifier {
       content
         .matchedGeometryEffect(
           id: FeatureHeroID.card(origin: rowOrigin, feature),
-          in: namespace
+          in: namespace,
+          properties: .frame,
+          anchor: .center,
+          isSource: true
         )
         .zIndex(
           transitionCoordinator.isAnimatingHero ? FeatureHeroZIndex.listCard : 0
@@ -842,6 +864,7 @@ private struct FeatureCardSourceModifier: ViewModifier {
   }
 
   private var isActiveSource: Bool {
+    guard transitionCoordinator.isAnimatingHero else { return false }
     guard let rowOrigin,
       let selection = transitionCoordinator.selection
     else { return false }
@@ -856,7 +879,8 @@ private struct FeatureCardDestinationModifier: ViewModifier {
   let feature: FeatureID
 
   func body(content: Content) -> some View {
-    if let selection = transitionCoordinator.selection,
+    if transitionCoordinator.isAnimatingHero,
+      let selection = transitionCoordinator.selection,
       selection.feature == feature,
       let namespace,
       !reduceMotion
@@ -864,7 +888,10 @@ private struct FeatureCardDestinationModifier: ViewModifier {
       content
         .matchedGeometryEffect(
           id: FeatureHeroID.card(origin: selection.origin, feature),
-          in: namespace
+          in: namespace,
+          properties: .frame,
+          anchor: .center,
+          isSource: false
         )
         .zIndex(FeatureHeroZIndex.detailCard)
     } else {
@@ -883,13 +910,20 @@ private struct FeatureHeroDestinationModifier: ViewModifier {
   func body(content: Content) -> some View {
     if part == .card {
       content
-    } else if let selection = transitionCoordinator.selection,
+    } else if transitionCoordinator.isAnimatingHero,
+      let selection = transitionCoordinator.selection,
       selection.feature == feature,
       let namespace,
       !reduceMotion
     {
       content
-        .matchedGeometryEffect(id: heroID(origin: selection.origin), in: namespace)
+        .matchedGeometryEffect(
+          id: heroID(origin: selection.origin),
+          in: namespace,
+          properties: .frame,
+          anchor: .center,
+          isSource: false
+        )
         .zIndex(
           transitionCoordinator.isAnimatingHero ? zIndexForPart : 0
         )
@@ -930,7 +964,13 @@ private struct FeatureHeroSourceModifier: ViewModifier {
       !reduceMotion
     {
       content
-        .matchedGeometryEffect(id: heroID(origin: rowOrigin), in: namespace)
+        .matchedGeometryEffect(
+          id: heroID(origin: rowOrigin),
+          in: namespace,
+          properties: .frame,
+          anchor: .center,
+          isSource: true
+        )
         .zIndex(
           transitionCoordinator.isAnimatingHero ? zIndexForPart : 0
         )
@@ -940,6 +980,7 @@ private struct FeatureHeroSourceModifier: ViewModifier {
   }
 
   private var isActiveSource: Bool {
+    guard transitionCoordinator.isAnimatingHero else { return false }
     guard let rowOrigin,
       let selection = transitionCoordinator.selection
     else { return false }
