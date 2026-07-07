@@ -1,148 +1,85 @@
 # AGENTS.md
 
-CloudFX is a mobile Cloudflare client: sign in with a Cloudflare account via
-OAuth 2.0 (Authorization Code + PKCE), then manage zones, DNS records (full
-CRUD), cache purge, zone quick settings (dev mode / Under Attack / HTTPS /
-SSL), firewall security events, Workers (workers.dev start/pause, custom
-domains, deployments, per-zone routes, source viewer), Pages projects
-(domains, deployment status), R2 buckets + Workers KV
-(browse/upload/edit/delete), and account + zone analytics incl. Web Analytics
-(RUM). The repo is a pnpm workspace managed with Turborepo.
+Dash for Cloudflare is a native iOS/iPadOS Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
 
-## Workspace layout
+## Workspace
 
-| Workspace | Package name | Purpose |
-| --- | --- | --- |
-| `apps/mobile` | `@cloudfx/mobile` | The app. Expo SDK 57 + React Native + expo-router + NativeWind. |
-| `apps/relay-worker` | `@cloudfx/relay-worker` | Stateless Cloudflare Worker that 302-redirects the `https://` OAuth callback into the `cloudfx://` deep link. Deployed with wrangler. |
-| `packages/api` | `@cloudfx/api` | Framework-agnostic, `fetch`-based Cloudflare client: OAuth helpers (exchange / refresh / revoke), `CloudflareClient` with automatic 401 → refresh-retry, typed REST + GraphQL analytics helpers. **Source-exported — no build step.** |
-| `packages/ui` | `ui` | shadcn/ui (base-nova) component library for **web** (React DOM + Tailwind v4). Left over from the monorepo template; not consumed by the mobile app. Do not import it from `apps/mobile`. |
-
-Per-app details live in `apps/mobile/README.md` (OAuth flow, env setup, file
-layout) and `apps/relay-worker/README.md` (why the relay exists, deploy steps).
+| Path | Purpose |
+| --- | --- |
+| `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
+| `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
+| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker OAuth relay |
+| `packages/ui` | Web-only component library; do not import it into Dash |
 
 ## Commands
 
-Requires Node (current LTS) + pnpm 11 via Corepack (`corepack enable`). Always
-install from the repo root.
-
 ```sh
 pnpm install
-pnpm dev          # turbo dev (all workspaces with a dev task)
-pnpm typecheck    # tsc --noEmit everywhere
-pnpm lint         # ESLint everywhere
-pnpm lint:fix     # ESLint with --fix (this is also the formatter)
-pnpm build        # only packages that define a build task
+pnpm ios:build      # signed simulator build
+pnpm ios:device     # signed device build
+pnpm ios:test       # unit + UI tests on an iPhone 17 Pro simulator (Xcode 26+)
+pnpm api:test       # Swift Package tests, no simulator needed
+pnpm typecheck      # turbo typecheck + api:test + full simulator build (slow)
+pnpm lint
+pnpm lint:fix
+pnpm ios:icons      # regenerate Solar icon assets
+pnpm --filter @dash/relay-worker run deploy
 ```
 
-Target a single workspace with `pnpm --filter`:
+Single tests:
 
 ```sh
-pnpm --filter @cloudfx/mobile dev            # Metro / Expo dev server
-pnpm --filter @cloudfx/mobile typecheck
-pnpm --filter @cloudfx/relay-worker run deploy   # wrangler deploy
+swift test --package-path packages/cloudflare-api --filter <testFunctionName>
+xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -allowProvisioningUpdates -only-testing:DashTests test
 ```
 
-Before finishing any change, run `pnpm typecheck` and `pnpm lint` (or the
-filtered equivalents). Lefthook runs `lint:fix` + `typecheck` on pre-commit,
-so unfixed issues will block commits anyway.
+All iOS build and test commands use Automatic signing with team `J4CCPX9K6H` (`apps/ios/Config/Signing.xcconfig`). OAuth secrets stay in ignored `Config/Secrets.xcconfig`.
 
-## Code style and conventions
+Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and `pnpm ios:test`. Fix failures before committing. Commit frequently using Conventional Commits. Lefthook's pre-commit hook runs `lint:fix` and `typecheck` on staged changes, so commits trigger a simulator build.
 
-- **Formatting is ESLint's job** (`@withxat/eslint-config`, ESLint 10 flat
-  config). There is no Prettier. Run `pnpm lint:fix` instead of hand-formatting.
-  House style: tabs for indentation, single quotes, no semicolons.
-- **TypeScript 6, strict**, via `@withxat/tsconfig`. Keep everything typed; the
-  API surface in `packages/api` exports explicit types from `src/index.ts`.
-- **Dependency versions come from catalogs** in `pnpm-workspace.yaml`
-  (`catalog:devtool`, `catalog:react`, `catalog:mobile`, `catalog:tailwind`).
-  When adding a dependency shared across workspaces, add or reuse a catalog
-  entry rather than hardcoding a version. Cross-workspace deps use
-  `workspace:*`.
-- **Commits follow Conventional Commits** (`feat:`, `fix:`, `chore:`, …).
-- pnpm supply-chain policy (`trustPolicy: no-downgrade`) may reject new
-  packages; exceptions go in `minimumReleaseAgeExclude` / `trustPolicyExclude`
-  in `pnpm-workspace.yaml` only after review.
+## Architecture
 
-## Mobile app (`apps/mobile`)
+### iOS app
 
-- **Routing:** expo-router file-based routes under `app/`. `(auth)` holds the
- login screen; `(app)/_layout.tsx` owns the native tabs (home, items,
- watchtower, search). Each tab owns its own native Stack so its large title is
- connected to that tab's ScrollView and preserves independent scroll state.
- Tab roots show the profile avatar; pushed screens use the system back button.
- The URL-less `(items)` route group owns Items plus `zones` / `workers` /
- `storage` / `account`, keeping their public paths unchanged while ensuring
- avatar-to-back transitions happen in one native stack. The tab bar is hidden
- on pushed screens; form sheets keep their native modal header. UI glyphs come from `@solar-icons/react-native` via
- `components/icons.tsx`; catalog/product glyphs are Solar Linear icons mapped
- in `components/catalog-item-icon.tsx`.
-- **Styling:** NativeWind `className` strings (Tailwind v3 syntax) over
- Kumo-aligned semantic color tokens (`bg-canvas`, `bg-base`, `bg-elevated`,
- `text-default`, `text-subtle`, `border-line`, `bg-brand`, `text-accent`, …)
- defined as CSS variables in `global.css` with light/dark values (system
- appearance via `darkMode: 'media'`). Primary actions use Cloudflare blue
- (`brand`); the orange accent (`accent`) is reserved for brand marks and
- emphasis. The Kumo-aligned design system lives in `components/kumo/` (barrel
- `components/kumo/index.ts`); legacy paths under `components/*.tsx` re-export
- from there for backward compatibility. Non-native primitives mirror Kumo
- patterns (`Badge` variants/appearances, squircle `Switch`, `LayerCard`, etc.).
- Never hardcode hex colors in components; for JS-side colors (navigator chrome,
- spinners, animated controls) use `useTheme()` from `lib/theme.ts`. Combine
- conditional classes with the local `cx` helper from `lib/cx.ts` — not
- `clsx`/`cn` from elsewhere. App-specific helpers (Stat, Row, SettingRow,
- Segmented, icons, …) stay in `components/`; prefer importing Kumo primitives
- from `components/kumo` for new UI. Long lists use `LegendList` from
- `@legendapp/list/react-native`.
-- **Data:** TanStack React Query on top of a singleton `CloudflareClient`
-  (`lib/api.ts`). Tokens live in SecureStore (`lib/storage.ts`); auth state
-  comes from `useAuth()` (`lib/use-auth.ts`), active account from
-  `useActiveAccount()`.
-- **Config:** `EXPO_PUBLIC_CLOUDFLARE_CLIENT_ID` and
-  `EXPO_PUBLIC_CLOUDFLARE_REDIRECT_URI` are read at bundle time in
-  `lib/config.ts`. They are inlined by Metro — after changing `.env`, Metro
-  must be restarted. If unset, the login screen shows a "not configured" state.
-- **Expo Go is not supported.** The OAuth flow needs the custom `cloudfx://`
-  scheme, so a development build is required (`eas build --profile development`
-  or `expo prebuild`). Adding/changing native dependencies requires a new dev
-  build; JS-only changes do not.
-- Always follow the React Native performance rules in
-  `.agents/skills/vercel-react-native-skills/` (they are workspace rules):
-  no bare strings outside `<Text>`, no `&&` rendering with falsy values,
-  virtualize lists, native navigators, `Pressable` over Touchables, etc.
+- One `AppModel` (`@Observable @MainActor`, created in `DashApp`, injected via `.environment`) owns the `CloudflareClient`, `KeychainTokenStore`, `FeatureDataCache`, auth state, accounts, and active-account selection. Switching accounts or signing out clears the cache.
+- `AppRootView` switches on auth state into `MainTabView` — three tabs (Home, Items, Watchtower), each its own `NavigationStack`. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
+- `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar asset, and category per feature. Rich features (zones, workers, R2, KV, D1, account) have dedicated views in `FeatureViews.swift`, `StorageViews.swift`, and `AccountFeatureViews.swift`; the rest fall through to `GenericFeatureView`, which maps the `FeatureID` to a REST path and lists `GenericResource` rows. A simple list feature needs only a `FeatureID` case and a path there — no new view.
+- `FeatureDataCache` is an in-memory, session-scoped cache keyed by `FeatureCacheKey` strings. Views read the cache in `.task` and bypass it from `refreshable` with `force: true`.
+- Shared chrome (cards, trays/sheets, pill buttons, catalog toolbar) lives in `DashChrome.swift`; all palette, typography, and spacing tokens in `DashTheme.swift`.
+- Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals.
+- Home shortcuts and recents persist in `AppStorage` as comma-separated `FeatureID` raw values.
 
-## OAuth architecture (why the relay Worker exists)
+### Auth flow
 
-Cloudflare OAuth clients only accept `http(s)://` redirect URIs, but the app
-can only reliably capture callbacks via the `cloudfx://` custom scheme. So:
+- `AppModel.signIn()` builds a PKCE authorize URL and opens `ASWebAuthenticationSession`; Cloudflare redirects to the relay's HTTPS callback, which 302s to `dash://oauth/callback`; the app exchanges the code and stores tokens through `KeychainTokenStore` (an actor implementing the package's `TokenStore` protocol).
+- Configuration plumbing: `Config/Base.xcconfig` `#include?`s the ignored `Signing.xcconfig` and `Secrets.xcconfig`; `DASH_CLIENT_ID`/`DASH_REDIRECT_URI` flow into Info.plist keys read by `AppConfiguration.current`. Unexpanded `$(...)` values mean unconfigured, which disables sign-in with a hint instead of crashing.
 
-```
-app → authorize on dash.cloudflare.com (redirect_uri = https://<worker>/oauth/callback)
-dash → 302 https://<worker>/oauth/callback?code=…&state=…
-worker → 302 cloudfx://oauth/callback?code=…&state=…   (captured by the app)
-app → exchanges code + PKCE code_verifier for tokens
-```
+### Tests
 
-The Worker (`apps/relay-worker/src/index.ts`) is stateless, logs nothing, and
-cannot exchange the code (it never holds the PKCE verifier). Keep it that way:
-do not add state, logging of query params, or token handling to it.
+- `DashTests` uses Swift Testing (`@Test`); `DashUITests` uses XCTest. `CloudflareAPITests` uses Swift Testing with a `URLProtocol` mock session — no live network calls.
 
-Scopes are exact Cloudflare scope IDs (e.g. `zone.read`, `dns.write`) defined
-in `packages/api/src/scopes.ts` — colon-delimited scopes are rejected by
-Cloudflare, write scopes end in `.write` (never `.edit`), and Workers
-permissions are fine-grained (`workers-scripts.*`, `workers-routes.*`,
-`workers-kv-storage.*`, `workers-r2.*` / `workers-r2-bucket-item.*`) — there
-is no blanket `workers.read`/`workers.edit`. Requesting a scope also requires
-enabling it on the OAuth client in the Cloudflare dashboard, and existing
-sessions must sign out/in to pick up newly added scopes. The app degrades
-gracefully on 403s from missing scopes (hides or explains the affected
-section). Discover valid scope IDs via `GET /client/v4/oauth/scopes`.
+## Swift conventions
 
-## packages/api rules
+- Use Swift 6 strict concurrency, `async throws`, actors for shared mutable state, and `@Observable @MainActor` for UI state.
+- Prefer SwiftUI system navigation, lists, searchable, refreshable, sheets, semantic colors, SF Symbols, and Dynamic Type.
+- The Kumo-aligned palette is defined in `DashTheme`; do not scatter literal colors through feature views.
+- App code depends on `CloudflareAPI`, never on JavaScript packages or `packages/ui`.
+- Tokens belong in the Keychain. Local OAuth values belong in ignored `Config/Secrets.xcconfig`; never commit credentials.
+- Preserve graceful 403 handling. A missing OAuth scope must affect only its feature and should surface an actionable error.
+- Use the exact Cloudflare OAuth scope IDs in `CloudflareScopes`. Write scopes end in `.write`; Workers permissions remain fine-grained.
+- Lists should stay lazy or use `List`; avoid loading unbounded object/key collections into a non-virtualized stack.
 
-- Keep it dependency-free and platform-agnostic: plain `fetch`, no React, no
-  Expo imports. It is consumed from source by the mobile app via the workspace
-  symlink.
-- New Cloudflare endpoints go through `CloudflareClient` (so they inherit the
-  401 → refresh-retry behavior) with response types in `src/types.ts`, and get
-  re-exported from `src/index.ts`.
+## Cloudflare API package
+
+- Keep `packages/cloudflare-api` dependency-free and Foundation-based.
+- New endpoints go through `CloudflareClient` so they inherit Bearer auth, single-flight refresh, and one retry after 401.
+- Public response types are `Codable` and `Sendable`; public operations use `async throws`.
+- Binary endpoints use `Data` or file URLs. Do not decode unbounded bodies as text unless the endpoint is known to be bounded.
+
+## OAuth relay
+
+Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is deployed as `dash-relay` on Workers, which redirects to `dash://oauth/callback`.
+
+The Worker must remain stateless: do not log query parameters, persist authorization state, handle tokens, or receive the PKCE verifier. Redeploy it before releasing a Dash build that expects the new scheme.
