@@ -16,6 +16,7 @@ final class AppModel {
   let configuration: AppConfiguration
   let tokenStore: KeychainTokenStore
   let client: CloudflareClient
+  let featureCache = FeatureDataCache()
   var accounts: [CloudflareAccount] = []
   var activeAccountID: String?
   var authState: AuthenticationState = .loading
@@ -36,6 +37,13 @@ final class AppModel {
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
 
   func bootstrap() async {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
+        authState = .authenticated
+        return
+      }
+    #endif
+
     do {
       guard try await tokenStore.getAccessToken() != nil else {
         authState = .unauthenticated
@@ -109,6 +117,7 @@ final class AppModel {
       try? await OAuth.revoke(clientID: configuration.clientID, token: token)
     }
     try? await tokenStore.clear()
+    featureCache.clear()
     accounts = []
     user = nil
     activeAccountID = nil
@@ -117,6 +126,8 @@ final class AppModel {
   }
 
   func selectAccount(_ account: CloudflareAccount) {
+    guard activeAccountID != account.id else { return }
+    featureCache.clear()
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
   }

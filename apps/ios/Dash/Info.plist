@@ -33,11 +33,8 @@
 	<string>$(DASH_CLIENT_ID)</string>
 	<key>DASHRedirectURI</key>
 	<string>$(DASH_REDIRECT_URI)</string>
-	<key>UIAppFonts</key>
-	<array>
-		<string>ChillRoundGothic_Bold.otf</string>
-		<string>ChillRoundGothic_Heavy.otf</string>
-	</array>
+	<key>DashKeychainAccessGroup</key>
+	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key><string>LaunchBackground</string>

@@ -27,22 +27,19 @@ private struct LoginView: View {
       ScrollView {
         VStack(spacing: 32) {
           Spacer(minLength: 80)
-          VStack(spacing: 12) {
+          VStack(spacing: 16) {
             ZStack {
-              RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-                .fill(DashTheme.accent)
-              Image(systemName: "cloud.fill")
-                .font(.system(size: 30, weight: .bold))
-                .foregroundStyle(DashTheme.inverse)
+              Circle().fill(DashTheme.accent)
+              SolarIcon(asset: SolarAsset.cloud, size: 32, color: DashTheme.inverse)
             }
-            .frame(width: 64, height: 64)
+            .frame(width: 72, height: 72)
             Text("Dash")
-              .font(.chill(38, heavy: true))
+              .font(.dashTitle(40))
               .foregroundStyle(DashTheme.strong)
             Text(
-              "Zones, DNS, cache, security and analytics, your Cloudflare account in your pocket."
+              "Zones, DNS, cache, security and analytics — your Cloudflare account in your pocket."
             )
-            .font(.system(size: 14))
+            .font(.system(size: 15))
             .foregroundStyle(DashTheme.subtle)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -50,35 +47,28 @@ private struct LoginView: View {
 
           if let error = model.errorMessage {
             Text(error)
-              .font(.system(size: 13))
+              .font(.system(size: 14))
               .foregroundStyle(DashTheme.danger)
               .multilineTextAlignment(.center)
           }
 
-          Button {
-            model.signIn()
-          } label: {
-            HStack(spacing: 8) {
-              if model.isAuthenticating { ProgressView().tint(DashTheme.inverse) }
-              Text("Connect Cloudflare").font(.system(size: 14, weight: .medium))
-            }
-            .foregroundStyle(DashTheme.inverse)
-            .frame(maxWidth: .infinity, minHeight: 40)
-            .background(DashTheme.brand)
-            .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-          }
-          .buttonStyle(DashOpacityButtonStyle())
-          .disabled(model.isAuthenticating || !model.configuration.isConfigured)
-          .opacity(model.isAuthenticating || !model.configuration.isConfigured ? 0.5 : 1)
+          DashPillButton(
+            title: "Connect Cloudflare",
+            isLoading: model.isAuthenticating,
+            action: { model.signIn() }
+          )
+          .disabled(!model.configuration.isConfigured)
+          .opacity(model.configuration.isConfigured ? 1 : 0.5)
 
           if !model.configuration.isConfigured {
             DashCard {
               VStack(alignment: .leading, spacing: 8) {
-                Text("Almost ready").font(.system(size: 14, weight: .semibold))
+                Text("Almost ready")
+                  .font(.system(size: 16, weight: .semibold))
                 Text(
                   "Add Config/Secrets.xcconfig with your OAuth client values, then rebuild Dash."
                 )
-                .font(.system(size: 13))
+                .font(.system(size: 14))
                 .foregroundStyle(DashTheme.subtle)
                 .fixedSize(horizontal: false, vertical: true)
               }
@@ -86,15 +76,10 @@ private struct LoginView: View {
           }
 
           DashCard {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Secure OAuth with PKCE")
-                .font(.system(size: 12))
-                .foregroundStyle(DashTheme.subtle)
-              Text("Your credentials never pass through the callback relay.")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(DashTheme.text)
-                .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Secure OAuth with PKCE. Your credentials never pass through the callback relay.")
+              .font(.system(size: 13))
+              .foregroundStyle(DashTheme.subtle)
+              .fixedSize(horizontal: false, vertical: true)
           }
           Spacer(minLength: 24)
         }
@@ -108,98 +93,199 @@ private struct LoginView: View {
 
 private enum AppTab: Hashable { case home, items, watchtower }
 
-private struct MainTabView: View {
-  @State private var selection: AppTab = .home
+private struct FeatureNavigationStack<Root: View>: View {
+  @ViewBuilder let root: () -> Root
+
   var body: some View {
-    TabView(selection: $selection) {
-      NavigationStack { HomeView() }
-        .tabItem {
-          Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
-            .renderingMode(.template)
-            .accessibilityLabel("Home")
-        }
-        .tag(AppTab.home)
-      NavigationStack { ItemsView() }
-        .tabItem {
-          Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
-            .renderingMode(.template)
-            .accessibilityLabel("Items")
-        }
-        .tag(AppTab.items)
-      NavigationStack { WatchtowerView() }
-        .tabItem {
-          Image(
-            selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
-          )
-          .renderingMode(.template)
-          .accessibilityLabel("Watchtower")
-        }
-        .tag(AppTab.watchtower)
+    NavigationStack {
+      root()
+        .destinationRouting()
     }
+  }
+}
+
+private struct MainTabView: View {
+  @Namespace private var featureHero
+  @State private var featureTransitionCoordinator = FeatureTransitionCoordinator()
+  @State private var selection: AppTab = .home
+  @State private var showsProfile = false
+  @State private var showsEditShortcuts = false
+  @State private var nestedTrayPresented = false
+  @State private var tabBarExitHold = false
+  @State private var tabBarHoldTask: Task<Void, Never>?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var reduceMotionTransition: AnyTransition {
+    reduceMotion ? .identity : .opacity
+  }
+
+  private var hidesTabBar: Bool {
+    featureTransitionCoordinator.presentedFeature != nil
+      || showsProfile || showsEditShortcuts || nestedTrayPresented || tabBarExitHold
+  }
+
+  var body: some View {
+    ZStack {
+      TabView(selection: $selection) {
+        FeatureNavigationStack { HomeView() }
+          .tabItem {
+            Image(selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+              .renderingMode(.template)
+              .accessibilityLabel("Home")
+          }
+          .tag(AppTab.home)
+        FeatureNavigationStack { ItemsView() }
+          .tabItem {
+            Image(selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+              .renderingMode(.template)
+              .accessibilityLabel("Items")
+          }
+          .tag(AppTab.items)
+        FeatureNavigationStack { WatchtowerView() }
+          .tabItem {
+            Image(
+              selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
+            )
+            .renderingMode(.template)
+            .accessibilityLabel("Watchtower")
+          }
+          .tag(AppTab.watchtower)
+      }
+      .zIndex(0)
+      .opacity(featureTransitionCoordinator.presentedFeature == nil ? 1 : 0.94)
+
+      if let feature = featureTransitionCoordinator.presentedFeature {
+        FeatureDetailOverlay(feature: feature) {
+          featureTransitionCoordinator.dismiss(reduceMotion: reduceMotion)
+        }
+        .zIndex(
+          featureTransitionCoordinator.isAnimatingHero
+            ? FeatureHeroZIndex.heroShell
+            : FeatureHeroZIndex.detailShell
+        )
+        .transition(reduceMotionTransition)
+      }
+    }
+    .environment(\.featureZoomNamespace, featureHero)
+    .environment(featureTransitionCoordinator)
+    .toolbar(hidesTabBar ? .hidden : .visible, for: .tabBar)
     .toolbarBackground(DashTheme.elevated, for: .tabBar)
-    .toolbarBackground(.visible, for: .tabBar)
+    .toolbarBackground(hidesTabBar ? .hidden : .visible, for: .tabBar)
+    .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
+    .onChange(of: showsProfile) { _, presented in
+      if presented {
+        cancelTabBarHold()
+      } else {
+        scheduleTabBarRestore()
+      }
+    }
+    .onChange(of: showsEditShortcuts) { _, presented in
+      if presented {
+        cancelTabBarHold()
+      } else {
+        scheduleTabBarRestore()
+      }
+    }
+    .onChange(of: nestedTrayPresented) { _, presented in
+      if presented {
+        cancelTabBarHold()
+      } else {
+        scheduleTabBarRestore()
+      }
+    }
+    .environment(\.showsProfile, $showsProfile)
+    .environment(\.showsEditShortcuts, $showsEditShortcuts)
+    .dashTray(isPresented: $showsProfile, title: "Profile") {
+      ProfileTrayContent()
+    }
+  }
+
+  private func cancelTabBarHold() {
+    tabBarHoldTask?.cancel()
+    tabBarHoldTask = nil
+    tabBarExitHold = false
+  }
+
+  private func scheduleTabBarRestore() {
+    tabBarHoldTask?.cancel()
+    guard !showsProfile, !showsEditShortcuts, !nestedTrayPresented else { return }
+    tabBarExitHold = true
+    tabBarHoldTask = Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(400))
+      guard !Task.isCancelled else { return }
+      tabBarExitHold = false
+      tabBarHoldTask = nil
+    }
   }
 }
 
 struct AccountToolbar: ToolbarContent {
   @Environment(AppModel.self) private var model
-  @State private var showsProfile = false
+  @Environment(\.showsProfile) private var showsProfile
 
   var body: some ToolbarContent {
-    ToolbarItem(placement: .topBarTrailing) {
-      Button {
-        showsProfile = true
-      } label: {
-        ZStack {
-          Circle().fill(DashTheme.accent)
-          Text(model.user?.displayName.prefix(1).uppercased() ?? "D").font(.caption.bold())
-            .foregroundStyle(DashTheme.inverse)
-        }.frame(width: 32, height: 32)
-      }.accessibilityLabel("Profile").sheet(isPresented: $showsProfile) {
-        NavigationStack { ProfileView() }
-      }
+    leadingAvatarItem
+  }
+
+  @ToolbarContentBuilder
+  private var leadingAvatarItem: some ToolbarContent {
+    if #available(iOS 26.0, *) {
+      ToolbarItem(placement: .topBarLeading) { profileButton }
+        .sharedBackgroundVisibility(.hidden)
+    } else {
+      ToolbarItem(placement: .topBarLeading) { profileButton }
     }
+  }
+
+  private var profileButton: some View {
+    Button {
+      showsProfile.wrappedValue = true
+    } label: {
+      HeaderProfileAvatar(email: model.user?.email ?? "")
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Open profile")
   }
 }
 
-private struct ProfileView: View {
+struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.dashTrayDismiss) private var dismiss
 
   var body: some View {
-    List {
-      Section {
-        LabeledContent("Name", value: model.user?.displayName ?? "—")
-        LabeledContent("Email", value: model.user?.email ?? "—")
-      }
-      Section("Active account") {
-        ForEach(model.accounts) { account in
-          Button {
-            model.selectAccount(account)
-            dismiss()
-          } label: {
-            HStack {
-              Text(account.name)
-              Spacer()
-              if account.id == model.activeAccountID { Image(systemName: "checkmark") }
-            }
-          }.foregroundStyle(.primary)
+    VStack(spacing: 20) {
+      HStack(spacing: 16) {
+        UserAvatar(email: model.user?.email ?? "", size: 56)
+        VStack(alignment: .leading, spacing: 4) {
+          Text(model.user?.displayName ?? "—")
+            .font(.system(size: 18, weight: .semibold))
+          Text(model.user?.email ?? "—")
+            .font(.system(size: 14))
+            .foregroundStyle(DashTheme.subtle)
+          if let account = model.activeAccount {
+            Text(account.name)
+              .font(.system(size: 13))
+              .foregroundStyle(DashTheme.placeholder)
+          }
         }
+        Spacer(minLength: 0)
       }
-      Section {
-        Button("Sign out", role: .destructive) {
+
+      VStack(spacing: 12) {
+        DashActionRow(
+          title: "Sign out",
+          icon: SolarAsset.danger,
+          role: .destructive
+        ) {
           Task {
             await model.signOut()
             dismiss()
           }
         }
-      } footer: {
-        Text("Solar Icons by 480 Design, licensed under CC BY 4.0.")
       }
     }
-    .dashGroupedList()
-    .navigationTitle("Profile").navigationBarTitleDisplayMode(.inline)
-    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+    .padding(.horizontal, DashTheme.Sheet.content)
+    .padding(.bottom, DashTheme.Sheet.bodyBottom)
   }
 }
 
@@ -207,7 +293,8 @@ extension View {
   @ViewBuilder func destinationRouting() -> some View {
     navigationDestination(for: Destination.self) { destination in
       switch destination {
-      case .feature(let feature): FeatureRouterView(feature: feature)
+      case .feature:
+        EmptyView()
       case .zone(let id): ZoneDetailView(zoneID: id)
       case .dns(let id): DNSRecordsView(zoneID: id)
       case .cache(let id): CachePurgeView(zoneID: id)

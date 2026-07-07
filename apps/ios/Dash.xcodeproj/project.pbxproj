@@ -1,133 +1,559 @@
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
-	classes = {};
-	objectVersion = 77;
+	classes = {
+	};
+	objectVersion = 71;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		B00000000000000000000001 = {isa = PBXBuildFile; fileRef = F00000000000000000000001; };
-		B00000000000000000000002 = {isa = PBXBuildFile; fileRef = F00000000000000000000002; };
-		B00000000000000000000003 = {isa = PBXBuildFile; fileRef = F00000000000000000000003; };
-		B00000000000000000000004 = {isa = PBXBuildFile; fileRef = F00000000000000000000004; };
-		B00000000000000000000005 = {isa = PBXBuildFile; fileRef = F00000000000000000000005; };
-		B00000000000000000000006 = {isa = PBXBuildFile; fileRef = F00000000000000000000006; };
-		B00000000000000000000007 = {isa = PBXBuildFile; fileRef = F00000000000000000000007; };
-		B00000000000000000000008 = {isa = PBXBuildFile; fileRef = F00000000000000000000008; };
-		B00000000000000000000009 = {isa = PBXBuildFile; fileRef = F00000000000000000000009; };
-		B0000000000000000000000A = {isa = PBXBuildFile; fileRef = F0000000000000000000000A; };
-		B0000000000000000000000B = {isa = PBXBuildFile; fileRef = F0000000000000000000000B; };
-		B0000000000000000000000C = {isa = PBXBuildFile; fileRef = F0000000000000000000000C; };
-		B0000000000000000000000D = {isa = PBXBuildFile; fileRef = F0000000000000000000000D; };
-		B0000000000000000000000E = {isa = PBXBuildFile; fileRef = F0000000000000000000000E; };
-		B0000000000000000000000F = {isa = PBXBuildFile; fileRef = F0000000000000000000000F; };
-		B00000000000000000000010 = {isa = PBXBuildFile; fileRef = F00000000000000000000010; };
-		B00000000000000000000011 = {isa = PBXBuildFile; fileRef = F00000000000000000000011; };
-		B00000000000000000000012 = {isa = PBXBuildFile; fileRef = F00000000000000000000012; };
-		B00000000000000000000013 = {isa = PBXBuildFile; fileRef = F00000000000000000000013; };
-		B00000000000000000000014 = {isa = PBXBuildFile; productRef = P00000000000000000000001; };
+		B00000000000000000000001 /* DashApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000001 /* DashApp.swift */; };
+		B00000000000000000000002 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppConfiguration.swift */; };
+		B00000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
+		B00000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* AppModel.swift */; };
+		B00000000000000000000005 /* DashTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* DashTheme.swift */; };
+		B00000000000000000000006 /* Catalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* Catalog.swift */; };
+		B00000000000000000000007 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* AppRootView.swift */; };
+		B00000000000000000000008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* HomeView.swift */; };
+		B00000000000000000000009 /* ItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* ItemsView.swift */; };
+		B0000000000000000000000A /* WatchtowerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000A /* WatchtowerView.swift */; };
+		B0000000000000000000000B /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* FeatureViews.swift */; };
+		B0000000000000000000000C /* StorageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* StorageViews.swift */; };
+		B0000000000000000000000D /* GenericFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000D /* GenericFeatureViews.swift */; };
+		B00000000000000000000015 /* UserAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* UserAvatar.swift */; };
+		B00000000000000000000016 /* AccountFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000032 /* AccountFeatureViews.swift */; };
+		B00000000000000000000017 /* WatchtowerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000033 /* WatchtowerModel.swift */; };
+		B00000000000000000000018 /* SolarIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000034 /* SolarIcons.swift */; };
+		B00000000000000000000019 /* DashChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000035 /* DashChrome.swift */; };
+		B0000000000000000000001A /* FeatureDataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000036 /* FeatureDataCache.swift */; };
+		B0000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* Assets.xcassets */; };
+		B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* PrivacyInfo.xcprivacy */; };
+		B00000000000000000000012 /* DashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000012 /* DashTests.swift */; };
+		B00000000000000000000013 /* DashUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000013 /* DashUITests.swift */; };
+		B00000000000000000000014 /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000001 /* CloudflareAPI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		C00000000000000000000001 = {isa = PBXContainerItemProxy; containerPortal = A00000000000000000000001; proxyType = 1; remoteGlobalIDString = A00000000000000000000002; remoteInfo = Dash; };
+		C00000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000002;
+			remoteInfo = Dash;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		F00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashApp.swift; sourceTree = "<group>"; };
-		F00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
-		F00000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
-		F00000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
-		F00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
-		F00000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
-		F00000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
-		F00000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		F00000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsView.swift; sourceTree = "<group>"; };
-		F0000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerView.swift; sourceTree = "<group>"; };
-		F0000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
-		F0000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageViews.swift; sourceTree = "<group>"; };
-		F0000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericFeatureViews.swift; sourceTree = "<group>"; };
-		F0000000000000000000000E = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		F0000000000000000000000F = {isa = PBXFileReference; lastKnownFileType = file; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
-		F00000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = file; path = ChillRoundGothic_Bold.otf; sourceTree = "<group>"; };
-		F00000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = file; path = ChillRoundGothic_Heavy.otf; sourceTree = "<group>"; };
-		F00000000000000000000012 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTests.swift; sourceTree = "<group>"; };
-		F00000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashUITests.swift; sourceTree = "<group>"; };
-		F00000000000000000000020 = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		F00000000000000000000021 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F00000000000000000000022 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000001 /* DashApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashApp.swift; sourceTree = "<group>"; };
+		F00000000000000000000002 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		F00000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		F00000000000000000000005 /* DashTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
+		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
+		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
+		F00000000000000000000008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		F00000000000000000000009 /* ItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsView.swift; sourceTree = "<group>"; };
+		F0000000000000000000000A /* WatchtowerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerView.swift; sourceTree = "<group>"; };
+		F0000000000000000000000B /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000000C /* StorageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000000D /* GenericFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GenericFeatureViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000031 /* UserAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAvatar.swift; sourceTree = "<group>"; };
+		F00000000000000000000032 /* AccountFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountFeatureViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000033 /* WatchtowerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerModel.swift; sourceTree = "<group>"; };
+		F00000000000000000000034 /* SolarIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarIcons.swift; sourceTree = "<group>"; };
+		F00000000000000000000035 /* DashChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashChrome.swift; sourceTree = "<group>"; };
+		F00000000000000000000036 /* FeatureDataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureDataCache.swift; sourceTree = "<group>"; };
+		F0000000000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		F0000000000000000000000F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F00000000000000000000012 /* DashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000013 /* DashUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashUITests.swift; sourceTree = "<group>"; };
+		F00000000000000000000020 /* Dash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000021 /* DashTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000022 /* DashUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000030 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = Config/Base.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		D00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000014,); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000003 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D00000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000014 /* CloudflareAPI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A00000000000000000000010 = {isa = PBXGroup; children = (A00000000000000000000011,A00000000000000000000012,A00000000000000000000013,A00000000000000000000014,A00000000000000000000015); sourceTree = "<group>"; };
-		A00000000000000000000011 = {isa = PBXGroup; path = Dash; sourceTree = "<group>"; children = (F00000000000000000000001,F00000000000000000000002,F00000000000000000000003,F00000000000000000000004,F00000000000000000000005,F00000000000000000000006,F00000000000000000000007,F00000000000000000000008,F00000000000000000000009,F0000000000000000000000A,F0000000000000000000000B,F0000000000000000000000C,F0000000000000000000000D,A00000000000000000000016,F0000000000000000000000F); };
-		A00000000000000000000012 = {isa = PBXGroup; path = DashTests; sourceTree = "<group>"; children = (F00000000000000000000012,); };
-		A00000000000000000000013 = {isa = PBXGroup; path = DashUITests; sourceTree = "<group>"; children = (F00000000000000000000013,); };
-		A00000000000000000000014 = {isa = PBXGroup; name = Products; children = (F00000000000000000000020,F00000000000000000000021,F00000000000000000000022); sourceTree = "<group>"; };
-		A00000000000000000000015 = {isa = PBXGroup; name = Frameworks; children = (); sourceTree = "<group>"; };
-		A00000000000000000000016 = {isa = PBXGroup; path = Resources; sourceTree = "<group>"; children = (F0000000000000000000000E,A00000000000000000000017); };
-		A00000000000000000000017 = {isa = PBXGroup; path = Fonts; sourceTree = "<group>"; children = (F00000000000000000000010,F00000000000000000000011); };
+		5B23A8D52FFB6F8700D18CF0 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000030 /* Base.xcconfig */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		A00000000000000000000010 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000011 /* Dash */,
+				A00000000000000000000012 /* DashTests */,
+				A00000000000000000000013 /* DashUITests */,
+				A00000000000000000000014 /* Products */,
+				A00000000000000000000015 /* Frameworks */,
+				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000011 /* Dash */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000001 /* DashApp.swift */,
+				F00000000000000000000002 /* AppConfiguration.swift */,
+				F00000000000000000000003 /* KeychainTokenStore.swift */,
+				F00000000000000000000004 /* AppModel.swift */,
+				F00000000000000000000036 /* FeatureDataCache.swift */,
+				F00000000000000000000005 /* DashTheme.swift */,
+				F00000000000000000000006 /* Catalog.swift */,
+				F00000000000000000000007 /* AppRootView.swift */,
+				F00000000000000000000008 /* HomeView.swift */,
+				F00000000000000000000009 /* ItemsView.swift */,
+				F0000000000000000000000A /* WatchtowerView.swift */,
+				F0000000000000000000000B /* FeatureViews.swift */,
+				F0000000000000000000000C /* StorageViews.swift */,
+				F0000000000000000000000D /* GenericFeatureViews.swift */,
+				F00000000000000000000031 /* UserAvatar.swift */,
+				F00000000000000000000032 /* AccountFeatureViews.swift */,
+				F00000000000000000000033 /* WatchtowerModel.swift */,
+				F00000000000000000000034 /* SolarIcons.swift */,
+				F00000000000000000000035 /* DashChrome.swift */,
+				A00000000000000000000016 /* Resources */,
+				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
+			);
+			path = Dash;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000012 /* DashTests */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000012 /* DashTests.swift */,
+			);
+			path = DashTests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000013 /* DashUITests */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000013 /* DashUITests.swift */,
+			);
+			path = DashUITests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000014 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000020 /* Dash.app */,
+				F00000000000000000000021 /* DashTests.xctest */,
+				F00000000000000000000022 /* DashUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000015 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000016 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F0000000000000000000000E /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A00000000000000000000002 = {isa = PBXNativeTarget; buildConfigurationList = E00000000000000000000002; buildPhases = (D00000000000000000000011,D00000000000000000000001,D00000000000000000000021); buildRules = (); dependencies = (); name = Dash; packageProductDependencies = (P00000000000000000000001,); productName = Dash; productReference = F00000000000000000000020; productType = "com.apple.product-type.application"; };
-		A00000000000000000000003 = {isa = PBXNativeTarget; buildConfigurationList = E00000000000000000000003; buildPhases = (D00000000000000000000012,D00000000000000000000002,D00000000000000000000022); buildRules = (); dependencies = (C00000000000000000000011,); name = DashTests; productName = DashTests; productReference = F00000000000000000000021; productType = "com.apple.product-type.bundle.unit-test"; };
-		A00000000000000000000004 = {isa = PBXNativeTarget; buildConfigurationList = E00000000000000000000004; buildPhases = (D00000000000000000000013,D00000000000000000000003,D00000000000000000000023); buildRules = (); dependencies = (C00000000000000000000012,); name = DashUITests; productName = DashUITests; productReference = F00000000000000000000022; productType = "com.apple.product-type.bundle.ui-testing"; };
+		A00000000000000000000002 /* Dash */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000002 /* Build configuration list for PBXNativeTarget "Dash" */;
+			buildPhases = (
+				D00000000000000000000011 /* Sources */,
+				D00000000000000000000001 /* Frameworks */,
+				D00000000000000000000021 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Dash;
+			packageProductDependencies = (
+				P00000000000000000000001 /* CloudflareAPI */,
+			);
+			productName = Dash;
+			productReference = F00000000000000000000020 /* Dash.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A00000000000000000000003 /* DashTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000003 /* Build configuration list for PBXNativeTarget "DashTests" */;
+			buildPhases = (
+				D00000000000000000000012 /* Sources */,
+				D00000000000000000000002 /* Frameworks */,
+				D00000000000000000000022 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C00000000000000000000011 /* PBXTargetDependency */,
+			);
+			name = DashTests;
+			productName = DashTests;
+			productReference = F00000000000000000000021 /* DashTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A00000000000000000000004 /* DashUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000004 /* Build configuration list for PBXNativeTarget "DashUITests" */;
+			buildPhases = (
+				D00000000000000000000013 /* Sources */,
+				D00000000000000000000003 /* Frameworks */,
+				D00000000000000000000023 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C00000000000000000000012 /* PBXTargetDependency */,
+			);
+			name = DashUITests;
+			productName = DashUITests;
+			productReference = F00000000000000000000022 /* DashUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		A00000000000000000000001 = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2640; LastUpgradeCheck = 2640; TargetAttributes = {A00000000000000000000002 = {CreatedOnToolsVersion = 26.4;}; A00000000000000000000003 = {CreatedOnToolsVersion = 26.4; TestTargetID = A00000000000000000000002;}; A00000000000000000000004 = {CreatedOnToolsVersion = 26.4; TestTargetID = A00000000000000000000002;};};}; buildConfigurationList = E00000000000000000000001; compatibilityVersion = "Xcode 16.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en,Base); mainGroup = A00000000000000000000010; packageReferences = (P00000000000000000000002,); productRefGroup = A00000000000000000000014; projectDirPath = ""; projectRoot = ""; targets = (A00000000000000000000002,A00000000000000000000003,A00000000000000000000004); };
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2640;
+				TargetAttributes = {
+					A00000000000000000000002 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+					A00000000000000000000003 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = A00000000000000000000002;
+					};
+					A00000000000000000000004 = {
+						CreatedOnToolsVersion = 26.4;
+						TestTargetID = A00000000000000000000002;
+					};
+				};
+			};
+			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000010;
+			packageReferences = (
+				P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */,
+			);
+			productRefGroup = A00000000000000000000014 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000002 /* Dash */,
+				A00000000000000000000003 /* DashTests */,
+				A00000000000000000000004 /* DashUITests */,
+			);
+		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		D00000000000000000000021 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (B0000000000000000000000E,B0000000000000000000000F,B00000000000000000000010,B00000000000000000000011); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000022 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000023 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		D00000000000000000000021 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0000000000000000000000E /* Assets.xcassets in Resources */,
+				B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000023 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		D00000000000000000000011 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000001,B00000000000000000000002,B00000000000000000000003,B00000000000000000000004,B00000000000000000000005,B00000000000000000000006,B00000000000000000000007,B00000000000000000000008,B00000000000000000000009,B0000000000000000000000A,B0000000000000000000000B,B0000000000000000000000C,B0000000000000000000000D); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000012 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000012,); runOnlyForDeploymentPostprocessing = 0; };
-		D00000000000000000000013 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (B00000000000000000000013,); runOnlyForDeploymentPostprocessing = 0; };
+		D00000000000000000000011 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000001 /* DashApp.swift in Sources */,
+				B00000000000000000000002 /* AppConfiguration.swift in Sources */,
+				B00000000000000000000003 /* KeychainTokenStore.swift in Sources */,
+				B00000000000000000000004 /* AppModel.swift in Sources */,
+				B00000000000000000000005 /* DashTheme.swift in Sources */,
+				B00000000000000000000006 /* Catalog.swift in Sources */,
+				B00000000000000000000007 /* AppRootView.swift in Sources */,
+				B00000000000000000000008 /* HomeView.swift in Sources */,
+				B00000000000000000000009 /* ItemsView.swift in Sources */,
+				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
+				B0000000000000000000000B /* FeatureViews.swift in Sources */,
+				B0000000000000000000000C /* StorageViews.swift in Sources */,
+				B0000000000000000000000D /* GenericFeatureViews.swift in Sources */,
+				B00000000000000000000015 /* UserAvatar.swift in Sources */,
+				B00000000000000000000016 /* AccountFeatureViews.swift in Sources */,
+				B00000000000000000000017 /* WatchtowerModel.swift in Sources */,
+				B00000000000000000000018 /* SolarIcons.swift in Sources */,
+				B00000000000000000000019 /* DashChrome.swift in Sources */,
+				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000012 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000012 /* DashTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000013 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000013 /* DashUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		C00000000000000000000011 = {isa = PBXTargetDependency; target = A00000000000000000000002; targetProxy = C00000000000000000000001; };
-		C00000000000000000000012 = {isa = PBXTargetDependency; target = A00000000000000000000002; targetProxy = C00000000000000000000001; };
+		C00000000000000000000011 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000002 /* Dash */;
+			targetProxy = C00000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000012 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000002 /* Dash */;
+			targetProxy = C00000000000000000000001 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		E00000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; ENABLE_DEBUG_DYLIB = NO; ENABLE_TESTABILITY = YES; ONLY_ACTIVE_ARCH = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone"; SWIFT_STRICT_CONCURRENCY = complete;}; name = Debug; };
-		E00000000000000000000012 = {isa = XCBuildConfiguration; buildSettings = {CLANG_ENABLE_MODULES = YES; SWIFT_COMPILATION_MODE = wholemodule; SWIFT_OPTIMIZATION_LEVEL = "-O";}; name = Release; };
-		E00000000000000000000021 = {isa = XCBuildConfiguration; baseConfigurationReference = F00000000000000000000030; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Dash/Info.plist; PRODUCT_NAME = Dash; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO;}; name = Debug; };
-		E00000000000000000000022 = {isa = XCBuildConfiguration; baseConfigurationReference = F00000000000000000000030; buildSettings = {ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon; CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements; CODE_SIGN_STYLE = Automatic; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Dash/Info.plist; PRODUCT_NAME = Dash; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SUPPORTS_MACCATALYST = NO;}; name = Release; };
-		E00000000000000000000031 = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";}; name = Debug; };
-		E00000000000000000000032 = {isa = XCBuildConfiguration; buildSettings = {BUNDLE_LOADER = "$(TEST_HOST)"; GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";}; name = Release; };
-		E00000000000000000000041 = {isa = XCBuildConfiguration; buildSettings = {GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Dash;}; name = Debug; };
-		E00000000000000000000042 = {isa = XCBuildConfiguration; buildSettings = {GENERATE_INFOPLIST_FILE = YES; IPHONEOS_DEPLOYMENT_TARGET = 17.0; PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = iphoneos; SUPPORTED_PLATFORMS = "iphoneos iphonesimulator"; SWIFT_VERSION = 6.0; TEST_TARGET_NAME = Dash;}; name = Release; };
+		E00000000000000000000011 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_TESTABILITY = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+			};
+			name = Debug;
+		};
+		E00000000000000000000012 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		E00000000000000000000021 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Dash/Info.plist;
+				PRODUCT_NAME = Dash;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+			};
+			name = Debug;
+		};
+		E00000000000000000000022 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Dash/Info.plist;
+				PRODUCT_NAME = Dash;
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+			};
+			name = Release;
+		};
+		E00000000000000000000031 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";
+			};
+			name = Debug;
+		};
+		E00000000000000000000032 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";
+			};
+			name = Release;
+		};
+		E00000000000000000000041 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Dash;
+			};
+			name = Debug;
+		};
+		E00000000000000000000042 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TEST_TARGET_NAME = Dash;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		E00000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (E00000000000000000000011,E00000000000000000000012); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		E00000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (E00000000000000000000021,E00000000000000000000022); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		E00000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (E00000000000000000000031,E00000000000000000000032); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
-		E00000000000000000000004 = {isa = XCConfigurationList; buildConfigurations = (E00000000000000000000041,E00000000000000000000042); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000011 /* Debug */,
+				E00000000000000000000012 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000002 /* Build configuration list for PBXNativeTarget "Dash" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000021 /* Debug */,
+				E00000000000000000000022 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000003 /* Build configuration list for PBXNativeTarget "DashTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000031 /* Debug */,
+				E00000000000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000004 /* Build configuration list for PBXNativeTarget "DashUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000041 /* Debug */,
+				E00000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		P00000000000000000000002 = {isa = XCLocalSwiftPackageReference; relativePath = ../../packages/cloudflare-api; };
+		P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/cloudflare-api";
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		P00000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = P00000000000000000000002; productName = CloudflareAPI; };
+		P00000000000000000000001 /* CloudflareAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
+			productName = CloudflareAPI;
+		};
 /* End XCSwiftPackageProductDependency section */
-
-		F00000000000000000000030 = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = Config/Base.xcconfig; sourceTree = SOURCE_ROOT; };
 	};
-	rootObject = A00000000000000000000001;
+	rootObject = A00000000000000000000001 /* Project object */;
 }

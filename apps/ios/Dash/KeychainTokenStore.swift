@@ -11,6 +11,14 @@ actor KeychainTokenStore: TokenStore {
 
   private let service = "sh.xat.dash"
 
+  private var accessGroup: String? {
+    guard
+      let group = Bundle.main.object(forInfoDictionaryKey: "DashKeychainAccessGroup") as? String,
+      !group.isEmpty, !group.contains("$(")
+    else { return nil }
+    return group
+  }
+
   func clear() async throws {
     try delete(Key.access)
     try delete(Key.refresh)
@@ -31,11 +39,15 @@ actor KeychainTokenStore: TokenStore {
   }
 
   private func query(_ key: String) -> [String: Any] {
-    [
+    var item: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrAccount as String: key,
       kSecAttrService as String: service,
     ]
+    if let accessGroup {
+      item[kSecAttrAccessGroup as String] = accessGroup
+    }
+    return item
   }
 
   private func read(_ key: String) throws -> String? {

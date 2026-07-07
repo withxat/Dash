@@ -11,48 +11,62 @@ struct R2BucketsView: View {
   @State private var creates = false
 
   var body: some View {
-    List {
-      if loading {
-        LoadingStateView().listRowBackground(Color.clear)
-      } else if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else {
-        ForEach(buckets) { bucket in
-          NavigationLink(value: Destination.r2Bucket(bucket.name)) {
-            Label {
-              VStack(alignment: .leading) {
-                Text(bucket.name)
-                Text(bucket.creationDate ?? "").font(.caption).foregroundStyle(DashTheme.subtle)
-              }
-            } icon: {
-              Image(systemName: "externaldrive").foregroundStyle(DashTheme.brand)
-            }
-          }.swipeActions { Button("Delete", role: .destructive) { Task { await delete(bucket) } } }
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      DashListCard {
+        DashListCardRows(items: buckets) { bucket in
+          DashListGroupLink(value: .r2Bucket(bucket.name)) {
+            DashListRow(
+              title: bucket.name,
+              subtitle: bucket.creationDate,
+              icon: SolarAsset.box
+            )
+          }
+          .contextMenu {
+            Button("Delete", role: .destructive) { Task { await delete(bucket) } }
+          }
         }
       }
     }
-    .dashGroupedList()
-    .navigationTitle("R2").toolbar {
+    .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button {
           creates = true
         } label: {
-          Image(systemName: "plus")
+          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("New bucket")
       }
     }
-    .alert("New bucket", isPresented: $creates) {
-      TextField("Bucket name", text: $newName)
-      Button("Create") { Task { await create() } }
-      Button("Cancel", role: .cancel) {}
+    .dashTray(isPresented: $creates, title: "New bucket") {
+      DashFormSheet(
+        saveTitle: "Create",
+        canSave: !newName.isEmpty,
+        onSave: { Task { await create() } },
+        content: {
+          DashFormField(label: "Bucket name", text: $newName)
+        }
+      )
     }
-    .refreshable { await load() }.task { await load() }.destinationRouting()
+    .refreshable { await load(force: true) }.task { await load() }
   }
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
-    loading = true
+    let key = FeatureCacheKey.r2Buckets(id)
+    if !force, let cached: [R2Bucket] = model.featureCache.get(key) {
+      buckets = cached
+      loading = false
+      error = nil
+      return
+    }
+    if buckets.isEmpty { loading = true }
     do {
       buckets = try await model.client.listR2Buckets(accountID: id)
+      model.featureCache.set(key, buckets)
       error = nil
     } catch { self.error = error.localizedDescription }
     loading = false
@@ -62,13 +76,16 @@ struct R2BucketsView: View {
     do {
       _ = try await model.client.createR2Bucket(accountID: id, name: newName)
       newName = ""
-      await load()
+      creates = false
+      model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
+      await load(force: true)
     } catch { self.error = error.localizedDescription }
   }
   private func delete(_ bucket: R2Bucket) async {
     guard let id = model.activeAccountID else { return }
     try? await model.client.deleteR2Bucket(accountID: id, name: bucket.name)
-    await load()
+    model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
+    await load(force: true)
   }
 }
 
@@ -81,50 +98,67 @@ struct R2BucketView: View {
   @State private var importsFile = false
 
   var body: some View {
-    List {
-      if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if objects.isEmpty {
-        ContentUnavailableView(
-          "Empty bucket", systemImage: "externaldrive",
-          description: Text("Upload a file to get started.")
-        ).listRowBackground(Color.clear)
+    DashFeatureList(
+      search: $prefix,
+      prompt: "Filter by prefix",
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if objects.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.box,
+          title: "Empty bucket",
+          message: "Upload a file to get started."
+        )
       } else {
-        ForEach(objects) { object in
-          HStack {
-            Image(systemName: "doc")
-            VStack(alignment: .leading) {
-              Text(object.key)
-              if let size = object.size {
-                Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)).font(
-                  .caption
-                ).foregroundStyle(DashTheme.subtle)
-              }
+        DashListCard {
+          DashListCardRows(items: objects) { object in
+            DashListRow(
+              title: object.key,
+              subtitle: object.size.map {
+                ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
+              },
+              icon: SolarAsset.file,
+              iconColor: DashTheme.text,
+              showsChevron: false
+            )
+            .contextMenu {
+              Button("Delete", role: .destructive) { Task { await delete(object) } }
             }
-          }.swipeActions { Button("Delete", role: .destructive) { Task { await delete(object) } } }
-        }
-      }
-    }.dashGroupedList().navigationTitle(bucket).searchable(text: $prefix, prompt: "Prefix")
-      .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          Button {
-            importsFile = true
-          } label: {
-            Image(systemName: "square.and.arrow.up")
           }
         }
       }
-      .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
-        if case .success(let url) = result { Task { await upload(url) } }
+    }
+    .navigationTitle(bucket)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          importsFile = true
+        } label: {
+          DashToolbarActionIcon(asset: SolarAsset.upload)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("Upload file")
       }
-      .refreshable { await load() }.task(id: prefix) { await load() }
+    }
+    .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
+      if case .success(let url) = result { Task { await upload(url) } }
+    }
+    .refreshable { await load(force: true) }.task(id: prefix) { await load() }
   }
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
+    let key = FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix)
+    if !force, let cached: [R2Object] = model.featureCache.get(key) {
+      objects = cached
+      error = nil
+      return
+    }
     do {
       objects = try await model.client.listR2Objects(
         accountID: id, bucket: bucket, prefix: prefix.nilIfEmpty
       ).items
+      model.featureCache.set(key, objects)
       error = nil
     } catch { self.error = error.localizedDescription }
   }
@@ -137,13 +171,17 @@ struct R2BucketView: View {
       try await model.client.putR2Object(
         accountID: id, bucket: bucket, key: url.lastPathComponent, data: data,
         contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
-      await load()
+      model.featureCache.remove(
+        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
+      await load(force: true)
     } catch { self.error = error.localizedDescription }
   }
   private func delete(_ object: R2Object) async {
     guard let id = model.activeAccountID else { return }
     try? await model.client.deleteR2Object(accountID: id, bucket: bucket, key: object.key)
-    await load()
+    model.featureCache.remove(
+      FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
+    await load(force: true)
   }
 }
 
@@ -151,28 +189,49 @@ struct KVNamespacesView: View {
   @Environment(AppModel.self) private var model
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
+  @State private var loading = true
+
   var body: some View {
-    List {
-      if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if namespaces.isEmpty {
-        LoadingStateView().listRowBackground(Color.clear)
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if namespaces.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.pinList,
+          title: "No namespaces",
+          message: "KV namespaces for this account will appear here."
+        )
       } else {
-        ForEach(namespaces) { namespace in
-          NavigationLink(value: Destination.kvNamespace(namespace.id)) {
-            Label(namespace.title, systemImage: "list.bullet.rectangle")
+        DashListCard {
+          DashListCardRows(items: namespaces) { namespace in
+            DashListGroupLink(value: .kvNamespace(namespace.id)) {
+              DashListRow(title: namespace.title, icon: SolarAsset.pinList)
+            }
           }
         }
       }
-    }.dashGroupedList().navigationTitle("KV").refreshable { await load() }.task { await load() }
-      .destinationRouting()
+    }
+    .refreshable { await load(force: true) }.task { await load() }
   }
-  private func load() async {
+
+  private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
+    let key = FeatureCacheKey.kvNamespaces(id)
+    if !force, let cached: [KVNamespace] = model.featureCache.get(key) {
+      namespaces = cached
+      loading = false
+      error = nil
+      return
+    }
+    if namespaces.isEmpty { loading = true }
     do {
       namespaces = try await model.client.listKVNamespaces(accountID: id).items
+      model.featureCache.set(key, namespaces)
       error = nil
     } catch { self.error = error.localizedDescription }
+    loading = false
   }
 }
 
@@ -185,62 +244,92 @@ struct KVNamespaceView: View {
   @State private var error: String?
 
   var body: some View {
-    List {
-      if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else {
-        ForEach(keys) { key in
+    DashFeatureList(
+      search: $prefix,
+      prompt: "Filter by key prefix",
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      DashListCard {
+        DashListCardRows(items: keys) { key in
           Button {
             selected = key
           } label: {
-            Label(key.name, systemImage: "key")
-          }.foregroundStyle(.primary).swipeActions {
+            DashListRow(title: key.name, icon: SolarAsset.key)
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .contextMenu {
             Button("Delete", role: .destructive) { Task { await delete(key) } }
           }
         }
       }
-    }.dashGroupedList().navigationTitle("KV keys").searchable(text: $prefix, prompt: "Key prefix")
-      .task(id: prefix) {
-        await load()
-      }.refreshable { await load() }
-      .sheet(item: $selected) { key in
-        NavigationStack { KVValueEditor(namespaceID: namespaceID, keyName: key.name) }
+    }
+    .navigationTitle("KV keys")
+    .task(id: prefix) {
+      await load()
+    }.refreshable { await load(force: true) }
+    .dashTray(
+      item: $selected,
+      title: { $0.name },
+      content: { key in
+        KVValueEditor(namespaceID: namespaceID, keyName: key.name)
       }
+    )
   }
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
+    let key = FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix)
+    if !force, let cached: [KVKey] = model.featureCache.get(key) {
+      keys = cached
+      error = nil
+      return
+    }
     do {
       keys = try await model.client.listKVKeys(
         accountID: id, namespaceID: namespaceID, prefix: prefix.nilIfEmpty
       ).items
+      model.featureCache.set(key, keys)
       error = nil
     } catch { self.error = error.localizedDescription }
   }
   private func delete(_ key: KVKey) async {
     guard let id = model.activeAccountID else { return }
     try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: key.name)
-    await load()
+    model.featureCache.remove(
+      FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
+    await load(force: true)
   }
 }
 
 private struct KVValueEditor: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.dashTrayDismiss) private var dismiss
   let namespaceID: String
   let keyName: String
   @State private var value = ""
   @State private var error: String?
   var body: some View {
-    Form {
-      Section(keyName) { TextEditor(text: $value).font(.body.monospaced()).frame(minHeight: 260) }
-      if let error { Text(error).foregroundStyle(.red) }
-    }
-    .dashGroupedList()
-    .navigationTitle("KV entry").navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-      ToolbarItem(placement: .confirmationAction) { Button("Save") { Task { await save() } } }
-    }
+    DashFormSheet(
+      onSave: { Task { await save() } },
+      content: {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Value")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(DashTheme.subtle)
+          TextEditor(text: $value)
+            .font(.body.monospaced())
+            .frame(minHeight: 220)
+            .padding(12)
+            .background(DashTheme.recessed)
+            .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+          if let error {
+            Text(error)
+              .font(.system(size: 14))
+              .foregroundStyle(DashTheme.danger)
+          }
+        }
+      }
+    )
     .task { await load() }
   }
   private func load() async {
@@ -265,39 +354,55 @@ struct D1DatabasesView: View {
   @Environment(AppModel.self) private var model
   @State private var databases: [D1Database] = []
   @State private var error: String?
+  @State private var loading = true
+
   var body: some View {
-    List {
-      if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if databases.isEmpty {
-        LoadingStateView().listRowBackground(Color.clear)
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if databases.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.database,
+          title: "No databases",
+          message: "D1 databases for this account will appear here."
+        )
       } else {
-        ForEach(databases) { database in
-          NavigationLink(value: Destination.d1Database(database.id, database.name)) {
-            Label {
-              VStack(alignment: .leading) {
-                Text(database.name)
-                if let size = database.fileSize {
-                  Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                    .font(.caption).foregroundStyle(DashTheme.subtle)
-                }
-              }
-            } icon: {
-              Image(systemName: "cylinder")
+        DashListCard {
+          DashListCardRows(items: databases) { database in
+            DashListGroupLink(value: .d1Database(database.id, database.name)) {
+              DashListRow(
+                title: database.name,
+                subtitle: database.fileSize.map {
+                  ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
+                },
+                icon: SolarAsset.database
+              )
             }
           }
         }
       }
     }
-    .dashGroupedList()
-    .navigationTitle("D1").refreshable { await load() }.task { await load() }.destinationRouting()
+    .refreshable { await load(force: true) }.task { await load() }
   }
-  private func load() async {
+
+  private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
+    let key = FeatureCacheKey.d1Databases(id)
+    if !force, let cached: [D1Database] = model.featureCache.get(key) {
+      databases = cached
+      loading = false
+      error = nil
+      return
+    }
+    if databases.isEmpty { loading = true }
     do {
       databases = try await model.client.listD1Databases(accountID: id).items
+      model.featureCache.set(key, databases)
       error = nil
     } catch { self.error = error.localizedDescription }
+    loading = false
   }
 }
 
@@ -308,27 +413,54 @@ struct D1ConsoleView: View {
   @State private var sql = "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;"
   @State private var result = ""
   @State private var error: String?
+  @State private var running = false
   var body: some View {
-    Form {
-      Section("SQL") {
-        TextEditor(text: $sql).font(.body.monospaced()).frame(minHeight: 140)
-        Button("Run query") { Task { await run() } }.buttonStyle(.borderedProminent)
-      }
-      Section("Result") {
+    ScrollView {
+      VStack(spacing: DashTheme.Spacing.section) {
+        DashCodePanel(
+          title: "SQL query",
+          message: "Run a read or write statement against this database.",
+          text: $sql,
+          minHeight: 150
+        )
+
+        DashPillButton(title: "Run query", isLoading: running) { Task { await run() } }
+          .disabled(sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || running)
+
         if let error {
-          Text(error).foregroundStyle(.red)
+          DashNotice(kind: .error, message: error)
         } else {
-          ScrollView(.horizontal) {
-            Text(result.isEmpty ? "Run a query to see results." : result).font(
-              .caption.monospaced()
-            ).textSelection(.enabled)
+          DashCard {
+            VStack(alignment: .leading, spacing: 12) {
+              Text("Result")
+                .font(.dashTitle(18, weight: .semibold))
+                .foregroundStyle(DashTheme.strong)
+              ScrollView(.horizontal, showsIndicators: false) {
+                Text(result.isEmpty ? "Run a query to see results." : result)
+                  .font(.system(size: 13, design: .monospaced))
+                  .foregroundStyle(result.isEmpty ? DashTheme.subtle : DashTheme.text)
+                  .textSelection(.enabled)
+                  .padding(14)
+              }
+              .frame(maxWidth: .infinity, minHeight: 120, alignment: .topLeading)
+              .background(DashTheme.recessed)
+              .clipShape(
+                RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+            }
           }
         }
       }
-    }.dashGroupedList().navigationTitle(name)
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, 12)
+      .padding(.bottom, 100)
+    }
+    .background(DashTheme.canvas)
+    .navigationTitle(name)
   }
   private func run() async {
     guard let id = model.activeAccountID else { return }
+    running = true
+    defer { running = false }
     do {
       let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
       result = String(describing: values.flatMap { $0.results ?? [] })

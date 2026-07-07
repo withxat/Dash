@@ -1,16 +1,23 @@
 import CloudflareAPI
 import SwiftUI
 
-struct FeatureRouterView: View {
+struct FeatureRouterContent: View {
   let feature: FeatureID
+
   var body: some View {
-    switch feature {
-    case .zones: ZonesView()
-    case .workers: WorkersView()
-    case .r2: R2BucketsView()
-    case .kv: KVNamespacesView()
-    case .d1: D1DatabasesView()
-    default: GenericFeatureView(feature: feature)
+    Group {
+      switch feature {
+      case .zones: ZonesView()
+      case .workers: WorkersView()
+      case .r2: R2BucketsView()
+      case .kv: KVNamespacesView()
+      case .d1: D1DatabasesView()
+      case .images: ImagesView()
+      case .stream: StreamView()
+      case .analytics: AnalyticsView()
+      case .account: AccountView()
+      default: GenericFeatureView(feature: feature)
+      }
     }
   }
 }
@@ -27,40 +34,57 @@ struct ZonesView: View {
   }
 
   var body: some View {
-    List {
-      if loading {
-        LoadingStateView().listRowBackground(Color.clear)
-      } else if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if filtered.isEmpty {
-        ContentUnavailableView.search(text: search).listRowBackground(Color.clear)
+    DashFeatureList(
+      search: $search,
+      prompt: "Search zones",
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if filtered.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.search,
+          title: search.isEmpty ? "No zones" : "Nothing found",
+          message: search.isEmpty
+            ? "Cloudflare returned no zones for this account."
+            : "No zone matches \(search)."
+        )
       } else {
-        ForEach(filtered) { zone in
-          NavigationLink(value: Destination.zone(zone.id)) {
-            HStack(spacing: 12) {
-              Image(systemName: "globe").foregroundStyle(DashTheme.brand).frame(width: 30)
-              VStack(alignment: .leading) {
-                Text(zone.name).fontWeight(.medium)
-                Text(zone.status ?? "unknown").font(.caption).foregroundStyle(DashTheme.subtle)
+        DashListCard {
+          DashListCardRows(items: filtered) { zone in
+            DashListGroupLink(value: .zone(zone.id)) {
+              DashListRow(
+                title: zone.name,
+                subtitle: zone.status ?? "unknown",
+                icon: SolarAsset.globe
+              )
+              .overlay(alignment: .trailing) {
+                StatusBadge(text: zone.status ?? "unknown")
+                  .padding(.trailing, 28)
               }
-              Spacer()
-              StatusBadge(text: zone.status ?? "unknown")
             }
           }
         }
       }
     }
-    .dashGroupedList().navigationTitle("Zones").searchable(
-      text: $search, prompt: "Search zones"
-    )
-    .refreshable { await load() }.task { await load() }.destinationRouting()
+    .refreshable { await load(force: true) }.task { await load() }
   }
 
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }
-    loading = true
+    let key = FeatureCacheKey.zones(accountID)
+    if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
+      zones = cached
+      loading = false
+      error = nil
+      return
+    }
+    if zones.isEmpty { loading = true }
     error = nil
-    do { zones = try await model.client.listZones(accountID: accountID).items } catch {
+    do {
+      zones = try await model.client.listZones(accountID: accountID).items
+      model.featureCache.set(key, zones)
+    } catch {
       self.error = error.localizedDescription
     }
     loading = false
@@ -74,17 +98,17 @@ struct ZoneDetailView: View {
   @State private var error: String?
 
   private let tools: [(String, String, String)] = [
-    ("DNS", "network", "dns"), ("Analytics", "chart.xyaxis.line", "analytics"),
-    ("Cache", "bolt", "cache"), ("Settings", "slider.horizontal.3", "settings"),
-    ("Security events", "shield", "security"), ("SSL/TLS", "lock.shield", "ssl"),
-    ("IP access rules", "hand.raised", "firewall/access_rules/rules"),
-    ("WAF", "wall", "rulesets/phases/http_request_firewall_custom/entrypoint"),
-    ("Health checks", "heart.text.square", "healthchecks"),
-    ("Waiting rooms", "person.3.sequence", "waiting_rooms"),
-    ("Load balancers", "scale.3d", "load_balancers"),
-    ("Page rules", "doc.badge.gearshape", "pagerules"),
-    ("Email routing", "envelope", "email/routing/rules"),
-    ("Worker routes", "arrow.triangle.branch", "workers/routes"),
+    ("DNS", SolarAsset.globus, "dns"), ("Analytics", SolarAsset.chart, "analytics"),
+    ("Cache", SolarAsset.bolt, "cache"), ("Settings", SolarAsset.slider, "settings"),
+    ("Security events", SolarAsset.shield, "security"), ("SSL/TLS", SolarAsset.lock, "ssl"),
+    ("IP access rules", "SolarShieldUserOutline", "firewall/access_rules/rules"),
+    ("WAF", SolarAsset.shield, "rulesets/phases/http_request_firewall_custom/entrypoint"),
+    ("Health checks", SolarAsset.heartPulse, "healthchecks"),
+    ("Waiting rooms", SolarAsset.users, "waiting_rooms"),
+    ("Load balancers", SolarAsset.branching, "load_balancers"),
+    ("Page rules", SolarAsset.file, "pagerules"),
+    ("Email routing", SolarAsset.letter, "email/routing/rules"),
+    ("Worker routes", SolarAsset.routing, "workers/routes"),
   ]
 
   var body: some View {
@@ -94,17 +118,15 @@ struct ZoneDetailView: View {
           DashCard {
             VStack(alignment: .leading, spacing: 12) {
               HStack {
-                Image(systemName: "globe.americas.fill").font(.title).foregroundStyle(
-                  DashTheme.accent)
+                SolarIcon(asset: SolarAsset.globe, size: 28, color: DashTheme.accent)
                 VStack(alignment: .leading) {
-                  Text(zone.name).font(.chill(21))
+                  Text(zone.name).font(.dashTitle(21))
                   Text(zone.status ?? "unknown").foregroundStyle(DashTheme.subtle)
                 }
                 Spacer()
                 StatusBadge(text: zone.status ?? "unknown")
               }
               if let servers = zone.nameServers {
-                Divider()
                 Text("Nameservers").font(.caption.weight(.semibold)).foregroundStyle(
                   DashTheme.subtle)
                 ForEach(servers, id: \.self) { Text($0).font(.footnote.monospaced()) }
@@ -115,11 +137,14 @@ struct ZoneDetailView: View {
             ForEach(tools, id: \.0) { title, symbol, endpoint in
               NavigationLink(value: destination(title: title, endpoint: endpoint)) {
                 VStack(alignment: .leading, spacing: 12) {
-                  Image(systemName: symbol).font(.title3).foregroundStyle(DashTheme.brand)
-                  Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.primary).frame(
-                    maxWidth: .infinity, alignment: .leading)
+                  SolarIcon(asset: symbol, size: 22, color: DashTheme.brand)
+                  Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(DashTheme.text)
+                    .frame(
+                      maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(16).frame(minHeight: 96).background(DashTheme.base)
+                .padding(16)
+                .frame(minHeight: 96)
+                .background(DashTheme.base)
                 .clipShape(
                   RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
                 )
@@ -129,7 +154,7 @@ struct ZoneDetailView: View {
                 }
                 .dashCardShadow()
               }
-              .buttonStyle(DashOpacityButtonStyle())
+              .buttonStyle(DashPressButtonStyle())
             }
           }
         } else if let error {
@@ -140,11 +165,22 @@ struct ZoneDetailView: View {
       }.padding(16).padding(.bottom, 60)
     }.background(DashTheme.canvas).navigationTitle(zone?.name ?? "Zone")
       .navigationBarTitleDisplayMode(.inline)
-      .refreshable { await load() }.task { await load() }.destinationRouting()
+      .refreshable { await load(force: true) }.task { await load() }
   }
 
-  private func load() async {
-    do { zone = try await model.client.getZone(zoneID) } catch {
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.zone(zoneID)
+    if !force, let cached: CloudflareZone = model.featureCache.get(key) {
+      zone = cached
+      error = nil
+      return
+    }
+    do {
+      let fetched = try await model.client.getZone(zoneID)
+      zone = fetched
+      model.featureCache.set(key, fetched)
+      error = nil
+    } catch {
       self.error = error.localizedDescription
     }
   }
@@ -180,75 +216,99 @@ struct DNSRecordsView: View {
   }
 
   var body: some View {
-    List {
-      if loading {
-        LoadingStateView().listRowBackground(Color.clear)
-      } else if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if filtered.isEmpty {
-        ContentUnavailableView(
-          "No DNS records", systemImage: "network",
-          description: Text("Create a record with the add button.")
-        ).listRowBackground(Color.clear)
+    DashFeatureList(
+      search: $search,
+      prompt: "Search records",
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if filtered.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.globus,
+          title: "No DNS records",
+          message: "Create a record with the add button."
+        )
       } else {
-        ForEach(filtered) { record in
-          Button {
-            selected = record
-          } label: {
-            HStack {
-              Text(record.type).font(.caption.bold()).foregroundStyle(DashTheme.brand).frame(
-                width: 44)
-              VStack(alignment: .leading) {
-                Text(record.name).foregroundStyle(.primary).lineLimit(1)
-                Text(record.content).font(.caption.monospaced()).foregroundStyle(DashTheme.subtle)
-                  .lineLimit(1)
-              }
-              Spacer()
-              if record.proxied == true {
-                Image(systemName: "cloud.fill").foregroundStyle(DashTheme.accent)
-              }
+        DashListCard {
+          DashListCardRows(items: filtered) { record in
+            Button {
+              selected = record
+            } label: {
+              DashListRow(
+                title: record.name,
+                subtitle: "\(record.type)  ·  \(record.content)",
+                icon: record.proxied == true ? SolarAsset.cloud : SolarAsset.globus,
+                iconColor: record.proxied == true ? DashTheme.accent : DashTheme.brand
+              )
             }
-          }.swipeActions { Button("Delete", role: .destructive) { Task { await delete(record) } } }
+            .buttonStyle(DashPressButtonStyle())
+            .contextMenu {
+              Button("Delete", role: .destructive) { Task { await delete(record) } }
+            }
+          }
         }
       }
     }
-    .dashGroupedList()
-    .navigationTitle("DNS").searchable(text: $search, prompt: "Records")
+    .navigationTitle("DNS")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         Button {
           createsRecord = true
         } label: {
-          Image(systemName: "plus")
+          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("New DNS record")
       }
     }
-    .sheet(item: $selected) { record in
-      NavigationStack { DNSRecordEditor(zoneID: zoneID, record: record) { Task { await load() } } }
+    .dashTray(
+      item: $selected,
+      title: { _ in "DNS record" },
+      content: { record in
+        DNSRecordEditor(zoneID: zoneID, record: record) {
+          model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+          Task { await load(force: true) }
+        }
+      }
+    )
+    .dashTray(isPresented: $createsRecord, title: "New DNS record") {
+      DNSRecordEditor(zoneID: zoneID, record: nil) {
+        model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+        Task { await load(force: true) }
+      }
     }
-    .sheet(isPresented: $createsRecord) {
-      NavigationStack { DNSRecordEditor(zoneID: zoneID, record: nil) { Task { await load() } } }
-    }
-    .refreshable { await load() }.task { await load() }
+    .refreshable { await load(force: true) }.task { await load() }
   }
 
-  private func load() async {
-    loading = true
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.dnsRecords(zoneID)
+    if !force, let cached: [DNSRecord] = model.featureCache.get(key) {
+      records = cached
+      loading = false
+      error = nil
+      return
+    }
+    if records.isEmpty { loading = true }
     error = nil
-    do { records = try await model.client.listDNSRecords(zoneID: zoneID).items } catch {
+    do {
+      records = try await model.client.listDNSRecords(zoneID: zoneID).items
+      model.featureCache.set(key, records)
+    } catch {
       self.error = error.localizedDescription
     }
     loading = false
   }
   private func delete(_ record: DNSRecord) async {
     try? await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
-    await load()
+    model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+    await load(force: true)
   }
 }
 
 private struct DNSRecordEditor: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.dashTrayDismiss) private var dismiss
   let zoneID: String
   let record: DNSRecord?
   let saved: () -> Void
@@ -272,28 +332,38 @@ private struct DNSRecordEditor: View {
   }
 
   var body: some View {
-    Form {
-      Section("Record") {
-        Picker("Type", selection: $type) {
-          ForEach(["A", "AAAA", "CNAME", "TXT", "MX", "SRV"], id: \.self) { Text($0) }
+    DashFormSheet(
+      isSaving: saving,
+      canSave: !name.isEmpty && !content.isEmpty,
+      onSave: { Task { await save() } },
+      content: {
+        VStack(spacing: 14) {
+          Picker("Type", selection: $type) {
+            ForEach(["A", "AAAA", "CNAME", "TXT", "MX", "SRV"], id: \.self) { Text($0) }
+          }
+          .pickerStyle(.segmented)
+
+          DashFormField(label: "Name", text: $name)
+          DashFormField(label: "Content", text: $content, axis: .vertical)
+
+          Toggle("Proxied", isOn: $proxied)
+            .font(.system(size: 15, weight: .medium))
+            .tint(DashTheme.brand)
+            .padding(.horizontal, 4)
+
+          Stepper(ttl == 1 ? "TTL: Auto" : "TTL: \(ttl)s", value: $ttl, in: 1...86400)
+            .font(.system(size: 15, weight: .medium))
+            .padding(.horizontal, 4)
+
+          if let error {
+            Text(error)
+              .font(.system(size: 14))
+              .foregroundStyle(DashTheme.danger)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
         }
-        TextField("Name", text: $name).textInputAutocapitalization(.never)
-        TextField("Content", text: $content, axis: .vertical).textInputAutocapitalization(.never)
-        Toggle("Proxied", isOn: $proxied)
-        Stepper(ttl == 1 ? "TTL: Auto" : "TTL: \(ttl)s", value: $ttl, in: 1...86400)
       }
-      if let error { Section { Text(error).foregroundStyle(.red) } }
-    }
-    .dashGroupedList()
-    .navigationTitle(record == nil ? "New DNS record" : "DNS record").navigationBarTitleDisplayMode(
-      .inline
     )
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Save") { Task { await save() } }.disabled(name.isEmpty || content.isEmpty || saving)
-      }
-    }
   }
 
   private func save() async {
@@ -316,116 +386,194 @@ private struct DNSRecordEditor: View {
 }
 
 struct WorkersView: View {
+  private enum Tab: Hashable { case workers, pages }
+
   @Environment(AppModel.self) private var model
   @State private var workers: [WorkerScript] = []
   @State private var pages: [PagesProject] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var selectedTab: Tab = .workers
 
   var body: some View {
-    List {
-      if loading {
-        LoadingStateView().listRowBackground(Color.clear)
-      } else if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else {
-        Section("Workers") {
-          ForEach(workers) { worker in
-            NavigationLink(value: Destination.worker(worker.id)) {
-              Label(worker.id, systemImage: "bolt.horizontal.circle")
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } },
+      header: {
+        DashTextTabs(
+          items: [("Workers", Tab.workers), ("Pages", Tab.pages)],
+          selection: $selectedTab
+        )
+      }
+    ) {
+      if selectedTab == .workers, workers.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.codeCircle,
+          title: "No Workers yet",
+          message: "Your deployed Workers will appear here."
+        )
+      } else if selectedTab == .pages, pages.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.code,
+          title: "No Pages projects yet",
+          message: "Your Pages projects will appear here."
+        )
+      } else if selectedTab == .workers {
+        DashListCard {
+          DashListCardRows(items: workers) { worker in
+            DashListGroupLink(value: .worker(worker.id)) {
+              DashListRow(title: worker.id, icon: SolarAsset.codeCircle)
             }
           }
         }
-        Section("Pages") {
-          ForEach(pages) { project in
-            NavigationLink(
-              value: Destination.zoneTool(
+      } else {
+        DashListCard {
+          DashListCardRows(items: pages) { project in
+            DashListGroupLink(
+              value: .zoneTool(
                 zoneID: "", title: project.name,
                 path:
                   "/accounts/\(model.activeAccountID ?? "")/pages/projects/\(project.name)/deployments"
               )
             ) {
-              VStack(alignment: .leading) {
-                Text(project.name)
-                Text(project.subdomain ?? "").font(.caption).foregroundStyle(DashTheme.subtle)
-              }
+              DashListRow(
+                title: project.name,
+                subtitle: project.subdomain,
+                icon: SolarAsset.code
+              )
             }
           }
         }
       }
-    }.dashGroupedList().navigationTitle("Workers & Pages").refreshable { await load() }.task {
+    }
+    .refreshable { await load(force: true) }.task {
       await load()
     }
-    .destinationRouting()
   }
 
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }
-    loading = true
+    let workersKey = FeatureCacheKey.workers(accountID)
+    let pagesKey = FeatureCacheKey.pages(accountID)
+    if !force,
+      let cachedWorkers: [WorkerScript] = model.featureCache.get(workersKey),
+      let cachedPages: [PagesProject] = model.featureCache.get(pagesKey)
+    {
+      workers = cachedWorkers
+      pages = cachedPages
+      loading = false
+      error = nil
+      return
+    }
+    if workers.isEmpty && pages.isEmpty { loading = true }
     error = nil
     do {
       async let w = model.client.listWorkers(accountID: accountID)
       async let p = model.client.listPagesProjects(accountID: accountID)
       (workers, pages) = try await (w, p)
+      model.featureCache.set(workersKey, workers)
+      model.featureCache.set(pagesKey, pages)
     } catch { self.error = error.localizedDescription }
     loading = false
   }
 }
 
 struct WorkerDetailView: View {
+  private enum Tab: Hashable { case management, source }
+
   @Environment(AppModel.self) private var model
   let name: String
   @State private var source = ""
   @State private var error: String?
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
+  @State private var selectedTab: Tab = .management
 
   var body: some View {
-    List {
-      Section("Management") {
-        Toggle("workers.dev", isOn: $subdomainEnabled)
-          .onChange(of: subdomainEnabled) { _, enabled in
-            if loadedSubdomain { Task { await setSubdomain(enabled) } }
-          }
-        NavigationLink(
-          value: Destination.zoneTool(
-            zoneID: "", title: "Deployments",
-            path:
-              "/accounts/\(model.activeAccountID ?? "")/workers/services/\(name)/environments/production/deployments"
-          )
-        ) { Label("Deployments", systemImage: "clock.arrow.circlepath") }
-        NavigationLink(
-          value: Destination.zoneTool(
-            zoneID: "", title: "Custom domains",
-            path: "/accounts/\(model.activeAccountID ?? "")/workers/domains?service=\(name)")
-        ) { Label("Custom domains", systemImage: "network") }
-        NavigationLink(
-          value: Destination.zoneTool(
-            zoneID: "", title: "Builds",
-            path: "/accounts/\(model.activeAccountID ?? "")/builds/builds?script_name=\(name)")
-        ) { Label("Builds", systemImage: "hammer") }
-      }
-      Section("Source") {
-        if let error {
-          Text(error).foregroundStyle(.red)
-        } else if source.isEmpty {
-          ProgressView()
-        } else {
-          ScrollView(.horizontal) {
-            Text(source).font(.caption.monospaced()).textSelection(.enabled)
+    DashFeatureScreen(chrome: {
+      DashTextTabs(
+        items: [("Management", Tab.management), ("Source", Tab.source)],
+        selection: $selectedTab
+      )
+    }) {
+      ScrollView {
+        LazyVStack(spacing: DashTheme.Spacing.section) {
+          if selectedTab == .management {
+            DashListCard {
+              Toggle("workers.dev", isOn: $subdomainEnabled)
+                .padding(.vertical, 8)
+                .onChange(of: subdomainEnabled) { _, enabled in
+                  if loadedSubdomain { Task { await setSubdomain(enabled) } }
+                }
+              DashListGroupDivider()
+              DashListGroupLink(
+                value: .zoneTool(
+                  zoneID: "", title: "Deployments",
+                  path:
+                    "/accounts/\(model.activeAccountID ?? "")/workers/services/\(name)/environments/production/deployments"
+                )
+              ) {
+                DashListRow(title: "Deployments", icon: SolarAsset.clock)
+              }
+              DashListGroupDivider()
+              DashListGroupLink(
+                value: .zoneTool(
+                  zoneID: "", title: "Custom domains",
+                  path: "/accounts/\(model.activeAccountID ?? "")/workers/domains?service=\(name)")
+              ) {
+                DashListRow(title: "Custom domains", icon: SolarAsset.globus)
+              }
+              DashListGroupDivider()
+              DashListGroupLink(
+                value: .zoneTool(
+                  zoneID: "", title: "Builds",
+                  path: "/accounts/\(model.activeAccountID ?? "")/builds/builds?script_name=\(name)"
+                )
+              ) {
+                DashListRow(title: "Builds", icon: SolarAsset.sledgehammer)
+              }
+            }
+          } else if let error {
+            Text(error).foregroundStyle(DashTheme.danger)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          } else if source.isEmpty {
+            ProgressView()
+              .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+          } else {
+            DashListCard {
+              ScrollView(.horizontal, showsIndicators: false) {
+                Text(source).font(.caption.monospaced()).textSelection(.enabled)
+              }
+              .padding(.vertical, 12)
+            }
           }
         }
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 100)
       }
-    }.dashGroupedList().navigationTitle(name).task { await load() }.destinationRouting()
+    }
+    .navigationTitle(name).task { await load() }
   }
-  private func load() async {
+  private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }
+    let key = FeatureCacheKey.workerSource(accountID: accountID, name: name)
+    if !force, let cached: WorkerDetailSnapshot = model.featureCache.get(key) {
+      source = cached.source
+      subdomainEnabled = cached.subdomainEnabled
+      loadedSubdomain = true
+      error = nil
+      return
+    }
     do {
       async let fetchedSource = model.client.getWorkerSource(accountID: accountID, name: name)
       async let fetchedSubdomain = model.client.getWorkerSubdomain(accountID: accountID, name: name)
       source = try await fetchedSource
       subdomainEnabled = try await fetchedSubdomain.enabled
       loadedSubdomain = true
+      model.featureCache.set(
+        key, WorkerDetailSnapshot(source: source, subdomainEnabled: subdomainEnabled))
+      error = nil
     } catch {
       self.error = error.localizedDescription
     }
@@ -437,6 +585,7 @@ struct WorkerDetailView: View {
       let result = try await model.client.setWorkerSubdomain(
         accountID: accountID, name: name, enabled: enabled)
       subdomainEnabled = result.enabled
+      model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
     } catch {
       subdomainEnabled.toggle()
       self.error = error.localizedDescription
@@ -452,25 +601,59 @@ struct CachePurgeView: View {
   @State private var working = false
 
   var body: some View {
-    Form {
-      Section("Purge by URL") {
-        TextField("https://example.com/path", text: $url).textInputAutocapitalization(.never)
-          .keyboardType(.URL)
-        Button("Purge URL") { Task { await purge(files: [url]) } }
-          .disabled(url.isEmpty || working)
+    ScrollView {
+      VStack(spacing: DashTheme.Spacing.section) {
+        DashCard {
+          VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Purge by URL")
+                .font(.dashTitle(20, weight: .semibold))
+                .foregroundStyle(DashTheme.strong)
+              Text("Remove one cached asset without disturbing the rest of the zone.")
+                .font(.subheadline)
+                .foregroundStyle(DashTheme.subtle)
+            }
+            DashFormField(label: "Asset URL", text: $url, keyboard: .URL)
+            DashPillButton(title: "Purge URL", isLoading: working) {
+              Task { await purge(files: [url]) }
+            }
+            .disabled(url.isEmpty || working)
+            .opacity(url.isEmpty ? 0.45 : 1)
+          }
+        }
+
+        DashCard {
+          VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Entire zone")
+                .font(.dashTitle(20, weight: .semibold))
+                .foregroundStyle(DashTheme.strong)
+              Text("This removes every cached asset. Requests may temporarily reach your origin.")
+                .font(.subheadline)
+                .foregroundStyle(DashTheme.subtle)
+            }
+            DashActionRow(
+              title: "Purge everything",
+              icon: SolarAsset.trash,
+              role: .destructive
+            ) {
+              Task { await purge(files: nil) }
+            }
+            .disabled(working)
+          }
+        }
+
+        if let status {
+          DashNotice(kind: status == "Cache purged." ? .success : .error, message: status)
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        }
       }
-      Section {
-        Button("Purge everything", role: .destructive) { Task { await purge(files: nil) } }
-          .disabled(working)
-      } header: {
-        Text("Entire zone")
-      } footer: {
-        Text("Purging everything removes all cached assets for this zone.")
-      }
-      if let status {
-        Section { Text(status).foregroundStyle(status == "Cache purged." ? .green : .red) }
-      }
-    }.dashGroupedList().navigationTitle("Cache")
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, 12)
+      .padding(.bottom, 100)
+    }
+    .background(DashTheme.canvas)
+    .navigationTitle("Cache")
   }
 
   private func purge(files: [String]?) async {
@@ -491,35 +674,48 @@ struct ZoneSettingsView: View {
   @State private var error: String?
 
   var body: some View {
-    List {
-      if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      }
-      ForEach(settings) { setting in
-        switch setting.value {
-        case .bool(let enabled):
-          Toggle(
-            setting.id.replacingOccurrences(of: "_", with: " ").capitalized,
-            isOn: Binding(
-              get: { enabled },
-              set: { value in Task { await update(setting, value: .bool(value)) } })
-          )
-          .disabled(setting.editable == false)
-        case .string(let value):
-          LabeledContent(
-            setting.id.replacingOccurrences(of: "_", with: " ").capitalized, value: value)
-        default:
-          LabeledContent(setting.id, value: String(describing: setting.value))
+    DashFeatureList(error: error, retry: { Task { await load() } }) {
+      if settings.isEmpty, error == nil {
+        LoadingStateView()
+          .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+      } else {
+        DashListGroup(title: "Zone configuration") {
+          ForEach(Array(settings.enumerated()), id: \.element.id) { index, setting in
+            switch setting.value {
+            case .bool(let enabled):
+              DashToggleRow(
+                title: setting.displayTitle,
+                subtitle: setting.editable == false ? "Read only" : nil,
+                isOn: Binding(
+                  get: { enabled },
+                  set: { value in Task { await update(setting, value: .bool(value)) } }),
+                isEnabled: setting.editable != false
+              )
+            case .string(let value):
+              DashValueRow(title: setting.displayTitle, value: value)
+            default:
+              DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
+            }
+            if index < settings.count - 1 { DashListGroupDivider() }
+          }
         }
       }
-    }.dashGroupedList().navigationTitle("Settings").refreshable { await load() }.task {
-      await load()
     }
+    .navigationTitle("Settings")
+    .refreshable { await load(force: true) }
+    .task { await load() }
   }
 
-  private func load() async {
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.zoneSettings(zoneID)
+    if !force, let cached: [ZoneSetting] = model.featureCache.get(key) {
+      settings = cached
+      error = nil
+      return
+    }
     do {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
+      model.featureCache.set(key, settings)
       error = nil
     } catch { self.error = error.localizedDescription }
   }
@@ -528,7 +724,30 @@ struct ZoneSettingsView: View {
     do {
       _ = try await model.client.updateZoneSetting(
         zoneID: zoneID, settingID: setting.id, value: value)
-      await load()
+      model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
+      await load(force: true)
     } catch { self.error = error.localizedDescription }
+  }
+}
+
+extension ZoneSetting {
+  fileprivate var displayTitle: String {
+    id.replacingOccurrences(of: "_", with: " ").capitalized
+  }
+}
+
+extension JSONValue {
+  fileprivate var displayText: String {
+    switch self {
+    case .array(let values):
+      values.isEmpty ? "None" : values.map(\.displayText).joined(separator: ", ")
+    case .bool(let value): value ? "On" : "Off"
+    case .null: "Not set"
+    case .number(let value):
+      value.rounded() == value ? String(Int(value)) : value.formatted()
+    case .object(let value):
+      value.isEmpty ? "None" : "\(value.count) values"
+    case .string(let value): value
+    }
   }
 }

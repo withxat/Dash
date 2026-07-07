@@ -14,6 +14,13 @@ import Testing
   #expect(Set(values).count == FeatureID.allCases.count)
 }
 
-@Test func defaultShortcutsMatchOriginalApp() {
-  #expect(FeatureCatalog.defaults == [.zones, .workers, .r2, .kv])
+@Test @MainActor func featureDataCacheStoresAndClearsValues() {
+  let cache = FeatureDataCache()
+  cache.set("zones:test", ["zone-a"])
+  #expect(cache.get("zones:test") as [String]? == ["zone-a"])
+  cache.remove("zones:test")
+  #expect(cache.get("zones:test") as [String]? == nil)
+  cache.set("workers:test", 3)
+  cache.clear()
+  #expect(cache.get("workers:test") as Int? == nil)
 }

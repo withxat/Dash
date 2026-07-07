@@ -94,6 +94,28 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
     case .account: "SolarSettingsMinimalistic"
     }
   }
+  var solarOutlineAssetName: String {
+    switch self {
+    case .zones: SolarAsset.globe
+    case .workers: SolarAsset.code
+    case .r2: SolarAsset.box
+    case .kv: "SolarKeyMinimalisticOutline"
+    case .d1: SolarAsset.database
+    case .queues: SolarAsset.inbox
+    case .vectorize: "SolarStructureOutline"
+    case .secrets: SolarAsset.lock
+    case .turnstile: SolarAsset.shieldCheck
+    case .accessApps: "SolarShieldUserOutline"
+    case .emailAddresses: SolarAsset.letter
+    case .registrar: SolarAsset.globus
+    case .tunnels: SolarAsset.routing
+    case .loadBalancerPools: SolarAsset.branching
+    case .images: SolarAsset.gallery
+    case .stream: SolarAsset.video
+    case .analytics: SolarAsset.chart
+    case .account: SolarAsset.settings
+    }
+  }
   var category: String {
     switch self {
     case .zones: "Infrastructure"
@@ -124,11 +146,39 @@ enum Destination: Hashable {
 
 enum FeatureCatalog {
   static let defaults: [FeatureID] = [.zones, .workers, .r2, .kv]
-  static var grouped: [(String, [FeatureID])] {
-    Dictionary(grouping: FeatureID.allCases, by: \.category)
-      .sorted {
-        FeatureID.allCases.firstIndex(of: $0.value[0])! < FeatureID.allCases.firstIndex(
-          of: $1.value[0])!
+
+  static func sections(for features: [FeatureID]) -> [(String, [FeatureID])] {
+    let order = catalogOrder
+    return Dictionary(grouping: features, by: \.category)
+      .map { category, items in
+        (
+          category,
+          items.sorted { (order[$0] ?? .max) < (order[$1] ?? .max) }
+        )
       }
+      .sorted { (order[$0.1.first!] ?? .max) < (order[$1.1.first!] ?? .max) }
+  }
+
+  static var grouped: [(String, [FeatureID])] {
+    sections(for: FeatureID.allCases)
+  }
+
+  static var catalogOrder: [FeatureID: Int] {
+    Dictionary(uniqueKeysWithValues: FeatureID.allCases.enumerated().map { ($1, $0) })
+  }
+
+  static func sorted(_ features: [FeatureID]) -> [FeatureID] {
+    let order = catalogOrder
+    return features.sorted { (order[$0] ?? .max) < (order[$1] ?? .max) }
+  }
+
+  static func matchesSearch(_ feature: FeatureID, query: String) -> Bool {
+    let needle = query.localizedLowercase
+    let fields = [
+      feature.title,
+      feature.subtitle,
+      feature.rawValue,
+    ].map { $0.localizedLowercase }
+    return fields.contains { $0.contains(needle) }
   }
 }

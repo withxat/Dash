@@ -3,7 +3,7 @@ import SwiftUI
 struct HomeView: View {
   @AppStorage("dash.home_shortcuts") private var shortcutData = "zones,workers,r2,kv"
   @AppStorage("dash.recent_items") private var recentData = ""
-  @State private var editShortcuts = false
+  @Environment(\.showsEditShortcuts) private var showsEditShortcuts
 
   private var shortcuts: [FeatureID] {
     shortcutData.split(separator: ",").compactMap { FeatureID(rawValue: String($0)) }
@@ -15,42 +15,57 @@ struct HomeView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
-        FeatureSection(title: "Shortcuts", items: shortcuts, actionTitle: "Edit") {
-          editShortcuts = true
+        DashRootHeader(title: "Home")
+        FeatureSection(
+          title: "Shortcuts", items: shortcuts, heroOrigin: .shortcuts, actionTitle: "Edit"
+        ) {
+          showsEditShortcuts.wrappedValue = true
         }
         FeatureSection(
-          title: "Frequently used", items: Array((recent + shortcuts).uniqued().prefix(4)))
-        if !recent.isEmpty { FeatureSection(title: "Recently opened", items: recent) }
+          title: "Frequently used",
+          items: Array((recent + shortcuts).uniqued().prefix(4)),
+          heroOrigin: .frequent
+        )
+        if !recent.isEmpty {
+          FeatureSection(title: "Recently opened", items: recent, heroOrigin: .recent)
+        }
         Text("Open Items to browse every feature by category.")
           .font(.system(size: 11))
           .foregroundStyle(DashTheme.placeholder)
           .frame(maxWidth: .infinity)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, DashTheme.Spacing.screen)
+      .padding(.top, 12)
       .padding(.bottom, 100)
     }
     .background(DashTheme.canvas)
-    .navigationTitle("Home").navigationBarTitleDisplayMode(.large)
-    .toolbar { AccountToolbar() }
-    .sheet(isPresented: $editShortcuts) {
-      EditShortcutsView(
-        selection: Binding(
-          get: { shortcuts }, set: { shortcutData = $0.map(\.rawValue).joined(separator: ",") }))
+    .toolbar(.hidden, for: .navigationBar)
+    .dashOverlayTray(isPresented: showsEditShortcuts, title: "Edit shortcuts") {
+      EditShortcutsView()
     }
-    .destinationRouting()
   }
 }
 
 struct FeatureSection: View {
   let title: String
   let items: [FeatureID]
+  let heroOrigin: FeatureHeroOrigin
+  var iconStyle: CatalogFeatureIcon.Style = .duotone
   var actionTitle: String?
   var action: (() -> Void)?
 
-  init(title: String, items: [FeatureID], actionTitle: String? = nil, action: (() -> Void)? = nil) {
+  init(
+    title: String,
+    items: [FeatureID],
+    heroOrigin: FeatureHeroOrigin,
+    iconStyle: CatalogFeatureIcon.Style = .duotone,
+    actionTitle: String? = nil,
+    action: (() -> Void)? = nil
+  ) {
     self.title = title
     self.items = items
+    self.heroOrigin = heroOrigin
+    self.iconStyle = iconStyle
     self.actionTitle = actionTitle
     self.action = action
   }
@@ -58,10 +73,14 @@ struct FeatureSection: View {
   var body: some View {
     DashListGroup(title: title, actionTitle: actionTitle, action: action) {
       ForEach(Array(items.enumerated()), id: \.element) { index, item in
-        NavigationLink(value: Destination.feature(item)) { FeatureRow(feature: item) }
-          .buttonStyle(DashOpacityButtonStyle())
-          .simultaneousGesture(TapGesture().onEnded { record(item) })
-        if index < items.count - 1 { Divider().overlay(DashTheme.hairline) }
+        DashListGroupLink(
+          value: .feature(item), heroOrigin: heroOrigin, onNavigate: { record(item) }
+        ) {
+          FeatureRow(feature: item, iconStyle: iconStyle)
+        }
+        if index < items.count - 1 {
+          DashListGroupDivider()
+        }
       }
     }
   }
@@ -78,55 +97,90 @@ struct FeatureSection: View {
 
 struct FeatureRow: View {
   let feature: FeatureID
+  var iconStyle: CatalogFeatureIcon.Style = .duotone
+
   var body: some View {
     HStack(spacing: 12) {
-      CatalogFeatureIcon(feature: feature)
+      CatalogFeatureIcon(feature: feature, style: iconStyle)
+        .featureHeroSource(feature, part: .icon)
       VStack(alignment: .leading, spacing: 2) {
         Text(feature.title)
-          .font(.system(size: 14))
+          .font(.body)
           .foregroundStyle(DashTheme.text)
           .lineLimit(1)
+          .featureHeroSource(feature, part: .title)
         Text(feature.subtitle)
-          .font(.system(size: 12))
+          .font(.caption)
           .foregroundStyle(DashTheme.subtle)
           .lineLimit(1)
       }
       Spacer(minLength: 8)
-      Image(systemName: "chevron.right")
-        .font(.system(size: 12, weight: .semibold))
-        .foregroundStyle(DashTheme.placeholder)
+      SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
     }
-    .padding(.vertical, 10)
+    .padding(.vertical, 12)
     .contentShape(Rectangle())
   }
 }
 
-private struct EditShortcutsView: View {
-  @Binding var selection: [FeatureID]
-  @Environment(\.dismiss) private var dismiss
+struct EditShortcutsView: View {
+  @AppStorage("dash.home_shortcuts") private var shortcutData = "zones,workers,r2,kv"
+
+  private var selection: [FeatureID] {
+    shortcutData.split(separator: ",").compactMap { FeatureID(rawValue: String($0)) }
+  }
 
   var body: some View {
-    NavigationStack {
-      List(FeatureID.allCases) { feature in
-        Button {
-          if let index = selection.firstIndex(of: feature) {
-            selection.remove(at: index)
-          } else {
-            selection.append(feature)
+    ScrollView {
+      VStack(spacing: 12) {
+        ForEach(FeatureID.allCases) { feature in
+          HStack(spacing: 12) {
+            DashListGroupLink(value: .feature(feature), heroOrigin: .editShortcuts) {
+              HStack(spacing: 12) {
+                CatalogFeatureIcon(feature: feature, size: .shortcut)
+                  .featureHeroSource(feature, part: .icon)
+                Text(feature.title)
+                  .font(.system(size: 18, weight: .semibold))
+                  .foregroundStyle(DashTheme.strong)
+                  .lineLimit(1)
+                  .featureHeroSource(feature, part: .title)
+              }
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Button {
+              toggle(feature)
+            } label: {
+              Image(selection.contains(feature) ? SolarAsset.checkCircle : SolarAsset.circle)
+                .resizable()
+                .renderingMode(.template)
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+                .foregroundStyle(
+                  selection.contains(feature) ? DashTheme.brand : DashTheme.placeholder)
+            }
+            .buttonStyle(DashPressButtonStyle())
+            .accessibilityLabel(
+              selection.contains(feature) ? "Remove from shortcuts" : "Add to shortcuts")
           }
-        } label: {
-          HStack {
-            FeatureRow(feature: feature)
-            Spacer()
-            Image(systemName: selection.contains(feature) ? "checkmark.circle.fill" : "circle")
-              .foregroundStyle(DashTheme.brand)
-          }
-        }.foregroundStyle(.primary)
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(DashTheme.Sheet.shortcutItem)
+          .clipShape(DashTheme.buttonShape)
+        }
       }
-      .dashGroupedList()
-      .navigationTitle("Edit shortcuts").navigationBarTitleDisplayMode(.inline)
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+      .padding(.horizontal, DashTheme.Sheet.content)
+      .padding(.bottom, DashTheme.Sheet.bodyBottom)
     }
+  }
+
+  private func toggle(_ feature: FeatureID) {
+    var items = selection
+    if let index = items.firstIndex(of: feature) {
+      items.remove(at: index)
+    } else {
+      items.append(feature)
+    }
+    shortcutData = items.map(\.rawValue).joined(separator: ",")
   }
 }
 

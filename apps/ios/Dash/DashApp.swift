@@ -9,11 +9,16 @@ struct DashApp: App {
     appearance.configureWithDefaultBackground()
     appearance.backgroundColor = .clear
     appearance.shadowColor = .clear
-    if let largeTitleFont = UIFont(name: "ChillRoundGothic_Bold", size: 34) {
-      appearance.largeTitleTextAttributes = [.font: largeTitleFont]
-    }
+    appearance.largeTitleTextAttributes = [
+      .font: UIFont.dashRounded(size: 34, weight: .bold)
+    ]
     UINavigationBar.appearance().standardAppearance = appearance
     UINavigationBar.appearance().scrollEdgeAppearance = appearance
+
+    // Minimal back chevron — same leading slot as the tab-root profile avatar.
+    let backImage = UIImage(named: SolarAsset.chevronLeft)?.withRenderingMode(.alwaysTemplate)
+    UINavigationBar.appearance().backIndicatorImage = backImage
+    UINavigationBar.appearance().backIndicatorTransitionMaskImage = backImage
   }
 
   var body: some Scene {

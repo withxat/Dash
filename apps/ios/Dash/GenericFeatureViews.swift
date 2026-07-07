@@ -38,37 +38,42 @@ struct GenericResourcesView: View {
   @State private var loading = true
 
   var body: some View {
-    List {
-      if loading {
-        LoadingStateView().listRowBackground(Color.clear)
-      } else if let error {
-        ErrorStateView(message: error) { Task { await load() } }.listRowBackground(Color.clear)
-      } else if resources.isEmpty {
-        ContentUnavailableView(
-          "Nothing here yet", systemImage: "tray",
-          description: Text("Cloudflare returned no resources for this account.")
-        ).listRowBackground(Color.clear)
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load() } }
+    ) {
+      if resources.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.inbox,
+          title: "Nothing here yet",
+          message: "Cloudflare returned no resources for this account."
+        )
       } else {
-        ForEach(resources) { resource in
-          HStack {
-            Image(systemName: "cloud").foregroundStyle(DashTheme.brand)
-            VStack(alignment: .leading) {
-              Text(resource.name)
-              if let detail = resource.detail {
-                Text(detail).font(.caption).foregroundStyle(DashTheme.subtle)
-              }
-            }
-            Spacer()
+        DashListCard {
+          DashListCardRows(items: resources) { resource in
+            DashListRow(
+              title: resource.name,
+              subtitle: resource.detail,
+              icon: SolarAsset.cloud,
+              showsChevron: false
+            )
           }
         }
       }
     }
-    .dashGroupedList()
-    .navigationTitle(title).refreshable { await load() }.task { await load() }
+    .refreshable { await load(force: true) }.task { await load() }
   }
 
-  private func load() async {
-    loading = true
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.generic(path: path)
+    if !force, let cached: [GenericResource] = model.featureCache.get(key) {
+      resources = cached
+      loading = false
+      error = nil
+      return
+    }
+    if resources.isEmpty { loading = true }
     error = nil
     do {
       let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
@@ -77,7 +82,16 @@ struct GenericResourcesView: View {
         for item in queryItems { query[item.name] = item.value }
       }
       resources = try await model.client.listResources(path: parts[0], query: query).items
-    } catch { self.error = error.localizedDescription }
+      model.featureCache.set(key, resources)
+    } catch {
+      if let apiError = error as? CloudflareAPIError, apiError.isPermissionDenied {
+        self.error =
+          (apiError.errorDescription ?? "Permission denied")
+          + "\n\nEnable the required OAuth scope on your Cloudflare app and sign in again."
+      } else {
+        self.error = error.localizedDescription
+      }
+    }
     loading = false
   }
 }
