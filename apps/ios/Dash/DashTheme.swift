@@ -81,7 +81,7 @@ enum DashTheme {
     static let grabBarBottom: CGFloat = 8
     static let closeIcon = Color(hex: 0x9B9A9D)
     static let headerBorder = adaptive(light: 0xF9F7FA, dark: 0x262626)
-    static let shortcutItem = Color(hex: 0xF9F9FB)
+    static let shortcutItem = adaptive(light: 0xF9F9FB, dark: 0x262626)
     static let scrimOpacity: CGFloat = 0.35
   }
 
