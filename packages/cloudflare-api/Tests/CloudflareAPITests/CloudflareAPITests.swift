@@ -40,8 +40,35 @@ import Testing
   #expect(envelope.resultInfo?.totalCount == 1)
 }
 
+@Test func decodesZonePlan() throws {
+  let data = Data(
+    #"{"id":"zone","name":"example.com","status":"active","plan":{"id":"p","name":"Free Website","legacy_id":"free"}}"#
+      .utf8)
+  let zone = try JSONDecoder().decode(CloudflareZone.self, from: data)
+  #expect(zone.plan?.legacyId == "free")
+  #expect(zone.plan?.name == "Free Website")
+}
+
 @Suite(.serialized)
 struct NetworkTests {
+  @Test func decodesZoneAnalyticsGraphQL() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"data":{"viewer":{"zones":[{"httpRequests1dGroups":[
+        {"dimensions":{"date":"2026-07-06"},"sum":{"requests":120,"pageViews":40,"threats":2,"bytes":98304}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let days = try await client.zoneAnalytics(zoneID: "zone")
+    #expect(days.count == 1)
+    #expect(days.first?.requests == 120)
+    #expect(days.first?.bytes == 98304)
+  }
   @Test func decodesImagesListEnvelope() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in

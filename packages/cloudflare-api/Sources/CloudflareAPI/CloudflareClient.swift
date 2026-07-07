@@ -223,6 +223,39 @@ public actor CloudflareClient {
   {
     try await request(path, method: method, body: body)
   }
+  /// Daily HTTP request totals for a zone via the GraphQL Analytics API —
+  /// the REST zone-analytics endpoints no longer exist.
+  public func zoneAnalytics(zoneID: String, days: Int = 7) async throws -> [ZoneAnalyticsDay] {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(days - 1, 0)) * 86400)
+    let query = """
+      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
+      httpRequests1dGroups(limit: \(days), \
+      filter: {date_geq: "\(formatter.string(from: since))", \
+      date_leq: "\(formatter.string(from: until))"}, orderBy: [date_DESC]) { \
+      dimensions { date } sum { requests pageViews threats bytes } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response = try await raw(
+      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
+      contentType: "application/json")
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<ZoneAnalyticsData>.self, from: response)
+    if let message = envelope.errors?.first?.message {
+      throw CloudflareAPIError.request(
+        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+    }
+    return (envelope.data?.viewer.zones.first?.httpRequests1dGroups ?? []).map {
+      ZoneAnalyticsDay(
+        date: $0.dimensions.date, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
+        threats: $0.sum.threats, bytes: $0.sum.bytes)
+    }
+  }
+
   public func graphQL(query: String, variables: [String: JSONValue]) async throws -> JSONValue {
     let data = try JSONEncoder().encode([
       "query": JSONValue.string(query), "variables": .object(variables),
@@ -329,6 +362,29 @@ public actor CloudflareClient {
 }
 
 private struct ErrorEnvelope: Decodable { let errors: [APIErrorItem] }
+private struct GraphQLEnvelope<Value: Decodable & Sendable>: Decodable, Sendable {
+  let data: Value?
+  let errors: [GraphQLErrorItem]?
+}
+private struct GraphQLErrorItem: Decodable, Sendable { let message: String }
+private struct ZoneAnalyticsData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let zones: [Zone] }
+  struct Zone: Decodable, Sendable { let httpRequests1dGroups: [Group] }
+  struct Group: Decodable, Sendable {
+    let dimensions: Dimensions
+    let sum: Sum
+
+    struct Dimensions: Decodable, Sendable { let date: String }
+    struct Sum: Decodable, Sendable {
+      let requests: Int
+      let pageViews: Int
+      let threats: Int
+      let bytes: Int64
+    }
+  }
+}
 private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
 private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
 private struct R2ObjectResult: Decodable, Sendable {

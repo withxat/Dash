@@ -177,12 +177,32 @@ public struct CloudflareZone: CloudflareResource, Hashable {
   public let paused: Bool?
   public let developmentMode: Int?
   public let nameServers: [String]?
+  public let plan: ZonePlan?
 
   enum CodingKeys: String, CodingKey {
-    case id, name, status, paused
+    case id, name, status, paused, plan
     case developmentMode = "development_mode"
     case nameServers = "name_servers"
   }
+}
+
+public struct ZonePlan: Codable, Hashable, Sendable {
+  public let id: String?
+  public let name: String?
+  public let legacyId: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name
+    case legacyId = "legacy_id"
+  }
+}
+
+public struct ZoneAnalyticsDay: Codable, Hashable, Sendable {
+  public let date: String
+  public let requests: Int
+  public let pageViews: Int
+  public let threats: Int
+  public let bytes: Int64
 }
 
 public struct DNSRecord: CloudflareResource, Hashable {
