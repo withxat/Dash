@@ -253,28 +253,79 @@ extension EnvironmentValues {
   }
 }
 
-struct DashRootHeader: View {
-  let title: String
-
+struct CatalogToolbar: ToolbarContent {
   @Environment(AppModel.self) private var model
   @Environment(\.showsProfile) private var showsProfile
 
-  var body: some View {
-    HStack(alignment: .center, spacing: 16) {
-      Text(title)
-        .font(.dashTitle(34))
-        .foregroundStyle(DashTheme.strong)
-        .tracking(-0.5)
-      Spacer(minLength: 0)
-      Button {
-        showsProfile.wrappedValue = true
-      } label: {
-        HeaderProfileAvatar(email: model.user?.email ?? "")
-      }
-      .buttonStyle(DashPressButtonStyle())
-      .accessibilityLabel("Open profile")
+  var body: some ToolbarContent {
+    leadingAvatarItem
+  }
+
+  @ToolbarContentBuilder
+  private var leadingAvatarItem: some ToolbarContent {
+    if #available(iOS 26.0, *) {
+      ToolbarItem(placement: .topBarLeading) { profileButton }
+        .sharedBackgroundVisibility(.hidden)
+    } else {
+      ToolbarItem(placement: .topBarLeading) { profileButton }
     }
-    .frame(minHeight: 52)
+  }
+
+  private var profileButton: some View {
+    Button {
+      showsProfile.wrappedValue = true
+    } label: {
+      HeaderProfileAvatar(email: model.user?.email ?? "")
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Open profile")
+  }
+}
+
+extension View {
+  func dashCatalogScreen(_ title: String) -> some View {
+    navigationTitle(title)
+      .navigationBarTitleDisplayMode(.large)
+      .toolbar {
+        CatalogToolbar()
+      }
+      .toolbarBackground(DashTheme.canvas, for: .navigationBar)
+      .background(DashTheme.canvas)
+  }
+
+  func dashCatalogNativeSearch(
+    text: Binding<String>,
+    prompt: String
+  ) -> some View {
+    modifier(
+      DashCatalogNativeSearchModifier(text: text, prompt: prompt))
+  }
+}
+
+// No `isPresented` binding here: combining it with `.searchToolbarBehavior(.minimize)`
+// keeps the field expanded on device (iOS 26). Read `\.isSearching` in content instead.
+private struct DashCatalogNativeSearchModifier: ViewModifier {
+  @Binding var text: String
+  let prompt: String
+
+  func body(content: Content) -> some View {
+    content
+      .searchable(text: $text, prompt: prompt)
+      .modifier(DashCatalogSearchToolbarStyle())
+  }
+}
+
+private struct DashCatalogSearchToolbarStyle: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content
+        .toolbar {
+          DefaultToolbarItem(kind: .search, placement: .topBarTrailing)
+        }
+        .searchToolbarBehavior(.minimize)
+    } else {
+      content
+    }
   }
 }
 

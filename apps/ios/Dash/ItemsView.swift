@@ -2,13 +2,34 @@ import SwiftUI
 
 struct ItemsView: View {
   @State private var search = ""
-  @FocusState private var searchFocused: Bool
+
+  var body: some View {
+    ScrollView {
+      ItemsListContent(search: search)
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 100)
+    }
+    .dashCatalogScreen("Items")
+    .dashCatalogNativeSearch(
+      text: $search,
+      prompt: "Features, zones…"
+    )
+  }
+}
+
+// `\.isSearching` only resolves below the `.searchable` view, so the
+// search-dependent content lives in this child rather than in ItemsView.
+private struct ItemsListContent: View {
+  let search: String
+  @Environment(\.isSearching) private var isSearching
 
   private var trimmedSearch: String {
     search.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
-  private var isSearchMode: Bool { searchFocused || !trimmedSearch.isEmpty }
+  private var showsSearchResults: Bool {
+    isSearching || !trimmedSearch.isEmpty
+  }
 
   private var searchResults: [FeatureID] {
     guard trimmedSearch.count >= 2 else { return [] }
@@ -18,29 +39,16 @@ struct ItemsView: View {
   }
 
   var body: some View {
-    ScrollView {
-      LazyVStack(spacing: DashTheme.Spacing.section) {
-        VStack(spacing: 14) {
-          DashRootHeader(title: "Items")
-          DashInlineSearch(
-            prompt: "Features, zones…", text: $search, reportsFocus: $searchFocused)
-        }
-        listContent
-      }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
-      .padding(.bottom, 100)
-      .animation(.easeOut(duration: 0.2), value: isSearchMode)
-      .animation(.easeOut(duration: 0.2), value: trimmedSearch)
+    LazyVStack(spacing: DashTheme.Spacing.section) {
+      listContent
     }
-    .scrollDismissesKeyboard(.interactively)
-    .background(DashTheme.canvas)
-    .toolbar(.hidden, for: .navigationBar)
+    .animation(.easeOut(duration: 0.2), value: showsSearchResults)
+    .animation(.easeOut(duration: 0.2), value: trimmedSearch)
   }
 
   @ViewBuilder
   private var listContent: some View {
-    if isSearchMode {
+    if showsSearchResults {
       if trimmedSearch.isEmpty {
         DashEmptyState(
           icon: SolarAsset.search,
@@ -64,7 +72,7 @@ struct ItemsView: View {
       }
     } else {
       ForEach(FeatureCatalog.grouped, id: \.0) { title, features in
-        FeatureSection(title: title, items: features, heroOrigin: .itemsCategory(title))
+        FeatureSection(title: title, items: features)
       }
     }
   }
@@ -73,7 +81,7 @@ struct ItemsView: View {
     DashListGroup(title: "Results") {
       ForEach(Array(searchResults.enumerated()), id: \.element) { index, item in
         DashListGroupLink(
-          value: .feature(item), heroOrigin: .itemsSearch, onNavigate: { record(item) }
+          value: .feature(item), onNavigate: { record(item) }
         ) {
           FeatureRow(feature: item)
         }
