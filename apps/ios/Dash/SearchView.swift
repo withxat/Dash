@@ -2,7 +2,6 @@ import SwiftUI
 
 struct SearchView: View {
   @State private var search = ""
-  @FocusState private var isFocused: Bool
 
   private var trimmedSearch: String {
     search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -25,18 +24,10 @@ struct SearchView: View {
       .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
     .dashCatalogScreen("Search")
-    .safeAreaInset(edge: .top, spacing: 0) {
-      DashInlineSearch(prompt: "Features, zones…", text: $search, reportsFocus: $isFocused)
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.top, 8)
-        .padding(.bottom, 10)
-        .background(DashTheme.canvas)
-    }
-    // Focus only on a fresh visit — coming back from a result with a live
-    // query should not pop the keyboard over the list.
-    .onAppear {
-      if trimmedSearch.isEmpty { isFocused = true }
-    }
+    // Plain .searchable only: inside the search-role tab, iOS 26 morphs the
+    // detached tab-bar button into a bottom search field. No isPresented
+    // binding and no toolbar placement overrides — both break on device.
+    .searchable(text: $search, prompt: "Features, zones…")
   }
 
   @ViewBuilder
