@@ -5,15 +5,31 @@ struct DashApp: App {
   @State private var model = AppModel()
 
   init() {
-    let appearance = UINavigationBarAppearance()
-    appearance.configureWithDefaultBackground()
-    appearance.backgroundColor = .clear
-    appearance.shadowColor = .clear
-    appearance.largeTitleTextAttributes = [
-      .font: UIFont.dashRounded(size: 34, weight: .bold)
+    let largeTitleAttributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.dashTitle(size: AvatarHeaderMetrics.titleSize, weight: .bold),
+      .foregroundColor: UIColor.label,
     ]
-    UINavigationBar.appearance().standardAppearance = appearance
-    UINavigationBar.appearance().scrollEdgeAppearance = appearance
+    let inlineTitleAttributes: [NSAttributedString.Key: Any] = [
+      .font: UIFont.dashTitle(size: 17, weight: .semibold),
+      .foregroundColor: UIColor.label,
+    ]
+
+    let scrollEdgeAppearance = UINavigationBarAppearance()
+    scrollEdgeAppearance.configureWithTransparentBackground()
+    scrollEdgeAppearance.largeTitleTextAttributes = largeTitleAttributes
+    scrollEdgeAppearance.titleTextAttributes = inlineTitleAttributes
+    scrollEdgeAppearance.shadowColor = .clear
+
+    let standardAppearance = UINavigationBarAppearance()
+    standardAppearance.configureWithDefaultBackground()
+    standardAppearance.backgroundColor = DashTheme.uiCanvas
+    standardAppearance.largeTitleTextAttributes = largeTitleAttributes
+    standardAppearance.titleTextAttributes = inlineTitleAttributes
+    standardAppearance.shadowColor = .clear
+
+    UINavigationBar.appearance().scrollEdgeAppearance = scrollEdgeAppearance
+    UINavigationBar.appearance().standardAppearance = standardAppearance
+    UINavigationBar.appearance().compactAppearance = standardAppearance
 
     // Minimal back chevron — same leading slot as the tab-root profile avatar.
     let backImage = UIImage(named: SolarAsset.chevronLeft)?.withRenderingMode(.alwaysTemplate)

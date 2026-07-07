@@ -196,35 +196,6 @@ private struct MainTabView: View {
   }
 }
 
-struct AccountToolbar: ToolbarContent {
-  @Environment(AppModel.self) private var model
-  @Environment(\.showsProfile) private var showsProfile
-
-  var body: some ToolbarContent {
-    leadingAvatarItem
-  }
-
-  @ToolbarContentBuilder
-  private var leadingAvatarItem: some ToolbarContent {
-    if #available(iOS 26.0, *) {
-      ToolbarItem(placement: .topBarLeading) { profileButton }
-        .sharedBackgroundVisibility(.hidden)
-    } else {
-      ToolbarItem(placement: .topBarLeading) { profileButton }
-    }
-  }
-
-  private var profileButton: some View {
-    Button {
-      showsProfile.wrappedValue = true
-    } label: {
-      HeaderProfileAvatar(email: model.user?.email ?? "")
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel("Open profile")
-  }
-}
-
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss

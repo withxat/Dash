@@ -25,8 +25,6 @@ struct WatchtowerView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
-        DashRootHeader(title: "Watchtower")
-
         summaryCard
 
         if loading, model.activeAccountID != nil {
@@ -68,11 +66,9 @@ struct WatchtowerView: View {
         footerCaption
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
       .padding(.bottom, 100)
     }
-    .background(DashTheme.canvas)
-    .toolbar(.hidden, for: .navigationBar)
+    .dashCatalogScreen("Watchtower")
     .refreshable { await load(force: true) }
     .task(id: model.activeAccountID) { await load() }
   }
@@ -159,7 +155,7 @@ struct WatchtowerView: View {
     .contentShape(Rectangle())
 
     if let destination = signal.destination {
-      DashDestinationLink(destination: destination, heroOrigin: .watchtower) { content }
+      DashDestinationLink(destination: destination) { content }
     } else {
       content
     }

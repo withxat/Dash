@@ -20,6 +20,7 @@ enum Gravatar {
 enum AvatarHeaderMetrics {
   /// Matches UIKit minimal back-button slot width on iOS.
   static let barSize: CGFloat = 44
+  static let titleSize: CGFloat = 34
 }
 
 struct UserAvatar: View {
