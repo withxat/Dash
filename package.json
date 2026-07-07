@@ -1,25 +1,35 @@
 {
-	"name": "monorepo-template",
+	"name": "dash-for-cloudflare",
 	"type": "module",
 	"version": "1.0.0",
 	"private": true,
 	"packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b",
-	"description": "A monorepo template for TypeScript projects",
+	"description": "Dash for Cloudflare — a native SwiftUI client with a stateless OAuth relay",
 	"author": "Xat <i@xat.sh>(https://xat.sh)",
 	"license": "MIT",
 	"scripts": {
-		"dev": "turbo dev",
-		"build": "turbo build",
-		"typecheck": "turbo typecheck",
-		"lint": "turbo lint",
-		"lint:fix": "turbo lint -- --fix"
+		"dev": "open apps/ios/Dash.xcodeproj",
+		"build": "pnpm build:js && pnpm ios:build",
+		"build:js": "turbo build",
+		"ios:icons": "node apps/ios/scripts/generate-solar-icons.mjs",
+		"ios:build": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -allowProvisioningUpdates build",
+		"ios:device": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -destination 'generic/platform=iOS' -allowProvisioningUpdates build",
+		"ios:test": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -allowProvisioningUpdates -parallel-testing-enabled NO test",
+		"api:test": "swift test --package-path packages/cloudflare-api",
+		"typecheck": "turbo typecheck && pnpm api:test && pnpm ios:build",
+		"lint": "turbo lint && pnpm lint:swift",
+		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api",
+		"lint:fix": "turbo lint -- --fix && pnpm lint:fix:swift",
+		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api"
 	},
 	"devDependencies": {
+		"@solar-icons/react-native": "^1.1.1",
 		"@withxat/eslint-config": "catalog:devtool",
 		"@withxat/tsconfig": "catalog:devtool",
 		"eslint": "catalog:devtool",
 		"jiti": "catalog:devtool",
 		"lefthook": "catalog:devtool",
+		"sharp": "^0.35.3",
 		"turbo": "catalog:devtool",
 		"typescript": "catalog:devtool"
 	}
