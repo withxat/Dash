@@ -835,6 +835,42 @@ struct DashCodePanel: View {
   }
 }
 
+/// Read-only companion to DashCodePanel for command output and source code.
+struct DashCodeBlock: View {
+  var title: String?
+  let text: String
+  var placeholder: String?
+  var minHeight: CGFloat = 120
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if let title {
+        Text(title)
+          .font(.dashTitle(18, weight: .semibold))
+          .foregroundStyle(DashTheme.strong)
+      }
+      ScrollView(.horizontal, showsIndicators: false) {
+        Text(text.isEmpty ? (placeholder ?? "") : text)
+          .font(.system(size: 13, design: .monospaced))
+          .foregroundStyle(text.isEmpty ? DashTheme.subtle : DashTheme.text)
+          .textSelection(.enabled)
+          .padding(12)
+      }
+      .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+      .background(DashTheme.recessed)
+      .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    }
+    .padding(DashTheme.Spacing.card)
+    .background(DashTheme.base)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        .stroke(DashTheme.line, lineWidth: 0.5)
+    }
+    .dashCardShadow()
+  }
+}
+
 struct DashNotice: View {
   enum Kind { case success, error, warning }
 

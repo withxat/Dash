@@ -335,6 +335,31 @@ struct DashFormField: View {
   }
 }
 
+/// Multiline code variant of DashFormField for tray forms.
+struct DashFormCodeField: View {
+  let label: String
+  @Binding var text: String
+  var minHeight: CGFloat = 220
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(label)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(DashTheme.subtle)
+      TextEditor(text: $text)
+        .font(.system(size: 13, design: .monospaced))
+        .foregroundStyle(DashTheme.text)
+        .scrollContentBackground(.hidden)
+        .textInputAutocapitalization(.never)
+        .autocorrectionDisabled()
+        .frame(minHeight: minHeight)
+        .padding(12)
+        .background(DashTheme.recessed)
+        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    }
+  }
+}
+
 struct DashActionRow: View {
   let title: String
   var icon: String?
