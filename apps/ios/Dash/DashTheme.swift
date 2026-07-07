@@ -929,9 +929,8 @@ struct DashToolbarActionIcon: View {
   let asset: String
 
   var body: some View {
-    SolarIcon(asset: asset, size: 18, color: DashTheme.inverse)
+    SolarIcon(asset: asset, size: 22, color: DashTheme.strong)
       .frame(width: 36, height: 36)
-      .background(DashTheme.strong, in: Circle())
       .accessibilityHidden(true)
   }
 }
