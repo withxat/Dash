@@ -112,16 +112,7 @@ private struct DashSheetContainer<Content: View>: View {
           .font(.dashTitle(20))
           .foregroundStyle(DashTheme.strong)
         Spacer(minLength: 12)
-        Button {
-          dismiss()
-        } label: {
-          SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
-            .frame(width: 32, height: 32)
-            .background(DashTheme.recessed, in: Circle())
-        }
-        .padding(2)
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("Close")
+        DashCloseButton { dismiss() }
       }
       .padding(.horizontal, DashTheme.Sheet.content)
       .padding(.top, sizing == .large ? 12 : DashTheme.Sheet.headerTop)
@@ -330,11 +321,7 @@ private struct DashCatalogSearchModifier: ViewModifier {
   private var searchBar: some View {
     HStack(spacing: 12) {
       DashInlineSearch(prompt: prompt, text: $text, reportsFocus: $isFocused)
-      Button("Cancel") { collapse() }
-        .buttonStyle(DashPressButtonStyle())
-        .font(.system(size: 16, weight: .medium))
-        .foregroundStyle(DashTheme.brand)
-        .accessibilityLabel("Close search")
+      DashCloseButton(accessibilityLabel: "Close search") { collapse() }
     }
     .padding(.horizontal, DashTheme.Spacing.screen)
     .padding(.bottom, 10)
@@ -460,6 +447,23 @@ struct DashActionRow: View {
       .clipShape(DashTheme.buttonShape)
     }
     .buttonStyle(DashPressButtonStyle())
+  }
+}
+
+/// Circular close control shared by tray headers and the catalog search bar.
+struct DashCloseButton: View {
+  var accessibilityLabel = "Close"
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
+        .frame(width: 32, height: 32)
+        .background(DashTheme.recessed, in: Circle())
+    }
+    .padding(2)
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(accessibilityLabel)
   }
 }
 
