@@ -119,11 +119,6 @@ enum DashTheme {
       })
   }
 
-  static var uiCanvas: UIColor {
-    UIColor { traits in
-      UIColor(hex: traits.userInterfaceStyle == .dark ? 0x1A1A1A : 0xFFFFFF)
-    }
-  }
 }
 
 extension UIColor {

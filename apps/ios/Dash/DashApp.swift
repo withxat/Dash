@@ -20,9 +20,10 @@ struct DashApp: App {
     scrollEdgeAppearance.titleTextAttributes = inlineTitleAttributes
     scrollEdgeAppearance.shadowColor = .clear
 
+    // Default background keeps the system blur material, so scrolled content
+    // frosts through the inline-title bar instead of hitting a flat canvas.
     let standardAppearance = UINavigationBarAppearance()
     standardAppearance.configureWithDefaultBackground()
-    standardAppearance.backgroundColor = DashTheme.uiCanvas
     standardAppearance.largeTitleTextAttributes = largeTitleAttributes
     standardAppearance.titleTextAttributes = inlineTitleAttributes
     standardAppearance.shadowColor = .clear

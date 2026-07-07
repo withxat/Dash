@@ -280,7 +280,6 @@ extension View {
       .toolbar {
         CatalogToolbar()
       }
-      .toolbarBackground(DashTheme.canvas, for: .navigationBar)
       .background(DashTheme.canvas)
   }
 
