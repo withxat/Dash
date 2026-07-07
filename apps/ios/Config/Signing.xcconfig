@@ -1,0 +1,3 @@
+// Automatic signing for device builds. Override locally if you use a different team.
+DEVELOPMENT_TEAM = J4CCPX9K6H
+CODE_SIGN_STYLE = Automatic
