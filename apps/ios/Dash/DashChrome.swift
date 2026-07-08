@@ -370,43 +370,6 @@ struct DashFormCodeField: View {
   }
 }
 
-struct DashActionRow: View {
-  let title: String
-  var icon: String?
-  var trailing: String?
-  var role: ButtonRole?
-  let action: () -> Void
-
-  var body: some View {
-    Button(role: role, action: action) {
-      HStack(spacing: 12) {
-        if let icon {
-          SolarIcon(
-            asset: icon,
-            size: 22,
-            color: role == .destructive ? DashTheme.danger : DashTheme.strong
-          )
-        }
-        Text(title)
-          .font(.system(size: 18, weight: .semibold))
-          .foregroundStyle(role == .destructive ? DashTheme.danger : DashTheme.strong)
-        Spacer(minLength: 0)
-        if let trailing {
-          Text(trailing)
-            .font(.system(size: 15))
-            .foregroundStyle(DashTheme.subtle)
-        }
-      }
-      .padding(.horizontal, 18)
-      .padding(.vertical, 16)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(role == .destructive ? DashTheme.dangerTint : DashTheme.recessed)
-      .clipShape(DashTheme.buttonShape)
-    }
-    .buttonStyle(DashPressButtonStyle())
-  }
-}
-
 /// Circular close control shared by tray headers and the catalog search bar.
 struct DashCloseButton: View {
   var accessibilityLabel = "Close"
