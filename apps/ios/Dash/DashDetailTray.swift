@@ -10,32 +10,72 @@ struct DashDetailField {
 }
 
 /// Tray content that lays a resource out as full, selectable label/value rows —
-/// the readable home for information that a single `DashListRow` truncates.
-/// Pass `dangerActions` to append a morphing confirm step (e.g. Delete).
+/// the readable home for information that a single `DashListRow` truncates. A
+/// read-only tray shows no action button; when a delete is supplied, a header
+/// trash button morphs the fields into a single-Confirm confirmation.
 struct DashDetailTray: View {
   let fields: [DashDetailField]
-  var dangerActions: [DashDangerAction] = []
+  var deleteMessage: String? = nil
+  var isDeleting = false
+  var onDelete: (() -> Void)? = nil
+  @State private var confirmingDelete = false
+
+  private var hasDelete: Bool { deleteMessage != nil && onDelete != nil }
 
   var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-            fieldRow(field)
-            if index < fields.count - 1 { DashListGroupDivider() }
+    ZStack {
+      if confirmingDelete, let deleteMessage, let onDelete {
+        VStack(spacing: 16) {
+          Text(deleteMessage)
+            .font(.system(size: 15))
+            .foregroundStyle(DashTheme.subtle)
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 4)
+
+          VStack(spacing: 4) {
+            Button {
+              withAnimation(DashTheme.Motion.morph) { confirmingDelete = false }
+            } label: {
+              Text("Cancel")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(DashTheme.subtle)
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(DashPressButtonStyle())
+
+            DashActionButton(
+              title: "Confirm", role: .destructive, isLoading: isDeleting, action: onDelete)
           }
         }
         .padding(.horizontal, DashTheme.Sheet.content)
-
-        if !dangerActions.isEmpty {
-          DashConfirmableActions(actions: dangerActions)
-            .padding(.top, 16)
+        .padding(.bottom, DashTheme.Sheet.bodyBottom)
+        .transition(.dashMorph)
+      } else {
+        ScrollView {
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+              fieldRow(field)
+              if index < fields.count - 1 { DashListGroupDivider() }
+            }
+          }
+          .padding(.horizontal, DashTheme.Sheet.content)
+          .padding(.bottom, DashTheme.Sheet.bodyBottom)
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .transition(.dashMorph)
       }
-      .padding(.bottom, dangerActions.isEmpty ? DashTheme.Sheet.bodyBottom : 0)
     }
-    .scrollBounceBehavior(.basedOnSize)
-    .safeAreaPadding(.bottom)
+    .dashTrayHeaderAction(
+      hasDelete && !confirmingDelete
+        ? DashSheetHeaderAction(
+          id: "delete", icon: SolarAsset.trash, accessibilityLabel: "Delete"
+        ) {
+          withAnimation(DashTheme.Motion.morph) { confirmingDelete = true }
+        }
+        : nil
+    )
   }
 
   private func fieldRow(_ field: DashDetailField) -> some View {

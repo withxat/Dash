@@ -71,7 +71,10 @@ enum DashTheme {
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     /// Deliberate hero morph for matchedGeometryEffect tray transitions — springy
     /// and slower than the micro-interaction tokens so the shape change reads.
-    static let morph = Animation.spring(response: 0.42, dampingFraction: 0.86)
+    static let morph = Animation.spring(response: 0.32, dampingFraction: 0.85)
+    /// Tray present/dismiss — the card slide and dim fade. Slower and eased in and
+    /// out so the sheet arrives and leaves gently rather than snapping.
+    static let sheet = Animation.timingCurve(0.42, 0, 0.58, 1, duration: 0.34)
   }
 
   enum Sheet {
