@@ -117,7 +117,9 @@ private struct DashSheetHeader: View {
         Spacer(minLength: 12)
         if let trailingAction {
           Button(action: trailingAction.perform) {
-            SolarIcon(asset: trailingAction.icon, size: 22, color: DashTheme.danger)
+            // The glyph sits smaller than the close X, whose larger mark is what
+            // keeps the two circles visually balanced.
+            SolarIcon(asset: trailingAction.icon, size: 18, color: DashTheme.danger)
               .frame(width: 32, height: 32)
               .background(DashTheme.dangerTint, in: Circle())
           }
