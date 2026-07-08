@@ -316,7 +316,31 @@ struct DashFormSheet<Content: View>: View {
       .padding(.bottom, dangerActions.isEmpty ? DashTheme.Sheet.bodyBottom : 0)
     }
     .scrollBounceBehavior(.basedOnSize)
+    .dashKeyboardDismissal()
     .safeAreaPadding(.bottom)
+  }
+}
+
+private struct DashKeyboardDismissalModifier: ViewModifier {
+  func body(content: Content) -> some View {
+    content
+      .scrollDismissesKeyboard(.interactively)
+      .toolbar {
+        ToolbarItemGroup(placement: .keyboard) {
+          Spacer()
+          Button("Done") {
+            UIApplication.shared.sendAction(
+              #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+          }
+          .fontWeight(.semibold)
+        }
+      }
+  }
+}
+
+extension View {
+  func dashKeyboardDismissal() -> some View {
+    modifier(DashKeyboardDismissalModifier())
   }
 }
 

@@ -686,6 +686,7 @@ struct CachePurgeView: View {
       .padding(.bottom, 100)
       .animation(DashTheme.Motion.quick, value: status)
     }
+    .dashKeyboardDismissal()
     .background(DashTheme.canvas)
     .navigationTitle("Cache")
     .toolbar {

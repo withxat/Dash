@@ -529,6 +529,7 @@ struct D1ConsoleView: View {
       .padding(.bottom, 100)
       .animation(DashTheme.Motion.quick, value: error)
     }
+    .dashKeyboardDismissal()
     .background(DashTheme.canvas)
     .navigationTitle(name)
   }
