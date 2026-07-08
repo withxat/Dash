@@ -440,15 +440,18 @@ extension DashFeatureList where Header == EmptyView {
 struct DashListGroup<Content: View>: View {
   let title: String
   var actionTitle: String?
+  var actionIcon: String?
   var action: (() -> Void)?
   private let content: Content
 
   init(
-    title: String, actionTitle: String? = nil, action: (() -> Void)? = nil,
+    title: String, actionTitle: String? = nil, actionIcon: String? = nil,
+    action: (() -> Void)? = nil,
     @ViewBuilder content: () -> Content
   ) {
     self.title = title
     self.actionTitle = actionTitle
+    self.actionIcon = actionIcon
     self.action = action
     self.content = content()
   }
@@ -460,11 +463,19 @@ struct DashListGroup<Content: View>: View {
           .font(.system(size: 16, weight: .medium))
           .foregroundStyle(DashTheme.subtle)
         Spacer(minLength: 0)
-        if let actionTitle, let action {
-          Button(actionTitle, action: action)
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(DashTheme.brand)
+        if let action {
+          if let actionIcon {
+            Button(action: action) {
+              SolarIcon(asset: actionIcon, size: 20, color: DashTheme.brand)
+            }
             .buttonStyle(DashOpacityButtonStyle())
+            .accessibilityLabel(actionTitle ?? "Edit")
+          } else if let actionTitle {
+            Button(actionTitle, action: action)
+              .font(.system(size: 14, weight: .medium))
+              .foregroundStyle(DashTheme.brand)
+              .buttonStyle(DashOpacityButtonStyle())
+          }
         }
       }
       .padding(.horizontal, 16)

@@ -16,7 +16,7 @@ struct HomeView: View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         FeatureSection(
-          title: "Shortcuts", items: shortcuts, actionTitle: "Edit"
+          title: "Shortcuts", items: shortcuts, actionTitle: "Edit", actionIcon: SolarAsset.pen
         ) {
           showsEditShortcuts.wrappedValue = true
         }
@@ -44,6 +44,7 @@ struct FeatureSection: View {
   let items: [FeatureID]
   var iconStyle: CatalogFeatureIcon.Style = .duotone
   var actionTitle: String?
+  var actionIcon: String?
   var action: (() -> Void)?
 
   init(
@@ -51,17 +52,19 @@ struct FeatureSection: View {
     items: [FeatureID],
     iconStyle: CatalogFeatureIcon.Style = .duotone,
     actionTitle: String? = nil,
+    actionIcon: String? = nil,
     action: (() -> Void)? = nil
   ) {
     self.title = title
     self.items = items
     self.iconStyle = iconStyle
     self.actionTitle = actionTitle
+    self.actionIcon = actionIcon
     self.action = action
   }
 
   var body: some View {
-    DashListGroup(title: title, actionTitle: actionTitle, action: action) {
+    DashListGroup(title: title, actionTitle: actionTitle, actionIcon: actionIcon, action: action) {
       ForEach(Array(items.enumerated()), id: \.element) { index, item in
         DashListGroupLink(
           value: .feature(item), onNavigate: { record(item) }
