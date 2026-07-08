@@ -50,6 +50,11 @@ enum DashTheme {
     RoundedRectangle(cornerRadius: Radius.button, style: .continuous)
   }
 
+  /// Rounded-full pill used by every primary action button.
+  static var pillShape: Capsule {
+    Capsule(style: .continuous)
+  }
+
   enum Spacing {
     static let screen: CGFloat = 16
     static let section: CGFloat = 20

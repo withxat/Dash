@@ -83,6 +83,7 @@ const OUTLINE_ICONS = {
 	SolarCodeCircleOutline: 'it/Linear/CodeCircle',
 	SolarKeyOutline: 'security/Linear/Key',
 	SolarPinListOutline: 'ui/Linear/PinList',
+	SolarMenuDotsOutline: 'ui/Linear/MenuDots',
 }
 
 /** Simple stroke icons Solar doesn't ship as standalone assets. */

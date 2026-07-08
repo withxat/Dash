@@ -291,19 +291,29 @@ struct DashFormSheet<Content: View>: View {
   var saveTitle = "Save"
   var isSaving = false
   var canSave = true
+  /// Optional high-risk actions (e.g. Delete) rendered below Save, each morphing
+  /// into a confirmation step via `DashConfirmableActions`.
+  var dangerActions: [DashDangerAction] = []
   let onSave: () -> Void
   @ViewBuilder let content: Content
 
   var body: some View {
     ScrollView {
       VStack(spacing: 16) {
-        content
-        DashPillButton(title: saveTitle, isLoading: isSaving, action: onSave)
-          .disabled(!canSave || isSaving)
-          .opacity(canSave ? 1 : 0.45)
+        VStack(spacing: 16) {
+          content
+          DashPillButton(title: saveTitle, isLoading: isSaving, action: onSave)
+            .disabled(!canSave || isSaving)
+            .opacity(canSave ? 1 : 0.45)
+        }
+        .padding(.horizontal, DashTheme.Sheet.content)
+
+        if !dangerActions.isEmpty {
+          DashConfirmableActions(actions: dangerActions)
+            .padding(.top, 4)
+        }
       }
-      .padding(.horizontal, DashTheme.Sheet.content)
-      .padding(.bottom, DashTheme.Sheet.bodyBottom)
+      .padding(.bottom, dangerActions.isEmpty ? DashTheme.Sheet.bodyBottom : 0)
     }
     .scrollBounceBehavior(.basedOnSize)
     .safeAreaPadding(.bottom)
@@ -428,7 +438,7 @@ struct DashPillButton: View {
       }
       .foregroundStyle(DashTheme.inverse)
       .frame(maxWidth: .infinity, minHeight: 52)
-      .background(DashTheme.strong, in: DashTheme.buttonShape)
+      .background(DashTheme.strong, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
     .disabled(isLoading)
@@ -455,9 +465,176 @@ struct DashSecondaryPillButton: View {
       .font(.system(size: 16, weight: .bold))
       .foregroundStyle(DashTheme.strong)
       .frame(maxWidth: .infinity, minHeight: 52)
-      .background(DashTheme.recessed, in: DashTheme.buttonShape)
+      .background(DashTheme.recessed, in: DashTheme.pillShape)
       .overlay {
-        DashTheme.buttonShape.stroke(DashTheme.line, lineWidth: 0.5)
+        DashTheme.pillShape.stroke(DashTheme.line, lineWidth: 0.5)
       }
+  }
+}
+
+// MARK: - Danger confirmation morph
+
+/// A single high-risk action presented inside a tray. Tapping its row morphs —
+/// via matchedGeometryEffect — into an inline confirmation step before `perform`
+/// runs. This is the canonical tray danger pattern; reuse it everywhere a
+/// destructive action needs a second tap (purge, delete, sign out).
+struct DashDangerAction: Identifiable {
+  /// Stable across re-renders — it drives the matchedGeometryEffect morph, so it
+  /// must NOT be a fresh UUID per render. Defaults to `title`.
+  let id: String
+  let title: String
+  let icon: String
+  let message: String
+  let confirmTitle: String
+  let perform: () async -> Void
+
+  init(
+    id: String? = nil,
+    title: String,
+    icon: String = SolarAsset.trash,
+    message: String,
+    confirmTitle: String? = nil,
+    perform: @escaping () async -> Void
+  ) {
+    self.id = id ?? title
+    self.title = title
+    self.icon = icon
+    self.message = message
+    self.confirmTitle = confirmTitle ?? title
+    self.perform = perform
+  }
+}
+
+/// Tray content that lists destructive actions and morphs a tapped one into a
+/// confirmation step. Self-insets for standalone trays; pass `horizontalInset: 0`
+/// when embedding under content that already insets (e.g. `DashDetailTray`).
+struct DashConfirmableActions: View {
+  let actions: [DashDangerAction]
+  var horizontalInset: CGFloat = DashTheme.Sheet.content
+  @Namespace private var morph
+  @State private var pending: DashDangerAction?
+  @State private var working = false
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    ZStack {
+      if let pending {
+        confirmation(pending)
+          .transition(.opacity)
+      } else {
+        menu
+          .transition(.opacity)
+      }
+    }
+    .padding(.horizontal, horizontalInset)
+    .padding(.bottom, DashTheme.Sheet.bodyBottom)
+  }
+
+  private var menu: some View {
+    VStack(spacing: 12) {
+      ForEach(actions) { action in
+        Button {
+          withAnimation(DashTheme.Motion.enter) { pending = action }
+        } label: {
+          dangerRow(action)
+        }
+        .buttonStyle(DashPressButtonStyle())
+      }
+    }
+  }
+
+  private func dangerRow(_ action: DashDangerAction) -> some View {
+    HStack(spacing: 12) {
+      SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)
+      Text(action.title)
+        .font(.system(size: 18, weight: .semibold))
+        .foregroundStyle(DashTheme.danger)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 20)
+    .padding(.vertical, 16)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      DashTheme.pillShape
+        .fill(DashTheme.dangerTint)
+        .matchedGeometryEffect(id: action.id, in: morph)
+    }
+  }
+
+  private func confirmation(_ action: DashDangerAction) -> some View {
+    VStack(spacing: 20) {
+      VStack(spacing: 14) {
+        SolarIcon(asset: action.icon, size: 30, color: DashTheme.danger)
+          .frame(width: 64, height: 64)
+          .background(DashTheme.dangerTint, in: Circle())
+        Text(action.message)
+          .font(.system(size: 15))
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .padding(.top, 4)
+
+      VStack(spacing: 12) {
+        Button {
+          Task {
+            working = true
+            await action.perform()
+            dismiss()
+          }
+        } label: {
+          HStack(spacing: 8) {
+            if working { ProgressView().tint(DashTheme.inverse) }
+            Text(action.confirmTitle)
+              .font(.system(size: 16, weight: .semibold))
+          }
+          .foregroundStyle(DashTheme.inverse)
+          .frame(maxWidth: .infinity, minHeight: 52)
+          .background {
+            DashTheme.pillShape
+              .fill(DashTheme.danger)
+              .matchedGeometryEffect(id: action.id, in: morph)
+          }
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .disabled(working)
+
+        DashSecondaryPillButton(title: "Cancel") {
+          withAnimation(DashTheme.Motion.exit) { pending = nil }
+        }
+        .disabled(working)
+      }
+    }
+  }
+}
+
+// MARK: - Header more menu
+
+/// Trailing toolbar button that opens a `dashMoreMenu` tray of danger actions.
+struct DashMoreButton: View {
+  @Binding var isPresented: Bool
+  var accessibilityLabel = "More actions"
+
+  var body: some View {
+    Button {
+      isPresented = true
+    } label: {
+      DashToolbarActionIcon(asset: SolarAsset.menuDots)
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(accessibilityLabel)
+  }
+}
+
+extension View {
+  /// Attaches a tray of high-risk actions, each morphing to a confirmation step.
+  func dashMoreMenu(
+    isPresented: Binding<Bool>,
+    title: String = "Actions",
+    actions: [DashDangerAction]
+  ) -> some View {
+    dashTray(isPresented: isPresented, title: title) {
+      DashConfirmableActions(actions: actions)
+    }
   }
 }

@@ -40,6 +40,7 @@ enum SolarAsset {
   static let slider = "SolarSliderHorizontalOutline"
   static let search = "SolarMagnifierOutline"
   static let close = "SolarCloseOutline"
+  static let menuDots = "SolarMenuDotsOutline"
 }
 
 struct SolarIcon: View {
