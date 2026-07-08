@@ -174,8 +174,7 @@ struct R2BucketView: View {
         DashDangerAction(
           title: "Delete bucket",
           message:
-            "Permanently delete \(bucket) and everything in it. This cannot be undone.",
-          confirmTitle: "Delete bucket"
+            "Permanently delete \(bucket) and everything in it. This cannot be undone."
         ) {
           await deleteBucket()
         }
@@ -190,8 +189,7 @@ struct R2BucketView: View {
           dangerActions: [
             DashDangerAction(
               title: "Delete object",
-              message: "Permanently delete \(object.key) from \(bucket).",
-              confirmTitle: "Delete object"
+              message: "Permanently delete \(object.key) from \(bucket)."
             ) {
               await delete(object)
             }
@@ -394,8 +392,7 @@ private struct KVValueEditor: View {
       dangerActions: [
         DashDangerAction(
           title: "Delete key",
-          message: "Permanently delete \(keyName) from this namespace.",
-          confirmTitle: "Delete key"
+          message: "Permanently delete \(keyName) from this namespace."
         ) {
           await delete()
         }

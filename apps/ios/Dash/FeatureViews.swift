@@ -387,8 +387,7 @@ private struct DNSRecordEditor: View {
         [
           DashDangerAction(
             title: "Delete record",
-            message: "Permanently delete the \(existing.type) record for \(existing.name).",
-            confirmTitle: "Delete record"
+            message: "Permanently delete the \(existing.type) record for \(existing.name)."
           ) {
             await delete(existing)
           }
@@ -702,8 +701,7 @@ struct CachePurgeView: View {
         DashDangerAction(
           title: "Purge everything",
           message:
-            "This removes every cached asset in this zone. Requests may temporarily reach your origin.",
-          confirmTitle: "Purge everything"
+            "This removes every cached asset in this zone. Requests may temporarily reach your origin."
         ) {
           await purge(files: nil)
         }

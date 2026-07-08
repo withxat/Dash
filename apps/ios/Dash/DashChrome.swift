@@ -472,7 +472,6 @@ struct DashDangerAction: Identifiable {
   let title: String
   let icon: String
   let message: String
-  let confirmTitle: String
   let perform: () async -> Void
 
   init(
@@ -480,21 +479,21 @@ struct DashDangerAction: Identifiable {
     title: String,
     icon: String = SolarAsset.trash,
     message: String,
-    confirmTitle: String? = nil,
     perform: @escaping () async -> Void
   ) {
     self.id = id ?? title
     self.title = title
     self.icon = icon
     self.message = message
-    self.confirmTitle = confirmTitle ?? title
     self.perform = perform
   }
 }
 
-/// Tray content that lists destructive actions and morphs a tapped one into a
-/// confirmation step. Self-insets for standalone trays; pass `horizontalInset: 0`
-/// when embedding under content that already insets (e.g. `DashDetailTray`).
+/// Tray content that lists destructive actions as menu rows and morphs a tapped
+/// one — via matchedGeometryEffect — into a confirm step (message, a plain
+/// Cancel, and a red Confirm that the row grows into). Self-insets for standalone
+/// trays; pass `horizontalInset: 0` when embedding under content that already
+/// insets (e.g. `DashDetailTray`).
 struct DashConfirmableActions: View {
   let actions: [DashDangerAction]
   var horizontalInset: CGFloat = DashTheme.Sheet.content
@@ -514,14 +513,14 @@ struct DashConfirmableActions: View {
       }
     }
     .padding(.horizontal, horizontalInset)
-    .padding(.bottom, DashTheme.Sheet.bodyBottom)
+    .padding(.bottom, 8)
   }
 
   private var menu: some View {
-    VStack(spacing: 12) {
+    VStack(spacing: 10) {
       ForEach(actions) { action in
         Button {
-          withAnimation(DashTheme.Motion.enter) { pending = action }
+          withAnimation(DashTheme.Motion.morph) { pending = action }
         } label: {
           dangerRow(action)
         }
@@ -530,39 +529,48 @@ struct DashConfirmableActions: View {
     }
   }
 
+  // List-item styled after Edit shortcuts rows, with an outline icon.
   private func dangerRow(_ action: DashDangerAction) -> some View {
     HStack(spacing: 12) {
       SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)
       Text(action.title)
-        .font(.system(size: 18, weight: .semibold))
+        .font(.body)
         .foregroundStyle(DashTheme.danger)
+        .lineLimit(1)
       Spacer(minLength: 0)
     }
-    .padding(.horizontal, 20)
-    .padding(.vertical, 16)
+    .padding(.horizontal, 16)
+    .padding(.vertical, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background {
-      DashTheme.pillShape
+      RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
         .fill(DashTheme.dangerTint)
         .matchedGeometryEffect(id: action.id, in: morph)
     }
   }
 
   private func confirmation(_ action: DashDangerAction) -> some View {
-    VStack(spacing: 20) {
-      VStack(spacing: 14) {
-        SolarIcon(asset: action.icon, size: 30, color: DashTheme.danger)
-          .frame(width: 64, height: 64)
-          .background(DashTheme.dangerTint, in: Circle())
-        Text(action.message)
-          .font(.system(size: 15))
-          .foregroundStyle(DashTheme.subtle)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .padding(.top, 4)
+    VStack(spacing: 16) {
+      Text(action.message)
+        .font(.system(size: 15))
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
 
-      VStack(spacing: 12) {
+      VStack(spacing: 4) {
+        Button {
+          withAnimation(DashTheme.Motion.morph) { pending = nil }
+        } label: {
+          Text("Cancel")
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .disabled(working)
+
         Button {
           Task {
             working = true
@@ -572,7 +580,7 @@ struct DashConfirmableActions: View {
         } label: {
           HStack(spacing: 8) {
             if working { ProgressView().tint(DashTheme.inverse) }
-            Text(action.confirmTitle)
+            Text("Confirm")
               .font(.system(size: 16, weight: .semibold))
           }
           .foregroundStyle(DashTheme.inverse)
@@ -584,11 +592,6 @@ struct DashConfirmableActions: View {
           }
         }
         .buttonStyle(DashPressButtonStyle())
-        .disabled(working)
-
-        DashSecondaryPillButton(title: "Cancel") {
-          withAnimation(DashTheme.Motion.exit) { pending = nil }
-        }
         .disabled(working)
       }
     }

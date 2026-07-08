@@ -69,6 +69,9 @@ enum DashTheme {
     static let enter = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
     static let exit = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
+    /// Deliberate hero morph for matchedGeometryEffect tray transitions — springy
+    /// and slower than the micro-interaction tokens so the shape change reads.
+    static let morph = Animation.spring(response: 0.42, dampingFraction: 0.86)
   }
 
   enum Sheet {
@@ -78,7 +81,7 @@ enum DashTheme {
     static let headerTop: CGFloat = 28
     static let headerBottom: CGFloat = 14
     static let bodyVertical: CGFloat = 16
-    static let outerBottom: CGFloat = 20
+    static let outerBottom: CGFloat = 10
     static let bodyBottom: CGFloat = 32
     static let grabBarWidth: CGFloat = 36
     static let grabBarHeight: CGFloat = 5

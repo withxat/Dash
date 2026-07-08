@@ -273,8 +273,7 @@ struct ProfileTrayContent: View {
         DashDangerAction(
           title: "Sign out",
           icon: SolarAsset.danger,
-          message: "You'll need to reconnect your Cloudflare account to use Dash again.",
-          confirmTitle: "Sign out"
+          message: "You'll need to reconnect your Cloudflare account to use Dash again."
         ) {
           await model.signOut()
         }
