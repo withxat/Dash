@@ -53,17 +53,16 @@ struct DashDetailTray: View {
         .padding(.bottom, DashTheme.Sheet.bodyBottom)
         .transition(.dashMorph)
       } else {
-        ScrollView {
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-              fieldRow(field)
-              if index < fields.count - 1 { DashListGroupDivider() }
-            }
+        // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+            fieldRow(field)
+            if index < fields.count - 1 { DashListGroupDivider() }
           }
-          .padding(.horizontal, DashTheme.Sheet.content)
-          .padding(.bottom, DashTheme.Sheet.bodyBottom)
         }
-        .scrollBounceBehavior(.basedOnSize)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, DashTheme.Sheet.content)
+        .padding(.bottom, DashTheme.Sheet.bodyBottom)
         .transition(.dashMorph)
       }
     }

@@ -391,10 +391,9 @@ private struct DNSRecordEditor: View {
       onSave: { Task { await save() } },
       content: {
         VStack(spacing: 14) {
-          Picker("Type", selection: $type) {
-            ForEach(["A", "AAAA", "CNAME", "TXT", "MX", "SRV"], id: \.self) { Text($0) }
-          }
-          .pickerStyle(.segmented)
+          DashFormMenuField(
+            label: "Type", selection: $type,
+            options: ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"])
 
           DashFormField(label: "Name", text: $name)
           DashFormField(label: "Content", text: $content)

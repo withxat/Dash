@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 // MARK: - Sheet presentation
@@ -52,6 +53,20 @@ extension View {
 }
 
 private struct DashSheetFittedHeightKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+private struct DashSheetHeaderHeightKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+private struct DashSheetBodyIdealKey: PreferenceKey {
   static let defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
     value = max(value, nextValue())
@@ -137,6 +152,7 @@ private struct DashCustomSheet<Content: View>: View {
   @State private var shown = false
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
+  @State private var keyboardHeight: CGFloat = 0
   @State private var headerAction: DashSheetHeaderAction?
 
   var body: some View {
@@ -146,27 +162,46 @@ private struct DashCustomSheet<Content: View>: View {
         .contentShape(Rectangle())
         .onTapGesture { close() }
 
-      // Always laid out (only offset off-screen while hidden) so the whole card —
-      // header action included — slides as one piece instead of the button
-      // popping in a frame late.
-      DashSheetCard {
-        VStack(alignment: .leading, spacing: 0) {
+      // We position the card above the keyboard ourselves (padding + an observed
+      // height) rather than let SwiftUI's automatic avoidance also push it, which
+      // over-lifts it and leaves a dim gap. The card caps its body at the space
+      // left above the keyboard and scrolls the rest.
+      GeometryReader { proxy in
+        DashSheetCard(
+          maxCardHeight: proxy.size.height - keyboardInset(proxy) - 24,
+          bottomInset: keyboardInset(proxy)
+        ) {
+          // Drag-to-dismiss lives on the header only, so the scrollable body
+          // keeps its own vertical scroll.
           DashSheetHeader(title: title, trailingAction: headerAction, dismiss: close)
-            // Drag-to-dismiss lives on the header only, so a scrollable body
-            // (forms, detail) keeps its own vertical scroll.
             .contentShape(Rectangle())
             .gesture(dragGesture)
+        } content: {
           content()
-            .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.top, DashTheme.Sheet.bodyVertical)
         }
+        // Always laid out (only offset off-screen while hidden) so it slides as
+        // one piece; bottom-pinned, with the card lifting its own content above
+        // the keyboard while its fill runs underneath it.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .offset(y: shown ? drag : hiddenOffset)
       }
-      .offset(y: shown ? drag : hiddenOffset)
+      .ignoresSafeArea(.keyboard)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .environment(\.dashTrayDismiss, close)
     .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
+    .onReceive(
+      NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
+    ) { note in
+      guard let frame = note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,
+        let window = UIApplication.shared.connectedScenes
+          .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first
+      else { return }
+      // How far the keyboard covers the window from the bottom (0 when hidden).
+      let covered = max(0, window.bounds.height - frame.minY)
+      withAnimation(DashTheme.Motion.sheet) { keyboardHeight = covered }
+    }
     .presentationBackground(.clear)
     .onAppear { withAnimation(DashTheme.Motion.sheet) { shown = true } }
   }
@@ -174,6 +209,14 @@ private struct DashCustomSheet<Content: View>: View {
   /// Push the card fully below the screen while hidden, using its measured height
   /// so the visible slide distance equals the card — not a magic overshoot.
   private var hiddenOffset: CGFloat { (cardHeight > 0 ? cardHeight : 900) + 160 }
+
+  /// How far to lift the card above the keyboard, in the GeometryReader's space.
+  /// `keyboardHeight` is measured from the window bottom (home indicator
+  /// included), but the reader already sits above the home indicator, so subtract
+  /// that inset or the card over-lifts and leaves a dim gap.
+  private func keyboardInset(_ proxy: GeometryProxy) -> CGFloat {
+    max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
+  }
 
   private func close() {
     withAnimation(DashTheme.Motion.sheet) {
@@ -234,48 +277,80 @@ private struct DashSheetGrabBar: View {
   }
 }
 
-/// The visible card of a `.content` tray, hosted in the bottom of a full-screen
-/// transparent cover. It measures its natural height and springs a `display`
-/// height toward it, clipping the content mid-flight — so a morph grows and
-/// shrinks smoothly with no detent to clip or snap. Paints its own canvas fill,
-/// top corners, and safe-area extension. First measurement is instant so the
-/// tray opens crisply.
-private struct DashSheetCard<Content: View>: View {
-  @ViewBuilder let content: Content
-  @State private var display: CGFloat = 0
+/// The visible card of a `.content` tray, at the bottom of a full-screen
+/// transparent cover: a fixed header over a body that springs its height to fit
+/// its content — so a morph resizes smoothly with no detent to clip or snap —
+/// but caps at the available height (`maxCardHeight`, which shrinks with the
+/// keyboard) and scrolls beyond it, so a form never squeezes or overflows.
+/// Paints its own canvas fill, top corners, and safe-area extension.
+private struct DashSheetCard<Header: View, Body: View>: View {
+  let maxCardHeight: CGFloat
+  /// Empty white space kept below the content (behind the keyboard) so the fill
+  /// runs under the keyboard's rounded top corners instead of leaving a gap.
+  var bottomInset: CGFloat = 0
+  @ViewBuilder let header: () -> Header
+  @ViewBuilder let content: () -> Body
+  @State private var headerHeight: CGFloat = 0
+  @State private var bodyIdeal: CGFloat = 0
+  @State private var bodyDisplay: CGFloat = 0
+
+  private var maxBodyHeight: CGFloat { max(80, maxCardHeight - headerHeight) }
 
   var body: some View {
-    content
-      // Hug the content vertically so ScrollView-based trays (forms, detail)
-      // report a real natural height instead of greedily filling the cover.
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .top)
-      .padding(.bottom, DashTheme.Sheet.bodyVertical)
-      .background {
-        GeometryReader { proxy in
-          Color.clear.preference(key: DashSheetFittedHeightKey.self, value: proxy.size.height)
+    VStack(spacing: 0) {
+      header()
+        .background {
+          GeometryReader { proxy in
+            Color.clear.preference(key: DashSheetHeaderHeightKey.self, value: proxy.size.height)
+          }
         }
+
+      ScrollView {
+        content()
+          .frame(maxWidth: .infinity, alignment: .top)
+          .padding(.top, DashTheme.Sheet.bodyVertical)
+          .background {
+            GeometryReader { proxy in
+              Color.clear.preference(key: DashSheetBodyIdealKey.self, value: proxy.size.height)
+            }
+          }
       }
-      .frame(height: display > 0 ? display : nil, alignment: .top)
-      .clipped()
-      .background {
-        UnevenRoundedRectangle(
-          topLeadingRadius: DashTheme.Radius.sheet,
-          topTrailingRadius: DashTheme.Radius.sheet,
-          style: .continuous
-        )
-        .fill(DashTheme.canvas)
-        .ignoresSafeArea(.container, edges: .bottom)
+      .scrollBounceBehavior(.basedOnSize)
+      .scrollDismissesKeyboard(.interactively)
+      .frame(height: bodyDisplay > 0 ? bodyDisplay : nil)
+    }
+    .padding(.bottom, bottomInset)
+    .frame(maxWidth: .infinity)
+    .background {
+      UnevenRoundedRectangle(
+        topLeadingRadius: DashTheme.Radius.sheet,
+        topTrailingRadius: DashTheme.Radius.sheet,
+        style: .continuous
+      )
+      .fill(DashTheme.canvas)
+      .ignoresSafeArea(edges: .bottom)
+    }
+    .background {
+      GeometryReader { proxy in
+        Color.clear.preference(key: DashSheetFittedHeightKey.self, value: proxy.size.height)
       }
-      .frame(maxWidth: .infinity)
-      .onPreferenceChange(DashSheetFittedHeightKey.self) { natural in
-        guard natural > 0 else { return }
-        if display == 0 {
-          display = natural
-        } else {
-          withAnimation(DashTheme.Motion.morph) { display = natural }
-        }
-      }
+    }
+    .onPreferenceChange(DashSheetHeaderHeightKey.self) { headerHeight = $0 }
+    .onPreferenceChange(DashSheetBodyIdealKey.self) { ideal in
+      bodyIdeal = ideal
+      applyBody(animated: bodyDisplay != 0)
+    }
+    .onChange(of: maxBodyHeight) { _, _ in applyBody(animated: true) }
+  }
+
+  private func applyBody(animated: Bool) {
+    let target = min(bodyIdeal, maxBodyHeight)
+    guard target > 0 else { return }
+    if animated {
+      withAnimation(DashTheme.Motion.morph) { bodyDisplay = target }
+    } else {
+      bodyDisplay = target
+    }
   }
 }
 
@@ -559,6 +634,42 @@ struct DashFormField: View {
         .padding(.vertical, 14)
         .background(DashTheme.recessed)
         .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    }
+  }
+}
+
+/// Menu-backed form field (a dropdown) styled to match `DashFormField` — for
+/// choosing among many options where a segmented control would cramp and can't
+/// grow. One row, constant footprint, scales to any number of options.
+struct DashFormMenuField: View {
+  let label: String
+  @Binding var selection: String
+  let options: [String]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(label)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(DashTheme.subtle)
+      Menu {
+        Picker(label, selection: $selection) {
+          ForEach(options, id: \.self) { Text($0) }
+        }
+      } label: {
+        HStack(spacing: 8) {
+          Text(selection)
+            .font(.system(size: 16, weight: .medium))
+            .foregroundStyle(DashTheme.text)
+          Spacer(minLength: 0)
+          SolarIcon(asset: SolarAsset.chevronRight, size: 14, color: DashTheme.placeholder)
+            .rotationEffect(.degrees(90))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DashTheme.recessed)
+        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+      }
     }
   }
 }
