@@ -67,6 +67,7 @@ const OUTLINE_ICONS = {
 	SolarBoltOutline: 'ui/Linear/Bolt',
 	SolarCode2Outline: 'it/Linear/Code2',
 	SolarPenOutline: 'messages/Linear/Pen',
+	SolarPenNewSquareOutline: 'messages/Linear/PenNewSquare',
 	SolarTrashBinOutline: 'ui/Linear/TrashBinMinimalistic',
 	SolarCloudOutline: 'weather/Linear/Cloud',
 	SolarFileOutline: 'files/Linear/File',
