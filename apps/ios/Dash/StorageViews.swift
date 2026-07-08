@@ -111,6 +111,7 @@ struct R2BucketView: View {
   @State private var importsFile = false
   @State private var showsMore = false
   @State private var selectedObject: R2Object?
+  @State private var deletingObject = false
 
   var body: some View {
     DashFeatureList(
@@ -186,14 +187,9 @@ struct R2BucketView: View {
       content: { object in
         DashDetailTray(
           fields: object.detailFields,
-          dangerActions: [
-            DashDangerAction(
-              title: "Delete object",
-              message: "Permanently delete \(object.key) from \(bucket)."
-            ) {
-              await delete(object)
-            }
-          ]
+          deleteMessage: "Permanently delete \(object.key) from \(bucket).",
+          isDeleting: deletingObject,
+          onDelete: { Task { await delete(object) } }
         )
       }
     )
@@ -239,10 +235,13 @@ struct R2BucketView: View {
   }
   private func delete(_ object: R2Object) async {
     guard let id = model.activeAccountID else { return }
+    deletingObject = true
     try? await model.client.deleteR2Object(accountID: id, bucket: bucket, key: object.key)
     model.featureCache.remove(
       FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
+    selectedObject = nil
     await load(force: true)
+    deletingObject = false
   }
 }
 
@@ -386,17 +385,13 @@ private struct KVValueEditor: View {
   @State private var error: String?
   // Saving before the fetch lands would overwrite the stored value with "".
   @State private var loaded = false
+  @State private var deleting = false
   var body: some View {
     DashFormSheet(
       canSave: loaded,
-      dangerActions: [
-        DashDangerAction(
-          title: "Delete key",
-          message: "Permanently delete \(keyName) from this namespace."
-        ) {
-          await delete()
-        }
-      ],
+      deleteMessage: "Permanently delete \(keyName) from this namespace.",
+      isDeleting: deleting,
+      onDelete: { Task { await delete() } },
       onSave: { Task { await save() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
@@ -411,9 +406,11 @@ private struct KVValueEditor: View {
   }
   private func delete() async {
     guard let id = model.activeAccountID else { return }
+    deleting = true
     try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
     UINotificationFeedbackGenerator().notificationOccurred(.success)
     onDeleted()
+    dismiss()
   }
   private func load() async {
     guard let id = model.activeAccountID else { return }

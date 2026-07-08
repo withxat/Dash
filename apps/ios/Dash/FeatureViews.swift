@@ -367,6 +367,8 @@ private struct DNSRecordEditor: View {
   @State private var ttl: Int
   @State private var error: String?
   @State private var saving = false
+  @State private var deleting = false
+  @State private var confirmingDelete = false
 
   init(zoneID: String, record: DNSRecord?, saved: @escaping () -> Void) {
     self.zoneID = zoneID
@@ -383,16 +385,9 @@ private struct DNSRecordEditor: View {
     DashFormSheet(
       isSaving: saving,
       canSave: !name.isEmpty && !content.isEmpty,
-      dangerActions: record.map { existing in
-        [
-          DashDangerAction(
-            title: "Delete record",
-            message: "Permanently delete the \(existing.type) record for \(existing.name)."
-          ) {
-            await delete(existing)
-          }
-        ]
-      } ?? [],
+      deleteMessage: record.map { "Permanently delete the \($0.type) record for \($0.name)." },
+      isDeleting: deleting,
+      onDelete: record.map { rec in { Task { await delete(rec) } } },
       onSave: { Task { await save() } },
       content: {
         VStack(spacing: 14) {
@@ -440,9 +435,11 @@ private struct DNSRecordEditor: View {
   }
 
   private func delete(_ record: DNSRecord) async {
+    deleting = true
     try? await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
     UINotificationFeedbackGenerator().notificationOccurred(.success)
     saved()
+    dismiss()
   }
 }
 
