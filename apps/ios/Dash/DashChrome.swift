@@ -324,17 +324,14 @@ struct DashFormSheet<Content: View>: View {
 private struct DashKeyboardDismissalModifier: ViewModifier {
   func body(content: Content) -> some View {
     content
-      .scrollDismissesKeyboard(.interactively)
-      .toolbar {
-        ToolbarItemGroup(placement: .keyboard) {
-          Spacer()
-          Button("Done") {
-            UIApplication.shared.sendAction(
-              #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-          }
-          .fontWeight(.semibold)
-        }
-      }
+      .scrollDismissesKeyboard(.immediately)
+      .contentShape(Rectangle())
+      .onTapGesture(perform: dismissKeyboard)
+  }
+
+  private func dismissKeyboard() {
+    UIApplication.shared.sendAction(
+      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
   }
 }
 
@@ -347,20 +344,23 @@ extension View {
 struct DashFormField: View {
   let label: String
   @Binding var text: String
-  var axis: Axis = .horizontal
   var keyboard: UIKeyboardType = .default
+  @FocusState private var isFocused: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(label)
         .font(.system(size: 13, weight: .semibold))
         .foregroundStyle(DashTheme.subtle)
-      TextField(label, text: $text, axis: axis)
+      TextField(label, text: $text)
         .font(.system(size: 16, weight: .medium))
         .foregroundStyle(DashTheme.text)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
         .keyboardType(keyboard)
+        .focused($isFocused)
+        .submitLabel(.done)
+        .onSubmit { isFocused = false }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(DashTheme.recessed)

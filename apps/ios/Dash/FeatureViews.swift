@@ -302,6 +302,7 @@ struct DNSRecordsView: View {
         }
       }
     }
+    .refreshable { await load(force: true) }
     .navigationTitle("DNS")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -330,7 +331,7 @@ struct DNSRecordsView: View {
         Task { await load(force: true) }
       }
     }
-    .refreshable { await load(force: true) }.task { await load() }
+    .task { await load() }
   }
 
   private func load(force: Bool = false) async {
@@ -402,7 +403,7 @@ private struct DNSRecordEditor: View {
           .pickerStyle(.segmented)
 
           DashFormField(label: "Name", text: $name)
-          DashFormField(label: "Content", text: $content, axis: .vertical)
+          DashFormField(label: "Content", text: $content)
 
           Toggle("Proxied", isOn: $proxied)
             .font(.system(size: 15, weight: .medium))

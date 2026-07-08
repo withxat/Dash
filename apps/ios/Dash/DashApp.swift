@@ -40,10 +40,36 @@ struct DashApp: App {
 
   var body: some Scene {
     WindowGroup {
-      AppRootView()
-        .environment(model)
-        .tint(DashTheme.brand)
-        .task { await model.bootstrap() }
+      if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
+        KeyboardDismissalTestHost()
+          .tint(DashTheme.brand)
+      } else {
+        AppRootView()
+          .environment(model)
+          .tint(DashTheme.brand)
+          .task { await model.bootstrap() }
+      }
     }
+  }
+}
+
+private struct KeyboardDismissalTestHost: View {
+  @State private var text = ""
+  @State private var presentsForm = true
+
+  var body: some View {
+    Color.clear
+      .dashTray(isPresented: $presentsForm, title: "Keyboard test") {
+        DashFormSheet(
+          onSave: {},
+          content: {
+            VStack(spacing: 24) {
+              DashFormField(label: "Name", text: $text)
+              Text("Form background")
+                .frame(maxWidth: .infinity, minHeight: 80)
+            }
+          }
+        )
+      }
   }
 }
