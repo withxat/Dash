@@ -32,9 +32,6 @@ struct R2BucketsView: View {
                 icon: SolarAsset.box
               )
             }
-            .contextMenu {
-              Button("Delete", role: .destructive) { Task { await delete(bucket) } }
-            }
           }
         }
       }
@@ -60,7 +57,17 @@ struct R2BucketsView: View {
         }
       )
     }
-    .refreshable { await load(force: true) }.task { await load() }
+    .refreshable { await load(force: true) }
+    .task { await load() }
+    .onAppear { reloadIfInvalidated() }
+  }
+
+  /// A child (bucket screen) may delete a bucket and clear the cache while this
+  /// list stays alive below it; refresh on return when the cache went cold.
+  private func reloadIfInvalidated() {
+    guard let id = model.activeAccountID, !buckets.isEmpty else { return }
+    let cached: [R2Bucket]? = model.featureCache.get(FeatureCacheKey.r2Buckets(id))
+    if cached == nil { Task { await load(force: true) } }
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -89,16 +96,11 @@ struct R2BucketsView: View {
       await load(force: true)
     } catch { self.error = error.localizedDescription }
   }
-  private func delete(_ bucket: R2Bucket) async {
-    guard let id = model.activeAccountID else { return }
-    try? await model.client.deleteR2Bucket(accountID: id, name: bucket.name)
-    model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
-    await load(force: true)
-  }
 }
 
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
   let bucket: String
   @State private var objects: [R2Object] = []
   @State private var prefix = ""
@@ -107,6 +109,8 @@ struct R2BucketView: View {
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
   @State private var importsFile = false
+  @State private var showsMore = false
+  @State private var selectedObject: R2Object?
 
   var body: some View {
     DashFeatureList(
@@ -127,18 +131,20 @@ struct R2BucketView: View {
       } else {
         DashListCard {
           DashListCardRows(items: objects) { object in
-            DashListRow(
-              title: object.key,
-              subtitle: object.size.map {
-                ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
-              },
-              icon: SolarAsset.file,
-              iconColor: DashTheme.text,
-              showsChevron: false
-            )
-            .contextMenu {
-              Button("Delete", role: .destructive) { Task { await delete(object) } }
+            Button {
+              selectedObject = object
+            } label: {
+              DashListRow(
+                title: object.key,
+                subtitle: object.size.map {
+                  ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
+                },
+                icon: SolarAsset.file,
+                iconColor: DashTheme.text,
+                showsChevron: false
+              )
             }
+            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
@@ -154,11 +160,52 @@ struct R2BucketView: View {
         .buttonStyle(DashPressButtonStyle())
         .accessibilityLabel("Upload file")
       }
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
+      }
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
       if case .success(let url) = result { Task { await upload(url) } }
     }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: bucket,
+      actions: [
+        DashDangerAction(
+          title: "Delete bucket",
+          message:
+            "Permanently delete \(bucket) and everything in it. This cannot be undone.",
+          confirmTitle: "Delete bucket"
+        ) {
+          await deleteBucket()
+        }
+      ]
+    )
+    .dashTray(
+      item: $selectedObject,
+      title: { $0.key },
+      content: { object in
+        DashDetailTray(
+          fields: object.detailFields,
+          dangerActions: [
+            DashDangerAction(
+              title: "Delete object",
+              message: "Permanently delete \(object.key) from \(bucket).",
+              confirmTitle: "Delete object"
+            ) {
+              await delete(object)
+            }
+          ]
+        )
+      }
+    )
     .refreshable { await load(force: true) }.task(id: prefix) { await load() }
+  }
+  private func deleteBucket() async {
+    guard let id = model.activeAccountID else { return }
+    try? await model.client.deleteR2Bucket(accountID: id, name: bucket)
+    model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
+    dismiss()
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -287,9 +334,6 @@ struct KVNamespaceView: View {
               DashListRow(title: key.name, icon: SolarAsset.key)
             }
             .buttonStyle(DashPressButtonStyle())
-            .contextMenu {
-              Button("Delete", role: .destructive) { Task { await delete(key) } }
-            }
           }
         }
       }
@@ -302,9 +346,17 @@ struct KVNamespaceView: View {
       item: $selected,
       title: { $0.name },
       content: { key in
-        KVValueEditor(namespaceID: namespaceID, keyName: key.name)
+        KVValueEditor(namespaceID: namespaceID, keyName: key.name) {
+          reloadAfterDelete()
+        }
       }
     )
+  }
+  private func reloadAfterDelete() {
+    guard let id = model.activeAccountID else { return }
+    model.featureCache.remove(
+      FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
+    Task { await load(force: true) }
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -324,13 +376,6 @@ struct KVNamespaceView: View {
     } catch { self.error = error.localizedDescription }
     loading = false
   }
-  private func delete(_ key: KVKey) async {
-    guard let id = model.activeAccountID else { return }
-    try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: key.name)
-    model.featureCache.remove(
-      FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
-    await load(force: true)
-  }
 }
 
 private struct KVValueEditor: View {
@@ -338,6 +383,7 @@ private struct KVValueEditor: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   let namespaceID: String
   let keyName: String
+  var onDeleted: () -> Void = {}
   @State private var value = ""
   @State private var error: String?
   // Saving before the fetch lands would overwrite the stored value with "".
@@ -345,6 +391,15 @@ private struct KVValueEditor: View {
   var body: some View {
     DashFormSheet(
       canSave: loaded,
+      dangerActions: [
+        DashDangerAction(
+          title: "Delete key",
+          message: "Permanently delete \(keyName) from this namespace.",
+          confirmTitle: "Delete key"
+        ) {
+          await delete()
+        }
+      ],
       onSave: { Task { await save() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
@@ -356,6 +411,12 @@ private struct KVValueEditor: View {
       }
     )
     .task { await load() }
+  }
+  private func delete() async {
+    guard let id = model.activeAccountID else { return }
+    try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    onDeleted()
   }
   private func load() async {
     guard let id = model.activeAccountID else { return }

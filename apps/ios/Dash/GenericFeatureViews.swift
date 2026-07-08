@@ -34,6 +34,7 @@ struct GenericResourcesView: View {
   let title: String
   let path: String
   @State private var resources: [GenericResource] = []
+  @State private var selected: GenericResource?
   @State private var error: String?
   @State private var loading = true
 
@@ -52,17 +53,27 @@ struct GenericResourcesView: View {
       } else {
         DashListCard {
           DashListCardRows(items: resources) { resource in
-            DashListRow(
-              title: resource.name,
-              subtitle: resource.detail,
-              icon: SolarAsset.cloud,
-              showsChevron: false
-            )
+            Button {
+              selected = resource
+            } label: {
+              DashListRow(
+                title: resource.name,
+                subtitle: resource.detail,
+                icon: SolarAsset.cloud,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
     }
     .navigationTitle(title)
+    .dashTray(
+      item: $selected,
+      title: { $0.name },
+      content: { DashDetailTray(fields: $0.detailFields) }
+    )
     .refreshable { await load(force: true) }.task { await load() }
   }
 

@@ -298,9 +298,6 @@ struct DNSRecordsView: View {
               )
             }
             .buttonStyle(DashPressButtonStyle())
-            .contextMenu {
-              Button("Delete", role: .destructive) { Task { await delete(record) } }
-            }
           }
         }
       }
@@ -354,11 +351,6 @@ struct DNSRecordsView: View {
     }
     loading = false
   }
-  private func delete(_ record: DNSRecord) async {
-    try? await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
-    model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
-    await load(force: true)
-  }
 }
 
 private struct DNSRecordEditor: View {
@@ -390,6 +382,17 @@ private struct DNSRecordEditor: View {
     DashFormSheet(
       isSaving: saving,
       canSave: !name.isEmpty && !content.isEmpty,
+      dangerActions: record.map { existing in
+        [
+          DashDangerAction(
+            title: "Delete record",
+            message: "Permanently delete the \(existing.type) record for \(existing.name).",
+            confirmTitle: "Delete record"
+          ) {
+            await delete(existing)
+          }
+        ]
+      } ?? [],
       onSave: { Task { await save() } },
       content: {
         VStack(spacing: 14) {
@@ -434,6 +437,12 @@ private struct DNSRecordEditor: View {
       dismiss()
     } catch { self.error = error.localizedDescription }
     saving = false
+  }
+
+  private func delete(_ record: DNSRecord) async {
+    try? await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    saved()
   }
 }
 
@@ -643,6 +652,7 @@ struct CachePurgeView: View {
   @State private var url = ""
   @State private var status: String?
   @State private var working = false
+  @State private var showsMore = false
 
   var body: some View {
     ScrollView {
@@ -666,27 +676,6 @@ struct CachePurgeView: View {
           }
         }
 
-        DashCard {
-          VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Entire zone")
-                .font(.dashTitle(20, weight: .semibold))
-                .foregroundStyle(DashTheme.strong)
-              Text("This removes every cached asset. Requests may temporarily reach your origin.")
-                .font(.system(size: 15))
-                .foregroundStyle(DashTheme.subtle)
-            }
-            DashActionRow(
-              title: "Purge everything",
-              icon: SolarAsset.trash,
-              role: .destructive
-            ) {
-              Task { await purge(files: nil) }
-            }
-            .disabled(working)
-          }
-        }
-
         if let status {
           DashNotice(kind: status == "Cache purged." ? .success : .error, message: status)
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -699,6 +688,25 @@ struct CachePurgeView: View {
     }
     .background(DashTheme.canvas)
     .navigationTitle("Cache")
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
+      }
+    }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: "Purge cache",
+      actions: [
+        DashDangerAction(
+          title: "Purge everything",
+          message:
+            "This removes every cached asset in this zone. Requests may temporarily reach your origin.",
+          confirmTitle: "Purge everything"
+        ) {
+          await purge(files: nil)
+        }
+      ]
+    )
   }
 
   private func purge(files: [String]?) async {
@@ -780,7 +788,7 @@ extension ZoneSetting {
 }
 
 extension JSONValue {
-  fileprivate var displayText: String {
+  var displayText: String {
     switch self {
     case .array(let values):
       values.isEmpty ? "None" : values.map(\.displayText).joined(separator: ", ")

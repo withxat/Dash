@@ -248,7 +248,6 @@ private struct TabBarChrome: ViewModifier {
 
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
 
   var body: some View {
     VStack(spacing: 20) {
@@ -268,22 +267,19 @@ struct ProfileTrayContent: View {
         }
         Spacer(minLength: 0)
       }
+      .padding(.horizontal, DashTheme.Sheet.content)
 
-      VStack(spacing: 12) {
-        DashActionRow(
+      DashConfirmableActions(actions: [
+        DashDangerAction(
           title: "Sign out",
           icon: SolarAsset.danger,
-          role: .destructive
+          message: "You'll need to reconnect your Cloudflare account to use Dash again.",
+          confirmTitle: "Sign out"
         ) {
-          Task {
-            await model.signOut()
-            dismiss()
-          }
+          await model.signOut()
         }
-      }
+      ])
     }
-    .padding(.horizontal, DashTheme.Sheet.content)
-    .padding(.bottom, DashTheme.Sheet.bodyBottom)
   }
 }
 

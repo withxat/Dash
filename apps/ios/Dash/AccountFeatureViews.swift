@@ -13,6 +13,7 @@ private func permissionHint(for error: Error) -> String {
 struct ImagesView: View {
   @Environment(AppModel.self) private var model
   @State private var images: [CloudflareImage] = []
+  @State private var selected: CloudflareImage?
   @State private var error: String?
   @State private var loading = true
 
@@ -31,17 +32,27 @@ struct ImagesView: View {
       } else {
         DashListCard {
           DashListCardRows(items: images) { image in
-            DashListRow(
-              title: image.name,
-              subtitle: image.uploaded,
-              icon: SolarAsset.gallery,
-              trailing: image.requireSignedURLs == true ? "Signed" : nil,
-              showsChevron: false
-            )
+            Button {
+              selected = image
+            } label: {
+              DashListRow(
+                title: image.name,
+                subtitle: image.uploaded,
+                icon: SolarAsset.gallery,
+                trailing: image.requireSignedURLs == true ? "Signed" : nil,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
     }
+    .dashTray(
+      item: $selected,
+      title: { $0.name },
+      content: { DashDetailTray(fields: $0.detailFields) }
+    )
     .refreshable { await load(force: true) }
     .task { await load() }
   }
@@ -70,6 +81,7 @@ struct ImagesView: View {
 struct StreamView: View {
   @Environment(AppModel.self) private var model
   @State private var videos: [StreamVideo] = []
+  @State private var selected: StreamVideo?
   @State private var error: String?
   @State private var loading = true
 
@@ -88,16 +100,26 @@ struct StreamView: View {
       } else {
         DashListCard {
           DashListCardRows(items: videos) { video in
-            DashListRow(
-              title: video.name,
-              subtitle: video.created,
-              icon: SolarAsset.video,
-              showsChevron: false
-            )
+            Button {
+              selected = video
+            } label: {
+              DashListRow(
+                title: video.name,
+                subtitle: video.created,
+                icon: SolarAsset.video,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
     }
+    .dashTray(
+      item: $selected,
+      title: { $0.name },
+      content: { DashDetailTray(fields: $0.detailFields) }
+    )
     .refreshable { await load(force: true) }
     .task { await load() }
   }
@@ -126,6 +148,7 @@ struct StreamView: View {
 struct AnalyticsView: View {
   @Environment(AppModel.self) private var model
   @State private var sites: [RumSite] = []
+  @State private var selected: RumSite?
   @State private var error: String?
   @State private var loading = true
 
@@ -144,16 +167,26 @@ struct AnalyticsView: View {
       } else {
         DashListGroup(title: "RUM sites") {
           DashListCardRows(items: sites) { site in
-            DashListRow(
-              title: site.name,
-              subtitle: site.siteTag,
-              icon: SolarAsset.chart,
-              showsChevron: false
-            )
+            Button {
+              selected = site
+            } label: {
+              DashListRow(
+                title: site.name,
+                subtitle: site.siteTag,
+                icon: SolarAsset.chart,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
     }
+    .dashTray(
+      item: $selected,
+      title: { $0.name },
+      content: { DashDetailTray(fields: $0.detailFields) }
+    )
     .refreshable { await load(force: true) }
     .task { await load() }
   }
@@ -179,6 +212,42 @@ struct AnalyticsView: View {
   }
 }
 
+/// One selected account row, across the tab's four resource types, so a single
+/// detail tray can render whichever the user tapped.
+private enum AccountDetailItem: Identifiable, Equatable {
+  case member(AccountMember)
+  case policy(NotificationPolicy)
+  case history(NotificationHistoryEntry)
+  case audit(AuditLogEntry)
+
+  var id: String {
+    switch self {
+    case .member(let value): "member-\(value.id)"
+    case .policy(let value): "policy-\(value.id)"
+    case .history(let value): "history-\(value.id)"
+    case .audit(let value): "audit-\(value.id)"
+    }
+  }
+
+  var trayTitle: String {
+    switch self {
+    case .member(let value): value.displayName
+    case .policy(let value): value.title
+    case .history(let value): value.title
+    case .audit(let value): value.title
+    }
+  }
+
+  var fields: [DashDetailField] {
+    switch self {
+    case .member(let value): value.detailFields
+    case .policy(let value): value.detailFields
+    case .history(let value): value.detailFields
+    case .audit(let value): value.detailFields
+    }
+  }
+}
+
 struct AccountView: View {
   private enum Tab: Hashable { case members, alerts, audit }
 
@@ -187,6 +256,7 @@ struct AccountView: View {
   @State private var policies: [NotificationPolicy] = []
   @State private var history: [NotificationHistoryEntry] = []
   @State private var auditLogs: [AuditLogEntry] = []
+  @State private var detail: AccountDetailItem?
   @State private var error: String?
   @State private var loading = true
   @State private var selectedTab: Tab = .members
@@ -214,12 +284,17 @@ struct AccountView: View {
         } else {
           DashListCard {
             DashListCardRows(items: members) { member in
-              DashListRow(
-                title: member.displayName,
-                subtitle: member.user?.email ?? member.roleSummary,
-                icon: SolarAsset.users,
-                showsChevron: false
-              )
+              Button {
+                detail = .member(member)
+              } label: {
+                DashListRow(
+                  title: member.displayName,
+                  subtitle: member.user?.email ?? member.roleSummary,
+                  icon: SolarAsset.users,
+                  showsChevron: false
+                )
+              }
+              .buttonStyle(DashPressButtonStyle())
             }
           }
         }
@@ -233,18 +308,28 @@ struct AccountView: View {
         } else {
           DashListCard {
             DashListCardRows(items: policies) { policy in
-              DashListRow(title: policy.title, icon: SolarAsset.bolt, showsChevron: false)
+              Button {
+                detail = .policy(policy)
+              } label: {
+                DashListRow(title: policy.title, icon: SolarAsset.bolt, showsChevron: false)
+              }
+              .buttonStyle(DashPressButtonStyle())
             }
             if !policies.isEmpty && !history.isEmpty {
               DashListGroupDivider()
             }
             DashListCardRows(items: history) { entry in
-              DashListRow(
-                title: entry.title,
-                subtitle: entry.subtitle,
-                icon: SolarAsset.clock,
-                showsChevron: false
-              )
+              Button {
+                detail = .history(entry)
+              } label: {
+                DashListRow(
+                  title: entry.title,
+                  subtitle: entry.subtitle,
+                  icon: SolarAsset.clock,
+                  showsChevron: false
+                )
+              }
+              .buttonStyle(DashPressButtonStyle())
             }
           }
         }
@@ -258,17 +343,27 @@ struct AccountView: View {
         } else {
           DashListCard {
             DashListCardRows(items: auditLogs) { entry in
-              DashListRow(
-                title: entry.title,
-                subtitle: entry.subtitle,
-                icon: SolarAsset.shieldCheck,
-                showsChevron: false
-              )
+              Button {
+                detail = .audit(entry)
+              } label: {
+                DashListRow(
+                  title: entry.title,
+                  subtitle: entry.subtitle,
+                  icon: SolarAsset.shieldCheck,
+                  showsChevron: false
+                )
+              }
+              .buttonStyle(DashPressButtonStyle())
             }
           }
         }
       }
     }
+    .dashTray(
+      item: $detail,
+      title: { $0.trayTitle },
+      content: { DashDetailTray(fields: $0.fields) }
+    )
     .refreshable { await load(force: true) }
     .task { await load() }
   }
