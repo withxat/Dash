@@ -581,10 +581,13 @@ public struct GenericResource: CloudflareResource, Hashable {
     let raw = try [String: JSONValue](from: decoder)
     self.raw = raw
     id =
-      raw.string(for: ["id", "uuid", "tag", "sitekey", "key", "queue_id", "name"])
+      raw.string(for: ["id", "uuid", "tag", "sitekey", "key", "queue_id", "snippet_name", "name"])
       ?? UUID().uuidString
     name =
-      raw.string(for: ["name", "title", "hostname", "email", "pattern", "queue_name", "id", "uuid"])
+      raw.string(for: [
+        "name", "title", "hostname", "email", "pattern", "queue_name", "snippet_name", "url",
+        "id", "uuid",
+      ])
       ?? "Cloudflare resource"
     detail = raw.string(for: ["status", "type", "state", "description"])
   }
@@ -596,7 +599,11 @@ extension Dictionary where Key == String, Value == JSONValue {
   func string(for keys: [String]) -> String? {
     for key in keys {
       if case .string(let value)? = self[key] { return value }
-      if case .number(let value)? = self[key] { return String(value) }
+      if case .number(let value)? = self[key] {
+        // Integral ids (e.g. Logpush job ids) must not render as "123.0" —
+        // they feed straight into request paths.
+        return value.rounded() == value ? String(Int64(value)) : String(value)
+      }
     }
     return nil
   }

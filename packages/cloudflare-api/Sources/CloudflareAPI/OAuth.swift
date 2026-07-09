@@ -34,6 +34,18 @@ public enum CloudflareScopes {
     "workers-observability.read", "workers-ci.read",
     "secrets-store.read", "secrets-store.write", "vectorize.read", "vectorize.write",
     "notifications.read", "notifications.write",
+    "aig.read", "aig.write", "query-cache.read", "query-cache.write",
+    "pipelines.read", "pipelines.write",
+    "account-logs.read", "account-logs.write", "logs.read", "logs.write",
+    "dns-firewall.read", "dns-firewall.write",
+    "access-group.read", "access-group.write",
+    "access-service-token.read", "access-service-token.write",
+    "access.read", "access.write", "access-policy.read", "access-policy.write",
+    "teams.read", "teams.write",
+    "account-rule-lists.read", "account-rule-lists.write",
+    "snippets.read", "snippets.write", "web3-hostnames.read", "web3-hostnames.write",
+    "page-shield.read", "account-waf.read", "account-waf.write",
+    "memberships.read", "memberships.write", "account-settings.write",
     "offline_access",
   ]
 }
