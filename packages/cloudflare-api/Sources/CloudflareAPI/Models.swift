@@ -580,10 +580,10 @@ public struct GenericResource: CloudflareResource, Hashable {
     let raw = try [String: JSONValue](from: decoder)
     self.raw = raw
     id =
-      raw.string(for: ["id", "uuid", "tag", "sitekey", "key", "name"])
+      raw.string(for: ["id", "uuid", "tag", "sitekey", "key", "queue_id", "name"])
       ?? UUID().uuidString
     name =
-      raw.string(for: ["name", "title", "hostname", "email", "id", "uuid"])
+      raw.string(for: ["name", "title", "hostname", "email", "pattern", "queue_name", "id", "uuid"])
       ?? "Cloudflare resource"
     detail = raw.string(for: ["status", "type", "state", "description"])
   }

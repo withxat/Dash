@@ -120,6 +120,11 @@ public actor CloudflareClient {
     let _: Data = try await raw(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)", method: "DELETE")
   }
+
+  /// Raw object body — binary endpoint, no JSON envelope.
+  public func getR2Object(accountID: String, bucket: String, key: String) async throws -> Data {
+    try await raw("/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
+  }
   public func listKVNamespaces(accountID: String, page: Int = 1) async throws -> Page<KVNamespace> {
     try await list(
       "/accounts/\(accountID)/storage/kv/namespaces",

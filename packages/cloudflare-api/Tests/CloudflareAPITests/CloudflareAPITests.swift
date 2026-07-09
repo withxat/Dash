@@ -69,6 +69,21 @@ struct NetworkTests {
     #expect(days.first?.requests == 120)
     #expect(days.first?.bytes == 98304)
   }
+  @Test func genericResourceExtractsQueueAndRouteIdentity() throws {
+    let decoder = JSONDecoder()
+    let queue = try decoder.decode(
+      GenericResource.self,
+      from: Data(#"{"queue_id":"q1","queue_name":"jobs","producers":[]}"#.utf8))
+    #expect(queue.id == "q1")
+    #expect(queue.name == "jobs")
+
+    let route = try decoder.decode(
+      GenericResource.self,
+      from: Data(#"{"id":"r1","pattern":"example.com/*","script":"worker"}"#.utf8))
+    #expect(route.id == "r1")
+    #expect(route.name == "example.com/*")
+  }
+
   @Test func decodesImagesListEnvelope() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
@@ -95,6 +110,21 @@ struct NetworkTests {
       session: session)
     let buckets = try await client.listR2Buckets(accountID: "account")
     #expect(buckets.map(\.name) == ["assets"])
+  }
+
+  @Test func returnsRawR2ObjectBody() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let payload = Data([0x50, 0x4B, 0x03, 0x04, 0x00])
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/r2/buckets/assets/objects/archive.zip") == true)
+      return (200, payload)
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let data = try await client.getR2Object(
+      accountID: "account", bucket: "assets", key: "archive.zip")
+    #expect(data == payload)
   }
 
   @Test func concurrent401ResponsesShareOneRefresh() async throws {
