@@ -11,7 +11,8 @@ public enum CloudflareEndpoints {
 
 public enum CloudflareScopes {
   public static let all: [String] = [
-    "user-details.read", "account-settings.read", "zone.read", "dns.read", "dns.write",
+    "user-details.read", "account-settings.read", "zone.read", "zone.write", "dns.read",
+    "dns.write",
     "cache.purge", "zone-settings.read", "zone-settings.write", "workers-scripts.read",
     "workers-scripts.write", "workers-routes.read", "workers-routes.write",
     "workers-kv-storage.read", "workers-kv-storage.write", "workers-r2.read",
@@ -20,16 +21,19 @@ public enum CloudflareScopes {
     "analytics.read",
     "account-analytics.read", "firewall-services.read", "firewall-services.write", "zone-waf.read",
     "zone-waf.write", "ssl-and-certificates.read", "ssl-and-certificates.write",
-    "healthcheck.read", "waiting-rooms.read",
-    "load-balancers.read", "load-balancing-monitors-and-pools.read",
+    "healthcheck.read", "healthcheck.write", "waiting-rooms.read", "waiting-rooms.write",
+    "load-balancers.read", "load-balancers.write", "load-balancing-monitors-and-pools.read",
     "load-balancing-monitors-and-pools.write", "page-rules.read", "page-rules.write",
     "email-routing-address.read", "email-routing-address.write", "email-routing-rule.read",
-    "email-routing-rule.write", "registrar-domains.read", "registrar-domains.write",
-    "argotunnel.read", "argotunnel.write", "access-app.read",
+    "email-routing-rule.write",
+    // Registrar has no .write scope — writes ride .admin (verified via GET /oauth/scopes).
+    "registrar-domains.read", "registrar-domains.admin",
+    "argotunnel.read", "argotunnel.write", "access-app.read", "access-app.write",
     "images.read", "images.write", "stream.read", "stream.write",
     "challenge-widgets.read", "challenge-widgets.write",
     "workers-observability.read", "workers-ci.read",
-    "secrets-store.read", "vectorize.read", "notifications.read", "notifications.write",
+    "secrets-store.read", "secrets-store.write", "vectorize.read", "vectorize.write",
+    "notifications.read", "notifications.write",
     "offline_access",
   ]
 }
