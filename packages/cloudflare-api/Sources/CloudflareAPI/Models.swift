@@ -430,13 +430,14 @@ public struct NotificationPolicy: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let name: String?
   public let alertType: String?
+  public let enabled: Bool?
 
   public var title: String {
     name ?? alertType?.replacingOccurrences(of: "_", with: " ") ?? id
   }
 
   enum CodingKeys: String, CodingKey {
-    case id, name
+    case id, name, enabled
     case alertType = "alert_type"
   }
 }
