@@ -953,6 +953,33 @@ struct DashActionButton: View {
   }
 }
 
+/// A neutral secondary pill for tray accessories — reversible writes like
+/// enable/disable or lock/unlock that need no confirm step, styled to match
+/// the R2 Download pill.
+struct DashTrayPillButton: View {
+  let title: String
+  var isLoading = false
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      HStack(spacing: 8) {
+        if isLoading { ProgressView() }
+        Text(title)
+          .font(.system(size: 16, weight: .bold))
+      }
+      .foregroundStyle(DashTheme.strong)
+      .frame(maxWidth: .infinity, minHeight: 52)
+      .background(DashTheme.recessed, in: DashTheme.pillShape)
+      .overlay {
+        DashTheme.pillShape.stroke(DashTheme.line, lineWidth: 0.5)
+      }
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .disabled(isLoading)
+  }
+}
+
 // MARK: - Header more menu
 
 /// Trailing toolbar button that opens a `dashMoreMenu` tray of danger actions.

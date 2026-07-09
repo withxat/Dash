@@ -16,6 +16,7 @@ struct ImagesView: View {
   @State private var selected: CloudflareImage?
   @State private var error: String?
   @State private var loading = true
+  @State private var deleting = false
 
   var body: some View {
     DashFeatureList(
@@ -51,10 +52,29 @@ struct ImagesView: View {
     .dashTray(
       item: $selected,
       title: { $0.name },
-      content: { DashDetailTray(fields: $0.detailFields) }
+      content: { image in
+        DashDetailTray(
+          fields: image.detailFields,
+          deleteMessage: "Permanently delete \(image.name) from Cloudflare Images.",
+          isDeleting: deleting,
+          onDelete: { Task { await delete(image) } }
+        )
+      }
     )
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func delete(_ image: CloudflareImage) async {
+    guard let accountID = model.activeAccountID else { return }
+    deleting = true
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(accountID)/images/v1/\(image.id)", method: "DELETE")
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    selected = nil
+    model.featureCache.remove(FeatureCacheKey.images(accountID))
+    await load(force: true)
+    deleting = false
   }
 
   private func load(force: Bool = false) async {
@@ -84,6 +104,7 @@ struct StreamView: View {
   @State private var selected: StreamVideo?
   @State private var error: String?
   @State private var loading = true
+  @State private var deleting = false
 
   var body: some View {
     DashFeatureList(
@@ -118,10 +139,29 @@ struct StreamView: View {
     .dashTray(
       item: $selected,
       title: { $0.name },
-      content: { DashDetailTray(fields: $0.detailFields) }
+      content: { video in
+        DashDetailTray(
+          fields: video.detailFields,
+          deleteMessage: "Permanently delete \(video.name) from Stream.",
+          isDeleting: deleting,
+          onDelete: { Task { await delete(video) } }
+        )
+      }
     )
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func delete(_ video: StreamVideo) async {
+    guard let accountID = model.activeAccountID else { return }
+    deleting = true
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(accountID)/stream/\(video.uid)", method: "DELETE")
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    selected = nil
+    model.featureCache.remove(FeatureCacheKey.stream(accountID))
+    await load(force: true)
+    deleting = false
   }
 
   private func load(force: Bool = false) async {
@@ -260,6 +300,8 @@ struct AccountView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var selectedTab: Tab = .members
+  @State private var togglingPolicy = false
+  @State private var toggleError: String?
 
   var body: some View {
     DashFeatureList(
@@ -309,9 +351,15 @@ struct AccountView: View {
           DashListCard {
             DashListCardRows(items: policies) { policy in
               Button {
+                toggleError = nil
                 detail = .policy(policy)
               } label: {
-                DashListRow(title: policy.title, icon: SolarAsset.bolt, showsChevron: false)
+                DashListRow(
+                  title: policy.title,
+                  subtitle: policy.enabled == false ? "Disabled" : nil,
+                  icon: SolarAsset.bolt,
+                  showsChevron: false
+                )
               }
               .buttonStyle(DashPressButtonStyle())
             }
@@ -362,10 +410,42 @@ struct AccountView: View {
     .dashTray(
       item: $detail,
       title: { $0.trayTitle },
-      content: { DashDetailTray(fields: $0.fields) }
+      content: { item in
+        DashDetailTray(fields: item.fields) {
+          if case .policy(let policy) = item {
+            VStack(spacing: 10) {
+              DashTrayPillButton(
+                title: policy.enabled == false ? "Enable policy" : "Disable policy",
+                isLoading: togglingPolicy
+              ) {
+                Task { await toggle(policy) }
+              }
+              if let toggleError {
+                DashNotice(kind: .error, message: toggleError)
+              }
+            }
+          }
+        }
+      }
     )
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func toggle(_ policy: NotificationPolicy) async {
+    guard let accountID = model.activeAccountID else { return }
+    togglingPolicy = true
+    toggleError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(accountID)/alerting/v3/policies/\(policy.id)", method: "PUT",
+        body: ["enabled": .bool(!(policy.enabled ?? true))])
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      detail = nil
+      model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
+      await load(force: true)
+    } catch { toggleError = error.localizedDescription }
+    togglingPolicy = false
   }
 
   private func load(force: Bool = false) async {

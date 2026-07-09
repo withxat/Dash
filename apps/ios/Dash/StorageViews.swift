@@ -554,6 +554,8 @@ struct D1DatabasesView: View {
   @State private var databases: [D1Database] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var creates = false
+  @State private var newName = ""
 
   var body: some View {
     DashFeatureList(
@@ -565,7 +567,7 @@ struct D1DatabasesView: View {
         DashEmptyState(
           icon: SolarAsset.database,
           title: "No databases",
-          message: "D1 databases for this account will appear here."
+          message: "Create a database with the add button."
         )
       } else {
         DashListCard {
@@ -583,7 +585,50 @@ struct D1DatabasesView: View {
         }
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          creates = true
+        } label: {
+          DashToolbarActionIcon(asset: SolarAsset.plus)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("New database")
+      }
+    }
+    .dashTray(isPresented: $creates, title: "New database") {
+      DashFormSheet(
+        saveTitle: "Create",
+        canSave: !newName.isEmpty,
+        onSave: { Task { await create() } },
+        content: {
+          DashFormField(label: "Database name", text: $newName)
+        }
+      )
+    }
     .refreshable { await load(force: true) }.task { await load() }
+    .onAppear { reloadIfInvalidated() }
+  }
+
+  /// A child (console screen) may delete a database and clear the cache while
+  /// this list stays alive below it; refresh on return when the cache went cold.
+  private func reloadIfInvalidated() {
+    guard let id = model.activeAccountID, !databases.isEmpty else { return }
+    let cached: [D1Database]? = model.featureCache.get(FeatureCacheKey.d1Databases(id))
+    if cached == nil { Task { await load(force: true) } }
+  }
+
+  private func create() async {
+    guard let id = model.activeAccountID, !newName.isEmpty else { return }
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(id)/d1/database", method: "POST",
+        body: ["name": .string(newName)])
+      newName = ""
+      creates = false
+      model.featureCache.remove(FeatureCacheKey.d1Databases(id))
+      await load(force: true)
+    } catch { self.error = error.localizedDescription }
   }
 
   private func load(force: Bool = false) async {
@@ -607,12 +652,14 @@ struct D1DatabasesView: View {
 
 struct D1ConsoleView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismissScreen
   let databaseID: String
   let name: String
   @State private var sql = "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;"
   @State private var result = ""
   @State private var error: String?
   @State private var running = false
+  @State private var showsMore = false
   var body: some View {
     ScrollView {
       VStack(spacing: DashTheme.Spacing.section) {
@@ -644,6 +691,30 @@ struct D1ConsoleView: View {
     .dashKeyboardDismissal()
     .background(DashTheme.canvas)
     .navigationTitle(name)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
+      }
+    }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: name,
+      actions: [
+        DashDangerAction(
+          title: "Delete database",
+          message: "Permanently delete \(name) and all of its data. This cannot be undone."
+        ) {
+          await deleteDatabase()
+        }
+      ]
+    )
+  }
+  private func deleteDatabase() async {
+    guard let id = model.activeAccountID else { return }
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(id)/d1/database/\(databaseID)", method: "DELETE")
+    model.featureCache.remove(FeatureCacheKey.d1Databases(id))
+    dismissScreen()
   }
   private func run() async {
     guard let id = model.activeAccountID else { return }

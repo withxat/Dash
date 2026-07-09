@@ -186,6 +186,7 @@ extension NotificationPolicy {
     [
       DashDetailField(label: "Policy", value: title),
       alertType.map { DashDetailField(label: "Type", value: $0) },
+      enabled.map { DashDetailField(label: "Enabled", value: $0 ? "On" : "Off") },
       DashDetailField(label: "ID", value: id, mono: true),
     ].compactMap { $0 }
   }

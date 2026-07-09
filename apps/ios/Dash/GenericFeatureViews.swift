@@ -53,6 +53,17 @@ struct GenericCreateSpec {
   let body: ([String: String]) -> [String: JSONValue]
 }
 
+/// A neutral, reversible write on a single row (enable/disable, lock/unlock),
+/// rendered as a pill under the row's detail fields — no confirm step.
+struct GenericRowUpdate: Identifiable {
+  let id: String
+  let title: (GenericResource) -> String
+  let method: String
+  /// Builds the request path from the list's base path and the row.
+  let path: (String, GenericResource) -> String
+  let body: (GenericResource) -> [String: JSONValue]
+}
+
 /// A high-risk action on the whole screen (header more-menu), e.g. redeploy or
 /// delete-project on a Pages deployments list.
 struct GenericScreenAction {
@@ -72,6 +83,7 @@ struct GenericResourceCapabilities {
   var create: GenericCreateSpec?
   /// Confirmation message for deleting a row; nil leaves the resource read-only.
   var deleteMessage: ((GenericResource) -> String)?
+  var updates: [GenericRowUpdate] = []
   var screenActions: [GenericScreenAction] = []
 
   static func forPath(_ fullPath: String) -> GenericResourceCapabilities {
@@ -145,6 +157,57 @@ struct GenericResourceCapabilities {
         fields: [GenericCreateField("email", "Email address")],
         body: { values in ["email": .string(values["email"] ?? "")] })
       caps.deleteMessage = { "Remove \($0.name) from destination addresses." }
+    } else if path.hasSuffix("/load_balancers/pools") {
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-enabled",
+          title: { $0.bool("enabled") == false ? "Enable pool" : "Disable pool" },
+          method: "PATCH",
+          path: { "\($0)/\($1.id)" },
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+      ]
+      caps.deleteMessage = {
+        "Permanently delete the pool \($0.name). Load balancers stop using its origins."
+      }
+    } else if path.hasSuffix("/pagerules") {
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-status",
+          title: { $0.string("status") == "active" ? "Disable rule" : "Enable rule" },
+          method: "PATCH",
+          path: { "\($0)/\($1.id)" },
+          body: {
+            ["status": .string($0.string("status") == "active" ? "disabled" : "active")]
+          })
+      ]
+      caps.deleteMessage = { _ in "Permanently delete this page rule." }
+    } else if path.hasSuffix("/registrar/domains") {
+      // Registrar updates go by domain name, not id, and only accept PUT.
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-auto-renew",
+          title: { $0.bool("auto_renew") == true ? "Disable auto-renew" : "Enable auto-renew" },
+          method: "PUT",
+          path: { "\($0)/\($1.name)" },
+          body: { ["auto_renew": .bool(!($0.bool("auto_renew") ?? false))] }),
+        GenericRowUpdate(
+          id: "toggle-locked",
+          title: { $0.bool("locked") == true ? "Unlock transfers" : "Lock transfers" },
+          method: "PUT",
+          path: { "\($0)/\($1.name)" },
+          body: { ["locked": .bool(!($0.bool("locked") ?? false))] }),
+      ]
+    } else if path.hasSuffix("/cfd_tunnel") {
+      caps.create = GenericCreateSpec(
+        title: "New tunnel",
+        fields: [GenericCreateField("name", "Tunnel name")],
+        body: { values in
+          // config_src cloudflare = remotely managed; no tunnel secret to mint.
+          ["name": .string(values["name"] ?? ""), "config_src": .string("cloudflare")]
+        })
+      caps.deleteMessage = {
+        "Permanently delete the tunnel \($0.name). Its connectors disconnect."
+      }
     } else if path.hasSuffix("/challenges/widgets") {
       caps.deleteMessage = {
         "Permanently delete the widget \($0.name). Its sitekey stops working."
@@ -172,6 +235,18 @@ struct GenericResourceCapabilities {
       ]
     }
     return caps
+  }
+}
+
+extension GenericResource {
+  fileprivate func bool(_ key: String) -> Bool? {
+    if case .bool(let value)? = raw[key] { return value }
+    return nil
+  }
+
+  fileprivate func string(_ key: String) -> String? {
+    if case .string(let value)? = raw[key] { return value }
+    return nil
   }
 }
 
@@ -251,6 +326,8 @@ struct GenericResourcesView: View {
   @State private var creates = false
   @State private var deleting = false
   @State private var showsMore = false
+  @State private var updatingID: String?
+  @State private var updateError: String?
 
   private var capabilities: GenericResourceCapabilities { .forPath(path) }
   private var basePath: String { String(path.split(separator: "?", maxSplits: 1)[0]) }
@@ -273,6 +350,7 @@ struct GenericResourcesView: View {
         DashListCard {
           DashListCardRows(items: resources) { resource in
             Button {
+              updateError = nil
               selected = resource
             } label: {
               DashListRow(
@@ -317,7 +395,23 @@ struct GenericResourcesView: View {
           onDelete: capabilities.deleteMessage != nil
             ? { Task { await delete(resource) } }
             : nil
-        )
+        ) {
+          if !capabilities.updates.isEmpty {
+            VStack(spacing: 10) {
+              ForEach(capabilities.updates) { update in
+                DashTrayPillButton(
+                  title: update.title(resource),
+                  isLoading: updatingID == update.id
+                ) {
+                  Task { await perform(update, on: resource) }
+                }
+              }
+              if let updateError {
+                DashNotice(kind: .error, message: updateError)
+              }
+            }
+          }
+        }
       }
     )
     .dashTray(isPresented: $creates, title: capabilities.create?.title ?? "New") {
@@ -347,6 +441,20 @@ struct GenericResourcesView: View {
     selected = nil
     await invalidateAndReload()
     deleting = false
+  }
+
+  private func perform(_ update: GenericRowUpdate, on resource: GenericResource) async {
+    updatingID = update.id
+    updateError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: update.path(basePath, resource), method: update.method,
+        body: update.body(resource))
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      selected = nil
+      await invalidateAndReload()
+    } catch { updateError = error.localizedDescription }
+    updatingID = nil
   }
 
   private func perform(_ action: GenericScreenAction) async {
