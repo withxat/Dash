@@ -190,7 +190,25 @@ struct R2BucketView: View {
           deleteMessage: "Permanently delete \(object.key) from \(bucket).",
           isDeleting: deletingObject,
           onDelete: { Task { await delete(object) } }
-        )
+        ) {
+          if let accountID = model.activeAccountID {
+            ShareLink(
+              item: R2ObjectExport(
+                client: model.client, accountID: accountID, bucket: bucket, key: object.key),
+              preview: SharePreview(object.key)
+            ) {
+              Text("Download")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(DashTheme.strong)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(DashTheme.recessed, in: DashTheme.pillShape)
+                .overlay {
+                  DashTheme.pillShape.stroke(DashTheme.line, lineWidth: 0.5)
+                }
+            }
+            .buttonStyle(DashPressButtonStyle())
+          }
+        }
       }
     )
     .refreshable { await load(force: true) }.task(id: prefix) { await load() }
@@ -250,6 +268,8 @@ struct KVNamespacesView: View {
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var creates = false
+  @State private var newTitle = ""
 
   var body: some View {
     DashFeatureList(
@@ -261,7 +281,7 @@ struct KVNamespacesView: View {
         DashEmptyState(
           icon: SolarAsset.pinList,
           title: "No namespaces",
-          message: "KV namespaces for this account will appear here."
+          message: "Create a namespace with the add button."
         )
       } else {
         DashListCard {
@@ -273,7 +293,51 @@ struct KVNamespacesView: View {
         }
       }
     }
-    .refreshable { await load(force: true) }.task { await load() }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          creates = true
+        } label: {
+          DashToolbarActionIcon(asset: SolarAsset.plus)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("New namespace")
+      }
+    }
+    .dashTray(isPresented: $creates, title: "New namespace") {
+      DashFormSheet(
+        saveTitle: "Create",
+        canSave: !newTitle.isEmpty,
+        onSave: { Task { await create() } },
+        content: {
+          DashFormField(label: "Namespace title", text: $newTitle)
+        }
+      )
+    }
+    .refreshable { await load(force: true) }
+    .task { await load() }
+    .onAppear { reloadIfInvalidated() }
+  }
+
+  /// A child (namespace screen) may delete a namespace and clear the cache while
+  /// this list stays alive below it; refresh on return when the cache went cold.
+  private func reloadIfInvalidated() {
+    guard let id = model.activeAccountID, !namespaces.isEmpty else { return }
+    let cached: [KVNamespace]? = model.featureCache.get(FeatureCacheKey.kvNamespaces(id))
+    if cached == nil { Task { await load(force: true) } }
+  }
+
+  private func create() async {
+    guard let id = model.activeAccountID, !newTitle.isEmpty else { return }
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(id)/storage/kv/namespaces", method: "POST",
+        body: ["title": .string(newTitle)])
+      newTitle = ""
+      creates = false
+      model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
+      await load(force: true)
+    } catch { self.error = error.localizedDescription }
   }
 
   private func load(force: Bool = false) async {
@@ -297,6 +361,7 @@ struct KVNamespacesView: View {
 
 struct KVNamespaceView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismissScreen
   let namespaceID: String
   @State private var keys: [KVKey] = []
   @State private var prefix = ""
@@ -305,6 +370,8 @@ struct KVNamespaceView: View {
   // First load only — `.task(id: prefix)` reloads per keystroke, and
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
+  @State private var creates = false
+  @State private var showsMore = false
 
   var body: some View {
     DashFeatureList(
@@ -339,21 +406,59 @@ struct KVNamespaceView: View {
     .task(id: prefix) {
       await load()
     }.refreshable { await load(force: true) }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          creates = true
+        } label: {
+          DashToolbarActionIcon(asset: SolarAsset.plus)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("New key")
+      }
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
+      }
+    }
     .dashTray(
       item: $selected,
       title: { $0.name },
       content: { key in
-        KVValueEditor(namespaceID: namespaceID, keyName: key.name) {
-          reloadAfterDelete()
+        KVValueEditor(namespaceID: namespaceID, existingKey: key.name) {
+          reloadKeys()
         }
       }
     )
+    .dashTray(isPresented: $creates, title: "New key") {
+      KVValueEditor(namespaceID: namespaceID, existingKey: nil) {
+        reloadKeys()
+      }
+    }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: "KV namespace",
+      actions: [
+        DashDangerAction(
+          title: "Delete namespace",
+          message: "Permanently delete this namespace and every key in it."
+        ) {
+          await deleteNamespace()
+        }
+      ]
+    )
   }
-  private func reloadAfterDelete() {
+  private func reloadKeys() {
     guard let id = model.activeAccountID else { return }
     model.featureCache.remove(
       FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
     Task { await load(force: true) }
+  }
+  private func deleteNamespace() async {
+    guard let id = model.activeAccountID else { return }
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(id)/storage/kv/namespaces/\(namespaceID)", method: "DELETE")
+    model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
+    dismissScreen()
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -375,26 +480,38 @@ struct KVNamespaceView: View {
   }
 }
 
+/// Edits an existing KV value (`existingKey` set) or creates a new key/value
+/// pair (`existingKey` nil — adds a key-name field, skips the value fetch).
 private struct KVValueEditor: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   let namespaceID: String
-  let keyName: String
-  var onDeleted: () -> Void = {}
+  let existingKey: String?
+  var onChanged: () -> Void = {}
+  @State private var newKeyName = ""
   @State private var value = ""
   @State private var error: String?
   // Saving before the fetch lands would overwrite the stored value with "".
   @State private var loaded = false
   @State private var deleting = false
+
+  private var keyName: String { existingKey ?? newKeyName }
+  private var canSave: Bool {
+    existingKey != nil ? loaded : !newKeyName.isEmpty
+  }
+
   var body: some View {
     DashFormSheet(
-      canSave: loaded,
-      deleteMessage: "Permanently delete \(keyName) from this namespace.",
+      canSave: canSave,
+      deleteMessage: existingKey.map { "Permanently delete \($0) from this namespace." },
       isDeleting: deleting,
-      onDelete: { Task { await delete() } },
+      onDelete: existingKey != nil ? { Task { await delete() } } : nil,
       onSave: { Task { await save() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
+          if existingKey == nil {
+            DashFormField(label: "Key", text: $newKeyName)
+          }
           DashFormCodeField(label: "Value", text: $value)
           if let error {
             DashNotice(kind: .error, message: error)
@@ -402,14 +519,14 @@ private struct KVValueEditor: View {
         }
       }
     )
-    .task { await load() }
+    .task { if existingKey != nil { await load() } }
   }
   private func delete() async {
     guard let id = model.activeAccountID else { return }
     deleting = true
     try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
     UINotificationFeedbackGenerator().notificationOccurred(.success)
-    onDeleted()
+    onChanged()
     dismiss()
   }
   private func load() async {
@@ -426,6 +543,7 @@ private struct KVValueEditor: View {
     do {
       try await model.client.putKVValue(
         accountID: id, namespaceID: namespaceID, key: keyName, data: Data(value.utf8))
+      if existingKey == nil { onChanged() }
       dismiss()
     } catch { self.error = error.localizedDescription }
   }
@@ -536,6 +654,26 @@ struct D1ConsoleView: View {
       result = String(describing: values.flatMap { $0.results ?? [] })
       error = nil
     } catch { self.error = error.localizedDescription }
+  }
+}
+
+/// Lazily downloads an R2 object into a temp file when the share sheet resolves
+/// it — no separate download-then-share state machine.
+private struct R2ObjectExport: Transferable {
+  let client: CloudflareClient
+  let accountID: String
+  let bucket: String
+  let key: String
+
+  static var transferRepresentation: some TransferRepresentation {
+    FileRepresentation(exportedContentType: .data) { export in
+      let data = try await export.client.getR2Object(
+        accountID: export.accountID, bucket: export.bucket, key: export.key)
+      let filename = export.key.split(separator: "/").last.map(String.init) ?? export.key
+      let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+      try data.write(to: url)
+      return SentTransferredFile(url)
+    }
   }
 }
 

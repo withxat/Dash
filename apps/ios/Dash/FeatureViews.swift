@@ -507,6 +507,15 @@ struct WorkersView: View {
     .refreshable { await load(force: true) }.task {
       await load()
     }
+    .onAppear { reloadIfInvalidated() }
+  }
+
+  /// A child (worker screen) may delete a worker and clear the cache while this
+  /// list stays alive below it; refresh on return when the cache went cold.
+  private func reloadIfInvalidated() {
+    guard let accountID = model.activeAccountID, !workers.isEmpty else { return }
+    let cached: [WorkerScript]? = model.featureCache.get(FeatureCacheKey.workers(accountID))
+    if cached == nil { Task { await load(force: true) } }
   }
 
   private func load(force: Bool = false) async {
@@ -540,12 +549,14 @@ struct WorkerDetailView: View {
   private enum Tab: Hashable { case management, source }
 
   @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismissScreen
   let name: String
   @State private var source = ""
   @State private var error: String?
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
   @State private var selectedTab: Tab = .management
+  @State private var showsMore = false
 
   var body: some View {
     DashFeatureScreen(chrome: {
@@ -603,6 +614,31 @@ struct WorkerDetailView: View {
       }
     }
     .navigationTitle(name).task { await load() }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
+      }
+    }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: name,
+      actions: [
+        DashDangerAction(
+          title: "Delete Worker",
+          message: "Permanently delete \(name) and its deployments. Routes stop resolving."
+        ) {
+          await deleteWorker()
+        }
+      ]
+    )
+  }
+  private func deleteWorker() async {
+    guard let accountID = model.activeAccountID else { return }
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(accountID)/workers/scripts/\(name)", method: "DELETE")
+    model.featureCache.remove(FeatureCacheKey.workers(accountID))
+    model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
+    dismissScreen()
   }
   private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }

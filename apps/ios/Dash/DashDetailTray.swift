@@ -12,13 +12,29 @@ struct DashDetailField {
 /// Tray content that lays a resource out as full, selectable label/value rows —
 /// the readable home for information that a single `DashListRow` truncates. A
 /// read-only tray shows no action button; when a delete is supplied, a header
-/// trash button morphs the fields into a single-Confirm confirmation.
-struct DashDetailTray: View {
+/// trash button morphs the fields into a single-Confirm confirmation. The
+/// `accessory` slot renders below the fields (e.g. a Download share link).
+struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
-  var deleteMessage: String? = nil
-  var isDeleting = false
-  var onDelete: (() -> Void)? = nil
+  var deleteMessage: String?
+  var isDeleting: Bool
+  var onDelete: (() -> Void)?
+  let accessory: Accessory
   @State private var confirmingDelete = false
+
+  init(
+    fields: [DashDetailField],
+    deleteMessage: String? = nil,
+    isDeleting: Bool = false,
+    onDelete: (() -> Void)? = nil,
+    @ViewBuilder accessory: () -> Accessory
+  ) {
+    self.fields = fields
+    self.deleteMessage = deleteMessage
+    self.isDeleting = isDeleting
+    self.onDelete = onDelete
+    self.accessory = accessory()
+  }
 
   private var hasDelete: Bool { deleteMessage != nil && onDelete != nil }
 
@@ -55,10 +71,14 @@ struct DashDetailTray: View {
       } else {
         // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-            fieldRow(field)
-            if index < fields.count - 1 { DashListGroupDivider() }
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+              fieldRow(field)
+              if index < fields.count - 1 { DashListGroupDivider() }
+            }
           }
+          accessory
+            .padding(.top, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, DashTheme.Sheet.content)
@@ -91,6 +111,19 @@ struct DashDetailTray: View {
     }
     .padding(.vertical, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+extension DashDetailTray where Accessory == EmptyView {
+  init(
+    fields: [DashDetailField],
+    deleteMessage: String? = nil,
+    isDeleting: Bool = false,
+    onDelete: (() -> Void)? = nil
+  ) {
+    self.init(
+      fields: fields, deleteMessage: deleteMessage, isDeleting: isDeleting, onDelete: onDelete,
+      accessory: { EmptyView() })
   }
 }
 
