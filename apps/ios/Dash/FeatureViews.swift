@@ -167,6 +167,9 @@ struct ZoneDetailView: View {
     ZoneTool(title: "Page rules", icon: SolarAsset.file, endpoint: "pagerules"),
     ZoneTool(title: "Email routing", icon: SolarAsset.letter, endpoint: "email/routing/rules"),
     ZoneTool(title: "Worker routes", icon: SolarAsset.routing, endpoint: "workers/routes"),
+    ZoneTool(title: "Snippets", icon: SolarAsset.code, endpoint: "snippets"),
+    ZoneTool(title: "Web3 gateways", icon: SolarAsset.globus, endpoint: "web3/hostnames"),
+    ZoneTool(title: "Page Shield", icon: SolarAsset.shield, endpoint: "page_shield/scripts"),
   ]
 
   private func visibleTools(for zone: CloudflareZone) -> [ZoneTool] {

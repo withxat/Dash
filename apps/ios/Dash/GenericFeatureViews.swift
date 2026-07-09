@@ -14,8 +14,17 @@ struct GenericFeatureView: View {
     case .queues: "/accounts/\(account)/queues"
     case .vectorize: "/accounts/\(account)/vectorize/v2/indexes"
     case .secrets: "/accounts/\(account)/secrets_store/stores"
+    case .hyperdrive: "/accounts/\(account)/hyperdrive/configs"
+    case .pipelines: "/accounts/\(account)/pipelines"
+    case .aiGateway: "/accounts/\(account)/ai-gateway/gateways"
     case .turnstile: "/accounts/\(account)/challenges/widgets"
     case .accessApps: "/accounts/\(account)/access/apps"
+    case .accessGroups: "/accounts/\(account)/access/groups"
+    case .serviceTokens: "/accounts/\(account)/access/service_tokens"
+    case .gatewayPolicies: "/accounts/\(account)/gateway/rules"
+    case .ruleLists: "/accounts/\(account)/rules/lists"
+    case .dnsFirewall: "/accounts/\(account)/dns_firewall"
+    case .logpush: "/accounts/\(account)/logpush/jobs"
     case .emailAddresses: "/accounts/\(account)/email/routing/addresses"
     case .registrar: "/accounts/\(account)/registrar/domains"
     case .tunnels: "/accounts/\(account)/cfd_tunnel"
@@ -83,6 +92,9 @@ struct GenericResourceCapabilities {
   var create: GenericCreateSpec?
   /// Confirmation message for deleting a row; nil leaves the resource read-only.
   var deleteMessage: ((GenericResource) -> String)?
+  /// Overrides the delete request path for endpoints that delete by something
+  /// other than `{base}/{id}` (e.g. Pipelines delete by name).
+  var deletePath: ((String, GenericResource) -> String)?
   var updates: [GenericRowUpdate] = []
   var screenActions: [GenericScreenAction] = []
 
@@ -320,6 +332,94 @@ struct GenericResourceCapabilities {
         fields: [GenericCreateField("name", "Store name")],
         body: { values in ["name": .string(values["name"] ?? "")] })
       caps.deleteMessage = { "Permanently delete the store \($0.name) and its secrets." }
+    } else if path.hasSuffix("/ai-gateway/gateways") {
+      caps.create = GenericCreateSpec(
+        title: "New gateway",
+        fields: [GenericCreateField("id", "Gateway name")],
+        body: { values in
+          [
+            "id": .string(values["id"] ?? ""),
+            "collect_logs": .bool(true),
+            "cache_invalidate_on_update": .bool(true),
+            "cache_ttl": .number(0),
+          ]
+        })
+      caps.deleteMessage = { "Permanently delete the gateway \($0.name) and its logs." }
+    } else if path.hasSuffix("/hyperdrive/configs") {
+      caps.deleteMessage = {
+        "Permanently delete the Hyperdrive config \($0.name). Workers bound to it lose their connection."
+      }
+    } else if path.hasSuffix("/pipelines") {
+      // Pipelines delete by name, not id.
+      caps.deletePath = { "\($0)/\($1.name)" }
+      caps.deleteMessage = { "Permanently delete the pipeline \($0.name)." }
+    } else if path.hasSuffix("/logpush/jobs") {
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-enabled",
+          title: { $0.bool("enabled") == false ? "Enable job" : "Disable job" },
+          method: "PUT",
+          path: { "\($0)/\($1.id)" },
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+      ]
+      caps.deleteMessage = { "Permanently delete this Logpush job (\($0.name))." }
+    } else if path.hasSuffix("/dns_firewall") {
+      caps.create = GenericCreateSpec(
+        title: "New DNS Firewall cluster",
+        fields: [
+          GenericCreateField("name", "Cluster name"),
+          GenericCreateField("upstreams", "Upstream IPs (comma-separated)"),
+        ],
+        body: { values in
+          let upstreams = (values["upstreams"] ?? "")
+            .split(separator: ",")
+            .map { JSONValue.string($0.trimmingCharacters(in: .whitespaces)) }
+          return [
+            "name": .string(values["name"] ?? ""),
+            "upstream_ips": .array(upstreams),
+          ]
+        })
+      caps.deleteMessage = { "Permanently delete the DNS Firewall cluster \($0.name)." }
+    } else if path.hasSuffix("/access/groups") {
+      caps.deleteMessage = {
+        "Permanently delete the Access group \($0.name). Policies referencing it stop matching."
+      }
+    } else if path.hasSuffix("/access/service_tokens") {
+      caps.deleteMessage = {
+        "Permanently delete the service token \($0.name). Clients using it lose access."
+      }
+    } else if path.hasSuffix("/gateway/rules") {
+      caps.deleteMessage = { "Permanently delete the Gateway policy \($0.name)." }
+    } else if path.hasSuffix("/rules/lists") {
+      caps.create = GenericCreateSpec(
+        title: "New list",
+        fields: [
+          GenericCreateField("name", "List name (letters, digits, _)"),
+          GenericCreateField("kind", "Kind", options: ["ip", "hostname", "asn", "redirect"]),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "kind": .string(values["kind"] ?? "ip"),
+          ]
+        })
+      caps.deleteMessage = { "Permanently delete the list \($0.name) and its items." }
+    } else if path.hasSuffix("/snippets") {
+      caps.deleteMessage = { "Permanently delete the snippet \($0.name)." }
+    } else if path.hasSuffix("/web3/hostnames") {
+      caps.create = GenericCreateSpec(
+        title: "New Web3 gateway",
+        fields: [
+          GenericCreateField("name", "Hostname"),
+          GenericCreateField("target", "Target", options: ["ipfs", "ethereum"]),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "target": .string(values["target"] ?? "ipfs"),
+          ]
+        })
+      caps.deleteMessage = { "Permanently delete the Web3 gateway \($0.name)." }
     } else if path.hasSuffix("/queues") {
       caps.create = GenericCreateSpec(
         title: "New queue",
@@ -544,7 +644,8 @@ struct GenericResourcesView: View {
 
   private func delete(_ resource: GenericResource) async {
     deleting = true
-    _ = try? await model.client.mutate(path: "\(basePath)/\(resource.id)", method: "DELETE")
+    let path = capabilities.deletePath?(basePath, resource) ?? "\(basePath)/\(resource.id)"
+    _ = try? await model.client.mutate(path: path, method: "DELETE")
     UINotificationFeedbackGenerator().notificationOccurred(.success)
     selected = nil
     await invalidateAndReload()
