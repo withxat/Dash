@@ -302,6 +302,7 @@ struct AccountView: View {
   @State private var selectedTab: Tab = .members
   @State private var togglingPolicy = false
   @State private var toggleError: String?
+  @State private var deletingPolicy = false
 
   var body: some View {
     DashFeatureList(
@@ -411,8 +412,13 @@ struct AccountView: View {
       item: $detail,
       title: { $0.trayTitle },
       content: { item in
-        DashDetailTray(fields: item.fields) {
-          if case .policy(let policy) = item {
+        if case .policy(let policy) = item {
+          DashDetailTray(
+            fields: policy.detailFields,
+            deleteMessage: "Permanently delete the policy \(policy.title).",
+            isDeleting: deletingPolicy,
+            onDelete: { Task { await deletePolicy(policy) } }
+          ) {
             VStack(spacing: 10) {
               DashTrayPillButton(
                 title: policy.enabled == false ? "Enable policy" : "Disable policy",
@@ -425,11 +431,25 @@ struct AccountView: View {
               }
             }
           }
+        } else {
+          DashDetailTray(fields: item.fields)
         }
       }
     )
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func deletePolicy(_ policy: NotificationPolicy) async {
+    guard let accountID = model.activeAccountID else { return }
+    deletingPolicy = true
+    _ = try? await model.client.mutate(
+      path: "/accounts/\(accountID)/alerting/v3/policies/\(policy.id)", method: "DELETE")
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+    detail = nil
+    model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
+    await load(force: true)
+    deletingPolicy = false
   }
 
   private func toggle(_ policy: NotificationPolicy) async {

@@ -209,9 +209,117 @@ struct GenericResourceCapabilities {
         "Permanently delete the tunnel \($0.name). Its connectors disconnect."
       }
     } else if path.hasSuffix("/challenges/widgets") {
+      caps.create = GenericCreateSpec(
+        title: "New widget",
+        fields: [
+          GenericCreateField("name", "Widget name"),
+          GenericCreateField("domains", "Domains (comma-separated)"),
+          GenericCreateField(
+            "mode", "Mode", options: ["managed", "non-interactive", "invisible"]),
+        ],
+        body: { values in
+          let domains = (values["domains"] ?? "")
+            .split(separator: ",")
+            .map { JSONValue.string($0.trimmingCharacters(in: .whitespaces)) }
+          return [
+            "name": .string(values["name"] ?? ""),
+            "domains": .array(domains),
+            "mode": .string(values["mode"] ?? "managed"),
+          ]
+        })
       caps.deleteMessage = {
         "Permanently delete the widget \($0.name). Its sitekey stops working."
       }
+    } else if path.hasSuffix("/healthchecks") {
+      caps.create = GenericCreateSpec(
+        title: "New health check",
+        fields: [
+          GenericCreateField("name", "Name"),
+          GenericCreateField("address", "Hostname or IP"),
+          GenericCreateField("type", "Type", options: ["HTTPS", "HTTP", "TCP"]),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "address": .string(values["address"] ?? ""),
+            "type": .string(values["type"] ?? "HTTPS"),
+          ]
+        })
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-suspended",
+          title: { $0.bool("suspended") == true ? "Resume checks" : "Suspend checks" },
+          method: "PATCH",
+          path: { "\($0)/\($1.id)" },
+          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] })
+      ]
+      caps.deleteMessage = { "Permanently delete the health check \($0.name)." }
+    } else if path.hasSuffix("/waiting_rooms") {
+      caps.create = GenericCreateSpec(
+        title: "New waiting room",
+        fields: [
+          GenericCreateField("name", "Name"),
+          GenericCreateField("host", "Hostname"),
+          GenericCreateField("total_active_users", "Total active users"),
+          GenericCreateField("new_users_per_minute", "New users per minute"),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "host": .string(values["host"] ?? ""),
+            "total_active_users": .number(Double(values["total_active_users"] ?? "") ?? 200),
+            "new_users_per_minute": .number(Double(values["new_users_per_minute"] ?? "") ?? 200),
+          ]
+        })
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-suspended",
+          title: { $0.bool("suspended") == true ? "Resume room" : "Suspend room" },
+          method: "PATCH",
+          path: { "\($0)/\($1.id)" },
+          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] })
+      ]
+      caps.deleteMessage = { "Permanently delete the waiting room \($0.name)." }
+    } else if path.hasSuffix("/load_balancers") {
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-enabled",
+          title: { $0.bool("enabled") == false ? "Enable load balancer" : "Disable load balancer" },
+          method: "PATCH",
+          path: { "\($0)/\($1.id)" },
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+      ]
+      caps.deleteMessage = {
+        "Permanently delete the load balancer \($0.name). Traffic falls back to DNS."
+      }
+    } else if path.hasSuffix("/access/apps") {
+      caps.deleteMessage = {
+        "Permanently delete the Access application \($0.name) and its policies."
+      }
+    } else if path.hasSuffix("/vectorize/v2/indexes") {
+      caps.create = GenericCreateSpec(
+        title: "New index",
+        fields: [
+          GenericCreateField("name", "Index name"),
+          GenericCreateField("dimensions", "Dimensions"),
+          GenericCreateField("metric", "Metric", options: ["cosine", "euclidean", "dot-product"]),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "config": .object([
+              "dimensions": .number(Double(values["dimensions"] ?? "") ?? 768),
+              "metric": .string(values["metric"] ?? "cosine"),
+            ]),
+          ]
+        })
+      caps.deleteMessage = { "Permanently delete the index \($0.name) and its vectors." }
+    } else if path.hasSuffix("/secrets_store/stores") {
+      caps.create = GenericCreateSpec(
+        title: "New store",
+        fields: [GenericCreateField("name", "Store name")],
+        body: { values in ["name": .string(values["name"] ?? "")] })
+      caps.deleteMessage = { "Permanently delete the store \($0.name) and its secrets." }
     } else if path.hasSuffix("/queues") {
       caps.create = GenericCreateSpec(
         title: "New queue",

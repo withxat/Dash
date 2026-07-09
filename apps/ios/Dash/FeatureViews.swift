@@ -28,6 +28,8 @@ struct ZonesView: View {
   @State private var search = ""
   @State private var error: String?
   @State private var loading = true
+  @State private var creates = false
+  @State private var newName = ""
 
   private var filtered: [CloudflareZone] {
     search.isEmpty ? zones : zones.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -67,7 +69,53 @@ struct ZonesView: View {
         }
       }
     }
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        Button {
+          creates = true
+        } label: {
+          DashToolbarActionIcon(asset: SolarAsset.plus)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel("Add zone")
+      }
+    }
+    .dashTray(isPresented: $creates, title: "Add zone") {
+      DashFormSheet(
+        saveTitle: "Add",
+        canSave: !newName.isEmpty,
+        onSave: { Task { await create() } },
+        content: {
+          DashFormField(label: "Domain name", text: $newName)
+        }
+      )
+    }
     .refreshable { await load(force: true) }.task { await load() }
+    .onAppear { reloadIfInvalidated() }
+  }
+
+  /// A child (zone screen) may delete a zone and clear the cache while this
+  /// list stays alive below it; refresh on return when the cache went cold.
+  private func reloadIfInvalidated() {
+    guard let accountID = model.activeAccountID, !zones.isEmpty else { return }
+    let cached: [CloudflareZone]? = model.featureCache.get(FeatureCacheKey.zones(accountID))
+    if cached == nil { Task { await load(force: true) } }
+  }
+
+  private func create() async {
+    guard let accountID = model.activeAccountID, !newName.isEmpty else { return }
+    do {
+      _ = try await model.client.mutate(
+        path: "/zones", method: "POST",
+        body: [
+          "name": .string(newName),
+          "account": .object(["id": .string(accountID)]),
+        ])
+      newName = ""
+      creates = false
+      model.featureCache.remove(FeatureCacheKey.zones(accountID))
+      await load(force: true)
+    } catch { self.error = error.localizedDescription }
   }
 
   private func load(force: Bool = false) async {
@@ -93,9 +141,11 @@ struct ZonesView: View {
 
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismissScreen
   let zoneID: String
   @State private var zone: CloudflareZone?
   @State private var error: String?
+  @State private var showsMore = false
 
   private let tools: [ZoneTool] = [
     ZoneTool(title: "DNS", icon: SolarAsset.globus, endpoint: "dns"),
@@ -192,7 +242,32 @@ struct ZoneDetailView: View {
       .padding(.bottom, 100)
     }.background(DashTheme.canvas).navigationTitle(zone?.name ?? "Zone")
       .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashMoreButton(isPresented: $showsMore)
+        }
+      }
+      .dashMoreMenu(
+        isPresented: $showsMore,
+        title: zone?.name ?? "Zone",
+        actions: [
+          DashDangerAction(
+            title: "Remove zone",
+            message:
+              "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare."
+          ) {
+            await deleteZone()
+          }
+        ]
+      )
       .refreshable { await load(force: true) }.task { await load() }
+  }
+
+  private func deleteZone() async {
+    guard let accountID = model.activeAccountID else { return }
+    _ = try? await model.client.mutate(path: "/zones/\(zoneID)", method: "DELETE")
+    model.featureCache.remove(FeatureCacheKey.zones(accountID))
+    dismissScreen()
   }
 
   private func load(force: Bool = false) async {
