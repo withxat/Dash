@@ -716,6 +716,54 @@ struct CachePurgeView: View {
   }
 }
 
+/// Dashboard-style buckets for the flat zone-settings list.
+private enum ZoneSettingGroup: String, CaseIterable {
+  case ssl = "SSL/TLS"
+  case speed = "Speed"
+  case caching = "Caching"
+  case security = "Security"
+  case network = "Network"
+  case other = "Other"
+
+  init(settingID: String) {
+    self =
+      switch settingID {
+      case "ssl", "always_use_https", "min_tls_version", "tls_1_3",
+        "automatic_https_rewrites", "opportunistic_encryption", "tls_client_auth",
+        "security_header", "ciphers":
+        .ssl
+      case "brotli", "early_hints", "rocket_loader", "mirage", "polish", "webp",
+        "image_resizing", "minify", "prefetch_preload", "speed_brain", "fonts":
+        .speed
+      case "cache_level", "browser_cache_ttl", "always_online", "development_mode",
+        "sort_query_string_for_cache", "crawler_hints":
+        .caching
+      case "security_level", "challenge_ttl", "browser_check", "hotlink_protection",
+        "email_obfuscation", "server_side_exclude", "waf", "privacy_pass",
+        "replace_insecure_js":
+        .security
+      case "http2", "http3", "0rtt", "ipv6", "websockets", "ip_geolocation",
+        "max_upload", "response_buffering", "true_client_ip_header", "pseudo_ipv4",
+        "opportunistic_onion", "network_error_logging", "h2_prioritization":
+        .network
+      default:
+        .other
+      }
+  }
+}
+
+/// Enum-valued settings the API accepts as plain strings; everything listed here
+/// renders as an editable menu instead of a read-only value row.
+private let zoneSettingOptions: [String: [String]] = [
+  "ssl": ["off", "flexible", "full", "strict"],
+  "min_tls_version": ["1.0", "1.1", "1.2", "1.3"],
+  "security_level": ["essentially_off", "low", "medium", "high", "under_attack"],
+  "cache_level": ["aggressive", "basic", "simplified"],
+  "polish": ["off", "lossless", "lossy"],
+  "image_resizing": ["off", "open", "on"],
+  "pseudo_ipv4": ["off", "add_header", "overwrite_header"],
+]
+
 struct ZoneSettingsView: View {
   @Environment(AppModel.self) private var model
   let zoneID: String
@@ -725,30 +773,50 @@ struct ZoneSettingsView: View {
 
   var body: some View {
     DashFeatureList(isLoading: loading, error: error, retry: { Task { await load() } }) {
-      DashListGroup(title: "Zone configuration") {
-        ForEach(Array(settings.enumerated()), id: \.element.id) { index, setting in
-          switch setting.value {
-          case .bool(let enabled):
-            DashToggleRow(
-              title: setting.displayTitle,
-              subtitle: setting.editable == false ? "Read only" : nil,
-              isOn: Binding(
-                get: { enabled },
-                set: { value in Task { await update(setting, value: .bool(value)) } }),
-              isEnabled: setting.editable != false
-            )
-          case .string(let value):
-            DashValueRow(title: setting.displayTitle, value: value)
-          default:
-            DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
+      ForEach(ZoneSettingGroup.allCases, id: \.self) { group in
+        let grouped = settings.filter { ZoneSettingGroup(settingID: $0.id) == group }
+        if !grouped.isEmpty {
+          DashListGroup(title: group.rawValue) {
+            ForEach(Array(grouped.enumerated()), id: \.element.id) { index, setting in
+              settingRow(setting)
+              if index < grouped.count - 1 { DashListGroupDivider() }
+            }
           }
-          if index < settings.count - 1 { DashListGroupDivider() }
         }
       }
     }
     .navigationTitle("Settings")
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  @ViewBuilder
+  private func settingRow(_ setting: ZoneSetting) -> some View {
+    switch setting.value {
+    case .bool(let enabled):
+      DashToggleRow(
+        title: setting.displayTitle,
+        subtitle: setting.editable == false ? "Read only" : nil,
+        isOn: Binding(
+          get: { enabled },
+          set: { value in Task { await update(setting, value: .bool(value)) } }),
+        isEnabled: setting.editable != false
+      )
+    case .string(let value):
+      if let options = zoneSettingOptions[setting.id], setting.editable != false {
+        ZoneSettingMenuRow(
+          title: setting.displayTitle,
+          value: value,
+          options: options
+        ) { chosen in
+          Task { await update(setting, value: .string(chosen)) }
+        }
+      } else {
+        DashValueRow(title: setting.displayTitle, value: value)
+      }
+    default:
+      DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
+    }
   }
 
   private func load(force: Bool = false) async {
@@ -774,6 +842,38 @@ struct ZoneSettingsView: View {
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
       await load(force: true)
     } catch { self.error = error.localizedDescription }
+  }
+}
+
+/// Value-row-shaped menu for enum zone settings: title left, current value and a
+/// chevron right, options in a menu.
+private struct ZoneSettingMenuRow: View {
+  let title: String
+  let value: String
+  let options: [String]
+  let onSelect: (String) -> Void
+
+  var body: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 16) {
+      Text(title)
+        .font(.system(size: 16, weight: .medium))
+        .foregroundStyle(DashTheme.text)
+      Spacer(minLength: 12)
+      Menu {
+        Picker(title, selection: Binding(get: { value }, set: onSelect)) {
+          ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
+        }
+      } label: {
+        HStack(spacing: 6) {
+          Text(value.replacingOccurrences(of: "_", with: " "))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(DashTheme.brand)
+          SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.brand)
+            .rotationEffect(.degrees(90))
+        }
+      }
+    }
+    .padding(.vertical, 14)
   }
 }
 
