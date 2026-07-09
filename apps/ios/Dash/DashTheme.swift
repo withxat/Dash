@@ -962,7 +962,11 @@ struct DashTextTabs<Selection: Hashable>: View {
   @Binding var selection: Selection
 
   var body: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
+    VStack(spacing: 0) {
+      // A plain HStack, deliberately not a horizontal ScrollView: a scroll view
+      // delays touch-down (killing the press animation) and picks up the
+      // enclosing `refreshable`, letting a vertical pull on the tabs trigger a
+      // refresh. Tab sets are 2–3 items and always fit.
       HStack(spacing: 28) {
         ForEach(items.indices, id: \.self) { index in
           let item = items[index]
@@ -973,17 +977,27 @@ struct DashTextTabs<Selection: Hashable>: View {
           } label: {
             Text(item.title)
               .font(.system(size: 18, weight: .semibold))
-              .foregroundStyle(selection == item.value ? DashTheme.strong : DashTheme.placeholder)
+              .foregroundStyle(
+                selection == item.value ? DashTheme.strong : DashTheme.placeholder
+              )
               .contentTransition(.interpolate)
+              // Press the whole tab (incl. its padding), not just the glyph, so
+              // the shrink reads on the small label.
+              .padding(.vertical, 4)
+              .contentShape(Rectangle())
           }
           .buttonStyle(DashPressButtonStyle())
           .accessibilityAddTraits(selection == item.value ? .isSelected : [])
         }
       }
-      .padding(.vertical, 4)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.bottom, 10)
+
+      // Same hairline the tray header carries, so tabs read as header chrome.
+      Rectangle()
+        .fill(DashTheme.Sheet.headerBorder)
+        .frame(height: 1)
     }
-    .scrollClipDisabled()
-    .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.bottom, 12)
   }
 }
