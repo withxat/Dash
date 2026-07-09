@@ -177,7 +177,6 @@ struct DashCard<Content: View>: View {
         RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
           .stroke(DashTheme.line, lineWidth: 0.5)
       }
-      .dashCardShadow()
   }
 }
 
@@ -705,11 +704,6 @@ struct DashEmptyState: View {
 }
 
 extension View {
-  func dashCardShadow() -> some View {
-    shadow(color: .black.opacity(0.04), radius: 1, y: 1)
-      .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-  }
-
   func dashScreen() -> some View {
     scrollContentBackground(.hidden)
       .background(DashTheme.canvas)
@@ -853,7 +847,6 @@ struct DashCodePanel: View {
       RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
         .stroke(DashTheme.line, lineWidth: 0.5)
     }
-    .dashCardShadow()
   }
 }
 
@@ -889,7 +882,6 @@ struct DashCodeBlock: View {
       RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
         .stroke(DashTheme.line, lineWidth: 0.5)
     }
-    .dashCardShadow()
   }
 }
 

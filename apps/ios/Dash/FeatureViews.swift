@@ -229,7 +229,6 @@ struct ZoneDetailView: View {
                   RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
                     .stroke(DashTheme.line, lineWidth: 0.5)
                 }
-                .dashCardShadow()
               }
               .buttonStyle(DashPressButtonStyle())
             }
