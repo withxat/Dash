@@ -180,89 +180,68 @@ struct ZoneDetailView: View {
   }
 
   var body: some View {
-    ScrollView {
-      VStack(spacing: DashTheme.Spacing.section) {
-        if let zone {
-          DashCard {
-            VStack(alignment: .leading, spacing: 12) {
-              HStack {
-                SolarIcon(asset: SolarAsset.globe, size: 28, color: DashTheme.accent)
-                VStack(alignment: .leading) {
-                  Text(zone.name).font(.dashTitle(21))
-                  Text(zone.status ?? "unknown").foregroundStyle(DashTheme.subtle)
-                  if let planName = zone.plan?.name {
-                    Text(planName)
-                      .font(.system(size: 13))
-                      .foregroundStyle(DashTheme.placeholder)
-                  }
+    DashFeatureList(
+      isLoading: zone == nil && error == nil,
+      error: zone == nil ? error : nil,
+      retry: { Task { await load() } }
+    ) {
+      if let zone {
+        DashCard {
+          VStack(alignment: .leading, spacing: 12) {
+            HStack {
+              SolarIcon(asset: SolarAsset.globe, size: 28, color: DashTheme.accent)
+              VStack(alignment: .leading) {
+                Text(zone.name).dashTextStyle(.sheetTitle)
+                Text(zone.status ?? "unknown").foregroundStyle(DashTheme.subtle)
+                if let planName = zone.plan?.name {
+                  Text(planName)
+                    .font(.footnote)
+                    .foregroundStyle(DashTheme.placeholder)
                 }
-                Spacer()
-                StatusBadge(text: zone.status ?? "unknown")
               }
-              if let servers = zone.nameServers {
-                Text("Nameservers").font(.system(size: 13, weight: .semibold)).foregroundStyle(
-                  DashTheme.subtle)
-                ForEach(servers, id: \.self) {
-                  Text($0).font(.system(size: 13, design: .monospaced))
-                }
+              Spacer()
+              StatusBadge(text: zone.status ?? "unknown")
+            }
+            if let servers = zone.nameServers {
+              Text("Nameservers").dashTextStyle(.footnoteSemibold).foregroundStyle(
+                DashTheme.subtle)
+              ForEach(servers, id: \.self) {
+                Text($0).dashTextStyle(.code)
               }
             }
           }
-          LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            ForEach(visibleTools(for: zone), id: \.title) { tool in
-              NavigationLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
-                VStack(alignment: .leading, spacing: 12) {
-                  SolarIcon(asset: tool.icon, size: 22, color: DashTheme.brand)
-                  Text(tool.title).font(.subheadline.weight(.semibold)).foregroundStyle(
-                    DashTheme.text
-                  )
-                  .frame(
-                    maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(DashTheme.Spacing.card)
-                .frame(minHeight: 96)
-                .background(DashTheme.base)
-                .clipShape(
-                  RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-                )
-                .overlay {
-                  RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-                    .stroke(DashTheme.line, lineWidth: 0.5)
-                }
-              }
-              .buttonStyle(DashPressButtonStyle())
+        }
+        DashTileGrid {
+          ForEach(visibleTools(for: zone), id: \.title) { tool in
+            NavigationLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
+              DashToolTile(title: tool.title, icon: tool.icon)
             }
+            .buttonStyle(DashPressButtonStyle())
           }
-        } else if let error {
-          ErrorStateView(message: error) { Task { await load() } }
-        } else {
-          LoadingStateView()
         }
       }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
-      .padding(.bottom, 100)
-    }.background(DashTheme.canvas).navigationTitle(zone?.name ?? "Zone")
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashMoreButton(isPresented: $showsMore)
-        }
+    }
+    .navigationTitle(zone?.name ?? "Zone")
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        DashMoreButton(isPresented: $showsMore)
       }
-      .dashMoreMenu(
-        isPresented: $showsMore,
-        title: zone?.name ?? "Zone",
-        actions: [
-          DashDangerAction(
-            title: "Remove zone",
-            message:
-              "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare."
-          ) {
-            await deleteZone()
-          }
-        ]
-      )
-      .refreshable { await load(force: true) }.task { await load() }
+    }
+    .dashMoreMenu(
+      isPresented: $showsMore,
+      title: zone?.name ?? "Zone",
+      actions: [
+        DashDangerAction(
+          title: "Remove zone",
+          message:
+            "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare."
+        ) {
+          await deleteZone()
+        }
+      ]
+    )
+    .refreshable { await load(force: true) }.task { await load() }
   }
 
   private func deleteZone() async {
@@ -784,46 +763,47 @@ struct WorkerDetailView: View {
 
 struct CachePurgeView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
   @State private var url = ""
   @State private var status: String?
+  @State private var failed = false
   @State private var working = false
   @State private var showsMore = false
 
   var body: some View {
-    ScrollView {
-      VStack(spacing: DashTheme.Spacing.section) {
-        DashCard {
-          VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-              Text("Purge by URL")
-                .font(.dashTitle(20, weight: .semibold))
-                .foregroundStyle(DashTheme.strong)
-              Text("Remove one cached asset without disturbing the rest of the zone.")
-                .font(.system(size: 15))
-                .foregroundStyle(DashTheme.subtle)
+    DashFeatureScreen {
+      ScrollView {
+        VStack(spacing: DashTheme.Spacing.section) {
+          DashCard {
+            VStack(alignment: .leading, spacing: 16) {
+              VStack(alignment: .leading, spacing: 4) {
+                Text("Purge by URL")
+                  .dashTextStyle(.sectionTitle)
+                  .foregroundStyle(DashTheme.strong)
+                Text("Remove one cached asset without disturbing the rest of the zone.")
+                  .dashTextStyle(.supporting)
+                  .foregroundStyle(DashTheme.subtle)
+              }
+              DashFormField(label: "Asset URL", text: $url, keyboard: .URL)
+              DashPillButton(title: "Purge URL", isLoading: working, isEnabled: !url.isEmpty) {
+                Task { await purge(files: [url]) }
+              }
             }
-            DashFormField(label: "Asset URL", text: $url, keyboard: .URL)
-            DashPillButton(title: "Purge URL", isLoading: working) {
-              Task { await purge(files: [url]) }
-            }
-            .disabled(url.isEmpty || working)
-            .opacity(url.isEmpty ? 0.45 : 1)
+          }
+
+          if let status {
+            DashNotice(kind: failed ? .error : .success, message: status)
+              .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
           }
         }
-
-        if let status {
-          DashNotice(kind: status == "Cache purged." ? .success : .error, message: status)
-            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-        }
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 100)
+        .animation(
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: status)
       }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
-      .padding(.bottom, 100)
-      .animation(DashTheme.Motion.quick, value: status)
+      .dashKeyboardDismissal()
     }
-    .dashKeyboardDismissal()
-    .background(DashTheme.canvas)
     .navigationTitle("Cache")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -850,8 +830,12 @@ struct CachePurgeView: View {
     do {
       try await model.client.purgeCache(zoneID: zoneID, files: files)
       status = "Cache purged."
+      failed = false
       UINotificationFeedbackGenerator().notificationOccurred(.success)
-    } catch { status = error.localizedDescription }
+    } catch {
+      status = error.localizedDescription
+      failed = true
+    }
     working = false
   }
 }

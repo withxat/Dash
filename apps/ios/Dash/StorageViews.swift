@@ -653,6 +653,7 @@ struct D1DatabasesView: View {
 struct D1ConsoleView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let databaseID: String
   let name: String
   @State private var sql = "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;"
@@ -661,35 +662,38 @@ struct D1ConsoleView: View {
   @State private var running = false
   @State private var showsMore = false
   var body: some View {
-    ScrollView {
-      VStack(spacing: DashTheme.Spacing.section) {
-        DashCodePanel(
-          title: "SQL query",
-          message: "Run a read or write statement against this database.",
-          text: $sql,
-          minHeight: 150
-        )
-
-        DashPillButton(title: "Run query", isLoading: running) { Task { await run() } }
-          .disabled(sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || running)
-
-        if let error {
-          DashNotice(kind: .error, message: error)
-        } else {
-          DashCodeBlock(
-            title: "Result",
-            text: result,
-            placeholder: "Run a query to see results."
+    DashFeatureScreen {
+      ScrollView {
+        VStack(spacing: DashTheme.Spacing.section) {
+          DashCodePanel(
+            title: "SQL query",
+            message: "Run a read or write statement against this database.",
+            text: $sql,
+            minHeight: 150
           )
+
+          DashPillButton(
+            title: "Run query", isLoading: running,
+            isEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          ) { Task { await run() } }
+
+          if let error {
+            DashNotice(kind: .error, message: error)
+          } else {
+            DashCodeBlock(
+              title: "Result",
+              text: result,
+              placeholder: "Run a query to see results."
+            )
+          }
         }
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 100)
+        .animation(
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: error)
       }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, 12)
-      .padding(.bottom, 100)
-      .animation(DashTheme.Motion.quick, value: error)
+      .dashKeyboardDismissal()
     }
-    .dashKeyboardDismissal()
-    .background(DashTheme.canvas)
     .navigationTitle(name)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
@@ -722,9 +726,17 @@ struct D1ConsoleView: View {
     defer { running = false }
     do {
       let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
-      result = String(describing: values.flatMap { $0.results ?? [] })
+      result = Self.format(rows: values.flatMap { $0.results ?? [] })
       error = nil
     } catch { self.error = error.localizedDescription }
+  }
+
+  private static func format(rows: [[String: JSONValue]]) -> String {
+    guard !rows.isEmpty else { return "No rows returned." }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    guard let data = try? encoder.encode(rows) else { return String(describing: rows) }
+    return String(decoding: data, as: UTF8.self)
   }
 }
 

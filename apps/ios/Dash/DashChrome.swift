@@ -755,6 +755,8 @@ struct DashCloseButton: View {
 struct DashPillButton: View {
   let title: String
   var isLoading = false
+  /// Disabled state with the shared 0.45 dim; loading disables without dimming.
+  var isEnabled = true
   let action: () -> Void
 
   var body: some View {
@@ -769,7 +771,8 @@ struct DashPillButton: View {
       .background(DashTheme.strong, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
-    .disabled(isLoading)
+    .disabled(isLoading || !isEnabled)
+    .opacity(isEnabled ? 1 : 0.45)
   }
 }
 

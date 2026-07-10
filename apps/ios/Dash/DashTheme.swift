@@ -144,6 +144,7 @@ enum DashTextStyle {
   case bodyBold
   case supporting
   case supportingMedium
+  case supportingSemibold
   case footnoteSemibold
   case captionSemibold
   case code
@@ -162,6 +163,7 @@ enum DashTextStyle {
     case .bodyBold: (16, .bold, .default, .body)
     case .supporting: (15, .regular, .default, .subheadline)
     case .supportingMedium: (14, .medium, .default, .subheadline)
+    case .supportingSemibold: (15, .semibold, .default, .subheadline)
     case .footnoteSemibold: (13, .semibold, .default, .footnote)
     case .captionSemibold: (12, .semibold, .default, .caption)
     case .code: (13, .regular, .monospaced, .footnote)
@@ -236,6 +238,43 @@ struct DashCard<Content: View>: View {
         RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
           .stroke(DashTheme.line, lineWidth: 0.5)
       }
+  }
+}
+
+/// Icon-over-title navigation tile for tool grids, carrying DashCard chrome.
+struct DashToolTile: View {
+  let title: String
+  let icon: String
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      SolarIcon(asset: icon, size: 22, color: DashTheme.brand)
+      Text(title)
+        .dashTextStyle(.supportingSemibold)
+        .foregroundStyle(DashTheme.text)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .padding(DashTheme.Spacing.card)
+    .frame(minHeight: 96)
+    .background(DashTheme.base)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        .stroke(DashTheme.line, lineWidth: 0.5)
+    }
+  }
+}
+
+/// Tool-tile grid that reflows with available width — two-up on iPhone (kept
+/// down to 320pt Display Zoom windows), four or five inside the regular-width
+/// content column.
+struct DashTileGrid<Content: View>: View {
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 12)], spacing: 12) {
+      content()
+    }
   }
 }
 
