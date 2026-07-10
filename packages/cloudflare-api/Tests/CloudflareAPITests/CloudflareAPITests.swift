@@ -127,6 +127,53 @@ struct NetworkTests {
     #expect(data == payload)
   }
 
+  @Test func workerTagMatchesExactScriptName() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/account/workers/scripts")
+      let body = #"""
+        {"success":true,"result":[
+        {"id":"api-staging","tag":"e8f70fdbc8b1fb0b8ddb1af166186758"},
+        {"id":"api","tag":"57eb1c68b8504f0baa4b5cc56cbc7d0f"}
+        ]}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let tag = try await client.workerTag(accountID: "account", name: "api")
+    #expect(tag == "57eb1c68b8504f0baa4b5cc56cbc7d0f")
+  }
+
+  @Test func genericResourceExtractsBuildIdentity() throws {
+    let build = try JSONDecoder().decode(
+      GenericResource.self,
+      from: Data(
+        #"{"build_uuid":"b-1","status":"stopped","branch":"main","created_at":"2026-07-09"}"#.utf8))
+    #expect(build.id == "b-1")
+    #expect(build.name == "main")
+    #expect(build.detail == "stopped")
+  }
+
+  @Test func listResourcesUnwrapsWorkerDeployments() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":true,"result":{"deployments":[
+        {"id":"dep-1","created_on":"2026-07-09T00:00:00Z","source":"api"}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let page = try await client.listResources(
+      path: "/accounts/account/workers/scripts/api/deployments")
+    #expect(page.items.map(\.id) == ["dep-1"])
+  }
+
   @Test func concurrent401ResponsesShareOneRefresh() async throws {
     let recorder = RequestRecorder()
     let store = MemoryTokenStore(access: "old", refresh: "refresh")

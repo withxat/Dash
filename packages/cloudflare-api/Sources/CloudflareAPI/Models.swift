@@ -248,11 +248,13 @@ public struct DNSRecordInput: Codable, Hashable, Sendable {
 public struct WorkerScript: CloudflareResource, Hashable {
   public let id: String
   public var name: String { id }
+  /// Immutable script tag — the `external_script_id` the Builds APIs key on.
+  public let tag: String?
   public let modifiedOn: String?
   public let createdOn: String?
 
   enum CodingKeys: String, CodingKey {
-    case id
+    case id, tag
     case modifiedOn = "modified_on"
     case createdOn = "created_on"
   }
@@ -265,18 +267,6 @@ public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
   enum CodingKeys: String, CodingKey {
     case enabled
     case previewsEnabled = "previews_enabled"
-  }
-}
-
-/// Row of the Workers scripts-search endpoint — `id` is the immutable script
-/// tag that Builds APIs key on, not the script name.
-public struct WorkerSearchResult: Codable, Hashable, Sendable {
-  public let id: String
-  public let scriptName: String?
-
-  enum CodingKeys: String, CodingKey {
-    case id
-    case scriptName = "script_name"
   }
 }
 
@@ -598,12 +588,14 @@ public struct GenericResource: CloudflareResource, Hashable {
     let raw = try [String: JSONValue](from: decoder)
     self.raw = raw
     id =
-      raw.string(for: ["id", "uuid", "tag", "sitekey", "key", "queue_id", "snippet_name", "name"])
+      raw.string(for: [
+        "id", "uuid", "build_uuid", "tag", "sitekey", "key", "queue_id", "snippet_name", "name",
+      ])
       ?? UUID().uuidString
     name =
       raw.string(for: [
         "name", "title", "hostname", "email", "pattern", "queue_name", "snippet_name", "url",
-        "id", "uuid",
+        "id", "uuid", "branch", "build_uuid",
       ])
       ?? "Cloudflare resource"
     detail = raw.string(for: ["status", "type", "state", "description"])

@@ -86,11 +86,10 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/workers/scripts/\(name)/subdomain",
       method: "POST", body: ["enabled": enabled])
   }
+  /// The immutable script tag (`external_script_id`) the Builds APIs key on,
+  /// resolved from the documented scripts list.
   public func workerTag(accountID: String, name: String) async throws -> String? {
-    let page: Page<WorkerSearchResult> = try await list(
-      "/accounts/\(accountID)/workers/scripts-search",
-      query: ["name": name, "per_page": "100"])
-    return page.items.first { $0.scriptName == name }?.id
+    try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
   }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
     try await list("/accounts/\(accountID)/pages/projects").items
