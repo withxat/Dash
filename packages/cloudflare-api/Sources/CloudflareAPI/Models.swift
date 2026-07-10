@@ -268,6 +268,23 @@ public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
   }
 }
 
+/// Row of the Workers scripts-search endpoint — `id` is the immutable script
+/// tag that Builds APIs key on, not the script name.
+public struct WorkerSearchResult: Codable, Hashable, Sendable {
+  public let id: String
+  public let scriptName: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id
+    case scriptName = "script_name"
+  }
+}
+
+/// Worker deployments arrive wrapped in an object, not as a bare result array.
+public struct WorkerDeploymentsResult: Codable, Sendable {
+  public let deployments: [GenericResource]
+}
+
 public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let value: JSONValue

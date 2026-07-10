@@ -77,15 +77,20 @@ public actor CloudflareClient {
   public func getWorkerSubdomain(accountID: String, name: String) async throws
     -> WorkerSubdomainStatus
   {
-    try await request(
-      "/accounts/\(accountID)/workers/services/\(name)/environments/production/subdomain")
+    try await request("/accounts/\(accountID)/workers/scripts/\(name)/subdomain")
   }
   public func setWorkerSubdomain(accountID: String, name: String, enabled: Bool) async throws
     -> WorkerSubdomainStatus
   {
     try await request(
-      "/accounts/\(accountID)/workers/services/\(name)/environments/production/subdomain",
+      "/accounts/\(accountID)/workers/scripts/\(name)/subdomain",
       method: "POST", body: ["enabled": enabled])
+  }
+  public func workerTag(accountID: String, name: String) async throws -> String? {
+    let page: Page<WorkerSearchResult> = try await list(
+      "/accounts/\(accountID)/workers/scripts-search",
+      query: ["name": name, "per_page": "100"])
+    return page.items.first { $0.scriptName == name }?.id
   }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
     try await list("/accounts/\(accountID)/pages/projects").items
@@ -221,7 +226,11 @@ public actor CloudflareClient {
   public func listResources(path: String, query: [String: String?] = [:]) async throws -> Page<
     GenericResource
   > {
-    try await list(path, query: query)
+    if path.contains("/workers/scripts/"), path.hasSuffix("/deployments") {
+      let result: WorkerDeploymentsResult = try await request(path)
+      return Page(items: result.deployments, resultInfo: nil)
+    }
+    return try await list(path, query: query)
   }
   public func mutate(path: String, method: String, body: [String: JSONValue]? = nil) async throws
     -> JSONValue
