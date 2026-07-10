@@ -10,44 +10,35 @@ public enum CloudflareEndpoints {
 }
 
 public enum CloudflareScopes {
-  public static let all: [String] = [
-    "user-details.read", "account-settings.read", "zone.read", "zone.write", "dns.read",
-    "dns.write",
-    "cache.purge", "zone-settings.read", "zone-settings.write", "workers-scripts.read",
-    "workers-scripts.write", "workers-routes.read", "workers-routes.write",
-    "workers-kv-storage.read", "workers-kv-storage.write", "workers-r2.read",
-    "workers-r2.write", "workers-r2-bucket-item.read", "workers-r2-bucket-item.write",
-    "d1.read", "d1.write", "queues.read", "queues.write", "page.read", "page.write",
-    "analytics.read",
-    "account-analytics.read", "firewall-services.read", "firewall-services.write", "zone-waf.read",
-    "zone-waf.write", "ssl-and-certificates.read", "ssl-and-certificates.write",
-    "healthcheck.read", "healthcheck.write", "waiting-rooms.read", "waiting-rooms.write",
-    "load-balancers.read", "load-balancers.write", "load-balancing-monitors-and-pools.read",
-    "load-balancing-monitors-and-pools.write", "page-rules.read", "page-rules.write",
-    "email-routing-address.read", "email-routing-address.write", "email-routing-rule.read",
-    "email-routing-rule.write",
-    // Registrar has no .write scope — writes ride .admin (verified via GET /oauth/scopes).
-    "registrar-domains.read", "registrar-domains.admin",
-    "argotunnel.read", "argotunnel.write", "access-app.read", "access-app.write",
-    "images.read", "images.write", "stream.read", "stream.write",
-    "challenge-widgets.read", "challenge-widgets.write",
-    "workers-observability.read", "workers-ci.read",
-    "secrets-store.read", "secrets-store.write", "vectorize.read", "vectorize.write",
-    "notifications.read", "notifications.write",
-    "aig.read", "aig.write", "query-cache.read", "query-cache.write",
-    "pipelines.read", "pipelines.write",
-    "account-logs.read", "account-logs.write", "logs.read", "logs.write",
-    "dns-firewall.read", "dns-firewall.write",
-    "access-group.read", "access-group.write",
-    "access-service-token.read", "access-service-token.write",
-    "access.read", "access.write", "access-policy.read", "access-policy.write",
-    "teams.read", "teams.write",
-    "account-rule-lists.read", "account-rule-lists.write",
-    "snippets.read", "snippets.write", "web3-hostnames.read", "web3-hostnames.write",
-    "page-shield.read", "account-waf.read", "account-waf.write",
-    "memberships.read", "memberships.write", "account-settings.write",
-    "offline_access",
+  public static let protocolScopes = ["offline_access"]
+  public static let required = ["user-details.read", "account-settings.read", "offline_access"]
+  public static let all: [String] = OAuthScopeCatalog.allIDs + protocolScopes
+  public static let unsupportedByOAuthClient: Set<String> = [
+    "ai-search.metadata_read",
+    "aig.metadata_read",
+    "d1.metadata_read",
+    "images.metadata_read",
+    "pages.metadata_read",
+    "queues.metadata_read",
+    "stream.metadata_read",
+    "workers-kv-storage.metadata_read",
+    "workers-r2.metadata_read",
+    "workers_ai.metadata_read",
   ]
+  public static let requestable = Set(all).subtracting(unsupportedByOAuthClient)
+  public static let published = requestable.sorted()
+
+  public static func sanitized(_ scopes: [String]) -> [String] {
+    Array(Set(scopes).intersection(requestable)).sorted()
+  }
+
+  public static func invalid(in scopes: [String]) -> Set<String> {
+    Set(scopes).subtracting(Set(all))
+  }
+
+  public static func unsupported(in scopes: [String]) -> Set<String> {
+    Set(scopes).intersection(unsupportedByOAuthClient)
+  }
 }
 
 public struct PKCEPair: Hashable, Sendable {
@@ -65,8 +56,9 @@ public struct PKCEPair: Hashable, Sendable {
 public enum OAuth {
   public static func authorizationURL(
     clientID: String, redirectURI: String, callbackState: String, pkce: PKCEPair,
-    scopes: [String] = CloudflareScopes.all
+    scopes: [String]
   ) -> URL {
+    let scopes = CloudflareScopes.sanitized(scopes)
     var components = URLComponents(
       url: CloudflareEndpoints.authorization, resolvingAgainstBaseURL: false)!
     components.queryItems = [

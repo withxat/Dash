@@ -31,6 +31,60 @@ import Testing
   #expect(values["scope"] == "zone.read")
 }
 
+@Test func authorizationURLDropsMisspelledAndOAuthUnsupportedScopes() throws {
+  let misspelled = "ai-search.meatadata_read"
+  let url = OAuth.authorizationURL(
+    clientID: "client",
+    redirectURI: "https://relay.example/oauth/callback",
+    callbackState: "state",
+    pkce: PKCEPair(verifier: "verifier", challenge: "challenge"),
+    scopes: ["ai-search.read", misspelled, "d1.metadata_read", "d1.read"]
+  )
+  let values = Dictionary(
+    uniqueKeysWithValues:
+      URLComponents(url: url, resolvingAgainstBaseURL: false)!.queryItems!.map {
+        ($0.name, $0.value ?? "")
+      }
+  )
+  #expect(values["scope"] == "ai-search.read d1.read")
+  #expect(CloudflareScopes.invalid(in: [misspelled]) == [misspelled])
+  #expect(CloudflareScopes.invalid(in: CloudflareScopes.all).isEmpty)
+}
+
+@Test func generatedCatalogsCoverOfficialScopesAndOpenAPI() {
+  #expect(OAuthScopeCatalog.all.count == 368)
+  #expect(Set(OAuthScopeCatalog.allIDs).count == OAuthScopeCatalog.all.count)
+  #expect(OAuthScopeCatalog.byID["query-cache.read"]?.name == "Hyperdrive Read")
+  #expect(CloudflareEndpointCatalog.all.count == 3_243)
+  #expect(CloudflareEndpointCatalog.all.contains { $0.path == "/oauth/scopes" })
+  #expect(OAuthScopeCoverage.all.count == OAuthScopeCatalog.all.count)
+  #expect(Set(OAuthScopeCoverage.all.map(\.scopeID)) == Set(OAuthScopeCatalog.allIDs))
+  #expect(
+    OAuthScopeCoverage.all
+      .filter { $0.disposition == .noPublicEndpoint }
+      .allSatisfy { $0.reason?.isEmpty == false }
+  )
+  #expect(OAuthScopeCoverage.protocolManaged.map(\.scopeID) == ["offline_access"])
+  #expect(CloudflareScopes.invalid(in: CloudflareScopes.published).isEmpty)
+  #expect(Set(CloudflareScopes.required).isSubset(of: Set(CloudflareScopes.published)))
+  #expect(!CloudflareScopes.published.contains("ai-search.metadata_read"))
+  #expect(CloudflareScopes.published.count == 359)
+  #expect(CloudflareScopes.unsupportedByOAuthClient.count == 10)
+  #expect(
+    CloudflareScopes.unsupported(in: CloudflareScopes.all)
+      == CloudflareScopes.unsupportedByOAuthClient
+  )
+}
+
+@Test func authenticationAndAuthorizationErrorsAreDistinct() {
+  let unauthorized = CloudflareAPIError.request(status: 401, errors: [])
+  let forbidden = CloudflareAPIError.request(status: 403, errors: [])
+  #expect(unauthorized.isUnauthorized)
+  #expect(!unauthorized.isPermissionDenied)
+  #expect(forbidden.isForbidden)
+  #expect(forbidden.isPermissionDenied)
+}
+
 @Test func decodesPaginatedZoneEnvelope() throws {
   let data = Data(
     #"{"success":true,"result":[{"id":"zone","name":"example.com","status":"active"}],"result_info":{"page":1,"per_page":50,"total_count":1}}"#

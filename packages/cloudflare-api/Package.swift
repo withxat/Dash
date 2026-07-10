@@ -12,7 +12,10 @@ let package = Package(
     .library(name: "CloudflareAPI", targets: ["CloudflareAPI"])
   ],
   targets: [
-    .target(name: "CloudflareAPI"),
+    .target(
+      name: "CloudflareAPI",
+      resources: [.process("Resources")]
+    ),
     .testTarget(name: "CloudflareAPITests", dependencies: ["CloudflareAPI"]),
   ]
 )

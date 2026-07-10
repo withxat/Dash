@@ -278,6 +278,44 @@ public actor CloudflareClient {
     return try JSONDecoder().decode(JSONValue.self, from: response)
   }
 
+  public func execute(
+    path: String,
+    method: String,
+    query: [String: String?] = [:],
+    body: JSONValue? = nil
+  ) async throws -> JSONValue {
+    let data = try body.map { try JSONEncoder().encode($0) }
+    let response = try await raw(
+      path,
+      method: method,
+      query: query,
+      data: data,
+      contentType: data == nil ? nil : "application/json"
+    )
+    guard !response.isEmpty else { return .null }
+    do {
+      return try JSONDecoder().decode(JSONValue.self, from: response)
+    } catch {
+      return .string(String(data: response, encoding: .utf8) ?? response.base64EncodedString())
+    }
+  }
+
+  public func executeRaw(
+    path: String,
+    method: String,
+    query: [String: String?] = [:],
+    data: Data? = nil,
+    contentType: String? = nil
+  ) async throws -> Data {
+    try await raw(
+      path,
+      method: method,
+      query: query,
+      data: data,
+      contentType: contentType
+    )
+  }
+
   private func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
     _ path: String, method: String = "GET", query: [String: String?] = [:],
     body: Body? = Optional<String>.none

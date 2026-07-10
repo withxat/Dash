@@ -11,6 +11,7 @@
 		"dev": "open apps/ios/Dash.xcodeproj",
 		"build": "pnpm build:js && pnpm ios:build",
 		"build:js": "turbo build",
+		"ios:oauth-audit": "node apps/ios/scripts/audit-cloudflare-oauth-client.mjs",
 		"ios:icons": "node apps/ios/scripts/generate-solar-icons.mjs",
 		"ios:build": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -allowProvisioningUpdates build",
 		"ios:device": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -destination 'generic/platform=iOS' -allowProvisioningUpdates build",

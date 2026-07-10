@@ -57,8 +57,18 @@ public enum CloudflareAPIError: Error, LocalizedError, Sendable {
     }
   }
 
+  public var isUnauthorized: Bool {
+    if case .request(let status, _) = self { return status == 401 }
+    return false
+  }
+
+  public var isForbidden: Bool {
+    if case .request(let status, _) = self { return status == 403 }
+    return false
+  }
+
   public var isPermissionDenied: Bool {
-    if case .request(let status, _) = self { return status == 401 || status == 403 }
+    if case .request(let status, _) = self { return status == 403 }
     return false
   }
 }
@@ -139,7 +149,14 @@ public protocol TokenStore: Sendable {
   func clear() async throws
   func getAccessToken() async throws -> String?
   func getRefreshToken() async throws -> String?
+  func getGrantedScopes() async throws -> Set<String>?
+  func setGrantedScopes(_ scopes: Set<String>) async throws
   func setTokens(_ tokens: TokenSet) async throws
+}
+
+extension TokenStore {
+  public func getGrantedScopes() async throws -> Set<String>? { nil }
+  public func setGrantedScopes(_: Set<String>) async throws {}
 }
 
 public protocol CloudflareResource: Codable, Identifiable, Sendable where ID == String {
