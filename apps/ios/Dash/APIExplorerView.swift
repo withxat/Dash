@@ -184,7 +184,9 @@ struct EndpointProductView: View {
       } header: {
         Text("\(endpoints.count) public operations")
       } footer: {
-        Text("Generated from Cloudflare OpenAPI \(CloudflareEndpointCatalog.generatedAt).")
+        Text(
+          "This module deliberately stays a raw API console — its product is query- or config-shaped rather than a resource list. Generated from Cloudflare OpenAPI \(CloudflareEndpointCatalog.generatedAt)."
+        )
       }
     }
     .scrollContentBackground(.hidden)
