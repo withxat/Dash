@@ -377,6 +377,26 @@ struct NetworkTests {
       accountID: "account", name: "api", source: source, content: "export default {}")
   }
 
+  @Test func inviteAccountMemberSendsEmailAndRoleIDs() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path == "/accounts/account/members")
+      let body = #"""
+        {"success":true,"result":{"id":"m1","status":"pending",
+        "user":{"email":"new@xat.sh"},"roles":[{"id":"r1","name":"Administrator Read Only"}]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let member = try await client.inviteAccountMember(
+      accountID: "account", email: "new@xat.sh", roleIDs: ["r1"])
+    #expect(member.id == "m1")
+    #expect(member.roles?.first?.id == "r1")
+  }
+
   @Test func mediaUploadsSendMultipartFilePart() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

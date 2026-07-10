@@ -476,7 +476,14 @@ public struct AccountMemberUser: Codable, Hashable, Sendable {
 }
 
 public struct AccountMemberRole: Codable, Hashable, Sendable {
+  public let id: String?
   public let name: String?
+}
+
+public struct AccountRole: CloudflareResource, Hashable {
+  public let id: String
+  public let name: String
+  public let description: String?
 }
 
 public struct RumSite: Codable, Hashable, Identifiable, Sendable {

@@ -181,6 +181,35 @@ import Testing
   #expect(!workerSourceIsEditable(moduleCount: 1, hasWriteScope: false))
 }
 
+@Test func certificatePackOrderAndServiceTokenRegistryEntries() {
+  let packs = GenericResourceCapabilities.forPath("/zones/xyz/ssl/certificate_packs?status=all")
+  #expect(packs.create != nil)
+  #expect(
+    packs.createPath?("/zones/xyz/ssl/certificate_packs")
+      == "/zones/xyz/ssl/certificate_packs/order")
+  #expect(packs.create?.revealResult != nil)
+  let orderBody = packs.create?.body([
+    "hosts": "example.com, www.example.com",
+    "certificate_authority": "lets_encrypt",
+    "validation_method": "txt",
+    "validity_days": "90",
+  ])
+  #expect(orderBody?["type"] == .string("advanced"))
+  #expect(orderBody?["hosts"] == .array([.string("example.com"), .string("www.example.com")]))
+  #expect(orderBody?["validity_days"] == .number(90))
+
+  let tokens = GenericResourceCapabilities.forPath("/accounts/abc/access/service_tokens")
+  #expect(tokens.create != nil)
+  #expect(tokens.deleteMessage != nil)
+  let revealed = tokens.create?.revealResult?(
+    .object([
+      "id": .string("t1"),
+      "client_id": .string("cid.access"),
+      "client_secret": .string("shh"),
+    ]))
+  #expect(revealed == "CF-Access-Client-Id: cid.access\nCF-Access-Client-Secret: shh")
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)

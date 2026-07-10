@@ -50,6 +50,9 @@ struct GenericCreateSpec {
   let fields: [GenericCreateField]
   /// Builds the POST body from the entered field values.
   let body: ([String: String]) -> [String: JSONValue]
+  /// When set, a successful create keeps the sheet open and shows this text
+  /// (e.g. a one-time secret) instead of dismissing straight away.
+  var revealResult: ((JSONValue) -> String?)?
 }
 
 /// A neutral, reversible write on a single row (enable/disable, lock/unlock),
@@ -80,6 +83,9 @@ struct GenericScreenAction {
 /// more resources gain write support.
 struct GenericResourceCapabilities {
   var create: GenericCreateSpec?
+  /// Overrides the create POST path when it deviates from the list's base
+  /// path (e.g. certificate packs order at `{base}/order`).
+  var createPath: ((String) -> String)?
   /// Confirmation message for deleting a row; nil leaves the resource read-only.
   var deleteMessage: ((GenericResource) -> String)?
   /// Overrides the delete request path for endpoints that delete by something
@@ -386,6 +392,17 @@ struct GenericResourceCapabilities {
         "Permanently delete the Access group \($0.name). Policies referencing it stop matching."
       }
     } else if path.hasSuffix("/access/service_tokens") {
+      caps.create = GenericCreateSpec(
+        title: "New service token",
+        fields: [GenericCreateField("name", "Token name")],
+        body: { values in ["name": .string(values["name"] ?? "")] },
+        revealResult: { result in
+          guard case .object(let object) = result,
+            case .string(let clientID)? = object["client_id"],
+            case .string(let secret)? = object["client_secret"]
+          else { return nil }
+          return "CF-Access-Client-Id: \(clientID)\nCF-Access-Client-Secret: \(secret)"
+        })
       caps.deleteMessage = {
         "Permanently delete the service token \($0.name). Clients using it lose access."
       }
@@ -454,6 +471,39 @@ struct GenericResourceCapabilities {
         "Permanently delete this custom certificate. Traffic falls back to universal SSL."
       }
     } else if path.hasSuffix("/ssl/certificate_packs") {
+      caps.create = GenericCreateSpec(
+        title: "Order certificate pack",
+        fields: [
+          GenericCreateField("hosts", "Hosts (comma-separated, must include the zone apex)"),
+          GenericCreateField(
+            "certificate_authority", "Certificate authority",
+            options: ["lets_encrypt", "google", "ssl_com"]),
+          GenericCreateField(
+            "validation_method", "Validation method", options: ["txt", "http", "email"]),
+          GenericCreateField(
+            "validity_days", "Validity (days)", options: ["90", "30", "14", "365"]),
+        ],
+        body: { values in
+          let hosts = (values["hosts"] ?? "")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+          return [
+            "type": .string("advanced"),
+            "hosts": .array(hosts.map(JSONValue.string)),
+            "certificate_authority": .string(values["certificate_authority"] ?? "lets_encrypt"),
+            "validation_method": .string(values["validation_method"] ?? "txt"),
+            "validity_days": .number(Double(values["validity_days"] ?? "90") ?? 90),
+          ]
+        },
+        revealResult: { result in
+          guard case .object(let object) = result else { return nil }
+          var lines: [String] = []
+          if case .string(let id)? = object["id"] { lines.append("Order ID: \(id)") }
+          if case .string(let status)? = object["status"] { lines.append("Status: \(status)") }
+          return lines.isEmpty ? nil : lines.joined(separator: "\n")
+        })
+      caps.createPath = { "\($0)/order" }
       caps.deleteMessage = {
         "Permanently delete the certificate pack \($0.id). Hosts covered only by it lose HTTPS."
       }
@@ -555,14 +605,16 @@ extension GenericResource {
   }
 }
 
-/// Declarative create form for a generic resource.
+/// Declarative create form for a generic resource. When the spec asks to
+/// reveal the result (one-time secrets), the sheet stays open showing it.
 private struct GenericCreateSheet: View {
   let spec: GenericCreateSpec
-  let onCreate: ([String: JSONValue]) async throws -> Void
+  let onCreate: ([String: JSONValue]) async throws -> JSONValue
   @Environment(\.dashTrayDismiss) private var dismiss
   @State private var values: [String: String] = [:]
   @State private var error: String?
   @State private var saving = false
+  @State private var revealed: String?
 
   private var canSave: Bool {
     spec.fields.allSatisfy { field in
@@ -571,38 +623,51 @@ private struct GenericCreateSheet: View {
   }
 
   var body: some View {
-    DashFormSheet(
-      saveTitle: "Create",
-      isSaving: saving,
-      canSave: canSave,
-      onSave: { Task { await save() } },
-      content: {
-        VStack(spacing: 14) {
-          ForEach(spec.fields, id: \.key) { field in
-            if let options = field.options {
-              DashFormMenuField(
-                label: field.label,
-                selection: Binding(
-                  get: { values[field.key] ?? options[0] },
-                  set: { values[field.key] = $0 }),
-                options: options)
-            } else {
-              DashFormField(
-                label: field.label,
-                text: Binding(
-                  get: { values[field.key] ?? "" },
-                  set: { values[field.key] = $0 }))
-            }
-          }
-          if let error {
-            DashNotice(kind: .error, message: error)
-          }
+    if let revealed {
+      VStack(alignment: .leading, spacing: 16) {
+        DashNotice(
+          kind: .warning,
+          message: "Copy this now — Cloudflare will not show it again.")
+        DashCodeBlock(text: revealed)
+        DashTrayPillButton(title: "Copy and close") {
+          UIPasteboard.general.string = revealed
+          dismiss()
         }
       }
-    )
-    .onAppear {
-      for field in spec.fields where values[field.key] == nil {
-        if let options = field.options { values[field.key] = options[0] }
+    } else {
+      DashFormSheet(
+        saveTitle: "Create",
+        isSaving: saving,
+        canSave: canSave,
+        onSave: { Task { await save() } },
+        content: {
+          VStack(spacing: 14) {
+            ForEach(spec.fields, id: \.key) { field in
+              if let options = field.options {
+                DashFormMenuField(
+                  label: field.label,
+                  selection: Binding(
+                    get: { values[field.key] ?? options[0] },
+                    set: { values[field.key] = $0 }),
+                  options: options)
+              } else {
+                DashFormField(
+                  label: field.label,
+                  text: Binding(
+                    get: { values[field.key] ?? "" },
+                    set: { values[field.key] = $0 }))
+              }
+            }
+            if let error {
+              DashNotice(kind: .error, message: error)
+            }
+          }
+        }
+      )
+      .onAppear {
+        for field in spec.fields where values[field.key] == nil {
+          if let options = field.options { values[field.key] = options[0] }
+        }
       }
     }
   }
@@ -611,9 +676,13 @@ private struct GenericCreateSheet: View {
     saving = true
     error = nil
     do {
-      try await onCreate(spec.body(values))
+      let result = try await onCreate(spec.body(values))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
-      dismiss()
+      if let reveal = spec.revealResult, let text = reveal(result) {
+        revealed = text
+      } else {
+        dismiss()
+      }
     } catch { self.error = error.dashActionableMessage }
     saving = false
   }
@@ -640,6 +709,7 @@ struct GenericResourcesView: View {
     var capabilities = GenericResourceCapabilities.forPath(path)
     if !featureAllowsWrites {
       capabilities.create = nil
+      capabilities.createPath = nil
       capabilities.deleteMessage = nil
       capabilities.deletePath = nil
       capabilities.updates = []
@@ -734,8 +804,10 @@ struct GenericResourcesView: View {
     .dashTray(isPresented: $creates, title: capabilities.create?.title ?? "New") {
       if let spec = capabilities.create {
         GenericCreateSheet(spec: spec) { body in
-          _ = try await model.client.mutate(path: basePath, method: "POST", body: body)
+          let target = capabilities.createPath?(basePath) ?? basePath
+          let result = try await model.client.mutate(path: target, method: "POST", body: body)
           await invalidateAndReload()
+          return result
         }
       }
     }

@@ -363,6 +363,24 @@ public actor CloudflareClient {
       "\(basePath)/rulesets/\(rulesetID)/rules/\(ruleID)", method: "PATCH", body: body)
   }
 
+  // MARK: Account members
+
+  public func listAccountRoles(accountID: String) async throws -> [AccountRole] {
+    try await list("/accounts/\(accountID)/roles", query: ["per_page": "50"]).items
+  }
+
+  @discardableResult
+  public func inviteAccountMember(
+    accountID: String, email: String, roleIDs: [String]
+  ) async throws -> AccountMember {
+    try await request(
+      "/accounts/\(accountID)/members", method: "POST",
+      body: [
+        "email": JSONValue.string(email),
+        "roles": .array(roleIDs.map(JSONValue.string)),
+      ])
+  }
+
   // MARK: Access policies
 
   public func listAccessApps(accountID: String) async throws -> [AccessApp] {

@@ -521,10 +521,87 @@ private enum AccountDetailItem: Identifiable, Equatable {
   }
 }
 
+/// Invite form: email plus one role picked from the account's role list.
+private struct MemberInviteForm: View {
+  @Environment(AppModel.self) private var model
+  let onInvited: () -> Void
+
+  @State private var email = ""
+  @State private var roles: [AccountRole] = []
+  @State private var roleName = ""
+  @State private var loadingRoles = true
+  @State private var saving = false
+  @State private var saveError: String?
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: "Invite",
+      isSaving: saving,
+      canSave: !email.isEmpty && selectedRole != nil,
+      onSave: { Task { await invite() } },
+      content: {
+        VStack(alignment: .leading, spacing: 16) {
+          if let saveError {
+            DashNotice(kind: .error, message: saveError)
+          }
+          DashFormField(label: "Email address", text: $email, keyboard: .emailAddress)
+          if loadingRoles {
+            ProgressView().frame(maxWidth: .infinity)
+          } else if roles.isEmpty {
+            DashNotice(
+              kind: .warning,
+              message: "No roles could be loaded; inviting needs at least one role.")
+          } else {
+            DashFormMenuField(
+              label: "Role", selection: $roleName, options: roles.map(\.name))
+          }
+        }
+      }
+    )
+    .task { await loadRoles() }
+  }
+
+  private var selectedRole: AccountRole? {
+    roles.first { $0.name == roleName }
+  }
+
+  private func loadRoles() async {
+    guard let accountID = model.activeAccountID else { return }
+    do {
+      roles = try await model.client.listAccountRoles(accountID: accountID)
+      if roleName.isEmpty {
+        roleName =
+          roles.first { $0.name.lowercased().contains("read") }?.name
+          ?? roles.first?.name ?? ""
+      }
+    } catch {
+      saveError = error.dashActionableMessage
+    }
+    loadingRoles = false
+  }
+
+  private func invite() async {
+    guard let accountID = model.activeAccountID, let role = selectedRole else { return }
+    saving = true
+    saveError = nil
+    do {
+      _ = try await model.client.inviteAccountMember(
+        accountID: accountID, email: email, roleIDs: [role.id])
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      onInvited()
+    } catch {
+      saveError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    saving = false
+  }
+}
+
 struct AccountView: View {
   private enum Tab: Hashable { case members, alerts, audit }
 
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var members: [AccountMember] = []
   @State private var policies: [NotificationPolicy] = []
   @State private var history: [NotificationHistoryEntry] = []
@@ -537,6 +614,9 @@ struct AccountView: View {
   @State private var toggleError: String?
   @State private var deletingPolicy = false
   @State private var deletePolicyError: String?
+  @State private var invites = false
+  @State private var removingMember = false
+  @State private var removeMemberError: String?
 
   var body: some View {
     DashFeatureList(
@@ -667,13 +747,59 @@ struct AccountView: View {
               }
             }
           }
+        } else if case .member(let member) = item, featureAllowsWrites {
+          DashDetailTray(
+            fields: item.fields,
+            deleteMessage:
+              "Remove \(member.displayName) from this account. Their access ends immediately.",
+            isDeleting: removingMember,
+            deleteError: removeMemberError,
+            onDelete: { Task { await removeMember(member) } }
+          )
         } else {
           DashDetailTray(fields: item.fields)
         }
       }
     )
+    .toolbar {
+      if featureAllowsWrites, selectedTab == .members {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Invite member") {
+            invites = true
+          }
+        }
+        .dashSeparateToolbarBackground()
+      }
+    }
+    .dashTray(isPresented: $invites, title: "Invite member") {
+      MemberInviteForm {
+        invites = false
+        if let accountID = model.activeAccountID {
+          model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
+        }
+        Task { await load(force: true) }
+      }
+    }
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func removeMember(_ member: AccountMember) async {
+    guard let accountID = model.activeAccountID else { return }
+    removingMember = true
+    removeMemberError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(accountID)/members/\(member.id)", method: "DELETE")
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      detail = nil
+      model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
+      await load(force: true)
+    } catch {
+      removeMemberError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    removingMember = false
   }
 
   private func deletePolicy(_ policy: NotificationPolicy) async {
