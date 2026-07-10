@@ -63,6 +63,12 @@ struct FeatureRouterContent: View {
   }
 }
 
+/// Editing is safe only for classic scripts (0 module parts) or single-module
+/// workers; multi-module uploads through /content would drop sibling modules.
+func workerSourceIsEditable(moduleCount: Int, hasWriteScope: Bool) -> Bool {
+  hasWriteScope && moduleCount <= 1
+}
+
 private struct FeatureWriteAccessKey: EnvironmentKey {
   static let defaultValue = true
 }
@@ -696,6 +702,10 @@ struct WorkerDetailView: View {
   @Environment(\.dismiss) private var dismissScreen
   let name: String
   @State private var source: WorkerSource?
+  @State private var draft = ""
+  @State private var deploying = false
+  @State private var deployError: String?
+  @State private var confirmsDeploy = false
   @State private var error: String?
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
@@ -755,7 +765,44 @@ struct WorkerDetailView: View {
           } else if let error {
             ErrorStateView(message: error) { Task { await load(force: true) } }
           } else if let source {
-            DashCodeBlock(text: source.content)
+            if workerSourceIsEditable(
+              moduleCount: source.moduleCount, hasWriteScope: hasWriteScope)
+            {
+              if let deployError {
+                DashNotice(kind: .error, message: deployError)
+              }
+              DashCodePanel(
+                title: source.mainModule ?? "Script",
+                message: "Deploying replaces the live script content immediately.",
+                text: $draft,
+                minHeight: 260
+              )
+              DashPillButton(
+                title: "Deploy",
+                isLoading: deploying,
+                isEnabled: !draft.isEmpty && draft != source.content
+              ) {
+                confirmsDeploy = true
+              }
+              .confirmationDialog(
+                "Deploy \(name)?", isPresented: $confirmsDeploy, titleVisibility: .visible
+              ) {
+                Button("Deploy to production", role: .destructive) {
+                  Task { await deploy() }
+                }
+              } message: {
+                Text("The new content serves on all routes as soon as Cloudflare accepts it.")
+              }
+            } else {
+              if source.moduleCount > 1 {
+                DashNotice(
+                  kind: .warning,
+                  message:
+                    "This Worker has \(source.moduleCount) modules; editing multi-module Workers needs wrangler. Showing the main module read-only."
+                )
+              }
+              DashCodeBlock(text: source.content)
+            }
           } else {
             LoadingStateView()
           }
@@ -786,6 +833,25 @@ struct WorkerDetailView: View {
       ]
     )
   }
+  private var hasWriteScope: Bool {
+    model.hasScopes(["workers-scripts.write"])
+  }
+
+  private func deploy() async {
+    guard let accountID = model.activeAccountID, let source else { return }
+    deploying = true
+    deployError = nil
+    do {
+      _ = try await model.client.uploadWorkerScript(
+        accountID: accountID, name: name, source: source, content: draft)
+      model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
+      await load(force: true)
+    } catch {
+      deployError = error.dashActionableMessage
+    }
+    deploying = false
+  }
+
   private func deleteWorker() async throws {
     guard let accountID = model.activeAccountID else { return }
     _ = try await model.client.mutate(
@@ -799,6 +865,7 @@ struct WorkerDetailView: View {
     let key = FeatureCacheKey.workerSource(accountID: accountID, name: name)
     if !force, let cached: WorkerDetailSnapshot = model.featureCache.get(key) {
       source = cached.source
+      draft = cached.source.content
       subdomainEnabled = cached.subdomainEnabled
       workerTag = cached.tag
       loadedSubdomain = true
@@ -810,6 +877,7 @@ struct WorkerDetailView: View {
       async let fetchedSubdomain = model.client.getWorkerSubdomain(accountID: accountID, name: name)
       async let fetchedTag = resolveTag(accountID: accountID)
       source = try await fetchedSource
+      draft = source?.content ?? ""
       subdomainEnabled = try await fetchedSubdomain.enabled
       loadedSubdomain = true
       do {

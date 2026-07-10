@@ -174,6 +174,13 @@ import Testing
   #expect(apps.deleteMessage != nil)
 }
 
+@Test func workerEditingRequiresScopeAndSingleModule() {
+  #expect(workerSourceIsEditable(moduleCount: 0, hasWriteScope: true))
+  #expect(workerSourceIsEditable(moduleCount: 1, hasWriteScope: true))
+  #expect(!workerSourceIsEditable(moduleCount: 2, hasWriteScope: true))
+  #expect(!workerSourceIsEditable(moduleCount: 1, hasWriteScope: false))
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)
