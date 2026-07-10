@@ -227,6 +227,53 @@ public actor CloudflareClient {
       query: ["page": String(page), "per_page": String(perPage)])
     return result.images ?? []
   }
+  /// Uploads one image through the Images v1 multipart endpoint.
+  @discardableResult
+  public func uploadImage(accountID: String, filename: String, data: Data) async throws
+    -> CloudflareImage
+  {
+    var form = MultipartForm()
+    form.addFile(
+      name: "file", filename: filename, contentType: "application/octet-stream", data: data)
+    let response = try await raw(
+      "/accounts/\(accountID)/images/v1",
+      method: "POST", data: form.encode(), contentType: form.contentType)
+    let envelope = try JSONDecoder().decode(APIEnvelope<CloudflareImage>.self, from: response)
+    guard envelope.success else {
+      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+    }
+    return envelope.result
+  }
+
+  /// Stream basic upload — multipart POST, documented for files under 200 MB.
+  @discardableResult
+  public func uploadStreamVideo(accountID: String, filename: String, data: Data) async throws
+    -> StreamVideo
+  {
+    var form = MultipartForm()
+    form.addFile(
+      name: "file", filename: filename, contentType: "application/octet-stream", data: data)
+    let response = try await raw(
+      "/accounts/\(accountID)/stream",
+      method: "POST", data: form.encode(), contentType: form.contentType)
+    let envelope = try JSONDecoder().decode(APIEnvelope<StreamVideo>.self, from: response)
+    guard envelope.success else {
+      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+    }
+    return envelope.result
+  }
+
+  /// Imports a video into Stream from a public URL.
+  @discardableResult
+  public func streamCopy(accountID: String, url: String, name: String?) async throws -> StreamVideo
+  {
+    var body: [String: JSONValue] = ["url": .string(url)]
+    if let name, !name.isEmpty {
+      body["meta"] = .object(["name": .string(name)])
+    }
+    return try await request("/accounts/\(accountID)/stream/copy", method: "POST", body: body)
+  }
+
   public func listStreamVideos(accountID: String) async throws -> [StreamVideo] {
     try await list("/accounts/\(accountID)/stream").items
   }

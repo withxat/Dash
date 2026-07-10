@@ -377,6 +377,45 @@ struct NetworkTests {
       accountID: "account", name: "api", source: source, content: "export default {}")
   }
 
+  @Test func mediaUploadsSendMultipartFilePart() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.path ?? "")
+      let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+      #expect(contentType.hasPrefix("multipart/form-data; boundary="))
+      if request.url?.path.hasSuffix("/images/v1") == true {
+        return (200, Data(#"{"success":true,"result":{"id":"img1","filename":"a.jpg"}}"#.utf8))
+      }
+      return (200, Data(#"{"success":true,"result":{"uid":"vid1"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let image = try await client.uploadImage(
+      accountID: "account", filename: "a.jpg", data: Data("img".utf8))
+    #expect(image.id == "img1")
+    let video = try await client.uploadStreamVideo(
+      accountID: "account", filename: "a.mp4", data: Data("vid".utf8))
+    #expect(video.uid == "vid1")
+    #expect(
+      recorder.paths == ["/accounts/account/images/v1", "/accounts/account/stream"])
+  }
+
+  @Test func streamCopySendsURLAndOptionalName() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/stream/copy") == true)
+      return (200, Data(#"{"success":true,"result":{"uid":"vid2"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let video = try await client.streamCopy(
+      accountID: "account", url: "https://example.com/a.mp4", name: "A")
+    #expect(video.uid == "vid2")
+  }
+
   @Test func executeRawPassesBinaryBodiesThroughUntouched() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])

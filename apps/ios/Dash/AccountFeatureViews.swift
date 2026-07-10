@@ -1,4 +1,5 @@
 import CloudflareAPI
+import PhotosUI
 import SwiftUI
 
 private func permissionHint(for error: Error) -> String {
@@ -47,6 +48,7 @@ private struct ProductNotActivatedView: View {
 
 struct ImagesView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var images: [CloudflareImage] = []
   @State private var selected: CloudflareImage?
   @State private var error: String?
@@ -54,6 +56,9 @@ struct ImagesView: View {
   @State private var notActivated = false
   @State private var deleting = false
   @State private var deleteError: String?
+  @State private var pickedItem: PhotosPickerItem?
+  @State private var uploading = false
+  @State private var uploadError: String?
 
   var body: some View {
     DashFeatureList(
@@ -61,6 +66,12 @@ struct ImagesView: View {
       error: error,
       retry: { Task { await load() } }
     ) {
+      if uploading {
+        DashNotice(kind: .success, message: "Uploading image…")
+      }
+      if let uploadError {
+        DashNotice(kind: .error, message: uploadError)
+      }
       if notActivated {
         ProductNotActivatedView(
           feature: .images,
@@ -107,8 +118,48 @@ struct ImagesView: View {
         )
       }
     )
+    .toolbar {
+      if featureAllowsWrites, !notActivated {
+        ToolbarItem(placement: .topBarTrailing) {
+          PhotosPicker(selection: $pickedItem, matching: .images) {
+            SolarIcon(asset: SolarAsset.upload, size: 20, color: DashTheme.strong)
+              .frame(width: 34, height: 34)
+              .background(DashTheme.base, in: Circle())
+              .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
+          }
+          .accessibilityLabel("Upload image")
+          .disabled(uploading)
+        }
+        .dashSeparateToolbarBackground()
+      }
+    }
+    .onChange(of: pickedItem) { _, item in
+      if let item { Task { await upload(item) } }
+    }
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func upload(_ item: PhotosPickerItem) async {
+    guard let accountID = model.activeAccountID else { return }
+    uploading = true
+    uploadError = nil
+    do {
+      guard let data = try await item.loadTransferable(type: Data.self) else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      let filename = "upload-\(UUID().uuidString.prefix(8)).jpg"
+      _ = try await model.client.uploadImage(
+        accountID: accountID, filename: filename, data: data)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      model.featureCache.remove(FeatureCacheKey.images(accountID))
+      await load(force: true)
+    } catch {
+      uploadError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    pickedItem = nil
+    uploading = false
   }
 
   private func delete(_ image: CloudflareImage) async {
@@ -156,7 +207,11 @@ struct ImagesView: View {
 }
 
 struct StreamView: View {
+  /// Documented ceiling for the Stream basic (multipart) upload path.
+  static let basicUploadLimit = 200 * 1024 * 1024
+
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var videos: [StreamVideo] = []
   @State private var selected: StreamVideo?
   @State private var error: String?
@@ -164,6 +219,12 @@ struct StreamView: View {
   @State private var notActivated = false
   @State private var deleting = false
   @State private var deleteError: String?
+  @State private var adds = false
+  @State private var pickedItem: PhotosPickerItem?
+  @State private var uploading = false
+  @State private var uploadError: String?
+  @State private var copyURL = ""
+  @State private var copyName = ""
 
   var body: some View {
     DashFeatureList(
@@ -216,8 +277,101 @@ struct StreamView: View {
         )
       }
     )
+    .toolbar {
+      if featureAllowsWrites, !notActivated {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.upload, accessibilityLabel: "Add video") {
+            uploadError = nil
+            adds = true
+          }
+        }
+        .dashSeparateToolbarBackground()
+      }
+    }
+    .dashTray(isPresented: $adds, title: "Add video") {
+      VStack(alignment: .leading, spacing: 16) {
+        if uploading {
+          DashNotice(kind: .success, message: "Uploading video…")
+        }
+        if let uploadError {
+          DashNotice(kind: .error, message: uploadError)
+        }
+        PhotosPicker(selection: $pickedItem, matching: .videos) {
+          DashListCard {
+            DashListRow(
+              title: "Upload from library",
+              subtitle: "Basic upload, files up to 200 MB",
+              icon: SolarAsset.upload
+            )
+          }
+        }
+        .disabled(uploading)
+        DashFormField(label: "…or import from URL", text: $copyURL, keyboard: .URL)
+        DashFormField(label: "Name (optional)", text: $copyName)
+        DashTrayPillButton(
+          title: uploading ? "Working…" : "Import from URL",
+          isLoading: uploading
+        ) {
+          guard !copyURL.isEmpty else { return }
+          Task { await importFromURL() }
+        }
+      }
+    }
+    .onChange(of: pickedItem) { _, item in
+      if let item { Task { await upload(item) } }
+    }
     .refreshable { await load(force: true) }
     .task { await load() }
+  }
+
+  private func upload(_ item: PhotosPickerItem) async {
+    guard let accountID = model.activeAccountID else { return }
+    uploading = true
+    uploadError = nil
+    do {
+      guard let data = try await item.loadTransferable(type: Data.self) else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      guard data.count <= Self.basicUploadLimit else {
+        uploadError =
+          "This video is over 200 MB; the basic upload path caps there. Use dash.cloudflare.com or tus for larger files."
+        uploading = false
+        pickedItem = nil
+        return
+      }
+      let filename = "upload-\(UUID().uuidString.prefix(8)).mp4"
+      _ = try await model.client.uploadStreamVideo(
+        accountID: accountID, filename: filename, data: data)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      adds = false
+      model.featureCache.remove(FeatureCacheKey.stream(accountID))
+      await load(force: true)
+    } catch {
+      uploadError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    pickedItem = nil
+    uploading = false
+  }
+
+  private func importFromURL() async {
+    guard let accountID = model.activeAccountID else { return }
+    uploading = true
+    uploadError = nil
+    do {
+      _ = try await model.client.streamCopy(
+        accountID: accountID, url: copyURL, name: copyName)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      copyURL = ""
+      copyName = ""
+      adds = false
+      model.featureCache.remove(FeatureCacheKey.stream(accountID))
+      await load(force: true)
+    } catch {
+      uploadError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    uploading = false
   }
 
   private func delete(_ video: StreamVideo) async {
