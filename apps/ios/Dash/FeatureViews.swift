@@ -38,11 +38,8 @@ struct FeatureRouterContent: View {
         EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
       case .browserRendering:
         EndpointProductView(feature: feature, matching: ["browser-rendering"])
-      case .workersObservability:
-        EndpointProductView(
-          feature: feature,
-          matching: ["workers-observability", "tail", "telemetry"]
-        )
+      case .calls, .zeroTrustConnectors, .workersObservability:
+        FeatureHubView(feature: feature)
       case .rulesets:
         EndpointProductView(
           feature: feature,
@@ -61,11 +58,6 @@ struct FeatureRouterContent: View {
         EndpointProductView(
           feature: feature,
           matching: ["access-policy", "/access/policies", "device-posture"]
-        )
-      case .zeroTrustConnectors:
-        EndpointProductView(
-          feature: feature,
-          matching: ["connector", "cloudflared", "/networks/", "warp"]
         )
       case .magicNetworking:
         EndpointProductView(
@@ -89,8 +81,6 @@ struct FeatureRouterContent: View {
           feature: feature,
           matching: ["cache", "purge", "compression", "zone-version"]
         )
-      case .calls:
-        EndpointProductView(feature: feature, matching: ["/calls/", "realtime", "/moq/"])
       case .radarIntel:
         EndpointProductView(feature: feature, matching: ["/radar/", "/intel/"])
       default: GenericFeatureView(feature: feature)

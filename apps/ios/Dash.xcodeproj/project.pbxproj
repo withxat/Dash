@@ -36,6 +36,7 @@
 		B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* ZoneAnalyticsView.swift */; };
 		B0000000000000000000001D /* DashDetailTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* DashDetailTray.swift */; };
 		B0000000000000000000001E /* APIExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003A /* APIExplorerView.swift */; };
+		B0000000000000000000001F /* HubFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003B /* HubFeatureViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +82,7 @@
 		F00000000000000000000038 /* ZoneAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAnalyticsView.swift; sourceTree = "<group>"; };
 		F00000000000000000000039 /* DashDetailTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDetailTray.swift; sourceTree = "<group>"; };
 		F0000000000000000000003A /* APIExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIExplorerView.swift; sourceTree = "<group>"; };
+		F0000000000000000000003B /* HubFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubFeatureViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +148,7 @@
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
 				F00000000000000000000039 /* DashDetailTray.swift */,
 				F0000000000000000000003A /* APIExplorerView.swift */,
+				F0000000000000000000003B /* HubFeatureViews.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000000C /* StorageViews.swift */,
@@ -353,6 +356,7 @@
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000001E /* APIExplorerView.swift in Sources */,
+				B0000000000000000000001F /* HubFeatureViews.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000000C /* StorageViews.swift in Sources */,

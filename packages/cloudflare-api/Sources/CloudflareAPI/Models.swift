@@ -606,13 +606,14 @@ public struct GenericResource: CloudflareResource, Hashable {
     self.raw = raw
     id =
       raw.string(for: [
-        "id", "uuid", "build_uuid", "tag", "sitekey", "key", "queue_id", "snippet_name", "name",
+        "id", "uuid", "build_uuid", "tag", "sitekey", "key", "queue_id", "snippet_name", "slug",
+        "name",
       ])
       ?? UUID().uuidString
     name =
       raw.string(for: [
         "name", "title", "hostname", "email", "pattern", "queue_name", "snippet_name", "url",
-        "id", "uuid", "branch", "build_uuid",
+        "network", "slug", "id", "uuid", "branch", "build_uuid",
       ])
       ?? "Cloudflare resource"
     detail = raw.string(for: ["status", "type", "state", "description"])

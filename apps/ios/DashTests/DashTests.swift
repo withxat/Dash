@@ -65,6 +65,48 @@ import Testing
   #expect(namespaces.updates.isEmpty)
 }
 
+@Test func hubRegistryPathsCarryTheirWrites() {
+  let apps = GenericResourceCapabilities.forPath("/accounts/abc/calls/apps")
+  #expect(apps.create != nil)
+  #expect(apps.deleteMessage != nil)
+
+  let turnKeys = GenericResourceCapabilities.forPath("/accounts/abc/calls/turn_keys")
+  #expect(turnKeys.create != nil)
+  #expect(turnKeys.deleteMessage != nil)
+
+  let relays = GenericResourceCapabilities.forPath("/accounts/abc/moq/relays")
+  #expect(relays.create == nil)
+  #expect(relays.deleteMessage != nil)
+
+  let warp = GenericResourceCapabilities.forPath("/accounts/abc/warp_connector")
+  #expect(warp.deleteMessage != nil)
+
+  let virtualNetworks = GenericResourceCapabilities.forPath(
+    "/accounts/abc/teamnet/virtual_networks")
+  #expect(virtualNetworks.create != nil)
+  #expect(virtualNetworks.deleteMessage != nil)
+
+  let queries = GenericResourceCapabilities.forPath(
+    "/accounts/abc/workers/observability/queries")
+  #expect(queries.deleteMessage != nil)
+
+  let destinations = GenericResourceCapabilities.forPath(
+    "/accounts/abc/workers/observability/destinations")
+  #expect(destinations.deleteMessage != nil)
+  #expect(destinations.deletePath != nil)
+}
+
+@Test func teamnetRoutesStayDistinctFromWorkerRoutes() {
+  // Both end in "/routes"; each must resolve to its own capabilities.
+  let teamnet = GenericResourceCapabilities.forPath("/accounts/abc/teamnet/routes")
+  #expect(teamnet.create == nil)
+  #expect(teamnet.deleteMessage != nil)
+
+  let workerRoutes = GenericResourceCapabilities.forPath("/zones/xyz/workers/routes")
+  #expect(workerRoutes.create != nil)
+  #expect(workerRoutes.deleteMessage != nil)
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)

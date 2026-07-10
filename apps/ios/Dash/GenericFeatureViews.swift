@@ -414,6 +414,51 @@ struct GenericResourceCapabilities {
         fields: [GenericCreateField("name", "Queue name")],
         body: { values in ["queue_name": .string(values["name"] ?? "")] })
       caps.deleteMessage = { "Permanently delete the queue \($0.name) and its messages." }
+    } else if path.hasSuffix("/calls/apps") {
+      caps.create = GenericCreateSpec(
+        title: "New app",
+        fields: [GenericCreateField("name", "App name")],
+        body: { values in ["name": .string(values["name"] ?? "")] })
+      caps.deleteMessage = { "Permanently delete the Calls app \($0.name) and its tokens." }
+    } else if path.hasSuffix("/calls/turn_keys") {
+      caps.create = GenericCreateSpec(
+        title: "New TURN key",
+        fields: [GenericCreateField("name", "Key name")],
+        body: { values in ["name": .string(values["name"] ?? "")] })
+      caps.deleteMessage = {
+        "Permanently delete the TURN key \($0.name). Clients using it lose TURN access."
+      }
+    } else if path.hasSuffix("/moq/relays") {
+      caps.deleteMessage = { "Permanently delete the MoQ relay \($0.name)." }
+    } else if path.hasSuffix("/warp_connector") {
+      caps.deleteMessage = { "Permanently delete the WARP connector tunnel \($0.name)." }
+    } else if path.hasSuffix("/teamnet/routes") {
+      caps.deleteMessage = {
+        "Permanently delete the route \($0.name). Traffic to it stops flowing through the tunnel."
+      }
+    } else if path.hasSuffix("/teamnet/virtual_networks") {
+      caps.create = GenericCreateSpec(
+        title: "New virtual network",
+        fields: [
+          GenericCreateField("name", "Network name"),
+          GenericCreateField("comment", "Comment", optional: true),
+        ],
+        body: { values in
+          var body: [String: JSONValue] = ["name": .string(values["name"] ?? "")]
+          if let comment = values["comment"], !comment.isEmpty {
+            body["comment"] = .string(comment)
+          }
+          return body
+        })
+      caps.deleteMessage = { "Permanently delete the virtual network \($0.name)." }
+    } else if path.hasSuffix("/workers/observability/queries") {
+      caps.deleteMessage = { "Permanently delete the saved query \($0.name)." }
+    } else if path.hasSuffix("/workers/observability/destinations") {
+      // Destinations delete by slug, not id.
+      caps.deleteMessage = { "Permanently delete the destination \($0.name)." }
+      caps.deletePath = { base, resource in
+        "\(base)/\(resource.string("slug") ?? resource.id)"
+      }
     } else if path.hasSuffix("/containers/applications") {
       caps.deleteMessage = {
         "Permanently delete the application \($0.name) and stop its instances."
