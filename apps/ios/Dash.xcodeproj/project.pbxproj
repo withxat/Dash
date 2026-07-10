@@ -38,6 +38,7 @@
 		B0000000000000000000001E /* APIExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003A /* APIExplorerView.swift */; };
 		B0000000000000000000001F /* HubFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003B /* HubFeatureViews.swift */; };
 		B00000000000000000000020 /* ZoneConfigViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003C /* ZoneConfigViews.swift */; };
+		B00000000000000000000021 /* AIFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003D /* AIFeatureViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -85,6 +86,7 @@
 		F0000000000000000000003A /* APIExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIExplorerView.swift; sourceTree = "<group>"; };
 		F0000000000000000000003B /* HubFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubFeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000003C /* ZoneConfigViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneConfigViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000003D /* AIFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIFeatureViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -152,6 +154,7 @@
 				F0000000000000000000003A /* APIExplorerView.swift */,
 				F0000000000000000000003B /* HubFeatureViews.swift */,
 				F0000000000000000000003C /* ZoneConfigViews.swift */,
+				F0000000000000000000003D /* AIFeatureViews.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000000C /* StorageViews.swift */,
@@ -361,6 +364,7 @@
 				B0000000000000000000001E /* APIExplorerView.swift in Sources */,
 				B0000000000000000000001F /* HubFeatureViews.swift in Sources */,
 				B00000000000000000000020 /* ZoneConfigViews.swift in Sources */,
+				B00000000000000000000021 /* AIFeatureViews.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000000C /* StorageViews.swift in Sources */,

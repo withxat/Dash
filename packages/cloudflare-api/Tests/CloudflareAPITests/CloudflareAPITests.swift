@@ -181,6 +181,24 @@ struct NetworkTests {
     #expect(data == payload)
   }
 
+  @Test func executeRawPassesBinaryBodiesThroughUntouched() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/browser-rendering/screenshot") == true)
+      #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
+      return (200, payload)
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let body = try JSONEncoder().encode(JSONValue.object(["url": .string("https://example.com")]))
+    let data = try await client.executeRaw(
+      path: "/accounts/account/browser-rendering/screenshot",
+      method: "POST", data: body, contentType: "application/json")
+    #expect(data == payload)
+  }
+
   @Test func workerTagMatchesExactScriptName() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in

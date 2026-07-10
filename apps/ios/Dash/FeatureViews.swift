@@ -32,12 +32,10 @@ struct FeatureRouterContent: View {
       case .analytics: AnalyticsView()
       case .account: AccountView()
       case .apiExplorer: APIExplorerView()
-      case .workersAI:
-        EndpointProductView(feature: feature, matching: ["workers-ai", "/ai/"])
+      case .workersAI: WorkersAIView()
+      case .browserRendering: BrowserRenderingView()
       case .aiSearch:
         EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
-      case .browserRendering:
-        EndpointProductView(feature: feature, matching: ["browser-rendering"])
       case .calls, .zeroTrustConnectors, .workersObservability:
         FeatureHubView(feature: feature)
       case .rulesets:
