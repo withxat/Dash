@@ -15,6 +15,10 @@ func zoneDestination(for feature: FeatureID, zoneID: String, zoneName: String) -
   switch feature {
   case .dnsManagement:
     return .dns(zoneID)
+  case .botManagement:
+    return .botManagement(zoneID: zoneID, zoneName: zoneName)
+  case .cacheSettings:
+    return .cachePerformance(zoneID: zoneID, zoneName: zoneName)
   default:
     return .zoneFeatureHub(feature: feature, zoneID: zoneID, zoneName: zoneName)
   }

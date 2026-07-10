@@ -646,6 +646,10 @@ private struct DestinationRoutedContent: View {
       case .zonePicker(let feature): FeatureZonePickerView(feature: feature)
       case .zoneFeatureHub(let feature, let zoneID, let zoneName):
         ZoneFeatureHubView(feature: feature, zoneID: zoneID, zoneName: zoneName)
+      case .botManagement(let zoneID, let zoneName):
+        BotManagementView(zoneID: zoneID, zoneName: zoneName)
+      case .cachePerformance(let zoneID, let zoneName):
+        CachePerformanceView(zoneID: zoneID, zoneName: zoneName)
       case .worker(let name): WorkerDetailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)

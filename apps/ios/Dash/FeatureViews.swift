@@ -45,8 +45,8 @@ struct FeatureRouterContent: View {
           feature: feature,
           matching: ["ruleset", "transform", "redirect", "custom-error"]
         )
-      case .botManagement:
-        EndpointProductView(feature: feature, matching: ["bot-management", "/bots/"])
+      case .botManagement, .cacheSettings:
+        FeatureZonePickerView(feature: feature)
       case .zaraz:
         EndpointProductView(feature: feature, matching: ["zaraz"])
       case .accessPolicies:
@@ -65,11 +65,6 @@ struct FeatureRouterContent: View {
         FeatureHubView(feature: feature)
       case .sslCertificates, .apiSecurity:
         FeatureZonePickerView(feature: feature)
-      case .cacheSettings:
-        EndpointProductView(
-          feature: feature,
-          matching: ["cache", "purge", "compression", "zone-version"]
-        )
       case .radarIntel:
         EndpointProductView(feature: feature, matching: ["/radar/", "/intel/"])
       default: GenericFeatureView(feature: feature)

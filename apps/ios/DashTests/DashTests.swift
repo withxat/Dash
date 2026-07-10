@@ -117,6 +117,12 @@ import Testing
   #expect(
     zoneDestination(for: .apiSecurity, zoneID: "z1", zoneName: "example.com")
       == .zoneFeatureHub(feature: .apiSecurity, zoneID: "z1", zoneName: "example.com"))
+  #expect(
+    zoneDestination(for: .botManagement, zoneID: "z1", zoneName: "example.com")
+      == .botManagement(zoneID: "z1", zoneName: "example.com"))
+  #expect(
+    zoneDestination(for: .cacheSettings, zoneID: "z1", zoneName: "example.com")
+      == .cachePerformance(zoneID: "z1", zoneName: "example.com"))
 }
 
 @Test func zoneHubRegistryPathsCarryTheirWrites() {
