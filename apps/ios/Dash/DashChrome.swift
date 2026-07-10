@@ -112,7 +112,7 @@ private struct DashSheetHeader: View {
 
       HStack(alignment: .center, spacing: 8) {
         Text(title)
-          .font(.dashTitle(20))
+          .dashTextStyle(.sheetTitle)
           .foregroundStyle(DashTheme.strong)
         Spacer(minLength: 12)
         if let trailingAction {
@@ -122,8 +122,8 @@ private struct DashSheetHeader: View {
             SolarIcon(asset: trailingAction.icon, size: 18, color: DashTheme.danger)
               .frame(width: 32, height: 32)
               .background(DashTheme.dangerTint, in: Circle())
+              .dashCompactHitTarget()
           }
-          .padding(2)
           .buttonStyle(DashPressButtonStyle())
           .accessibilityLabel(trailingAction.accessibilityLabel)
         }
@@ -151,6 +151,8 @@ private struct DashCustomSheet<Content: View>: View {
   /// Removes the cover once the exit animation has finished.
   let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var shown = false
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
@@ -181,11 +183,16 @@ private struct DashCustomSheet<Content: View>: View {
         } content: {
           content()
         }
+        .frame(
+          maxWidth: horizontalSizeClass == .regular
+            ? DashTheme.Layout.trayMaxWidth : .infinity
+        )
         // Always laid out (only offset off-screen while hidden) so it slides as
         // one piece; bottom-pinned, with the card lifting its own content above
         // the keyboard while its fill runs underneath it.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: shown ? drag : hiddenOffset)
+        .offset(y: reduceMotion ? drag : (shown ? drag : hiddenOffset))
+        .opacity(reduceMotion ? (shown ? 1 : 0) : 1)
       }
       .ignoresSafeArea(.keyboard)
     }
@@ -202,10 +209,18 @@ private struct DashCustomSheet<Content: View>: View {
       else { return }
       // How far the keyboard covers the window from the bottom (0 when hidden).
       let covered = max(0, window.bounds.height - frame.minY)
-      withAnimation(DashTheme.Motion.sheet) { keyboardHeight = covered }
+      if reduceMotion {
+        keyboardHeight = covered
+      } else {
+        withAnimation(DashTheme.Motion.sheet) { keyboardHeight = covered }
+      }
     }
     .presentationBackground(.clear)
-    .onAppear { withAnimation(DashTheme.Motion.sheet) { shown = true } }
+    .onAppear {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.sheet) {
+        shown = true
+      }
+    }
   }
 
   /// Push the card fully below the screen while hidden, using its measured height
@@ -221,11 +236,20 @@ private struct DashCustomSheet<Content: View>: View {
   }
 
   private func close() {
-    withAnimation(DashTheme.Motion.sheet) {
-      shown = false
-      drag = 0
-    } completion: {
-      onDismiss()
+    if reduceMotion {
+      withAnimation(DashTheme.Motion.reduced) {
+        shown = false
+      } completion: {
+        drag = 0
+        onDismiss()
+      }
+    } else {
+      withAnimation(DashTheme.Motion.sheet) {
+        shown = false
+        drag = 0
+      } completion: {
+        onDismiss()
+      }
     }
   }
 
@@ -237,6 +261,8 @@ private struct DashCustomSheet<Content: View>: View {
       .onEnded { value in
         if value.translation.height > 120 {
           close()
+        } else if reduceMotion {
+          drag = 0
         } else {
           withAnimation(DashTheme.Motion.sheet) { drag = 0 }
         }
@@ -292,6 +318,7 @@ private struct DashSheetCard<Header: View, Body: View>: View {
   var bottomInset: CGFloat = 0
   @ViewBuilder let header: () -> Header
   @ViewBuilder let content: () -> Body
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var headerHeight: CGFloat = 0
   @State private var bodyIdeal: CGFloat = 0
   @State private var bodyDisplay: CGFloat = 0
@@ -348,10 +375,12 @@ private struct DashSheetCard<Header: View, Body: View>: View {
   private func applyBody(animated: Bool) {
     let target = min(bodyIdeal, maxBodyHeight)
     guard target > 0 else { return }
-    if animated {
+    if animated, !reduceMotion {
       withAnimation(DashTheme.Motion.morph) { bodyDisplay = target }
     } else {
-      bodyDisplay = target
+      var transaction = Transaction()
+      transaction.disablesAnimations = reduceMotion
+      withTransaction(transaction) { bodyDisplay = target }
     }
   }
 }
@@ -540,36 +569,41 @@ private struct DashConfirmMorph<Content: View>: View {
   let action: () -> Void
   var headerDelete = false
   @ViewBuilder let content: () -> Content
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var morphAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
+  }
 
   var body: some View {
     VStack(spacing: 16) {
       ZStack {
         if confirming, let message {
           Text(message)
-            .font(.system(size: 15))
+            .dashTextStyle(.supporting)
             .foregroundStyle(DashTheme.subtle)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
-            .transition(.dashMorph)
+            .transition(reduceMotion ? .opacity : .dashMorph)
         } else {
           content()
-            .transition(.dashMorph)
+            .transition(reduceMotion ? .opacity : .dashMorph)
         }
       }
 
       if confirming {
         Button {
-          withAnimation(DashTheme.Motion.morph) { confirming = false }
+          withAnimation(morphAnimation) { confirming = false }
         } label: {
           Text("Cancel")
-            .font(.system(size: 16, weight: .medium))
+            .dashTextStyle(.bodyMedium)
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(DashPressButtonStyle())
-        .transition(.dashMorph)
+        .transition(reduceMotion ? .opacity : .dashMorph)
       }
 
       DashActionButton(
@@ -585,7 +619,7 @@ private struct DashConfirmMorph<Content: View>: View {
         ? DashSheetHeaderAction(
           id: "delete", icon: SolarAsset.trash, accessibilityLabel: "Delete"
         ) {
-          withAnimation(DashTheme.Motion.morph) { confirming = true }
+          withAnimation(morphAnimation) { confirming = true }
         }
         : nil
     )
@@ -621,10 +655,10 @@ struct DashFormField: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(label)
-        .font(.system(size: 13, weight: .semibold))
+        .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       TextField(label, text: $text)
-        .font(.system(size: 16, weight: .medium))
+        .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.text)
         .textInputAutocapitalization(.never)
         .autocorrectionDisabled()
@@ -651,7 +685,7 @@ struct DashFormMenuField: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(label)
-        .font(.system(size: 13, weight: .semibold))
+        .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       Menu {
         Picker(label, selection: $selection) {
@@ -660,7 +694,7 @@ struct DashFormMenuField: View {
       } label: {
         HStack(spacing: 8) {
           Text(selection)
-            .font(.system(size: 16, weight: .medium))
+            .dashTextStyle(.bodyMedium)
             .foregroundStyle(DashTheme.text)
           Spacer(minLength: 0)
           SolarIcon(asset: SolarAsset.chevronRight, size: 14, color: DashTheme.placeholder)
@@ -685,10 +719,10 @@ struct DashFormCodeField: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text(label)
-        .font(.system(size: 13, weight: .semibold))
+        .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       TextEditor(text: $text)
-        .font(.system(size: 13, design: .monospaced))
+        .dashTextStyle(.code)
         .foregroundStyle(DashTheme.text)
         .scrollContentBackground(.hidden)
         .textInputAutocapitalization(.never)
@@ -711,8 +745,8 @@ struct DashCloseButton: View {
       SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
         .frame(width: 32, height: 32)
         .background(DashTheme.recessed, in: Circle())
+        .dashCompactHitTarget()
     }
-    .padding(2)
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(accessibilityLabel)
   }
@@ -728,7 +762,7 @@ struct DashPillButton: View {
       HStack(spacing: 8) {
         if isLoading { ProgressView().tint(DashTheme.inverse) }
         Text(title)
-          .font(.system(size: 16, weight: .semibold))
+          .dashTextStyle(.bodySemibold)
       }
       .foregroundStyle(DashTheme.inverse)
       .frame(maxWidth: .infinity, minHeight: 52)
@@ -756,7 +790,7 @@ struct DashSecondaryPillButton: View {
 
   private var label: some View {
     Text(title)
-      .font(.system(size: 16, weight: .bold))
+      .dashTextStyle(.bodyBold)
       .foregroundStyle(DashTheme.strong)
       .frame(maxWidth: .infinity, minHeight: 52)
       .background(DashTheme.recessed, in: DashTheme.pillShape)
@@ -780,7 +814,8 @@ extension AnyTransition {
   /// before/after content dissolves rather than hard-swapping under the
   /// matchedGeometryEffect hero.
   static var dashMorph: AnyTransition {
-    .opacity.combined(
+    if UIAccessibility.isReduceMotionEnabled { return .opacity }
+    return .opacity.combined(
       with: .modifier(
         active: DashBlurModifier(radius: 3),
         identity: DashBlurModifier(radius: 0)))
@@ -826,16 +861,21 @@ struct DashConfirmableActions: View {
   @Namespace private var morph
   @State private var pending: DashDangerAction?
   @State private var working = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayDismiss) private var dismiss
+
+  private var morphAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
+  }
 
   var body: some View {
     ZStack {
       if let pending {
         confirmation(pending)
-          .transition(.dashMorph)
+          .transition(reduceMotion ? .opacity : .dashMorph)
       } else {
         menu
-          .transition(.dashMorph)
+          .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
     .padding(.horizontal, horizontalInset)
@@ -846,7 +886,7 @@ struct DashConfirmableActions: View {
     VStack(spacing: 10) {
       ForEach(actions) { action in
         Button {
-          withAnimation(DashTheme.Motion.morph) { pending = action }
+          withAnimation(morphAnimation) { pending = action }
         } label: {
           dangerRow(action)
         }
@@ -869,7 +909,17 @@ struct DashConfirmableActions: View {
     .padding(.vertical, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+      dangerBackground(action)
+    }
+  }
+
+  @ViewBuilder
+  private func dangerBackground(_ action: DashDangerAction) -> some View {
+    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+    if reduceMotion {
+      shape.fill(DashTheme.dangerTint)
+    } else {
+      shape
         .fill(DashTheme.dangerTint)
         .matchedGeometryEffect(id: action.id, in: morph)
     }
@@ -878,7 +928,7 @@ struct DashConfirmableActions: View {
   private func confirmation(_ action: DashDangerAction) -> some View {
     VStack(spacing: 16) {
       Text(action.message)
-        .font(.system(size: 15))
+        .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
@@ -887,10 +937,10 @@ struct DashConfirmableActions: View {
 
       VStack(spacing: 4) {
         Button {
-          withAnimation(DashTheme.Motion.morph) { pending = nil }
+          withAnimation(morphAnimation) { pending = nil }
         } label: {
           Text("Cancel")
-            .font(.system(size: 16, weight: .medium))
+            .dashTextStyle(.bodyMedium)
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, minHeight: 44)
         }
@@ -907,19 +957,28 @@ struct DashConfirmableActions: View {
           HStack(spacing: 8) {
             if working { ProgressView().tint(DashTheme.inverse) }
             Text("Confirm")
-              .font(.system(size: 16, weight: .semibold))
+              .dashTextStyle(.bodySemibold)
           }
           .foregroundStyle(DashTheme.inverse)
           .frame(maxWidth: .infinity, minHeight: 52)
           .background {
-            DashTheme.pillShape
-              .fill(DashTheme.danger)
-              .matchedGeometryEffect(id: action.id, in: morph)
+            confirmBackground(action)
           }
         }
         .buttonStyle(DashPressButtonStyle())
         .disabled(working)
       }
+    }
+  }
+
+  @ViewBuilder
+  private func confirmBackground(_ action: DashDangerAction) -> some View {
+    if reduceMotion {
+      DashTheme.pillShape.fill(DashTheme.danger)
+    } else {
+      DashTheme.pillShape
+        .fill(DashTheme.danger)
+        .matchedGeometryEffect(id: action.id, in: morph)
     }
   }
 }
@@ -941,7 +1000,7 @@ struct DashActionButton: View {
       HStack(spacing: 8) {
         if isLoading { ProgressView().tint(DashTheme.inverse) }
         Text(title)
-          .font(.system(size: 16, weight: .semibold))
+          .dashTextStyle(.bodySemibold)
           .contentTransition(.opacity)
       }
       .foregroundStyle(DashTheme.inverse)
@@ -966,7 +1025,7 @@ struct DashTrayPillButton: View {
       HStack(spacing: 8) {
         if isLoading { ProgressView() }
         Text(title)
-          .font(.system(size: 16, weight: .bold))
+          .dashTextStyle(.bodyBold)
       }
       .foregroundStyle(DashTheme.strong)
       .frame(maxWidth: .infinity, minHeight: 52)

@@ -1,43 +1,16 @@
 import SwiftUI
 import UIKit
 
-@MainActor
-enum DashScreenMetrics {
-  /// Matches the display's physical corner radius when available.
-  static var displayCornerRadius: CGFloat {
-    guard
-      let screen = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .first?.screen
-    else { return 47.33 }
-
-    if let radius = screen.value(forKey: "_displayCornerRadius") as? CGFloat, radius > 10 {
-      return radius
-    }
-
-    let height = max(screen.nativeBounds.width, screen.nativeBounds.height)
-    switch height {
-    case 2868, 2796, 2622, 2556: return 55.75
-    case 2532, 2460, 2778: return 47.33
-    default:
-      if height >= 2700 { return 55.75 }
-      if height >= 2500 { return 47.33 }
-      return 39
-    }
-  }
-
-  /// Gives list states enough height to read as screen content instead of a stray list cell.
-  static var emptyStateHeight: CGFloat {
-    guard
-      let screen = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .first?.screen
-    else { return 520 }
-    return max(420, min(screen.bounds.height - 280, 680))
-  }
-}
-
 enum DashTheme {
+  enum Layout {
+    /// Reading width for regular-width feature screens. The parent container still
+    /// wins when Split View or Stage Manager gives the app less room.
+    static let contentMaxWidth: CGFloat = 760
+    static let trayMaxWidth: CGFloat = 640
+    static let emptyStateMinHeight: CGFloat = 420
+    static let minimumHitTarget: CGFloat = 44
+  }
+
   enum Radius {
     static let small: CGFloat = 8
     static let medium: CGFloat = 12
@@ -59,32 +32,33 @@ enum DashTheme {
     static let screen: CGFloat = 16
     static let section: CGFloat = 20
     static let card: CGFloat = 16
-    static let listRow: CGFloat = 6
     static let listInset: CGFloat = 0
   }
 
-  /// Strong ease-out motion tokens — built-in easings feel soft, exits must
-  /// resolve faster than entrances, and frequent state flips stay the shortest.
+  /// Strong ease-out motion tokens — built-in easings feel soft, and frequent
+  /// state flips stay the shortest.
   enum Motion {
-    static let enter = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.18)
-    static let exit = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.14)
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
+    static let reduced = Animation.easeOut(duration: 0.12)
     /// Deliberate hero morph for matchedGeometryEffect tray transitions — springy
     /// and slower than the micro-interaction tokens so the shape change reads.
-    static let morph = Animation.spring(response: 0.32, dampingFraction: 0.85)
+    static var morph: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.85)
+    }
     /// Tray present/dismiss — the card slide and dim fade. Slower and eased in and
     /// out so the sheet arrives and leaves gently rather than snapping.
-    static let sheet = Animation.timingCurve(0.42, 0, 0.58, 1, duration: 0.34)
+    static var sheet: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.timingCurve(0.42, 0, 0.58, 1, duration: 0.34)
+    }
   }
 
   enum Sheet {
-    static let horizontalInset: CGFloat = 12
-    static let bottomInset: CGFloat = 0
     static let content: CGFloat = 24
     static let headerTop: CGFloat = 28
     static let headerBottom: CGFloat = 14
     static let bodyVertical: CGFloat = 16
-    static let outerBottom: CGFloat = 10
     static let bodyBottom: CGFloat = 32
     static let grabBarWidth: CGFloat = 36
     static let grabBarHeight: CGFloat = 5
@@ -100,8 +74,6 @@ enum DashTheme {
   static let elevated = adaptive(light: 0xFAFAFA, dark: 0x1F1F1F)
   static let recessed = adaptive(light: 0xF5F5F5, dark: 0x262626)
   static let base = adaptive(light: 0xFFFFFF, dark: 0x2B2B2B)
-  static let tint = adaptive(light: 0xF7F7F7, dark: 0x404040)
-  static let control = adaptive(light: 0xFFFFFF, dark: 0x212126)
   static let fill = adaptive(light: 0xE5E5E5, dark: 0x404040)
 
   static let text = adaptive(light: 0x212126, dark: 0xF5F5F5)
@@ -157,6 +129,93 @@ extension Color {
 extension Font {
   static func dashTitle(_ size: CGFloat, weight: Font.Weight = .bold) -> Font {
     .system(size: size, weight: weight)
+  }
+}
+
+/// Scalable counterparts to the app's established fixed-size hierarchy. Base
+/// sizes intentionally match the existing UI while Dynamic Type supplies the
+/// user-selected scale.
+enum DashTextStyle {
+  case emptyTitle
+  case sheetTitle
+  case sectionTitle
+  case bodyMedium
+  case bodySemibold
+  case bodyBold
+  case supporting
+  case supportingMedium
+  case footnoteSemibold
+  case captionSemibold
+  case code
+
+  fileprivate var metrics:
+    (
+      size: CGFloat, weight: Font.Weight, design: Font.Design, relativeTo: Font.TextStyle
+    )
+  {
+    switch self {
+    case .emptyTitle: (24, .bold, .default, .title2)
+    case .sheetTitle: (20, .bold, .default, .title3)
+    case .sectionTitle: (18, .semibold, .default, .headline)
+    case .bodyMedium: (16, .medium, .default, .body)
+    case .bodySemibold: (16, .semibold, .default, .body)
+    case .bodyBold: (16, .bold, .default, .body)
+    case .supporting: (15, .regular, .default, .subheadline)
+    case .supportingMedium: (14, .medium, .default, .subheadline)
+    case .footnoteSemibold: (13, .semibold, .default, .footnote)
+    case .captionSemibold: (12, .semibold, .default, .caption)
+    case .code: (13, .regular, .monospaced, .footnote)
+    }
+  }
+}
+
+private struct DashTypographyModifier: ViewModifier {
+  let style: DashTextStyle
+  @ScaledMetric private var size: CGFloat
+
+  init(style: DashTextStyle) {
+    self.style = style
+    let metrics = style.metrics
+    _size = ScaledMetric(wrappedValue: metrics.size, relativeTo: metrics.relativeTo)
+  }
+
+  func body(content: Content) -> some View {
+    let metrics = style.metrics
+    content.font(.system(size: size, weight: metrics.weight, design: metrics.design))
+  }
+}
+
+private struct DashContentColumnModifier: ViewModifier {
+  let regularMaxWidth: CGFloat
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+
+  func body(content: Content) -> some View {
+    content
+      .frame(
+        maxWidth: horizontalSizeClass == .regular ? regularMaxWidth : .infinity,
+        alignment: .top
+      )
+      .frame(maxWidth: .infinity, alignment: .top)
+  }
+}
+
+extension View {
+  func dashTextStyle(_ style: DashTextStyle) -> some View {
+    modifier(DashTypographyModifier(style: style))
+  }
+
+  func dashContentColumn(
+    maxWidth: CGFloat = DashTheme.Layout.contentMaxWidth
+  ) -> some View {
+    modifier(DashContentColumnModifier(regularMaxWidth: maxWidth))
+  }
+
+  func dashCompactHitTarget() -> some View {
+    frame(
+      minWidth: DashTheme.Layout.minimumHitTarget,
+      minHeight: DashTheme.Layout.minimumHitTarget
+    )
+    .contentShape(Rectangle())
   }
 }
 
@@ -267,6 +326,7 @@ struct DashInlineSearch: View {
   @Binding var text: String
   private var reportsFocus: FocusState<Bool>.Binding?
   @FocusState private var internalFocused: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(
     prompt: String,
@@ -290,7 +350,7 @@ struct DashInlineSearch: View {
         color: focusBinding.wrappedValue ? DashTheme.brand : DashTheme.placeholder
       )
       TextField(prompt, text: $text)
-        .font(.system(size: 16, weight: .medium))
+        .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.text)
         .focused(focusBinding)
         .submitLabel(.search)
@@ -298,13 +358,18 @@ struct DashInlineSearch: View {
         .autocorrectionDisabled()
       if !text.isEmpty {
         Button {
-          withAnimation(DashTheme.Motion.quick) { text = "" }
+          withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick) {
+            text = ""
+          }
         } label: {
           SolarIcon(asset: SolarAsset.close, size: 18, color: DashTheme.subtle)
+            .dashCompactHitTarget()
         }
         .buttonStyle(DashPressButtonStyle())
         .accessibilityLabel("Clear search")
-        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+        .transition(
+          reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9))
+        )
       }
     }
     .padding(.horizontal, 16)
@@ -352,6 +417,7 @@ struct DashFeatureScreen<Chrome: View, Content: View>: View {
       content()
     }
     .padding(.top, 12)
+    .dashContentColumn()
     .background(DashTheme.canvas)
   }
 }
@@ -400,7 +466,10 @@ struct DashFeatureList<Header: View, Content: View>: View {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           if isLoading {
             LoadingStateView()
-              .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+              .frame(
+                maxWidth: .infinity,
+                minHeight: DashTheme.Layout.emptyStateMinHeight
+              )
           } else if let error {
             ErrorStateView(message: error, retry: retry)
           } else {
@@ -459,26 +528,28 @@ struct DashListGroup<Content: View>: View {
     VStack(spacing: 0) {
       HStack(spacing: 12) {
         Text(title)
-          .font(.system(size: 16, weight: .medium))
+          .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.subtle)
         Spacer(minLength: 0)
         if let action {
           if let actionIcon {
             Button(action: action) {
               SolarIcon(asset: actionIcon, size: 20, color: DashTheme.brand)
+                .dashCompactHitTarget()
             }
             .buttonStyle(DashOpacityButtonStyle())
             .accessibilityLabel(actionTitle ?? "Edit")
           } else if let actionTitle {
             Button(actionTitle, action: action)
-              .font(.system(size: 14, weight: .medium))
+              .dashTextStyle(.supportingMedium)
               .foregroundStyle(DashTheme.brand)
+              .dashCompactHitTarget()
               .buttonStyle(DashOpacityButtonStyle())
           }
         }
       }
       .padding(.horizontal, 16)
-      .padding(.vertical, 12)
+      .padding(.vertical, action == nil ? 12 : 2)
 
       DashListCard { content }
         .padding(.horizontal, -0.5)
@@ -617,7 +688,7 @@ struct StatusBadge: View {
 
   var body: some View {
     Text(text.capitalized)
-      .font(.system(size: 12, weight: .semibold))
+      .dashTextStyle(.captionSemibold)
       .foregroundStyle(colors.foreground)
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
@@ -629,7 +700,7 @@ struct LoadingStateView: View {
   var body: some View {
     ProgressView()
       .tint(DashTheme.brand)
-      .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+      .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.emptyStateMinHeight)
       .listRowInsets(EdgeInsets())
       .listRowSeparator(.hidden)
       .listSectionSeparator(.hidden)
@@ -663,7 +734,10 @@ struct DashPressButtonStyle: ButtonStyle {
     configuration.label
       .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
       .opacity(configuration.isPressed ? 0.82 : 1)
-      .animation(DashTheme.Motion.quick, value: configuration.isPressed)
+      .animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick,
+        value: configuration.isPressed
+      )
   }
 }
 
@@ -680,11 +754,11 @@ struct DashEmptyState: View {
         .frame(width: 72, height: 72)
         .background(DashTheme.recessed, in: Circle())
       Text(title)
-        .font(.dashTitle(24))
+        .dashTextStyle(.emptyTitle)
         .foregroundStyle(DashTheme.strong)
         .multilineTextAlignment(.center)
       Text(message)
-        .font(.system(size: 15))
+        .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
@@ -695,7 +769,7 @@ struct DashEmptyState: View {
     }
     .frame(maxWidth: 440)
     .padding(28)
-    .frame(maxWidth: .infinity, minHeight: DashScreenMetrics.emptyStateHeight)
+    .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.emptyStateMinHeight)
     .listRowInsets(EdgeInsets())
     .listRowSeparator(.hidden)
     .listSectionSeparator(.hidden)
@@ -766,7 +840,7 @@ struct DashValueRow: View {
     HStack(alignment: .firstTextBaseline, spacing: 16) {
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
-          .font(.system(size: 16, weight: .medium))
+          .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.text)
         if let subtitle {
           Text(subtitle)
@@ -776,7 +850,7 @@ struct DashValueRow: View {
       }
       Spacer(minLength: 12)
       Text(value)
-        .font(.system(size: 14, weight: .medium))
+        .dashTextStyle(.supportingMedium)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.trailing)
         .lineLimit(2)
@@ -795,7 +869,7 @@ struct DashToggleRow: View {
     Toggle(isOn: $isOn) {
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
-          .font(.system(size: 16, weight: .medium))
+          .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.text)
         if let subtitle {
           Text(subtitle)
@@ -821,7 +895,7 @@ struct DashCodePanel: View {
     VStack(alignment: .leading, spacing: 12) {
       VStack(alignment: .leading, spacing: 3) {
         Text(title)
-          .font(.dashTitle(18, weight: .semibold))
+          .dashTextStyle(.sectionTitle)
           .foregroundStyle(DashTheme.strong)
         if let message {
           Text(message)
@@ -831,7 +905,7 @@ struct DashCodePanel: View {
       }
 
       TextEditor(text: $text)
-        .font(.system(size: 13, design: .monospaced))
+        .dashTextStyle(.code)
         .foregroundStyle(DashTheme.text)
         .scrollContentBackground(.hidden)
         .disabled(!isEditable)
@@ -861,12 +935,12 @@ struct DashCodeBlock: View {
     VStack(alignment: .leading, spacing: 12) {
       if let title {
         Text(title)
-          .font(.dashTitle(18, weight: .semibold))
+          .dashTextStyle(.sectionTitle)
           .foregroundStyle(DashTheme.strong)
       }
       ScrollView(.horizontal, showsIndicators: false) {
         Text(text.isEmpty ? (placeholder ?? "") : text)
-          .font(.system(size: 13, design: .monospaced))
+          .dashTextStyle(.code)
           .foregroundStyle(text.isEmpty ? DashTheme.subtle : DashTheme.text)
           .textSelection(.enabled)
           .padding(12)
@@ -903,7 +977,7 @@ struct DashNotice: View {
     HStack(alignment: .top, spacing: 12) {
       SolarIcon(asset: colors.icon, size: 20, color: colors.foreground)
       Text(message)
-        .font(.system(size: 14, weight: .medium))
+        .dashTextStyle(.supportingMedium)
         .foregroundStyle(colors.foreground)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -914,10 +988,15 @@ struct DashNotice: View {
 }
 
 struct DashListButtonStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
       .opacity(configuration.isPressed ? 0.58 : 1)
-      .animation(DashTheme.Motion.quick, value: configuration.isPressed)
+      .animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick,
+        value: configuration.isPressed
+      )
   }
 }
 
@@ -930,7 +1009,7 @@ struct DashSectionHeader: View {
 
   var body: some View {
     Text(title)
-      .font(.system(size: 18, weight: .semibold))
+      .dashTextStyle(.sectionTitle)
       .foregroundStyle(DashTheme.strong)
       .textCase(nil)
       .padding(.top, 12)
@@ -944,7 +1023,7 @@ struct DashToolbarActionIcon: View {
 
   var body: some View {
     SolarIcon(asset: asset, size: 22, color: DashTheme.strong)
-      .frame(width: 36, height: 36)
+      .dashCompactHitTarget()
       .accessibilityHidden(true)
   }
 }
@@ -952,6 +1031,7 @@ struct DashToolbarActionIcon: View {
 struct DashTextTabs<Selection: Hashable>: View {
   let items: [(title: String, value: Selection)]
   @Binding var selection: Selection
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(spacing: 0) {
@@ -963,19 +1043,19 @@ struct DashTextTabs<Selection: Hashable>: View {
         ForEach(items.indices, id: \.self) { index in
           let item = items[index]
           Button {
-            withAnimation(DashTheme.Motion.quick) {
+            withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick) {
               selection = item.value
             }
           } label: {
             Text(item.title)
-              .font(.system(size: 18, weight: .semibold))
+              .dashTextStyle(.sectionTitle)
               .foregroundStyle(
                 selection == item.value ? DashTheme.strong : DashTheme.placeholder
               )
-              .contentTransition(.interpolate)
+              .contentTransition(reduceMotion ? .opacity : .interpolate)
               // Press the whole tab (incl. its padding), not just the glyph, so
               // the shrink reads on the small label.
-              .padding(.vertical, 4)
+              .dashCompactHitTarget()
               .contentShape(Rectangle())
           }
           .buttonStyle(DashPressButtonStyle())
@@ -1015,7 +1095,7 @@ private struct DashGroupedListModifier: ViewModifier {
         )
       )
       .environment(\.defaultMinListRowHeight, 1)
-      .font(.system(size: 16, weight: .medium))
+      .dashTextStyle(.bodyMedium)
       .buttonStyle(DashListButtonStyle())
       .tint(DashTheme.strong)
       .headerProminence(.increased)

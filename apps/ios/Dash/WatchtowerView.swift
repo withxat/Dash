@@ -3,6 +3,7 @@ import SwiftUI
 
 struct WatchtowerView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var signals: [WatchtowerSignal] = []
   @State private var alerts: [NotificationHistoryEntry] = []
   @State private var alertsStatus: WatchtowerAlertsStatus = .loading
@@ -33,7 +34,7 @@ struct WatchtowerView: View {
 
         if !loading, !issues.isEmpty {
           DashListGroup(title: "Needs attention") {
-            ForEach(Array(issues.enumerated()), id: \.element.id) { index, signal in
+            DashListCardRows(items: issues) { signal in
               signalRow(signal)
             }
           }
@@ -41,7 +42,7 @@ struct WatchtowerView: View {
 
         if !loading, !healthy.isEmpty {
           DashListGroup(title: "All clear") {
-            ForEach(Array(healthy.enumerated()), id: \.element.id) { index, signal in
+            DashListCardRows(items: healthy) { signal in
               signalRow(signal)
             }
           }
@@ -51,12 +52,12 @@ struct WatchtowerView: View {
           DashListGroup(title: "Recent alerts") {
             if alerts.isEmpty {
               Text("No notifications sent recently.")
-                .font(.system(size: 13))
+                .font(.footnote)
                 .foregroundStyle(DashTheme.subtle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
             } else {
-              ForEach(Array(alerts.enumerated()), id: \.element.id) { index, alert in
+              DashListCardRows(items: alerts) { alert in
                 alertRow(alert)
               }
             }
@@ -78,22 +79,22 @@ struct WatchtowerView: View {
     DashCard {
       if model.activeAccountID == nil {
         Text("No Cloudflare account is available for this user.")
-          .font(.system(size: 14))
+          .font(.subheadline)
           .foregroundStyle(DashTheme.subtle)
       } else if loading {
         VStack(alignment: .leading, spacing: 8) {
           ProgressView().tint(DashTheme.brand)
           Text("Checking zones, tunnels, certificates…")
-            .font(.system(size: 13))
+            .font(.footnote)
             .foregroundStyle(DashTheme.subtle)
         }
       } else if signals.isEmpty {
         Text("Nothing to watch yet — no monitored resources found in this account.")
-          .font(.system(size: 14))
+          .font(.subheadline)
           .foregroundStyle(DashTheme.subtle)
           .fixedSize(horizontal: false, vertical: true)
       } else {
-        HStack(spacing: 12) {
+        HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
           SolarIcon(
             asset: allClear ? SolarAsset.shieldCheck : SolarAsset.danger,
             size: 28,
@@ -107,13 +108,15 @@ struct WatchtowerView: View {
                 ? "All systems normal"
                 : "\(issueCount) issue\(issueCount == 1 ? "" : "s") need\(issueCount == 1 ? "s" : "") attention"
             )
-            .font(.system(size: 16, weight: .semibold))
+            .font(.headline)
             .foregroundStyle(DashTheme.text)
+            .fixedSize(horizontal: false, vertical: true)
             Text(
               "\(signals.count) check\(signals.count == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
             )
-            .font(.system(size: 12))
+            .font(.caption)
             .foregroundStyle(DashTheme.subtle)
+            .fixedSize(horizontal: false, vertical: true)
           }
           Spacer(minLength: 0)
         }
@@ -135,24 +138,7 @@ struct WatchtowerView: View {
 
   @ViewBuilder
   private func signalRow(_ signal: WatchtowerSignal) -> some View {
-    let content = HStack(spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(signal.title)
-          .font(.system(size: 14, weight: .semibold))
-          .foregroundStyle(DashTheme.text)
-        Text(signal.detail)
-          .font(.system(size: 12))
-          .foregroundStyle(DashTheme.subtle)
-          .lineLimit(2)
-      }
-      Spacer(minLength: 8)
-      signalBadge(signal.status)
-      if signal.destination != nil {
-        SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
-      }
-    }
-    .padding(.vertical, 10)
-    .contentShape(Rectangle())
+    let content = signalRowContent(signal)
 
     if let destination = signal.destination {
       DashDestinationLink(destination: destination) { content }
@@ -161,27 +147,90 @@ struct WatchtowerView: View {
     }
   }
 
-  private func alertRow(_ alert: NotificationHistoryEntry) -> some View {
-    HStack(alignment: .top, spacing: 12) {
-      VStack(alignment: .leading, spacing: 2) {
-        Text(alert.title)
-          .font(.system(size: 14, weight: .medium))
-          .foregroundStyle(DashTheme.text)
-        if let subtitle = alert.subtitle {
-          Text(subtitle)
-            .font(.system(size: 12))
-            .foregroundStyle(DashTheme.subtle)
-            .lineLimit(2)
+  @ViewBuilder
+  private func signalRowContent(_ signal: WatchtowerSignal) -> some View {
+    Group {
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 8) {
+          signalCopy(signal)
+          HStack(spacing: 8) {
+            signalBadge(signal.status)
+            Spacer(minLength: 0)
+            if signal.destination != nil {
+              SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+            }
+          }
         }
-      }
-      Spacer(minLength: 8)
-      if let sent = alert.sent {
-        Text(relativeTime(sent))
-          .font(.system(size: 11))
-          .foregroundStyle(DashTheme.placeholder)
+      } else {
+        HStack(spacing: 12) {
+          signalCopy(signal)
+          Spacer(minLength: 8)
+          signalBadge(signal.status)
+          if signal.destination != nil {
+            SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+          }
+        }
       }
     }
     .padding(.vertical, 10)
+    .contentShape(Rectangle())
+  }
+
+  private func signalCopy(_ signal: WatchtowerSignal) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(signal.title)
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(DashTheme.text)
+      Text(signal.detail)
+        .font(.caption)
+        .foregroundStyle(DashTheme.subtle)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+    }
+    .fixedSize(horizontal: false, vertical: true)
+    .layoutPriority(1)
+  }
+
+  @ViewBuilder
+  private func alertRow(_ alert: NotificationHistoryEntry) -> some View {
+    Group {
+      if dynamicTypeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 6) {
+          alertCopy(alert)
+          if let sent = alert.sent {
+            Text(relativeTime(sent))
+              .font(.caption2)
+              .foregroundStyle(DashTheme.placeholder)
+          }
+        }
+      } else {
+        HStack(alignment: .top, spacing: 12) {
+          alertCopy(alert)
+          Spacer(minLength: 8)
+          if let sent = alert.sent {
+            Text(relativeTime(sent))
+              .font(.caption2)
+              .foregroundStyle(DashTheme.placeholder)
+          }
+        }
+      }
+    }
+    .padding(.vertical, 10)
+  }
+
+  private func alertCopy(_ alert: NotificationHistoryEntry) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(alert.title)
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(DashTheme.text)
+      if let subtitle = alert.subtitle {
+        Text(subtitle)
+          .font(.caption)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+      }
+    }
+    .fixedSize(horizontal: false, vertical: true)
+    .layoutPriority(1)
   }
 
   private var footerCaption: some View {
@@ -190,7 +239,7 @@ struct WatchtowerView: View {
         ? "Watching \(model.activeAccount?.name ?? "this account") · \(unavailableCount) check\(unavailableCount == 1 ? "" : "s") unavailable (missing scopes)"
         : "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
     )
-    .font(.system(size: 11))
+    .font(.caption2)
     .foregroundStyle(DashTheme.placeholder)
     .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
@@ -200,23 +249,12 @@ struct WatchtowerView: View {
   private func signalBadge(_ status: WatchtowerStatus) -> some View {
     switch status {
     case .ok:
-      watchtowerBadge(label: "OK", foreground: DashTheme.success, background: DashTheme.successTint)
+      StatusBadge(text: "OK")
     case .warning:
-      watchtowerBadge(
-        label: "Warning", foreground: DashTheme.warning, background: DashTheme.warningTint)
+      StatusBadge(text: "Warning")
     case .critical:
-      watchtowerBadge(
-        label: "Attention", foreground: DashTheme.danger, background: DashTheme.dangerTint)
+      StatusBadge(text: "Critical")
     }
-  }
-
-  private func watchtowerBadge(label: String, foreground: Color, background: Color) -> some View {
-    Text(label)
-      .font(.system(size: 12, weight: .semibold))
-      .foregroundStyle(foreground)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .background(background, in: Capsule())
   }
 
   private func relativeTime(_ iso: String) -> String {
