@@ -37,7 +37,8 @@ enum WatchtowerEngine {
     signals: [WatchtowerSignal],
     alerts: [NotificationHistoryEntry],
     alertsStatus: WatchtowerAlertsStatus,
-    unavailableCount: Int
+    missingScopeChecks: [String],
+    failedChecks: [String]
   ) {
     async let zonesTask = fetch { try await client.listZones(accountID: accountID).items }
     async let tunnelsTask = fetch { try await client.listTunnels(accountID: accountID) }
@@ -65,47 +66,65 @@ enum WatchtowerEngine {
     }
 
     var signals: [WatchtowerSignal] = []
-    var unavailableCount = 0
+    var missingScopeChecks: [String] = []
+    var failedChecks: [String] = []
 
     if zonesResult.failed {
-      unavailableCount += 1
+      recordFailure(
+        "Zones", result: zonesResult, missingScopes: &missingScopeChecks, failures: &failedChecks)
     } else if let zones = zonesResult.value {
       append(&signals, zonesSignal(zones))
     }
 
     if tunnelsResult.failed {
-      unavailableCount += 1
+      recordFailure(
+        "Tunnels", result: tunnelsResult, missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
     } else if let tunnels = tunnelsResult.value {
       append(&signals, tunnelsSignal(tunnels))
     }
 
     if poolsResult.failed {
-      unavailableCount += 1
+      recordFailure(
+        "LB Pools", result: poolsResult, missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
     } else if let pools = poolsResult.value {
       append(&signals, poolsSignal(pools))
     }
 
     if registrarResult.failed {
-      unavailableCount += 1
+      recordFailure(
+        "Registrar", result: registrarResult, missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
     } else if let domains = registrarResult.value {
       append(&signals, registrarSignal(domains))
     }
 
     if pagesResult.failed {
-      unavailableCount += 1
+      recordFailure(
+        "Pages", result: pagesResult, missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
     } else if let pages = pagesResult.value {
       append(&signals, pagesSignal(pages))
     }
 
     if !scopedZones.isEmpty {
       if certResults.allFailed {
-        unavailableCount += 1
+        if certResults.allPermissionDenied {
+          missingScopeChecks.append("SSL certificates")
+        } else {
+          failedChecks.append("SSL certificates")
+        }
       } else {
         append(&signals, certsSignal(certResults.entries, truncated: zonesTruncated))
       }
 
       if healthResults.allFailed {
-        unavailableCount += 1
+        if healthResults.allPermissionDenied {
+          missingScopeChecks.append("Healthchecks")
+        } else {
+          failedChecks.append("Healthchecks")
+        }
       } else {
         append(&signals, healthchecksSignal(healthResults.entries, truncated: zonesTruncated))
       }
@@ -117,12 +136,18 @@ enum WatchtowerEngine {
       } else {
         .ok
       }
+    if alertsResult.failed {
+      recordFailure(
+        "Recent alerts", result: alertsResult, missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
+    }
 
     return (
       signals: signals,
       alerts: alertsResult.value ?? [],
       alertsStatus: alertsStatus,
-      unavailableCount: unavailableCount
+      missingScopeChecks: missingScopeChecks,
+      failedChecks: failedChecks
     )
   }
 
@@ -149,6 +174,20 @@ enum WatchtowerEngine {
   private struct ZoneScopedResult<Value> {
     let entries: [(zone: CloudflareZone, items: [Value])]
     let allFailed: Bool
+    let allPermissionDenied: Bool
+  }
+
+  private static func recordFailure<Value: Sendable>(
+    _ name: String,
+    result: FetchResult<Value>,
+    missingScopes: inout [String],
+    failures: inout [String]
+  ) {
+    if result.isPermissionDenied {
+      missingScopes.append(name)
+    } else {
+      failures.append(name)
+    }
   }
 
   private static func fetch<Value: Sendable>(_ operation: () async throws -> Value) async
@@ -162,20 +201,30 @@ enum WatchtowerEngine {
     zones: [CloudflareZone],
     loader: @escaping (CloudflareZone) async throws -> [Value]
   ) async -> ZoneScopedResult<Value> {
-    guard !zones.isEmpty else { return ZoneScopedResult(entries: [], allFailed: false) }
+    guard !zones.isEmpty else {
+      return ZoneScopedResult(entries: [], allFailed: false, allPermissionDenied: false)
+    }
 
     var entries: [(zone: CloudflareZone, items: [Value])] = []
     var failures = 0
+    var permissionFailures = 0
 
     for zone in zones {
       do {
         entries.append((zone, try await loader(zone)))
       } catch {
         failures += 1
+        if (error as? CloudflareAPIError)?.isPermissionDenied == true {
+          permissionFailures += 1
+        }
       }
     }
 
-    return ZoneScopedResult(entries: entries, allFailed: failures == zones.count)
+    return ZoneScopedResult(
+      entries: entries,
+      allFailed: failures == zones.count,
+      allPermissionDenied: permissionFailures == zones.count
+    )
   }
 
   private static func append(_ signals: inout [WatchtowerSignal], _ signal: WatchtowerSignal?) {

@@ -78,7 +78,7 @@ struct ZoneAnalyticsView: View {
       days = try await model.client.zoneAnalytics(zoneID: zoneID)
       model.featureCache.set(key, days)
     } catch {
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
     loading = false
   }

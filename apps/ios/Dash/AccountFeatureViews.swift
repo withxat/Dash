@@ -3,11 +3,46 @@ import SwiftUI
 
 private func permissionHint(for error: Error) -> String {
   guard let apiError = error as? CloudflareAPIError, apiError.isPermissionDenied else {
-    return error.localizedDescription
+    return error.dashActionableMessage
   }
   return
     (apiError.errorDescription ?? "Permission denied")
     + "\n\nEnable the required OAuth scope on your Cloudflare app and sign in again."
+}
+
+/// Cloudflare answers 403 for both a missing OAuth scope and a product that was
+/// never activated on the account. When every read scope is already granted,
+/// the product itself is the missing piece.
+@MainActor
+private func isMissingEntitlement(_ error: Error, feature: FeatureID, model: AppModel) -> Bool {
+  guard let apiError = error as? CloudflareAPIError, apiError.isPermissionDenied,
+    let granted = model.grantedScopes
+  else { return false }
+  return feature.capability.read.isSubset(of: granted)
+}
+
+private struct ProductNotActivatedView: View {
+  @Environment(\.openURL) private var openURL
+  let feature: FeatureID
+  let icon: String
+  let accountID: String?
+  let dashboardPath: String
+
+  var body: some View {
+    DashEmptyState(
+      icon: icon,
+      title: "\(feature.title) isn’t activated",
+      message:
+        "This Cloudflare account hasn’t activated \(feature.title) yet. Choose a plan in the Cloudflare dashboard, then pull to refresh.",
+      actionTitle: "Open Cloudflare Dashboard",
+      action: {
+        guard let accountID,
+          let url = URL(string: "https://dash.cloudflare.com/\(accountID)/\(dashboardPath)")
+        else { return }
+        openURL(url)
+      }
+    )
+  }
 }
 
 struct ImagesView: View {
@@ -16,7 +51,9 @@ struct ImagesView: View {
   @State private var selected: CloudflareImage?
   @State private var error: String?
   @State private var loading = true
+  @State private var notActivated = false
   @State private var deleting = false
+  @State private var deleteError: String?
 
   var body: some View {
     DashFeatureList(
@@ -24,7 +61,14 @@ struct ImagesView: View {
       error: error,
       retry: { Task { await load() } }
     ) {
-      if images.isEmpty {
+      if notActivated {
+        ProductNotActivatedView(
+          feature: .images,
+          icon: SolarAsset.gallery,
+          accountID: model.activeAccountID,
+          dashboardPath: "images"
+        )
+      } else if images.isEmpty {
         DashEmptyState(
           icon: SolarAsset.gallery,
           title: "No images",
@@ -34,6 +78,7 @@ struct ImagesView: View {
         DashListCard {
           DashListCardRows(items: images) { image in
             Button {
+              deleteError = nil
               selected = image
             } label: {
               DashListRow(
@@ -57,6 +102,7 @@ struct ImagesView: View {
           fields: image.detailFields,
           deleteMessage: "Permanently delete \(image.name) from Cloudflare Images.",
           isDeleting: deleting,
+          deleteError: deleteError,
           onDelete: { Task { await delete(image) } }
         )
       }
@@ -68,12 +114,18 @@ struct ImagesView: View {
   private func delete(_ image: CloudflareImage) async {
     guard let accountID = model.activeAccountID else { return }
     deleting = true
-    _ = try? await model.client.mutate(
-      path: "/accounts/\(accountID)/images/v1/\(image.id)", method: "DELETE")
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    selected = nil
-    model.featureCache.remove(FeatureCacheKey.images(accountID))
-    await load(force: true)
+    deleteError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(accountID)/images/v1/\(image.id)", method: "DELETE")
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      selected = nil
+      model.featureCache.remove(FeatureCacheKey.images(accountID))
+      await load(force: true)
+    } catch {
+      deleteError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     deleting = false
   }
 
@@ -88,11 +140,16 @@ struct ImagesView: View {
     }
     if images.isEmpty { loading = true }
     error = nil
+    notActivated = false
     do {
       images = try await model.client.listImages(accountID: accountID)
       model.featureCache.set(key, images)
     } catch {
-      self.error = permissionHint(for: error)
+      if isMissingEntitlement(error, feature: .images, model: model) {
+        notActivated = true
+      } else {
+        self.error = permissionHint(for: error)
+      }
     }
     loading = false
   }
@@ -104,7 +161,9 @@ struct StreamView: View {
   @State private var selected: StreamVideo?
   @State private var error: String?
   @State private var loading = true
+  @State private var notActivated = false
   @State private var deleting = false
+  @State private var deleteError: String?
 
   var body: some View {
     DashFeatureList(
@@ -112,7 +171,14 @@ struct StreamView: View {
       error: error,
       retry: { Task { await load() } }
     ) {
-      if videos.isEmpty {
+      if notActivated {
+        ProductNotActivatedView(
+          feature: .stream,
+          icon: SolarAsset.video,
+          accountID: model.activeAccountID,
+          dashboardPath: "stream/plans"
+        )
+      } else if videos.isEmpty {
         DashEmptyState(
           icon: SolarAsset.video,
           title: "No videos",
@@ -122,6 +188,7 @@ struct StreamView: View {
         DashListCard {
           DashListCardRows(items: videos) { video in
             Button {
+              deleteError = nil
               selected = video
             } label: {
               DashListRow(
@@ -144,6 +211,7 @@ struct StreamView: View {
           fields: video.detailFields,
           deleteMessage: "Permanently delete \(video.name) from Stream.",
           isDeleting: deleting,
+          deleteError: deleteError,
           onDelete: { Task { await delete(video) } }
         )
       }
@@ -155,12 +223,18 @@ struct StreamView: View {
   private func delete(_ video: StreamVideo) async {
     guard let accountID = model.activeAccountID else { return }
     deleting = true
-    _ = try? await model.client.mutate(
-      path: "/accounts/\(accountID)/stream/\(video.uid)", method: "DELETE")
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    selected = nil
-    model.featureCache.remove(FeatureCacheKey.stream(accountID))
-    await load(force: true)
+    deleteError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(accountID)/stream/\(video.uid)", method: "DELETE")
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      selected = nil
+      model.featureCache.remove(FeatureCacheKey.stream(accountID))
+      await load(force: true)
+    } catch {
+      deleteError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     deleting = false
   }
 
@@ -175,11 +249,16 @@ struct StreamView: View {
     }
     if videos.isEmpty { loading = true }
     error = nil
+    notActivated = false
     do {
       videos = try await model.client.listStreamVideos(accountID: accountID)
       model.featureCache.set(key, videos)
     } catch {
-      self.error = permissionHint(for: error)
+      if isMissingEntitlement(error, feature: .stream, model: model) {
+        notActivated = true
+      } else {
+        self.error = permissionHint(for: error)
+      }
     }
     loading = false
   }
@@ -303,6 +382,7 @@ struct AccountView: View {
   @State private var togglingPolicy = false
   @State private var toggleError: String?
   @State private var deletingPolicy = false
+  @State private var deletePolicyError: String?
 
   var body: some View {
     DashFeatureList(
@@ -353,6 +433,7 @@ struct AccountView: View {
             DashListCardRows(items: policies) { policy in
               Button {
                 toggleError = nil
+                deletePolicyError = nil
                 detail = .policy(policy)
               } label: {
                 DashListRow(
@@ -417,6 +498,7 @@ struct AccountView: View {
             fields: policy.detailFields,
             deleteMessage: "Permanently delete the policy \(policy.title).",
             isDeleting: deletingPolicy,
+            deleteError: deletePolicyError,
             onDelete: { Task { await deletePolicy(policy) } }
           ) {
             VStack(spacing: 10) {
@@ -443,12 +525,18 @@ struct AccountView: View {
   private func deletePolicy(_ policy: NotificationPolicy) async {
     guard let accountID = model.activeAccountID else { return }
     deletingPolicy = true
-    _ = try? await model.client.mutate(
-      path: "/accounts/\(accountID)/alerting/v3/policies/\(policy.id)", method: "DELETE")
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    detail = nil
-    model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
-    await load(force: true)
+    deletePolicyError = nil
+    do {
+      _ = try await model.client.mutate(
+        path: "/accounts/\(accountID)/alerting/v3/policies/\(policy.id)", method: "DELETE")
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      detail = nil
+      model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
+      await load(force: true)
+    } catch {
+      deletePolicyError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     deletingPolicy = false
   }
 
@@ -464,7 +552,7 @@ struct AccountView: View {
       detail = nil
       model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
       await load(force: true)
-    } catch { toggleError = error.localizedDescription }
+    } catch { toggleError = error.dashActionableMessage }
     togglingPolicy = false
   }
 

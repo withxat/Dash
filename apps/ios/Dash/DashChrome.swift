@@ -531,6 +531,9 @@ struct DashFormSheet<Content: View>: View {
   var canSave = true
   var deleteMessage: String? = nil
   var isDeleting = false
+  /// Failure of the last delete attempt, shown inline while confirming so the
+  /// morph stays open instead of pretending success.
+  var deleteError: String? = nil
   var onDelete: (() -> Void)? = nil
   let onSave: () -> Void
   @ViewBuilder let content: Content
@@ -546,6 +549,7 @@ struct DashFormSheet<Content: View>: View {
       actionTitle: confirmingDelete ? "Confirm" : saveTitle,
       actionRole: confirmingDelete ? .destructive : nil,
       actionEnabled: confirmingDelete || canSave,
+      errorMessage: confirmingDelete ? deleteError : nil,
       action: { confirmingDelete ? onDelete?() : onSave() },
       headerDelete: hasDelete,
       content: { content }
@@ -566,6 +570,7 @@ private struct DashConfirmMorph<Content: View>: View {
   let actionTitle: String
   let actionRole: ButtonRole?
   let actionEnabled: Bool
+  var errorMessage: String? = nil
   let action: () -> Void
   var headerDelete = false
   @ViewBuilder let content: () -> Content
@@ -579,14 +584,19 @@ private struct DashConfirmMorph<Content: View>: View {
     VStack(spacing: 16) {
       ZStack {
         if confirming, let message {
-          Text(message)
-            .dashTextStyle(.supporting)
-            .foregroundStyle(DashTheme.subtle)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
-            .transition(reduceMotion ? .opacity : .dashMorph)
+          VStack(spacing: 12) {
+            Text(message)
+              .dashTextStyle(.supporting)
+              .foregroundStyle(DashTheme.subtle)
+              .multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity)
+              .padding(.top, 4)
+            if let errorMessage {
+              DashNotice(kind: .error, message: errorMessage)
+            }
+          }
+          .transition(reduceMotion ? .opacity : .dashMorph)
         } else {
           content()
             .transition(reduceMotion ? .opacity : .dashMorph)
@@ -836,14 +846,16 @@ struct DashDangerAction: Identifiable {
   let title: String
   let icon: String
   let message: String
-  let perform: () async -> Void
+  /// A thrown error keeps the confirmation open and surfaces the message
+  /// inline; only a clean return dismisses the tray.
+  let perform: () async throws -> Void
 
   init(
     id: String? = nil,
     title: String,
     icon: String = SolarAsset.trash,
     message: String,
-    perform: @escaping () async -> Void
+    perform: @escaping () async throws -> Void
   ) {
     self.id = id ?? title
     self.title = title
@@ -864,6 +876,7 @@ struct DashConfirmableActions: View {
   @Namespace private var morph
   @State private var pending: DashDangerAction?
   @State private var working = false
+  @State private var errorMessage: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayDismiss) private var dismiss
 
@@ -889,6 +902,7 @@ struct DashConfirmableActions: View {
     VStack(spacing: 10) {
       ForEach(actions) { action in
         Button {
+          errorMessage = nil
           withAnimation(morphAnimation) { pending = action }
         } label: {
           dangerRow(action)
@@ -938,8 +952,13 @@ struct DashConfirmableActions: View {
         .padding(.horizontal, 4)
         .padding(.top, 4)
 
+      if let errorMessage {
+        DashNotice(kind: .error, message: errorMessage)
+      }
+
       VStack(spacing: 4) {
         Button {
+          errorMessage = nil
           withAnimation(morphAnimation) { pending = nil }
         } label: {
           Text("Cancel")
@@ -953,8 +972,15 @@ struct DashConfirmableActions: View {
         Button {
           Task {
             working = true
-            await action.perform()
-            dismiss()
+            errorMessage = nil
+            do {
+              try await action.perform()
+              dismiss()
+            } catch {
+              withAnimation(morphAnimation) { errorMessage = error.dashActionableMessage }
+              UINotificationFeedbackGenerator().notificationOccurred(.error)
+              working = false
+            }
           }
         } label: {
           HStack(spacing: 8) {
@@ -1050,13 +1076,12 @@ struct DashMoreButton: View {
   var accessibilityLabel = "More actions"
 
   var body: some View {
-    Button {
+    DashToolbarIconButton(
+      asset: SolarAsset.menuDots,
+      accessibilityLabel: accessibilityLabel
+    ) {
       isPresented = true
-    } label: {
-      DashToolbarActionIcon(asset: SolarAsset.menuDots)
     }
-    .buttonStyle(DashPressButtonStyle())
-    .accessibilityLabel(accessibilityLabel)
   }
 }
 

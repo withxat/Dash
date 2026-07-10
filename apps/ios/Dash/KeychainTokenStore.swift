@@ -7,6 +7,7 @@ actor KeychainTokenStore: TokenStore {
     static let access = "dash.access_token"
     static let refresh = "dash.refresh_token"
     static let expiry = "dash.expires_at"
+    static let scopes = "dash.granted_scopes"
   }
 
   private let service = "sh.xat.dash"
@@ -23,14 +24,29 @@ actor KeychainTokenStore: TokenStore {
     try delete(Key.access)
     try delete(Key.refresh)
     try delete(Key.expiry)
+    try delete(Key.scopes)
   }
 
   func getAccessToken() async throws -> String? { try read(Key.access) }
   func getRefreshToken() async throws -> String? { try read(Key.refresh) }
+  func getGrantedScopes() async throws -> Set<String>? {
+    guard let value = try read(Key.scopes) else { return nil }
+    return Set(value.split(separator: " ").map(String.init))
+  }
+
+  func setGrantedScopes(_ scopes: Set<String>) async throws {
+    try write(scopes.sorted().joined(separator: " "), key: Key.scopes)
+  }
 
   func setTokens(_ tokens: TokenSet) async throws {
     try write(tokens.accessToken, key: Key.access)
     if let refresh = tokens.refreshToken { try write(refresh, key: Key.refresh) }
+    if let scope = tokens.scope {
+      try write(
+        scope.split(separator: " ").map(String.init).sorted().joined(separator: " "),
+        key: Key.scopes
+      )
+    }
     if let expiresIn = tokens.expiresIn {
       try write(
         String(Date().addingTimeInterval(TimeInterval(expiresIn)).timeIntervalSince1970),

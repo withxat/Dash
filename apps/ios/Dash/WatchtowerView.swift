@@ -7,7 +7,8 @@ struct WatchtowerView: View {
   @State private var signals: [WatchtowerSignal] = []
   @State private var alerts: [NotificationHistoryEntry] = []
   @State private var alertsStatus: WatchtowerAlertsStatus = .loading
-  @State private var unavailableCount = 0
+  @State private var missingScopeChecks: [String] = []
+  @State private var failedChecks: [String] = []
   @State private var loading = true
 
   private var summary: WatchtowerSummary {
@@ -233,14 +234,25 @@ struct WatchtowerView: View {
     .layoutPriority(1)
   }
 
+  @ViewBuilder
   private var footerCaption: some View {
-    Text(
-      unavailableCount > 0
-        ? "Watching \(model.activeAccount?.name ?? "this account") · \(unavailableCount) check\(unavailableCount == 1 ? "" : "s") unavailable (missing scopes)"
-        : "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
-    )
+    VStack(spacing: 4) {
+      if !missingScopeChecks.isEmpty {
+        Text("Access needed: \(missingScopeChecks.joined(separator: ", "))")
+          .foregroundStyle(DashTheme.warning)
+      }
+      if !failedChecks.isEmpty {
+        Text("Temporarily unavailable: \(failedChecks.joined(separator: ", "))")
+          .foregroundStyle(DashTheme.placeholder)
+      }
+      if missingScopeChecks.isEmpty, failedChecks.isEmpty {
+        Text(
+          "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
+        )
+        .foregroundStyle(DashTheme.placeholder)
+      }
+    }
     .font(.caption2)
-    .foregroundStyle(DashTheme.placeholder)
     .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
   }
@@ -276,7 +288,8 @@ struct WatchtowerView: View {
       signals = cached.signals
       alerts = cached.alerts
       alertsStatus = cached.alertsStatus
-      unavailableCount = cached.unavailableCount
+      missingScopeChecks = cached.missingScopeChecks
+      failedChecks = cached.failedChecks
       loading = false
       return
     }
@@ -285,14 +298,16 @@ struct WatchtowerView: View {
     signals = result.signals
     alerts = result.alerts
     alertsStatus = result.alertsStatus
-    unavailableCount = result.unavailableCount
+    missingScopeChecks = result.missingScopeChecks
+    failedChecks = result.failedChecks
     model.featureCache.set(
       key,
       WatchtowerSnapshot(
         signals: signals,
         alerts: alerts,
         alertsStatus: alertsStatus,
-        unavailableCount: unavailableCount))
+        missingScopeChecks: missingScopeChecks,
+        failedChecks: failedChecks))
     loading = false
   }
 }

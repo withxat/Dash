@@ -1,6 +1,19 @@
 import CloudflareAPI
 import SwiftUI
 
+extension Error {
+  var dashActionableMessage: String {
+    if let apiError = self as? CloudflareAPIError, apiError.isUnauthorized {
+      return "Your Cloudflare session is no longer valid. Sign in again."
+    }
+    if let apiError = self as? CloudflareAPIError, apiError.isForbidden {
+      return (apiError.errorDescription ?? "Permission denied")
+        + "\n\nThe granted scopes cover this module, so the account may not include this product or resource."
+    }
+    return localizedDescription
+  }
+}
+
 struct GenericFeatureView: View {
   @Environment(AppModel.self) private var model
   let feature: FeatureID
@@ -10,31 +23,8 @@ struct GenericFeatureView: View {
 
   private var path: String {
     let account = model.activeAccountID ?? ""
-    return switch feature {
-    case .queues: "/accounts/\(account)/queues"
-    case .vectorize: "/accounts/\(account)/vectorize/v2/indexes"
-    case .secrets: "/accounts/\(account)/secrets_store/stores"
-    case .hyperdrive: "/accounts/\(account)/hyperdrive/configs"
-    case .pipelines: "/accounts/\(account)/pipelines/v1/pipelines"
-    case .aiGateway: "/accounts/\(account)/ai-gateway/gateways"
-    case .turnstile: "/accounts/\(account)/challenges/widgets"
-    case .accessApps: "/accounts/\(account)/access/apps"
-    case .accessGroups: "/accounts/\(account)/access/groups"
-    case .serviceTokens: "/accounts/\(account)/access/service_tokens"
-    case .gatewayPolicies: "/accounts/\(account)/gateway/rules"
-    case .ruleLists: "/accounts/\(account)/rules/lists"
-    case .dnsFirewall: "/accounts/\(account)/dns_firewall"
-    case .logpush: "/accounts/\(account)/logpush/jobs"
-    case .emailAddresses: "/accounts/\(account)/email/routing/addresses"
-    case .registrar: "/accounts/\(account)/registrar/domains"
-    case .tunnels: "/accounts/\(account)/cfd_tunnel"
-    case .loadBalancerPools: "/accounts/\(account)/load_balancers/pools"
-    case .images: "/accounts/\(account)/images/v1"
-    case .stream: "/accounts/\(account)/stream"
-    case .analytics: "/accounts/\(account)/rum/site_info/list"
-    case .account: "/accounts/\(account)/members"
-    default: "/accounts/\(account)"
-    }
+    return (FeatureCatalog.descriptor(for: feature).genericPath ?? "/accounts/{account}")
+      .replacingOccurrences(of: "{account}", with: account)
   }
 }
 
@@ -515,7 +505,7 @@ private struct GenericCreateSheet: View {
       try await onCreate(spec.body(values))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       dismiss()
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     saving = false
   }
 }
@@ -523,6 +513,7 @@ private struct GenericCreateSheet: View {
 struct GenericResourcesView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let title: String
   let path: String
   @State private var resources: [GenericResource] = []
@@ -531,11 +522,22 @@ struct GenericResourcesView: View {
   @State private var loading = true
   @State private var creates = false
   @State private var deleting = false
+  @State private var deleteError: String?
   @State private var showsMore = false
   @State private var updatingID: String?
   @State private var updateError: String?
 
-  private var capabilities: GenericResourceCapabilities { .forPath(path) }
+  private var capabilities: GenericResourceCapabilities {
+    var capabilities = GenericResourceCapabilities.forPath(path)
+    if !featureAllowsWrites {
+      capabilities.create = nil
+      capabilities.deleteMessage = nil
+      capabilities.deletePath = nil
+      capabilities.updates = []
+      capabilities.screenActions = []
+    }
+    return capabilities
+  }
   private var basePath: String { String(path.split(separator: "?", maxSplits: 1)[0]) }
 
   var body: some View {
@@ -557,6 +559,7 @@ struct GenericResourcesView: View {
           DashListCardRows(items: resources) { resource in
             Button {
               updateError = nil
+              deleteError = nil
               selected = resource
             } label: {
               DashListRow(
@@ -575,19 +578,17 @@ struct GenericResourcesView: View {
     .toolbar {
       if let create = capabilities.create {
         ToolbarItem(placement: .topBarTrailing) {
-          Button {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: create.title) {
             creates = true
-          } label: {
-            DashToolbarActionIcon(asset: SolarAsset.plus)
           }
-          .buttonStyle(DashPressButtonStyle())
-          .accessibilityLabel(create.title)
         }
+        .dashSeparateToolbarBackground()
       }
       if !capabilities.screenActions.isEmpty {
         ToolbarItem(placement: .topBarTrailing) {
           DashMoreButton(isPresented: $showsMore)
         }
+        .dashSeparateToolbarBackground()
       }
     }
     .dashTray(
@@ -598,6 +599,7 @@ struct GenericResourcesView: View {
           fields: resource.detailFields,
           deleteMessage: capabilities.deleteMessage?(resource),
           isDeleting: deleting,
+          deleteError: deleteError,
           onDelete: capabilities.deleteMessage != nil
             ? { Task { await delete(resource) } }
             : nil
@@ -633,7 +635,7 @@ struct GenericResourcesView: View {
       title: title,
       actions: capabilities.screenActions.map { action in
         DashDangerAction(title: action.title, icon: action.icon, message: action.message) {
-          await perform(action)
+          try await perform(action)
         }
       }
     )
@@ -642,11 +644,17 @@ struct GenericResourcesView: View {
 
   private func delete(_ resource: GenericResource) async {
     deleting = true
+    deleteError = nil
     let path = capabilities.deletePath?(basePath, resource) ?? "\(basePath)/\(resource.id)"
-    _ = try? await model.client.mutate(path: path, method: "DELETE")
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    selected = nil
-    await invalidateAndReload()
+    do {
+      _ = try await model.client.mutate(path: path, method: "DELETE")
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      selected = nil
+      await invalidateAndReload()
+    } catch {
+      deleteError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     deleting = false
   }
 
@@ -660,12 +668,15 @@ struct GenericResourcesView: View {
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       selected = nil
       await invalidateAndReload()
-    } catch { updateError = error.localizedDescription }
+    } catch {
+      updateError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     updatingID = nil
   }
 
-  private func perform(_ action: GenericScreenAction) async {
-    _ = try? await model.client.mutate(path: action.path(basePath), method: action.method)
+  private func perform(_ action: GenericScreenAction) async throws {
+    _ = try await model.client.mutate(path: action.path(basePath), method: action.method)
     UINotificationFeedbackGenerator().notificationOccurred(.success)
     if action.dismissesAfter {
       model.featureCache.remove(FeatureCacheKey.generic(path: path))
@@ -699,13 +710,7 @@ struct GenericResourcesView: View {
       resources = try await model.client.listResources(path: parts[0], query: query).items
       model.featureCache.set(key, resources)
     } catch {
-      if let apiError = error as? CloudflareAPIError, apiError.isPermissionDenied {
-        self.error =
-          (apiError.errorDescription ?? "Permission denied")
-          + "\n\nEnable the required OAuth scope on your Cloudflare app and sign in again."
-      } else {
-        self.error = error.localizedDescription
-      }
+      self.error = error.dashActionableMessage
     }
     loading = false
   }

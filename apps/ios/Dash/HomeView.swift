@@ -123,7 +123,7 @@ struct EditShortcutsView: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 12) {
-        ForEach(FeatureID.allCases) { feature in
+        ForEach(FeatureCatalog.all) { feature in
           HStack(spacing: 12) {
             DashListGroupLink(value: .feature(feature)) {
               HStack(spacing: 12) {

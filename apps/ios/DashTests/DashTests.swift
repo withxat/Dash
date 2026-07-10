@@ -1,3 +1,4 @@
+import CloudflareAPI
 import Testing
 
 @testable import Dash
@@ -12,6 +13,42 @@ import Testing
   let values = FeatureCatalog.grouped.flatMap(\.1)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
+  #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
+  #expect(Set(FeatureCatalog.all) == Set(FeatureID.allCases))
+}
+
+@Test func everyFeatureCapabilityUsesOfficialScopes() {
+  let official = Set(OAuthScopeCatalog.allIDs)
+  for feature in FeatureID.allCases {
+    #expect(feature.capability.all.isSubset(of: official))
+    #expect(feature.capability.all.isDisjoint(with: CloudflareScopes.unsupportedByOAuthClient))
+  }
+}
+
+@Test @MainActor func appModelDefaultsToPublishedPermissions() {
+  let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
+  #expect(model.selectedScopes == Set(CloudflareScopes.published))
+  #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
+  #expect(!model.selectedScopes.contains("ai-search.metadata_read"))
+}
+
+@Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
+  let scopes = AppModel.incrementalScopes(
+    granted: ["zone.read"],
+    requested: ["workers-scripts.read"]
+  )
+  #expect(scopes.contains("zone.read"))
+  #expect(scopes.contains("workers-scripts.read"))
+  #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
+}
+
+@Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
+  let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
+  #expect(capability.accessLevel(grantedScopes: []) == .locked)
+  #expect(capability.accessLevel(grantedScopes: ["product.read"]) == .readOnly)
+  #expect(
+    capability.accessLevel(grantedScopes: ["product.read", "product.write"]) == .full
+  )
 }
 
 @Test @MainActor func featureDataCacheStoresAndClearsValues() {
@@ -23,4 +60,26 @@ import Testing
   cache.set("workers:test", 3)
   cache.clear()
   #expect(cache.get("workers:test") as Int? == nil)
+}
+
+@Test func tabBarNavigationVisibilityChangesAnimateAndIgnoreDuplicates() {
+  let hide = tabBarVisibilityChange(
+    currentlyHidden: false,
+    targetHidden: true,
+    transition: .navigation
+  )
+  let duplicate = tabBarVisibilityChange(
+    currentlyHidden: true,
+    targetHidden: true,
+    transition: .navigation
+  )
+  let initial = tabBarVisibilityChange(
+    currentlyHidden: true,
+    targetHidden: false,
+    transition: .initial
+  )
+
+  #expect(hide == TabBarVisibilityChange(hidden: true, animated: true))
+  #expect(duplicate == nil)
+  #expect(initial == TabBarVisibilityChange(hidden: false, animated: false))
 }

@@ -704,7 +704,6 @@ struct FeatureDetailChrome<Content: View>: View {
           FeatureInlineNavigationTitle(feature: feature, title: feature.title)
         }
       }
-      .toolbar(.hidden, for: .tabBar)
   }
 }
 
@@ -1061,9 +1060,53 @@ struct DashToolbarActionIcon: View {
   let asset: String
 
   var body: some View {
+    // Keep the glyph square so Liquid Glass morphs to a circle, not a capsule.
     SolarIcon(asset: asset, size: 22, color: DashTheme.strong)
-      .dashCompactHitTarget()
+      .frame(width: 22, height: 22)
       .accessibilityHidden(true)
+  }
+}
+
+/// Trailing nav-bar icon action. Forces a circle on iOS 26 Liquid Glass
+/// (system default is a capsule whenever the label isn't treated as square).
+struct DashToolbarIconButton: View {
+  let asset: String
+  var accessibilityLabel: String
+  let action: () -> Void
+
+  var body: some View {
+    if #available(iOS 26.0, *) {
+      Button(action: action) {
+        // Match the system back-button glass diameter (~44pt). `.glass` adds
+        // ~7pt of chrome padding, so subtract it or the circle reads smaller.
+        DashToolbarActionIcon(asset: asset)
+          .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
+          .padding(-7)
+      }
+      .buttonStyle(.glass)
+      .buttonBorderShape(.circle)
+      .accessibilityLabel(accessibilityLabel)
+    } else {
+      Button(action: action) {
+        DashToolbarActionIcon(asset: asset)
+          .dashCompactHitTarget()
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .accessibilityLabel(accessibilityLabel)
+    }
+  }
+}
+
+extension ToolbarContent {
+  /// Lets each trailing icon keep its own circular glass instead of merging
+  /// into one shared capsule when several actions sit side by side.
+  @ToolbarContentBuilder
+  func dashSeparateToolbarBackground() -> some ToolbarContent {
+    if #available(iOS 26.0, *) {
+      sharedBackgroundVisibility(.hidden)
+    } else {
+      self
+    }
   }
 }
 

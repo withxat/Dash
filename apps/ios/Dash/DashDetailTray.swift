@@ -18,6 +18,9 @@ struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
   var deleteMessage: String?
   var isDeleting: Bool
+  /// Failure of the last delete attempt, shown inline while confirming so the
+  /// tray stays open instead of pretending success.
+  var deleteError: String?
   var onDelete: (() -> Void)?
   let accessory: Accessory
   @State private var confirmingDelete = false
@@ -26,12 +29,14 @@ struct DashDetailTray<Accessory: View>: View {
     fields: [DashDetailField],
     deleteMessage: String? = nil,
     isDeleting: Bool = false,
+    deleteError: String? = nil,
     onDelete: (() -> Void)? = nil,
     @ViewBuilder accessory: () -> Accessory
   ) {
     self.fields = fields
     self.deleteMessage = deleteMessage
     self.isDeleting = isDeleting
+    self.deleteError = deleteError
     self.onDelete = onDelete
     self.accessory = accessory()
   }
@@ -49,6 +54,10 @@ struct DashDetailTray<Accessory: View>: View {
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity)
             .padding(.top, 4)
+
+          if let deleteError {
+            DashNotice(kind: .error, message: deleteError)
+          }
 
           VStack(spacing: 4) {
             Button {
@@ -119,10 +128,12 @@ extension DashDetailTray where Accessory == EmptyView {
     fields: [DashDetailField],
     deleteMessage: String? = nil,
     isDeleting: Bool = false,
+    deleteError: String? = nil,
     onDelete: (() -> Void)? = nil
   ) {
     self.init(
-      fields: fields, deleteMessage: deleteMessage, isDeleting: isDeleting, onDelete: onDelete,
+      fields: fields, deleteMessage: deleteMessage, isDeleting: isDeleting,
+      deleteError: deleteError, onDelete: onDelete,
       accessory: { EmptyView() })
   }
 }

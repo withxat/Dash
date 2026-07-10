@@ -2,9 +2,24 @@ import CloudflareAPI
 import SwiftUI
 
 struct FeatureRouterContent: View {
+  @Environment(AppModel.self) private var model
   let feature: FeatureID
 
   var body: some View {
+    let accessLevel = feature.capability.accessLevel(grantedScopes: model.grantedScopes)
+    if accessLevel != .locked {
+      routedContent
+        .environment(
+          \.featureAllowsWrites,
+          accessLevel == .full
+        )
+    } else {
+      FeatureAccessRequiredView(feature: feature)
+    }
+  }
+
+  @ViewBuilder
+  private var routedContent: some View {
     Group {
       switch feature {
       case .zones: ZonesView()
@@ -16,9 +31,131 @@ struct FeatureRouterContent: View {
       case .stream: StreamView()
       case .analytics: AnalyticsView()
       case .account: AccountView()
+      case .apiExplorer: APIExplorerView()
+      case .workersAI:
+        EndpointProductView(feature: feature, matching: ["workers-ai", "/ai/"])
+      case .aiSearch:
+        EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
+      case .browserRendering:
+        EndpointProductView(feature: feature, matching: ["browser-rendering"])
+      case .containers:
+        EndpointProductView(feature: feature, matching: ["containers", "cloudchamber"])
+      case .r2Catalog:
+        EndpointProductView(feature: feature, matching: ["r2-catalog", "iceberg"])
+      case .workersObservability:
+        EndpointProductView(
+          feature: feature,
+          matching: ["workers-observability", "tail", "telemetry"]
+        )
+      case .rulesets:
+        EndpointProductView(
+          feature: feature,
+          matching: ["ruleset", "transform", "redirect", "custom-error"]
+        )
+      case .botManagement:
+        EndpointProductView(feature: feature, matching: ["bot-management", "/bots/"])
+      case .apiSecurity:
+        EndpointProductView(
+          feature: feature,
+          matching: ["api-gateway", "api-shield", "page-shield", "schema-validation"]
+        )
+      case .zaraz:
+        EndpointProductView(feature: feature, matching: ["zaraz"])
+      case .accessPolicies:
+        EndpointProductView(
+          feature: feature,
+          matching: ["access-policy", "/access/policies", "device-posture"]
+        )
+      case .zeroTrustConnectors:
+        EndpointProductView(
+          feature: feature,
+          matching: ["connector", "cloudflared", "/networks/", "warp"]
+        )
+      case .dex:
+        EndpointProductView(feature: feature, matching: ["dex", "resilience"])
+      case .magicNetworking:
+        EndpointProductView(
+          feature: feature,
+          matching: [
+            "magic-wan", "magic-transit", "magic-firewall", "ip-prefix", "address-map", "pcap",
+          ]
+        )
+      case .dnsManagement:
+        EndpointProductView(
+          feature: feature,
+          matching: ["/dns_records", "dns-view", "dns-settings", "dnssec"]
+        )
+      case .sslCertificates:
+        EndpointProductView(
+          feature: feature,
+          matching: ["certificate", "/ssl/", "ssl-verification", "custom-hostname"]
+        )
+      case .cacheSettings:
+        EndpointProductView(
+          feature: feature,
+          matching: ["cache", "purge", "compression", "zone-version"]
+        )
+      case .emailSending:
+        EndpointProductView(
+          feature: feature,
+          matching: ["email-sending", "email-routing", "dmarc", "suppression"]
+        )
+      case .calls:
+        EndpointProductView(feature: feature, matching: ["/calls/", "realtime", "/moq/"])
+      case .radarIntel:
+        EndpointProductView(feature: feature, matching: ["/radar/", "/intel/"])
+      case .artifacts:
+        EndpointProductView(
+          feature: feature,
+          matching: ["/artifacts", "resource-sharing", "resource-library"]
+        )
       default: GenericFeatureView(feature: feature)
       }
     }
+  }
+}
+
+private struct FeatureWriteAccessKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
+extension EnvironmentValues {
+  var featureAllowsWrites: Bool {
+    get { self[FeatureWriteAccessKey.self] }
+    set { self[FeatureWriteAccessKey.self] = newValue }
+  }
+}
+
+private struct FeatureAccessRequiredView: View {
+  @Environment(AppModel.self) private var model
+  let feature: FeatureID
+
+  var body: some View {
+    ScrollView {
+      DashCard {
+        VStack(alignment: .leading, spacing: 14) {
+          SolarIcon(asset: SolarAsset.lock, size: 30, color: DashTheme.brand)
+          Text("Grant access to \(feature.title)")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(DashTheme.strong)
+          Text(
+            "This module needs \(feature.capability.read.sorted().joined(separator: ", ")). You can review the request before Cloudflare opens."
+          )
+          .font(.subheadline)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+          DashPillButton(
+            title: "Grant access",
+            isLoading: model.isAuthenticating
+          ) {
+            model.requestAccess(to: feature.capability.all)
+          }
+        }
+      }
+      .padding(20)
+    }
+    .background(DashTheme.canvas)
+    .navigationTitle(feature.title)
   }
 }
 
@@ -71,14 +208,11 @@ struct ZonesView: View {
     }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Add zone") {
           creates = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("Add zone")
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "Add zone") {
       DashFormSheet(
@@ -115,7 +249,7 @@ struct ZonesView: View {
       creates = false
       model.featureCache.remove(FeatureCacheKey.zones(accountID))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 
   private func load(force: Bool = false) async {
@@ -133,7 +267,7 @@ struct ZonesView: View {
       zones = try await model.client.listZones(accountID: accountID).items
       model.featureCache.set(key, zones)
     } catch {
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
     loading = false
   }
@@ -227,6 +361,7 @@ struct ZoneDetailView: View {
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -237,16 +372,16 @@ struct ZoneDetailView: View {
           message:
             "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare."
         ) {
-          await deleteZone()
+          try await deleteZone()
         }
       ]
     )
     .refreshable { await load(force: true) }.task { await load() }
   }
 
-  private func deleteZone() async {
+  private func deleteZone() async throws {
     guard let accountID = model.activeAccountID else { return }
-    _ = try? await model.client.mutate(path: "/zones/\(zoneID)", method: "DELETE")
+    _ = try await model.client.mutate(path: "/zones/\(zoneID)", method: "DELETE")
     model.featureCache.remove(FeatureCacheKey.zones(accountID))
     dismissScreen()
   }
@@ -264,7 +399,7 @@ struct ZoneDetailView: View {
       model.featureCache.set(key, fetched)
       error = nil
     } catch {
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
   }
 
@@ -362,14 +497,11 @@ struct DNSRecordsView: View {
     .navigationTitle("DNS")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New DNS record") {
           createsRecord = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("New DNS record")
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(
       item: $selected,
@@ -404,7 +536,7 @@ struct DNSRecordsView: View {
       records = try await model.client.listDNSRecords(zoneID: zoneID).items
       model.featureCache.set(key, records)
     } catch {
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
     loading = false
   }
@@ -443,6 +575,7 @@ private struct DNSRecordEditor: View {
       canSave: !name.isEmpty && !content.isEmpty,
       deleteMessage: record.map { "Permanently delete the \($0.type) record for \($0.name)." },
       isDeleting: deleting,
+      deleteError: error,
       onDelete: record.map { rec in { Task { await delete(rec) } } },
       onSave: { Task { await save() } },
       content: {
@@ -485,16 +618,23 @@ private struct DNSRecordEditor: View {
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       saved()
       dismiss()
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     saving = false
   }
 
   private func delete(_ record: DNSRecord) async {
     deleting = true
-    try? await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    saved()
-    dismiss()
+    error = nil
+    do {
+      try await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      saved()
+      dismiss()
+    } catch {
+      self.error = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    deleting = false
   }
 }
 
@@ -596,7 +736,7 @@ struct WorkersView: View {
       (workers, pages) = try await (w, p)
       model.featureCache.set(workersKey, workers)
       model.featureCache.set(pagesKey, pages)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
 }
@@ -683,6 +823,7 @@ struct WorkerDetailView: View {
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -692,14 +833,14 @@ struct WorkerDetailView: View {
           title: "Delete Worker",
           message: "Permanently delete \(name) and its deployments. Routes stop resolving."
         ) {
-          await deleteWorker()
+          try await deleteWorker()
         }
       ]
     )
   }
-  private func deleteWorker() async {
+  private func deleteWorker() async throws {
     guard let accountID = model.activeAccountID else { return }
-    _ = try? await model.client.mutate(
+    _ = try await model.client.mutate(
       path: "/accounts/\(accountID)/workers/scripts/\(name)", method: "DELETE")
     model.featureCache.remove(FeatureCacheKey.workers(accountID))
     model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
@@ -735,7 +876,7 @@ struct WorkerDetailView: View {
       }
       error = nil
     } catch {
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
   }
 
@@ -756,7 +897,7 @@ struct WorkerDetailView: View {
       model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
     } catch {
       subdomainEnabled.toggle()
-      self.error = error.localizedDescription
+      self.error = error.dashActionableMessage
     }
   }
 }
@@ -809,6 +950,7 @@ struct CachePurgeView: View {
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -833,7 +975,7 @@ struct CachePurgeView: View {
       failed = false
       UINotificationFeedbackGenerator().notificationOccurred(.success)
     } catch {
-      status = error.localizedDescription
+      status = error.dashActionableMessage
       failed = true
     }
     working = false
@@ -955,7 +1097,7 @@ struct ZoneSettingsView: View {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
       model.featureCache.set(key, settings)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
 
@@ -965,7 +1107,7 @@ struct ZoneSettingsView: View {
         zoneID: zoneID, settingID: setting.id, value: value)
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 }
 

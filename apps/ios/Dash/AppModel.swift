@@ -22,6 +22,8 @@ final class AppModel {
   var authState: AuthenticationState = .loading
   var errorMessage: String?
   var isAuthenticating = false
+  var grantedScopes: Set<String>?
+  var selectedScopes = Set(CloudflareScopes.published)
   var user: CloudflareUser?
 
   private var authSession: ASWebAuthenticationSession?
@@ -39,6 +41,7 @@ final class AppModel {
   func bootstrap() async {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
+        grantedScopes = Set(CloudflareScopes.published)
         authState = .authenticated
         return
       }
@@ -49,6 +52,7 @@ final class AppModel {
         authState = .unauthenticated
         return
       }
+      grantedScopes = try await tokenStore.getGrantedScopes()
       try await loadIdentity()
       authState = .authenticated
     } catch {
@@ -57,17 +61,52 @@ final class AppModel {
   }
 
   func signIn() {
+    authorize(scopes: selectedScopes, preservesExistingSession: false)
+  }
+
+  func requestAccess(to scopes: Set<String>) {
+    let requested = Self.incrementalScopes(granted: grantedScopes, requested: scopes)
+    authorize(scopes: requested, preservesExistingSession: true)
+  }
+
+  static func incrementalScopes(
+    granted: Set<String>?,
+    requested: Set<String>
+  ) -> Set<String> {
+    (granted ?? []).union(requested).union(CloudflareScopes.required)
+  }
+
+  func hasScopes(_ scopes: Set<String>) -> Bool {
+    guard let grantedScopes else { return true }
+    return scopes.isSubset(of: grantedScopes)
+  }
+
+  func setScopeCategory(_ definitions: [OAuthScopeDefinition], enabled: Bool) {
+    let ids = Set(definitions.map(\.id)).intersection(CloudflareScopes.requestable)
+    if enabled {
+      selectedScopes.formUnion(ids)
+    } else {
+      selectedScopes.subtract(ids)
+      selectedScopes.formUnion(CloudflareScopes.required)
+    }
+  }
+
+  private func authorize(scopes: Set<String>, preservesExistingSession: Bool) {
     guard configuration.isConfigured else {
       errorMessage = "Add DASH_CLIENT_ID and DASH_REDIRECT_URI to Config/Secrets.xcconfig."
       return
     }
+    let requestedScopes = Set(
+      CloudflareScopes.sanitized(Array(scopes.union(CloudflareScopes.required)))
+    )
     let pkce = PKCEPair.generate()
     let state = UUID().uuidString
     let authorizationURL = OAuth.authorizationURL(
       clientID: configuration.clientID,
       redirectURI: configuration.redirectURI,
       callbackState: state,
-      pkce: pkce
+      pkce: pkce,
+      scopes: requestedScopes.sorted()
     )
     isAuthenticating = true
     errorMessage = nil
@@ -92,15 +131,50 @@ final class AppModel {
           errorMessage = values["error_description"] ?? values["error"] ?? "OAuth state mismatch."
           return
         }
+        let previousScopes = grantedScopes
+        let previousTokens: TokenSet?
+        let oldAccessToken =
+          preservesExistingSession ? try? await tokenStore.getAccessToken() : nil
+        if let accessToken = oldAccessToken {
+          previousTokens = TokenSet(
+            accessToken: accessToken,
+            refreshToken: try? await tokenStore.getRefreshToken(),
+            scope: previousScopes?.sorted().joined(separator: " ")
+          )
+        } else {
+          previousTokens = nil
+        }
+        var replacedTokens = false
         do {
           let tokens = try await OAuth.exchangeCode(
             clientID: configuration.clientID, code: code, verifier: pkce.verifier,
             redirectURI: configuration.redirectURI
           )
           try await tokenStore.setTokens(tokens)
+          replacedTokens = true
+          let granted =
+            tokens.scope.map { Set($0.split(separator: " ").map(String.init)) }
+            ?? requestedScopes
+          try await tokenStore.setGrantedScopes(granted)
+          grantedScopes = granted
+          selectedScopes = granted
+          featureCache.clear()
           try await loadIdentity()
           authState = .authenticated
-        } catch { errorMessage = error.localizedDescription }
+        } catch {
+          if replacedTokens, let previousTokens {
+            try? await tokenStore.setTokens(previousTokens)
+            if let previousScopes {
+              try? await tokenStore.setGrantedScopes(previousScopes)
+            }
+            grantedScopes = previousScopes
+            selectedScopes = previousScopes ?? selectedScopes
+          }
+          errorMessage = error.localizedDescription
+          if !preservesExistingSession {
+            authState = .unauthenticated
+          }
+        }
       }
     }
     session.presentationContextProvider = WebAuthenticationContext.shared
@@ -121,6 +195,8 @@ final class AppModel {
     accounts = []
     user = nil
     activeAccountID = nil
+    grantedScopes = nil
+    selectedScopes = Set(CloudflareScopes.published)
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     authState = .unauthenticated
   }

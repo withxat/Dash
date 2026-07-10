@@ -43,7 +43,8 @@ struct WatchtowerSnapshot: Sendable {
   var signals: [WatchtowerSignal]
   var alerts: [NotificationHistoryEntry]
   var alertsStatus: WatchtowerAlertsStatus
-  var unavailableCount: Int
+  var missingScopeChecks: [String]
+  var failedChecks: [String]
 }
 
 struct WorkerDetailSnapshot: Sendable {

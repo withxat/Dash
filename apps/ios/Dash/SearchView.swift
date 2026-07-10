@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SearchView: View {
-  @State private var search = ""
+  @Binding var search: String
 
   private var trimmedSearch: String {
     search.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -10,7 +10,7 @@ struct SearchView: View {
   private var searchResults: [FeatureID] {
     guard trimmedSearch.count >= 2 else { return [] }
     return FeatureCatalog.sorted(
-      FeatureID.allCases.filter { FeatureCatalog.matchesSearch($0, query: trimmedSearch) }
+      FeatureCatalog.all.filter { FeatureCatalog.matchesSearch($0, query: trimmedSearch) }
     )
   }
 
@@ -24,10 +24,6 @@ struct SearchView: View {
       .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
     .dashCatalogScreen("Search")
-    // Plain .searchable only: inside the search-role tab, iOS 26 morphs the
-    // detached tab-bar button into a bottom search field. No isPresented
-    // binding and no toolbar placement overrides — both break on device.
-    .searchable(text: $search, prompt: "Features, zones…")
   }
 
   @ViewBuilder

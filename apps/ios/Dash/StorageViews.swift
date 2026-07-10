@@ -38,14 +38,11 @@ struct R2BucketsView: View {
     }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New bucket") {
           creates = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("New bucket")
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New bucket") {
       DashFormSheet(
@@ -83,7 +80,7 @@ struct R2BucketsView: View {
       buckets = try await model.client.listR2Buckets(accountID: id)
       model.featureCache.set(key, buckets)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
   private func create() async {
@@ -94,7 +91,7 @@ struct R2BucketsView: View {
       creates = false
       model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 }
 
@@ -112,6 +109,7 @@ struct R2BucketView: View {
   @State private var showsMore = false
   @State private var selectedObject: R2Object?
   @State private var deletingObject = false
+  @State private var deleteError: String?
 
   var body: some View {
     DashFeatureList(
@@ -133,6 +131,7 @@ struct R2BucketView: View {
         DashListCard {
           DashListCardRows(items: objects) { object in
             Button {
+              deleteError = nil
               selectedObject = object
             } label: {
               DashListRow(
@@ -153,17 +152,15 @@ struct R2BucketView: View {
     .navigationTitle(bucket)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.upload, accessibilityLabel: "Upload file") {
           importsFile = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.upload)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("Upload file")
       }
+      .dashSeparateToolbarBackground()
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
       if case .success(let url) = result { Task { await upload(url) } }
@@ -177,7 +174,7 @@ struct R2BucketView: View {
           message:
             "Permanently delete \(bucket) and everything in it. This cannot be undone."
         ) {
-          await deleteBucket()
+          try await deleteBucket()
         }
       ]
     )
@@ -189,6 +186,7 @@ struct R2BucketView: View {
           fields: object.detailFields,
           deleteMessage: "Permanently delete \(object.key) from \(bucket).",
           isDeleting: deletingObject,
+          deleteError: deleteError,
           onDelete: { Task { await delete(object) } }
         ) {
           if let accountID = model.activeAccountID {
@@ -213,9 +211,9 @@ struct R2BucketView: View {
     )
     .refreshable { await load(force: true) }.task(id: prefix) { await load() }
   }
-  private func deleteBucket() async {
+  private func deleteBucket() async throws {
     guard let id = model.activeAccountID else { return }
-    try? await model.client.deleteR2Bucket(accountID: id, name: bucket)
+    try await model.client.deleteR2Bucket(accountID: id, name: bucket)
     model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
     dismiss()
   }
@@ -234,7 +232,7 @@ struct R2BucketView: View {
       ).items
       model.featureCache.set(key, objects)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
   private func upload(_ url: URL) async {
@@ -249,16 +247,23 @@ struct R2BucketView: View {
       model.featureCache.remove(
         FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
   private func delete(_ object: R2Object) async {
     guard let id = model.activeAccountID else { return }
     deletingObject = true
-    try? await model.client.deleteR2Object(accountID: id, bucket: bucket, key: object.key)
-    model.featureCache.remove(
-      FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
-    selectedObject = nil
-    await load(force: true)
+    deleteError = nil
+    do {
+      try await model.client.deleteR2Object(accountID: id, bucket: bucket, key: object.key)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      model.featureCache.remove(
+        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
+      selectedObject = nil
+      await load(force: true)
+    } catch {
+      deleteError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
     deletingObject = false
   }
 }
@@ -295,14 +300,11 @@ struct KVNamespacesView: View {
     }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New namespace") {
           creates = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("New namespace")
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New namespace") {
       DashFormSheet(
@@ -337,7 +339,7 @@ struct KVNamespacesView: View {
       creates = false
       model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 
   private func load(force: Bool = false) async {
@@ -354,7 +356,7 @@ struct KVNamespacesView: View {
       namespaces = try await model.client.listKVNamespaces(accountID: id).items
       model.featureCache.set(key, namespaces)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
 }
@@ -408,17 +410,15 @@ struct KVNamespaceView: View {
     }.refreshable { await load(force: true) }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New key") {
           creates = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("New key")
       }
+      .dashSeparateToolbarBackground()
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(
       item: $selected,
@@ -442,7 +442,7 @@ struct KVNamespaceView: View {
           title: "Delete namespace",
           message: "Permanently delete this namespace and every key in it."
         ) {
-          await deleteNamespace()
+          try await deleteNamespace()
         }
       ]
     )
@@ -453,9 +453,9 @@ struct KVNamespaceView: View {
       FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
     Task { await load(force: true) }
   }
-  private func deleteNamespace() async {
+  private func deleteNamespace() async throws {
     guard let id = model.activeAccountID else { return }
-    _ = try? await model.client.mutate(
+    _ = try await model.client.mutate(
       path: "/accounts/\(id)/storage/kv/namespaces/\(namespaceID)", method: "DELETE")
     model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
     dismissScreen()
@@ -475,7 +475,7 @@ struct KVNamespaceView: View {
       ).items
       model.featureCache.set(key, keys)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
 }
@@ -505,6 +505,7 @@ private struct KVValueEditor: View {
       canSave: canSave,
       deleteMessage: existingKey.map { "Permanently delete \($0) from this namespace." },
       isDeleting: deleting,
+      deleteError: error,
       onDelete: existingKey != nil ? { Task { await delete() } } : nil,
       onSave: { Task { await save() } },
       content: {
@@ -524,10 +525,17 @@ private struct KVValueEditor: View {
   private func delete() async {
     guard let id = model.activeAccountID else { return }
     deleting = true
-    try? await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
-    UINotificationFeedbackGenerator().notificationOccurred(.success)
-    onChanged()
-    dismiss()
+    error = nil
+    do {
+      try await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      onChanged()
+      dismiss()
+    } catch {
+      self.error = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    deleting = false
   }
   private func load() async {
     guard let id = model.activeAccountID else { return }
@@ -536,7 +544,7 @@ private struct KVValueEditor: View {
         decoding: try await model.client.getKVValue(
           accountID: id, namespaceID: namespaceID, key: keyName), as: UTF8.self)
       loaded = true
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
   private func save() async {
     guard let id = model.activeAccountID else { return }
@@ -545,7 +553,7 @@ private struct KVValueEditor: View {
         accountID: id, namespaceID: namespaceID, key: keyName, data: Data(value.utf8))
       if existingKey == nil { onChanged() }
       dismiss()
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 }
 
@@ -587,14 +595,11 @@ struct D1DatabasesView: View {
     }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        Button {
+        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New database") {
           creates = true
-        } label: {
-          DashToolbarActionIcon(asset: SolarAsset.plus)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel("New database")
       }
+      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New database") {
       DashFormSheet(
@@ -628,7 +633,7 @@ struct D1DatabasesView: View {
       creates = false
       model.featureCache.remove(FeatureCacheKey.d1Databases(id))
       await load(force: true)
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 
   private func load(force: Bool = false) async {
@@ -645,7 +650,7 @@ struct D1DatabasesView: View {
       databases = try await model.client.listD1Databases(accountID: id).items
       model.featureCache.set(key, databases)
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
     loading = false
   }
 }
@@ -699,6 +704,7 @@ struct D1ConsoleView: View {
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
+      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -708,14 +714,14 @@ struct D1ConsoleView: View {
           title: "Delete database",
           message: "Permanently delete \(name) and all of its data. This cannot be undone."
         ) {
-          await deleteDatabase()
+          try await deleteDatabase()
         }
       ]
     )
   }
-  private func deleteDatabase() async {
+  private func deleteDatabase() async throws {
     guard let id = model.activeAccountID else { return }
-    _ = try? await model.client.mutate(
+    _ = try await model.client.mutate(
       path: "/accounts/\(id)/d1/database/\(databaseID)", method: "DELETE")
     model.featureCache.remove(FeatureCacheKey.d1Databases(id))
     dismissScreen()
@@ -728,7 +734,7 @@ struct D1ConsoleView: View {
       let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
       result = Self.format(rows: values.flatMap { $0.results ?? [] })
       error = nil
-    } catch { self.error = error.localizedDescription }
+    } catch { self.error = error.dashActionableMessage }
   }
 
   private static func format(rows: [[String: JSONValue]]) -> String {
