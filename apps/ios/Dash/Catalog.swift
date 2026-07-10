@@ -68,6 +68,7 @@ enum Destination: Hashable {
   case cachePerformance(zoneID: String, zoneName: String)
   case rulesetList(basePath: String, title: String)
   case ruleset(basePath: String, rulesetID: String, name: String)
+  case accessAppPolicies(appID: String, appName: String)
   case worker(String)
   case r2Bucket(String)
   case kvNamespace(String)

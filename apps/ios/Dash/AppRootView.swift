@@ -654,6 +654,8 @@ private struct DestinationRoutedContent: View {
         RulesetListView(basePath: basePath, title: title)
       case .ruleset(let basePath, let rulesetID, let name):
         RulesetDetailView(basePath: basePath, rulesetID: rulesetID, name: name)
+      case .accessAppPolicies(let appID, let appName):
+        AccessAppPoliciesView(appID: appID, appName: appName)
       case .worker(let name): WorkerDetailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)

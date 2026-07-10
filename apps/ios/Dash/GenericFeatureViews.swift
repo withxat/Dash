@@ -295,6 +295,19 @@ struct GenericResourceCapabilities {
         "Permanently delete the load balancer \($0.name). Traffic falls back to DNS."
       }
     } else if path.hasSuffix("/access/apps") {
+      caps.create = GenericCreateSpec(
+        title: "New Access app",
+        fields: [
+          GenericCreateField("name", "Application name"),
+          GenericCreateField("domain", "Domain (e.g. app.example.com)"),
+        ],
+        body: { values in
+          [
+            "name": .string(values["name"] ?? ""),
+            "domain": .string(values["domain"] ?? ""),
+            "type": .string("self_hosted"),
+          ]
+        })
       caps.deleteMessage = {
         "Permanently delete the Access application \($0.name) and its policies."
       }

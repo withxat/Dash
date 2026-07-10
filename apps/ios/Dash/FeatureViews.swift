@@ -43,11 +43,7 @@ struct FeatureRouterContent: View {
         FeatureZonePickerView(feature: feature)
       case .zaraz:
         EndpointProductView(feature: feature, matching: ["zaraz"])
-      case .accessPolicies:
-        EndpointProductView(
-          feature: feature,
-          matching: ["access-policy", "/access/policies", "device-posture"]
-        )
+      case .accessPolicies: AccessPoliciesView()
       case .magicNetworking:
         EndpointProductView(
           feature: feature,

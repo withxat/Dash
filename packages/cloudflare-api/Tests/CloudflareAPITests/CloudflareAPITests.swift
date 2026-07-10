@@ -252,6 +252,35 @@ struct NetworkTests {
     #expect(detail.rules?.first?.enabled == false)
   }
 
+  @Test func createAccessPolicyTargetsReusableOrAppPath() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.path ?? "")
+      let body = #"""
+        {"success":true,"result":{"id":"p1","name":"Allow team","decision":"allow",
+        "include":[{"email_domain":{"domain":"xat.sh"}}]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let body: [String: JSONValue] = [
+      "name": .string("Allow team"),
+      "decision": .string("allow"),
+      "include": .array([.object(["email_domain": .object(["domain": .string("xat.sh")])])]),
+    ]
+    let reusable = try await client.createAccessPolicy(accountID: "account", body: body)
+    #expect(reusable.decision == "allow")
+    _ = try await client.createAccessPolicy(accountID: "account", appID: "app1", body: body)
+    #expect(
+      recorder.paths == [
+        "/accounts/account/access/policies",
+        "/accounts/account/access/apps/app1/policies",
+      ])
+  }
+
   @Test func executeRawPassesBinaryBodiesThroughUntouched() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])
@@ -365,8 +394,11 @@ private actor MemoryTokenStore: TokenStore {
 private final class RequestRecorder: @unchecked Sendable {
   private let lock = NSLock()
   private var count = 0
+  private var recorded: [String] = []
   var refreshCount: Int { lock.withLock { count } }
+  var paths: [String] { lock.withLock { recorded } }
   func recordRefresh() { lock.withLock { count += 1 } }
+  func record(_ path: String) { lock.withLock { recorded.append(path) } }
 }
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {

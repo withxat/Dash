@@ -262,6 +262,30 @@ public actor CloudflareClient {
     try await request(
       "\(basePath)/rulesets/\(rulesetID)/rules/\(ruleID)", method: "PATCH", body: body)
   }
+
+  // MARK: Access policies
+
+  public func listAccessApps(accountID: String) async throws -> [AccessApp] {
+    try await request("/accounts/\(accountID)/access/apps")
+  }
+
+  public func listAccessPolicies(accountID: String) async throws -> [AccessPolicy] {
+    try await request("/accounts/\(accountID)/access/policies")
+  }
+
+  public func listAppPolicies(accountID: String, appID: String) async throws -> [AccessPolicy] {
+    try await request("/accounts/\(accountID)/access/apps/\(appID)/policies")
+  }
+
+  @discardableResult
+  public func createAccessPolicy(
+    accountID: String, appID: String? = nil, body: [String: JSONValue]
+  ) async throws -> AccessPolicy {
+    let path =
+      appID.map { "/accounts/\(accountID)/access/apps/\($0)/policies" }
+      ?? "/accounts/\(accountID)/access/policies"
+    return try await request(path, method: "POST", body: body)
+  }
   /// Daily HTTP request totals for a zone via the GraphQL Analytics API —
   /// the REST zone-analytics endpoints no longer exist.
   public func zoneAnalytics(zoneID: String, days: Int = 7) async throws -> [ZoneAnalyticsDay] {

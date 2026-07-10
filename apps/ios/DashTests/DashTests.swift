@@ -152,6 +152,28 @@ import Testing
   #expect(!rulesetKindIsEditable(nil))
 }
 
+@Test func accessIncludeRulesBuildDocumentedShapes() {
+  let rules = accessIncludeRules([
+    (kind: "Everyone", value: ""),
+    (kind: "Email", value: "i@xat.sh"),
+    (kind: "Email domain", value: "xat.sh"),
+  ])
+  #expect(
+    rules == [
+      .object(["everyone": .object([:])]),
+      .object(["email": .object(["email": .string("i@xat.sh")])]),
+      .object(["email_domain": .object(["domain": .string("xat.sh")])]),
+    ])
+  // Empty values drop the row instead of sending an invalid rule.
+  #expect(accessIncludeRules([(kind: "Email", value: "")]).isEmpty)
+}
+
+@Test func accessAppsRegistryOffersCreateAndDelete() {
+  let apps = GenericResourceCapabilities.forPath("/accounts/abc/access/apps")
+  #expect(apps.create != nil)
+  #expect(apps.deleteMessage != nil)
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)

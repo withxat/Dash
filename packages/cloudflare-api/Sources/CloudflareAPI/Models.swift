@@ -213,6 +213,22 @@ public struct RulesetDetail: Codable, Hashable, Sendable {
   public let rules: [RulesetRule]?
 }
 
+public struct AccessApp: CloudflareResource, Hashable {
+  public let id: String
+  public let name: String
+  public let domain: String?
+  public let type: String?
+}
+
+public struct AccessPolicy: Codable, Identifiable, Hashable, Sendable {
+  public let id: String
+  public let name: String
+  public let decision: String?
+  /// The include rule union stays untyped; the app only builds a few shapes.
+  public let include: [JSONValue]?
+  public let reusable: Bool?
+}
+
 public struct CloudflareZone: CloudflareResource, Hashable {
   public let id: String
   public let name: String
