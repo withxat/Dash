@@ -135,11 +135,13 @@ enum FeatureCatalog {
     feature(
       .containers, "Containers", "Applications, versions, rollouts, registries, and instances",
       "shippingbox", "SolarBoxMinimalistic", SolarAsset.box, "Developer Platform",
+      path: "/accounts/{account}/containers/applications",
       read: ["containers.read", "cloudchamber.read"],
       write: ["containers.write", "cloudchamber.write"]),
     feature(
       .r2Catalog, "R2 Data Catalog", "Catalogs, namespaces, tables, SQL, and maintenance",
       "tablecells", "SolarDatabase", SolarAsset.database, "Developer Platform",
+      path: "/accounts/{account}/r2-catalog",
       read: ["r2-catalog.read", "r2-catalog-sql.read"], write: ["r2-catalog.write"]),
     feature(
       .workersObservability, "Workers Observability", "Logs, traces, telemetry, and live tails",
@@ -222,6 +224,7 @@ enum FeatureCatalog {
     feature(
       .dex, "Digital Experience", "DEX tests, insights, fleet status, and resilience",
       "gauge.with.dots.needle.50percent", "SolarChart2", SolarAsset.chart, "Cloudflare One",
+      path: "/accounts/{account}/dex/devices/dex_tests",
       read: ["teams-dex.read", "teams-resilience.read"],
       write: ["teams-dex.write", "teams-resilience.write"]),
     feature(
@@ -283,6 +286,7 @@ enum FeatureCatalog {
     feature(
       .emailSending, "Email Sending", "Transactional sends, routing, suppressions, and DMARC",
       "paperplane", "SolarLetter", SolarAsset.letter, "Email & Messaging",
+      path: "/accounts/{account}/email/sending/suppression",
       read: [
         "email-sending.read", "email-routing-suppression.read",
         "email-security-dmarcreports.read",
@@ -302,6 +306,7 @@ enum FeatureCatalog {
     feature(
       .artifacts, "Artifacts & Resources", "Artifacts, shared resources, and resource library",
       "archivebox", "SolarBoxMinimalistic", SolarAsset.box, "Other",
+      path: "/accounts/{account}/artifacts/namespaces",
       read: ["artifacts.read", "resource-sharing.read", "resource-library.read"],
       write: ["artifacts.write", "resource-library.write"]),
     feature(

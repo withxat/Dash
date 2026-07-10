@@ -414,6 +414,27 @@ struct GenericResourceCapabilities {
         fields: [GenericCreateField("name", "Queue name")],
         body: { values in ["queue_name": .string(values["name"] ?? "")] })
       caps.deleteMessage = { "Permanently delete the queue \($0.name) and its messages." }
+    } else if path.hasSuffix("/containers/applications") {
+      caps.deleteMessage = {
+        "Permanently delete the application \($0.name) and stop its instances."
+      }
+    } else if path.hasSuffix("/r2-catalog") {
+      caps.updates = [
+        GenericRowUpdate(
+          id: "toggle-catalog",
+          title: { $0.string("status") == "active" ? "Disable catalog" : "Enable catalog" },
+          method: "POST",
+          path: { "\($0)/\($1.name)/\($1.string("status") == "active" ? "disable" : "enable")" },
+          body: { _ in [:] })
+      ]
+    } else if path.hasSuffix("/dex/devices/dex_tests") {
+      caps.deleteMessage = { "Permanently delete the DEX test \($0.name)." }
+    } else if path.hasSuffix("/email/sending/suppression") {
+      caps.create = GenericCreateSpec(
+        title: "New suppression",
+        fields: [GenericCreateField("email", "Email address")],
+        body: { values in ["email": .string(values["email"] ?? "")] })
+      caps.deleteMessage = { "Remove \($0.name) from the suppression list." }
     } else if path.contains("/pages/projects/"), path.hasSuffix("/deployments") {
       caps.screenActions = [
         GenericScreenAction(

@@ -38,10 +38,6 @@ struct FeatureRouterContent: View {
         EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
       case .browserRendering:
         EndpointProductView(feature: feature, matching: ["browser-rendering"])
-      case .containers:
-        EndpointProductView(feature: feature, matching: ["containers", "cloudchamber"])
-      case .r2Catalog:
-        EndpointProductView(feature: feature, matching: ["r2-catalog", "iceberg"])
       case .workersObservability:
         EndpointProductView(
           feature: feature,
@@ -71,8 +67,6 @@ struct FeatureRouterContent: View {
           feature: feature,
           matching: ["connector", "cloudflared", "/networks/", "warp"]
         )
-      case .dex:
-        EndpointProductView(feature: feature, matching: ["dex", "resilience"])
       case .magicNetworking:
         EndpointProductView(
           feature: feature,
@@ -95,20 +89,10 @@ struct FeatureRouterContent: View {
           feature: feature,
           matching: ["cache", "purge", "compression", "zone-version"]
         )
-      case .emailSending:
-        EndpointProductView(
-          feature: feature,
-          matching: ["email-sending", "email-routing", "dmarc", "suppression"]
-        )
       case .calls:
         EndpointProductView(feature: feature, matching: ["/calls/", "realtime", "/moq/"])
       case .radarIntel:
         EndpointProductView(feature: feature, matching: ["/radar/", "/intel/"])
-      case .artifacts:
-        EndpointProductView(
-          feature: feature,
-          matching: ["/artifacts", "resource-sharing", "resource-library"]
-        )
       default: GenericFeatureView(feature: feature)
       }
     }

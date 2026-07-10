@@ -42,6 +42,29 @@ import Testing
   #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
 }
 
+@Test func batchOneRegistryPathsCarryTheirWrites() {
+  let containers = GenericResourceCapabilities.forPath("/accounts/abc/containers/applications")
+  #expect(containers.deleteMessage != nil)
+  #expect(containers.create == nil)
+
+  let catalog = GenericResourceCapabilities.forPath("/accounts/abc/r2-catalog")
+  #expect(catalog.updates.count == 1)
+  #expect(catalog.deleteMessage == nil)
+
+  let dex = GenericResourceCapabilities.forPath("/accounts/abc/dex/devices/dex_tests")
+  #expect(dex.deleteMessage != nil)
+
+  let suppression = GenericResourceCapabilities.forPath(
+    "/accounts/abc/email/sending/suppression")
+  #expect(suppression.create != nil)
+  #expect(suppression.deleteMessage != nil)
+
+  let namespaces = GenericResourceCapabilities.forPath("/accounts/abc/artifacts/namespaces")
+  #expect(namespaces.create == nil)
+  #expect(namespaces.deleteMessage == nil)
+  #expect(namespaces.updates.isEmpty)
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)
