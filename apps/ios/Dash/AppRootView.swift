@@ -643,6 +643,9 @@ private struct DestinationRoutedContent: View {
       case .zoneTool(let zoneID, let title, let path):
         GenericResourcesView(
           title: title, path: path.replacingOccurrences(of: "{zone}", with: zoneID))
+      case .zonePicker(let feature): FeatureZonePickerView(feature: feature)
+      case .zoneFeatureHub(let feature, let zoneID, let zoneName):
+        ZoneFeatureHubView(feature: feature, zoneID: zoneID, zoneName: zoneName)
       case .worker(let name): WorkerDetailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)

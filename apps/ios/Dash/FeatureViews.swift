@@ -47,11 +47,6 @@ struct FeatureRouterContent: View {
         )
       case .botManagement:
         EndpointProductView(feature: feature, matching: ["bot-management", "/bots/"])
-      case .apiSecurity:
-        EndpointProductView(
-          feature: feature,
-          matching: ["api-gateway", "api-shield", "page-shield", "schema-validation"]
-        )
       case .zaraz:
         EndpointProductView(feature: feature, matching: ["zaraz"])
       case .accessPolicies:
@@ -67,15 +62,9 @@ struct FeatureRouterContent: View {
           ]
         )
       case .dnsManagement:
-        EndpointProductView(
-          feature: feature,
-          matching: ["/dns_records", "dns-view", "dns-settings", "dnssec"]
-        )
-      case .sslCertificates:
-        EndpointProductView(
-          feature: feature,
-          matching: ["certificate", "/ssl/", "ssl-verification", "custom-hostname"]
-        )
+        FeatureHubView(feature: feature)
+      case .sslCertificates, .apiSecurity:
+        FeatureZonePickerView(feature: feature)
       case .cacheSettings:
         EndpointProductView(
           feature: feature,

@@ -107,6 +107,37 @@ import Testing
   #expect(workerRoutes.deleteMessage != nil)
 }
 
+@Test func zonePickerRoutesEachFeatureToItsSurface() {
+  #expect(
+    zoneDestination(for: .dnsManagement, zoneID: "z1", zoneName: "example.com")
+      == .dns("z1"))
+  #expect(
+    zoneDestination(for: .sslCertificates, zoneID: "z1", zoneName: "example.com")
+      == .zoneFeatureHub(feature: .sslCertificates, zoneID: "z1", zoneName: "example.com"))
+  #expect(
+    zoneDestination(for: .apiSecurity, zoneID: "z1", zoneName: "example.com")
+      == .zoneFeatureHub(feature: .apiSecurity, zoneID: "z1", zoneName: "example.com"))
+}
+
+@Test func zoneHubRegistryPathsCarryTheirWrites() {
+  let views = GenericResourceCapabilities.forPath("/accounts/abc/dns_settings/views")
+  #expect(views.create != nil)
+  #expect(views.deleteMessage != nil)
+
+  let hostnames = GenericResourceCapabilities.forPath("/zones/xyz/custom_hostnames")
+  #expect(hostnames.create != nil)
+  #expect(hostnames.deleteMessage != nil)
+
+  let certificates = GenericResourceCapabilities.forPath("/zones/xyz/custom_certificates")
+  #expect(certificates.create == nil)
+  #expect(certificates.deleteMessage != nil)
+
+  // The query suffix must not defeat path matching.
+  let packs = GenericResourceCapabilities.forPath(
+    "/zones/xyz/ssl/certificate_packs?status=all")
+  #expect(packs.deleteMessage != nil)
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)

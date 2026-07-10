@@ -414,6 +414,36 @@ struct GenericResourceCapabilities {
         fields: [GenericCreateField("name", "Queue name")],
         body: { values in ["queue_name": .string(values["name"] ?? "")] })
       caps.deleteMessage = { "Permanently delete the queue \($0.name) and its messages." }
+    } else if path.hasSuffix("/dns_settings/views") {
+      caps.create = GenericCreateSpec(
+        title: "New DNS view",
+        fields: [GenericCreateField("name", "View name")],
+        body: { values in ["name": .string(values["name"] ?? ""), "zones": .array([])] })
+      caps.deleteMessage = { "Permanently delete the DNS view \($0.name)." }
+    } else if path.hasSuffix("/custom_hostnames") {
+      caps.create = GenericCreateSpec(
+        title: "New custom hostname",
+        fields: [GenericCreateField("hostname", "Hostname")],
+        body: { values in
+          [
+            "hostname": .string(values["hostname"] ?? ""),
+            "ssl": .object([
+              "method": .string("http"),
+              "type": .string("dv"),
+            ]),
+          ]
+        })
+      caps.deleteMessage = {
+        "Permanently delete the custom hostname \($0.name) and its certificate."
+      }
+    } else if path.hasSuffix("/custom_certificates") {
+      caps.deleteMessage = { _ in
+        "Permanently delete this custom certificate. Traffic falls back to universal SSL."
+      }
+    } else if path.hasSuffix("/ssl/certificate_packs") {
+      caps.deleteMessage = {
+        "Permanently delete the certificate pack \($0.id). Hosts covered only by it lose HTTPS."
+      }
     } else if path.hasSuffix("/calls/apps") {
       caps.create = GenericCreateSpec(
         title: "New app",
