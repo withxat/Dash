@@ -66,6 +66,8 @@ enum Destination: Hashable {
   case zoneFeatureHub(feature: FeatureID, zoneID: String, zoneName: String)
   case botManagement(zoneID: String, zoneName: String)
   case cachePerformance(zoneID: String, zoneName: String)
+  case rulesetList(basePath: String, title: String)
+  case ruleset(basePath: String, rulesetID: String, name: String)
   case worker(String)
   case r2Bucket(String)
   case kvNamespace(String)

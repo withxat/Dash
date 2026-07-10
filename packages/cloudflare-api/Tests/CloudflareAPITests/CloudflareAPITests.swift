@@ -181,6 +181,77 @@ struct NetworkTests {
     #expect(data == payload)
   }
 
+  @Test func decodesRulesetListAndDetail() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      if request.url?.path == "/accounts/account/rulesets" {
+        let body = #"""
+          {"success":true,"result":[
+          {"id":"rs1","name":"Custom rules","kind":"custom","phase":"http_request_firewall_custom"},
+          {"id":"rs2","name":"Managed","kind":"managed","phase":"http_request_firewall_managed"}
+          ]}
+          """#
+        return (200, Data(body.utf8))
+      }
+      let body = #"""
+        {"success":true,"result":{"id":"rs1","name":"Custom rules","kind":"custom",
+        "phase":"http_request_firewall_custom","rules":[
+        {"id":"r1","action":"block","expression":"ip.src eq 1.2.3.4","enabled":true}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let rulesets = try await client.listRulesets(basePath: "/accounts/account")
+    #expect(rulesets.map(\.kind) == ["custom", "managed"])
+    let detail = try await client.getRuleset(basePath: "/accounts/account", id: "rs1")
+    #expect(detail.rules?.first?.action == "block")
+    #expect(detail.rules?.first?.enabled == true)
+  }
+
+  @Test func patchRulesetRuleTargetsRulePathWithBody() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "PATCH")
+      #expect(request.url?.path == "/zones/zone/rulesets/rs1/rules/r1")
+      let stream = request.httpBodyStream.map { stream -> Data in
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let size = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+          let read = stream.read(buffer, maxLength: size)
+          if read <= 0 { break }
+          data.append(buffer, count: read)
+        }
+        return data
+      }
+      if let stream,
+        let decoded = try? JSONDecoder().decode([String: JSONValue].self, from: stream)
+      {
+        #expect(decoded["enabled"] == .bool(false))
+      }
+      let body = #"""
+        {"success":true,"result":{"id":"rs1","name":"Custom rules","kind":"zone",
+        "phase":"http_request_firewall_custom","rules":[
+        {"id":"r1","action":"block","expression":"ip.src eq 1.2.3.4","enabled":false}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let detail = try await client.patchRulesetRule(
+      basePath: "/zones/zone", rulesetID: "rs1", ruleID: "r1",
+      body: ["enabled": .bool(false)])
+    #expect(detail.rules?.first?.enabled == false)
+  }
+
   @Test func executeRawPassesBinaryBodiesThroughUntouched() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])

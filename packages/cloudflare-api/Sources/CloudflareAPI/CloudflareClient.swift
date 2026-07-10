@@ -236,6 +236,32 @@ public actor CloudflareClient {
   {
     try await request(path, method: method, body: body)
   }
+
+  // MARK: Rulesets — basePath is "/accounts/{id}" or "/zones/{id}" so one
+  // code path serves both scopes.
+
+  public func listRulesets(basePath: String) async throws -> [Ruleset] {
+    try await request("\(basePath)/rulesets")
+  }
+
+  public func getRuleset(basePath: String, id: String) async throws -> RulesetDetail {
+    try await request("\(basePath)/rulesets/\(id)")
+  }
+
+  @discardableResult
+  public func addRulesetRule(
+    basePath: String, rulesetID: String, body: [String: JSONValue]
+  ) async throws -> RulesetDetail {
+    try await request("\(basePath)/rulesets/\(rulesetID)/rules", method: "POST", body: body)
+  }
+
+  @discardableResult
+  public func patchRulesetRule(
+    basePath: String, rulesetID: String, ruleID: String, body: [String: JSONValue]
+  ) async throws -> RulesetDetail {
+    try await request(
+      "\(basePath)/rulesets/\(rulesetID)/rules/\(ruleID)", method: "PATCH", body: body)
+  }
   /// Daily HTTP request totals for a zone via the GraphQL Analytics API —
   /// the REST zone-analytics endpoints no longer exist.
   public func zoneAnalytics(zoneID: String, days: Int = 7) async throws -> [ZoneAnalyticsDay] {

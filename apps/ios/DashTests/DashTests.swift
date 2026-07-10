@@ -144,6 +144,14 @@ import Testing
   #expect(packs.deleteMessage != nil)
 }
 
+@Test func onlyUnmanagedRulesetsAreEditable() {
+  #expect(rulesetKindIsEditable("custom"))
+  #expect(rulesetKindIsEditable("root"))
+  #expect(rulesetKindIsEditable("zone"))
+  #expect(!rulesetKindIsEditable("managed"))
+  #expect(!rulesetKindIsEditable(nil))
+}
+
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
   let capability = FeatureCapability(read: ["product.read"], write: ["product.write"])
   #expect(capability.accessLevel(grantedScopes: []) == .locked)

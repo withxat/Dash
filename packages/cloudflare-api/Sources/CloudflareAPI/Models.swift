@@ -187,6 +187,32 @@ public struct CloudflareAccount: CloudflareResource, Hashable {
   public let type: String?
 }
 
+public struct Ruleset: CloudflareResource, Hashable {
+  public let id: String
+  public let name: String
+  public let kind: String?
+  public let phase: String?
+  public let description: String?
+}
+
+public struct RulesetRule: Codable, Identifiable, Hashable, Sendable {
+  public let id: String
+  public let action: String?
+  public let expression: String?
+  public let description: String?
+  public let enabled: Bool?
+  public let ref: String?
+}
+
+public struct RulesetDetail: Codable, Hashable, Sendable {
+  public let id: String
+  public let name: String
+  public let kind: String?
+  public let phase: String?
+  public let description: String?
+  public let rules: [RulesetRule]?
+}
+
 public struct CloudflareZone: CloudflareResource, Hashable {
   public let id: String
   public let name: String

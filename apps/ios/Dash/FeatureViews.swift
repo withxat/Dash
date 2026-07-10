@@ -38,11 +38,7 @@ struct FeatureRouterContent: View {
         EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
       case .calls, .zeroTrustConnectors, .workersObservability:
         FeatureHubView(feature: feature)
-      case .rulesets:
-        EndpointProductView(
-          feature: feature,
-          matching: ["ruleset", "transform", "redirect", "custom-error"]
-        )
+      case .rulesets: RulesetsView()
       case .botManagement, .cacheSettings:
         FeatureZonePickerView(feature: feature)
       case .zaraz:

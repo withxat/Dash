@@ -650,6 +650,10 @@ private struct DestinationRoutedContent: View {
         BotManagementView(zoneID: zoneID, zoneName: zoneName)
       case .cachePerformance(let zoneID, let zoneName):
         CachePerformanceView(zoneID: zoneID, zoneName: zoneName)
+      case .rulesetList(let basePath, let title):
+        RulesetListView(basePath: basePath, title: title)
+      case .ruleset(let basePath, let rulesetID, let name):
+        RulesetDetailView(basePath: basePath, rulesetID: rulesetID, name: name)
       case .worker(let name): WorkerDetailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
