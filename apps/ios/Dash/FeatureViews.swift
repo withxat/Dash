@@ -695,7 +695,7 @@ struct WorkerDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
   let name: String
-  @State private var source = ""
+  @State private var source: WorkerSource?
   @State private var error: String?
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
@@ -754,10 +754,10 @@ struct WorkerDetailView: View {
             }
           } else if let error {
             ErrorStateView(message: error) { Task { await load(force: true) } }
-          } else if source.isEmpty {
-            LoadingStateView()
+          } else if let source {
+            DashCodeBlock(text: source.content)
           } else {
-            DashCodeBlock(text: source)
+            LoadingStateView()
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
@@ -814,9 +814,12 @@ struct WorkerDetailView: View {
       loadedSubdomain = true
       do {
         workerTag = try await fetchedTag
-        model.featureCache.set(
-          key,
-          WorkerDetailSnapshot(source: source, subdomainEnabled: subdomainEnabled, tag: workerTag))
+        if let source {
+          model.featureCache.set(
+            key,
+            WorkerDetailSnapshot(
+              source: source, subdomainEnabled: subdomainEnabled, tag: workerTag))
+        }
       } catch {
         // A failed lookup hides the Builds row for this visit only — skip
         // caching the snapshot so the next visit retries the tag.

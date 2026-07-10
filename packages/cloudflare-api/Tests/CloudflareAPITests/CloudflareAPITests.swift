@@ -281,6 +281,102 @@ struct NetworkTests {
       ])
   }
 
+  @Test func multipartFormEncodesGoldenBytes() {
+    var form = MultipartForm(boundary: "b0")
+    form.addField(name: "requireSignedURLs", value: "true")
+    form.addFile(
+      name: "file", filename: "photo.jpg", contentType: "image/jpeg",
+      data: Data("JPEGDATA".utf8))
+    let expected =
+      "--b0\r\n"
+      + "Content-Disposition: form-data; name=\"requireSignedURLs\"\r\n"
+      + "\r\ntrue\r\n"
+      + "--b0\r\n"
+      + "Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n"
+      + "Content-Type: image/jpeg\r\n"
+      + "\r\nJPEGDATA\r\n"
+      + "--b0--\r\n"
+    #expect(form.contentType == "multipart/form-data; boundary=b0")
+    #expect(form.encode() == Data(expected.utf8))
+  }
+
+  @Test func multipartDocumentParsesModuleDownload() {
+    let body =
+      "--sep\r\n"
+      + "Content-Disposition: form-data; name=\"worker.js\"; filename=\"worker.js\"\r\n"
+      + "Content-Type: application/javascript+module\r\n"
+      + "\r\nexport default { fetch() {} }\r\n"
+      + "--sep\r\n"
+      + "Content-Disposition: form-data; name=\"lib.js\"; filename=\"lib.js\"\r\n"
+      + "Content-Type: application/javascript+module\r\n"
+      + "\r\nexport const x = 1\r\n"
+      + "--sep--\r\n"
+    let parts = MultipartDocument.parse(
+      data: Data(body.utf8), contentType: "multipart/form-data; boundary=sep")
+    #expect(parts.count == 2)
+    #expect(parts.first?.filename == "worker.js")
+    #expect(parts.first?.contentType == "application/javascript+module")
+    #expect(
+      String(decoding: parts.first?.body ?? Data(), as: UTF8.self)
+        == "export default { fetch() {} }")
+  }
+
+  @Test func workerSourceBranchesOnResponseContentType() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/workers/scripts/api/content/v2") == true)
+      let body =
+        "--sep\r\n"
+        + "Content-Disposition: form-data; name=\"index.mjs\"; filename=\"index.mjs\"\r\n"
+        + "Content-Type: application/javascript+module\r\n"
+        + "\r\nexport default {}\r\n"
+        + "--sep--\r\n"
+      return (200, Data(body.utf8))
+    }
+    MockURLProtocol.responseHeaders = [
+      "Content-Type": "multipart/form-data; boundary=sep"
+    ]
+    defer { MockURLProtocol.responseHeaders = nil }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let source = try await client.getWorkerSource(accountID: "account", name: "api")
+    #expect(source.mainModule == "index.mjs")
+    #expect(source.moduleCount == 1)
+    #expect(source.content == "export default {}")
+  }
+
+  @Test func classicWorkerSourceDecodesAsPlainScript() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      (200, Data("addEventListener('fetch', () => {})".utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let source = try await client.getWorkerSource(accountID: "account", name: "legacy")
+    #expect(source.mainModule == nil)
+    #expect(source.moduleCount == 0)
+    #expect(source.content.hasPrefix("addEventListener"))
+  }
+
+  @Test func uploadWorkerScriptSendsMetadataAndModulePart() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "PUT")
+      #expect(request.url?.path.hasSuffix("/workers/scripts/api/content") == true)
+      let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
+      #expect(contentType.hasPrefix("multipart/form-data; boundary="))
+      return (200, Data(#"{"success":true,"result":{"id":"api"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let source = WorkerSource(content: "old", mainModule: "index.mjs", moduleCount: 1)
+    _ = try await client.uploadWorkerScript(
+      accountID: "account", name: "api", source: source, content: "export default {}")
+  }
+
   @Test func executeRawPassesBinaryBodiesThroughUntouched() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let payload = Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00])
@@ -403,13 +499,17 @@ private final class RequestRecorder: @unchecked Sendable {
 
 private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
   nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
+  /// Optional response headers for the next requests (e.g. Content-Type for
+  /// module-worker multipart downloads). Reset it in tests that set it.
+  nonisolated(unsafe) static var responseHeaders: [String: String]?
   override class func canInit(with _: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
   override func startLoading() {
     do {
       let (status, data) = try Self.handler?(request) ?? (500, Data())
       let response = HTTPURLResponse(
-        url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        url: request.url!, statusCode: status, httpVersion: nil,
+        headerFields: Self.responseHeaders)!
       client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
       client?.urlProtocol(self, didLoad: data)
       client?.urlProtocolDidFinishLoading(self)

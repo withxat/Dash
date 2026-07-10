@@ -70,9 +70,62 @@ public actor CloudflareClient {
   public func listWorkers(accountID: String) async throws -> [WorkerScript] {
     try await list("/accounts/\(accountID)/workers/scripts").items
   }
-  public func getWorkerSource(accountID: String, name: String) async throws -> String {
-    let data = try await raw("/accounts/\(accountID)/workers/scripts/\(name)")
-    return String(decoding: data, as: UTF8.self)
+  /// Downloads script content. Classic scripts come back as raw JS; module
+  /// workers come back as multipart/form-data with one part per module, the
+  /// boundary living in the response Content-Type header.
+  public func getWorkerSource(accountID: String, name: String) async throws -> WorkerSource {
+    var components = URLComponents(
+      url: apiBase.appending(path: "/accounts/\(accountID)/workers/scripts/\(name)/content/v2"),
+      resolvingAgainstBaseURL: false)!
+    components.queryItems = nil
+    let (data, response) = try await rawResponse(
+      url: components.url!, method: "GET", data: nil, contentType: nil)
+    let responseType = response.value(forHTTPHeaderField: "Content-Type") ?? ""
+    guard responseType.lowercased().contains("multipart/") else {
+      return WorkerSource(
+        content: String(decoding: data, as: UTF8.self), mainModule: nil, moduleCount: 0)
+    }
+    let parts = MultipartDocument.parse(data: data, contentType: responseType)
+    guard let main = parts.first else {
+      return WorkerSource(
+        content: String(decoding: data, as: UTF8.self), mainModule: nil, moduleCount: 0)
+    }
+    return WorkerSource(
+      content: String(decoding: main.body, as: UTF8.self),
+      mainModule: main.filename ?? main.name ?? "worker.js",
+      moduleCount: parts.count)
+  }
+
+  /// Re-uploads script content, preserving settings and bindings. Module
+  /// workers re-declare their main module; classic scripts use body_part.
+  @discardableResult
+  public func uploadWorkerScript(
+    accountID: String, name: String, source: WorkerSource, content: String
+  ) async throws -> JSONValue {
+    var form = MultipartForm()
+    if let mainModule = source.mainModule {
+      form.addFile(
+        name: "metadata", filename: "metadata.json", contentType: "application/json",
+        data: try JSONEncoder().encode(["main_module": mainModule]))
+      form.addFile(
+        name: mainModule, filename: mainModule,
+        contentType: "application/javascript+module", data: Data(content.utf8))
+    } else {
+      form.addFile(
+        name: "metadata", filename: "metadata.json", contentType: "application/json",
+        data: try JSONEncoder().encode(["body_part": "script"]))
+      form.addFile(
+        name: "script", filename: "script.js",
+        contentType: "application/javascript", data: Data(content.utf8))
+    }
+    let data = try await raw(
+      "/accounts/\(accountID)/workers/scripts/\(name)/content",
+      method: "PUT", data: form.encode(), contentType: form.contentType)
+    let envelope = try JSONDecoder().decode(APIEnvelope<JSONValue>.self, from: data)
+    guard envelope.success else {
+      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+    }
+    return envelope.result
   }
   public func getWorkerSubdomain(accountID: String, name: String) async throws
     -> WorkerSubdomainStatus
@@ -408,6 +461,14 @@ public actor CloudflareClient {
   private func raw(url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0)
     async throws -> Data
   {
+    try await rawResponse(
+      url: url, method: method, data: data, contentType: contentType, attempt: attempt
+    ).0
+  }
+
+  private func rawResponse(
+    url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0
+  ) async throws -> (Data, HTTPURLResponse) {
     var request = URLRequest(url: url)
     request.httpMethod = method
     request.httpBody = data
@@ -430,7 +491,7 @@ public actor CloudflareClient {
           canRetry = try await refresh() != nil
         }
         if canRetry {
-          return try await raw(
+          return try await rawResponse(
             url: url, method: method, data: data, contentType: contentType, attempt: 1)
         }
       }
@@ -438,7 +499,7 @@ public actor CloudflareClient {
         let errors = (try? JSONDecoder().decode(ErrorEnvelope.self, from: body).errors) ?? []
         throw CloudflareAPIError.request(status: response.statusCode, errors: errors)
       }
-      return body
+      return (body, response)
     } catch let error as CloudflareAPIError { throw error } catch {
       throw CloudflareAPIError.transport(error.localizedDescription)
     }
