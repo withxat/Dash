@@ -1,0 +1,121 @@
+{
+  "fill" : {
+    "solid" : "display-p3:0.97869,0.51181,0.20869,1.00000"
+  },
+  "groups" : [
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "fill-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : {
+                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
+              }
+            }
+          ],
+          "image-name" : "eyes.svg",
+          "name" : "eyes",
+          "opacity-specializations" : [
+            {
+              "appearance" : "dark",
+              "value" : 0.8
+            }
+          ],
+          "position" : {
+            "scale" : 9,
+            "translation-in-points" : [
+              75.42178502491038,
+              145.79721449321755
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "blur-material" : 0.5,
+      "layers" : [
+        {
+          "fill" : "automatic",
+          "glass" : true,
+          "image-name" : "body.svg",
+          "name" : "body",
+          "position" : {
+            "scale" : 8.1,
+            "translation-in-points" : [
+              177.0544150986691,
+              81.39414644954559
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 1
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.3
+      }
+    },
+    {
+      "blur-material" : null,
+      "layers" : [
+        {
+          "fill" : {
+            "solid" : "display-p3:0.97869,0.59047,0.29012,1.00000"
+          },
+          "glass" : false,
+          "image-name" : "texture.svg",
+          "name" : "texture",
+          "opacity-specializations" : [
+            {
+              "value" : 0.75
+            },
+            {
+              "appearance" : "dark",
+              "value" : 0.1
+            },
+            {
+              "appearance" : "tinted",
+              "value" : 0.08
+            }
+          ],
+          "position" : {
+            "scale" : 8.6,
+            "translation-in-points" : [
+              -9.706346999999937,
+              -14.251446999999985
+            ]
+          }
+        }
+      ],
+      "lighting" : "combined",
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "specular" : true,
+      "translucency" : {
+        "enabled" : false,
+        "value" : 0
+      }
+    }
+  ],
+  "supported-platforms" : {
+    "circles" : [
+      "watchOS"
+    ],
+    "squares" : "shared"
+  }
+}
