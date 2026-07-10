@@ -15,7 +15,7 @@ struct GenericFeatureView: View {
     case .vectorize: "/accounts/\(account)/vectorize/v2/indexes"
     case .secrets: "/accounts/\(account)/secrets_store/stores"
     case .hyperdrive: "/accounts/\(account)/hyperdrive/configs"
-    case .pipelines: "/accounts/\(account)/pipelines"
+    case .pipelines: "/accounts/\(account)/pipelines/v1/pipelines"
     case .aiGateway: "/accounts/\(account)/ai-gateway/gateways"
     case .turnstile: "/accounts/\(account)/challenges/widgets"
     case .accessApps: "/accounts/\(account)/access/apps"
@@ -350,8 +350,6 @@ struct GenericResourceCapabilities {
         "Permanently delete the Hyperdrive config \($0.name). Workers bound to it lose their connection."
       }
     } else if path.hasSuffix("/pipelines") {
-      // Pipelines delete by name, not id.
-      caps.deletePath = { "\($0)/\($1.name)" }
       caps.deleteMessage = { "Permanently delete the pipeline \($0.name)." }
     } else if path.hasSuffix("/logpush/jobs") {
       caps.updates = [

@@ -632,8 +632,10 @@ struct WorkerDetailView: View {
   @State private var error: String?
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
+  @State private var workerTag: String?
   @State private var selectedTab: Tab = .management
   @State private var showsMore = false
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     DashFeatureScreen(chrome: {
@@ -655,7 +657,7 @@ struct WorkerDetailView: View {
                 value: .zoneTool(
                   zoneID: "", title: "Deployments",
                   path:
-                    "/accounts/\(model.activeAccountID ?? "")/workers/services/\(name)/environments/production/deployments"
+                    "/accounts/\(model.activeAccountID ?? "")/workers/scripts/\(name)/deployments"
                 )
               ) {
                 DashListRow(title: "Deployments", icon: SolarAsset.clock)
@@ -668,14 +670,19 @@ struct WorkerDetailView: View {
               ) {
                 DashListRow(title: "Custom domains", icon: SolarAsset.globus)
               }
-              DashListGroupDivider()
-              DashListGroupLink(
-                value: .zoneTool(
-                  zoneID: "", title: "Builds",
-                  path: "/accounts/\(model.activeAccountID ?? "")/builds/builds?script_name=\(name)"
-                )
-              ) {
-                DashListRow(title: "Builds", icon: SolarAsset.sledgehammer)
+              // Builds APIs key on the immutable script tag, so the row waits
+              // for the tag to resolve.
+              if let workerTag {
+                DashListGroupDivider()
+                DashListGroupLink(
+                  value: .zoneTool(
+                    zoneID: "", title: "Builds",
+                    path:
+                      "/accounts/\(model.activeAccountID ?? "")/builds/workers/\(workerTag)/builds"
+                  )
+                ) {
+                  DashListRow(title: "Builds", icon: SolarAsset.sledgehammer)
+                }
               }
             }
           } else if let error {
@@ -688,6 +695,8 @@ struct WorkerDetailView: View {
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
         .padding(.bottom, 100)
+        .animation(
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: workerTag)
       }
     }
     .navigationTitle(name).task { await load() }
@@ -723,6 +732,7 @@ struct WorkerDetailView: View {
     if !force, let cached: WorkerDetailSnapshot = model.featureCache.get(key) {
       source = cached.source
       subdomainEnabled = cached.subdomainEnabled
+      workerTag = cached.tag
       loadedSubdomain = true
       error = nil
       return
@@ -730,15 +740,32 @@ struct WorkerDetailView: View {
     do {
       async let fetchedSource = model.client.getWorkerSource(accountID: accountID, name: name)
       async let fetchedSubdomain = model.client.getWorkerSubdomain(accountID: accountID, name: name)
+      async let fetchedTag = resolveTag(accountID: accountID)
       source = try await fetchedSource
       subdomainEnabled = try await fetchedSubdomain.enabled
       loadedSubdomain = true
-      model.featureCache.set(
-        key, WorkerDetailSnapshot(source: source, subdomainEnabled: subdomainEnabled))
+      do {
+        workerTag = try await fetchedTag
+        model.featureCache.set(
+          key,
+          WorkerDetailSnapshot(source: source, subdomainEnabled: subdomainEnabled, tag: workerTag))
+      } catch {
+        // A failed lookup hides the Builds row for this visit only — skip
+        // caching the snapshot so the next visit retries the tag.
+        workerTag = nil
+      }
       error = nil
     } catch {
       self.error = error.localizedDescription
     }
+  }
+
+  /// The workers list usually sits in the session cache already; only a deep
+  /// link pays for the extra request.
+  private func resolveTag(accountID: String) async throws -> String? {
+    let cached: [WorkerScript]? = model.featureCache.get(FeatureCacheKey.workers(accountID))
+    if let tag = cached?.first(where: { $0.id == name })?.tag { return tag }
+    return try await model.client.workerTag(accountID: accountID, name: name)
   }
 
   private func setSubdomain(_ enabled: Bool) async {

@@ -49,6 +49,7 @@ struct WatchtowerSnapshot: Sendable {
 struct WorkerDetailSnapshot: Sendable {
   var source: String
   var subdomainEnabled: Bool
+  var tag: String?
 }
 
 @MainActor
