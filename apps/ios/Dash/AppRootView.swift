@@ -108,7 +108,7 @@ private struct LoginView: View {
       }
       .frame(maxWidth: 448)
       .padding(.horizontal, 24)
-      .padding(.bottom, 8)
+      .padding(.bottom, 28)
       .frame(maxWidth: .infinity)
     }
     .dashTray(isPresented: $showsPermissions, title: "Permissions") {
