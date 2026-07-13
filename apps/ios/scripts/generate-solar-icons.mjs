@@ -78,19 +78,26 @@ const OUTLINE_ICONS = {
 	SolarCheckCircleOutline: 'ui/Linear/CheckCircle',
 	SolarHeartPulseOutline: 'medicine/Linear/HeartPulse',
 	SolarUsersGroupOutline: 'users/Linear/UsersGroupRounded',
+	SolarUserCircleOutline: 'users/Linear/UserCircle',
 	SolarClockCircleOutline: 'time/Linear/ClockCircle',
 	SolarSledgehammerOutline: 'ui/Linear/Sledgehammer',
 	SolarSliderHorizontalOutline: 'ui/Linear/SliderMinimalisticHorizontal',
 	SolarCodeCircleOutline: 'it/Linear/CodeCircle',
 	SolarKeyOutline: 'security/Linear/Key',
 	SolarPinListOutline: 'ui/Linear/PinList',
-	SolarMenuDotsOutline: 'ui/Linear/MenuDots',
 }
 
 /** Simple stroke icons Solar doesn't ship as standalone assets. */
 const STROKE_ICONS = {
 	SolarPlusOutline: ['M5 12h14', 'M12 5v14'],
 	SolarCircleOutline: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'],
+}
+
+/** Hand-tuned bodies that deviate from Solar's linear source. */
+const HAND_TUNED_ICONS = {
+	// Solar draws menu dots as stroked rings; solid dots read better at 22pt.
+	SolarMenuDotsOutline:
+		'<circle cx="5" cy="12" r="2" fill="#000"/><circle cx="12" cy="12" r="2" fill="#000"/><circle cx="19" cy="12" r="2" fill="#000"/>',
 }
 
 /** @returns {Element[]} */
@@ -146,22 +153,22 @@ function extractElements(iconPath) {
 }
 
 /** @param {Element[]} elements */
-function svgFor(elements, { template }) {
-	const body = elements.map((el) => renderElement(el, template)).join('')
+function svgFor(elements, { template, strokeWidth }) {
+	const body = elements.map((el) => renderElement(el, template, strokeWidth)).join('')
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`
 }
 
 /** @param {Element} el */
-function renderElement(el, template) {
+function renderElement(el, template, strokeWidth) {
 	if (el.tag === 'g') {
 		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
-		const children = (el.children ?? []).map(child => renderElement(child, template)).join('')
+		const children = (el.children ?? []).map(child => renderElement(child, template, strokeWidth)).join('')
 		return `<g${opacity}>${children}</g>`
 	}
 
 	if (el.tag === 'circle') {
 		const paint = el.stroke
-			? `fill="none" stroke="#000" stroke-width="${el.strokeWidth}"`
+			? `fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"`
 			: `fill="#000"`
 		return `<circle cx="${el.cx}" cy="${el.cy}" r="${el.r}" ${paint}/>`
 	}
@@ -171,7 +178,7 @@ function renderElement(el, template) {
 	if (el.stroke) {
 		const cap = el.strokeLinecap ? ` stroke-linecap="${el.strokeLinecap}"` : ' stroke-linecap="round"'
 		const join = el.strokeLinejoin ? ` stroke-linejoin="${el.strokeLinejoin}"` : ' stroke-linejoin="round"'
-		return `<path d="${el.d}" fill="none" stroke="#000" stroke-width="${el.strokeWidth}"${cap}${join}/>`
+		return `<path d="${el.d}" fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"${cap}${join}/>`
 	}
 
 	const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
@@ -181,7 +188,7 @@ function renderElement(el, template) {
 /** @param {string[]} paths */
 function strokeSvgFor(paths) {
 	const body = paths.map(d =>
-		`<path d="${d}" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`,
+		`<path d="${d}" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
 	).join('')
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`
 }
@@ -207,8 +214,9 @@ for (const [name, iconPath] of Object.entries(DUOTONE_CATALOG)) {
 	console.log(`duotone ${name}`)
 }
 
+// Outline assets render at stroke-width 2 (Solar ships 1.5) — see SolarIcons.swift.
 for (const [name, iconPath] of Object.entries(OUTLINE_ICONS)) {
-	const svg = svgFor(extractElements(iconPath), { template: true })
+	const svg = svgFor(extractElements(iconPath), { template: true, strokeWidth: '2' })
 	writeImageset(name, svg, true)
 	console.log(`outline ${name}`)
 }
@@ -216,4 +224,9 @@ for (const [name, iconPath] of Object.entries(OUTLINE_ICONS)) {
 for (const [name, paths] of Object.entries(STROKE_ICONS)) {
 	writeImageset(name, strokeSvgFor(paths), true)
 	console.log(`stroke ${name}`)
+}
+
+for (const [name, body] of Object.entries(HAND_TUNED_ICONS)) {
+	writeImageset(name, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`, true)
+	console.log(`hand-tuned ${name}`)
 }

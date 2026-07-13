@@ -26,6 +26,7 @@ enum SolarAsset {
   static let video = "SolarVideoLibraryOutline"
   static let chart = "SolarChart2Outline"
   static let users = "SolarUsersGroupOutline"
+  static let userCircle = "SolarUserCircleOutline"
   static let settings = "SolarSettingsMinimalisticOutline"
   static let code = "SolarCodeSquareOutline"
   static let codeCircle = "SolarCodeCircleOutline"

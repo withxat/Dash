@@ -169,6 +169,7 @@ public struct CloudflareUser: Codable, Hashable, Identifiable, Sendable {
   public let email: String?
   public let firstName: String?
   public let lastName: String?
+  public let createdOn: String?
 
   public var displayName: String {
     [firstName, lastName].compactMap { $0 }.joined(separator: " ").nilIfEmpty ?? email ?? "User"
@@ -178,6 +179,7 @@ public struct CloudflareUser: Codable, Hashable, Identifiable, Sendable {
     case id, email
     case firstName = "first_name"
     case lastName = "last_name"
+    case createdOn = "created_on"
   }
 }
 
@@ -185,6 +187,12 @@ public struct CloudflareAccount: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let type: String?
+  public let createdOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, type
+    case createdOn = "created_on"
+  }
 }
 
 public struct Ruleset: CloudflareResource, Hashable {

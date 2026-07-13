@@ -81,6 +81,8 @@ enum DashTheme {
   static let subtle = adaptive(light: 0x717171, dark: 0xA3A3A3)
   /// Quiet icon actions (e.g. list-header edit); a tier fainter than `subtle`.
   static let faint = Color(hex: 0xB3B3B3)
+  /// Leading icons on neutral tray menu rows; danger rows keep `danger`.
+  static let iconMuted = Color(hex: 0x8E908F)
   static let placeholder = adaptive(light: 0xA3A3A3, dark: 0x717171)
   static let inverse = adaptive(light: 0xFFFFFF, dark: 0x171717)
 

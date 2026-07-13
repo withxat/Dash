@@ -55,6 +55,7 @@ struct FeatureDescriptor: Hashable, Sendable {
 }
 
 enum Destination: Hashable {
+  case profile
   case feature(FeatureID)
   case zone(String)
   case dns(String)

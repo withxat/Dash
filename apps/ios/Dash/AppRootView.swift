@@ -420,6 +420,15 @@ private struct MainTabView: View {
     }
   }
 
+  private func pushOnActiveTab(_ destination: Destination) {
+    switch selection {
+    case .home: homePath.append(destination)
+    case .items: itemsPath.append(destination)
+    case .watchtower: watchtowerPath.append(destination)
+    case .search: searchPath.append(destination)
+    }
+  }
+
   var body: some View {
     tabContainer
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
@@ -447,7 +456,10 @@ private struct MainTabView: View {
       .environment(\.showsProfile, $showsProfile)
       .environment(\.showsEditShortcuts, $showsEditShortcuts)
       .dashTray(isPresented: $showsProfile, title: "Profile") {
-        ProfileTrayContent()
+        ProfileTrayContent {
+          showsProfile = false
+          pushOnActiveTab(.profile)
+        }
       }
       .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
         EditShortcutsView()
@@ -749,6 +761,8 @@ private final class TabBarVisibilityResolverViewController: UIViewController {
 
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
+  /// Dismisses the tray and pushes the Profile page onto the active tab.
+  let openProfile: () -> Void
 
   var body: some View {
     VStack(spacing: 20) {
@@ -770,16 +784,163 @@ struct ProfileTrayContent: View {
       }
       .padding(.horizontal, DashTheme.Sheet.content)
 
-      DashConfirmableActions(actions: [
-        DashDangerAction(
-          title: "Sign out",
-          icon: SolarAsset.danger,
-          message: "You'll need to reconnect your Cloudflare account to use Dash again."
-        ) {
-          await model.signOut()
+      VStack(spacing: 10) {
+        Button(action: openProfile) {
+          HStack(spacing: 12) {
+            SolarIcon(asset: SolarAsset.userCircle, size: 22, color: DashTheme.iconMuted)
+            Text("Profile")
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+          }
+          .padding(.horizontal, 16)
+          .padding(.vertical, 14)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
         }
-      ])
+        .buttonStyle(DashPressButtonStyle())
+
+        DashConfirmableActions(
+          actions: [
+            DashDangerAction(
+              title: "Sign out",
+              icon: SolarAsset.danger,
+              message: "You'll need to reconnect your Cloudflare account to use Dash again."
+            ) {
+              await model.signOut()
+            }
+          ], horizontalInset: 0)
+      }
+      .padding(.horizontal, DashTheme.Sheet.content)
     }
+  }
+}
+
+/// The standalone Profile page, pushed from the avatar tray's Profile row:
+/// identity, user id and registration date, the active account's details, and
+/// the account switcher. Signing out stays on the tray menu.
+struct ProfileView: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    ScrollView {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
+        VStack(spacing: 12) {
+          UserAvatar(email: model.user?.email ?? "", size: 80)
+          VStack(spacing: 2) {
+            Text(model.user?.displayName ?? "—")
+              .dashTextStyle(.sheetTitle)
+              .foregroundStyle(DashTheme.strong)
+            Text(model.user?.email ?? "—")
+              .dashTextStyle(.supporting)
+              .foregroundStyle(DashTheme.subtle)
+          }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+
+        DashCard {
+          VStack(alignment: .leading, spacing: 0) {
+            profileField(label: "User ID", value: model.user?.id ?? "—", mono: true)
+            DashListGroupDivider()
+            profileField(label: "Registered", value: formattedDate(model.user?.createdOn) ?? "—")
+          }
+        }
+
+        if let account = model.activeAccount {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Active account")
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            DashCard {
+              VStack(alignment: .leading, spacing: 0) {
+                profileField(label: "Name", value: account.name)
+                DashListGroupDivider()
+                profileField(label: "Account ID", value: account.id, mono: true)
+                if let created = formattedDate(account.createdOn) {
+                  DashListGroupDivider()
+                  profileField(label: "Created", value: created)
+                }
+              }
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+
+        if model.accounts.count > 1 {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Switch account")
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            DashCard {
+              VStack(spacing: 0) {
+                ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
+                  Button {
+                    model.selectAccount(account)
+                  } label: {
+                    HStack(spacing: 12) {
+                      Text(account.name)
+                        .dashTextStyle(.bodyMedium)
+                        .foregroundStyle(DashTheme.text)
+                        .lineLimit(1)
+                      Spacer(minLength: 0)
+                      SolarIcon(
+                        asset: account.id == model.activeAccountID
+                          ? SolarAsset.checkCircle : SolarAsset.circle,
+                        size: 22,
+                        color: account.id == model.activeAccountID
+                          ? DashTheme.brand : DashTheme.placeholder)
+                    }
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                  }
+                  .buttonStyle(DashPressButtonStyle())
+                  .accessibilityAddTraits(
+                    account.id == model.activeAccountID ? .isSelected : [])
+                  if index < model.accounts.count - 1 { DashListGroupDivider() }
+                }
+              }
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      .dashContentColumn()
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.vertical, DashTheme.Spacing.section)
+    }
+    .background(DashTheme.canvas)
+    .navigationTitle("Profile")
+    .navigationBarTitleDisplayMode(.inline)
+  }
+
+  private func profileField(label: String, value: String, mono: Bool = false) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(label)
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+      Text(value)
+        .font(mono ? .system(size: 14, design: .monospaced) : .system(size: 15))
+        .foregroundStyle(DashTheme.text)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// Cloudflare timestamps arrive as ISO 8601, with or without fractional
+  /// seconds; render them as a plain date.
+  private func formattedDate(_ iso: String?) -> String? {
+    guard let iso else { return nil }
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let plain = ISO8601DateFormatter()
+    guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
+    return date.formatted(date: .abbreviated, time: .omitted)
   }
 }
 
@@ -789,6 +950,7 @@ private struct DestinationRoutedContent: View {
   var body: some View {
     Group {
       switch destination {
+      case .profile: ProfileView()
       case .feature(let feature):
         FeatureDetailChrome(feature: feature) {
           FeatureRouterContent(feature: feature)

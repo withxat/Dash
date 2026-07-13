@@ -129,7 +129,7 @@ struct EditShortcutsView: View {
               HStack(spacing: 12) {
                 CatalogFeatureIcon(feature: feature, size: .shortcut)
                 Text(feature.title)
-                  .font(.body)
+                  .dashTextStyle(.bodyMedium)
                   .foregroundStyle(DashTheme.text)
                   .lineLimit(1)
               }

@@ -1051,7 +1051,7 @@ struct DashConfirmableActions: View {
     HStack(spacing: 12) {
       SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)
       Text(action.title)
-        .font(.body)
+        .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.danger)
         .lineLimit(1)
       Spacer(minLength: 0)
