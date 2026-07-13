@@ -541,6 +541,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
             ErrorStateView(message: error, retry: retry)
           } else {
             content()
+              .dashContentReveal()
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)

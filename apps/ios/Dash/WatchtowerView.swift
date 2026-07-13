@@ -39,6 +39,7 @@ struct WatchtowerView: View {
               signalRow(signal)
             }
           }
+          .dashContentReveal()
         }
 
         if !loading, !healthy.isEmpty {
@@ -47,6 +48,7 @@ struct WatchtowerView: View {
               signalRow(signal)
             }
           }
+          .dashContentReveal(1)
         }
 
         if alertsStatus == .ok {

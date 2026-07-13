@@ -807,6 +807,33 @@ extension View {
   func dashReveal(_ index: Int = 0, shown: Bool) -> some View {
     modifier(DashRevealModifier(index: index, shown: shown))
   }
+
+  /// Self-driving entrance for loaded content: plays once when the view first
+  /// appears with `ready` true (and the splash lifted), then latches — pull
+  /// refreshes and scroll-backs never replay it. Applied to a `@ViewBuilder`
+  /// product it distributes per element, so lazy stacks stay lazy.
+  func dashContentReveal(_ index: Int = 0, ready: Bool = true) -> some View {
+    modifier(DashContentRevealModifier(index: index, ready: ready))
+  }
+}
+
+private struct DashContentRevealModifier: ViewModifier {
+  let index: Int
+  let ready: Bool
+  @Environment(\.dashSplashLifted) private var splashLifted
+  @State private var revealed = false
+
+  func body(content: Content) -> some View {
+    content
+      .dashReveal(index, shown: revealed)
+      .onAppear { maybeReveal() }
+      .onChange(of: ready) { _, _ in maybeReveal() }
+      .onChange(of: splashLifted) { _, _ in maybeReveal() }
+  }
+
+  private func maybeReveal() {
+    if ready && splashLifted { revealed = true }
+  }
 }
 
 /// Twotone ring spinner (after iconify's line-md:loading-twotone-loop): a

@@ -734,6 +734,7 @@ struct D1ConsoleView: View {
         title: "No tables",
         message: "This database has no user tables yet. Create one from the Console tab."
       )
+      .dashContentReveal()
     } else {
       DashListCard {
         DashListCardRows(items: tables.map(TableRow.init)) { row in
@@ -744,6 +745,7 @@ struct D1ConsoleView: View {
           }
         }
       }
+      .dashContentReveal()
     }
   }
 
@@ -863,8 +865,10 @@ struct D1TableView: View {
             title: "Empty table",
             message: "\(table) in \(databaseName) has no rows yet."
           )
+          .dashContentReveal()
         } else {
           tableContent
+            .dashContentReveal()
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
