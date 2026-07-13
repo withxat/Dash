@@ -590,25 +590,32 @@ struct DashListGroup<Content: View>: View {
           .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.subtle)
         Spacer(minLength: 0)
-        if let action {
-          if let actionIcon {
-            Button(action: action) {
-              SolarIcon(asset: actionIcon, size: 20, color: DashTheme.brand)
-                .dashCompactHitTarget()
-            }
-            .buttonStyle(DashOpacityButtonStyle())
-            .accessibilityLabel(actionTitle ?? "Edit")
-          } else if let actionTitle {
-            Button(actionTitle, action: action)
-              .dashTextStyle(.supportingMedium)
-              .foregroundStyle(DashTheme.brand)
-              .dashCompactHitTarget()
-              .buttonStyle(DashOpacityButtonStyle())
-          }
-        }
       }
       .padding(.horizontal, 16)
-      .padding(.vertical, action == nil ? 12 : 2)
+      .padding(.vertical, 12)
+      // The action rides an overlay so its 44pt hit target never stretches
+      // the header: with or without an action, headers stay the same height.
+      .overlay(alignment: .trailing) {
+        if let action {
+          Group {
+            if let actionIcon {
+              Button(action: action) {
+                SolarIcon(asset: actionIcon, size: 20, color: DashTheme.brand)
+                  .dashCompactHitTarget()
+              }
+              .buttonStyle(DashOpacityButtonStyle())
+              .accessibilityLabel(actionTitle ?? "Edit")
+            } else if let actionTitle {
+              Button(actionTitle, action: action)
+                .dashTextStyle(.supportingMedium)
+                .foregroundStyle(DashTheme.brand)
+                .dashCompactHitTarget()
+                .buttonStyle(DashOpacityButtonStyle())
+            }
+          }
+          .padding(.trailing, 16)
+        }
+      }
 
       DashListCard { content }
         .padding(.horizontal, -0.5)
