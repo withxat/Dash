@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct DashApp: App {
   @State private var model = AppModel()
+  @State private var showSplash = true
 
   init() {
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
@@ -62,12 +63,68 @@ struct DashApp: App {
         KeyboardDismissalTestHost()
           .tint(DashTheme.brand)
       } else {
-        AppRootView()
-          .environment(model)
+        RootWithSplash(model: model, showSplash: $showSplash)
           .tint(DashTheme.brand)
-          .task { await model.bootstrap() }
       }
     }
+  }
+}
+
+/// Bridges the static system launch screen into the first interactive frame:
+/// same `LaunchBackground` + centered `LaunchLogo`, held until bootstrap
+/// finishes (and a short minimum), then faded away.
+private struct RootWithSplash: View {
+  var model: AppModel
+  @Binding var showSplash: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private static let minimumDuration: Duration = .milliseconds(800)
+  private static let fadeDuration: TimeInterval = 0.35
+
+  var body: some View {
+    ZStack {
+      AppRootView()
+        .environment(model)
+        .environment(\.dashSplashLifted, !showSplash)
+
+      if showSplash {
+        LaunchSplashView()
+          .transition(.opacity)
+          .zIndex(1)
+      }
+    }
+    .task {
+      async let bootstrap: Void = model.bootstrap()
+      try? await Task.sleep(for: Self.minimumDuration)
+      await bootstrap
+
+      if reduceMotion {
+        showSplash = false
+      } else {
+        withAnimation(.easeOut(duration: Self.fadeDuration)) {
+          showSplash = false
+        }
+      }
+    }
+  }
+}
+
+/// Matches `UILaunchScreen` composition so the handoff from the system splash
+/// does not flash a different layout.
+private struct LaunchSplashView: View {
+  var body: some View {
+    ZStack {
+      Color("LaunchBackground")
+        .ignoresSafeArea()
+      Image("LaunchLogo")
+        .resizable()
+        .scaledToFit()
+        .frame(width: 88, height: 88)
+        .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
+        .accessibilityHidden(true)
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }
 

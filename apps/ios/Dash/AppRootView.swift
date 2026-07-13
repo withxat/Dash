@@ -6,23 +6,32 @@ struct AppRootView: View {
   @Environment(AppModel.self) private var model
 
   var body: some View {
-    switch model.authState {
-    case .loading:
-      ZStack {
-        DashTheme.canvas.ignoresSafeArea()
-        ProgressView().tint(DashTheme.brand)
+    // Auth states cross-fade instead of swapping frames: sign-in should read
+    // as the login screen quietly dissolving into the catalog, not a flash.
+    ZStack {
+      switch model.authState {
+      case .loading:
+        // Match `UILaunchScreen` / `LaunchSplashView` so the handoff never
+        // flashes a different canvas color under the splash fade.
+        Color("LaunchBackground").ignoresSafeArea()
+          .transition(.opacity)
+      case .unauthenticated:
+        LoginView()
+          .transition(.opacity)
+      case .authenticated:
+        MainTabView()
+          .transition(.opacity)
       }
-    case .unauthenticated:
-      LoginView()
-    case .authenticated:
-      MainTabView()
     }
+    .animation(.easeOut(duration: 0.3), value: model.authState)
   }
 }
 
 private struct LoginView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashSplashLifted) private var splashLifted
   @State private var showsPermissions = false
+  @State private var revealed = false
 
   var body: some View {
     ZStack {
@@ -31,14 +40,17 @@ private struct LoginView: View {
         Spacer()
         VStack(spacing: 16) {
           appIconView
+            .dashReveal(0, shown: revealed)
           VStack(spacing: 6) {
             Text("Dash")
               .font(.dashTitle(40))
               .foregroundStyle(DashTheme.strong)
+              .dashReveal(1, shown: revealed)
             Text("Cloudflare in your hand.")
               .font(.system(size: 15))
               .foregroundStyle(DashTheme.subtle)
               .multilineTextAlignment(.center)
+              .dashReveal(2, shown: revealed)
           }
         }
         Spacer()
@@ -75,6 +87,7 @@ private struct LoginView: View {
               .frame(maxWidth: .infinity, minHeight: 44)
           }
           .buttonStyle(DashPressButtonStyle())
+          .dashReveal(3, shown: revealed)
 
           DashPillButton(
             title: "Start your engine!",
@@ -84,6 +97,7 @@ private struct LoginView: View {
           )
           .disabled(!model.configuration.isConfigured)
           .opacity(model.configuration.isConfigured ? 1 : 0.5)
+          .dashReveal(4, shown: revealed)
         }
       }
       .frame(maxWidth: 448)
@@ -93,6 +107,12 @@ private struct LoginView: View {
     }
     .dashTray(isPresented: $showsPermissions, title: "Permissions") {
       PermissionSelectionView()
+    }
+    .onAppear {
+      if splashLifted { revealed = true }
+    }
+    .onChange(of: splashLifted) { _, lifted in
+      if lifted { revealed = true }
     }
   }
 

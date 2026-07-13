@@ -762,6 +762,53 @@ struct DashCloseButton: View {
   }
 }
 
+// MARK: - Staggered reveal
+
+private struct DashSplashLiftedKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
+extension EnvironmentValues {
+  /// False while the launch splash still covers the window. Entrance reveals
+  /// wait on it so they play in view, not underneath the splash.
+  var dashSplashLifted: Bool {
+    get { self[DashSplashLiftedKey.self] }
+    set { self[DashSplashLiftedKey.self] = newValue }
+  }
+}
+
+/// Entrance reveal (after Transitions.dev "Texts reveal"): rises 12pt out of
+/// a 3pt blur on a 0.5s deceleration curve, held back 40ms per `index` so
+/// siblings land top to bottom. Works on any view, not just text. Exits
+/// should stay a plain short fade — never replay the stagger in reverse.
+private struct DashRevealModifier: ViewModifier {
+  let index: Int
+  let shown: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    let visible = shown || reduceMotion
+    content
+      .opacity(visible ? 1 : 0)
+      .offset(y: visible ? 0 : 12)
+      .blur(radius: visible ? 0 : 3)
+      .animation(
+        reduceMotion
+          ? nil
+          : .timingCurve(0.22, 1, 0.36, 1, duration: 0.5).delay(Double(index) * 0.04),
+        value: shown
+      )
+  }
+}
+
+extension View {
+  /// Staggered entrance; drive `shown` from state flipped on appear (waiting
+  /// for `dashSplashLifted` when the view can sit under the launch splash).
+  func dashReveal(_ index: Int = 0, shown: Bool) -> some View {
+    modifier(DashRevealModifier(index: index, shown: shown))
+  }
+}
+
 /// Twotone ring spinner (after iconify's line-md:loading-twotone-loop): a
 /// faint full circle under a quarter arc looping a 1.5s rotation. Sits at a
 /// pill's trailing edge so the centered label never shifts while loading.
@@ -1022,16 +1069,19 @@ struct DashConfirmableActions: View {
             }
           }
         } label: {
-          HStack(spacing: 8) {
-            if working { ProgressView().tint(DashTheme.inverse) }
-            Text("Confirm")
-              .dashTextStyle(.bodySemibold)
-          }
-          .foregroundStyle(DashTheme.inverse)
-          .frame(maxWidth: .infinity, minHeight: 52)
-          .background {
-            confirmBackground(action)
-          }
+          Text("Confirm")
+            .dashTextStyle(.button)
+            .foregroundStyle(DashTheme.inverse)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .overlay(alignment: .trailing) {
+              if working {
+                DashLoadingRing()
+                  .padding(.trailing, 18)
+              }
+            }
+            .background {
+              confirmBackground(action)
+            }
         }
         .buttonStyle(DashPressButtonStyle())
         .disabled(working)

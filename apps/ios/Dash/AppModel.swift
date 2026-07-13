@@ -4,7 +4,7 @@ import Foundation
 import Observation
 import UIKit
 
-enum AuthenticationState: Sendable {
+enum AuthenticationState: Sendable, Equatable {
   case authenticated
   case loading
   case unauthenticated
@@ -115,19 +115,21 @@ final class AppModel {
     ) { [weak self] url, error in
       Task { @MainActor [weak self] in
         guard let self else { return }
-        isAuthenticating = false
         if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
+          isAuthenticating = false
           return
         }
         guard error == nil, let url,
           let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
+          isAuthenticating = false
           errorMessage = error?.localizedDescription ?? "OAuth callback was invalid."
           return
         }
         let values = Dictionary(
           uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         guard values["state"] == state, let code = values["code"] else {
+          isAuthenticating = false
           errorMessage = values["error_description"] ?? values["error"] ?? "OAuth state mismatch."
           return
         }
@@ -160,8 +162,12 @@ final class AppModel {
           selectedScopes = granted
           featureCache.clear()
           try await loadIdentity()
+          // isAuthenticating stays true: the ring should survive the login
+          // screen's exit fade instead of vanishing mid-transition. signOut()
+          // resets it for the next visit.
           authState = .authenticated
         } catch {
+          isAuthenticating = false
           if replacedTokens, let previousTokens {
             try? await tokenStore.setTokens(previousTokens)
             if let previousScopes {
@@ -187,6 +193,7 @@ final class AppModel {
   }
 
   func signOut() async {
+    isAuthenticating = false
     if let token = try? await tokenStore.getAccessToken() {
       try? await OAuth.revoke(clientID: configuration.clientID, token: token)
     }
