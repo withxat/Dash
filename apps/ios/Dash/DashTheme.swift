@@ -55,7 +55,7 @@ enum DashTheme {
   }
 
   enum Sheet {
-    static let content: CGFloat = 24
+    static let content: CGFloat = 28
     static let headerTop: CGFloat = 28
     static let headerBottom: CGFloat = 14
     static let bodyVertical: CGFloat = 16
