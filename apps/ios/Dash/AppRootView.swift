@@ -70,7 +70,7 @@ private struct LoginView: View {
             showsPermissions = true
           } label: {
             Text("Permissions")
-              .dashTextStyle(.bodyMedium)
+              .dashTextStyle(.buttonMedium)
               .foregroundStyle(DashTheme.subtle)
               .frame(maxWidth: .infinity, minHeight: 44)
           }

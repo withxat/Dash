@@ -608,7 +608,7 @@ private struct DashConfirmMorph<Content: View>: View {
           withAnimation(morphAnimation) { confirming = false }
         } label: {
           Text("Cancel")
-            .dashTextStyle(.bodyMedium)
+            .dashTextStyle(.buttonMedium)
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, minHeight: 44)
         }
@@ -762,9 +762,36 @@ struct DashCloseButton: View {
   }
 }
 
+/// Twotone ring spinner (after iconify's line-md:loading-twotone-loop): a
+/// faint full circle under a quarter arc looping a 1.5s rotation. Sits at a
+/// pill's trailing edge so the centered label never shifts while loading.
+struct DashLoadingRing: View {
+  var color: Color = DashTheme.inverse
+  var size: CGFloat = 20
+  @State private var spinning = false
+
+  var body: some View {
+    ZStack {
+      Circle()
+        .stroke(color.opacity(0.3), lineWidth: 2)
+      Circle()
+        .trim(from: 0, to: 0.25)
+        .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        .rotationEffect(.degrees(spinning ? 360 : 0))
+    }
+    .frame(width: size, height: size)
+    .onAppear {
+      withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+        spinning = true
+      }
+    }
+    .accessibilityLabel("Loading")
+  }
+}
+
 struct DashPillButton: View {
   let title: String
-  /// Optional leading asset-catalog icon, hidden while loading.
+  /// Optional leading asset-catalog icon.
   var icon: String?
   var isLoading = false
   /// Disabled state with the shared 0.45 dim; loading disables without dimming.
@@ -774,16 +801,20 @@ struct DashPillButton: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 8) {
-        if isLoading {
-          ProgressView().tint(DashTheme.inverse)
-        } else if let icon {
+        if let icon {
           SolarIcon(asset: icon, size: 20, color: DashTheme.inverse)
         }
         Text(title)
-          .dashTextStyle(.bodySemibold)
+          .dashTextStyle(.button)
       }
       .foregroundStyle(DashTheme.inverse)
       .frame(maxWidth: .infinity, minHeight: 52)
+      .overlay(alignment: .trailing) {
+        if isLoading {
+          DashLoadingRing()
+            .padding(.trailing, 18)
+        }
+      }
       .background(DashTheme.strong, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
@@ -809,7 +840,7 @@ struct DashSecondaryPillButton: View {
 
   private var label: some View {
     Text(title)
-      .dashTextStyle(.bodyBold)
+      .dashTextStyle(.buttonBold)
       .foregroundStyle(DashTheme.strong)
       .frame(maxWidth: .infinity, minHeight: 52)
       .background(DashTheme.recessed, in: DashTheme.pillShape)
@@ -968,7 +999,7 @@ struct DashConfirmableActions: View {
           withAnimation(morphAnimation) { pending = nil }
         } label: {
           Text("Cancel")
-            .dashTextStyle(.bodyMedium)
+            .dashTextStyle(.buttonMedium)
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, minHeight: 44)
         }
@@ -1032,15 +1063,18 @@ struct DashActionButton: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 8) {
-        if isLoading { ProgressView().tint(DashTheme.inverse) }
-        Text(title)
-          .dashTextStyle(.bodySemibold)
-          .contentTransition(.opacity)
-      }
-      .foregroundStyle(DashTheme.inverse)
-      .frame(maxWidth: .infinity, minHeight: 52)
-      .background(fill, in: DashTheme.pillShape)
+      Text(title)
+        .dashTextStyle(.button)
+        .contentTransition(.opacity)
+        .foregroundStyle(DashTheme.inverse)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .overlay(alignment: .trailing) {
+          if isLoading {
+            DashLoadingRing()
+              .padding(.trailing, 18)
+          }
+        }
+        .background(fill, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
     .disabled(isLoading)
@@ -1057,17 +1091,20 @@ struct DashTrayPillButton: View {
 
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 8) {
-        if isLoading { ProgressView() }
-        Text(title)
-          .dashTextStyle(.bodyBold)
-      }
-      .foregroundStyle(DashTheme.strong)
-      .frame(maxWidth: .infinity, minHeight: 52)
-      .background(DashTheme.recessed, in: DashTheme.pillShape)
-      .overlay {
-        DashTheme.pillShape.stroke(DashTheme.line, lineWidth: 0.5)
-      }
+      Text(title)
+        .dashTextStyle(.buttonBold)
+        .foregroundStyle(DashTheme.strong)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .overlay(alignment: .trailing) {
+          if isLoading {
+            DashLoadingRing(color: DashTheme.strong)
+              .padding(.trailing, 18)
+          }
+        }
+        .background(DashTheme.recessed, in: DashTheme.pillShape)
+        .overlay {
+          DashTheme.pillShape.stroke(DashTheme.line, lineWidth: 0.5)
+        }
     }
     .buttonStyle(DashPressButtonStyle())
     .disabled(isLoading)

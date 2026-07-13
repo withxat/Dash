@@ -164,6 +164,9 @@ enum DashTextStyle {
   case bodyMedium
   case bodySemibold
   case bodyBold
+  case button
+  case buttonMedium
+  case buttonBold
   case supporting
   case supportingMedium
   case supportingSemibold
@@ -183,6 +186,9 @@ enum DashTextStyle {
     case .bodyMedium: (16, .medium, .default, .body)
     case .bodySemibold: (16, .semibold, .default, .body)
     case .bodyBold: (16, .bold, .default, .body)
+    case .button: (17, .semibold, .default, .body)
+    case .buttonMedium: (17, .medium, .default, .body)
+    case .buttonBold: (17, .bold, .default, .body)
     case .supporting: (15, .regular, .default, .subheadline)
     case .supportingMedium: (14, .medium, .default, .subheadline)
     case .supportingSemibold: (15, .semibold, .default, .subheadline)
