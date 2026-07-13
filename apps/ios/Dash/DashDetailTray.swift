@@ -75,7 +75,6 @@ struct DashDetailTray<Accessory: View>: View {
           }
         }
         .padding(.horizontal, DashTheme.Sheet.content)
-        .padding(.bottom, DashTheme.Sheet.bodyBottom)
         .transition(.dashMorph)
       } else {
         // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
@@ -91,7 +90,6 @@ struct DashDetailTray<Accessory: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, DashTheme.Sheet.content)
-        .padding(.bottom, DashTheme.Sheet.bodyBottom)
         .transition(.dashMorph)
       }
     }

@@ -298,7 +298,6 @@ private struct PermissionSelectionView: View {
       }
     }
     .padding(.horizontal, DashTheme.Sheet.content)
-    .padding(.bottom, DashTheme.Sheet.bodyBottom)
   }
 
   /// A whole-row toggle target: the bare switch ignores taps on its empty track
@@ -870,7 +869,6 @@ struct ProfileTrayContent: View {
       .buttonStyle(DashPressButtonStyle())
     }
     .padding(.horizontal, DashTheme.Sheet.content)
-    .padding(.bottom, 8)
   }
 
   private func menuRow(title: String, icon: String, action: @escaping () -> Void) -> some View {

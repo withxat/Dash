@@ -508,9 +508,12 @@ private struct DashSheetCard<Header: View, Body: View>: View {
         }
 
       ScrollView {
+        // The body owns its vertical margins so every tray breathes the same:
+        // content pieces must not add their own bottom padding.
         content()
           .frame(maxWidth: .infinity, alignment: .top)
           .padding(.top, DashTheme.Sheet.bodyVertical)
+          .padding(.bottom, DashTheme.Sheet.bodyBottom)
           .background {
             GeometryReader { proxy in
               Color.clear.preference(key: DashSheetBodyIdealKey.self, value: proxy.size.height)
@@ -789,7 +792,6 @@ private struct DashConfirmMorph<Content: View>: View {
       .opacity(actionEnabled ? 1 : 0.45)
     }
     .padding(.horizontal, DashTheme.Sheet.content)
-    .padding(.bottom, DashTheme.Sheet.bodyBottom)
     .dashTrayHeaderAction(
       headerDelete && !confirming
         ? DashSheetHeaderAction(
@@ -1195,7 +1197,6 @@ struct DashConfirmableActions: View {
       }
     }
     .padding(.horizontal, horizontalInset)
-    .padding(.bottom, 8)
   }
 
   private var menu: some View {
