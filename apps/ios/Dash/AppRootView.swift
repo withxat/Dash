@@ -23,28 +23,40 @@ struct AppRootView: View {
 private struct LoginView: View {
   @Environment(AppModel.self) private var model
 
+  /// The compiled primary app icon, resolved through Info.plist so it tracks
+  /// whatever `AppIcon.icon` produces at build time. `CFBundleIconName` maps to
+  /// the full-resolution icon in Assets.car; `CFBundleIconFiles` variants are
+  /// small home-screen renditions kept only as a fallback.
+  private static let appIcon: UIImage? = {
+    guard
+      let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+      let primary = icons["CFBundlePrimaryIcon"] as? [String: Any]
+    else { return nil }
+    if let name = primary["CFBundleIconName"] as? String, let image = UIImage(named: name) {
+      return image
+    }
+    guard let files = primary["CFBundleIconFiles"] as? [String], let name = files.last
+    else { return nil }
+    return UIImage(named: name)
+  }()
+
   var body: some View {
     ZStack {
       DashTheme.canvas.ignoresSafeArea()
       ScrollView {
         VStack(spacing: 32) {
-          Spacer(minLength: 80)
+          Spacer(minLength: 96)
           VStack(spacing: 16) {
-            ZStack {
-              Circle().fill(DashTheme.accent)
-              SolarIcon(asset: SolarAsset.cloud, size: 32, color: DashTheme.inverse)
+            appIconView
+            VStack(spacing: 6) {
+              Text("Dash")
+                .font(.dashTitle(40))
+                .foregroundStyle(DashTheme.strong)
+              Text("Cloudflare in your hand.")
+                .font(.system(size: 15))
+                .foregroundStyle(DashTheme.subtle)
+                .multilineTextAlignment(.center)
             }
-            .frame(width: 72, height: 72)
-            Text("Dash")
-              .font(.dashTitle(40))
-              .foregroundStyle(DashTheme.strong)
-            Text(
-              "Zones, DNS, cache, security and analytics — your Cloudflare account in your pocket."
-            )
-            .font(.system(size: 15))
-            .foregroundStyle(DashTheme.subtle)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
           }
 
           if let error = model.errorMessage {
@@ -55,7 +67,8 @@ private struct LoginView: View {
           }
 
           DashPillButton(
-            title: "Connect Cloudflare",
+            title: "Start your engine!",
+            icon: SolarAsset.cloudflare,
             isLoading: model.isAuthenticating,
             action: { model.signIn() }
           )
@@ -78,19 +91,29 @@ private struct LoginView: View {
               }
             }
           }
-
-          DashCard {
-            Text("Secure OAuth with PKCE. Your credentials never pass through the callback relay.")
-              .font(.system(size: 13))
-              .foregroundStyle(DashTheme.subtle)
-              .fixedSize(horizontal: false, vertical: true)
-          }
           Spacer(minLength: 24)
         }
         .frame(maxWidth: 448)
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity)
       }
+    }
+  }
+
+  @ViewBuilder private var appIconView: some View {
+    if let icon = Self.appIcon {
+      Image(uiImage: icon)
+        .resizable()
+        .scaledToFit()
+        .frame(width: 88, height: 88)
+        .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
+        .accessibilityHidden(true)
+    } else {
+      ZStack {
+        Circle().fill(DashTheme.accent)
+        SolarIcon(asset: SolarAsset.cloud, size: 32, color: DashTheme.inverse)
+      }
+      .frame(width: 72, height: 72)
     }
   }
 }

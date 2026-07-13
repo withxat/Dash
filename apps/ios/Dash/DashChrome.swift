@@ -764,6 +764,8 @@ struct DashCloseButton: View {
 
 struct DashPillButton: View {
   let title: String
+  /// Optional leading asset-catalog icon, hidden while loading.
+  var icon: String?
   var isLoading = false
   /// Disabled state with the shared 0.45 dim; loading disables without dimming.
   var isEnabled = true
@@ -772,7 +774,11 @@ struct DashPillButton: View {
   var body: some View {
     Button(action: action) {
       HStack(spacing: 8) {
-        if isLoading { ProgressView().tint(DashTheme.inverse) }
+        if isLoading {
+          ProgressView().tint(DashTheme.inverse)
+        } else if let icon {
+          SolarIcon(asset: icon, size: 20, color: DashTheme.inverse)
+        }
         Text(title)
           .dashTextStyle(.bodySemibold)
       }
