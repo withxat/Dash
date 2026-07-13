@@ -1072,6 +1072,29 @@ struct DashValueCard: View {
   }
 }
 
+/// A screen's inherently read-only settings, gathered into one white card at
+/// the top of the page — label/value rows with dividers — instead of dead
+/// controls scattered through the editable flow.
+struct DashReadOnlySettingsCard: View {
+  let rows: [(String, String)]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      Text("Read only")
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.subtle)
+        .padding(.horizontal, 16)
+      DashListCard {
+        ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+          DashValueRow(title: row.0, value: row.1)
+          if index < rows.count - 1 { DashListGroupDivider() }
+        }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
 struct DashCodePanel: View {
   let title: String
   var message: String?

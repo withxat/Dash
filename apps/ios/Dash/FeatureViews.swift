@@ -1082,8 +1082,15 @@ struct ZoneSettingsView: View {
 
   var body: some View {
     DashFeatureList(isLoading: loading, error: error, retry: { Task { await load() } }) {
+      let readOnly = settings.filter(isReadOnly)
+      if !readOnly.isEmpty {
+        DashReadOnlySettingsCard(
+          rows: readOnly.map { ($0.displayTitle, $0.value.displayText) })
+      }
       ForEach(ZoneSettingGroup.allCases, id: \.self) { group in
-        let grouped = settings.filter { ZoneSettingGroup(settingID: $0.id) == group }
+        let grouped = settings.filter {
+          ZoneSettingGroup(settingID: $0.id) == group && !isReadOnly($0)
+        }
         if !grouped.isEmpty {
           VStack(alignment: .leading, spacing: 12) {
             Text(group.rawValue)
@@ -1103,69 +1110,72 @@ struct ZoneSettingsView: View {
     .task { await load() }
   }
 
-  @ViewBuilder
-  private func settingRow(_ setting: ZoneSetting) -> some View {
-    if readOnlyZoneSettings.contains(setting.id) || setting.editable == false {
-      readOnlyRow(setting)
-    } else {
-      switch setting.value {
-      case .bool(let enabled):
-        DashToggleRow(
-          title: setting.displayTitle,
-          isOn: Binding(
-            get: { enabled },
-            set: { value in Task { await update(setting, value: .bool(value)) } })
-        )
-      case .string(let value):
-        // The enum map wins over the on/off toggle: settings like polish read
-        // "off" today but accept more than two states.
-        if let options = zoneSettingOptions[setting.id] {
-          DashMenuRow(
-            title: setting.displayTitle,
-            value: value,
-            options: options
-          ) { chosen in
-            Task { await update(setting, value: .string(chosen)) }
-          }
-        } else if value == "on" || value == "off" {
-          // Cloudflare encodes most binary zone settings as "on"/"off" strings,
-          // not booleans — render them as the switches they are.
-          DashToggleRow(
-            title: setting.displayTitle,
-            isOn: Binding(
-              get: { value == "on" },
-              set: { enabled in
-                Task { await update(setting, value: .string(enabled ? "on" : "off")) }
-              })
-          )
-        } else {
-          DashValueCard(title: setting.displayTitle, value: value)
-        }
-      case .number(let number):
-        if let options = zoneSettingNumberOptions[setting.id] {
-          DashMenuRow(
-            title: setting.displayTitle,
-            value: JSONValue.number(number).displayText,
-            options: options.map(String.init)
-          ) { chosen in
-            guard let value = Double(chosen) else { return }
-            Task { await update(setting, value: .number(value)) }
-          }
-        } else {
-          readOnlyRow(setting)
-        }
-      default:
-        readOnlyRow(setting)
-      }
+  /// Settings that can't be edited here: flagged uneditable by the API,
+  /// lacking a write path, or of a shape the page has no control for.
+  private func isReadOnly(_ setting: ZoneSetting) -> Bool {
+    if readOnlyZoneSettings.contains(setting.id) || setting.editable == false { return true }
+    switch setting.value {
+    case .bool: return false
+    case .string(let value):
+      return zoneSettingOptions[setting.id] == nil && value != "on" && value != "off"
+    case .number: return zoneSettingNumberOptions[setting.id] == nil
+    default: return true
     }
   }
 
-  private func readOnlyRow(_ setting: ZoneSetting) -> some View {
-    DashValueCard(
-      title: setting.displayTitle,
-      value: setting.value.displayText,
-      caption: setting.editable == false ? "Read only" : nil
-    )
+  /// Renders one editable setting; read-only ones are filtered into the
+  /// top card by `isReadOnly` before reaching here.
+  @ViewBuilder
+  private func settingRow(_ setting: ZoneSetting) -> some View {
+    switch setting.value {
+    case .bool(let enabled):
+      DashToggleRow(
+        title: setting.displayTitle,
+        isOn: Binding(
+          get: { enabled },
+          set: { value in Task { await update(setting, value: .bool(value)) } })
+      )
+    case .string(let value):
+      // The enum map wins over the on/off toggle: settings like polish read
+      // "off" today but accept more than two states.
+      if let options = zoneSettingOptions[setting.id] {
+        DashMenuRow(
+          title: setting.displayTitle,
+          value: value,
+          options: options
+        ) { chosen in
+          Task { await update(setting, value: .string(chosen)) }
+        }
+      } else if value == "on" || value == "off" {
+        // Cloudflare encodes most binary zone settings as "on"/"off" strings,
+        // not booleans — render them as the switches they are.
+        DashToggleRow(
+          title: setting.displayTitle,
+          isOn: Binding(
+            get: { value == "on" },
+            set: { enabled in
+              Task { await update(setting, value: .string(enabled ? "on" : "off")) }
+            })
+        )
+      } else {
+        DashValueCard(title: setting.displayTitle, value: value)
+      }
+    case .number(let number):
+      if let options = zoneSettingNumberOptions[setting.id] {
+        DashMenuRow(
+          title: setting.displayTitle,
+          value: JSONValue.number(number).displayText,
+          options: options.map(String.init)
+        ) { chosen in
+          guard let value = Double(chosen) else { return }
+          Task { await update(setting, value: .number(value)) }
+        }
+      } else {
+        DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
+      }
+    default:
+      DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
+    }
   }
 
   private func load(force: Bool = false) async {

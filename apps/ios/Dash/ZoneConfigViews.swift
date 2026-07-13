@@ -79,6 +79,16 @@ struct BotManagementView: View {
       if let saveError {
         DashNotice(kind: .error, message: saveError)
       }
+      let readOnlyRows = infoRows.filter { Self.enumOptions[$0.key] == nil }
+      if !readOnlyRows.isEmpty {
+        DashReadOnlySettingsCard(
+          rows: readOnlyRows.map {
+            (
+              Self.labels[$0.key]?.title ?? $0.key.replacingOccurrences(of: "_", with: " "),
+              $0.value
+            )
+          })
+      }
       if !toggleKeys.isEmpty {
         VStack(spacing: 12) {
           ForEach(toggleKeys, id: \.self) { key in
@@ -91,9 +101,10 @@ struct BotManagementView: View {
           }
         }
       }
-      if !infoRows.isEmpty {
+      let enumRows = infoRows.filter { Self.enumOptions[$0.key] != nil }
+      if !enumRows.isEmpty {
         VStack(spacing: 12) {
-          ForEach(infoRows, id: \.key) { row in
+          ForEach(enumRows, id: \.key) { row in
             if let options = Self.enumOptions[row.key], allowsWrites {
               DashMenuRow(
                 title: Self.labels[row.key]?.title
@@ -380,6 +391,10 @@ struct AccountDNSSettingsView: View {
       if let saveError {
         DashNotice(kind: .error, message: saveError)
       }
+      if !infoKeys.isEmpty {
+        DashReadOnlySettingsCard(
+          rows: infoKeys.map { ($0.humanizedSettingTitle, defaults[$0]?.displayText ?? "—") })
+      }
       if !defaults.isEmpty {
         VStack(spacing: 12) {
           ForEach(toggleKeys, id: \.self) { key in
@@ -423,12 +438,6 @@ struct AccountDNSSettingsView: View {
             } else {
               DashValueCard(title: "Nameserver type", value: nameserverType)
             }
-          }
-          ForEach(infoKeys, id: \.self) { key in
-            DashValueCard(
-              title: key.humanizedSettingTitle,
-              value: defaults[key]?.displayText ?? "—"
-            )
           }
         }
       }
