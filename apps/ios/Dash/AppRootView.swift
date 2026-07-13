@@ -125,47 +125,56 @@ private struct PermissionSelectionView: View {
         .foregroundStyle(DashTheme.subtle)
         .frame(maxWidth: .infinity, alignment: .leading)
 
-      Toggle(isOn: allBinding) {
-        permissionLabel(
-          "All OAuth-enabled permissions",
-          detail:
-            "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) selected"
-        )
-      }
-      .tint(DashTheme.brand)
+      permissionRow(
+        "All OAuth-enabled permissions",
+        detail: "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) selected",
+        isOn: allBinding
+      )
 
       ForEach(categories, id: \.key) { category in
-        DisclosureGroup {
-          VStack(spacing: 10) {
-            ForEach(category.values) { scope in
-              Toggle(isOn: scopeBinding(scope.id)) {
-                permissionLabel(
-                  scope.name,
-                  detail: scope.id,
-                  risk: scope.risk,
-                  unavailable: CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
-                )
-              }
-              .tint(DashTheme.brand)
-              .disabled(
-                CloudflareScopes.required.contains(scope.id)
-                  || CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
-              )
-            }
-          }
-          .padding(.top, 8)
-        } label: {
-          Toggle(isOn: categoryBinding(category.values)) {
-            Text(category.values.first?.categoryTitle ?? category.key)
-              .font(.subheadline.weight(.medium))
-              .foregroundStyle(DashTheme.text)
-          }
-          .tint(DashTheme.brand)
-        }
+        permissionRow(
+          category.values.first?.categoryTitle ?? category.key,
+          detail: categoryDetail(category.values),
+          isOn: categoryBinding(category.values),
+          disabled:
+            Set(category.values.map(\.id)).intersection(CloudflareScopes.requestable).isEmpty
+        )
       }
     }
     .padding(.horizontal, DashTheme.Sheet.content)
     .padding(.bottom, DashTheme.Sheet.bodyBottom)
+  }
+
+  /// A whole-row toggle target: the bare switch ignores taps on its empty track
+  /// on this iOS, and a full row is the friendlier target anyway. The switch is
+  /// display-only; the row button flips the binding.
+  private func permissionRow(
+    _ title: String,
+    detail: String,
+    isOn: Binding<Bool>,
+    disabled: Bool = false
+  ) -> some View {
+    Button {
+      isOn.wrappedValue.toggle()
+    } label: {
+      HStack(spacing: 12) {
+        permissionLabel(title, detail: detail)
+        Spacer(minLength: 12)
+        Toggle("", isOn: isOn)
+          .labelsHidden()
+          .tint(DashTheme.brand)
+          .allowsHitTesting(false)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .disabled(disabled)
+    .accessibilityElement(children: .combine)
+  }
+
+  private func categoryDetail(_ scopes: [OAuthScopeDefinition]) -> String {
+    let count = scopes.count
+    return count == 1 ? "1 permission" : "\(count) permissions"
   }
 
   private var allBinding: Binding<Bool> {
@@ -186,41 +195,11 @@ private struct PermissionSelectionView: View {
     )
   }
 
-  private func scopeBinding(_ scope: String) -> Binding<Bool> {
-    Binding(
-      get: { model.selectedScopes.contains(scope) },
-      set: { enabled in
-        if enabled, CloudflareScopes.requestable.contains(scope) {
-          model.selectedScopes.insert(scope)
-        } else if !CloudflareScopes.required.contains(scope) {
-          model.selectedScopes.remove(scope)
-        }
-      }
-    )
-  }
-
-  private func permissionLabel(
-    _ title: String,
-    detail: String,
-    risk: OAuthScopeRisk = .read,
-    unavailable: Bool = false
-  ) -> some View {
+  private func permissionLabel(_ title: String, detail: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
-      HStack(spacing: 6) {
-        Text(title)
-          .font(.caption.weight(.medium))
-          .foregroundStyle(DashTheme.text)
-        if risk == .elevated {
-          Text("Elevated")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(DashTheme.warning)
-        }
-        if unavailable {
-          Text("OAuth unavailable")
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(DashTheme.danger)
-        }
-      }
+      Text(title)
+        .font(.subheadline.weight(.medium))
+        .foregroundStyle(DashTheme.text)
       Text(detail)
         .font(.caption2)
         .foregroundStyle(DashTheme.subtle)
