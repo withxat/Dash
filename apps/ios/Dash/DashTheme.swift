@@ -942,6 +942,55 @@ struct DashValueRow: View {
   }
 }
 
+// MARK: - Control cards
+
+/// The face of one setting control: its own recessed rounded card with a bold
+/// title on the left and the control on the right. Captions render below the
+/// card (see `dashControlCaption`), never inside it.
+private struct DashControlSurface<Trailing: View>: View {
+  let title: String
+  @ViewBuilder let trailing: () -> Trailing
+
+  var body: some View {
+    HStack(spacing: 16) {
+      Text(title)
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(DashTheme.strong)
+        .multilineTextAlignment(.leading)
+      Spacer(minLength: 12)
+      trailing()
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 14)
+    .frame(maxWidth: .infinity)
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+  }
+}
+
+extension View {
+  /// Lays the supporting text of a control card beneath it, aligned with the
+  /// card's inner content.
+  fileprivate func dashControlCaption(_ caption: String?) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      self
+      if let caption {
+        Text(caption)
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+          .padding(.horizontal, 16)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A switch in a control card. The whole card is the toggle target — the bare
+/// switch ignores taps on its empty track on this iOS, and a full card is the
+/// friendlier target anyway — so the switch is display-only and the card button
+/// flips the binding.
 struct DashToggleRow: View {
   let title: String
   var subtitle: String?
@@ -949,21 +998,72 @@ struct DashToggleRow: View {
   var isEnabled = true
 
   var body: some View {
-    Toggle(isOn: $isOn) {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(title)
-          .dashTextStyle(.bodyMedium)
-          .foregroundStyle(DashTheme.text)
-        if let subtitle {
-          Text(subtitle)
-            .font(.caption)
+    Button {
+      isOn.toggle()
+    } label: {
+      DashControlSurface(title: title) {
+        Toggle("", isOn: $isOn)
+          .labelsHidden()
+          .tint(DashTheme.brand)
+          .allowsHitTesting(false)
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .disabled(!isEnabled)
+    .opacity(isEnabled ? 1 : 0.55)
+    .accessibilityElement(children: .combine)
+    .dashControlCaption(subtitle)
+  }
+}
+
+/// An enum setting in a control card: the current value and a disclosure sit
+/// where the switch would; the whole card opens the options menu.
+struct DashMenuRow: View {
+  let title: String
+  let value: String
+  var caption: String?
+  let options: [String]
+  let onSelect: (String) -> Void
+
+  var body: some View {
+    Menu {
+      Picker(title, selection: Binding(get: { value }, set: onSelect)) {
+        ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
+      }
+    } label: {
+      DashControlSurface(title: title) {
+        HStack(spacing: 6) {
+          Text(value.replacingOccurrences(of: "_", with: " "))
+            .dashTextStyle(.bodyMedium)
             .foregroundStyle(DashTheme.subtle)
+            .lineLimit(1)
+          SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+            .rotationEffect(.degrees(90))
         }
       }
+      .contentShape(Rectangle())
     }
-    .tint(DashTheme.brand)
-    .padding(.vertical, 12)
-    .disabled(!isEnabled)
+    .buttonStyle(DashPressButtonStyle())
+    .dashControlCaption(caption)
+  }
+}
+
+/// A read-only value in a control card, for settings that can't be edited here.
+struct DashValueCard: View {
+  let title: String
+  let value: String
+  var caption: String?
+
+  var body: some View {
+    DashControlSurface(title: title) {
+      Text(value)
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.trailing)
+        .lineLimit(2)
+    }
+    .dashControlCaption(caption)
   }
 }
 

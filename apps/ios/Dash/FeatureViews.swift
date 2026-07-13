@@ -541,10 +541,7 @@ private struct DNSRecordEditor: View {
           DashFormField(label: "Name", text: $name)
           DashFormField(label: "Content", text: $content)
 
-          Toggle("Proxied", isOn: $proxied)
-            .font(.system(size: 15, weight: .medium))
-            .tint(DashTheme.brand)
-            .padding(.horizontal, 4)
+          DashToggleRow(title: "Proxied", isOn: $proxied)
 
           Stepper(ttl == 1 ? "TTL: Auto" : "TTL: \(ttl)s", value: $ttl, in: 1...86400)
             .font(.system(size: 15, weight: .medium))
@@ -724,12 +721,11 @@ struct WorkerDetailView: View {
       ScrollView {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           if selectedTab == .management {
+            DashToggleRow(title: "workers.dev", isOn: $subdomainEnabled)
+              .onChange(of: subdomainEnabled) { _, enabled in
+                if loadedSubdomain { Task { await setSubdomain(enabled) } }
+              }
             DashListCard {
-              DashToggleRow(title: "workers.dev", isOn: $subdomainEnabled)
-                .onChange(of: subdomainEnabled) { _, enabled in
-                  if loadedSubdomain { Task { await setSubdomain(enabled) } }
-                }
-              DashListGroupDivider()
               DashListGroupLink(
                 value: .zoneTool(
                   zoneID: "", title: "Deployments",
@@ -1061,12 +1057,16 @@ struct ZoneSettingsView: View {
       ForEach(ZoneSettingGroup.allCases, id: \.self) { group in
         let grouped = settings.filter { ZoneSettingGroup(settingID: $0.id) == group }
         if !grouped.isEmpty {
-          DashListGroup(title: group.rawValue) {
-            ForEach(Array(grouped.enumerated()), id: \.element.id) { index, setting in
+          VStack(alignment: .leading, spacing: 12) {
+            Text(group.rawValue)
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.subtle)
+              .padding(.horizontal, 16)
+            ForEach(grouped) { setting in
               settingRow(setting)
-              if index < grouped.count - 1 { DashListGroupDivider() }
             }
           }
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
     }
@@ -1089,7 +1089,7 @@ struct ZoneSettingsView: View {
       )
     case .string(let value):
       if let options = zoneSettingOptions[setting.id], setting.editable != false {
-        ZoneSettingMenuRow(
+        DashMenuRow(
           title: setting.displayTitle,
           value: value,
           options: options
@@ -1097,10 +1097,10 @@ struct ZoneSettingsView: View {
           Task { await update(setting, value: .string(chosen)) }
         }
       } else {
-        DashValueRow(title: setting.displayTitle, value: value)
+        DashValueCard(title: setting.displayTitle, value: value)
       }
     default:
-      DashValueRow(title: setting.displayTitle, value: setting.value.displayText)
+      DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
     }
   }
 
@@ -1127,38 +1127,6 @@ struct ZoneSettingsView: View {
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
       await load(force: true)
     } catch { self.error = error.dashActionableMessage }
-  }
-}
-
-/// Value-row-shaped menu for enum zone settings: title left, current value and a
-/// chevron right, options in a menu.
-private struct ZoneSettingMenuRow: View {
-  let title: String
-  let value: String
-  let options: [String]
-  let onSelect: (String) -> Void
-
-  var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 16) {
-      Text(title)
-        .font(.system(size: 16, weight: .medium))
-        .foregroundStyle(DashTheme.text)
-      Spacer(minLength: 12)
-      Menu {
-        Picker(title, selection: Binding(get: { value }, set: onSelect)) {
-          ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
-        }
-      } label: {
-        HStack(spacing: 6) {
-          Text(value.replacingOccurrences(of: "_", with: " "))
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(DashTheme.brand)
-          SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.brand)
-            .rotationEffect(.degrees(90))
-        }
-      }
-    }
-    .padding(.vertical, 14)
   }
 }
 

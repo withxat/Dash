@@ -59,26 +59,24 @@ struct BotManagementView: View {
         DashNotice(kind: .error, message: saveError)
       }
       if !toggleKeys.isEmpty {
-        DashListCard {
-          ForEach(Array(toggleKeys.enumerated()), id: \.element) { index, key in
+        VStack(spacing: 12) {
+          ForEach(toggleKeys, id: \.self) { key in
             DashToggleRow(
               title: Self.labels[key]?.title ?? key.replacingOccurrences(of: "_", with: " "),
               subtitle: Self.labels[key]?.subtitle,
               isOn: binding(for: key),
               isEnabled: allowsWrites
             )
-            if index < toggleKeys.count - 1 { DashListGroupDivider() }
           }
         }
       }
       if !infoRows.isEmpty {
-        DashListCard {
-          ForEach(Array(infoRows.enumerated()), id: \.element.key) { index, row in
-            DashValueRow(
+        VStack(spacing: 12) {
+          ForEach(infoRows, id: \.key) { row in
+            DashValueCard(
               title: row.key.replacingOccurrences(of: "_", with: " "),
               value: row.value
             )
-            if index < infoRows.count - 1 { DashListGroupDivider() }
           }
         }
       }
@@ -191,10 +189,10 @@ struct CachePerformanceView: View {
       if let saveError {
         DashNotice(kind: .error, message: saveError)
       }
-      DashListCard {
-        ForEach(Array(Self.settings.enumerated()), id: \.element.id) { index, setting in
+      VStack(spacing: 12) {
+        ForEach(Self.settings) { setting in
           if let message = rowErrors[setting.path] {
-            DashValueRow(title: setting.title, value: "unavailable", subtitle: message)
+            DashValueCard(title: setting.title, value: "unavailable", caption: message)
           } else {
             DashToggleRow(
               title: setting.title,
@@ -203,7 +201,6 @@ struct CachePerformanceView: View {
               isEnabled: allowsWrites && values[setting.path] != nil
             )
           }
-          if index < Self.settings.count - 1 { DashListGroupDivider() }
         }
       }
       DashListCard {
