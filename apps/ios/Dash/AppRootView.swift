@@ -23,23 +23,6 @@ struct AppRootView: View {
 private struct LoginView: View {
   @Environment(AppModel.self) private var model
 
-  /// The compiled primary app icon, resolved through Info.plist so it tracks
-  /// whatever `AppIcon.icon` produces at build time. `CFBundleIconName` maps to
-  /// the full-resolution icon in Assets.car; `CFBundleIconFiles` variants are
-  /// small home-screen renditions kept only as a fallback.
-  private static let appIcon: UIImage? = {
-    guard
-      let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
-      let primary = icons["CFBundlePrimaryIcon"] as? [String: Any]
-    else { return nil }
-    if let name = primary["CFBundleIconName"] as? String, let image = UIImage(named: name) {
-      return image
-    }
-    guard let files = primary["CFBundleIconFiles"] as? [String], let name = files.last
-    else { return nil }
-    return UIImage(named: name)
-  }()
-
   var body: some View {
     ZStack {
       DashTheme.canvas.ignoresSafeArea()
@@ -100,21 +83,16 @@ private struct LoginView: View {
     }
   }
 
-  @ViewBuilder private var appIconView: some View {
-    if let icon = Self.appIcon {
-      Image(uiImage: icon)
-        .resizable()
-        .scaledToFit()
-        .frame(width: 88, height: 88)
-        .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
-        .accessibilityHidden(true)
-    } else {
-      ZStack {
-        Circle().fill(DashTheme.accent)
-        SolarIcon(asset: SolarAsset.cloud, size: 32, color: DashTheme.inverse)
-      }
-      .frame(width: 72, height: 72)
-    }
+  /// A raster copy of the app icon (`LoginAppIcon`). Never read the compiled
+  /// `AppIcon` through `UIImage(named:)`: on iOS 26 it can resolve to an Icon
+  /// Composer layer stack without a bitmap and crash with "Need an imageRef".
+  private var appIconView: some View {
+    Image("LoginAppIcon")
+      .resizable()
+      .scaledToFit()
+      .frame(width: 88, height: 88)
+      .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
+      .accessibilityHidden(true)
   }
 }
 
