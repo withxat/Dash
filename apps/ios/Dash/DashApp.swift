@@ -91,9 +91,14 @@ private struct RootWithSplash: View {
       .environment(\.dashLoginIconCloaked, phase != .done)
       .overlayPreferenceValue(DashLoginIconAnchorKey.self) { anchor in
         if phase != .done {
+          // Full-screen space: the system launch screen centers its image in
+          // the whole screen, so the overlay must too or the logo jumps ~12pt
+          // at handoff (the root view's frame is inset by asymmetric safe
+          // areas).
           GeometryReader { proxy in
             splashOverlay(in: proxy, target: anchor.map { proxy[$0] })
           }
+          .ignoresSafeArea()
           .allowsHitTesting(false)
           .accessibilityHidden(true)
         }
