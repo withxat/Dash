@@ -38,10 +38,20 @@ final class AppModel {
 
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
 
-  /// The headline for profile surfaces: the person's real name when Cloudflare
-  /// has one, else the account's label, else the email — never the email twice.
+  /// The headline for profile surfaces: the active account's label, else the
+  /// email — never the email twice. Cloudflare's per-user first/last name has
+  /// no dashboard surface, so Dash treats the account name as the identity.
   var profileTitle: String {
-    user?.fullName ?? activeAccount?.name ?? user?.email ?? "—"
+    activeAccount?.name ?? user?.email ?? "—"
+  }
+
+  /// Renames the active account (PUT /accounts/{id}) and refreshes the account
+  /// list so every surface picks up the new label.
+  func renameActiveAccount(to name: String) async throws {
+    guard let id = activeAccountID else { return }
+    _ = try await client.mutate(
+      path: "/accounts/\(id)", method: "PUT", body: ["name": .string(name)])
+    accounts = try await client.listAccounts()
   }
 
   func bootstrap() async {

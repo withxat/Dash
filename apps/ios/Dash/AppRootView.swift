@@ -898,6 +898,10 @@ struct ProfileTrayContent: View {
 /// Switching accounts and signing out stay on the tray menu.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
+  @State private var showsRename = false
+  @State private var renameText = ""
+  @State private var renaming = false
+  @State private var renameError: String?
 
   var body: some View {
     ScrollView {
@@ -928,9 +932,22 @@ struct ProfileView: View {
 
         if let account = model.activeAccount {
           VStack(alignment: .leading, spacing: 8) {
-            Text("Active account")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
+            HStack(spacing: 12) {
+              Text("Active account")
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              Spacer(minLength: 0)
+              Button {
+                renameError = nil
+                renameText = account.name
+                showsRename = true
+              } label: {
+                SolarIcon(asset: SolarAsset.pen, size: 18, color: DashTheme.faint)
+                  .dashCompactHitTarget()
+              }
+              .buttonStyle(DashPressButtonStyle())
+              .accessibilityLabel("Rename account")
+            }
             DashCard {
               VStack(alignment: .leading, spacing: 0) {
                 profileField(label: "Name", value: account.name)
@@ -954,6 +971,33 @@ struct ProfileView: View {
     .background(DashTheme.canvas)
     .navigationTitle("Profile")
     .navigationBarTitleDisplayMode(.inline)
+    .dashTray(isPresented: $showsRename, title: "Rename account") {
+      DashFormSheet(
+        isSaving: renaming,
+        canSave: !renameText.trimmingCharacters(in: .whitespaces).isEmpty,
+        onSave: { Task { await renameAccount() } }
+      ) {
+        VStack(spacing: 14) {
+          if let renameError {
+            DashNotice(kind: .error, message: renameError)
+          }
+          DashFormField(label: "Name", text: $renameText)
+        }
+      }
+    }
+  }
+
+  private func renameAccount() async {
+    renaming = true
+    renameError = nil
+    do {
+      try await model.renameActiveAccount(
+        to: renameText.trimmingCharacters(in: .whitespaces))
+      showsRename = false
+    } catch {
+      renameError = error.dashActionableMessage
+    }
+    renaming = false
   }
 
   private func profileField(label: String, value: String, mono: Bool = false) -> some View {
