@@ -960,6 +960,9 @@ private struct DashControlSurface<Trailing: View>: View {
       Spacer(minLength: 12)
       trailing()
     }
+    // UISwitch stands 31pt; every card matches it so toggle, menu, and value
+    // rows share one height.
+    .frame(minHeight: 31)
     .padding(.horizontal, 16)
     .padding(.vertical, 14)
     .frame(maxWidth: .infinity)
@@ -1018,7 +1021,8 @@ struct DashToggleRow: View {
 }
 
 /// An enum setting in a control card: the current value and a disclosure sit
-/// where the switch would; the whole card opens the options menu.
+/// where the switch would, and only that trailing part triggers the menu — the
+/// card itself stays put.
 struct DashMenuRow: View {
   let title: String
   let value: String
@@ -1027,12 +1031,12 @@ struct DashMenuRow: View {
   let onSelect: (String) -> Void
 
   var body: some View {
-    Menu {
-      Picker(title, selection: Binding(get: { value }, set: onSelect)) {
-        ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
-      }
-    } label: {
-      DashControlSurface(title: title) {
+    DashControlSurface(title: title) {
+      Menu {
+        Picker(title, selection: Binding(get: { value }, set: onSelect)) {
+          ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
+        }
+      } label: {
         HStack(spacing: 6) {
           Text(value.replacingOccurrences(of: "_", with: " "))
             .dashTextStyle(.bodyMedium)
@@ -1041,10 +1045,11 @@ struct DashMenuRow: View {
           SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
             .rotationEffect(.degrees(90))
         }
+        .frame(minHeight: 31)
+        .contentShape(Rectangle())
       }
-      .contentShape(Rectangle())
+      .buttonStyle(DashPressButtonStyle())
     }
-    .buttonStyle(DashPressButtonStyle())
     .dashControlCaption(caption)
   }
 }
