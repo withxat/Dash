@@ -3,7 +3,6 @@ import SwiftUI
 @main
 struct DashApp: App {
   @State private var model = AppModel()
-  @State private var showSplash = true
 
   init() {
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
@@ -63,7 +62,7 @@ struct DashApp: App {
         KeyboardDismissalTestHost()
           .tint(DashTheme.brand)
       } else {
-        RootWithSplash(model: model, showSplash: $showSplash)
+        RootWithSplash(model: model)
           .tint(DashTheme.brand)
       }
     }
@@ -72,59 +71,73 @@ struct DashApp: App {
 
 /// Bridges the static system launch screen into the first interactive frame:
 /// same `LaunchBackground` + centered `LaunchLogo`, held until bootstrap
-/// finishes (and a short minimum), then faded away.
+/// finishes (and a short minimum). Signed out, the canvas fades while the
+/// logo glides onto the login screen's icon and hands off in place; signed
+/// in, everything fades together.
 private struct RootWithSplash: View {
   var model: AppModel
-  @Binding var showSplash: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var phase: Phase = .holding
+
+  private enum Phase { case holding, revealing, done }
 
   private static let minimumDuration: Duration = .milliseconds(800)
-  private static let fadeDuration: TimeInterval = 0.35
+  private static let revealDuration: TimeInterval = 0.6
 
   var body: some View {
-    ZStack {
-      AppRootView()
-        .environment(model)
-        .environment(\.dashSplashLifted, !showSplash)
-
-      if showSplash {
-        LaunchSplashView()
-          .transition(.opacity)
-          .zIndex(1)
-      }
-    }
-    .task {
-      async let bootstrap: Void = model.bootstrap()
-      try? await Task.sleep(for: Self.minimumDuration)
-      await bootstrap
-
-      if reduceMotion {
-        showSplash = false
-      } else {
-        withAnimation(.easeOut(duration: Self.fadeDuration)) {
-          showSplash = false
+    AppRootView()
+      .environment(model)
+      .environment(\.dashSplashLifted, phase != .holding)
+      .environment(\.dashLoginIconCloaked, phase != .done)
+      .overlayPreferenceValue(DashLoginIconAnchorKey.self) { anchor in
+        if phase != .done {
+          GeometryReader { proxy in
+            splashOverlay(in: proxy, target: anchor.map { proxy[$0] })
+          }
+          .allowsHitTesting(false)
+          .accessibilityHidden(true)
         }
       }
-    }
-  }
-}
+      .task {
+        async let bootstrap: Void = model.bootstrap()
+        try? await Task.sleep(for: Self.minimumDuration)
+        await bootstrap
 
-/// Matches `UILaunchScreen` composition so the handoff from the system splash
-/// does not flash a different layout.
-private struct LaunchSplashView: View {
-  var body: some View {
-    ZStack {
+        if reduceMotion {
+          phase = .done
+          return
+        }
+        withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: Self.revealDuration)) {
+          phase = .revealing
+        }
+        try? await Task.sleep(for: .milliseconds(Int(Self.revealDuration * 1000) + 50))
+        phase = .done
+      }
+  }
+
+  /// Matches `UILaunchScreen` composition while holding. `target` is the
+  /// login icon's frame when the login screen is mounted underneath.
+  private func splashOverlay(in proxy: GeometryProxy, target: CGRect?) -> some View {
+    let holding = phase == .holding
+    return ZStack(alignment: .topLeading) {
       Color("LaunchBackground")
         .ignoresSafeArea()
+        .opacity(holding ? 1 : 0)
       Image("LaunchLogo")
         .resizable()
         .scaledToFit()
         .frame(width: 88, height: 88)
         .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
-        .accessibilityHidden(true)
+        .position(logoCenter(in: proxy, target: target))
+        .opacity(holding || target != nil ? 1 : 0)
     }
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
+  }
+
+  private func logoCenter(in proxy: GeometryProxy, target: CGRect?) -> CGPoint {
+    if phase != .holding, let target {
+      return CGPoint(x: target.midX, y: target.midY)
+    }
+    return CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
   }
 }
 

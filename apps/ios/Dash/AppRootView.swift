@@ -30,8 +30,12 @@ struct AppRootView: View {
 private struct LoginView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashSplashLifted) private var splashLifted
+  @Environment(\.dashLoginIconCloaked) private var iconCloaked
   @State private var showsPermissions = false
   @State private var revealed = false
+  /// Under the splash the icon skips the stagger: the launch logo glides onto
+  /// its spot and hands off in place. Later visits (sign-out) stagger it.
+  @State private var iconJoinsReveal = false
 
   var body: some View {
     ZStack {
@@ -40,7 +44,9 @@ private struct LoginView: View {
         Spacer()
         VStack(spacing: 16) {
           appIconView
-            .dashReveal(0, shown: revealed)
+            .opacity(iconCloaked ? 0 : 1)
+            .dashReveal(0, shown: iconJoinsReveal ? revealed : true)
+            .anchorPreference(key: DashLoginIconAnchorKey.self, value: .bounds) { $0 }
           VStack(spacing: 6) {
             Text("Dash")
               .font(.dashTitle(40))
@@ -109,6 +115,7 @@ private struct LoginView: View {
       PermissionSelectionView()
     }
     .onAppear {
+      iconJoinsReveal = splashLifted
       if splashLifted { revealed = true }
     }
     .onChange(of: splashLifted) { _, lifted in

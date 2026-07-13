@@ -768,12 +768,33 @@ private struct DashSplashLiftedKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+private struct DashLoginIconCloakedKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 extension EnvironmentValues {
   /// False while the launch splash still covers the window. Entrance reveals
   /// wait on it so they play in view, not underneath the splash.
   var dashSplashLifted: Bool {
     get { self[DashSplashLiftedKey.self] }
     set { self[DashSplashLiftedKey.self] = newValue }
+  }
+
+  /// True while the splash overlay's gliding logo stands in for the login
+  /// icon; the login screen keeps its own icon invisible (but laid out) so
+  /// the hand-off is a seamless same-frame swap.
+  var dashLoginIconCloaked: Bool {
+    get { self[DashLoginIconCloakedKey.self] }
+    set { self[DashLoginIconCloakedKey.self] = newValue }
+  }
+}
+
+/// Bubbles the login icon's bounds up to the splash overlay, which glides the
+/// launch logo onto it on first sign-in.
+struct DashLoginIconAnchorKey: PreferenceKey {
+  static var defaultValue: Anchor<CGRect>? { nil }
+  static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+    value = nextValue() ?? value
   }
 }
 
