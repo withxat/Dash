@@ -52,6 +52,17 @@ enum DashTheme {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.timingCurve(0.42, 0, 0.58, 1, duration: 0.34)
     }
+    /// Tray reveal — half-height slide, fade, and blur share one strongly
+    /// decelerating curve so the short travel still reads as a full open.
+    static var trayOpen: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.4)
+    }
+    /// The same curve slightly quicker on the way out.
+    static var trayClose: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.35)
+    }
   }
 
   enum Sheet {

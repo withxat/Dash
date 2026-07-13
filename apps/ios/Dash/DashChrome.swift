@@ -187,12 +187,14 @@ private struct DashCustomSheet<Content: View>: View {
           maxWidth: horizontalSizeClass == .regular
             ? DashTheme.Layout.trayMaxWidth : .infinity
         )
-        // Always laid out (only offset off-screen while hidden) so it slides as
-        // one piece; bottom-pinned, with the card lifting its own content above
-        // the keyboard while its fill runs underneath it.
+        // Always laid out so it moves as one piece; bottom-pinned, with the card
+        // lifting its own content above the keyboard while its fill runs
+        // underneath it. The reveal travels half the card's height while opacity
+        // and blur carry the rest, so the short slide reads as a full open.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: reduceMotion ? drag : (shown ? drag : hiddenOffset))
-        .opacity(reduceMotion ? (shown ? 1 : 0) : 1)
+        .offset(y: reduceMotion ? drag : (shown ? drag : revealOffset))
+        .opacity(shown ? 1 : 0)
+        .blur(radius: reduceMotion ? 0 : (shown ? 0 : 2))
       }
       .ignoresSafeArea(.keyboard)
     }
@@ -217,15 +219,15 @@ private struct DashCustomSheet<Content: View>: View {
     }
     .presentationBackground(.clear)
     .onAppear {
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.sheet) {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.trayOpen) {
         shown = true
       }
     }
   }
 
-  /// Push the card fully below the screen while hidden, using its measured height
-  /// so the visible slide distance equals the card — not a magic overshoot.
-  private var hiddenOffset: CGFloat { (cardHeight > 0 ? cardHeight : 900) + 160 }
+  /// Half the measured card height — the reveal's travel distance; fade and blur
+  /// cover the rest of the way, so the card never has to start fully off-screen.
+  private var revealOffset: CGFloat { (cardHeight > 0 ? cardHeight : 400) * 0.5 }
 
   /// How far to lift the card above the keyboard, in the GeometryReader's space.
   /// `keyboardHeight` is measured from the window bottom (home indicator
@@ -244,7 +246,7 @@ private struct DashCustomSheet<Content: View>: View {
         onDismiss()
       }
     } else {
-      withAnimation(DashTheme.Motion.sheet) {
+      withAnimation(DashTheme.Motion.trayClose) {
         shown = false
         drag = 0
       } completion: {
@@ -264,7 +266,7 @@ private struct DashCustomSheet<Content: View>: View {
         } else if reduceMotion {
           drag = 0
         } else {
-          withAnimation(DashTheme.Motion.sheet) { drag = 0 }
+          withAnimation(DashTheme.Motion.trayClose) { drag = 0 }
         }
       }
   }
