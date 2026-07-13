@@ -41,6 +41,7 @@
 		B00000000000000000000021 /* AIFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003D /* AIFeatureViews.swift */; };
 		B00000000000000000000022 /* RulesetViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003E /* RulesetViews.swift */; };
 		B00000000000000000000023 /* AccessPolicyViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003F /* AccessPolicyViews.swift */; };
+		B00000000000000000000024 /* LoginGrain.metal in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* LoginGrain.metal */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -91,6 +92,7 @@
 		F0000000000000000000003D /* AIFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIFeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000003E /* RulesetViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RulesetViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000003F /* AccessPolicyViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessPolicyViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000040 /* LoginGrain.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LoginGrain.metal; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -170,6 +172,7 @@
 				F00000000000000000000033 /* WatchtowerModel.swift */,
 				F00000000000000000000034 /* SolarIcons.swift */,
 				F00000000000000000000035 /* DashChrome.swift */,
+				F00000000000000000000040 /* LoginGrain.metal */,
 				A00000000000000000000016 /* Resources */,
 				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
 			);
@@ -383,6 +386,7 @@
 				B00000000000000000000018 /* SolarIcons.swift in Sources */,
 				B00000000000000000000019 /* DashChrome.swift in Sources */,
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
+				B00000000000000000000024 /* LoginGrain.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

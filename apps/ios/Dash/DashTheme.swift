@@ -102,6 +102,26 @@ enum DashTheme {
       })
   }
 
+  /// Sign-in backdrop palettes: 3×3 mesh vertex colors (row-major) and the
+  /// three-stop still wash used on iOS 17 and under Reduce Motion.
+  enum LoginBackdrop {
+    static let meshLight: [Color] = [
+      Color(hex: 0xFFFFFF), Color(hex: 0xFFE4C7), Color(hex: 0xFFF7EF),
+      Color(hex: 0xFFEBD6), Color(hex: 0xFFF5EB), Color(hex: 0xFFDFBE),
+      Color(hex: 0xFFF7EF), Color(hex: 0xFFEEDD), Color(hex: 0xFFFFFF),
+    ]
+    static let meshDark: [Color] = [
+      Color(hex: 0x1A1A1A), Color(hex: 0x33220F), Color(hex: 0x1F1B16),
+      Color(hex: 0x2A1D10), Color(hex: 0x221A11), Color(hex: 0x3A2410),
+      Color(hex: 0x1F1B16), Color(hex: 0x2A1D10), Color(hex: 0x1A1A1A),
+    ]
+    static let stillLight: [Color] = [
+      Color(hex: 0xFFE4C7), Color(hex: 0xFFFFFF), Color(hex: 0xFFEEDD),
+    ]
+    static let stillDark: [Color] = [
+      Color(hex: 0x33220F), Color(hex: 0x1A1A1A), Color(hex: 0x2A1D10),
+    ]
+  }
 }
 
 extension UIColor {

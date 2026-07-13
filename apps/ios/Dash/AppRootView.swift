@@ -26,7 +26,7 @@ private struct LoginView: View {
 
   var body: some View {
     ZStack {
-      DashTheme.canvas.ignoresSafeArea()
+      LoginBackground()
       VStack(spacing: 32) {
         Spacer()
         VStack(spacing: 16) {
@@ -106,6 +106,83 @@ private struct LoginView: View {
       .frame(width: 88, height: 88)
       .clipShape(RoundedRectangle(cornerRadius: 88 * 0.2237, style: .continuous))
       .accessibilityHidden(true)
+  }
+}
+
+// MARK: - Login background
+
+/// Sign-in backdrop: a slowly drifting warm mesh gradient (iOS 18+) under a
+/// static Metal film grain (`LoginGrain.metal`). iOS 17 and Reduce Motion get
+/// a still gradient with the same grain.
+private struct LoginBackground: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    Group {
+      if #available(iOS 18.0, *) {
+        LoginMeshGradient(animated: !reduceMotion, dark: colorScheme == .dark)
+      } else {
+        LoginStaticGradient(dark: colorScheme == .dark)
+      }
+    }
+    .colorEffect(ShaderLibrary.loginGrain(.float(0.12)))
+    .ignoresSafeArea()
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+@available(iOS 18.0, *)
+private struct LoginMeshGradient: View {
+  let animated: Bool
+  let dark: Bool
+
+  var body: some View {
+    if animated {
+      TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+        mesh(at: context.date.timeIntervalSinceReferenceDate)
+      }
+    } else {
+      mesh(at: 0)
+    }
+  }
+
+  private func mesh(at t: TimeInterval) -> MeshGradient {
+    MeshGradient(
+      width: 3, height: 3,
+      points: Self.points(at: t),
+      colors: dark ? DashTheme.LoginBackdrop.meshDark : DashTheme.LoginBackdrop.meshLight
+    )
+  }
+
+  /// Edge points keep their pinned axis so the mesh always covers the canvas;
+  /// the free axes and the center drift on slow, unsynchronized waves.
+  private static func points(at t: TimeInterval) -> [SIMD2<Float>] {
+    func wave(_ speed: Double, _ phase: Double, _ amplitude: Double) -> Float {
+      Float(0.5 + amplitude * sin(t * speed + phase))
+    }
+    return [
+      [0, 0], [wave(0.11, 0.0, 0.24), 0], [1, 0],
+      [0, wave(0.09, 1.3, 0.22)],
+      [wave(0.13, 2.1, 0.28), wave(0.07, 4.2, 0.26)],
+      [1, wave(0.08, 5.1, 0.22)],
+      [0, 1], [wave(0.10, 3.4, 0.24), 1], [1, 1],
+    ]
+  }
+
+}
+
+/// iOS 17 fallback: the same warm palette as a still diagonal wash.
+private struct LoginStaticGradient: View {
+  let dark: Bool
+
+  var body: some View {
+    LinearGradient(
+      colors: dark ? DashTheme.LoginBackdrop.stillDark : DashTheme.LoginBackdrop.stillLight,
+      startPoint: .topLeading,
+      endPoint: .bottomTrailing
+    )
   }
 }
 
