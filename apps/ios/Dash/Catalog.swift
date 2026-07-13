@@ -56,6 +56,7 @@ struct FeatureDescriptor: Hashable, Sendable {
 
 enum Destination: Hashable {
   case profile
+  case accountDNSSettings
   case feature(FeatureID)
   case zone(String)
   case dns(String)
@@ -84,7 +85,7 @@ enum FeatureCatalog {
       .zones, "Zones", "Domains, DNS, cache, and zone settings", "globe", "SolarGlobal",
       SolarAsset.globe, "Domains & DNS", read: ["zone.read"], write: ["zone.write"]),
     feature(
-      .dnsManagement, "DNS Management", "Straight to a zone's records, views, and DNS settings",
+      .dnsManagement, "DNS Management", "DNS views and account-level DNS defaults",
       "server.rack", "SolarGlobus", SolarAsset.globus, "Domains & DNS",
       read: ["dns.read", "dns-view.read", "account-dns-settings.read", "zone-dns-settings.read"],
       write: [

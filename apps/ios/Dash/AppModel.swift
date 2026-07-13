@@ -38,6 +38,12 @@ final class AppModel {
 
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
 
+  /// The headline for profile surfaces: the person's real name when Cloudflare
+  /// has one, else the account's label, else the email — never the email twice.
+  var profileTitle: String {
+    user?.fullName ?? activeAccount?.name ?? user?.email ?? "—"
+  }
+
   func bootstrap() async {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {

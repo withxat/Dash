@@ -171,8 +171,14 @@ public struct CloudflareUser: Codable, Hashable, Identifiable, Sendable {
   public let lastName: String?
   public let createdOn: String?
 
+  /// The person's actual name, or nil when Cloudflare has none on file —
+  /// letting callers pick their own fallback instead of repeating the email.
+  public var fullName: String? {
+    [firstName, lastName].compactMap { $0 }.joined(separator: " ").nilIfEmpty
+  }
+
   public var displayName: String {
-    [firstName, lastName].compactMap { $0 }.joined(separator: " ").nilIfEmpty ?? email ?? "User"
+    fullName ?? email ?? "User"
   }
 
   enum CodingKeys: String, CodingKey {

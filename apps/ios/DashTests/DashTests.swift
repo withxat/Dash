@@ -109,9 +109,6 @@ import Testing
 
 @Test func zonePickerRoutesEachFeatureToItsSurface() {
   #expect(
-    zoneDestination(for: .dnsManagement, zoneID: "z1", zoneName: "example.com")
-      == .dns("z1"))
-  #expect(
     zoneDestination(for: .sslCertificates, zoneID: "z1", zoneName: "example.com")
       == .zoneFeatureHub(feature: .sslCertificates, zoneID: "z1", zoneName: "example.com"))
   #expect(

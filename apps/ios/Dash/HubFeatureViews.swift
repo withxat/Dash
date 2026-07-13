@@ -13,8 +13,6 @@ struct HubRowItem: Identifiable {
 /// Which zone-scoped destination a feature's zone picker pushes.
 func zoneDestination(for feature: FeatureID, zoneID: String, zoneName: String) -> Destination {
   switch feature {
-  case .dnsManagement:
-    return .dns(zoneID)
   case .botManagement:
     return .botManagement(zoneID: zoneID, zoneName: zoneName)
   case .cacheSettings:
@@ -80,12 +78,12 @@ struct FeatureHubView: View {
       ]
     case .dnsManagement:
       return [
-        HubRowItem(
-          title: "Zone DNS records", subtitle: "Browse and edit records per zone",
-          icon: SolarAsset.globe, destination: .zonePicker(.dnsManagement)),
         list(
           "DNS views", "Internal DNS views", SolarAsset.pinList,
           "/accounts/{account}/dns_settings/views"),
+        HubRowItem(
+          title: "Account DNS settings", subtitle: "Defaults applied to new zones",
+          icon: SolarAsset.slider, destination: .accountDNSSettings),
       ]
     default:
       return []

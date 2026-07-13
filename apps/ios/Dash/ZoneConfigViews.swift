@@ -274,3 +274,166 @@ struct CachePerformanceView: View {
     loading = false
   }
 }
+
+/// Account-level DNS defaults (`zone_defaults`): the switches PATCH back on
+/// change, `zone_mode` edits through a menu, and structured values render
+/// read-only. This is the DNS surface Zones → DNS doesn't cover.
+struct AccountDNSSettingsView: View {
+  @Environment(AppModel.self) private var model
+  @State private var defaults: [String: JSONValue] = [:]
+  @State private var loading = true
+  @State private var error: String?
+  @State private var saveError: String?
+
+  private static let labels: [String: (title: String, subtitle: String)] = [
+    "flatten_all_cnames": (
+      "Flatten all CNAMEs", "Flatten every CNAME in the zone, not only the apex"
+    ),
+    "foundation_dns": ("Foundation DNS", "Advanced nameservers with added resilience"),
+    "multi_provider": (
+      "Multi-provider DNS", "Treat Cloudflare as one of several DNS providers"
+    ),
+    "secondary_overrides": ("Secondary overrides", "Allow record edits on secondary zones"),
+  ]
+
+  private static let zoneModes = ["standard", "cdn_only", "dns_only"]
+
+  private var toggleKeys: [String] {
+    defaults.keys
+      .filter { key in
+        if case .bool = defaults[key] { return true }
+        return false
+      }
+      .sorted()
+  }
+
+  private var infoKeys: [String] {
+    defaults.keys
+      .filter { key in
+        guard key != "zone_mode" else { return false }
+        switch defaults[key] {
+        case .bool, nil: return false
+        default: return true
+        }
+      }
+      .sorted()
+  }
+
+  private var allowsWrites: Bool {
+    model.grantedScopes?.contains("account-dns-settings.write") ?? true
+  }
+
+  var body: some View {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      retry: { Task { await load(force: true) } }
+    ) {
+      if let saveError {
+        DashNotice(kind: .error, message: saveError)
+      }
+      if !defaults.isEmpty {
+        VStack(spacing: 12) {
+          ForEach(toggleKeys, id: \.self) { key in
+            DashToggleRow(
+              title: Self.labels[key]?.title ?? key.humanizedSettingTitle,
+              subtitle: Self.labels[key]?.subtitle,
+              isOn: binding(for: key),
+              isEnabled: allowsWrites
+            )
+          }
+          if case .string(let mode)? = defaults["zone_mode"] {
+            DashMenuRow(
+              title: "Zone mode",
+              value: mode,
+              caption: "How new zones proxy traffic by default.",
+              options: Self.zoneModes
+            ) { chosen in
+              let previous = defaults
+              defaults["zone_mode"] = .string(chosen)
+              Task { await save(revertingTo: previous) }
+            }
+          }
+          ForEach(infoKeys, id: \.self) { key in
+            DashValueCard(
+              title: key.humanizedSettingTitle,
+              value: defaults[key]?.displayText ?? "—"
+            )
+          }
+        }
+      }
+      if !loading, defaults.isEmpty, error == nil {
+        DashEmptyState(
+          icon: SolarAsset.globus,
+          title: "No DNS defaults",
+          message: "Cloudflare returned no account-level DNS settings."
+        )
+      }
+    }
+    .navigationTitle("Account DNS settings")
+    .navigationBarTitleDisplayMode(.inline)
+    .refreshable { await load(force: true) }
+    .task { await load() }
+  }
+
+  private var path: String { "/accounts/\(model.activeAccountID ?? "")/dns_settings" }
+
+  private func binding(for key: String) -> Binding<Bool> {
+    Binding(
+      get: {
+        if case .bool(let value)? = defaults[key] { return value }
+        return false
+      },
+      set: { newValue in
+        let previous = defaults
+        defaults[key] = .bool(newValue)
+        Task { await save(revertingTo: previous) }
+      }
+    )
+  }
+
+  private func save(revertingTo previous: [String: JSONValue]) async {
+    do {
+      let result = try await model.client.mutate(
+        path: path, method: "PATCH", body: ["zone_defaults": .object(defaults)])
+      if case .object(let object) = result, case .object(let updated)? = object["zone_defaults"] {
+        defaults = updated
+      }
+      saveError = nil
+      model.featureCache.remove(FeatureCacheKey.generic(path: path))
+    } catch {
+      defaults = previous
+      saveError = error.dashActionableMessage
+    }
+  }
+
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.generic(path: path)
+    if !force, let cached: [String: JSONValue] = model.featureCache.get(key) {
+      defaults = cached
+      loading = false
+      return
+    }
+    if defaults.isEmpty { loading = true }
+    error = nil
+    do {
+      let result = try await model.client.mutate(path: path, method: "GET")
+      if case .object(let object) = result,
+        case .object(let zoneDefaults)? = object["zone_defaults"]
+      {
+        defaults = zoneDefaults
+      }
+      model.featureCache.set(key, defaults)
+    } catch {
+      self.error = error.dashActionableMessage
+    }
+    loading = false
+  }
+}
+
+extension String {
+  /// snake_case API keys → "Title Case" ("ns_ttl" → "Ns Ttl").
+  fileprivate var humanizedSettingTitle: String {
+    replacingOccurrences(of: "_", with: " ").capitalized
+  }
+}

@@ -761,20 +761,41 @@ private final class TabBarVisibilityResolverViewController: UIViewController {
 
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Dismisses the tray and pushes the Profile page onto the active tab.
   let openProfile: () -> Void
+  @State private var showsAccounts = false
+
+  private var morphAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
+  }
 
   var body: some View {
+    ZStack {
+      if showsAccounts {
+        accountList
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      } else {
+        menu
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      }
+    }
+  }
+
+  private var menu: some View {
     VStack(spacing: 20) {
       HStack(spacing: 16) {
         UserAvatar(email: model.user?.email ?? "", size: 56)
         VStack(alignment: .leading, spacing: 4) {
-          Text(model.user?.displayName ?? "—")
+          Text(model.profileTitle)
             .font(.system(size: 18, weight: .semibold))
-          Text(model.user?.email ?? "—")
-            .font(.system(size: 14))
-            .foregroundStyle(DashTheme.subtle)
-          if let account = model.activeAccount {
+          if let email = model.user?.email, email != model.profileTitle {
+            Text(email)
+              .font(.system(size: 14))
+              .foregroundStyle(DashTheme.subtle)
+          }
+          if let account = model.activeAccount, account.name != model.profileTitle {
             Text(account.name)
               .font(.system(size: 13))
               .foregroundStyle(DashTheme.placeholder)
@@ -785,22 +806,12 @@ struct ProfileTrayContent: View {
       .padding(.horizontal, DashTheme.Sheet.content)
 
       VStack(spacing: 10) {
-        Button(action: openProfile) {
-          HStack(spacing: 12) {
-            SolarIcon(asset: SolarAsset.userCircle, size: 22, color: DashTheme.iconMuted)
-            Text("Profile")
-              .dashTextStyle(.bodyMedium)
-              .foregroundStyle(DashTheme.text)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+        menuRow(title: "Profile", icon: SolarAsset.userCircle, action: openProfile)
+        if model.accounts.count > 1 {
+          menuRow(title: "Switch account", icon: SolarAsset.users) {
+            withAnimation(morphAnimation) { showsAccounts = true }
           }
-          .padding(.horizontal, 16)
-          .padding(.vertical, 14)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
         }
-        .buttonStyle(DashPressButtonStyle())
 
         DashConfirmableActions(
           actions: [
@@ -816,11 +827,75 @@ struct ProfileTrayContent: View {
       .padding(.horizontal, DashTheme.Sheet.content)
     }
   }
+
+  private var accountList: some View {
+    VStack(spacing: 16) {
+      VStack(spacing: 10) {
+        ForEach(model.accounts) { account in
+          Button {
+            model.selectAccount(account)
+            dismiss()
+          } label: {
+            HStack(spacing: 12) {
+              Text(account.name)
+                .dashTextStyle(.bodyMedium)
+                .foregroundStyle(DashTheme.text)
+                .lineLimit(1)
+              Spacer(minLength: 0)
+              SolarIcon(
+                asset: account.id == model.activeAccountID
+                  ? SolarAsset.checkCircle : SolarAsset.circle,
+                size: 22,
+                color: account.id == model.activeAccountID
+                  ? DashTheme.brand : DashTheme.placeholder)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .accessibilityAddTraits(account.id == model.activeAccountID ? .isSelected : [])
+        }
+      }
+
+      Button {
+        withAnimation(morphAnimation) { showsAccounts = false }
+      } label: {
+        Text("Back")
+          .dashTextStyle(.buttonMedium)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, minHeight: 44)
+      }
+      .buttonStyle(DashPressButtonStyle())
+    }
+    .padding(.horizontal, DashTheme.Sheet.content)
+    .padding(.bottom, 8)
+  }
+
+  private func menuRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      HStack(spacing: 12) {
+        SolarIcon(asset: icon, size: 22, color: DashTheme.iconMuted)
+        Text(title)
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+        SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 14)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+    }
+    .buttonStyle(DashPressButtonStyle())
+  }
 }
 
 /// The standalone Profile page, pushed from the avatar tray's Profile row:
-/// identity, user id and registration date, the active account's details, and
-/// the account switcher. Signing out stays on the tray menu.
+/// identity, user id and registration date, and the active account's details.
+/// Switching accounts and signing out stay on the tray menu.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
 
@@ -830,12 +905,14 @@ struct ProfileView: View {
         VStack(spacing: 12) {
           UserAvatar(email: model.user?.email ?? "", size: 80)
           VStack(spacing: 2) {
-            Text(model.user?.displayName ?? "—")
+            Text(model.profileTitle)
               .dashTextStyle(.sheetTitle)
               .foregroundStyle(DashTheme.strong)
-            Text(model.user?.email ?? "—")
-              .dashTextStyle(.supporting)
-              .foregroundStyle(DashTheme.subtle)
+            if let email = model.user?.email, email != model.profileTitle {
+              Text(email)
+                .dashTextStyle(.supporting)
+                .foregroundStyle(DashTheme.subtle)
+            }
           }
         }
         .frame(maxWidth: .infinity)
@@ -869,43 +946,6 @@ struct ProfileView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        if model.accounts.count > 1 {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Switch account")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            DashCard {
-              VStack(spacing: 0) {
-                ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
-                  Button {
-                    model.selectAccount(account)
-                  } label: {
-                    HStack(spacing: 12) {
-                      Text(account.name)
-                        .dashTextStyle(.bodyMedium)
-                        .foregroundStyle(DashTheme.text)
-                        .lineLimit(1)
-                      Spacer(minLength: 0)
-                      SolarIcon(
-                        asset: account.id == model.activeAccountID
-                          ? SolarAsset.checkCircle : SolarAsset.circle,
-                        size: 22,
-                        color: account.id == model.activeAccountID
-                          ? DashTheme.brand : DashTheme.placeholder)
-                    }
-                    .padding(.vertical, 12)
-                    .contentShape(Rectangle())
-                  }
-                  .buttonStyle(DashPressButtonStyle())
-                  .accessibilityAddTraits(
-                    account.id == model.activeAccountID ? .isSelected : [])
-                  if index < model.accounts.count - 1 { DashListGroupDivider() }
-                }
-              }
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
       }
       .dashContentColumn()
       .padding(.horizontal, DashTheme.Spacing.screen)
@@ -951,6 +991,7 @@ private struct DestinationRoutedContent: View {
     Group {
       switch destination {
       case .profile: ProfileView()
+      case .accountDNSSettings: AccountDNSSettingsView()
       case .feature(let feature):
         FeatureDetailChrome(feature: feature) {
           FeatureRouterContent(feature: feature)
