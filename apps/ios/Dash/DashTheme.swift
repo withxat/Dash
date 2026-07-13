@@ -1061,8 +1061,10 @@ struct DashToolbarActionIcon: View {
 
   var body: some View {
     // Keep the glyph square so Liquid Glass morphs to a circle, not a capsule.
-    SolarIcon(asset: asset, size: 22, color: DashTheme.strong)
-      .frame(width: 22, height: 22)
+    // 24pt matches the system back chevron, which renders its 24×24 Solar
+    // asset at natural size.
+    SolarIcon(asset: asset, size: 24, color: DashTheme.strong)
+      .frame(width: 24, height: 24)
       .accessibilityHidden(true)
   }
 }
