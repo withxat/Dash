@@ -104,6 +104,9 @@ private struct LoginView: View {
           .disabled(!model.configuration.isConfigured)
           .opacity(model.configuration.isConfigured ? 1 : 0.5)
           .dashReveal(4, shown: revealed)
+
+          legalCaption
+            .dashReveal(5, shown: revealed)
         }
       }
       .frame(maxWidth: 448)
@@ -121,6 +124,21 @@ private struct LoginView: View {
     .onChange(of: splashLifted) { _, lifted in
       if lifted { revealed = true }
     }
+  }
+
+  /// Terms/privacy notice. The highlighted spans are styling only for now —
+  /// they'll become links once the documents exist.
+  private var legalCaption: some View {
+    (Text("By using Dash, you agree to our ")
+      + Text("Terms of Use").foregroundStyle(DashTheme.text).fontWeight(.medium)
+      + Text(" and ")
+      + Text("Privacy Policy").foregroundStyle(DashTheme.text).fontWeight(.medium)
+      + Text("."))
+      .font(.system(size: 12))
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
   }
 
   /// A raster copy of the app icon (`LoginAppIcon`). Never read the compiled
