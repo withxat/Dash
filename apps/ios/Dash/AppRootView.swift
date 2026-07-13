@@ -129,7 +129,7 @@ private struct LoginView: View {
   /// Terms/privacy notice. The highlighted spans are styling only for now —
   /// they'll become links once the documents exist.
   private var legalCaption: some View {
-    (Text("By using Dash, you agree to our ")
+    (Text("By using Dash, you agree to our\n")
       + Text("Terms of Use").foregroundStyle(DashTheme.text).fontWeight(.medium)
       + Text(" and ")
       + Text("Privacy Policy").foregroundStyle(DashTheme.text).fontWeight(.medium)
@@ -139,6 +139,7 @@ private struct LoginView: View {
       .multilineTextAlignment(.center)
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity)
+      .padding(.top, 12)
   }
 
   /// A raster copy of the app icon (`LoginAppIcon`). Never read the compiled
