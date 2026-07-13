@@ -655,41 +655,42 @@ struct D1DatabasesView: View {
   }
 }
 
+/// Double-quotes a SQLite identifier so table names from sqlite_master can be
+/// interpolated safely (keywords, spaces, embedded quotes).
+func d1QuotedIdentifier(_ name: String) -> String {
+  "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
+}
+
 struct D1ConsoleView: View {
+  private enum Tab: Hashable { case tables, console }
+
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let databaseID: String
   let name: String
+  @State private var selectedTab: Tab = .tables
+  @State private var tables: [String] = []
+  @State private var tablesError: String?
+  @State private var loadingTables = true
   @State private var sql = "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;"
   @State private var result = ""
   @State private var error: String?
   @State private var running = false
   @State private var showsMore = false
   var body: some View {
-    DashFeatureScreen {
+    DashFeatureScreen(chrome: {
+      DashTextTabs(
+        items: [("Tables", Tab.tables), ("Console", Tab.console)],
+        selection: $selectedTab
+      )
+    }) {
       ScrollView {
         VStack(spacing: DashTheme.Spacing.section) {
-          DashCodePanel(
-            title: "SQL query",
-            message: "Run a read or write statement against this database.",
-            text: $sql,
-            minHeight: 150
-          )
-
-          DashPillButton(
-            title: "Run query", isLoading: running,
-            isEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-          ) { Task { await run() } }
-
-          if let error {
-            DashNotice(kind: .error, message: error)
+          if selectedTab == .tables {
+            tablesContent
           } else {
-            DashCodeBlock(
-              title: "Result",
-              text: result,
-              placeholder: "Run a query to see results."
-            )
+            consoleContent
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
@@ -700,6 +701,8 @@ struct D1ConsoleView: View {
       .dashKeyboardDismissal()
     }
     .navigationTitle(name)
+    .task { await loadTables() }
+    .refreshable { await loadTables(force: true) }
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
@@ -719,6 +722,89 @@ struct D1ConsoleView: View {
       ]
     )
   }
+  @ViewBuilder
+  private var tablesContent: some View {
+    if let tablesError {
+      DashNotice(kind: .error, message: tablesError)
+    } else if loadingTables {
+      LoadingStateView()
+    } else if tables.isEmpty {
+      DashEmptyState(
+        icon: SolarAsset.database,
+        title: "No tables",
+        message: "This database has no user tables yet. Create one from the Console tab."
+      )
+    } else {
+      DashListCard {
+        DashListCardRows(items: tables.map(TableRow.init)) { row in
+          DashListGroupLink(
+            value: .d1Table(databaseID: databaseID, databaseName: name, table: row.name)
+          ) {
+            DashListRow(title: row.name, icon: SolarAsset.database)
+          }
+        }
+      }
+    }
+  }
+
+  private struct TableRow: Identifiable {
+    let name: String
+    var id: String { name }
+  }
+
+  @ViewBuilder
+  private var consoleContent: some View {
+    DashCodePanel(
+      title: "SQL query",
+      message: "Run a read or write statement against this database.",
+      text: $sql,
+      minHeight: 150
+    )
+
+    DashPillButton(
+      title: "Run query", isLoading: running,
+      isEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    ) { Task { await run() } }
+
+    if let error {
+      DashNotice(kind: .error, message: error)
+    } else {
+      DashCodeBlock(
+        title: "Result",
+        text: result,
+        placeholder: "Run a query to see results."
+      )
+    }
+  }
+
+  private func loadTables(force: Bool = false) async {
+    guard let id = model.activeAccountID else { return }
+    let key = FeatureCacheKey.generic(path: "/d1/\(databaseID)/tables")
+    if !force, let cached: [String] = model.featureCache.get(key) {
+      tables = cached
+      loadingTables = false
+      return
+    }
+    if tables.isEmpty { loadingTables = true }
+    tablesError = nil
+    do {
+      let values = try await model.client.queryD1(
+        accountID: id, databaseID: databaseID,
+        sql: """
+          SELECT name FROM sqlite_master WHERE type = 'table' \
+          AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;
+          """)
+      tables = values.flatMap { $0.results ?? [] }.compactMap { row in
+        if case .string(let name)? = row["name"] { return name }
+        return nil
+      }
+      model.featureCache.set(key, tables)
+    } catch {
+      tablesError = error.dashActionableMessage
+    }
+    loadingTables = false
+  }
+
   private func deleteDatabase() async throws {
     guard let id = model.activeAccountID else { return }
     _ = try await model.client.mutate(
@@ -744,6 +830,197 @@ struct D1ConsoleView: View {
     guard let data = try? encoder.encode(rows) else { return String(describing: rows) }
     return String(decoding: data, as: UTF8.self)
   }
+}
+
+/// Paginated `SELECT *` browser for one D1 table. Table names come from
+/// `sqlite_master` (quoted via `d1QuotedIdentifier`); never from free text.
+struct D1TableView: View {
+  private static let pageSize = 50
+  private static let columnWidth: CGFloat = 140
+
+  @Environment(AppModel.self) private var model
+  let databaseID: String
+  let databaseName: String
+  let table: String
+  @State private var columns: [String] = []
+  @State private var rows: [D1TableRow] = []
+  @State private var error: String?
+  @State private var loading = true
+  @State private var loadingMore = false
+  @State private var canLoadMore = false
+  @State private var selectedRow: D1TableRow?
+
+  var body: some View {
+    DashFeatureScreen {
+      Group {
+        if loading && rows.isEmpty {
+          LoadingStateView()
+        } else if let error, rows.isEmpty {
+          ErrorStateView(message: error) { Task { await load(reset: true) } }
+        } else if rows.isEmpty {
+          DashEmptyState(
+            icon: SolarAsset.database,
+            title: "Empty table",
+            message: "\(table) in \(databaseName) has no rows yet."
+          )
+        } else {
+          tableContent
+        }
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.bottom, 100)
+    }
+    .navigationTitle(table)
+    .navigationBarTitleDisplayMode(.inline)
+    .task { await load(reset: true) }
+    .refreshable { await load(reset: true) }
+    .dashTray(
+      item: $selectedRow,
+      title: { rowTitle($0) },
+      content: { row in
+        DashDetailTray(fields: detailFields(for: row))
+      }
+    )
+  }
+
+  @ViewBuilder
+  private var tableContent: some View {
+    VStack(spacing: DashTheme.Spacing.section) {
+      if let error {
+        DashNotice(kind: .error, message: error)
+      }
+
+      ScrollView([.horizontal, .vertical]) {
+        LazyVStack(alignment: .leading, spacing: 0) {
+          headerRow
+          DashListGroupDivider()
+          ForEach(rows) { row in
+            Button {
+              selectedRow = row
+            } label: {
+              dataRow(row)
+            }
+            .buttonStyle(DashPressButtonStyle())
+            DashListGroupDivider()
+          }
+        }
+        .background(
+          DashTheme.base,
+          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        )
+        .overlay {
+          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+            .stroke(DashTheme.line, lineWidth: 0.5)
+        }
+      }
+
+      if canLoadMore {
+        DashPillButton(title: "Load more", isLoading: loadingMore) {
+          Task { await load(reset: false) }
+        }
+      }
+    }
+  }
+
+  private var headerRow: some View {
+    HStack(spacing: 0) {
+      ForEach(columns, id: \.self) { column in
+        Text(column)
+          .dashTextStyle(.code)
+          .fontWeight(.semibold)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(1)
+          .frame(width: Self.columnWidth, alignment: .leading)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 12)
+      }
+    }
+  }
+
+  private func dataRow(_ row: D1TableRow) -> some View {
+    HStack(spacing: 0) {
+      ForEach(columns, id: \.self) { column in
+        Text(cellText(row.cells[column]))
+          .dashTextStyle(.code)
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(1)
+          .frame(width: Self.columnWidth, alignment: .leading)
+          .padding(.horizontal, 10)
+          .padding(.vertical, 12)
+      }
+    }
+    .contentShape(Rectangle())
+  }
+
+  private func load(reset: Bool) async {
+    guard let id = model.activeAccountID else { return }
+    if reset {
+      loading = true
+      error = nil
+    } else {
+      loadingMore = true
+    }
+    defer {
+      loading = false
+      loadingMore = false
+    }
+
+    let offset = reset ? 0 : rows.count
+    let sql =
+      "SELECT * FROM \(d1QuotedIdentifier(table)) LIMIT \(Self.pageSize) OFFSET \(offset);"
+    do {
+      let values = try await model.client.queryD1(
+        accountID: id, databaseID: databaseID, sql: sql)
+      let fetched = values.flatMap { $0.results ?? [] }
+      if reset {
+        columns = fetched.first.map { $0.keys.sorted() } ?? []
+        rows = fetched.enumerated().map { D1TableRow(id: $0.offset, cells: $0.element) }
+      } else {
+        let base = rows.count
+        rows.append(
+          contentsOf: fetched.enumerated().map {
+            D1TableRow(id: base + $0.offset, cells: $0.element)
+          })
+      }
+      canLoadMore = fetched.count == Self.pageSize
+      error = nil
+    } catch {
+      self.error = error.dashActionableMessage
+      if reset {
+        rows = []
+        columns = []
+        canLoadMore = false
+      }
+    }
+  }
+
+  private func rowTitle(_ row: D1TableRow) -> String {
+    if let key = columns.first {
+      let text = cellText(row.cells[key])
+      if !text.isEmpty { return text }
+    }
+    return "Row \(row.id + 1)"
+  }
+
+  private func detailFields(for row: D1TableRow) -> [DashDetailField] {
+    let keys = columns.isEmpty ? row.cells.keys.sorted() : columns
+    return keys.map { key in
+      DashDetailField(label: key, value: cellText(row.cells[key]), mono: true)
+    }
+  }
+
+  private func cellText(_ value: JSONValue?) -> String {
+    guard let value else { return "" }
+    switch value {
+    case .null: return ""
+    default: return value.displayText
+    }
+  }
+}
+
+private struct D1TableRow: Identifiable, Hashable {
+  let id: Int
+  let cells: [String: JSONValue]
 }
 
 /// Lazily downloads an R2 object into a temp file when the share sheet resolves

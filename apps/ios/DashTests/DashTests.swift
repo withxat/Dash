@@ -251,3 +251,11 @@ import Testing
   #expect(duplicate == nil)
   #expect(initial == TabBarVisibilityChange(hidden: false, animated: false))
 }
+
+@Test func d1QuotedIdentifierEscapesKeywordsAndEmbeddedQuotes() {
+  #expect(d1QuotedIdentifier("users") == "\"users\"")
+  #expect(d1QuotedIdentifier("order") == "\"order\"")
+  #expect(d1QuotedIdentifier("has space") == "\"has space\"")
+  #expect(d1QuotedIdentifier("weird\"name") == "\"weird\"\"name\"")
+  #expect(d1QuotedIdentifier("a\"b\"c") == "\"a\"\"b\"\"c\"")
+}

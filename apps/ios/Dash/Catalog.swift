@@ -73,6 +73,7 @@ enum Destination: Hashable {
   case r2Bucket(String)
   case kvNamespace(String)
   case d1Database(String, String)
+  case d1Table(databaseID: String, databaseName: String, table: String)
 }
 
 enum FeatureCatalog {

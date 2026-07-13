@@ -660,6 +660,8 @@ private struct DestinationRoutedContent: View {
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
       case .d1Database(let id, let name): D1ConsoleView(databaseID: id, name: name)
+      case .d1Table(let databaseID, let databaseName, let table):
+        D1TableView(databaseID: databaseID, databaseName: databaseName, table: table)
       }
     }
   }
