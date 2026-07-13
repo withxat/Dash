@@ -147,6 +147,7 @@ struct EditShortcutsView: View {
           .clipShape(DashTheme.buttonShape)
         }
       }
+      .padding(.top, DashTheme.Sheet.bodyVertical)
       .padding(.horizontal, DashTheme.Sheet.content)
       .padding(.bottom, DashTheme.Sheet.bodyBottom)
     }

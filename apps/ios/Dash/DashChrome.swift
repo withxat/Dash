@@ -282,9 +282,11 @@ private struct DashLargeSheet<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       DashSheetHeader(title: title, showsGrabBar: true, dismiss: { dismiss() })
+      // No top padding here: the gap below the header border belongs to the
+      // scrollable content, so it scrolls away instead of sitting as a fixed
+      // blank strip.
       content()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, DashTheme.Sheet.bodyVertical)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .background(DashTheme.canvas)
