@@ -79,14 +79,48 @@ enum Destination: Hashable {
 
 enum FeatureCatalog {
   static let descriptors: [FeatureDescriptor] = [
+    // Domains & DNS
     feature(
       .zones, "Zones", "Domains, DNS, cache, and zone settings", "globe", "SolarGlobal",
-      SolarAsset.globe, "Infrastructure", read: ["zone.read"], write: ["zone.write"]),
+      SolarAsset.globe, "Domains & DNS", read: ["zone.read"], write: ["zone.write"]),
+    feature(
+      .dnsManagement, "DNS Management", "Straight to a zone's records, views, and DNS settings",
+      "server.rack", "SolarGlobus", SolarAsset.globus, "Domains & DNS",
+      read: ["dns.read", "dns-view.read", "account-dns-settings.read", "zone-dns-settings.read"],
+      write: [
+        "dns.write", "dns-view.write", "account-dns-settings.write", "zone-dns-settings.write",
+      ]),
+    feature(
+      .registrar, "Registrar", "Registered domains and renewals", "network", "SolarGlobus",
+      SolarAsset.globus, "Domains & DNS", path: "/accounts/{account}/registrar/domains",
+      read: ["registrar-domains.read"], write: ["registrar-domains.admin"]),
+    feature(
+      .dnsFirewall, "DNS Firewall", "Upstream DNS caching and protection", "shield.slash",
+      "SolarShieldCheck", SolarAsset.shieldCheck, "Domains & DNS",
+      path: "/accounts/{account}/dns_firewall",
+      read: ["dns-firewall.read"], write: ["dns-firewall.write"]),
+    // Compute
     feature(
       .workers, "Workers & Pages", "Scripts, routes, deployments, and custom domains",
       "bolt.horizontal.circle", "SolarCodeSquare", SolarAsset.code, "Compute",
       read: ["workers-scripts.read", "workers-routes.read", "page.read"],
       write: ["workers-scripts.write", "workers-routes.write", "page.write"]),
+    feature(
+      .containers, "Containers", "Applications, versions, rollouts, registries, and instances",
+      "shippingbox", "SolarBoxMinimalistic", SolarAsset.box, "Compute",
+      path: "/accounts/{account}/containers/applications",
+      read: ["containers.read", "cloudchamber.read"],
+      write: ["containers.write", "cloudchamber.write"]),
+    feature(
+      .browserRendering, "Browser Rendering", "Screenshots, crawls, PDFs, and browser sessions",
+      "safari", "SolarCodeSquare", SolarAsset.code, "Compute",
+      read: ["browser-rendering.read"], write: ["browser-rendering.write"]),
+    feature(
+      .workersObservability, "Workers Observability", "Logs, traces, telemetry, and live tails",
+      "waveform.path.ecg", "SolarChart2", SolarAsset.chart, "Compute",
+      read: ["workers-observability.read", "workers-tail.read"],
+      write: ["workers-observability.write", "workers-observability-telemetry.write"]),
+    // Storage & Data
     feature(
       .r2, "R2", "R2 object storage buckets", "externaldrive", "SolarBoxMinimalistic",
       SolarAsset.box, "Storage & Data",
@@ -104,16 +138,6 @@ enum FeatureCatalog {
       SolarAsset.inbox, "Storage & Data", path: "/accounts/{account}/queues",
       read: ["queues.read"], write: ["queues.write"]),
     feature(
-      .vectorize, "Vectorize", "Vector indexes for AI search",
-      "point.3.connected.trianglepath.dotted", "SolarStructure", "SolarStructureOutline",
-      "Storage & Data", path: "/accounts/{account}/vectorize/v2/indexes",
-      read: ["vectorize.read"], write: ["vectorize.write"]),
-    feature(
-      .secrets, "Secrets Store", "Account-level secrets, names only", "key.horizontal",
-      "SolarLockKeyhole", SolarAsset.lock, "Storage & Data",
-      path: "/accounts/{account}/secrets_store/stores",
-      read: ["secrets-store.read"], write: ["secrets-store.write"]),
-    feature(
       .hyperdrive, "Hyperdrive", "Accelerated connections to external databases",
       "bolt.horizontal", "SolarDatabase", SolarAsset.database, "Storage & Data",
       path: "/accounts/{account}/hyperdrive/configs",
@@ -124,103 +148,96 @@ enum FeatureCatalog {
       path: "/accounts/{account}/pipelines/v1/pipelines",
       read: ["pipelines.read"], write: ["pipelines.write", "pipelines.send"]),
     feature(
-      .aiGateway, "AI Gateway", "Gateways for observing and controlling AI traffic", "brain",
-      "SolarStructure", "SolarStructureOutline", "Storage & Data",
-      path: "/accounts/{account}/ai-gateway/gateways",
-      read: ["aig.read"], write: ["aig.write", "aig.run"]),
-    feature(
-      .workersAI, "Workers AI", "Models, inference, and conversion APIs", "sparkles",
-      "SolarStructure", "SolarStructureOutline", "AI & ML",
-      read: ["ai.read"], write: ["ai.write"]),
-    feature(
-      .aiSearch, "AI Search", "Search instances, content, jobs, and chat", "text.magnifyingglass",
-      "SolarStructure", "SolarStructureOutline", "AI & ML",
-      read: ["ai-search.read"],
-      write: ["ai-search.write", "ai-search.run", "ai-search.index"]),
-    feature(
-      .browserRendering, "Browser Rendering", "Screenshots, crawls, PDFs, and browser sessions",
-      "safari", "SolarCodeSquare", SolarAsset.code, "Developer Platform",
-      read: ["browser-rendering.read"], write: ["browser-rendering.write"]),
-    feature(
-      .containers, "Containers", "Applications, versions, rollouts, registries, and instances",
-      "shippingbox", "SolarBoxMinimalistic", SolarAsset.box, "Developer Platform",
-      path: "/accounts/{account}/containers/applications",
-      read: ["containers.read", "cloudchamber.read"],
-      write: ["containers.write", "cloudchamber.write"]),
-    feature(
       .r2Catalog, "R2 Data Catalog", "Catalogs, namespaces, tables, SQL, and maintenance",
-      "tablecells", "SolarDatabase", SolarAsset.database, "Developer Platform",
+      "tablecells", "SolarDatabase", SolarAsset.database, "Storage & Data",
       path: "/accounts/{account}/r2-catalog",
       read: ["r2-catalog.read", "r2-catalog-sql.read"], write: ["r2-catalog.write"]),
     feature(
-      .workersObservability, "Workers Observability", "Logs, traces, telemetry, and live tails",
-      "waveform.path.ecg", "SolarChart2", SolarAsset.chart, "Developer Platform",
-      read: ["workers-observability.read", "workers-tail.read"],
-      write: ["workers-observability.write", "workers-observability-telemetry.write"]),
+      .secrets, "Secrets Store", "Account-level secrets, names only", "key.horizontal",
+      "SolarLockKeyhole", SolarAsset.lock, "Storage & Data",
+      path: "/accounts/{account}/secrets_store/stores",
+      read: ["secrets-store.read"], write: ["secrets-store.write"]),
+    // AI
+    feature(
+      .workersAI, "Workers AI", "Models, inference, and conversion APIs", "sparkles",
+      "SolarStructure", "SolarStructureOutline", "AI",
+      read: ["ai.read"], write: ["ai.write"]),
+    feature(
+      .aiSearch, "AI Search", "Search instances, content, jobs, and chat", "text.magnifyingglass",
+      "SolarStructure", "SolarStructureOutline", "AI",
+      read: ["ai-search.read"],
+      write: ["ai-search.write", "ai-search.run", "ai-search.index"]),
+    feature(
+      .vectorize, "Vectorize", "Vector indexes for AI search",
+      "point.3.connected.trianglepath.dotted", "SolarStructure", "SolarStructureOutline",
+      "AI", path: "/accounts/{account}/vectorize/v2/indexes",
+      read: ["vectorize.read"], write: ["vectorize.write"]),
+    feature(
+      .aiGateway, "AI Gateway", "Gateways for observing and controlling AI traffic", "brain",
+      "SolarStructure", "SolarStructureOutline", "AI",
+      path: "/accounts/{account}/ai-gateway/gateways",
+      read: ["aig.read"], write: ["aig.write", "aig.run"]),
+    // Security
     feature(
       .turnstile, "Turnstile", "CAPTCHA-free widgets and secret rotation",
       "checkmark.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "Security",
       path: "/accounts/{account}/challenges/widgets",
       read: ["challenge-widgets.read"], write: ["challenge-widgets.write"]),
     feature(
-      .accessApps, "Access apps", "Zero Trust application inventory", "lock.app.dashed",
-      "SolarShieldUser", "SolarShieldUserOutline", "Security",
-      path: "/accounts/{account}/access/apps",
-      read: ["access-app.read"], write: ["access-app.write"]),
-    feature(
-      .accessGroups, "Access groups", "Reusable Zero Trust rule groups", "person.3",
-      "SolarShieldUser", "SolarShieldUserOutline", "Security",
-      path: "/accounts/{account}/access/groups",
-      read: ["access-group.read"], write: ["access-group.write"]),
-    feature(
-      .serviceTokens, "Service tokens", "Machine credentials for Access", "key.viewfinder",
-      "SolarKeyMinimalistic", SolarAsset.key, "Security",
-      path: "/accounts/{account}/access/service_tokens",
-      read: ["access-service-token.read"], write: ["access-service-token.write"]),
-    feature(
-      .gatewayPolicies, "Gateway policies", "Zero Trust Gateway filtering rules",
-      "shield.lefthalf.filled", "SolarShieldCheck", SolarAsset.shieldCheck, "Security",
-      path: "/accounts/{account}/gateway/rules",
-      read: ["teams.read"], write: ["teams.write"]),
+      .rulesets, "Rulesets", "Account and zone rules, transforms, redirects, and custom errors",
+      "slider.horizontal.3", "SolarSettingsMinimalistic", SolarAsset.settings, "Security",
+      read: ["account-rulesets.read", "transform-rules.read", "zone-transform-rules.read"],
+      write: ["account-rulesets.write", "transform-rules.write", "zone-transform-rules.write"]),
     feature(
       .ruleLists, "Rule lists", "Reusable IP and redirect lists",
       "list.bullet.rectangle.portrait", "SolarInbox", SolarAsset.inbox, "Security",
       path: "/accounts/{account}/rules/lists",
       read: ["account-rule-lists.read"], write: ["account-rule-lists.write"]),
     feature(
-      .rulesets, "Rulesets", "Account and zone rules, transforms, redirects, and custom errors",
-      "slider.horizontal.3", "SolarSettingsMinimalistic", SolarAsset.settings,
-      "App Security & Rules",
-      read: ["account-rulesets.read", "transform-rules.read", "zone-transform-rules.read"],
-      write: ["account-rulesets.write", "transform-rules.write", "zone-transform-rules.write"]),
-    feature(
       .botManagement, "Bot Management", "Bot controls, feedback reports, and managed protection",
-      "ant", "SolarShieldCheck", SolarAsset.shieldCheck, "App Security & Rules",
+      "ant", "SolarShieldCheck", SolarAsset.shieldCheck, "Security",
       read: ["bot-management.read", "bot-management-feedback.read"],
       write: ["bot-management.write", "bot-management-feedback.write"]),
     feature(
       .apiSecurity, "API Security", "API Gateway, discovery, schema validation, and Page Shield",
-      "lock.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "App Security & Rules",
+      "lock.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "Security",
       read: [
         "account-api-gateway.read", "api-gateway.read", "page-shield.read",
         "domain-page-shield.read", "request-tracer.read",
       ],
       write: ["account-api-gateway.write", "api-gateway.write"]),
+    // Zero Trust
     feature(
-      .zaraz, "Zaraz", "Third-party tools, triggers, actions, and publishing", "tag",
-      "SolarCodeSquare", SolarAsset.code, "App Security & Rules",
-      read: ["zaraz.read"], write: ["zaraz.edit", "zaraz.write"]),
+      .accessApps, "Access apps", "Zero Trust application inventory", "lock.app.dashed",
+      "SolarShieldUser", "SolarShieldUserOutline", "Zero Trust",
+      path: "/accounts/{account}/access/apps",
+      read: ["access-app.read"], write: ["access-app.write"]),
+    feature(
+      .accessGroups, "Access groups", "Reusable Zero Trust rule groups", "person.3",
+      "SolarShieldUser", "SolarShieldUserOutline", "Zero Trust",
+      path: "/accounts/{account}/access/groups",
+      read: ["access-group.read"], write: ["access-group.write"]),
     feature(
       .accessPolicies, "Access policies", "Application policies, tests, posture, and identity",
       "person.badge.shield.checkmark", "SolarShieldUser", "SolarShieldUserOutline",
-      "Cloudflare One",
+      "Zero Trust",
       read: ["access-policy.read", "access-policy-test.read", "access-device-posture.read"],
       write: ["access-policy.write", "access-policy-test.write", "access-device-posture.write"]),
+    feature(
+      .serviceTokens, "Service tokens", "Machine credentials for Access", "key.viewfinder",
+      "SolarKeyMinimalistic", SolarAsset.key, "Zero Trust",
+      path: "/accounts/{account}/access/service_tokens",
+      read: ["access-service-token.read"], write: ["access-service-token.write"]),
+    feature(
+      .gatewayPolicies, "Gateway policies", "Zero Trust Gateway filtering rules",
+      "shield.lefthalf.filled", "SolarShieldCheck", SolarAsset.shieldCheck, "Zero Trust",
+      path: "/accounts/{account}/gateway/rules",
+      read: ["teams.read"], write: ["teams.write"]),
     feature(
       .zeroTrustConnectors, "Zero Trust connectors",
       "cloudflared, WARP, private networks, and connector health",
       "point.3.connected.trianglepath.dotted",
-      "SolarRouting", SolarAsset.routing, "Cloudflare One",
+      "SolarRouting", SolarAsset.routing, "Zero Trust",
       read: [
         "teams-connectors.read", "teams-connector-cloudflared.read",
         "teams-connector-cloudflared.monitoring", "teams-connector-warp.read",
@@ -232,19 +249,11 @@ enum FeatureCatalog {
       ]),
     feature(
       .dex, "Digital Experience", "DEX tests, insights, fleet status, and resilience",
-      "gauge.with.dots.needle.50percent", "SolarChart2", SolarAsset.chart, "Cloudflare One",
+      "gauge.with.dots.needle.50percent", "SolarChart2", SolarAsset.chart, "Zero Trust",
       path: "/accounts/{account}/dex/devices/dex_tests",
       read: ["teams-dex.read", "teams-resilience.read"],
       write: ["teams-dex.write", "teams-resilience.write"]),
-    feature(
-      .emailAddresses, "Email addresses", "Email Routing destination addresses", "envelope",
-      "SolarLetter", SolarAsset.letter, "Email & Domains",
-      path: "/accounts/{account}/email/routing/addresses",
-      read: ["email-routing-address.read"], write: ["email-routing-address.write"]),
-    feature(
-      .registrar, "Registrar", "Registered domains and renewals", "network", "SolarGlobus",
-      SolarAsset.globus, "Email & Domains", path: "/accounts/{account}/registrar/domains",
-      read: ["registrar-domains.read"], write: ["registrar-domains.admin"]),
+    // Network
     feature(
       .tunnels, "Tunnels", "Cloudflare Tunnel health and connections",
       "arrow.left.arrow.right", "SolarRouting", SolarAsset.routing, "Network",
@@ -257,11 +266,6 @@ enum FeatureCatalog {
       read: ["load-balancing-monitors-and-pools.read"],
       write: ["load-balancing-monitors-and-pools.write"]),
     feature(
-      .dnsFirewall, "DNS Firewall", "Upstream DNS caching and protection", "shield.slash",
-      "SolarShieldCheck", SolarAsset.shieldCheck, "Network",
-      path: "/accounts/{account}/dns_firewall",
-      read: ["dns-firewall.read"], write: ["dns-firewall.write"]),
-    feature(
       .magicNetworking, "Magic Networking", "WAN, Transit, Firewall, BGP, prefixes, and captures",
       "network", "SolarRouting", SolarAsset.routing, "Network",
       read: [
@@ -272,29 +276,33 @@ enum FeatureCatalog {
         "magic-wan.write", "magic-transit.write", "magic-firewall.write", "ip-prefix.write",
         "ip-prefix-bgp-on-demand.write", "address-maps.write", "pcaps-api.write",
       ]),
-    feature(
-      .dnsManagement, "DNS Management", "Records, views, account settings, and zone settings",
-      "server.rack", "SolarGlobus", SolarAsset.globus, "DNS & Zones",
-      read: ["dns.read", "dns-view.read", "account-dns-settings.read", "zone-dns-settings.read"],
-      write: [
-        "dns.write", "dns-view.write", "account-dns-settings.write", "zone-dns-settings.write",
-      ]),
+    // Web & Performance
     feature(
       .sslCertificates, "SSL & Certificates", "Zone and account certificates, packs, and settings",
-      "checkmark.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "Cache & Performance",
+      "checkmark.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "Web & Performance",
       read: ["ssl-and-certificates.read", "account-ssl-and-certificates.read"],
       write: ["ssl-and-certificates.write", "account-ssl-and-certificates.write"]),
     feature(
       .cacheSettings, "Cache & Performance", "Cache settings, purge, compression, and versioning",
-      "bolt.circle", "SolarChart2", SolarAsset.chart, "Cache & Performance",
+      "bolt.circle", "SolarChart2", SolarAsset.chart, "Web & Performance",
       read: ["cache-settings.read", "response-compression.read", "zone-versioning.read"],
       write: [
         "cache-settings.write", "cache.purge", "response-compression.write",
         "zone-versioning.write",
       ]),
     feature(
+      .zaraz, "Zaraz", "Third-party tools, triggers, actions, and publishing", "tag",
+      "SolarCodeSquare", SolarAsset.code, "Web & Performance",
+      read: ["zaraz.read"], write: ["zaraz.edit", "zaraz.write"]),
+    // Email
+    feature(
+      .emailAddresses, "Email addresses", "Email Routing destination addresses", "envelope",
+      "SolarLetter", SolarAsset.letter, "Email",
+      path: "/accounts/{account}/email/routing/addresses",
+      read: ["email-routing-address.read"], write: ["email-routing-address.write"]),
+    feature(
       .emailSending, "Email Sending", "Transactional sends, routing, suppressions, and DMARC",
-      "paperplane", "SolarLetter", SolarAsset.letter, "Email & Messaging",
+      "paperplane", "SolarLetter", SolarAsset.letter, "Email",
       path: "/accounts/{account}/email/sending/suppression",
       read: [
         "email-sending.read", "email-routing-suppression.read",
@@ -304,20 +312,7 @@ enum FeatureCatalog {
         "email-sending.write", "email-routing-suppression.write",
         "email-security-dmarcreports.write",
       ]),
-    feature(
-      .calls, "Calls & MoQ", "Realtime audio, video, TURN, and Media over QUIC", "video",
-      "SolarVideoLibrary", SolarAsset.video, "Media",
-      read: ["calls.read", "moq.read"], write: ["calls.write", "moq.write"]),
-    feature(
-      .radarIntel, "Radar & Intel", "Internet trends, threat intelligence, and investigations",
-      "scope", "SolarChart2", SolarAsset.chart, "Analytics & Logs",
-      read: ["radar.read", "intel.read"], write: ["intel.write"]),
-    feature(
-      .artifacts, "Artifacts & Resources", "Artifacts, shared resources, and resource library",
-      "archivebox", "SolarBoxMinimalistic", SolarAsset.box, "Other",
-      path: "/accounts/{account}/artifacts/namespaces",
-      read: ["artifacts.read", "resource-sharing.read", "resource-library.read"],
-      write: ["artifacts.write", "resource-library.write"]),
+    // Media
     feature(
       .images, "Images", "Cloudflare Images library", "photo.on.rectangle", "SolarGallery",
       SolarAsset.gallery, "Media", read: ["images.read"], write: ["images.write"]),
@@ -325,22 +320,38 @@ enum FeatureCatalog {
       .stream, "Stream", "Stream video library", "play.rectangle", "SolarVideoLibrary",
       SolarAsset.video, "Media", read: ["stream.read"], write: ["stream.write"]),
     feature(
+      .calls, "Calls & MoQ", "Realtime audio, video, TURN, and Media over QUIC", "video",
+      "SolarVideoLibrary", SolarAsset.video, "Media",
+      read: ["calls.read", "moq.read"], write: ["calls.write", "moq.write"]),
+    // Analytics & Logs
+    feature(
       .analytics, "Analytics", "Account and zone traffic charts", "chart.xyaxis.line",
-      "SolarChart2", SolarAsset.chart, "Insights", read: ["account-analytics.read"]),
+      "SolarChart2", SolarAsset.chart, "Analytics & Logs", read: ["account-analytics.read"]),
     feature(
       .logpush, "Logpush", "Log delivery jobs to external storage",
-      "square.and.arrow.up.on.square", "SolarChart2", SolarAsset.chart, "Insights",
+      "square.and.arrow.up.on.square", "SolarChart2", SolarAsset.chart, "Analytics & Logs",
       path: "/accounts/{account}/logpush/jobs",
       read: ["account-logs.read"], write: ["account-logs.write"]),
     feature(
+      .radarIntel, "Radar & Intel", "Internet trends, threat intelligence, and investigations",
+      "scope", "SolarChart2", SolarAsset.chart, "Analytics & Logs",
+      read: ["radar.read", "intel.read"], write: ["intel.write"]),
+    // Account & Tools
+    feature(
       .account, "Account", "Members, notifications, and audit logs", "person.2",
-      "SolarSettingsMinimalistic", SolarAsset.settings, "Account",
+      "SolarSettingsMinimalistic", SolarAsset.settings, "Account & Tools",
       read: ["memberships.read", "notifications.read", "account-logs.read"],
       write: ["memberships.write", "notifications.write"]),
     feature(
       .apiExplorer, "API Explorer", "Every public Cloudflare API operation", "terminal",
-      "SolarCodeSquare", SolarAsset.code, "Developer Tools",
+      "SolarCodeSquare", SolarAsset.code, "Account & Tools",
       read: ["user-details.read", "account-settings.read"]),
+    feature(
+      .artifacts, "Artifacts & Resources", "Artifacts, shared resources, and resource library",
+      "archivebox", "SolarBoxMinimalistic", SolarAsset.box, "Account & Tools",
+      path: "/accounts/{account}/artifacts/namespaces",
+      read: ["artifacts.read", "resource-sharing.read", "resource-library.read"],
+      write: ["artifacts.write", "resource-library.write"]),
   ]
 
   private static let byID = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })
