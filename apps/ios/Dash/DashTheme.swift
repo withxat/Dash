@@ -15,7 +15,7 @@ enum DashTheme {
     static let small: CGFloat = 8
     static let medium: CGFloat = 12
     static let button: CGFloat = 18
-    static let card: CGFloat = 20
+    static let card: CGFloat = 24
     static let sheet: CGFloat = 36
   }
 
@@ -77,7 +77,7 @@ enum DashTheme {
     static let grabBarBottom: CGFloat = 8
     static let closeIcon = Color(hex: 0x9B9A9D)
     static let headerBorder = adaptive(light: 0xF9F7FA, dark: 0x262626)
-    static let shortcutItem = adaptive(light: 0xF9F9FB, dark: 0x262626)
+    static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
     static let scrimOpacity: CGFloat = 0.35
   }
 
@@ -101,6 +101,9 @@ enum DashTheme {
   static let brand = adaptive(light: 0x1460E6, dark: 0x1256D6)
   static let line = adaptive(light: 0xE5E5E5, dark: 0x525252)
   static let hairline = adaptive(light: 0xEEEEEE, dark: 0x404040)
+  /// Row separators on `recessed` panels — a step darker than `hairline`,
+  /// which disappears on gray.
+  static let panelLine = adaptive(light: 0xE8E8EA, dark: 0x3A3A3C)
   static let danger = adaptive(light: 0xEF4444, dark: 0xDC2626)
   static let dangerTint = adaptive(light: 0xFEE2E2, dark: 0x450A0A)
   static let success = adaptive(light: 0x10B981, dark: 0x34D399)
@@ -275,12 +278,9 @@ struct DashCard<Content: View>: View {
     VStack(alignment: .leading, spacing: 0) { content }
       .padding(DashTheme.Spacing.card)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(DashTheme.base)
-      .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-      .overlay {
-        RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-          .stroke(DashTheme.line, lineWidth: 0.5)
-      }
+      .background(
+        DashTheme.recessed,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -299,12 +299,9 @@ struct DashToolTile: View {
     }
     .padding(DashTheme.Spacing.card)
     .frame(minHeight: 96)
-    .background(DashTheme.base)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.line, lineWidth: 0.5)
-    }
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -368,7 +365,7 @@ struct DashDestinationLink<Label: View>: View {
 
 struct DashListGroupDivider: View {
   var body: some View {
-    Divider().overlay(DashTheme.hairline)
+    Divider().overlay(DashTheme.panelLine)
   }
 }
 
@@ -380,12 +377,9 @@ struct DashListCard<Content: View>: View {
     VStack(alignment: .leading, spacing: 0) { content() }
       .padding(.horizontal, 16)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(DashTheme.base)
-      .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-      .overlay {
-        RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-          .stroke(DashTheme.line, lineWidth: 0.5)
-      }
+      .background(
+        DashTheme.recessed,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -456,14 +450,14 @@ struct DashInlineSearch: View {
     }
     .padding(.horizontal, 16)
     .frame(minHeight: 52)
-    .background(DashTheme.base)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+    )
     .overlay {
       RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(
-          focusBinding.wrappedValue ? DashTheme.brand.opacity(0.45) : DashTheme.line,
-          lineWidth: focusBinding.wrappedValue ? 1.5 : 0.5
-        )
+        .stroke(DashTheme.brand.opacity(0.45), lineWidth: 1.5)
+        .opacity(focusBinding.wrappedValue ? 1 : 0)
     }
   }
 }
@@ -641,16 +635,13 @@ struct DashListGroup<Content: View>: View {
         }
       }
 
-      DashListCard { content }
-        .padding(.horizontal, -0.5)
-        .padding(.bottom, -0.5)
+      VStack(alignment: .leading, spacing: 0) { content }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .background(DashTheme.elevated)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.line, lineWidth: 0.5)
-    }
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -1122,16 +1113,13 @@ struct DashCodePanel: View {
         .disabled(!isEditable)
         .frame(minHeight: minHeight)
         .padding(12)
-        .background(DashTheme.recessed)
+        .background(DashTheme.base)
         .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
     }
     .padding(DashTheme.Spacing.card)
-    .background(DashTheme.base)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.line, lineWidth: 0.5)
-    }
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -1157,16 +1145,13 @@ struct DashCodeBlock: View {
           .padding(12)
       }
       .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-      .background(DashTheme.recessed)
+      .background(DashTheme.base)
       .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
     }
     .padding(DashTheme.Spacing.card)
-    .background(DashTheme.base)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.line, lineWidth: 0.5)
-    }
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 

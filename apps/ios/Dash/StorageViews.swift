@@ -909,13 +909,9 @@ struct D1TableView: View {
           }
         }
         .background(
-          DashTheme.base,
+          DashTheme.recessed,
           in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
         )
-        .overlay {
-          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-            .stroke(DashTheme.line, lineWidth: 0.5)
-        }
       }
 
       if canLoadMore {
