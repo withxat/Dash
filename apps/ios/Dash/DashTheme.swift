@@ -160,6 +160,7 @@ extension Font {
 enum DashTextStyle {
   case emptyTitle
   case sheetTitle
+  case trayTitle
   case sectionTitle
   case bodyMedium
   case bodySemibold
@@ -182,6 +183,7 @@ enum DashTextStyle {
     switch self {
     case .emptyTitle: (24, .bold, .default, .title2)
     case .sheetTitle: (20, .bold, .default, .title3)
+    case .trayTitle: (22, .bold, .default, .title3)
     case .sectionTitle: (18, .semibold, .default, .headline)
     case .bodyMedium: (16, .medium, .default, .body)
     case .bodySemibold: (16, .semibold, .default, .body)

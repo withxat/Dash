@@ -112,7 +112,7 @@ private struct DashSheetHeader: View {
 
       HStack(alignment: .center, spacing: 8) {
         Text(title)
-          .dashTextStyle(.sheetTitle)
+          .dashTextStyle(.trayTitle)
           .foregroundStyle(DashTheme.strong)
         Spacer(minLength: 12)
         if let trailingAction {
