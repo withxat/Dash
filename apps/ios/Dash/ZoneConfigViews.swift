@@ -24,6 +24,27 @@ struct BotManagementView: View {
     "auto_update_model": ("Auto-update model", "Adopt new detection models automatically"),
     "optimize_wordpress": ("Optimize for WordPress", "Reduce false positives on WordPress paths"),
     "crawler_protection": ("Crawler protection", "Block AI crawlers scraping this zone"),
+    "sbfm_definitely_automated": (
+      "Definitely automated", "Action for traffic scored definitely automated"
+    ),
+    "sbfm_likely_automated": ("Likely automated", "Action for traffic scored likely automated"),
+    "sbfm_verified_bots": ("Verified bots", "Action for known good bots"),
+    "ai_bots_protection": ("AI bots", "How AI crawlers are handled"),
+    "content_bots_protection": ("Content bots", "How content-scraping bots are handled"),
+    "cf_robots_variant": ("Managed robots.txt", "Cloudflare-managed robots.txt variant"),
+  ]
+
+  /// String settings with a known enum, from Cloudflare's OpenAPI schema. The
+  /// values differ per field — verified bots has no challenge option, crawler
+  /// protection speaks enabled/disabled — so each key carries its own list.
+  private static let enumOptions: [String: [String]] = [
+    "ai_bots_protection": ["block", "disabled", "only_on_ad_pages"],
+    "cf_robots_variant": ["off", "policy_only"],
+    "content_bots_protection": ["block", "disabled"],
+    "crawler_protection": ["enabled", "disabled"],
+    "sbfm_definitely_automated": ["allow", "block", "managed_challenge"],
+    "sbfm_likely_automated": ["allow", "block", "managed_challenge"],
+    "sbfm_verified_bots": ["allow", "block"],
   ]
 
   private var toggleKeys: [String] {
@@ -73,10 +94,25 @@ struct BotManagementView: View {
       if !infoRows.isEmpty {
         VStack(spacing: 12) {
           ForEach(infoRows, id: \.key) { row in
-            DashValueCard(
-              title: row.key.replacingOccurrences(of: "_", with: " "),
-              value: row.value
-            )
+            if let options = Self.enumOptions[row.key], allowsWrites {
+              DashMenuRow(
+                title: Self.labels[row.key]?.title
+                  ?? row.key.replacingOccurrences(of: "_", with: " "),
+                value: row.value,
+                caption: Self.labels[row.key]?.subtitle,
+                options: options
+              ) { chosen in
+                let previous = config
+                config[row.key] = .string(chosen)
+                Task { await save(revertingTo: previous) }
+              }
+            } else {
+              DashValueCard(
+                title: Self.labels[row.key]?.title
+                  ?? row.key.replacingOccurrences(of: "_", with: " "),
+                value: row.value
+              )
+            }
           }
         }
       }
@@ -297,6 +333,9 @@ struct AccountDNSSettingsView: View {
   ]
 
   private static let zoneModes = ["standard", "cdn_only", "dns_only"]
+  private static let nameserverTypes = [
+    "cloudflare.standard", "cloudflare.standard.random", "custom.account", "custom.tenant",
+  ]
 
   private var toggleKeys: [String] {
     defaults.keys
@@ -307,10 +346,19 @@ struct AccountDNSSettingsView: View {
       .sorted()
   }
 
+  /// The nameserver assignment type, when the object has the documented shape.
+  private var nameserverType: String? {
+    guard case .object(let nameservers)? = defaults["nameservers"],
+      case .string(let type)? = nameservers["type"]
+    else { return nil }
+    return type
+  }
+
   private var infoKeys: [String] {
     defaults.keys
       .filter { key in
         guard key != "zone_mode" else { return false }
+        guard key != "nameservers" || nameserverType == nil else { return false }
         switch defaults[key] {
         case .bool, nil: return false
         default: return true
@@ -343,15 +391,37 @@ struct AccountDNSSettingsView: View {
             )
           }
           if case .string(let mode)? = defaults["zone_mode"] {
-            DashMenuRow(
-              title: "Zone mode",
-              value: mode,
-              caption: "How new zones proxy traffic by default.",
-              options: Self.zoneModes
-            ) { chosen in
-              let previous = defaults
-              defaults["zone_mode"] = .string(chosen)
-              Task { await save(revertingTo: previous) }
+            if allowsWrites {
+              DashMenuRow(
+                title: "Zone mode",
+                value: mode,
+                caption: "How new zones proxy traffic by default.",
+                options: Self.zoneModes
+              ) { chosen in
+                let previous = defaults
+                defaults["zone_mode"] = .string(chosen)
+                Task { await save(revertingTo: previous) }
+              }
+            } else {
+              DashValueCard(title: "Zone mode", value: mode)
+            }
+          }
+          if let nameserverType {
+            if allowsWrites {
+              DashMenuRow(
+                title: "Nameserver type",
+                value: nameserverType,
+                caption: "Which nameserver set new zones are assigned.",
+                options: Self.nameserverTypes
+              ) { chosen in
+                guard case .object(var nameservers)? = defaults["nameservers"] else { return }
+                let previous = defaults
+                nameservers["type"] = .string(chosen)
+                defaults["nameservers"] = .object(nameservers)
+                Task { await save(revertingTo: previous) }
+              }
+            } else {
+              DashValueCard(title: "Nameserver type", value: nameserverType)
             }
           }
           ForEach(infoKeys, id: \.self) { key in

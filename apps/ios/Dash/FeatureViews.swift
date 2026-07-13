@@ -1034,15 +1034,43 @@ private enum ZoneSettingGroup: String, CaseIterable {
 }
 
 /// Enum-valued settings the API accepts as plain strings; everything listed here
-/// renders as an editable menu instead of a read-only value row.
+/// renders as an editable menu instead of a read-only value row. Values come
+/// from Cloudflare's OpenAPI schema (zones_*_value enums).
 private let zoneSettingOptions: [String: [String]] = [
   "ssl": ["off", "flexible", "full", "strict"],
   "min_tls_version": ["1.0", "1.1", "1.2", "1.3"],
-  "security_level": ["essentially_off", "low", "medium", "high", "under_attack"],
+  "security_level": ["off", "essentially_off", "low", "medium", "high", "under_attack"],
   "cache_level": ["aggressive", "basic", "simplified"],
   "polish": ["off", "lossless", "lossy"],
   "image_resizing": ["off", "open", "on"],
   "pseudo_ipv4": ["off", "add_header", "overwrite_header"],
+  "tls_1_3": ["on", "off", "zrt"],
+  "h2_prioritization": ["on", "off", "custom"],
+  "cname_flattening": ["flatten_at_root", "flatten_all"],
+  "origin_max_http_version": ["2", "1"],
+]
+
+/// Enumerated numeric settings; the menu writes the chosen number back.
+private let zoneSettingNumberOptions: [String: [Int]] = [
+  "challenge_ttl": [
+    300, 900, 1800, 2700, 3600, 7200, 10800, 14400, 28800, 57600, 86400,
+    604_800, 2_592_000, 31_536_000,
+  ],
+  "edge_cache_ttl": [
+    30, 60, 300, 1200, 1800, 3600, 7200, 10800, 14400, 18000, 28800, 43200,
+    57600, 72000, 86400, 172_800, 259_200, 345_600, 432_000, 518_400, 604_800,
+  ],
+  "max_upload": [
+    100, 125, 150, 175, 200, 225, 250, 275, 300, 325, 350, 375, 400, 425, 450,
+    475, 500, 1000,
+  ],
+]
+
+/// Readable in the settings collection but absent from the PATCH bodies
+/// (transformations) or declared uneditable (advanced_ddos) — never render a
+/// control that can only fail.
+private let readOnlyZoneSettings: Set<String> = [
+  "transformations", "transformations_allowed_origins", "advanced_ddos",
 ]
 
 struct ZoneSettingsView: View {
@@ -1077,31 +1105,67 @@ struct ZoneSettingsView: View {
 
   @ViewBuilder
   private func settingRow(_ setting: ZoneSetting) -> some View {
-    switch setting.value {
-    case .bool(let enabled):
-      DashToggleRow(
-        title: setting.displayTitle,
-        subtitle: setting.editable == false ? "Read only" : nil,
-        isOn: Binding(
-          get: { enabled },
-          set: { value in Task { await update(setting, value: .bool(value)) } }),
-        isEnabled: setting.editable != false
-      )
-    case .string(let value):
-      if let options = zoneSettingOptions[setting.id], setting.editable != false {
-        DashMenuRow(
+    if readOnlyZoneSettings.contains(setting.id) || setting.editable == false {
+      readOnlyRow(setting)
+    } else {
+      switch setting.value {
+      case .bool(let enabled):
+        DashToggleRow(
           title: setting.displayTitle,
-          value: value,
-          options: options
-        ) { chosen in
-          Task { await update(setting, value: .string(chosen)) }
+          isOn: Binding(
+            get: { enabled },
+            set: { value in Task { await update(setting, value: .bool(value)) } })
+        )
+      case .string(let value):
+        // The enum map wins over the on/off toggle: settings like polish read
+        // "off" today but accept more than two states.
+        if let options = zoneSettingOptions[setting.id] {
+          DashMenuRow(
+            title: setting.displayTitle,
+            value: value,
+            options: options
+          ) { chosen in
+            Task { await update(setting, value: .string(chosen)) }
+          }
+        } else if value == "on" || value == "off" {
+          // Cloudflare encodes most binary zone settings as "on"/"off" strings,
+          // not booleans — render them as the switches they are.
+          DashToggleRow(
+            title: setting.displayTitle,
+            isOn: Binding(
+              get: { value == "on" },
+              set: { enabled in
+                Task { await update(setting, value: .string(enabled ? "on" : "off")) }
+              })
+          )
+        } else {
+          DashValueCard(title: setting.displayTitle, value: value)
         }
-      } else {
-        DashValueCard(title: setting.displayTitle, value: value)
+      case .number(let number):
+        if let options = zoneSettingNumberOptions[setting.id] {
+          DashMenuRow(
+            title: setting.displayTitle,
+            value: JSONValue.number(number).displayText,
+            options: options.map(String.init)
+          ) { chosen in
+            guard let value = Double(chosen) else { return }
+            Task { await update(setting, value: .number(value)) }
+          }
+        } else {
+          readOnlyRow(setting)
+        }
+      default:
+        readOnlyRow(setting)
       }
-    default:
-      DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
     }
+  }
+
+  private func readOnlyRow(_ setting: ZoneSetting) -> some View {
+    DashValueCard(
+      title: setting.displayTitle,
+      value: setting.value.displayText,
+      caption: setting.editable == false ? "Read only" : nil
+    )
   }
 
   private func load(force: Bool = false) async {
