@@ -768,18 +768,20 @@ struct DashCloseButton: View {
 struct DashLoadingRing: View {
   var color: Color = DashTheme.inverse
   var size: CGFloat = 20
+  var lineWidth: CGFloat = 3
   @State private var spinning = false
 
   var body: some View {
     ZStack {
       Circle()
-        .stroke(color.opacity(0.3), lineWidth: 2)
+        .stroke(color.opacity(0.3), lineWidth: lineWidth)
       Circle()
         .trim(from: 0, to: 0.25)
-        .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
         .rotationEffect(.degrees(spinning ? 360 : 0))
     }
     .frame(width: size, height: size)
+    .padding(lineWidth / 2)
     .onAppear {
       withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
         spinning = true
