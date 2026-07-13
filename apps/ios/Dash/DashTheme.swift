@@ -58,10 +58,13 @@ enum DashTheme {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.4)
     }
-    /// The same curve slightly quicker on the way out.
+    /// The way out mirrors the reveal but accelerates: a decelerating exit
+    /// spends its tail at near-zero opacity, where the card fill blends away
+    /// before the text does and the content seems to linger. Accelerating,
+    /// everything reaches zero together and the close reads as one motion.
     static var trayClose: Animation {
       UIAccessibility.isReduceMotionEnabled
-        ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.35)
+        ? reduced : Animation.timingCurve(0.64, 0, 0.78, 0, duration: 0.3)
     }
   }
 

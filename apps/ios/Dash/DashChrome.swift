@@ -266,7 +266,8 @@ private struct DashCustomSheet<Content: View>: View {
         } else if reduceMotion {
           drag = 0
         } else {
-          withAnimation(DashTheme.Motion.trayClose) { drag = 0 }
+          // Settling back to rest is an entrance-like motion — decelerate.
+          withAnimation(DashTheme.Motion.trayOpen) { drag = 0 }
         }
       }
   }
