@@ -17,10 +17,19 @@ struct AppRootView: View {
           .transition(.opacity)
       case .unauthenticated:
         LoginView()
-          .transition(.opacity)
+          .transition(
+            .asymmetric(
+              insertion: .opacity.animation(.easeOut(duration: 0.35)),
+              removal: .opacity.animation(.easeOut(duration: 0.2))
+            ))
       case .authenticated:
         MainTabView()
-          .transition(.opacity)
+          .transition(
+            .asymmetric(
+              insertion: .scale(scale: 1.04).combined(with: .opacity)
+                .animation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.55)),
+              removal: .opacity.animation(.easeOut(duration: 0.2))
+            ))
       }
     }
     .animation(.easeOut(duration: 0.3), value: model.authState)
@@ -209,11 +218,11 @@ private struct LoginMeshGradient: View {
       Float(0.5 + amplitude * sin(t * speed + phase))
     }
     return [
-      [0, 0], [wave(0.33, 0.0, 0.24), 0], [1, 0],
-      [0, wave(0.27, 1.3, 0.22)],
-      [wave(0.39, 2.1, 0.28), wave(0.21, 4.2, 0.26)],
-      [1, wave(0.24, 5.1, 0.22)],
-      [0, 1], [wave(0.30, 3.4, 0.24), 1], [1, 1],
+      [0, 0], [wave(0.60, 0.0, 0.24), 0], [1, 0],
+      [0, wave(0.50, 1.3, 0.22)],
+      [wave(0.70, 2.1, 0.28), wave(0.40, 4.2, 0.26)],
+      [1, wave(0.45, 5.1, 0.22)],
+      [0, 1], [wave(0.55, 3.4, 0.24), 1], [1, 1],
     ]
   }
 

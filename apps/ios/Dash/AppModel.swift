@@ -162,6 +162,10 @@ final class AppModel {
           selectedScopes = granted
           featureCache.clear()
           try await loadIdentity()
+          // Let the browser sheet finish dismissing first, or the login →
+          // catalog transition plays hidden behind it and sign-in reads as a
+          // hard cut.
+          try? await Task.sleep(for: .milliseconds(450))
           // isAuthenticating stays true: the ring should survive the login
           // screen's exit fade instead of vanishing mid-transition. signOut()
           // resets it for the next visit.
