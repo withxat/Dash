@@ -22,6 +22,7 @@ struct AppRootView: View {
 
 private struct LoginView: View {
   @Environment(AppModel.self) private var model
+  @State private var showsPermissions = false
 
   var body: some View {
     ZStack {
@@ -49,16 +50,26 @@ private struct LoginView: View {
               .multilineTextAlignment(.center)
           }
 
-          DashPillButton(
-            title: "Start your engine!",
-            icon: SolarAsset.cloudflare,
-            isLoading: model.isAuthenticating,
-            action: { model.signIn() }
-          )
-          .disabled(!model.configuration.isConfigured)
-          .opacity(model.configuration.isConfigured ? 1 : 0.5)
+          VStack(spacing: 16) {
+            Button {
+              showsPermissions = true
+            } label: {
+              Text("Permissions")
+                .dashTextStyle(.bodyMedium)
+                .foregroundStyle(DashTheme.subtle)
+                .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(DashPressButtonStyle())
 
-          PermissionSelectionView()
+            DashPillButton(
+              title: "Start your engine!",
+              icon: SolarAsset.cloudflare,
+              isLoading: model.isAuthenticating,
+              action: { model.signIn() }
+            )
+            .disabled(!model.configuration.isConfigured)
+            .opacity(model.configuration.isConfigured ? 1 : 0.5)
+          }
 
           if !model.configuration.isConfigured {
             DashCard {
@@ -81,6 +92,9 @@ private struct LoginView: View {
         .frame(maxWidth: .infinity)
       }
     }
+    .dashTray(isPresented: $showsPermissions, title: "Permissions") {
+      PermissionSelectionView()
+    }
   }
 
   /// A raster copy of the app icon (`LoginAppIcon`). Never read the compiled
@@ -98,8 +112,6 @@ private struct LoginView: View {
 
 private struct PermissionSelectionView: View {
   @Environment(AppModel.self) private var model
-  @State private var expanded = false
-
   private var categories: [(key: String, values: [OAuthScopeDefinition])] {
     OAuthScopeCatalog.categories
       .map { ($0.key, $0.value.sorted { $0.name < $1.name }) }
@@ -107,60 +119,53 @@ private struct PermissionSelectionView: View {
   }
 
   var body: some View {
-    DashCard {
-      DisclosureGroup(isExpanded: $expanded) {
-        VStack(spacing: 14) {
-          Toggle(isOn: allBinding) {
-            permissionLabel(
-              "All OAuth-enabled permissions",
-              detail:
-                "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) selected"
-            )
-          }
-          .tint(DashTheme.brand)
+    VStack(spacing: 14) {
+      Text("All published capabilities are selected by default.")
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .frame(maxWidth: .infinity, alignment: .leading)
 
-          ForEach(categories, id: \.key) { category in
-            DisclosureGroup {
-              VStack(spacing: 10) {
-                ForEach(category.values) { scope in
-                  Toggle(isOn: scopeBinding(scope.id)) {
-                    permissionLabel(
-                      scope.name,
-                      detail: scope.id,
-                      risk: scope.risk,
-                      unavailable: CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
-                    )
-                  }
-                  .tint(DashTheme.brand)
-                  .disabled(
-                    CloudflareScopes.required.contains(scope.id)
-                      || CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
-                  )
-                }
-              }
-              .padding(.top, 8)
-            } label: {
-              Toggle(isOn: categoryBinding(category.values)) {
-                Text(category.values.first?.categoryTitle ?? category.key)
-                  .font(.subheadline.weight(.medium))
-                  .foregroundStyle(DashTheme.text)
+      Toggle(isOn: allBinding) {
+        permissionLabel(
+          "All OAuth-enabled permissions",
+          detail:
+            "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) selected"
+        )
+      }
+      .tint(DashTheme.brand)
+
+      ForEach(categories, id: \.key) { category in
+        DisclosureGroup {
+          VStack(spacing: 10) {
+            ForEach(category.values) { scope in
+              Toggle(isOn: scopeBinding(scope.id)) {
+                permissionLabel(
+                  scope.name,
+                  detail: scope.id,
+                  risk: scope.risk,
+                  unavailable: CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
+                )
               }
               .tint(DashTheme.brand)
+              .disabled(
+                CloudflareScopes.required.contains(scope.id)
+                  || CloudflareScopes.unsupportedByOAuthClient.contains(scope.id)
+              )
             }
           }
-        }
-        .padding(.top, 14)
-      } label: {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Permissions")
-            .font(.subheadline.weight(.semibold))
-            .foregroundStyle(DashTheme.strong)
-          Text("All published capabilities are selected by default. Expand to customize.")
-            .font(.caption)
-            .foregroundStyle(DashTheme.subtle)
+          .padding(.top, 8)
+        } label: {
+          Toggle(isOn: categoryBinding(category.values)) {
+            Text(category.values.first?.categoryTitle ?? category.key)
+              .font(.subheadline.weight(.medium))
+              .foregroundStyle(DashTheme.text)
+          }
+          .tint(DashTheme.brand)
         }
       }
     }
+    .padding(.horizontal, DashTheme.Sheet.content)
+    .padding(.bottom, DashTheme.Sheet.bodyBottom)
   }
 
   private var allBinding: Binding<Bool> {
