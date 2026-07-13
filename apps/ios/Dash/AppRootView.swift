@@ -27,48 +27,28 @@ private struct LoginView: View {
   var body: some View {
     ZStack {
       DashTheme.canvas.ignoresSafeArea()
-      ScrollView {
-        VStack(spacing: 32) {
-          Spacer(minLength: 96)
-          VStack(spacing: 16) {
-            appIconView
-            VStack(spacing: 6) {
-              Text("Dash")
-                .font(.dashTitle(40))
-                .foregroundStyle(DashTheme.strong)
-              Text("Cloudflare in your hand.")
-                .font(.system(size: 15))
-                .foregroundStyle(DashTheme.subtle)
-                .multilineTextAlignment(.center)
-            }
+      VStack(spacing: 32) {
+        Spacer()
+        VStack(spacing: 16) {
+          appIconView
+          VStack(spacing: 6) {
+            Text("Dash")
+              .font(.dashTitle(40))
+              .foregroundStyle(DashTheme.strong)
+            Text("Cloudflare in your hand.")
+              .font(.system(size: 15))
+              .foregroundStyle(DashTheme.subtle)
+              .multilineTextAlignment(.center)
           }
+        }
+        Spacer()
 
+        VStack(spacing: 16) {
           if let error = model.errorMessage {
             Text(error)
               .font(.system(size: 14))
               .foregroundStyle(DashTheme.danger)
               .multilineTextAlignment(.center)
-          }
-
-          VStack(spacing: 16) {
-            Button {
-              showsPermissions = true
-            } label: {
-              Text("Permissions")
-                .dashTextStyle(.bodyMedium)
-                .foregroundStyle(DashTheme.subtle)
-                .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(DashPressButtonStyle())
-
-            DashPillButton(
-              title: "Start your engine!",
-              icon: SolarAsset.cloudflare,
-              isLoading: model.isAuthenticating,
-              action: { model.signIn() }
-            )
-            .disabled(!model.configuration.isConfigured)
-            .opacity(model.configuration.isConfigured ? 1 : 0.5)
           }
 
           if !model.configuration.isConfigured {
@@ -85,12 +65,31 @@ private struct LoginView: View {
               }
             }
           }
-          Spacer(minLength: 24)
+
+          Button {
+            showsPermissions = true
+          } label: {
+            Text("Permissions")
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.subtle)
+              .frame(maxWidth: .infinity, minHeight: 44)
+          }
+          .buttonStyle(DashPressButtonStyle())
+
+          DashPillButton(
+            title: "Start your engine!",
+            icon: SolarAsset.cloudflare,
+            isLoading: model.isAuthenticating,
+            action: { model.signIn() }
+          )
+          .disabled(!model.configuration.isConfigured)
+          .opacity(model.configuration.isConfigured ? 1 : 0.5)
         }
-        .frame(maxWidth: 448)
-        .padding(.horizontal, 24)
-        .frame(maxWidth: .infinity)
       }
+      .frame(maxWidth: 448)
+      .padding(.horizontal, 24)
+      .padding(.bottom, 8)
+      .frame(maxWidth: .infinity)
     }
     .dashTray(isPresented: $showsPermissions, title: "Permissions") {
       PermissionSelectionView()
