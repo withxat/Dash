@@ -36,6 +36,24 @@ struct DashApp: App {
     let backImage = UIImage(named: SolarAsset.chevronLeft)?.withRenderingMode(.alwaysTemplate)
     UINavigationBar.appearance().backIndicatorImage = backImage
     UINavigationBar.appearance().backIndicatorTransitionMaskImage = backImage
+
+    // Tab icons: near-black when selected (instead of the global brand tint),
+    // quiet gray otherwise. SwiftUI ignores foregroundStyle on tab labels, so
+    // this has to go through the UIKit appearance proxy.
+    let tabAppearance = UITabBarAppearance()
+    let inactive = UIColor(red: 0xBD / 255, green: 0xBF / 255, blue: 0xC1 / 255, alpha: 1)
+    let active = UIColor { $0.userInterfaceStyle == .dark ? .white : .black }
+    for item in [
+      tabAppearance.stackedLayoutAppearance,
+      tabAppearance.inlineLayoutAppearance,
+      tabAppearance.compactInlineLayoutAppearance,
+    ] {
+      item.normal.iconColor = inactive
+      item.selected.iconColor = active
+    }
+    UITabBar.appearance().standardAppearance = tabAppearance
+    UITabBar.appearance().scrollEdgeAppearance = tabAppearance
+    UITabBar.appearance().unselectedItemTintColor = inactive
   }
 
   var body: some Scene {

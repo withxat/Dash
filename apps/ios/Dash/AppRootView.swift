@@ -383,24 +383,31 @@ private struct MainTabView: View {
         Tab(value: AppTab.home) {
           FeatureNavigationStack(path: $homePath) { HomeView() }
         } label: {
-          tabLabel("Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+          tabLabel(
+            "Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine",
+            active: selection == .home)
         }
         Tab(value: AppTab.items) {
           FeatureNavigationStack(path: $itemsPath) { ItemsView() }
         } label: {
-          tabLabel("Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+          tabLabel(
+            "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
+            active: selection == .items)
         }
         Tab(value: AppTab.watchtower) {
           FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
         } label: {
           tabLabel(
             "Watchtower",
-            asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine")
+            asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine",
+            active: selection == .watchtower)
         }
         Tab(value: AppTab.search, role: .search) {
           SearchNavigationStack(search: $search, path: $searchPath)
         } label: {
-          tabLabel("Search", asset: SolarAsset.search)
+          tabLabel(
+            "Search", asset: selection == .search ? "SolarTabSearchFill" : "SolarTabSearchLine",
+            active: selection == .search)
         }
       }
       .modifier(TabBarChrome(hidden: hidesTabBar))
@@ -408,25 +415,31 @@ private struct MainTabView: View {
       TabView(selection: $selection) {
         FeatureNavigationStack(path: $homePath) { HomeView() }
           .tabItem {
-            tabLabel("Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine")
+            tabLabel(
+              "Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine",
+              active: selection == .home)
           }
           .tag(AppTab.home)
         FeatureNavigationStack(path: $itemsPath) { ItemsView() }
           .tabItem {
             tabLabel(
-              "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine")
+              "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
+              active: selection == .items)
           }
           .tag(AppTab.items)
         FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
           .tabItem {
             tabLabel(
               "Watchtower",
-              asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine")
+              asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine",
+              active: selection == .watchtower)
           }
           .tag(AppTab.watchtower)
         SearchNavigationStack(search: $search, path: $searchPath)
           .tabItem {
-            tabLabel("Search", asset: SolarAsset.search)
+            tabLabel(
+              "Search", asset: selection == .search ? "SolarTabSearchFill" : "SolarTabSearchLine",
+              active: selection == .search)
           }
           .tag(AppTab.search)
       }
@@ -434,9 +447,13 @@ private struct MainTabView: View {
     }
   }
 
-  private func tabLabel(_ title: String, asset: String) -> some View {
+  /// Active tabs render as templates so the UIKit appearance proxy's selected
+  /// icon color applies; inactive tabs render original with the quiet gray
+  /// baked into the Line SVGs, because the iOS 26 tab bar ignores both
+  /// `normal.iconColor` and `unselectedItemTintColor`.
+  private func tabLabel(_ title: String, asset: String, active: Bool) -> some View {
     Image(asset)
-      .renderingMode(.template)
+      .renderingMode(active ? .template : .original)
       .accessibilityLabel(title)
   }
 
