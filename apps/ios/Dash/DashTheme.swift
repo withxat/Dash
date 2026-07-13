@@ -79,6 +79,8 @@ enum DashTheme {
   static let text = adaptive(light: 0x212126, dark: 0xF5F5F5)
   static let strong = adaptive(light: 0x171717, dark: 0xFAFAFA)
   static let subtle = adaptive(light: 0x717171, dark: 0xA3A3A3)
+  /// Quiet icon actions (e.g. list-header edit); a tier fainter than `subtle`.
+  static let faint = Color(hex: 0xB3B3B3)
   static let placeholder = adaptive(light: 0xA3A3A3, dark: 0x717171)
   static let inverse = adaptive(light: 0xFFFFFF, dark: 0x171717)
 
@@ -600,7 +602,7 @@ struct DashListGroup<Content: View>: View {
           Group {
             if let actionIcon {
               Button(action: action) {
-                SolarIcon(asset: actionIcon, size: 20, color: DashTheme.brand)
+                SolarIcon(asset: actionIcon, size: 20, color: DashTheme.faint)
                   .dashCompactHitTarget()
               }
               .buttonStyle(DashOpacityButtonStyle())
