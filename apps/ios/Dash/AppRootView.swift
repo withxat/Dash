@@ -4,23 +4,30 @@ import UIKit
 
 struct AppRootView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Lags `model.authState` so sign-in can play the login exit to completion
+  /// (stage briefly `nil`) before the catalog entrance — a simultaneous
+  /// crossfade hides the exit behind the catalog's opaque canvas.
+  @State private var stage: AuthenticationState? = .loading
 
   var body: some View {
-    // Auth states cross-fade instead of swapping frames: sign-in should read
-    // as the login screen quietly dissolving into the catalog, not a flash.
     ZStack {
-      switch model.authState {
-      case .loading:
-        // Match `UILaunchScreen` / `LaunchSplashView` so the handoff never
-        // flashes a different canvas color under the splash fade.
-        Color("LaunchBackground").ignoresSafeArea()
-          .transition(.opacity)
+      // Matches `UILaunchScreen` / the splash canvas: visible during bootstrap
+      // and for the beat between the login exit and the catalog entrance.
+      Color("LaunchBackground").ignoresSafeArea()
+
+      switch stage {
       case .unauthenticated:
+        // Animations ride the transitions themselves: removal transitions
+        // reliably animate only when the animation is bound to them, not to
+        // the surrounding transaction.
         LoginView()
+          .zIndex(1)
           .transition(
             .asymmetric(
               insertion: .opacity.animation(.easeOut(duration: 0.35)),
-              removal: .opacity.animation(.easeOut(duration: 0.2))
+              removal: .opacity.combined(with: .scale(scale: 0.97))
+                .animation(.easeOut(duration: 0.25))
             ))
       case .authenticated:
         MainTabView()
@@ -30,9 +37,26 @@ struct AppRootView: View {
                 .animation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.55)),
               removal: .opacity.animation(.easeOut(duration: 0.2))
             ))
+      case .loading, nil:
+        Color.clear
       }
     }
-    .animation(.easeOut(duration: 0.3), value: model.authState)
+    .onAppear { stage = model.authState }
+    .onChange(of: model.authState) { old, new in
+      if reduceMotion {
+        stage = new
+        return
+      }
+      if old == .unauthenticated, new == .authenticated {
+        Task { @MainActor in
+          withAnimation(.easeOut(duration: 0.25)) { stage = nil }
+          try? await Task.sleep(for: .milliseconds(240))
+          withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: 0.55)) { stage = .authenticated }
+        }
+      } else {
+        withAnimation(.easeOut(duration: 0.3)) { stage = new }
+      }
+    }
   }
 }
 
