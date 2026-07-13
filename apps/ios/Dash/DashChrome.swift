@@ -4,9 +4,10 @@ import SwiftUI
 // MARK: - Sheet presentation
 
 enum DashSheetSizing: Equatable {
-  /// Height hugs content (Profile, forms).
+  /// A floating card whose height hugs its content (Profile, forms).
   case content
-  /// Full-height sheet (Edit shortcuts).
+  /// Presents expanded to a full-height sheet; the grab bar drags it down to
+  /// a floating detent styled like `.content` (Edit shortcuts).
   case large
 }
 
@@ -169,11 +170,12 @@ private struct DashCustomSheet<Content: View>: View {
       // We position the card above the keyboard ourselves (padding + an observed
       // height) rather than let SwiftUI's automatic avoidance also push it, which
       // over-lifts it and leaves a dim gap. The card caps its body at the space
-      // left above the keyboard and scrolls the rest.
+      // left above the keyboard and scrolls the rest. As a floating card the
+      // lift is plain outer padding — there's no longer an edge-to-edge fill
+      // that has to run under the keyboard.
       GeometryReader { proxy in
         DashSheetCard(
-          maxCardHeight: proxy.size.height - keyboardInset(proxy) - 24,
-          bottomInset: keyboardInset(proxy)
+          maxCardHeight: proxy.size.height - bottomLift(proxy) - 24
         ) {
           // Drag-to-dismiss lives on the header only, so the scrollable body
           // keeps its own vertical scroll.
@@ -187,10 +189,11 @@ private struct DashCustomSheet<Content: View>: View {
           maxWidth: horizontalSizeClass == .regular
             ? DashTheme.Layout.trayMaxWidth : .infinity
         )
-        // Always laid out so it moves as one piece; bottom-pinned, with the card
-        // lifting its own content above the keyboard while its fill runs
-        // underneath it. The reveal travels half the card's height while opacity
-        // and blur carry the rest, so the short slide reads as a full open.
+        .padding(.horizontal, DashTheme.Sheet.floatingMargin)
+        .padding(.bottom, bottomLift(proxy))
+        // Always laid out so it moves as one piece; bottom-pinned. The reveal
+        // travels half the card's height while opacity and blur carry the rest,
+        // so the short slide reads as a full open.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .offset(y: reduceMotion ? drag : (shown ? drag : revealOffset))
         .opacity(shown ? 1 : 0)
@@ -237,6 +240,15 @@ private struct DashCustomSheet<Content: View>: View {
     max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
   }
 
+  /// Bottom gap under the floating card: the keyboard plus a margin while
+  /// typing; otherwise the home-indicator inset already reads as the gap, so
+  /// an explicit margin is added only on square-bottomed devices.
+  private func bottomLift(_ proxy: GeometryProxy) -> CGFloat {
+    let keyboard = keyboardInset(proxy)
+    if keyboard > 0 { return keyboard + DashTheme.Sheet.floatingMargin }
+    return proxy.safeAreaInsets.bottom > 0 ? 0 : DashTheme.Sheet.floatingMargin
+  }
+
   private func close() {
     if reduceMotion {
       withAnimation(DashTheme.Motion.reduced) {
@@ -273,28 +285,165 @@ private struct DashCustomSheet<Content: View>: View {
   }
 }
 
-/// `.large` trays keep the native sheet — a tall, scrollable list (Edit shortcuts)
-/// doesn't need the morphing card.
-private struct DashLargeSheet<Content: View>: View {
+/// `.large` trays: a custom two-detent sheet. It presents expanded — full
+/// width, edge-to-edge at the bottom, native-sheet top corners — and the grab
+/// bar or header drags it down to a floating detent styled exactly like a
+/// `.content` tray (screen-edge margins, concentric all-corner radius).
+/// Margins and radii interpolate continuously with the drag; past the floating
+/// detent it dismisses. Native sheet behavior, our chrome.
+private struct DashExpandableSheet<Content: View>: View {
   let title: String
+  /// Removes the cover once the exit animation has finished.
+  let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+  @State private var shown = false
+  @State private var expanded = true
+  @State private var drag: CGFloat = 0
+
+  private struct Metrics {
+    let cardTop: CGFloat
+    let height: CGFloat
+    let horizontalMargin: CGFloat
+    let bottomMargin: CGFloat
+    let topRadius: CGFloat
+    let bottomRadius: CGFloat
+    let contentBottomInset: CGFloat
+    let expandedTop: CGFloat
+    let floatingTop: CGFloat
+  }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      DashSheetHeader(title: title, showsGrabBar: true, dismiss: { dismiss() })
+    ZStack(alignment: .bottom) {
+      Color.black.opacity(shown ? DashTheme.Sheet.scrimOpacity : 0)
+        .ignoresSafeArea()
+        .contentShape(Rectangle())
+        .onTapGesture { close() }
+
+      GeometryReader { proxy in
+        let metrics = metrics(in: proxy)
+        card(metrics)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          .offset(y: reduceMotion ? 0 : (shown ? 0 : (proxy.size.height - metrics.cardTop) * 0.5))
+          .opacity(shown ? 1 : 0)
+          .blur(radius: reduceMotion ? 0 : (shown ? 0 : 2))
+      }
+      .ignoresSafeArea(edges: .bottom)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .environment(\.dashTrayDismiss, close)
+    .presentationBackground(.clear)
+    .onAppear {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.trayOpen) {
+        shown = true
+      }
+    }
+  }
+
+  private func card(_ metrics: Metrics) -> some View {
+    let shape = UnevenRoundedRectangle(
+      topLeadingRadius: metrics.topRadius,
+      bottomLeadingRadius: metrics.bottomRadius,
+      bottomTrailingRadius: metrics.bottomRadius,
+      topTrailingRadius: metrics.topRadius,
+      style: .continuous
+    )
+    return VStack(spacing: 0) {
+      DashSheetHeader(title: title, showsGrabBar: true, dismiss: close)
+        .contentShape(Rectangle())
+        .gesture(detentGesture(metrics))
       // No top padding here: the gap below the header border belongs to the
       // scrollable content, so it scrolls away instead of sitting as a fixed
       // blank strip.
       content()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .safeAreaPadding(.bottom, metrics.contentBottomInset)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .background(DashTheme.canvas)
-    .environment(\.dashTrayDismiss, { dismiss() })
-    .presentationDetents([.large])
-    .presentationDragIndicator(.hidden)
-    .presentationBackground(DashTheme.canvas)
+    .frame(height: metrics.height)
+    .frame(
+      maxWidth: horizontalSizeClass == .regular ? DashTheme.Layout.trayMaxWidth : .infinity
+    )
+    .background { shape.fill(DashTheme.canvas) }
+    .clipShape(shape)
+    .padding(.horizontal, metrics.horizontalMargin)
+    .padding(.bottom, metrics.bottomMargin)
+  }
+
+  /// Detent geometry for the current drag, interpolating chrome between the
+  /// expanded sheet and the floating card.
+  private func metrics(in proxy: GeometryProxy) -> Metrics {
+    let safeBottom = proxy.safeAreaInsets.bottom
+    let expandedTop = DashTheme.Sheet.expandedTopGap
+    let floatingBottomMargin = max(safeBottom, DashTheme.Sheet.floatingMargin)
+    let floatingHeight = proxy.size.height * DashTheme.Sheet.floatingDetentFraction
+    let floatingTop = proxy.size.height - floatingBottomMargin - floatingHeight
+
+    let baseTop = expanded ? expandedTop : floatingTop
+    var cardTop = baseTop + drag
+    if cardTop < expandedTop {
+      // Rubber-band past the top detent, like a native sheet.
+      cardTop = expandedTop - (expandedTop - cardTop) * 0.15
+    }
+    let progress = min(max((cardTop - expandedTop) / (floatingTop - expandedTop), 0), 1)
+
+    func lerp(_ from: CGFloat, _ to: CGFloat) -> CGFloat { from + (to - from) * progress }
+    let bottomMargin = lerp(0, floatingBottomMargin)
+    return Metrics(
+      cardTop: cardTop,
+      height: max(120, proxy.size.height - cardTop - bottomMargin),
+      horizontalMargin: lerp(0, DashTheme.Sheet.floatingMargin),
+      bottomMargin: bottomMargin,
+      topRadius: lerp(DashTheme.Sheet.expandedTopRadius, DashDisplayChrome.floatingRadius),
+      bottomRadius: lerp(DashDisplayChrome.cornerRadius, DashDisplayChrome.floatingRadius),
+      contentBottomInset: (1 - progress) * safeBottom,
+      expandedTop: expandedTop,
+      floatingTop: floatingTop
+    )
+  }
+
+  private func detentGesture(_ metrics: Metrics) -> some Gesture {
+    DragGesture(coordinateSpace: .global)
+      .onChanged { value in drag = value.translation.height }
+      .onEnded { value in
+        let baseTop = expanded ? metrics.expandedTop : metrics.floatingTop
+        let predictedTop = baseTop + value.predictedEndTranslation.height
+        let dismissThreshold =
+          metrics.floatingTop + (metrics.floatingTop - metrics.expandedTop) * 0.4
+        if predictedTop > dismissThreshold {
+          close()
+        } else {
+          let snapExpanded =
+            abs(predictedTop - metrics.expandedTop) < abs(predictedTop - metrics.floatingTop)
+          if reduceMotion {
+            expanded = snapExpanded
+            drag = 0
+          } else {
+            withAnimation(DashTheme.Motion.morph) {
+              expanded = snapExpanded
+              drag = 0
+            }
+          }
+        }
+      }
+  }
+
+  private func close() {
+    if reduceMotion {
+      withAnimation(DashTheme.Motion.reduced) {
+        shown = false
+      } completion: {
+        drag = 0
+        onDismiss()
+      }
+    } else {
+      withAnimation(DashTheme.Motion.trayClose) {
+        shown = false
+        drag = 0
+      } completion: {
+        onDismiss()
+      }
+    }
   }
 }
 
@@ -310,6 +459,28 @@ private struct DashSheetGrabBar: View {
   }
 }
 
+/// Physical display metrics so floating trays run concentric with the
+/// hardware corners.
+@MainActor
+enum DashDisplayChrome {
+  /// The display's corner radius; 0 on square-cornered devices.
+  static let cornerRadius: CGFloat = {
+    let key = ["_display", "Corner", "Radius"].joined()
+    let screen = UIApplication.shared.connectedScenes
+      .compactMap { ($0 as? UIWindowScene)?.screen }.first
+    return (screen?.value(forKey: key) as? CGFloat) ?? 0
+  }()
+
+  /// All-corner radius for a floating tray inset by `floatingMargin`:
+  /// concentric with the display when its radius is known, the sheet token
+  /// otherwise.
+  static var floatingRadius: CGFloat {
+    cornerRadius > 0
+      ? max(cornerRadius - DashTheme.Sheet.floatingMargin, DashTheme.Radius.card)
+      : DashTheme.Radius.sheet
+  }
+}
+
 /// The visible card of a `.content` tray, at the bottom of a full-screen
 /// transparent cover: a fixed header over a body that springs its height to fit
 /// its content — so a morph resizes smoothly with no detent to clip or snap —
@@ -318,9 +489,6 @@ private struct DashSheetGrabBar: View {
 /// Paints its own canvas fill, top corners, and safe-area extension.
 private struct DashSheetCard<Header: View, Body: View>: View {
   let maxCardHeight: CGFloat
-  /// Empty white space kept below the content (behind the keyboard) so the fill
-  /// runs under the keyboard's rounded top corners instead of leaving a gap.
-  var bottomInset: CGFloat = 0
   @ViewBuilder let header: () -> Header
   @ViewBuilder let content: () -> Body
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -353,17 +521,16 @@ private struct DashSheetCard<Header: View, Body: View>: View {
       .scrollDismissesKeyboard(.interactively)
       .frame(height: bodyDisplay > 0 ? bodyDisplay : nil)
     }
-    .padding(.bottom, bottomInset)
     .frame(maxWidth: .infinity)
+    // A floating card: every corner rounded, concentric with the display, and
+    // nothing extends past the card — the gaps around it are the design.
     .background {
-      UnevenRoundedRectangle(
-        topLeadingRadius: DashTheme.Radius.sheet,
-        topTrailingRadius: DashTheme.Radius.sheet,
-        style: .continuous
-      )
-      .fill(DashTheme.canvas)
-      .ignoresSafeArea(edges: .bottom)
+      RoundedRectangle(cornerRadius: DashDisplayChrome.floatingRadius, style: .continuous)
+        .fill(DashTheme.canvas)
     }
+    .clipShape(
+      RoundedRectangle(cornerRadius: DashDisplayChrome.floatingRadius, style: .continuous)
+    )
     .background {
       GeometryReader { proxy in
         Color.clear.preference(key: DashSheetFittedHeightKey.self, value: proxy.size.height)
@@ -409,23 +576,20 @@ private struct DashTrayModifier<TrayContent: View>: ViewModifier {
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    if sizing == .content {
-      content
-        .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
-        .onChange(of: isPresented, initial: true) { _, present in
-          dashPresentWithoutAnimation { covered = present }
-        }
-        .fullScreenCover(isPresented: $covered) {
+    content
+      .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
+      .onChange(of: isPresented, initial: true) { _, present in
+        dashPresentWithoutAnimation { covered = present }
+      }
+      .fullScreenCover(isPresented: $covered) {
+        if sizing == .content {
           DashCustomSheet(
             title: title, onDismiss: { isPresented = false }, content: trayContent)
+        } else {
+          DashExpandableSheet(
+            title: title, onDismiss: { isPresented = false }, content: trayContent)
         }
-    } else {
-      content
-        .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
-        .sheet(isPresented: $isPresented) {
-          DashLargeSheet(title: title, content: trayContent)
-        }
-    }
+      }
   }
 }
 
@@ -441,23 +605,20 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, TrayContent:
 
   @ViewBuilder
   func body(content: Content) -> some View {
-    if sizing == .content {
-      content
-        .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
-        .onChange(of: item, initial: true) { _, newItem in
-          dashPresentWithoutAnimation { coveredItem = newItem }
-        }
-        .fullScreenCover(item: $coveredItem) { value in
+    content
+      .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
+      .onChange(of: item, initial: true) { _, newItem in
+        dashPresentWithoutAnimation { coveredItem = newItem }
+      }
+      .fullScreenCover(item: $coveredItem) { value in
+        if sizing == .content {
           DashCustomSheet(
             title: title(value), onDismiss: { item = nil }, content: { trayContent(value) })
+        } else {
+          DashExpandableSheet(
+            title: title(value), onDismiss: { item = nil }, content: { trayContent(value) })
         }
-    } else {
-      content
-        .preference(key: TrayPresentedPreferenceKey.self, value: isPresented)
-        .sheet(item: $item) { value in
-          DashLargeSheet(title: title(value), content: { trayContent(value) })
-        }
-    }
+      }
   }
 }
 

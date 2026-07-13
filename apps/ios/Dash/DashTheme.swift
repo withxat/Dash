@@ -82,6 +82,15 @@ enum DashTheme {
     static let headerBorder = adaptive(light: 0xF9F7FA, dark: 0x262626)
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
     static let scrimOpacity: CGFloat = 0.35
+    /// Gap between a floating tray and the screen edges.
+    static let floatingMargin: CGFloat = 12
+    /// Native-sheet-like top corners while an expandable tray is expanded.
+    static let expandedTopRadius: CGFloat = 12
+    /// Gap kept below the top safe area while expanded.
+    static let expandedTopGap: CGFloat = 10
+    /// Share of the screen an expandable tray keeps when collapsed to its
+    /// floating detent.
+    static let floatingDetentFraction: CGFloat = 0.62
   }
 
   static let canvas = adaptive(light: 0xFFFFFF, dark: 0x1A1A1A)
