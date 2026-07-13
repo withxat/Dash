@@ -139,7 +139,7 @@ private struct APIEndpointRow: View {
         }
       }
     }
-    .buttonStyle(.plain)
+    .buttonStyle(DashPressButtonStyle())
   }
 }
 

@@ -502,7 +502,7 @@ struct CatalogToolbar: ToolbarContent {
     } label: {
       HeaderProfileAvatar(email: model.user?.email ?? "")
     }
-    .buttonStyle(.plain)
+    .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel("Open profile")
   }
 }

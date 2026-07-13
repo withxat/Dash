@@ -614,14 +614,14 @@ struct DashListGroup<Content: View>: View {
                 SolarIcon(asset: actionIcon, size: 20, color: DashTheme.faint)
                   .dashCompactHitTarget()
               }
-              .buttonStyle(DashOpacityButtonStyle())
+              .buttonStyle(DashPressButtonStyle())
               .accessibilityLabel(actionTitle ?? "Edit")
             } else if let actionTitle {
               Button(actionTitle, action: action)
                 .dashTextStyle(.supportingMedium)
                 .foregroundStyle(DashTheme.brand)
                 .dashCompactHitTarget()
-                .buttonStyle(DashOpacityButtonStyle())
+                .buttonStyle(DashPressButtonStyle())
             }
           }
           .padding(.trailing, 16)
@@ -794,12 +794,6 @@ struct ErrorStateView: View {
       message: message,
       actionTitle: "Try again",
       action: retry)
-  }
-}
-
-struct DashOpacityButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label.opacity(configuration.isPressed ? 0.7 : 1)
   }
 }
 

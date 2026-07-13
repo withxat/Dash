@@ -323,7 +323,7 @@ private struct PermissionSelectionView: View {
       }
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
+    .buttonStyle(DashPressButtonStyle())
     .disabled(disabled)
     .accessibilityElement(children: .combine)
   }
