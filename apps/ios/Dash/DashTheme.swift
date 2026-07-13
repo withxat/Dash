@@ -635,13 +635,28 @@ struct DashListGroup<Content: View>: View {
         }
       }
 
+      // The signature two-tone group: a white, hairlined card seated in an
+      // elevated frame. Deliberately exempt from the strokeless panel language;
+      // inlined rather than reusing DashListCard so the panels can evolve
+      // without dragging this along.
       VStack(alignment: .leading, spacing: 0) { content }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DashTheme.base)
+        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+        .overlay {
+          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+            .stroke(DashTheme.line, lineWidth: 0.5)
+        }
+        .padding(.horizontal, -0.5)
+        .padding(.bottom, -0.5)
     }
-    .background(
-      DashTheme.recessed,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .background(DashTheme.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        .stroke(DashTheme.line, lineWidth: 0.5)
+    }
   }
 }
 
