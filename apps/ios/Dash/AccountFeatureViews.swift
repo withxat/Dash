@@ -830,9 +830,10 @@ struct AccountView: View {
     togglingPolicy = true
     toggleError = nil
     do {
-      _ = try await model.client.mutate(
-        path: "/accounts/\(accountID)/alerting/v3/policies/\(policy.id)", method: "PUT",
-        body: ["enabled": .bool(!(policy.enabled ?? true))])
+      _ = try await model.client.updateNotificationPolicy(
+        accountID: accountID,
+        policyID: policy.id,
+        input: policy.input(enabled: !(policy.enabled ?? true)))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
       detail = nil
       model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
