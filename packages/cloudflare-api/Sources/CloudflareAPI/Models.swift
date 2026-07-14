@@ -362,6 +362,19 @@ public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
   }
 }
 
+/// A live tail session. `url` is a `wss://` endpoint carrying its own auth
+/// token; sessions expire after a few minutes unless the socket stays open.
+public struct WorkerTail: Codable, Hashable, Sendable {
+  public let id: String
+  public let url: String
+  public let expiresAt: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, url
+    case expiresAt = "expires_at"
+  }
+}
+
 /// Worker deployments arrive wrapped in an object, not as a bare result array.
 public struct WorkerDeploymentsResult: Codable, Sendable {
   public let deployments: [GenericResource]

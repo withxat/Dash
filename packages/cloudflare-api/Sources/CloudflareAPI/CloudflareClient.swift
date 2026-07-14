@@ -144,6 +144,18 @@ public actor CloudflareClient {
   public func workerTag(accountID: String, name: String) async throws -> String? {
     try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
   }
+  public func startWorkerTail(accountID: String, scriptName: String) async throws -> WorkerTail {
+    try await request(
+      "/accounts/\(accountID)/workers/scripts/\(scriptName)/tails",
+      method: "POST", body: [String: JSONValue]())
+  }
+  public func listWorkerTails(accountID: String, scriptName: String) async throws -> [WorkerTail] {
+    try await list("/accounts/\(accountID)/workers/scripts/\(scriptName)/tails").items
+  }
+  public func deleteWorkerTail(accountID: String, scriptName: String, tailID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/workers/scripts/\(scriptName)/tails/\(tailID)", method: "DELETE")
+  }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
     try await list("/accounts/\(accountID)/pages/projects").items
   }

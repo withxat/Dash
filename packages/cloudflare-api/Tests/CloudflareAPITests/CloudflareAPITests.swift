@@ -108,6 +108,37 @@ import Testing
   #expect(CloudflareClient.retryDelay(retryAfter: "-2") == 0)
 }
 
+@Test func parsesTailRequestEventWithLogsAndExceptions() throws {
+  let blob = #"""
+    {"outcome":"exception","eventTimestamp":1752470000000,
+     "event":{"request":{"method":"GET","url":"https://example.com/api"}},
+     "logs":[{"level":"info","message":["hit",{"user":"x"},42]}],
+     "exceptions":[{"name":"TypeError","message":"undefined is not a function"}]}
+    """#
+  let event = try #require(WorkerTailMessage.parse(Data(blob.utf8)))
+  #expect(event.outcome == "exception")
+  #expect(event.summary == "GET https://example.com/api — exception")
+  #expect(event.timestamp == Date(timeIntervalSince1970: 1_752_470_000))
+  #expect(event.lines.count == 2)
+  #expect(event.lines[0] == #"[info] hit {"user":"x"} 42"#)
+  #expect(event.lines[1] == "[exception] TypeError: undefined is not a function")
+}
+
+@Test func parsesTailCronAndMinimalEvents() throws {
+  let cron = try #require(
+    WorkerTailMessage.parse(
+      Data(#"{"outcome":"ok","event":{"cron":"*/5 * * * *"}}"#.utf8)))
+  #expect(cron.summary == "cron */5 * * * * — ok")
+  #expect(cron.timestamp == nil)
+  #expect(cron.lines.isEmpty)
+
+  let minimal = try #require(WorkerTailMessage.parse(Data("{}".utf8)))
+  #expect(minimal.summary == "event")
+  #expect(minimal.outcome == nil)
+
+  #expect(WorkerTailMessage.parse(Data("not json".utf8)) == nil)
+}
+
 @Test func decodesPaginatedZoneEnvelope() throws {
   let data = Data(
     #"{"success":true,"result":[{"id":"zone","name":"example.com","status":"active"}],"result_info":{"page":1,"per_page":50,"total_count":1}}"#
@@ -547,6 +578,52 @@ struct NetworkTests {
     #expect(values.0.first?.name == "Example")
     #expect(values.1.first?.name == "Example")
     #expect(recorder.refreshCount == 1)
+  }
+
+  @Test func workerTailLifecycleTargetsDocumentedPaths() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record("\(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+      switch request.httpMethod {
+      case "POST":
+        return (
+          200,
+          Data(
+            #"{"success":true,"result":{"id":"tail-1","url":"wss://tail.developers.workers.dev/tail-1","expires_at":"2026-07-14T13:00:00Z"}}"#
+              .utf8)
+        )
+      case "GET":
+        return (
+          200,
+          Data(
+            #"{"success":true,"result":[{"id":"tail-1","url":"wss://tail.developers.workers.dev/tail-1"}]}"#
+              .utf8)
+        )
+      default:
+        return (200, Data(#"{"success":true,"result":{"id":"tail-1"}}"#.utf8))
+      }
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let tail = try await client.startWorkerTail(accountID: "acc", scriptName: "api")
+    #expect(tail.id == "tail-1")
+    #expect(tail.url.hasPrefix("wss://"))
+    #expect(tail.expiresAt == "2026-07-14T13:00:00Z")
+
+    let tails = try await client.listWorkerTails(accountID: "acc", scriptName: "api")
+    #expect(tails.map(\.id) == ["tail-1"])
+    #expect(tails.first?.expiresAt == nil)
+
+    try await client.deleteWorkerTail(accountID: "acc", scriptName: "api", tailID: "tail-1")
+    #expect(
+      recorder.paths == [
+        "POST /accounts/acc/workers/scripts/api/tails",
+        "GET /accounts/acc/workers/scripts/api/tails",
+        "DELETE /accounts/acc/workers/scripts/api/tails/tail-1",
+      ])
   }
 
   @Test func rateLimitedRequestRetriesAfterShortWait() async throws {
