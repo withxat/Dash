@@ -157,3 +157,10 @@ dist/
 DerivedData/
 xcuserdata/
 apps/ios/Config/Secrets.xcconfig
+
+# Wrangler local secrets (never commit)
+.dev.vars
+.dev.vars.*
+**/.dev.vars
+**/.dev.vars.*
+

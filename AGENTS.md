@@ -8,7 +8,7 @@ Dash for Cloudflare is a native iOS/iPadOS Cloudflare client. The installed name
 | --- | --- |
 | `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
 | `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
-| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker OAuth relay |
+| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker: OAuth callback relay + APNs push bridge (`dash-relay` at `dash.xat.sh`) |
 | `packages/ui` | Web-only component library; do not import it into Dash |
 
 ## Commands
@@ -78,8 +78,24 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 - Public response types are `Codable` and `Sendable`; public operations use `async throws`.
 - Binary endpoints use `Data` or file URLs. Do not decode unbounded bodies as text unless the endpoint is known to be bounded.
 
-## OAuth relay
+## Relay worker (OAuth + push)
 
-Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is deployed as `dash-relay` on Workers, which redirects to `dash://oauth/callback`.
+Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is
+deployed as `dash-relay` on Workers at `https://dash.xat.sh`, which redirects
+OAuth to `dash://oauth/callback` and also bridges Cloudflare alert webhooks to
+APNs under `/push/*`.
 
-The Worker must remain stateless: do not log query parameters, persist authorization state, handle tokens, or receive the PKCE verifier. Redeploy it before releasing a Dash build that expects the new scheme.
+Invariants that still hold:
+
+- Zero storage (no KV, DO, or D1). Push state lives in the user's own Cloudflare
+  account as a webhook destination plus notification policies.
+- Never touches Cloudflare credentials, OAuth tokens, or the PKCE verifier.
+- Never logs query parameters, device tokens, alert payloads, or notify URLs
+  (the URL is a bearer capability). Logs only APNs status codes via
+  `wrangler tail`.
+
+Honest additions: the worker now holds the APNs `.p8` signing key and processes
+APNs device tokens when registering and notifying. Redeploy it before releasing
+a Dash build that expects new `/push/*` behavior. `wrangler dev` cannot reach
+APNs (HTTP/2); verify with a deployed worker and
+`POST /accounts/{id}/alerting/v3/policies/{id}/test`.

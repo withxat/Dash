@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Dash OAuth relay — converts Cloudflare's https OAuth callback into the dash:// redirect the iOS app captures.",
+  "description": "Dash relay — OAuth callback bridge and Cloudflare→APNs push forwarder.",
   "scripts": {
     "deploy": "wrangler deploy",
 	"lint": "eslint src",
