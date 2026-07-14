@@ -178,6 +178,21 @@ import UIKit
   #expect(mine == [a])
 }
 
+@Test func tailBufferTrimsOldestBeyondLimit() {
+  let event = { (summary: String) in
+    WorkerTailEvent(timestamp: nil, outcome: "ok", summary: summary, lines: [])
+  }
+  var buffer: [WorkerTailEvent] = []
+  for index in 0..<5 {
+    buffer = WorkerTailView.appending(event("e\(index)"), to: buffer, limit: 3)
+  }
+  #expect(buffer.map(\.summary) == ["e2", "e3", "e4"])
+
+  var small: [WorkerTailEvent] = []
+  small = WorkerTailView.appending(event("only"), to: small, limit: 3)
+  #expect(small.map(\.summary) == ["only"])
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

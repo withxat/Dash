@@ -859,6 +859,12 @@ struct WorkerDetailView: View {
                   DashListRow(title: "Builds", icon: SolarAsset.sledgehammer)
                 }
               }
+              if model.hasScopes(["workers-tail.read"]) {
+                DashListGroupDivider()
+                DashListGroupLink(value: .workerTail(name)) {
+                  DashListRow(title: "Live tail", icon: SolarAsset.bolt)
+                }
+              }
             }
           } else if let error {
             ErrorStateView(message: error) { Task { await load(force: true) } }

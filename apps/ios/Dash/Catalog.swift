@@ -72,6 +72,7 @@ enum Destination: Hashable {
   case ruleset(basePath: String, rulesetID: String, name: String)
   case accessAppPolicies(appID: String, appName: String)
   case worker(String)
+  case workerTail(String)
   case r2Bucket(String)
   case kvNamespace(String)
   case d1Database(String, String)

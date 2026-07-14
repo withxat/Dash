@@ -1074,6 +1074,7 @@ private struct DestinationRoutedContent: View {
       case .accessAppPolicies(let appID, let appName):
         AccessAppPoliciesView(appID: appID, appName: appName)
       case .worker(let name): WorkerDetailView(name: name)
+      case .workerTail(let name): WorkerTailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
       case .d1Database(let id, let name): D1ConsoleView(databaseID: id, name: name)
