@@ -132,6 +132,7 @@ struct ZonesView: View {
       prompt: "Search zones",
       isLoading: loading,
       error: error,
+      hasContent: !zones.isEmpty,
       retry: { Task { await load() } }
     ) {
       if filtered.isEmpty {
@@ -270,7 +271,8 @@ struct ZoneDetailView: View {
   var body: some View {
     DashFeatureList(
       isLoading: zone == nil && error == nil,
-      error: zone == nil ? error : nil,
+      error: error,
+      hasContent: zone != nil,
       retry: { Task { await load() } }
     ) {
       if let zone {
@@ -421,6 +423,7 @@ struct DNSRecordsView: View {
       prompt: "Search records",
       isLoading: loading,
       error: error,
+      hasContent: !records.isEmpty,
       retry: { Task { await load() } }
     ) {
       if filtered.isEmpty {
@@ -603,6 +606,7 @@ struct WorkersView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: selectedTab == .workers ? !workers.isEmpty : !pages.isEmpty,
       retry: { Task { await load() } },
       header: {
         DashTextTabs(
@@ -1081,7 +1085,10 @@ struct ZoneSettingsView: View {
   @State private var loading = true
 
   var body: some View {
-    DashFeatureList(isLoading: loading, error: error, retry: { Task { await load() } }) {
+    DashFeatureList(
+      isLoading: loading, error: error, hasContent: !settings.isEmpty,
+      retry: { Task { await load() } }
+    ) {
       let readOnly = settings.filter(isReadOnly)
       if !readOnly.isEmpty {
         DashReadOnlySettingsCard(

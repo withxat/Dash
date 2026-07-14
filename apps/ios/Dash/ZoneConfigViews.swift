@@ -74,6 +74,7 @@ struct BotManagementView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !config.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       if let saveError {
@@ -386,6 +387,7 @@ struct AccountDNSSettingsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !defaults.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       if let saveError {

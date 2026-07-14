@@ -14,6 +14,7 @@ struct R2BucketsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !buckets.isEmpty,
       retry: { Task { await load() } }
     ) {
       if buckets.isEmpty {
@@ -117,6 +118,7 @@ struct R2BucketView: View {
       prompt: "Filter by prefix",
       isLoading: loading,
       error: error,
+      hasContent: !objects.isEmpty,
       retry: { Task { await load() } }
     ) {
       if objects.isEmpty {
@@ -280,6 +282,7 @@ struct KVNamespacesView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !namespaces.isEmpty,
       retry: { Task { await load() } }
     ) {
       if namespaces.isEmpty {
@@ -381,6 +384,7 @@ struct KVNamespaceView: View {
       prompt: "Filter by key prefix",
       isLoading: loading,
       error: error,
+      hasContent: !keys.isEmpty,
       retry: { Task { await load() } }
     ) {
       if keys.isEmpty {
@@ -569,6 +573,7 @@ struct D1DatabasesView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !databases.isEmpty,
       retry: { Task { await load() } }
     ) {
       if databases.isEmpty {

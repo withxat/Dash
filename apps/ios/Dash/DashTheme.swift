@@ -520,12 +520,28 @@ extension DashFeatureScreen where Chrome == EmptyView {
   }
 }
 
+/// What a feature list should render for a given load/error/content state.
+/// An error only takes over the full screen when there is nothing better to
+/// show; with content on hand it degrades to an inline banner above the rows.
+enum DashListPhase: Equatable {
+  case loading
+  case fullScreenError(String)
+  case content(banner: String?)
+
+  static func resolve(isLoading: Bool, error: String?, hasContent: Bool) -> DashListPhase {
+    if isLoading { return .loading }
+    if let error, !hasContent { return .fullScreenError(error) }
+    return .content(banner: error)
+  }
+}
+
 /// Shared feature list: optional search, loading/error slots, grouped list chrome.
 struct DashFeatureList<Header: View, Content: View>: View {
   var search: Binding<String>?
   var prompt: String = ""
   var isLoading: Bool = false
   var error: String?
+  var hasContent: Bool = false
   var retry: () -> Void
   @ViewBuilder var header: () -> Header
   @ViewBuilder var content: () -> Content
@@ -535,6 +551,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
     prompt: String = "",
     isLoading: Bool = false,
     error: String? = nil,
+    hasContent: Bool = false,
     retry: @escaping () -> Void = {},
     @ViewBuilder header: @escaping () -> Header,
     @ViewBuilder content: @escaping () -> Content
@@ -543,6 +560,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
     self.prompt = prompt
     self.isLoading = isLoading
     self.error = error
+    self.hasContent = hasContent
     self.retry = retry
     self.header = header
     self.content = content
@@ -552,15 +570,19 @@ struct DashFeatureList<Header: View, Content: View>: View {
     DashFeatureScreen(search: search, prompt: prompt, chrome: header) {
       ScrollView {
         LazyVStack(spacing: DashTheme.Spacing.section) {
-          if isLoading {
+          switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
+          case .loading:
             LoadingStateView()
               .frame(
                 maxWidth: .infinity,
                 minHeight: DashTheme.Layout.emptyStateMinHeight
               )
-          } else if let error {
-            ErrorStateView(message: error, retry: retry)
-          } else {
+          case .fullScreenError(let message):
+            ErrorStateView(message: message, retry: retry)
+          case .content(let banner):
+            if let banner {
+              DashNotice(kind: .error, message: banner)
+            }
             content()
               .dashContentReveal()
           }
@@ -579,6 +601,7 @@ extension DashFeatureList where Header == EmptyView {
     prompt: String = "",
     isLoading: Bool = false,
     error: String? = nil,
+    hasContent: Bool = false,
     retry: @escaping () -> Void = {},
     @ViewBuilder content: @escaping () -> Content
   ) {
@@ -587,6 +610,7 @@ extension DashFeatureList where Header == EmptyView {
       prompt: prompt,
       isLoading: isLoading,
       error: error,
+      hasContent: hasContent,
       retry: retry,
       header: { EmptyView() },
       content: content

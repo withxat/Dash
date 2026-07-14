@@ -726,6 +726,7 @@ struct GenericResourcesView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !resources.isEmpty,
       retry: { Task { await load() } }
     ) {
       if resources.isEmpty {

@@ -64,6 +64,7 @@ struct ImagesView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !images.isEmpty,
       retry: { Task { await load() } }
     ) {
       if uploading {
@@ -230,6 +231,7 @@ struct StreamView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !videos.isEmpty,
       retry: { Task { await load() } }
     ) {
       if notActivated {
@@ -430,6 +432,7 @@ struct AnalyticsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !sites.isEmpty,
       retry: { Task { await load() } }
     ) {
       if sites.isEmpty {
@@ -623,6 +626,7 @@ struct AccountView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !(members.isEmpty && policies.isEmpty && history.isEmpty && auditLogs.isEmpty),
       retry: { Task { await load() } },
       header: {
         DashTextTabs(

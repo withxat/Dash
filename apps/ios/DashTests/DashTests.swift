@@ -59,6 +59,25 @@ import UIKit
   #expect(unknown.stale)
 }
 
+@Test func listPhaseKeepsContentVisibleThroughRefreshFailures() {
+  #expect(
+    DashListPhase.resolve(isLoading: true, error: nil, hasContent: false) == .loading)
+  #expect(
+    DashListPhase.resolve(isLoading: true, error: "boom", hasContent: true) == .loading)
+  #expect(
+    DashListPhase.resolve(isLoading: false, error: "boom", hasContent: false)
+      == .fullScreenError("boom"))
+  #expect(
+    DashListPhase.resolve(isLoading: false, error: "boom", hasContent: true)
+      == .content(banner: "boom"))
+  #expect(
+    DashListPhase.resolve(isLoading: false, error: nil, hasContent: true)
+      == .content(banner: nil))
+  #expect(
+    DashListPhase.resolve(isLoading: false, error: nil, hasContent: false)
+      == .content(banner: nil))
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

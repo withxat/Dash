@@ -12,6 +12,7 @@ struct ZoneAnalyticsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !days.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       if days.isEmpty {

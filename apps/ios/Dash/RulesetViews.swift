@@ -32,6 +32,7 @@ struct RulesetsView: View {
         DashFeatureList(
           isLoading: loading,
           error: error,
+          hasContent: tab == .account ? !rulesets.isEmpty : !zones.isEmpty,
           retry: { Task { await load(force: true) } }
         ) {
           if tab == .account {
@@ -115,6 +116,7 @@ struct RulesetListView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !rulesets.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       RulesetRowsCard(rulesets: rulesets, basePath: basePath)
@@ -203,6 +205,7 @@ struct RulesetDetailView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: detail != nil,
       retry: { Task { await load(force: true) } }
     ) {
       if let detail {

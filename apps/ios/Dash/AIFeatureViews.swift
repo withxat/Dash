@@ -26,6 +26,7 @@ struct WorkersAIView: View {
       prompt: "Search models",
       isLoading: loading,
       error: error,
+      hasContent: !models.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       if filtered.isEmpty {

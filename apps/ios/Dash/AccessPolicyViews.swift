@@ -51,6 +51,7 @@ struct AccessPoliciesView: View {
         DashFeatureList(
           isLoading: loading,
           error: error,
+          hasContent: tab == .reusable ? !policies.isEmpty : !apps.isEmpty,
           retry: { Task { await load(force: true) } }
         ) {
           if tab == .reusable {
@@ -182,6 +183,7 @@ struct AccessAppPoliciesView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
+      hasContent: !policies.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
       AccessPolicyRowsCard(policies: policies, emptyMessage: "This app has no policies yet.") {

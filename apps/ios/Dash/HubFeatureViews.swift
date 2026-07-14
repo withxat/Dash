@@ -191,6 +191,7 @@ struct FeatureZonePickerView: View {
       prompt: "Search zones",
       isLoading: loading,
       error: error,
+      hasContent: !zones.isEmpty,
       retry: { Task { await load() } }
     ) {
       if filtered.isEmpty {
