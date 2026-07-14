@@ -11,6 +11,8 @@ struct WatchtowerView: View {
   @State private var failedChecks: [String] = []
   @State private var fetchedAt: Date?
   @State private var loading = true
+  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var notificationsEnabled = false
+  @State private var notificationsDenied = false
 
   private var summary: WatchtowerSummary {
     WatchtowerSummary(
@@ -66,6 +68,10 @@ struct WatchtowerView: View {
               }
             }
           }
+        }
+
+        if model.activeAccountID != nil {
+          notificationsGroup
         }
 
         footerCaption
@@ -235,6 +241,31 @@ struct WatchtowerView: View {
     }
     .fixedSize(horizontal: false, vertical: true)
     .layoutPriority(1)
+  }
+
+  @ViewBuilder
+  private var notificationsGroup: some View {
+    DashListGroup(title: "Notifications") {
+      DashToggleRow(title: "Notify on new issues", isOn: $notificationsEnabled)
+        .onChange(of: notificationsEnabled) { _, enabled in
+          guard enabled else {
+            notificationsDenied = false
+            return
+          }
+          Task {
+            let granted = await WatchtowerNotifier.requestAuthorization()
+            if !granted {
+              notificationsEnabled = false
+              notificationsDenied = true
+            }
+          }
+        }
+      if notificationsDenied {
+        DashNotice(
+          kind: .warning,
+          message: "Notifications are turned off in Settings. Enable them for Dash to get alerts.")
+      }
+    }
   }
 
   @ViewBuilder

@@ -35,6 +35,14 @@
 	<string>$(DASH_REDIRECT_URI)</string>
 	<key>DashKeychainAccessGroup</key>
 	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>sh.xat.dash.watchtower.refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

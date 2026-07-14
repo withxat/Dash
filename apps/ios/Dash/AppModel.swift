@@ -1,8 +1,10 @@
 import AuthenticationServices
+import BackgroundTasks
 import CloudflareAPI
 import Foundation
 import Observation
 import UIKit
+import UserNotifications
 import WidgetKit
 
 enum AuthenticationState: Sendable, Equatable {
@@ -279,6 +281,8 @@ final class AppModel {
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
+    BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
+    UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     if let url = WatchtowerWidgetSnapshot.containerFileURL {
       WatchtowerWidgetSnapshot.clear(at: url)
       WidgetCenter.shared.reloadAllTimelines()
@@ -333,13 +337,37 @@ final class AppModel {
     return snapshot
   }
 
-  /// Writes the slim snapshot into the App Group container and refreshes the
-  /// widget. A missing container (entitlement not provisioned) is a silent
-  /// no-op — the widget just shows its empty state.
+  /// Writes the slim snapshot into the App Group container, refreshes the
+  /// widget, and fires any due local notifications by diffing against the
+  /// previously shared snapshot. A missing container (entitlement not
+  /// provisioned) is a silent no-op — the widget just shows its empty state.
   private func publishWidgetSnapshot(_ snapshot: WatchtowerSnapshot) {
     guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
-    try? snapshot.widgetSnapshot(accountName: activeAccount?.name).write(to: url)
+    let previous = try? WatchtowerWidgetSnapshot.load(from: url)
+    let widget = snapshot.widgetSnapshot(accountName: activeAccount?.name)
+    try? widget.write(to: url)
     WidgetCenter.shared.reloadAllTimelines()
+    Task { await WatchtowerNotifier.notifyIfNeeded(previous: previous, current: widget) }
+  }
+
+  static let backgroundRefreshID = "sh.xat.dash.watchtower.refresh"
+
+  /// Asks iOS to wake the app to re-check Watchtower. Opportunistic — realistic
+  /// delivery is a handful of runs per day; the 5-minute snapshot TTL means
+  /// every granted run does real work. Idempotent: a duplicate request for the
+  /// same identifier just replaces the pending one.
+  func scheduleWatchtowerBackgroundRefresh() {
+    let request = BGAppRefreshTaskRequest(identifier: Self.backgroundRefreshID)
+    request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+    try? BGTaskScheduler.shared.submit(request)
+  }
+
+  /// Runs from the BGAppRefresh handler: refresh if stale (which republishes
+  /// the snapshot and notifies through the shared choke point), then reschedule.
+  func performBackgroundWatchtowerRefresh() async {
+    guard (try? await tokenStore.getAccessToken()) != nil else { return }
+    await refreshWatchtowerIfStale()
+    scheduleWatchtowerBackgroundRefresh()
   }
 
   /// Foreground/warm-up hook: cheap when the snapshot is younger than the

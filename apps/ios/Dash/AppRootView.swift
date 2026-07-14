@@ -450,10 +450,16 @@ private struct MainTabView: View {
     tabContainer
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
       .onChange(of: scenePhase) { _, phase in
-        guard phase == .active else { return }
-        Task {
-          await model.retryIdentityIfNeeded()
-          await model.refreshWatchtowerIfStale()
+        switch phase {
+        case .active:
+          Task {
+            await model.retryIdentityIfNeeded()
+            await model.refreshWatchtowerIfStale()
+          }
+        case .background:
+          model.scheduleWatchtowerBackgroundRefresh()
+        default:
+          break
         }
       }
       // Warms the Watchtower badge once per account, before the tab is

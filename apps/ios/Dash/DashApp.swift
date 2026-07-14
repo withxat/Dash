@@ -73,6 +73,9 @@ struct DashApp: App {
           .tint(DashTheme.brand)
       }
     }
+    .backgroundTask(.appRefresh(AppModel.backgroundRefreshID)) {
+      await model.performBackgroundWatchtowerRefresh()
+    }
   }
 }
 

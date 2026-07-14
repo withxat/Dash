@@ -1,0 +1,84 @@
+import Foundation
+import UserNotifications
+
+/// Decides which local notifications a Watchtower refresh should fire, by
+/// diffing the previous shared snapshot against the new one. Pure so the
+/// rules are unit-tested; the previous value is the last snapshot written to
+/// the App Group file, which is exactly the state last shown to the user.
+enum WatchtowerNotificationPlanner {
+  struct Plan: Equatable {
+    var identifier: String
+    var title: String
+    var body: String
+  }
+
+  static func plans(
+    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot
+  ) -> [Plan] {
+    // Nothing to compare against on a first run.
+    guard let previous else { return [] }
+
+    // Signals that are critical now but weren't before → one alert each, with
+    // a stable identifier so a still-critical signal never re-notifies.
+    let previousCritical = Set(
+      previous.signals.filter { $0.status == "critical" }.map(\.title))
+    let newCritical = current.signals.filter {
+      $0.status == "critical" && !previousCritical.contains($0.title)
+    }
+    if !newCritical.isEmpty {
+      return newCritical.map { signal in
+        Plan(
+          identifier: "watchtower.critical.\(signal.title)",
+          title: signal.title,
+          body: signal.detail)
+      }
+    }
+
+    // Otherwise, a rise in the overall issue count → one summary alert.
+    if current.issueCount > previous.issueCount {
+      return [
+        Plan(
+          identifier: "watchtower.issues",
+          title: "Watchtower",
+          body:
+            "\(current.issueCount) \(current.issueCount == 1 ? "issue needs" : "issues need") attention."
+        )
+      ]
+    }
+
+    return []
+  }
+}
+
+/// Bridges the planner to UNUserNotificationCenter, gated on the user's opt-in
+/// and system authorization.
+@MainActor
+enum WatchtowerNotifier {
+  static let optInDefaultsKey = "dash.watchtower_notifications"
+
+  static func notifyIfNeeded(
+    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot
+  ) async {
+    guard UserDefaults.standard.bool(forKey: optInDefaultsKey) else { return }
+    let center = UNUserNotificationCenter.current()
+    let settings = await center.notificationSettings()
+    guard settings.authorizationStatus == .authorized else { return }
+
+    for plan in WatchtowerNotificationPlanner.plans(previous: previous, current: current) {
+      let content = UNMutableNotificationContent()
+      content.title = plan.title
+      content.body = plan.body
+      content.sound = .default
+      let request = UNNotificationRequest(
+        identifier: plan.identifier, content: content, trigger: nil)
+      try? await center.add(request)
+    }
+  }
+
+  /// Prompts for authorization; returns whether alerts are allowed.
+  static func requestAuthorization() async -> Bool {
+    let center = UNUserNotificationCenter.current()
+    let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+    return granted
+  }
+}
