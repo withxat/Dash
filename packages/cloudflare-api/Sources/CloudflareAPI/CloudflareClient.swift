@@ -299,6 +299,49 @@ public actor CloudflareClient {
   public func listNotificationPolicies(accountID: String) async throws -> [NotificationPolicy] {
     try await list("/accounts/\(accountID)/alerting/v3/policies").items
   }
+  public func createNotificationPolicy(accountID: String, input: NotificationPolicyInput)
+    async throws -> NotificationPolicy
+  {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/policies", method: "POST", body: input)
+  }
+  public func updateNotificationPolicy(
+    accountID: String, policyID: String, input: NotificationPolicyInput
+  ) async throws -> NotificationPolicy {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/policies/\(policyID)", method: "PUT", body: input)
+  }
+  public func deleteNotificationPolicy(accountID: String, policyID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/alerting/v3/policies/\(policyID)", method: "DELETE")
+  }
+  public func listNotificationWebhooks(accountID: String) async throws -> [NotificationWebhook] {
+    try await list("/accounts/\(accountID)/alerting/v3/destinations/webhooks").items
+  }
+  public func createNotificationWebhook(accountID: String, input: NotificationWebhookInput)
+    async throws -> NotificationWebhook
+  {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/destinations/webhooks", method: "POST", body: input)
+  }
+  public func updateNotificationWebhook(
+    accountID: String, webhookID: String, input: NotificationWebhookInput
+  ) async throws -> NotificationWebhook {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/destinations/webhooks/\(webhookID)", method: "PUT",
+      body: input)
+  }
+  public func deleteNotificationWebhook(accountID: String, webhookID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/alerting/v3/destinations/webhooks/\(webhookID)", method: "DELETE")
+  }
+  public func listAvailableAlerts(accountID: String) async throws -> [AvailableAlert] {
+    let grouped: [String: [AvailableAlert]] = try await request(
+      "/accounts/\(accountID)/alerting/v3/available_alerts")
+    return grouped.values.flatMap { $0 }.sorted {
+      ($0.displayName ?? $0.type ?? "") < ($1.displayName ?? $1.type ?? "")
+    }
+  }
   public func listNotificationHistory(accountID: String, perPage: Int = 10) async throws
     -> [NotificationHistoryEntry]
   {

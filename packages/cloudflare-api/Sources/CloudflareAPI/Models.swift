@@ -570,19 +570,141 @@ public struct RumSite: Codable, Hashable, Identifiable, Sendable {
   }
 }
 
+public struct NotificationMechanismTarget: Codable, Hashable, Sendable {
+  public var id: String
+
+  public init(id: String) {
+    self.id = id
+  }
+}
+
+public struct NotificationMechanisms: Codable, Hashable, Sendable {
+  public var email: [NotificationMechanismTarget]?
+  public var pagerduty: [NotificationMechanismTarget]?
+  public var webhooks: [NotificationMechanismTarget]?
+
+  public init(
+    email: [NotificationMechanismTarget]? = nil,
+    pagerduty: [NotificationMechanismTarget]? = nil,
+    webhooks: [NotificationMechanismTarget]? = nil
+  ) {
+    self.email = email
+    self.pagerduty = pagerduty
+    self.webhooks = webhooks
+  }
+}
+
 public struct NotificationPolicy: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let name: String?
+  public let description: String?
   public let alertType: String?
   public let enabled: Bool?
+  public let alertInterval: String?
+  public let filters: [String: [String]]?
+  public let mechanisms: NotificationMechanisms?
 
   public var title: String {
     name ?? alertType?.replacingOccurrences(of: "_", with: " ") ?? id
   }
 
+  /// Read-modify-write helper for PUTs that must preserve mechanisms/filters.
+  public func input(enabled: Bool? = nil) -> NotificationPolicyInput {
+    NotificationPolicyInput(
+      name: name ?? title,
+      alertType: alertType ?? "",
+      enabled: enabled ?? self.enabled ?? true,
+      description: description,
+      alertInterval: alertInterval,
+      filters: filters,
+      mechanisms: mechanisms
+    )
+  }
+
   enum CodingKeys: String, CodingKey {
-    case id, name, enabled
+    case id, name, description, enabled, filters, mechanisms
     case alertType = "alert_type"
+    case alertInterval = "alert_interval"
+  }
+}
+
+public struct NotificationPolicyInput: Codable, Hashable, Sendable {
+  public var name: String
+  public var alertType: String
+  public var enabled: Bool
+  public var description: String?
+  public var alertInterval: String?
+  public var filters: [String: [String]]?
+  public var mechanisms: NotificationMechanisms?
+
+  public init(
+    name: String,
+    alertType: String,
+    enabled: Bool = true,
+    description: String? = nil,
+    alertInterval: String? = nil,
+    filters: [String: [String]]? = nil,
+    mechanisms: NotificationMechanisms? = nil
+  ) {
+    self.name = name
+    self.alertType = alertType
+    self.enabled = enabled
+    self.description = description
+    self.alertInterval = alertInterval
+    self.filters = filters
+    self.mechanisms = mechanisms
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case name, description, enabled, filters, mechanisms
+    case alertType = "alert_type"
+    case alertInterval = "alert_interval"
+  }
+}
+
+public struct NotificationWebhook: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String?
+  public let url: String?
+  public let type: String?
+  public let createdAt: String?
+  public let lastFailure: String?
+  public let lastSuccess: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, url, type
+    case createdAt = "created_at"
+    case lastFailure = "last_failure"
+    case lastSuccess = "last_success"
+  }
+}
+
+public struct NotificationWebhookInput: Codable, Hashable, Sendable {
+  public var name: String
+  public var url: String
+  public var secret: String?
+
+  public init(name: String, url: String, secret: String? = nil) {
+    self.name = name
+    self.url = url
+    self.secret = secret
+  }
+}
+
+/// One alert type from `GET …/available_alerts` (flattened from the category map).
+public struct AvailableAlert: Codable, Hashable, Sendable, Identifiable {
+  public let description: String?
+  public let displayName: String?
+  public let type: String?
+
+  public var id: String { type ?? displayName ?? description ?? UUID().uuidString }
+  public var title: String {
+    displayName ?? type?.replacingOccurrences(of: "_", with: " ") ?? "Alert"
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case description, type
+    case displayName = "display_name"
   }
 }
 

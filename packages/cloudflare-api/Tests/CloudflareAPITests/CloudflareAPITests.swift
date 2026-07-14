@@ -157,8 +157,57 @@ import Testing
   #expect(zone.plan?.name == "Free Website")
 }
 
+@Test func decodesNotificationPolicyWithMechanisms() throws {
+  let data = Data(
+    #"""
+    {"id":"pol1","name":"Origin down","alert_type":"http_alert_origin_error",
+     "enabled":true,"alert_interval":"30m","description":"Ping me",
+     "filters":{"zones":["zone1"]},
+     "mechanisms":{"webhooks":[{"id":"wh1"}],"email":[{"id":"a@b.c"}]}}
+    """#.utf8)
+  let policy = try JSONDecoder().decode(NotificationPolicy.self, from: data)
+  #expect(policy.id == "pol1")
+  #expect(policy.mechanisms?.webhooks?.first?.id == "wh1")
+  #expect(policy.mechanisms?.email?.first?.id == "a@b.c")
+  #expect(policy.filters?["zones"] == ["zone1"])
+  #expect(policy.alertInterval == "30m")
+
+  let input = policy.input(enabled: false)
+  #expect(input.enabled == false)
+  #expect(input.mechanisms?.webhooks?.first?.id == "wh1")
+  #expect(input.filters?["zones"] == ["zone1"])
+  #expect(input.alertType == "http_alert_origin_error")
+
+  let encoded = try JSONEncoder().encode(input)
+  let roundTrip = try JSONDecoder().decode(NotificationPolicyInput.self, from: encoded)
+  #expect(roundTrip.name == "Origin down")
+  #expect(roundTrip.enabled == false)
+  #expect(roundTrip.mechanisms?.webhooks?.first?.id == "wh1")
+  #expect(roundTrip.description == "Ping me")
+}
+
 @Suite(.serialized)
 struct NetworkTests {
+  @Test func flattensAvailableAlertsFromCategoryMap() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":true,"result":{"Origin Monitoring":[
+          {"type":"http_alert_origin_error","display_name":"Origin Error Rate Alert",
+           "description":"5xx at origin"}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let alerts = try await client.listAvailableAlerts(accountID: "acct")
+    #expect(alerts.count == 1)
+    #expect(alerts.first?.type == "http_alert_origin_error")
+    #expect(alerts.first?.displayName == "Origin Error Rate Alert")
+  }
+
   @Test func decodesZoneAnalyticsGraphQL() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
