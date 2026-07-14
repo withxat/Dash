@@ -298,6 +298,49 @@ import UIKit
   #expect(base.staleness(now: Date(timeIntervalSince1970: 25 * 3600)) == .stale)
 }
 
+@Test func watchtowerNotificationPlannerDiffsSnapshots() {
+  func snapshot(issues: Int, critical: [String], warning: [String] = [])
+    -> WatchtowerWidgetSnapshot
+  {
+    let signals =
+      critical.map { WatchtowerWidgetSnapshot.Signal(title: $0, detail: "d", status: "critical") }
+      + warning.map { WatchtowerWidgetSnapshot.Signal(title: $0, detail: "d", status: "warning") }
+    return WatchtowerWidgetSnapshot(
+      issueCount: issues, criticalCount: critical.count, warningCount: warning.count,
+      signals: signals, accountName: nil, fetchedAt: Date(timeIntervalSince1970: 0))
+  }
+  typealias Planner = WatchtowerNotificationPlanner
+
+  // First run: nothing to diff against.
+  #expect(Planner.plans(previous: nil, current: snapshot(issues: 2, critical: ["a"])).isEmpty)
+
+  // A newly-critical signal fires with a stable identifier.
+  let newCritical = Planner.plans(
+    previous: snapshot(issues: 1, critical: [], warning: ["w"]),
+    current: snapshot(issues: 2, critical: ["tunnel"], warning: ["w"]))
+  #expect(newCritical.map(\.identifier) == ["watchtower.critical.tunnel"])
+
+  // Still-critical does not re-notify.
+  #expect(
+    Planner.plans(
+      previous: snapshot(issues: 1, critical: ["tunnel"]),
+      current: snapshot(issues: 1, critical: ["tunnel"])
+    ).isEmpty)
+
+  // Count rise without a new critical → one summary.
+  let summary = Planner.plans(
+    previous: snapshot(issues: 1, critical: [], warning: ["w1"]),
+    current: snapshot(issues: 2, critical: [], warning: ["w1", "w2"]))
+  #expect(summary.map(\.identifier) == ["watchtower.issues"])
+
+  // Recovery → nothing.
+  #expect(
+    Planner.plans(
+      previous: snapshot(issues: 2, critical: ["a"]),
+      current: snapshot(issues: 0, critical: [])
+    ).isEmpty)
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

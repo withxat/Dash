@@ -19,9 +19,9 @@
 		"api:test": "swift test --package-path packages/cloudflare-api",
 		"typecheck": "turbo typecheck && pnpm api:test && pnpm ios:build",
 		"lint": "turbo lint && pnpm lint:swift",
-		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api",
+		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api",
 		"lint:fix": "turbo lint -- --fix && pnpm lint:fix:swift",
-		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api"
+		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api"
 	},
 	"devDependencies": {
 		"@solar-icons/react-native": "^1.1.1",

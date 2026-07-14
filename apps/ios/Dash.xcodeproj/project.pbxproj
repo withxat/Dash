@@ -50,6 +50,9 @@
 		B00000000000000000000106 /* DashAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000106 /* DashAppIntents.swift */; };
 		B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000108 /* WatchtowerNotifications.swift */; };
+		B00000000000000000000109 /* DashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000109 /* DashWidgets.swift */; };
+		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
+		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +62,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = A00000000000000000000002;
 			remoteInfo = Dash;
+		};
+		C00000000000000000000013 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000005;
+			remoteInfo = DashWidgets;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -109,6 +119,10 @@
 		F00000000000000000000106 /* DashAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppIntents.swift; sourceTree = "<group>"; };
 		F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerWidgetSnapshot.swift; sourceTree = "<group>"; };
 		F00000000000000000000108 /* WatchtowerNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerNotifications.swift; sourceTree = "<group>"; };
+		F00000000000000000000109 /* DashWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgets.swift; sourceTree = "<group>"; };
+		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
+		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -134,7 +148,28 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000015 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D00000000000000000000017 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXGroup section */
 		5B23A8D52FFB6F8700D18CF0 /* Recovered References */ = {
@@ -151,10 +186,21 @@
 				A00000000000000000000011 /* Dash */,
 				A00000000000000000000012 /* DashTests */,
 				A00000000000000000000013 /* DashUITests */,
+				A00000000000000000000017 /* DashWidgets */,
 				A00000000000000000000014 /* Products */,
 				A00000000000000000000015 /* Frameworks */,
 				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
 			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000017 /* DashWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000109 /* DashWidgets.swift */,
+				F0000000000000000000010A /* Info.plist */,
+				F0000000000000000000010B /* DashWidgets.entitlements */,
+			);
+			path = DashWidgets;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000011 /* Dash */ = {
@@ -225,6 +271,7 @@
 				F00000000000000000000020 /* Dash.app */,
 				F00000000000000000000021 /* DashTests.xctest */,
 				F00000000000000000000022 /* DashUITests.xctest */,
+				F00000000000000000000023 /* DashWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -255,10 +302,12 @@
 				D00000000000000000000011 /* Sources */,
 				D00000000000000000000001 /* Frameworks */,
 				D00000000000000000000021 /* Resources */,
+				D00000000000000000000017 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C00000000000000000000014 /* PBXTargetDependency */,
 			);
 			name = Dash;
 			packageProductDependencies = (
@@ -267,6 +316,23 @@
 			productName = Dash;
 			productReference = F00000000000000000000020 /* Dash.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A00000000000000000000005 /* DashWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000005 /* Build configuration list for PBXNativeTarget "DashWidgets" */;
+			buildPhases = (
+				D00000000000000000000014 /* Sources */,
+				D00000000000000000000015 /* Frameworks */,
+				D00000000000000000000016 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashWidgets;
+			productName = DashWidgets;
+			productReference = F00000000000000000000023 /* DashWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 		A00000000000000000000003 /* DashTests */ = {
 			isa = PBXNativeTarget;
@@ -325,6 +391,9 @@
 						CreatedOnToolsVersion = 26.4;
 						TestTargetID = A00000000000000000000002;
 					};
+					A00000000000000000000005 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */;
@@ -344,6 +413,7 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000002 /* Dash */,
+				A00000000000000000000005 /* DashWidgets */,
 				A00000000000000000000003 /* DashTests */,
 				A00000000000000000000004 /* DashUITests */,
 			);
@@ -358,6 +428,13 @@
 				B0000000000000000000000E /* Assets.xcassets in Resources */,
 				5BD28D9C30006EA10012912F /* AppIcon.icon in Resources */,
 				B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000016 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -422,6 +499,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000014 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000109 /* DashWidgets.swift in Sources */,
+				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D00000000000000000000012 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -450,6 +536,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000002 /* Dash */;
 			targetProxy = C00000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000014 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000005 /* DashWidgets */;
+			targetProxy = C00000000000000000000013 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -588,6 +679,48 @@
 			};
 			name = Release;
 		};
+		E00000000000000000000051 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashWidgets/DashWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E00000000000000000000052 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashWidgets/DashWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -623,6 +756,15 @@
 			buildConfigurations = (
 				E00000000000000000000041 /* Debug */,
 				E00000000000000000000042 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000005 /* Build configuration list for PBXNativeTarget "DashWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000051 /* Debug */,
+				E00000000000000000000052 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
