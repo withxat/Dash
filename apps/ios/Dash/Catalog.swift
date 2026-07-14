@@ -117,7 +117,7 @@ enum FeatureCatalog {
       "safari", "SolarCodeSquare", SolarAsset.code, "Compute",
       read: ["browser-rendering.read"], write: ["browser-rendering.write"]),
     feature(
-      .workersObservability, "Workers Observability", "Logs, traces, telemetry, and live tails",
+      .workersObservability, "Workers Observability", "Telemetry queries and destinations",
       "waveform.path.ecg", "SolarChart2", SolarAsset.chart, "Compute",
       read: ["workers-observability.read", "workers-tail.read"],
       write: ["workers-observability.write", "workers-observability-telemetry.write"]),
@@ -149,7 +149,7 @@ enum FeatureCatalog {
       path: "/accounts/{account}/pipelines/v1/pipelines",
       read: ["pipelines.read"], write: ["pipelines.write", "pipelines.send"]),
     feature(
-      .r2Catalog, "R2 Data Catalog", "Catalogs, namespaces, tables, SQL, and maintenance",
+      .r2Catalog, "R2 Data Catalog", "R2 Data Catalog inventory",
       "tablecells", "SolarDatabase", SolarAsset.database, "Storage & Data",
       path: "/accounts/{account}/r2-catalog",
       read: ["r2-catalog.read", "r2-catalog-sql.read"], write: ["r2-catalog.write"]),
@@ -180,7 +180,7 @@ enum FeatureCatalog {
       read: ["aig.read"], write: ["aig.write", "aig.run"]),
     // Security
     feature(
-      .turnstile, "Turnstile", "CAPTCHA-free widgets and secret rotation",
+      .turnstile, "Turnstile", "CAPTCHA-free challenge widgets",
       "checkmark.shield", "SolarShieldCheck", SolarAsset.shieldCheck, "Security",
       path: "/accounts/{account}/challenges/widgets",
       read: ["challenge-widgets.read"], write: ["challenge-widgets.write"]),
@@ -249,7 +249,7 @@ enum FeatureCatalog {
         "teams-connector-warp.write", "teams-networks.write",
       ]),
     feature(
-      .dex, "Digital Experience", "DEX tests, insights, fleet status, and resilience",
+      .dex, "Digital Experience", "Digital Experience tests",
       "gauge.with.dots.needle.50percent", "SolarChart2", SolarAsset.chart, "Zero Trust",
       path: "/accounts/{account}/dex/devices/dex_tests",
       read: ["teams-dex.read", "teams-resilience.read"],
@@ -302,7 +302,7 @@ enum FeatureCatalog {
       path: "/accounts/{account}/email/routing/addresses",
       read: ["email-routing-address.read"], write: ["email-routing-address.write"]),
     feature(
-      .emailSending, "Email Sending", "Transactional sends, routing, suppressions, and DMARC",
+      .emailSending, "Email Sending", "Email Sending suppression list",
       "paperplane", "SolarLetter", SolarAsset.letter, "Email",
       path: "/accounts/{account}/email/sending/suppression",
       read: [
@@ -326,7 +326,7 @@ enum FeatureCatalog {
       read: ["calls.read", "moq.read"], write: ["calls.write", "moq.write"]),
     // Analytics & Logs
     feature(
-      .analytics, "Analytics", "Account and zone traffic charts", "chart.xyaxis.line",
+      .analytics, "Analytics", "Web analytics and RUM sites", "chart.xyaxis.line",
       "SolarChart2", SolarAsset.chart, "Analytics & Logs", read: ["account-analytics.read"]),
     feature(
       .logpush, "Logpush", "Log delivery jobs to external storage",
