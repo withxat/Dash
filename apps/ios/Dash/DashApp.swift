@@ -87,6 +87,9 @@ private struct RootWithSplash: View {
   var body: some View {
     AppRootView()
       .environment(model)
+      .onOpenURL { url in
+        if let route = DashRoute.parse(url) { model.pendingRoute = route }
+      }
       .environment(\.dashSplashLifted, phase != .holding)
       .environment(\.dashLoginIconCloaked, phase != .done)
       .overlayPreferenceValue(DashLoginIconAnchorKey.self) { anchor in

@@ -430,6 +430,22 @@ private struct MainTabView: View {
     }
   }
 
+  /// Applies a buffered deep link: bare tab switch for Watchtower, else jump
+  /// to Home and push the destination onto a fresh stack.
+  private func consume(_ route: DashRoute) {
+    switch route {
+    case .watchtower:
+      selection = .watchtower
+      watchtowerPath = NavigationPath()
+    default:
+      guard let destination = route.destination else { break }
+      selection = .home
+      homePath = NavigationPath()
+      homePath.append(destination)
+    }
+    model.pendingRoute = nil
+  }
+
   var body: some View {
     tabContainer
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
@@ -442,7 +458,15 @@ private struct MainTabView: View {
       }
       // Warms the Watchtower badge once per account, before the tab is
       // ever visited.
-      .task(id: model.activeAccountID) { await model.refreshWatchtowerIfStale() }
+      .task(id: model.activeAccountID) {
+        // A cold-launch deep link is set before this view mounts, so onChange
+        // never fires for it — drain the inbox on first appearance too.
+        if let route = model.pendingRoute { consume(route) }
+        await model.refreshWatchtowerIfStale()
+      }
+      .onChange(of: model.pendingRoute) { _, route in
+        if let route { consume(route) }
+      }
       .onChange(of: showsProfile) { _, presented in
         if presented {
           cancelTabBarHold()

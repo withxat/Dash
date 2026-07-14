@@ -312,6 +312,14 @@ public struct ZoneAnalyticsDay: Codable, Hashable, Sendable {
   public let pageViews: Int
   public let threats: Int
   public let bytes: Int64
+
+  public init(date: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64) {
+    self.date = date
+    self.requests = requests
+    self.pageViews = pageViews
+    self.threats = threats
+    self.bytes = bytes
+  }
 }
 
 public struct DNSRecord: CloudflareResource, Hashable {

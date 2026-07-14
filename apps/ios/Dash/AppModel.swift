@@ -35,6 +35,11 @@ final class AppModel {
 
   static let watchtowerTTL: TimeInterval = 5 * 60
 
+  /// A deep link / App Intent target waiting to be consumed by MainTabView.
+  /// Buffered here because a link can arrive before the tab view mounts
+  /// (cold launch) or before the user is authenticated.
+  var pendingRoute: DashRoute?
+
   private var authSession: ASWebAuthenticationSession?
   private var isRetryingIdentity = false
   private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
@@ -272,6 +277,7 @@ final class AppModel {
     selectedScopes = Set(CloudflareScopes.published)
     identityStale = false
     watchtowerIssueCount = nil
+    pendingRoute = nil
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     authState = .unauthenticated
   }

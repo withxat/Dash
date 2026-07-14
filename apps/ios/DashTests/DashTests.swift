@@ -214,6 +214,36 @@ import UIKit
   #expect(hourPoints.map(\.requests) == [10, 20])  // fractional seconds parsed, garbage dropped
 }
 
+@Test func dashRouteParsesEveryGrammarForm() {
+  func parse(_ string: String) -> DashRoute? {
+    guard let url = URL(string: string) else { return nil }
+    return DashRoute.parse(url)
+  }
+
+  #expect(parse("dash://watchtower") == .watchtower)
+  #expect(parse("dash://zone/abc") == .zone("abc"))
+  #expect(parse("dash://zone/abc/dns") == .zoneDNS("abc"))
+  #expect(parse("dash://zone/abc/cache") == .zoneCache("abc"))
+  #expect(parse("dash://zone/abc/settings") == .zoneSettings("abc"))
+  #expect(parse("dash://zone/abc/analytics") == .zoneAnalytics("abc"))
+  #expect(parse("dash://zone/abc/unknown") == .zone("abc"))  // unknown subpath falls back
+  #expect(parse("dash://feature/workers") == .feature(.workers))
+  #expect(parse("dash://worker/my%20worker") == .worker("my worker"))  // percent-decoded
+
+  // Rejections.
+  #expect(parse("dash://oauth/callback?code=x") == nil)  // owned by the auth session
+  #expect(parse("dash://feature/bogus") == nil)  // unknown FeatureID
+  #expect(parse("dash://zone") == nil)  // missing id
+  #expect(parse("https://watchtower") == nil)  // wrong scheme
+  #expect(parse("dash://unknownhost") == nil)
+
+  // destination mapping.
+  #expect(DashRoute.watchtower.destination == nil)
+  #expect(DashRoute.zoneDNS("z").destination == .dns("z"))
+  #expect(DashRoute.feature(.r2).destination == .feature(.r2))
+  #expect(DashRoute.worker("w").destination == .worker("w"))
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],
