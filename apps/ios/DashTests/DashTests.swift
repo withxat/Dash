@@ -339,6 +339,46 @@ import UIKit
   #expect(initial == TabBarVisibilityChange(hidden: false, animated: false))
 }
 
+@Test func d1DestructiveDetectorFlagsWritesNotReads() {
+  // Read-safe statements run without a confirm.
+  #expect(D1SQL.destructiveKeyword(in: "SELECT * FROM users;") == nil)
+  #expect(D1SQL.destructiveKeyword(in: "PRAGMA table_info(users);") == nil)
+  #expect(D1SQL.destructiveKeyword(in: "CREATE TABLE t (id INTEGER);") == nil)
+  #expect(D1SQL.destructiveKeyword(in: "EXPLAIN QUERY PLAN SELECT 1;") == nil)
+  #expect(D1SQL.destructiveKeyword(in: "INSERT INTO t VALUES (1);") == nil)
+  #expect(D1SQL.destructiveKeyword(in: "") == nil)
+
+  // Destructive statements are flagged with their keyword.
+  #expect(D1SQL.destructiveKeyword(in: "DROP TABLE users;") == "DROP")
+  #expect(D1SQL.destructiveKeyword(in: "delete from users where id = 1") == "DELETE")
+  #expect(D1SQL.destructiveKeyword(in: "Update users SET name = 'x';") == "UPDATE")
+  #expect(D1SQL.destructiveKeyword(in: "ALTER TABLE t ADD COLUMN c;") == "ALTER")
+  #expect(D1SQL.destructiveKeyword(in: "REPLACE INTO t VALUES (1);") == "REPLACE")
+
+  // Multi-statement input: any destructive statement flags the batch.
+  #expect(D1SQL.destructiveKeyword(in: "SELECT 1; DROP TABLE x;") == "DROP")
+
+  // Comments and whitespace do not hide the verb.
+  #expect(D1SQL.destructiveKeyword(in: "-- cleanup\ndrop table x") == "DROP")
+  #expect(D1SQL.destructiveKeyword(in: "/* audit */ DELETE FROM t;") == "DELETE")
+  // A commented-out write stays read-safe.
+  #expect(D1SQL.destructiveKeyword(in: "-- DROP TABLE x\nSELECT 1;") == nil)
+
+  // CTEs and upserts get the word-boundary scan.
+  #expect(
+    D1SQL.destructiveKeyword(in: "WITH old AS (SELECT id FROM t) DELETE FROM t;") == "DELETE")
+  #expect(D1SQL.destructiveKeyword(in: "INSERT OR REPLACE INTO t VALUES (1);") == "REPLACE")
+  #expect(
+    D1SQL.destructiveKeyword(
+      in: "INSERT INTO t VALUES (1) ON CONFLICT DO UPDATE SET x = 2;") == "UPDATE")
+
+  // Identifiers containing keyword substrings stay safe.
+  #expect(D1SQL.destructiveKeyword(in: "SELECT * FROM legacy_update;") == nil)
+  #expect(
+    D1SQL.destructiveKeyword(in: "WITH d AS (SELECT * FROM audit_delete_log) SELECT * FROM d;")
+      == nil)
+}
+
 @Test func d1QuotedIdentifierEscapesKeywordsAndEmbeddedQuotes() {
   #expect(d1QuotedIdentifier("users") == "\"users\"")
   #expect(d1QuotedIdentifier("order") == "\"order\"")

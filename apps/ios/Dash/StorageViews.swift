@@ -737,6 +737,9 @@ struct D1ConsoleView: View {
   @State private var error: String?
   @State private var running = false
   @State private var showsMore = false
+  @State private var confirmsRun = false
+
+  private var destructiveKeyword: String? { D1SQL.destructiveKeyword(in: sql) }
   var body: some View {
     DashFeatureScreen(chrome: {
       DashTextTabs(
@@ -767,6 +770,18 @@ struct D1ConsoleView: View {
         DashMoreButton(isPresented: $showsMore)
       }
       .dashSeparateToolbarBackground()
+    }
+    .dashTray(isPresented: $confirmsRun, title: "Write statement") {
+      DashConfirmableActions(actions: [
+        DashDangerAction(
+          title: "Run \(destructiveKeyword ?? "write") statement",
+          icon: SolarAsset.danger,
+          message:
+            "This statement can modify or delete data in \(name). This cannot be undone."
+        ) {
+          try await performQuery()
+        }
+      ])
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -823,9 +838,16 @@ struct D1ConsoleView: View {
     )
 
     DashPillButton(
-      title: "Run query", isLoading: running,
+      title: destructiveKeyword.map { "Run \($0) statement" } ?? "Run query",
+      isLoading: running,
       isEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    ) { Task { await run() } }
+    ) {
+      if destructiveKeyword != nil {
+        confirmsRun = true
+      } else {
+        Task { await run() }
+      }
+    }
 
     if let error {
       DashNotice(kind: .error, message: error)
@@ -874,14 +896,18 @@ struct D1ConsoleView: View {
     dismissScreen()
   }
   private func run() async {
+    do {
+      try await performQuery()
+    } catch { self.error = error.dashActionableMessage }
+  }
+
+  private func performQuery() async throws {
     guard let id = model.activeAccountID else { return }
     running = true
     defer { running = false }
-    do {
-      let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
-      result = Self.format(rows: values.flatMap { $0.results ?? [] })
-      error = nil
-    } catch { self.error = error.dashActionableMessage }
+    let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
+    result = Self.format(rows: values.flatMap { $0.results ?? [] })
+    error = nil
   }
 
   private static func format(rows: [[String: JSONValue]]) -> String {
