@@ -86,7 +86,7 @@ struct WatchtowerView: View {
           .foregroundStyle(DashTheme.subtle)
       } else if loading {
         VStack(alignment: .leading, spacing: 8) {
-          ProgressView().tint(DashTheme.brand)
+          DashLoadingRing(color: DashTheme.brand)
           Text("Checking zones, tunnels, certificates…")
             .font(.footnote)
             .foregroundStyle(DashTheme.subtle)

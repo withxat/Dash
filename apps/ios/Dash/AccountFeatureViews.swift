@@ -546,7 +546,7 @@ private struct MemberInviteForm: View {
           }
           DashFormField(label: "Email address", text: $email, keyboard: .emailAddress)
           if loadingRoles {
-            ProgressView().frame(maxWidth: .infinity)
+            DashLoadingRing(color: DashTheme.brand).frame(maxWidth: .infinity)
           } else if roles.isEmpty {
             DashNotice(
               kind: .warning,

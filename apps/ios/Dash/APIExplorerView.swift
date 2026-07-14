@@ -362,7 +362,7 @@ private struct APIRequestView: View {
 
         if isRunning {
           HStack {
-            ProgressView()
+            DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
             Text("Cloudflare is processing the request…")
               .foregroundStyle(.secondary)
           }

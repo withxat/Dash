@@ -805,8 +805,7 @@ struct StatusBadge: View {
 
 struct LoadingStateView: View {
   var body: some View {
-    ProgressView()
-      .tint(DashTheme.brand)
+    DashLoadingRing(color: DashTheme.brand)
       .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.emptyStateMinHeight)
       .listRowInsets(EdgeInsets())
       .listRowSeparator(.hidden)
