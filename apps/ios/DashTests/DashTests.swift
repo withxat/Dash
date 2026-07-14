@@ -259,6 +259,45 @@ import UIKit
   #expect(entity.name == "example.com")
 }
 
+@Test func watchtowerWidgetSnapshotMapsAndRoundTrips() throws {
+  let signal = { (status: WatchtowerStatus, title: String) in
+    WatchtowerSignal(
+      id: UUID().uuidString, title: title, detail: "d", status: status, destination: nil)
+  }
+  let snapshot = WatchtowerSnapshot(
+    signals: [
+      signal(.ok, "healthy"), signal(.warning, "cert soon"), signal(.critical, "tunnel down"),
+    ],
+    alerts: [], alertsStatus: .ok, missingScopeChecks: [], failedChecks: [],
+    fetchedAt: Date(timeIntervalSince1970: 1_000_000))
+  let widget = snapshot.widgetSnapshot(accountName: "Acme")
+
+  #expect(widget.issueCount == 2)
+  #expect(widget.criticalCount == 1)
+  #expect(widget.warningCount == 1)
+  #expect(widget.accountName == "Acme")
+  // Non-ok only, critical first.
+  #expect(widget.signals.map(\.status) == ["critical", "warning"])
+  #expect(widget.signals.first?.title == "tunnel down")
+
+  // Codable round-trips through the App Group file format.
+  let url = FileManager.default.temporaryDirectory
+    .appendingPathComponent("watchtower-\(UUID().uuidString).json")
+  try widget.write(to: url)
+  let loaded = try WatchtowerWidgetSnapshot.load(from: url)
+  #expect(loaded == widget)
+  WatchtowerWidgetSnapshot.clear(at: url)
+}
+
+@Test func watchtowerWidgetStalenessTiers() {
+  let base = WatchtowerWidgetSnapshot(
+    issueCount: 0, criticalCount: 0, warningCount: 0, signals: [], accountName: nil,
+    fetchedAt: Date(timeIntervalSince1970: 0))
+  #expect(base.staleness(now: Date(timeIntervalSince1970: 3600)) == .fresh)
+  #expect(base.staleness(now: Date(timeIntervalSince1970: 3 * 3600)) == .aging)
+  #expect(base.staleness(now: Date(timeIntervalSince1970: 25 * 3600)) == .stale)
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

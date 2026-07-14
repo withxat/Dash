@@ -55,6 +55,35 @@ struct WatchtowerSnapshot: Sendable {
   func isStale(now: Date = .now, ttl: TimeInterval) -> Bool {
     now.timeIntervalSince(fetchedAt) > ttl
   }
+
+  /// Projects the full snapshot into the slim Codable form the widget reads.
+  /// Non-ok signals only, critical before warning.
+  func widgetSnapshot(accountName: String?) -> WatchtowerWidgetSnapshot {
+    let issues = signals.filter { $0.status != .ok }
+    let ordered = issues.sorted { lhs, rhs in
+      (lhs.status == .critical ? 0 : 1) < (rhs.status == .critical ? 0 : 1)
+    }
+    return WatchtowerWidgetSnapshot(
+      issueCount: issues.count,
+      criticalCount: signals.count { $0.status == .critical },
+      warningCount: signals.count { $0.status == .warning },
+      signals: ordered.map {
+        WatchtowerWidgetSnapshot.Signal(
+          title: $0.title, detail: $0.detail, status: $0.status.widgetRawValue)
+      },
+      accountName: accountName,
+      fetchedAt: fetchedAt)
+  }
+}
+
+extension WatchtowerStatus {
+  var widgetRawValue: String {
+    switch self {
+    case .ok: "ok"
+    case .warning: "warning"
+    case .critical: "critical"
+    }
+  }
 }
 
 struct WorkerDetailSnapshot: Sendable {

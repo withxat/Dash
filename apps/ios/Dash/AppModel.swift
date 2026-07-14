@@ -3,6 +3,7 @@ import CloudflareAPI
 import Foundation
 import Observation
 import UIKit
+import WidgetKit
 
 enum AuthenticationState: Sendable, Equatable {
   case authenticated
@@ -278,6 +279,10 @@ final class AppModel {
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
+    if let url = WatchtowerWidgetSnapshot.containerFileURL {
+      WatchtowerWidgetSnapshot.clear(at: url)
+      WidgetCenter.shared.reloadAllTimelines()
+    }
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     authState = .unauthenticated
   }
@@ -324,7 +329,17 @@ final class AppModel {
     guard activeAccountID == accountID else { return snapshot }
     featureCache.set(key, snapshot)
     watchtowerIssueCount = snapshot.issueCount
+    publishWidgetSnapshot(snapshot)
     return snapshot
+  }
+
+  /// Writes the slim snapshot into the App Group container and refreshes the
+  /// widget. A missing container (entitlement not provisioned) is a silent
+  /// no-op — the widget just shows its empty state.
+  private func publishWidgetSnapshot(_ snapshot: WatchtowerSnapshot) {
+    guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
+    try? snapshot.widgetSnapshot(accountName: activeAccount?.name).write(to: url)
+    WidgetCenter.shared.reloadAllTimelines()
   }
 
   /// Foreground/warm-up hook: cheap when the snapshot is younger than the
