@@ -71,6 +71,16 @@ public enum CloudflareAPIError: Error, LocalizedError, Sendable {
     if case .request(let status, _) = self { return status == 403 }
     return false
   }
+
+  public var isRateLimited: Bool {
+    if case .request(let status, _) = self { return status == 429 }
+    return false
+  }
+
+  public var isTransport: Bool {
+    if case .transport = self { return true }
+    return false
+  }
 }
 
 public struct ResultInfo: Codable, Hashable, Sendable {

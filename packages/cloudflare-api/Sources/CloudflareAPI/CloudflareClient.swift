@@ -531,6 +531,18 @@ public actor CloudflareClient {
     ).0
   }
 
+  static let maxAttempts = 2
+  static let maxAutoRetryDelay: TimeInterval = 5
+
+  /// Auto-retry delay for a 429. A missing or unparseable header earns one
+  /// cheap retry; a server-requested wait longer than `maxAutoRetryDelay`
+  /// means the caller should surface the rate limit instead of stalling.
+  static func retryDelay(retryAfter header: String?) -> TimeInterval? {
+    guard let header, let seconds = TimeInterval(header) else { return 1 }
+    guard seconds <= maxAutoRetryDelay else { return nil }
+    return max(0, seconds)
+  }
+
   private func rawResponse(
     url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0
   ) async throws -> (Data, HTTPURLResponse) {
@@ -559,6 +571,13 @@ public actor CloudflareClient {
           return try await rawResponse(
             url: url, method: method, data: data, contentType: contentType, attempt: 1)
         }
+      }
+      if response.statusCode == 429, attempt < Self.maxAttempts,
+        let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
+      {
+        if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+        return try await rawResponse(
+          url: url, method: method, data: data, contentType: contentType, attempt: attempt + 1)
       }
       guard (200..<300).contains(response.statusCode) else {
         let errors = (try? JSONDecoder().decode(ErrorEnvelope.self, from: body).errors) ?? []

@@ -85,6 +85,29 @@ import Testing
   #expect(forbidden.isPermissionDenied)
 }
 
+@Test func transportAndRateLimitErrorsAreDistinguishable() {
+  let offline = CloudflareAPIError.transport("offline")
+  let rateLimited = CloudflareAPIError.request(status: 429, errors: [])
+  let unauthorized = CloudflareAPIError.request(status: 401, errors: [])
+  #expect(offline.isTransport)
+  #expect(!offline.isRateLimited)
+  #expect(rateLimited.isRateLimited)
+  #expect(!rateLimited.isTransport)
+  #expect(!unauthorized.isTransport)
+  #expect(!unauthorized.isRateLimited)
+}
+
+@Test func retryDelayHonorsRetryAfterHeader() {
+  #expect(CloudflareClient.retryDelay(retryAfter: nil) == 1)
+  #expect(CloudflareClient.retryDelay(retryAfter: "not-a-number") == 1)
+  #expect(CloudflareClient.retryDelay(retryAfter: "0") == 0)
+  #expect(CloudflareClient.retryDelay(retryAfter: "3") == 3)
+  #expect(CloudflareClient.retryDelay(retryAfter: "5") == 5)
+  #expect(CloudflareClient.retryDelay(retryAfter: "6") == nil)
+  #expect(CloudflareClient.retryDelay(retryAfter: "120") == nil)
+  #expect(CloudflareClient.retryDelay(retryAfter: "-2") == 0)
+}
+
 @Test func decodesPaginatedZoneEnvelope() throws {
   let data = Data(
     #"{"success":true,"result":[{"id":"zone","name":"example.com","status":"active"}],"result_info":{"page":1,"per_page":50,"total_count":1}}"#
@@ -524,6 +547,69 @@ struct NetworkTests {
     #expect(values.0.first?.name == "Example")
     #expect(values.1.first?.name == "Example")
     #expect(recorder.refreshCount == 1)
+  }
+
+  @Test func rateLimitedRequestRetriesAfterShortWait() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.path ?? "")
+      if recorder.paths.count == 1 {
+        return (
+          429, Data(#"{"success":false,"errors":[{"code":971,"message":"rate limited"}]}"#.utf8)
+        )
+      }
+      return (200, Data(#"{"success":true,"result":[{"id":"account","name":"Example"}]}"#.utf8))
+    }
+    MockURLProtocol.responseHeaders = ["Retry-After": "0"]
+    defer { MockURLProtocol.responseHeaders = nil }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let accounts = try await client.listAccounts()
+    #expect(accounts.first?.name == "Example")
+    #expect(recorder.paths.count == 2)
+  }
+
+  @Test func rateLimitedRequestSurfacesLongWaitImmediately() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.path ?? "")
+      return (
+        429, Data(#"{"success":false,"errors":[{"code":971,"message":"rate limited"}]}"#.utf8)
+      )
+    }
+    MockURLProtocol.responseHeaders = ["Retry-After": "120"]
+    defer { MockURLProtocol.responseHeaders = nil }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    await #expect(throws: CloudflareAPIError.self) { try await client.listAccounts() }
+    #expect(recorder.paths.count == 1)
+  }
+
+  @Test func rateLimitedRetriesAreCapped() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.path ?? "")
+      return (
+        429, Data(#"{"success":false,"errors":[{"code":971,"message":"rate limited"}]}"#.utf8)
+      )
+    }
+    MockURLProtocol.responseHeaders = ["Retry-After": "0"]
+    defer { MockURLProtocol.responseHeaders = nil }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    do {
+      _ = try await client.listAccounts()
+      Issue.record("expected a rate-limit error")
+    } catch let error as CloudflareAPIError {
+      #expect(error.isRateLimited)
+    }
+    #expect(recorder.paths.count == CloudflareClient.maxAttempts + 1)
   }
 }
 
