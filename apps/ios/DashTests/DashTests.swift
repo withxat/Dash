@@ -122,6 +122,25 @@ import UIKit
   #expect(!state.canLoadMore)
 }
 
+@Test func watchtowerSnapshotDerivesIssueCountAndStaleness() {
+  let signal = { (status: WatchtowerStatus) in
+    WatchtowerSignal(
+      id: UUID().uuidString, title: "t", detail: "d", status: status, destination: nil)
+  }
+  let now = Date(timeIntervalSince1970: 1_000_000)
+  let snapshot = WatchtowerSnapshot(
+    signals: [signal(.ok), signal(.warning), signal(.critical), signal(.ok)],
+    alerts: [],
+    alertsStatus: .ok,
+    missingScopeChecks: [],
+    failedChecks: [],
+    fetchedAt: now)
+  #expect(snapshot.issueCount == 2)
+  #expect(!snapshot.isStale(now: now.addingTimeInterval(299), ttl: 300))
+  #expect(!snapshot.isStale(now: now.addingTimeInterval(300), ttl: 300))
+  #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

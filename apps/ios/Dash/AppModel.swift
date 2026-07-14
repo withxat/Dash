@@ -29,9 +29,15 @@ final class AppModel {
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
   var identityStale = false
+  /// Issue count from the freshest Watchtower snapshot — drives the tab
+  /// badge. nil until the first check completes for the active account.
+  var watchtowerIssueCount: Int?
+
+  static let watchtowerTTL: TimeInterval = 5 * 60
 
   private var authSession: ASWebAuthenticationSession?
   private var isRetryingIdentity = false
+  private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
 
   init(configuration: AppConfiguration = .current) {
     self.configuration = configuration
@@ -265,6 +271,7 @@ final class AppModel {
     grantedScopes = nil
     selectedScopes = Set(CloudflareScopes.published)
     identityStale = false
+    watchtowerIssueCount = nil
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     authState = .unauthenticated
   }
@@ -272,8 +279,57 @@ final class AppModel {
   func selectAccount(_ account: CloudflareAccount) {
     guard activeAccountID != account.id else { return }
     featureCache.clear()
+    watchtowerIssueCount = nil
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
+  }
+
+  /// Single entry point for Watchtower data: serves the cached snapshot when
+  /// fresh, joins an in-flight refresh for the same account instead of
+  /// doubling the fan-out, and keeps the tab-badge count in sync.
+  func watchtowerSnapshot(force: Bool = false) async -> WatchtowerSnapshot? {
+    guard let accountID = activeAccountID else { return nil }
+    let key = FeatureCacheKey.watchtower(accountID)
+    if !force, let cached: WatchtowerSnapshot = featureCache.get(key) {
+      watchtowerIssueCount = cached.issueCount
+      return cached
+    }
+    if let inFlight = watchtowerRefresh, inFlight.accountID == accountID {
+      return await inFlight.task.value
+    }
+    let client = client
+    let task = Task {
+      let result = await WatchtowerEngine.load(client: client, accountID: accountID)
+      return WatchtowerSnapshot(
+        signals: result.signals,
+        alerts: result.alerts,
+        alertsStatus: result.alertsStatus,
+        missingScopeChecks: result.missingScopeChecks,
+        failedChecks: result.failedChecks,
+        fetchedAt: .now)
+    }
+    watchtowerRefresh = (accountID, task)
+    defer {
+      if watchtowerRefresh?.accountID == accountID { watchtowerRefresh = nil }
+    }
+    let snapshot = await task.value
+    // The user may have switched accounts mid-flight; never let a stale
+    // account's result touch the cache or the badge.
+    guard activeAccountID == accountID else { return snapshot }
+    featureCache.set(key, snapshot)
+    watchtowerIssueCount = snapshot.issueCount
+    return snapshot
+  }
+
+  /// Foreground/warm-up hook: cheap when the snapshot is younger than the
+  /// TTL, otherwise re-runs the checks in the background.
+  func refreshWatchtowerIfStale() async {
+    guard let accountID = activeAccountID else { return }
+    if let cached: WatchtowerSnapshot = featureCache.get(FeatureCacheKey.watchtower(accountID)) {
+      watchtowerIssueCount = cached.issueCount
+      guard cached.isStale(ttl: Self.watchtowerTTL) else { return }
+    }
+    _ = await watchtowerSnapshot(force: true)
   }
 
   func loadIdentity() async throws {

@@ -9,6 +9,7 @@ struct WatchtowerView: View {
   @State private var alertsStatus: WatchtowerAlertsStatus = .loading
   @State private var missingScopeChecks: [String] = []
   @State private var failedChecks: [String] = []
+  @State private var fetchedAt: Date?
   @State private var loading = true
 
   private var summary: WatchtowerSummary {
@@ -253,10 +254,21 @@ struct WatchtowerView: View {
         )
         .foregroundStyle(DashTheme.placeholder)
       }
+      if let fetchedAt {
+        Text("Updated \(relativeDate(fetchedAt))")
+          .foregroundStyle(DashTheme.placeholder)
+      }
     }
     .font(.caption2)
     .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
+  }
+
+  private func relativeDate(_ date: Date) -> String {
+    guard Date().timeIntervalSince(date) >= 60 else { return "just now" }
+    let formatter = RelativeDateTimeFormatter()
+    formatter.unitsStyle = .abbreviated
+    return formatter.localizedString(for: date, relativeTo: Date())
   }
 
   @ViewBuilder
@@ -279,37 +291,21 @@ struct WatchtowerView: View {
   }
 
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
+    guard model.activeAccountID != nil else {
       loading = false
       signals = []
       alerts = []
       return
     }
-    let key = FeatureCacheKey.watchtower(accountID)
-    if !force, let cached: WatchtowerSnapshot = model.featureCache.get(key) {
-      signals = cached.signals
-      alerts = cached.alerts
-      alertsStatus = cached.alertsStatus
-      missingScopeChecks = cached.missingScopeChecks
-      failedChecks = cached.failedChecks
-      loading = false
-      return
-    }
     if signals.isEmpty { loading = true }
-    let result = await WatchtowerEngine.load(client: model.client, accountID: accountID)
-    signals = result.signals
-    alerts = result.alerts
-    alertsStatus = result.alertsStatus
-    missingScopeChecks = result.missingScopeChecks
-    failedChecks = result.failedChecks
-    model.featureCache.set(
-      key,
-      WatchtowerSnapshot(
-        signals: signals,
-        alerts: alerts,
-        alertsStatus: alertsStatus,
-        missingScopeChecks: missingScopeChecks,
-        failedChecks: failedChecks))
+    if let snapshot = await model.watchtowerSnapshot(force: force) {
+      signals = snapshot.signals
+      alerts = snapshot.alerts
+      alertsStatus = snapshot.alertsStatus
+      missingScopeChecks = snapshot.missingScopeChecks
+      failedChecks = snapshot.failedChecks
+      fetchedAt = snapshot.fetchedAt
+    }
     loading = false
   }
 }

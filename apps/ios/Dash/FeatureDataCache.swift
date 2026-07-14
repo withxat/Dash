@@ -45,6 +45,13 @@ struct WatchtowerSnapshot: Sendable {
   var alertsStatus: WatchtowerAlertsStatus
   var missingScopeChecks: [String]
   var failedChecks: [String]
+  var fetchedAt: Date
+
+  var issueCount: Int { signals.count { $0.status != .ok } }
+
+  func isStale(now: Date = .now, ttl: TimeInterval) -> Bool {
+    now.timeIntervalSince(fetchedAt) > ttl
+  }
 }
 
 struct WorkerDetailSnapshot: Sendable {

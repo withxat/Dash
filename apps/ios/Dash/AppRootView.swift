@@ -435,8 +435,14 @@ private struct MainTabView: View {
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
       .onChange(of: scenePhase) { _, phase in
         guard phase == .active else { return }
-        Task { await model.retryIdentityIfNeeded() }
+        Task {
+          await model.retryIdentityIfNeeded()
+          await model.refreshWatchtowerIfStale()
+        }
       }
+      // Warms the Watchtower badge once per account, before the tab is
+      // ever visited.
+      .task(id: model.activeAccountID) { await model.refreshWatchtowerIfStale() }
       .onChange(of: showsProfile) { _, presented in
         if presented {
           cancelTabBarHold()
@@ -499,6 +505,7 @@ private struct MainTabView: View {
             asset: selection == .watchtower ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine",
             active: selection == .watchtower)
         }
+        .badge(model.watchtowerIssueCount ?? 0)
         Tab(value: AppTab.search, role: .search) {
           SearchNavigationStack(search: $search, path: $searchPath)
         } label: {
@@ -532,6 +539,7 @@ private struct MainTabView: View {
               active: selection == .watchtower)
           }
           .tag(AppTab.watchtower)
+          .badge(model.watchtowerIssueCount ?? 0)
         SearchNavigationStack(search: $search, path: $searchPath)
           .tabItem {
             tabLabel(
