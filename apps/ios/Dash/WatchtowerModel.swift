@@ -58,12 +58,14 @@ enum WatchtowerEngine {
     let scopedZones = Array(zones.prefix(zoneFanoutLimit))
     let zonesTruncated = zones.count > zoneFanoutLimit
 
-    let certResults = await loadZoneScoped(client: client, zones: scopedZones) {
+    async let certTask = loadZoneScoped(client: client, zones: scopedZones) {
       try await client.listCertificatePacks(zoneID: $0.id)
     }
-    let healthResults = await loadZoneScoped(client: client, zones: scopedZones) {
+    async let healthTask = loadZoneScoped(client: client, zones: scopedZones) {
       try await client.listHealthchecks(zoneID: $0.id)
     }
+    let certResults = await certTask
+    let healthResults = await healthTask
 
     var signals: [WatchtowerSignal] = []
     var missingScopeChecks: [String] = []
@@ -196,32 +198,56 @@ enum WatchtowerEngine {
     do { return .success(try await operation()) } catch { return .failure(error) }
   }
 
+  /// At most this many zone-scoped requests in flight per check family, so a
+  /// refresh stays fast without bursting into Cloudflare's rate limit.
+  private static let zoneScopedConcurrency = 4
+
   private static func loadZoneScoped<Value: Sendable>(
     client: CloudflareClient,
     zones: [CloudflareZone],
-    loader: @escaping (CloudflareZone) async throws -> [Value]
+    loader: @escaping @Sendable (CloudflareZone) async throws -> [Value]
   ) async -> ZoneScopedResult<Value> {
     guard !zones.isEmpty else {
       return ZoneScopedResult(entries: [], allFailed: false, allPermissionDenied: false)
     }
 
-    var entries: [(zone: CloudflareZone, items: [Value])] = []
+    // Sliding window: seed the group, add one task as each completes, and
+    // slot results by index so zone order survives the concurrency.
+    var slots: [(zone: CloudflareZone, items: [Value])?] = Array(
+      repeating: nil, count: zones.count)
     var failures = 0
     var permissionFailures = 0
 
-    for zone in zones {
-      do {
-        entries.append((zone, try await loader(zone)))
-      } catch {
-        failures += 1
-        if (error as? CloudflareAPIError)?.isPermissionDenied == true {
-          permissionFailures += 1
+    await withTaskGroup(of: (Int, Result<[Value], Error>).self) { group in
+      var nextIndex = 0
+      func addNext() {
+        guard nextIndex < zones.count else { return }
+        let index = nextIndex
+        let zone = zones[index]
+        nextIndex += 1
+        group.addTask {
+          do { return (index, .success(try await loader(zone))) } catch {
+            return (index, .failure(error))
+          }
         }
+      }
+      for _ in 0..<min(zoneScopedConcurrency, zones.count) { addNext() }
+      while let (index, result) = await group.next() {
+        switch result {
+        case .success(let items):
+          slots[index] = (zones[index], items)
+        case .failure(let error):
+          failures += 1
+          if (error as? CloudflareAPIError)?.isPermissionDenied == true {
+            permissionFailures += 1
+          }
+        }
+        addNext()
       }
     }
 
     return ZoneScopedResult(
-      entries: entries,
+      entries: slots.compactMap { $0 },
       allFailed: failures == zones.count,
       allPermissionDenied: permissionFailures == zones.count
     )
