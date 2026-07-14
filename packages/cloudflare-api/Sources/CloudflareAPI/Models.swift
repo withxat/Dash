@@ -289,6 +289,23 @@ public struct ZonePlan: Codable, Hashable, Sendable {
   }
 }
 
+/// One hour bucket of HTTP request totals; `datetime` is an ISO 8601 instant.
+public struct ZoneAnalyticsPoint: Codable, Hashable, Sendable {
+  public let datetime: String
+  public let requests: Int
+  public let pageViews: Int
+  public let threats: Int
+  public let bytes: Int64
+
+  public init(datetime: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64) {
+    self.datetime = datetime
+    self.requests = requests
+    self.pageViews = pageViews
+    self.threats = threats
+    self.bytes = bytes
+  }
+}
+
 public struct ZoneAnalyticsDay: Codable, Hashable, Sendable {
   public let date: String
   public let requests: Int

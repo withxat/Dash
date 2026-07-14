@@ -449,6 +449,40 @@ public actor CloudflareClient {
     }
   }
 
+  /// Hourly HTTP request totals via the GraphQL `httpRequests1hGroups`
+  /// dataset. Returned ascending so charts can plot it directly.
+  public func zoneAnalyticsHourly(zoneID: String, hours: Int = 24) async throws
+    -> [ZoneAnalyticsPoint]
+  {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let query = """
+      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
+      httpRequests1hGroups(limit: \(hours + 1), \
+      filter: {datetime_geq: "\(formatter.string(from: since))", \
+      datetime_leq: "\(formatter.string(from: until))"}, orderBy: [datetime_ASC]) { \
+      dimensions { datetime } sum { requests pageViews threats bytes } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response = try await raw(
+      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
+      contentType: "application/json")
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<ZoneAnalyticsHourlyData>.self, from: response)
+    if let message = envelope.errors?.first?.message {
+      throw CloudflareAPIError.request(
+        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+    }
+    return (envelope.data?.viewer.zones.first?.httpRequests1hGroups ?? []).map {
+      ZoneAnalyticsPoint(
+        datetime: $0.dimensions.datetime, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
+        threats: $0.sum.threats, bytes: $0.sum.bytes)
+    }
+  }
+
   public func graphQL(query: String, variables: [String: JSONValue]) async throws -> JSONValue {
     let data = try JSONEncoder().encode([
       "query": JSONValue.string(query), "variables": .object(variables),
@@ -635,6 +669,24 @@ private struct ZoneAnalyticsData: Decodable, Sendable {
     let sum: Sum
 
     struct Dimensions: Decodable, Sendable { let date: String }
+    struct Sum: Decodable, Sendable {
+      let requests: Int
+      let pageViews: Int
+      let threats: Int
+      let bytes: Int64
+    }
+  }
+}
+private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let zones: [Zone] }
+  struct Zone: Decodable, Sendable { let httpRequests1hGroups: [Group] }
+  struct Group: Decodable, Sendable {
+    let dimensions: Dimensions
+    let sum: Sum
+
+    struct Dimensions: Decodable, Sendable { let datetime: String }
     struct Sum: Decodable, Sendable {
       let requests: Int
       let pageViews: Int

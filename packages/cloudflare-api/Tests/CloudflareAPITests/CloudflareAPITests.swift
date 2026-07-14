@@ -177,6 +177,42 @@ struct NetworkTests {
     #expect(days.first?.requests == 120)
     #expect(days.first?.bytes == 98304)
   }
+  @Test func decodesHourlyZoneAnalyticsAscending() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.absoluteString ?? "")
+      let body = #"""
+        {"data":{"viewer":{"zones":[{"httpRequests1hGroups":[
+        {"dimensions":{"datetime":"2026-07-14T08:00:00Z"},"sum":{"requests":10,"pageViews":4,"threats":1,"bytes":2048}},
+        {"dimensions":{"datetime":"2026-07-14T09:00:00Z"},"sum":{"requests":20,"pageViews":8,"threats":0,"bytes":4096}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let points = try await client.zoneAnalyticsHourly(zoneID: "zone", hours: 24)
+    #expect(points.map(\.datetime) == ["2026-07-14T08:00:00Z", "2026-07-14T09:00:00Z"])
+    #expect(points.first?.requests == 10)
+    #expect(points.last?.bytes == 4096)
+    #expect(recorder.paths.first?.contains("/graphql") == true)
+  }
+
+  @Test func surfacesHourlyAnalyticsGraphQLErrors() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      (200, Data(#"{"data":null,"errors":[{"message":"unauthorized zone"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    await #expect(throws: CloudflareAPIError.self) {
+      _ = try await client.zoneAnalyticsHourly(zoneID: "zone")
+    }
+  }
+
   @Test func genericResourceExtractsQueueAndRouteIdentity() throws {
     let decoder = JSONDecoder()
     let queue = try decoder.decode(
