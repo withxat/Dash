@@ -1,10 +1,17 @@
+import AppIntents
 import SwiftUI
 
 @main
 struct DashApp: App {
-  @State private var model = AppModel()
+  @State private var model: AppModel
 
   init() {
+    let model = AppModel()
+    _model = State(initialValue: model)
+    // In-app App Intents run in this process; hand them the app's own model
+    // so they share its client and single-flight token refresh.
+    AppDependencyManager.shared.add(dependency: model)
+
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
       .font: UIFont.dashTitle(size: AvatarHeaderMetrics.titleSize, weight: .bold),
       .foregroundColor: UIColor.label,

@@ -244,6 +244,21 @@ import UIKit
   #expect(DashRoute.worker("w").destination == .worker("w"))
 }
 
+@Test func underAttackRestoreLevelFallsBackToMedium() {
+  #expect(SetUnderAttackIntent.restoreLevel(stashed: "high") == "high")
+  #expect(SetUnderAttackIntent.restoreLevel(stashed: "essentially_off") == "essentially_off")
+  #expect(SetUnderAttackIntent.restoreLevel(stashed: nil) == "medium")
+}
+
+@Test func zoneEntityMapsFromCloudflareZone() throws {
+  let zone = try JSONDecoder().decode(
+    CloudflareZone.self,
+    from: Data(#"{"id":"z1","name":"example.com","status":"active"}"#.utf8))
+  let entity = ZoneEntity(zone: zone)
+  #expect(entity.id == "z1")
+  #expect(entity.name == "example.com")
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],
