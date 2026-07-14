@@ -10,6 +10,31 @@ import UIKit
       .isConfigured)
 }
 
+@Test func pushBaseURLStripsPathFromRedirectURI() {
+  let configured = AppConfiguration(
+    clientID: "client",
+    redirectURI: "https://dash.xat.sh/oauth/callback")
+  #expect(configured.pushBaseURL?.absoluteString == "https://dash.xat.sh")
+
+  let withPort = AppConfiguration(
+    clientID: "client",
+    redirectURI: "https://example.test:8443/oauth/callback")
+  #expect(withPort.pushBaseURL?.absoluteString == "https://example.test:8443")
+}
+
+@Test func pushBaseURLRejectsNonHTTPSAndUnexpanded() {
+  #expect(
+    AppConfiguration(clientID: "c", redirectURI: "http://dash.xat.sh/oauth/callback")
+      .pushBaseURL == nil)
+  #expect(
+    AppConfiguration(clientID: "c", redirectURI: "$(DASH_REDIRECT_URI)").pushBaseURL == nil)
+  #expect(AppConfiguration(clientID: "c", redirectURI: "").pushBaseURL == nil)
+  // isConfigured stays independent — missing push must not block sign-in.
+  let loginOnly = AppConfiguration(clientID: "client", redirectURI: "http://insecure.test/cb")
+  #expect(loginOnly.isConfigured)
+  #expect(loginOnly.pushBaseURL == nil)
+}
+
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
   #expect(values.count == FeatureID.allCases.count)
