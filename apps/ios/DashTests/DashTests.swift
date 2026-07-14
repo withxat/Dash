@@ -193,6 +193,27 @@ import UIKit
   #expect(small.map(\.summary) == ["only"])
 }
 
+@Test func analyticsChartPointsParseAndSortAscending() {
+  let daily = [
+    ZoneAnalyticsDay(date: "2026-07-14", requests: 3, pageViews: 1, threats: 0, bytes: 30),
+    ZoneAnalyticsDay(date: "2026-07-12", requests: 1, pageViews: 0, threats: 0, bytes: 10),
+    ZoneAnalyticsDay(date: "not-a-date", requests: 9, pageViews: 9, threats: 9, bytes: 9),
+    ZoneAnalyticsDay(date: "2026-07-13", requests: 2, pageViews: 0, threats: 1, bytes: 20),
+  ]
+  let dayPoints = ZoneAnalyticsChartModel.points(fromDaily: daily)
+  #expect(dayPoints.map(\.requests) == [1, 2, 3])  // bad date dropped, sorted ascending
+
+  let hourly = [
+    ZoneAnalyticsPoint(
+      datetime: "2026-07-14T09:00:00Z", requests: 20, pageViews: 8, threats: 0, bytes: 40),
+    ZoneAnalyticsPoint(
+      datetime: "2026-07-14T08:00:00.000Z", requests: 10, pageViews: 4, threats: 1, bytes: 20),
+    ZoneAnalyticsPoint(datetime: "garbage", requests: 99, pageViews: 0, threats: 0, bytes: 0),
+  ]
+  let hourPoints = ZoneAnalyticsChartModel.points(fromHourly: hourly)
+  #expect(hourPoints.map(\.requests) == [10, 20])  // fractional seconds parsed, garbage dropped
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

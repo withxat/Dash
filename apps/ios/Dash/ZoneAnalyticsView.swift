@@ -1,83 +1,243 @@
+import Charts
 import CloudflareAPI
 import SwiftUI
+
+/// A single normalized point for the chart, independent of whether it came
+/// from the hourly or daily dataset.
+struct ZoneAnalyticsChartPoint: Identifiable, Hashable {
+  let date: Date
+  let requests: Int
+  let threats: Int
+  let bytes: Int64
+  let pageViews: Int
+
+  var id: Date { date }
+}
+
+/// Pure conversion + parsing, so the date handling is unit-tested away from
+/// the view. Both builders return ascending, dropping unparseable stamps.
+enum ZoneAnalyticsChartModel {
+  private static let dayParser: DateFormatter = {
+    let parser = DateFormatter()
+    parser.dateFormat = "yyyy-MM-dd"
+    parser.locale = Locale(identifier: "en_US_POSIX")
+    parser.timeZone = TimeZone(identifier: "UTC")
+    return parser
+  }()
+
+  static func points(fromDaily days: [ZoneAnalyticsDay]) -> [ZoneAnalyticsChartPoint] {
+    days.compactMap { day in
+      guard let date = dayParser.date(from: day.date) else { return nil }
+      return ZoneAnalyticsChartPoint(
+        date: date, requests: day.requests, threats: day.threats, bytes: day.bytes,
+        pageViews: day.pageViews)
+    }
+    .sorted { $0.date < $1.date }
+  }
+
+  static func points(fromHourly hourly: [ZoneAnalyticsPoint]) -> [ZoneAnalyticsChartPoint] {
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime]
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return hourly.compactMap { point in
+      guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
+      else { return nil }
+      return ZoneAnalyticsChartPoint(
+        date: date, requests: point.requests, threats: point.threats, bytes: point.bytes,
+        pageViews: point.pageViews)
+    }
+    .sorted { $0.date < $1.date }
+  }
+}
+
+enum AnalyticsRange: Hashable {
+  case day, week, month
+
+  var title: String {
+    switch self {
+    case .day: "24h"
+    case .week: "7d"
+    case .month: "30d"
+    }
+  }
+  var totalsHeading: String {
+    switch self {
+    case .day: "Last 24 hours"
+    case .week: "Last 7 days"
+    case .month: "Last 30 days"
+    }
+  }
+}
 
 struct ZoneAnalyticsView: View {
   @Environment(AppModel.self) private var model
   let zoneID: String
-  @State private var days: [ZoneAnalyticsDay] = []
+  @State private var range: AnalyticsRange = .day
+  @State private var points: [ZoneAnalyticsChartPoint] = []
   @State private var error: String?
   @State private var loading = true
 
   var body: some View {
-    DashFeatureList(
-      isLoading: loading,
-      error: error,
-      hasContent: !days.isEmpty,
-      retry: { Task { await load(force: true) } }
-    ) {
-      if days.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.chart,
-          title: "No traffic yet",
-          message: "HTTP request analytics for this zone will appear here."
-        )
-      } else {
-        DashListGroup(title: "Last 7 days") {
-          DashValueRow(title: "Requests", value: totalRequests.formatted())
-          DashListGroupDivider()
-          DashValueRow(title: "Bandwidth", value: bandwidth(totalBytes))
-          DashListGroupDivider()
-          DashValueRow(title: "Page views", value: totalPageViews.formatted())
-          DashListGroupDivider()
-          DashValueRow(title: "Threats", value: totalThreats.formatted())
-        }
-        DashListGroup(title: "Daily requests") {
-          ForEach(Array(days.enumerated()), id: \.element.date) { index, day in
-            DashValueRow(
-              title: displayDate(day.date),
-              value: "\(day.requests.formatted()) req",
-              subtitle: bandwidth(Int64(day.bytes))
-            )
-            if index < days.count - 1 { DashListGroupDivider() }
+    DashFeatureScreen(chrome: {
+      DashTextTabs(
+        items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+        selection: $range
+      )
+    }) {
+      DashFeatureList(
+        isLoading: loading,
+        error: error,
+        hasContent: !points.isEmpty,
+        retry: { Task { await load(force: true) } }
+      ) {
+        if points.isEmpty {
+          DashEmptyState(
+            icon: SolarAsset.chart,
+            title: "No traffic yet",
+            message: "HTTP request analytics for this zone will appear here."
+          )
+        } else {
+          chartCard
+          totalsGroup
+          if range != .day {
+            perBucketGroup
           }
         }
       }
     }
     .navigationTitle("Analytics")
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .onChange(of: range) { points = [] }
+    .task(id: range) { await load() }
   }
 
-  private var totalRequests: Int { days.reduce(0) { $0 + $1.requests } }
-  private var totalPageViews: Int { days.reduce(0) { $0 + $1.pageViews } }
-  private var totalThreats: Int { days.reduce(0) { $0 + $1.threats } }
-  private var totalBytes: Int64 { days.reduce(0) { $0 + $1.bytes } }
+  private var chartCard: some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 12) {
+        Text("Requests").dashTextStyle(.footnoteSemibold).foregroundStyle(DashTheme.subtle)
+        Chart(points) { point in
+          AreaMark(
+            x: .value("Time", point.date),
+            y: .value("Requests", point.requests)
+          )
+          .foregroundStyle(
+            .linearGradient(
+              colors: [DashTheme.brand.opacity(0.28), DashTheme.brand.opacity(0.02)],
+              startPoint: .top, endPoint: .bottom)
+          )
+          .interpolationMethod(.catmullRom)
+          LineMark(
+            x: .value("Time", point.date),
+            y: .value("Requests", point.requests)
+          )
+          .foregroundStyle(DashTheme.brand)
+          .interpolationMethod(.catmullRom)
+          if totalThreats > 0 {
+            LineMark(
+              x: .value("Time", point.date),
+              y: .value("Threats", point.threats),
+              series: .value("Series", "Threats")
+            )
+            .foregroundStyle(DashTheme.warning)
+            .lineStyle(StrokeStyle(lineWidth: 1))
+          }
+        }
+        .chartYAxis {
+          AxisMarks(format: IntegerFormatStyle<Int>().notation(.compactName))
+        }
+        .chartXAxis {
+          AxisMarks(values: .automatic(desiredCount: range == .day ? 4 : 5)) { value in
+            AxisGridLine()
+            AxisValueLabel(format: xAxisFormat, centered: false)
+          }
+        }
+        .frame(height: 180)
+        if totalThreats > 0 {
+          HStack(spacing: 12) {
+            legendDot(DashTheme.brand, "Requests")
+            legendDot(DashTheme.warning, "Threats")
+          }
+        }
+      }
+    }
+  }
+
+  private func legendDot(_ color: Color, _ label: String) -> some View {
+    HStack(spacing: 5) {
+      Circle().fill(color).frame(width: 7, height: 7)
+      Text(label).font(.caption2).foregroundStyle(DashTheme.placeholder)
+    }
+  }
+
+  private var xAxisFormat: Date.FormatStyle {
+    range == .day
+      ? .dateTime.hour()
+      : .dateTime.month(.abbreviated).day()
+  }
+
+  private var totalsGroup: some View {
+    DashListGroup(title: range.totalsHeading) {
+      DashValueRow(title: "Requests", value: totalRequests.formatted())
+      DashListGroupDivider()
+      DashValueRow(title: "Bandwidth", value: bandwidth(totalBytes))
+      DashListGroupDivider()
+      DashValueRow(title: "Page views", value: totalPageViews.formatted())
+      DashListGroupDivider()
+      DashValueRow(title: "Threats", value: totalThreats.formatted())
+    }
+  }
+
+  private var perBucketGroup: some View {
+    DashListGroup(title: "Daily requests") {
+      let ordered = points.reversed().enumerated()
+      ForEach(Array(ordered), id: \.element.id) { index, point in
+        DashValueRow(
+          title: point.date.formatted(.dateTime.month(.abbreviated).day()),
+          value: "\(point.requests.formatted()) req",
+          subtitle: bandwidth(point.bytes)
+        )
+        if index < points.count - 1 { DashListGroupDivider() }
+      }
+    }
+  }
+
+  private var totalRequests: Int { points.reduce(0) { $0 + $1.requests } }
+  private var totalPageViews: Int { points.reduce(0) { $0 + $1.pageViews } }
+  private var totalThreats: Int { points.reduce(0) { $0 + $1.threats } }
+  private var totalBytes: Int64 { points.reduce(0) { $0 + $1.bytes } }
 
   private func bandwidth(_ bytes: Int64) -> String {
     ByteCountFormatter.string(fromByteCount: bytes, countStyle: .binary)
   }
 
-  private func displayDate(_ raw: String) -> String {
-    let parser = DateFormatter()
-    parser.dateFormat = "yyyy-MM-dd"
-    parser.locale = Locale(identifier: "en_US_POSIX")
-    guard let date = parser.date(from: raw) else { return raw }
-    return date.formatted(.dateTime.month(.abbreviated).day())
-  }
-
   private func load(force: Bool = false) async {
-    let key = FeatureCacheKey.zoneAnalytics(zoneID)
-    if !force, let cached: [ZoneAnalyticsDay] = model.featureCache.get(key) {
-      days = cached
-      error = nil
-      loading = false
-      return
-    }
-    if days.isEmpty { loading = true }
+    if points.isEmpty { loading = true }
     error = nil
     do {
-      days = try await model.client.zoneAnalytics(zoneID: zoneID)
-      model.featureCache.set(key, days)
+      switch range {
+      case .day:
+        let key = FeatureCacheKey.zoneAnalyticsHourly(zoneID)
+        if !force, let cached: [ZoneAnalyticsPoint] = model.featureCache.get(key) {
+          points = ZoneAnalyticsChartModel.points(fromHourly: cached)
+          loading = false
+          return
+        }
+        let hourly = try await model.client.zoneAnalyticsHourly(zoneID: zoneID, hours: 24)
+        model.featureCache.set(key, hourly)
+        points = ZoneAnalyticsChartModel.points(fromHourly: hourly)
+      case .week, .month:
+        let days = range == .week ? 7 : 30
+        let key = FeatureCacheKey.zoneAnalytics(zoneID, days: days)
+        if !force, let cached: [ZoneAnalyticsDay] = model.featureCache.get(key) {
+          points = ZoneAnalyticsChartModel.points(fromDaily: cached)
+          loading = false
+          return
+        }
+        let daily = try await model.client.zoneAnalytics(zoneID: zoneID, days: days)
+        model.featureCache.set(key, daily)
+        points = ZoneAnalyticsChartModel.points(fromDaily: daily)
+      }
     } catch {
       self.error = error.dashActionableMessage
     }

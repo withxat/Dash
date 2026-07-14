@@ -14,7 +14,10 @@ enum FeatureCacheKey {
     "workerSubdomain:\(accountID):\(name)"
   }
   static func zoneSettings(_ zoneID: String) -> String { "zoneSettings:\(zoneID)" }
-  static func zoneAnalytics(_ zoneID: String) -> String { "zoneAnalytics:\(zoneID)" }
+  static func zoneAnalytics(_ zoneID: String, days: Int) -> String {
+    "zoneAnalytics:\(zoneID):\(days)"
+  }
+  static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
   static func generic(path: String) -> String { "generic:\(path)" }
   static func images(_ accountID: String) -> String { "images:\(accountID)" }
   static func stream(_ accountID: String) -> String { "stream:\(accountID)" }
