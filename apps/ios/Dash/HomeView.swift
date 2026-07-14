@@ -85,12 +85,7 @@ struct FeatureSection: View {
   }
 
   private func record(_ item: FeatureID) {
-    let key = "dash.recent_items"
-    let existing = (UserDefaults.standard.string(forKey: key) ?? "").split(separator: ",").map(
-      String.init)
-    UserDefaults.standard.set(
-      ([item.rawValue] + existing.filter { $0 != item.rawValue }).prefix(6).joined(separator: ","),
-      forKey: key)
+    RecentFeatures.record(item)
   }
 }
 

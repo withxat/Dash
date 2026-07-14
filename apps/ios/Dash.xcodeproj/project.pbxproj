@@ -44,6 +44,7 @@
 		B00000000000000000000024 /* LoginGrain.metal in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* LoginGrain.metal */; };
 		B00000000000000000000101 /* Pagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000101 /* Pagination.swift */; };
 		B00000000000000000000102 /* D1SQL.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000102 /* D1SQL.swift */; };
+		B00000000000000000000103 /* HomePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000103 /* HomePersistence.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +98,7 @@
 		F00000000000000000000040 /* LoginGrain.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LoginGrain.metal; sourceTree = "<group>"; };
 		F00000000000000000000101 /* Pagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pagination.swift; sourceTree = "<group>"; };
 		F00000000000000000000102 /* D1SQL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = D1SQL.swift; sourceTree = "<group>"; };
+		F00000000000000000000103 /* HomePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomePersistence.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -178,6 +180,7 @@
 				F00000000000000000000035 /* DashChrome.swift */,
 				F00000000000000000000101 /* Pagination.swift */,
 				F00000000000000000000102 /* D1SQL.swift */,
+				F00000000000000000000103 /* HomePersistence.swift */,
 				F00000000000000000000040 /* LoginGrain.metal */,
 				A00000000000000000000016 /* Resources */,
 				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
@@ -394,6 +397,7 @@
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
 				B00000000000000000000101 /* Pagination.swift in Sources */,
 				B00000000000000000000102 /* D1SQL.swift in Sources */,
+				B00000000000000000000103 /* HomePersistence.swift in Sources */,
 				B00000000000000000000024 /* LoginGrain.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

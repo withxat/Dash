@@ -141,6 +141,19 @@ import UIKit
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
 }
 
+@Test func recentFeaturesDedupeReorderAndCap() {
+  // A repeat visit moves the feature to the front instead of duplicating it.
+  #expect(
+    RecentFeatures.updated(existing: "zones,workers,r2", adding: .workers)
+      == "workers,zones,r2")
+  // New entries prepend.
+  #expect(RecentFeatures.updated(existing: "", adding: .d1) == "d1")
+  // The list caps at six.
+  #expect(
+    RecentFeatures.updated(existing: "zones,workers,r2,kv,d1,images", adding: .stream)
+      == "stream,zones,workers,r2,kv,d1")
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],
