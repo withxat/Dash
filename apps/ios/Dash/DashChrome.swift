@@ -1148,6 +1148,10 @@ struct DashDangerAction: Identifiable {
   let title: String
   let icon: String
   let message: String
+  /// When set, Confirm stays disabled until the user types this exact string
+  /// — for deletes whose blast radius deserves a name echo (zone, bucket,
+  /// database).
+  let confirmationText: String?
   /// A thrown error keeps the confirmation open and surfaces the message
   /// inline; only a clean return dismisses the tray.
   let perform: () async throws -> Void
@@ -1157,12 +1161,14 @@ struct DashDangerAction: Identifiable {
     title: String,
     icon: String = SolarAsset.trash,
     message: String,
+    confirmationText: String? = nil,
     perform: @escaping () async throws -> Void
   ) {
     self.id = id ?? title
     self.title = title
     self.icon = icon
     self.message = message
+    self.confirmationText = confirmationText
     self.perform = perform
   }
 }
@@ -1179,6 +1185,7 @@ struct DashConfirmableActions: View {
   @State private var pending: DashDangerAction?
   @State private var working = false
   @State private var errorMessage: String?
+  @State private var typedConfirmation = ""
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayDismiss) private var dismiss
 
@@ -1204,6 +1211,7 @@ struct DashConfirmableActions: View {
       ForEach(actions) { action in
         Button {
           errorMessage = nil
+          typedConfirmation = ""
           withAnimation(morphAnimation) { pending = action }
         } label: {
           dangerRow(action)
@@ -1253,6 +1261,10 @@ struct DashConfirmableActions: View {
         .padding(.horizontal, 4)
         .padding(.top, 4)
 
+      if let expected = action.confirmationText {
+        DashFormField(label: "Type \(expected) to confirm", text: $typedConfirmation)
+      }
+
       if let errorMessage {
         DashNotice(kind: .error, message: errorMessage)
       }
@@ -1260,6 +1272,7 @@ struct DashConfirmableActions: View {
       VStack(spacing: 4) {
         Button {
           errorMessage = nil
+          typedConfirmation = ""
           withAnimation(morphAnimation) { pending = nil }
         } label: {
           Text("Cancel")
@@ -1297,11 +1310,17 @@ struct DashConfirmableActions: View {
             .background {
               confirmBackground(action)
             }
+            .opacity(confirmationSatisfied(action) ? 1 : 0.45)
         }
         .buttonStyle(DashPressButtonStyle())
-        .disabled(working)
+        .disabled(working || !confirmationSatisfied(action))
       }
     }
+  }
+
+  private func confirmationSatisfied(_ action: DashDangerAction) -> Bool {
+    guard let expected = action.confirmationText else { return true }
+    return typedConfirmation.trimmingCharacters(in: .whitespacesAndNewlines) == expected
   }
 
   @ViewBuilder

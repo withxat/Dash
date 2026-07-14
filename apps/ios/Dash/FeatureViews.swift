@@ -364,7 +364,8 @@ struct ZoneDetailView: View {
         DashDangerAction(
           title: "Remove zone",
           message:
-            "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare."
+            "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare.",
+          confirmationText: zone?.name
         ) {
           try await deleteZone()
         }

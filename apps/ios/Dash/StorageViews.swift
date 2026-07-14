@@ -183,7 +183,8 @@ struct R2BucketView: View {
         DashDangerAction(
           title: "Delete bucket",
           message:
-            "Permanently delete \(bucket) and everything in it. This cannot be undone."
+            "Permanently delete \(bucket) and everything in it. This cannot be undone.",
+          confirmationText: bucket
         ) {
           try await deleteBucket()
         }
@@ -789,7 +790,8 @@ struct D1ConsoleView: View {
       actions: [
         DashDangerAction(
           title: "Delete database",
-          message: "Permanently delete \(name) and all of its data. This cannot be undone."
+          message: "Permanently delete \(name) and all of its data. This cannot be undone.",
+          confirmationText: name
         ) {
           try await deleteDatabase()
         }
