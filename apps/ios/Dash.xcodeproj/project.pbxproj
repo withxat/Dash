@@ -53,6 +53,7 @@
 		B00000000000000000000109 /* DashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000109 /* DashWidgets.swift */; };
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +123,7 @@
 		F00000000000000000000109 /* DashWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgets.swift; sourceTree = "<group>"; };
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
+		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -242,6 +244,7 @@
 				F00000000000000000000106 /* DashAppIntents.swift */,
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F00000000000000000000108 /* WatchtowerNotifications.swift */,
+				F0000000000000000000010C /* PushRegistration.swift */,
 				F00000000000000000000040 /* LoginGrain.metal */,
 				A00000000000000000000016 /* Resources */,
 				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
@@ -495,6 +498,7 @@
 				B00000000000000000000106 /* DashAppIntents.swift in Sources */,
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
+				B0000000000000000000010C /* PushRegistration.swift in Sources */,
 				B00000000000000000000024 /* LoginGrain.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

@@ -456,6 +456,8 @@ private struct MainTabView: View {
             await model.retryIdentityIfNeeded()
             await model.refreshWatchtowerIfStale()
           }
+          // Idempotent — re-delivers the token if the system rotated it.
+          UIApplication.shared.registerForRemoteNotifications()
         case .background:
           model.scheduleWatchtowerBackgroundRefresh()
         default:

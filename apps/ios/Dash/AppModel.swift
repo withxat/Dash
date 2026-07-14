@@ -43,6 +43,10 @@ final class AppModel {
   /// (cold launch) or before the user is authenticated.
   var pendingRoute: DashRoute?
 
+  /// APNs device token hex, buffered because the system callback can arrive
+  /// before bootstrap finishes (RootWithSplash holds ~800ms).
+  var pendingDeviceToken: String?
+
   private var authSession: ASWebAuthenticationSession?
   private var isRetryingIdentity = false
   private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
@@ -281,6 +285,7 @@ final class AppModel {
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
+    pendingDeviceToken = nil
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     if let url = WatchtowerWidgetSnapshot.containerFileURL {
@@ -387,6 +392,12 @@ final class AppModel {
     user = try await fetchedUser
     accounts = try await fetchedAccounts
     if activeAccount == nil, let first = accounts.first { selectAccount(first) }
+  }
+}
+
+extension AppModel: PushTokenInbox {
+  func receiveDeviceToken(_ token: Data) {
+    pendingDeviceToken = PushRegistration.hexToken(from: token)
   }
 }
 

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UserNotifications
 
 /// Decides which local notifications a Watchtower refresh should fire, by
@@ -76,9 +77,17 @@ enum WatchtowerNotifier {
   }
 
   /// Prompts for authorization; returns whether alerts are allowed.
+  /// On grant, also registers for remote notifications so Account → Alerts
+  /// push can mint a device token (local Watchtower alerts need only the
+  /// authorization; remote registration is idempotent and cheap).
   static func requestAuthorization() async -> Bool {
     let center = UNUserNotificationCenter.current()
     let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+    if granted {
+      await MainActor.run {
+        UIApplication.shared.registerForRemoteNotifications()
+      }
+    }
     return granted
   }
 }

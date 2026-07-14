@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct DashApp: App {
+  @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
   @State private var model: AppModel
 
   init() {
@@ -71,6 +72,7 @@ struct DashApp: App {
       } else {
         RootWithSplash(model: model)
           .tint(DashTheme.brand)
+          .onAppear { pushDelegate.inbox = model }
       }
     }
     .backgroundTask(.appRefresh(AppModel.backgroundRefreshID)) {
