@@ -17,6 +17,7 @@ final class AppModel {
   let tokenStore: KeychainTokenStore
   let client: CloudflareClient
   let featureCache = FeatureDataCache()
+  let avatars = AvatarStore()
   var accounts: [CloudflareAccount] = []
   var activeAccountID: String?
   var authState: AuthenticationState = .loading
@@ -219,6 +220,7 @@ final class AppModel {
     }
     try? await tokenStore.clear()
     featureCache.clear()
+    avatars.clear()
     accounts = []
     user = nil
     activeAccountID = nil

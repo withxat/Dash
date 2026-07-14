@@ -1,5 +1,6 @@
 import CloudflareAPI
 import Testing
+import UIKit
 
 @testable import Dash
 
@@ -255,4 +256,110 @@ import Testing
   #expect(d1QuotedIdentifier("has space") == "\"has space\"")
   #expect(d1QuotedIdentifier("weird\"name") == "\"weird\"\"name\"")
   #expect(d1QuotedIdentifier("a\"b\"c") == "\"a\"\"b\"\"c\"")
+}
+
+// MARK: - AvatarStore
+
+/// Serialized because the mock protocol's handler is a shared static.
+@Suite(.serialized) struct AvatarStoreTests {
+  @MainActor
+  private func makeStore(
+    handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)
+  ) -> AvatarStore {
+    AvatarMockURLProtocol.handler = handler
+    let configuration = URLSessionConfiguration.ephemeral
+    configuration.protocolClasses = [AvatarMockURLProtocol.self]
+    return AvatarStore(session: URLSession(configuration: configuration))
+  }
+
+  @MainActor
+  private func waitForImage(in store: AvatarStore, email: String) async throws -> Bool {
+    for _ in 0..<200 {
+      if store.image(for: email) != nil { return true }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    return false
+  }
+
+  private var pixel: Data {
+    UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).pngData { context in
+      UIColor.orange.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+  }
+
+  @Test @MainActor func singleFlightsAndNormalizesRepeatRequests() async throws {
+    let log = RequestLog()
+    let image = pixel
+    let store = makeStore { _ in
+      _ = log.next()
+      return (200, image)
+    }
+    store.ensureLoaded("i@xat.sh")
+    store.ensureLoaded(" I@XAT.SH ")
+    #expect(try await waitForImage(in: store, email: "i@xat.sh"))
+    store.ensureLoaded("i@xat.sh")
+    #expect(store.image(for: " I@Xat.sh ") != nil)
+    #expect(log.count == 1)
+  }
+
+  @Test @MainActor func treats404AsDefinitiveNoAvatar() async throws {
+    let log = RequestLog()
+    let store = makeStore { _ in
+      _ = log.next()
+      return (404, Data())
+    }
+    store.ensureLoaded("i@xat.sh")
+    for _ in 0..<20 {
+      store.ensureLoaded("i@xat.sh")
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(store.image(for: "i@xat.sh") == nil)
+    #expect(log.count == 1)
+  }
+
+  @Test @MainActor func retriesAfterTransientFailure() async throws {
+    let log = RequestLog()
+    let image = pixel
+    let store = makeStore { _ in
+      if log.next() == 1 { throw URLError(.notConnectedToInternet) }
+      return (200, image)
+    }
+    for _ in 0..<200 {
+      store.ensureLoaded("i@xat.sh")
+      if store.image(for: "i@xat.sh") != nil { break }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(store.image(for: "i@xat.sh") != nil)
+    #expect(log.count == 2)
+  }
+}
+
+private final class RequestLog: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value = 0
+  var count: Int { lock.withLock { value } }
+  func next() -> Int {
+    lock.withLock {
+      value += 1
+      return value
+    }
+  }
+}
+
+private final class AvatarMockURLProtocol: URLProtocol, @unchecked Sendable {
+  nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
+  override class func canInit(with _: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {
+    do {
+      let (status, data) = try Self.handler?(request) ?? (500, Data())
+      let response = HTTPURLResponse(
+        url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: data)
+      client?.urlProtocolDidFinishLoading(self)
+    } catch { client?.urlProtocol(self, didFailWithError: error) }
+  }
+  override func stopLoading() {}
 }
