@@ -1,26 +1,16 @@
 /**
- * Dash OAuth relay.
+ * Dash relay worker.
  *
- * Cloudflare OAuth clients only accept http(s) redirect URIs, but Dash
- * captures the `dash://`
- * custom scheme. This worker is deployed at the registered https redirect URI
- * and converts the OAuth callback into a `dash://` redirect the app captures.
- *
- * Security: the authorization code is one-time, short-lived, and bound to the
- * PKCE code_verifier held only in the app, so neither this relay nor anyone
- * observing the redirect can exchange it. The worker is stateless and logs
- * nothing.
+ * Serves the HTTPS OAuth callback Cloudflare requires, and reserves `/push/*`
+ * for the APNs notification bridge (added in later commits). Stateless: does
+ * not persist authorization state, Cloudflare credentials, or the PKCE
+ * verifier.
  */
 
-// MUST match the native app's capture URI.
-const APP_CALLBACK = 'dash://oauth/callback'
+import { handleOAuth } from './oauth'
 
 export default {
 	async fetch(request: Request): Promise<Response> {
-		if (request.method !== 'GET') {
-			return new Response('Method Not Allowed', { status: 405 })
-		}
-
 		const url = new URL(request.url)
 
 		// Liveness probe — verify the worker is reachable before registering it
@@ -31,16 +21,12 @@ export default {
 			})
 		}
 
-		// Forward the full query string (code, state, iss, …) to the app.
-		const target = `${APP_CALLBACK}${url.search}`
-		return new Response('Redirecting to Dash…', {
-			headers: {
-				// Never cache — a stale redirect must not replay an old code.
-				'cache-control': 'no-store',
-				'content-type': 'text/plain',
-				'location': target,
-			},
-			status: 302,
-		})
+		// Push routes must be claimed before the OAuth catch-all, otherwise
+		// every `/push/*` request would 302 to `dash://`.
+		if (url.pathname.startsWith('/push/')) {
+			return new Response('Not Found', { status: 404 })
+		}
+
+		return handleOAuth(request, url)
 	},
 }
