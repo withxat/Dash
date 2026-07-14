@@ -78,6 +78,50 @@ import UIKit
       == .content(banner: nil))
 }
 
+@Test func pageStateAdvancesAndStopsOnTotals() {
+  var state = DashPageState()
+  #expect(state.nextPage == 1)
+  #expect(!state.canLoadMore)
+
+  // Total-driven: 50 of 120 loaded → more remain, request page 2 next.
+  state.absorb(
+    info: ResultInfo(page: 1, perPage: 50, totalCount: 120, cursor: nil),
+    received: 50, loaded: 50, pageSize: 50)
+  #expect(state.nextPage == 2)
+  #expect(state.totalCount == 120)
+  #expect(state.canLoadMore)
+
+  // Final page: loaded reaches total.
+  state.absorb(
+    info: ResultInfo(page: 3, perPage: 50, totalCount: 120, cursor: nil),
+    received: 20, loaded: 120, pageSize: 50)
+  #expect(state.nextPage == 4)
+  #expect(!state.canLoadMore)
+
+  // Heuristic without result_info: a full page may have a successor.
+  state.reset()
+  state.absorb(info: nil, received: 50, loaded: 50, pageSize: 50)
+  #expect(state.nextPage == 2)
+  #expect(state.canLoadMore)
+  state.absorb(info: nil, received: 12, loaded: 62, pageSize: 50)
+  #expect(!state.canLoadMore)
+}
+
+@Test func pageStateRehydratesFromCachedArrays() {
+  var state = DashPageState()
+  state.rehydrate(loaded: 100, pageSize: 50)
+  #expect(state.nextPage == 3)
+  #expect(state.canLoadMore)
+
+  state.rehydrate(loaded: 62, pageSize: 50)
+  #expect(state.nextPage == 2)
+  #expect(!state.canLoadMore)
+
+  state.rehydrate(loaded: 0, pageSize: 50)
+  #expect(state.nextPage == 1)
+  #expect(!state.canLoadMore)
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

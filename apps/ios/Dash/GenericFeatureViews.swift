@@ -701,6 +701,8 @@ struct GenericResourcesView: View {
   @State private var selected: GenericResource?
   @State private var error: String?
   @State private var loading = true
+  @State private var loadingMore = false
+  @State private var pageInfo: ResultInfo?
   @State private var creates = false
   @State private var deleting = false
   @State private var deleteError: String?
@@ -721,6 +723,16 @@ struct GenericResourcesView: View {
     return capabilities
   }
   private var basePath: String { String(path.split(separator: "?", maxSplits: 1)[0]) }
+
+  /// Pagination stays strictly result_info-driven: the first load never sends
+  /// page params, and Load more appears only when the endpoint reported
+  /// page/per_page/total_count and more rows remain.
+  private var canLoadMore: Bool {
+    guard let info = pageInfo, let total = info.totalCount,
+      info.page != nil, info.perPage != nil
+    else { return false }
+    return resources.count < total
+  }
 
   var body: some View {
     DashFeatureList(
@@ -755,6 +767,14 @@ struct GenericResourcesView: View {
             .buttonStyle(DashPressButtonStyle())
           }
         }
+      }
+      if canLoadMore {
+        DashLoadMoreFooter(
+          loaded: resources.count,
+          total: pageInfo?.totalCount,
+          noun: "resources",
+          isLoading: loadingMore
+        ) { Task { await loadMore() } }
       }
     }
     .navigationTitle(title)
@@ -887,16 +907,44 @@ struct GenericResourcesView: View {
     if resources.isEmpty { loading = true }
     error = nil
     do {
-      let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
-      var query: [String: String?] = [:]
-      if parts.count == 2, let queryItems = URLComponents(string: "?\(parts[1])")?.queryItems {
-        for item in queryItems { query[item.name] = item.value }
-      }
-      resources = try await model.client.listResources(path: parts[0], query: query).items
+      pageInfo = nil
+      let result = try await model.client.listResources(
+        path: basePath, query: embeddedQuery())
+      resources = result.items
+      pageInfo = result.resultInfo
       model.featureCache.set(key, resources)
     } catch {
       self.error = error.dashActionableMessage
     }
     loading = false
+  }
+
+  private func loadMore() async {
+    guard !loadingMore, let info = pageInfo, let page = info.page, let perPage = info.perPage
+    else { return }
+    loadingMore = true
+    defer { loadingMore = false }
+    do {
+      var query = embeddedQuery()
+      query["page"] = String(page + 1)
+      query["per_page"] = String(perPage)
+      let result = try await model.client.listResources(path: basePath, query: query)
+      resources += result.items
+      // A page without result_info ends pagination instead of re-looping it.
+      pageInfo = result.resultInfo
+      model.featureCache.set(FeatureCacheKey.generic(path: path), resources)
+      error = nil
+    } catch {
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func embeddedQuery() -> [String: String?] {
+    let parts = path.split(separator: "?", maxSplits: 1).map(String.init)
+    var query: [String: String?] = [:]
+    if parts.count == 2, let queryItems = URLComponents(string: "?\(parts[1])")?.queryItems {
+      for item in queryItems { query[item.name] = item.value }
+    }
+    return query
   }
 }

@@ -114,11 +114,15 @@ private struct FeatureAccessRequiredView: View {
 }
 
 struct ZonesView: View {
+  static let pageSize = 50
+
   @Environment(AppModel.self) private var model
   @State private var zones: [CloudflareZone] = []
   @State private var search = ""
   @State private var error: String?
   @State private var loading = true
+  @State private var loadingMore = false
+  @State private var pageState = DashPageState()
   @State private var creates = false
   @State private var newName = ""
 
@@ -159,6 +163,15 @@ struct ZonesView: View {
             }
           }
         }
+      }
+      if pageState.canLoadMore {
+        DashLoadMoreFooter(
+          loaded: zones.count,
+          total: pageState.totalCount,
+          noun: "zones",
+          caption: search.isEmpty ? nil : "Searching \(zones.count) loaded zones",
+          isLoading: loadingMore
+        ) { Task { await loadMore() } }
       }
     }
     .toolbar {
@@ -212,6 +225,7 @@ struct ZonesView: View {
     let key = FeatureCacheKey.zones(accountID)
     if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
       zones = cached
+      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
       loading = false
       error = nil
       return
@@ -219,12 +233,36 @@ struct ZonesView: View {
     if zones.isEmpty { loading = true }
     error = nil
     do {
-      zones = try await model.client.listZones(accountID: accountID).items
+      pageState.reset()
+      let page = try await model.client.listZones(
+        accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
+      zones = page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: zones.count,
+        pageSize: Self.pageSize)
       model.featureCache.set(key, zones)
     } catch {
       self.error = error.dashActionableMessage
     }
     loading = false
+  }
+
+  private func loadMore() async {
+    guard let accountID = model.activeAccountID, !loadingMore else { return }
+    loadingMore = true
+    defer { loadingMore = false }
+    do {
+      let page = try await model.client.listZones(
+        accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
+      zones += page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: zones.count,
+        pageSize: Self.pageSize)
+      model.featureCache.set(FeatureCacheKey.zones(accountID), zones)
+      error = nil
+    } catch {
+      self.error = error.dashActionableMessage
+    }
   }
 }
 
@@ -399,6 +437,8 @@ enum ZonePlanTier: Int, Comparable {
 }
 
 struct DNSRecordsView: View {
+  static let pageSize = 100
+
   @Environment(AppModel.self) private var model
   let zoneID: String
   @State private var records: [DNSRecord] = []
@@ -406,6 +446,8 @@ struct DNSRecordsView: View {
   @State private var createsRecord = false
   @State private var search = ""
   @State private var loading = true
+  @State private var loadingMore = false
+  @State private var pageState = DashPageState()
   @State private var error: String?
 
   private var filtered: [DNSRecord] {
@@ -449,6 +491,15 @@ struct DNSRecordsView: View {
           }
         }
       }
+      if pageState.canLoadMore {
+        DashLoadMoreFooter(
+          loaded: records.count,
+          total: pageState.totalCount,
+          noun: "records",
+          caption: search.isEmpty ? nil : "Searching \(records.count) loaded records",
+          isLoading: loadingMore
+        ) { Task { await loadMore() } }
+      }
     }
     .refreshable { await load(force: true) }
     .navigationTitle("DNS")
@@ -483,6 +534,7 @@ struct DNSRecordsView: View {
     let key = FeatureCacheKey.dnsRecords(zoneID)
     if !force, let cached: [DNSRecord] = model.featureCache.get(key) {
       records = cached
+      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
       loading = false
       error = nil
       return
@@ -490,12 +542,36 @@ struct DNSRecordsView: View {
     if records.isEmpty { loading = true }
     error = nil
     do {
-      records = try await model.client.listDNSRecords(zoneID: zoneID).items
+      pageState.reset()
+      let page = try await model.client.listDNSRecords(
+        zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+      records = page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: records.count,
+        pageSize: Self.pageSize)
       model.featureCache.set(key, records)
     } catch {
       self.error = error.dashActionableMessage
     }
     loading = false
+  }
+
+  private func loadMore() async {
+    guard !loadingMore else { return }
+    loadingMore = true
+    defer { loadingMore = false }
+    do {
+      let page = try await model.client.listDNSRecords(
+        zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+      records += page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: records.count,
+        pageSize: Self.pageSize)
+      model.featureCache.set(FeatureCacheKey.dnsRecords(zoneID), records)
+      error = nil
+    } catch {
+      self.error = error.dashActionableMessage
+    }
   }
 }
 

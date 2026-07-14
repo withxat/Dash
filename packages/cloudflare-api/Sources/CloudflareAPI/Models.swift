@@ -89,6 +89,15 @@ public struct ResultInfo: Codable, Hashable, Sendable {
   public let totalCount: Int?
   public let cursor: String?
 
+  public init(
+    page: Int? = nil, perPage: Int? = nil, totalCount: Int? = nil, cursor: String? = nil
+  ) {
+    self.page = page
+    self.perPage = perPage
+    self.totalCount = totalCount
+    self.cursor = cursor
+  }
+
   enum CodingKeys: String, CodingKey {
     case page, cursor
     case perPage = "per_page"
