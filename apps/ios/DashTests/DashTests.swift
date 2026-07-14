@@ -33,6 +33,32 @@ import UIKit
   #expect(!model.selectedScopes.contains("ai-search.metadata_read"))
 }
 
+@Test @MainActor func identityFailuresOnlySignOutOnDefinitive401() {
+  let unauthorized = AppModel.authOutcome(
+    afterIdentityError: CloudflareAPIError.request(status: 401, errors: []))
+  #expect(unauthorized.state == .unauthenticated)
+  #expect(!unauthorized.stale)
+
+  let offline = AppModel.authOutcome(
+    afterIdentityError: CloudflareAPIError.transport("offline"))
+  #expect(offline.state == .authenticated)
+  #expect(offline.stale)
+
+  let serverError = AppModel.authOutcome(
+    afterIdentityError: CloudflareAPIError.request(status: 500, errors: []))
+  #expect(serverError.state == .authenticated)
+  #expect(serverError.stale)
+
+  let oauthOutage = AppModel.authOutcome(
+    afterIdentityError: CloudflareAPIError.oauth("token endpoint unavailable"))
+  #expect(oauthOutage.state == .authenticated)
+  #expect(oauthOutage.stale)
+
+  let unknown = AppModel.authOutcome(afterIdentityError: URLError(.timedOut))
+  #expect(unknown.state == .authenticated)
+  #expect(unknown.stale)
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

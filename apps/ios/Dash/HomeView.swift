@@ -4,6 +4,7 @@ struct HomeView: View {
   @AppStorage("dash.home_shortcuts") private var shortcutData = "zones,workers,r2,kv"
   @AppStorage("dash.recent_items") private var recentData = ""
   @Environment(\.showsEditShortcuts) private var showsEditShortcuts
+  @Environment(AppModel.self) private var model
 
   private var shortcuts: [FeatureID] {
     shortcutData.split(separator: ",").compactMap { FeatureID(rawValue: String($0)) }
@@ -15,6 +16,11 @@ struct HomeView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
+        if model.identityStale {
+          DashNotice(
+            kind: .warning,
+            message: "Offline — showing cached data. Reconnect to refresh your account.")
+        }
         FeatureSection(
           title: "Shortcuts", items: shortcuts, actionTitle: "Edit", actionIcon: SolarAsset.pen
         ) {

@@ -393,6 +393,8 @@ private struct SearchNavigationStack: View {
 }
 
 private struct MainTabView: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.scenePhase) private var scenePhase
   @State private var selection: AppTab = .home
   @State private var homePath = NavigationPath()
   @State private var itemsPath = NavigationPath()
@@ -431,6 +433,10 @@ private struct MainTabView: View {
   var body: some View {
     tabContainer
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTrayPresented = $0 }
+      .onChange(of: scenePhase) { _, phase in
+        guard phase == .active else { return }
+        Task { await model.retryIdentityIfNeeded() }
+      }
       .onChange(of: showsProfile) { _, presented in
         if presented {
           cancelTabBarHold()

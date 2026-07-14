@@ -6,6 +6,9 @@ extension Error {
     if let apiError = self as? CloudflareAPIError, apiError.isUnauthorized {
       return "Your Cloudflare session is no longer valid. Sign in again."
     }
+    if let apiError = self as? CloudflareAPIError, apiError.isRateLimited {
+      return "Rate limited by Cloudflare — wait a moment and try again."
+    }
     if let apiError = self as? CloudflareAPIError, apiError.isForbidden {
       return (apiError.errorDescription ?? "Permission denied")
         + "\n\nThe granted scopes cover this module, so the account may not include this product or resource."

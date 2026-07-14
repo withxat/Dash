@@ -26,8 +26,12 @@ final class AppModel {
   var grantedScopes: Set<String>?
   var selectedScopes = Set(CloudflareScopes.published)
   var user: CloudflareUser?
+  /// True while the session is trusted but the identity fetch failed
+  /// (offline, Cloudflare outage). Cleared by the next successful retry.
+  var identityStale = false
 
   private var authSession: ASWebAuthenticationSession?
+  private var isRetryingIdentity = false
 
   init(configuration: AppConfiguration = .current) {
     self.configuration = configuration
@@ -69,11 +73,45 @@ final class AppModel {
         authState = .unauthenticated
         return
       }
-      grantedScopes = try await tokenStore.getGrantedScopes()
+    } catch {
+      authState = .unauthenticated
+      return
+    }
+    grantedScopes = try? await tokenStore.getGrantedScopes()
+    do {
       try await loadIdentity()
       authState = .authenticated
     } catch {
-      authState = .unauthenticated
+      let outcome = Self.authOutcome(afterIdentityError: error)
+      identityStale = outcome.stale
+      authState = outcome.state
+    }
+  }
+
+  /// Only a definitive 401 proves the session is dead. Anything else —
+  /// offline, a Cloudflare outage, a failed token-endpoint POST — keeps the
+  /// session alive with stale identity; the next foreground retry either
+  /// heals it or hits the 401 that signs out for real.
+  static func authOutcome(
+    afterIdentityError error: Error
+  ) -> (state: AuthenticationState, stale: Bool) {
+    if let apiError = error as? CloudflareAPIError, apiError.isUnauthorized {
+      return (.unauthenticated, false)
+    }
+    return (.authenticated, true)
+  }
+
+  func retryIdentityIfNeeded() async {
+    guard identityStale, !isRetryingIdentity else { return }
+    isRetryingIdentity = true
+    defer { isRetryingIdentity = false }
+    do {
+      try await loadIdentity()
+      identityStale = false
+    } catch {
+      if (error as? CloudflareAPIError)?.isUnauthorized == true {
+        await signOut()
+      }
     }
   }
 
@@ -226,6 +264,7 @@ final class AppModel {
     activeAccountID = nil
     grantedScopes = nil
     selectedScopes = Set(CloudflareScopes.published)
+    identityStale = false
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     authState = .unauthenticated
   }
