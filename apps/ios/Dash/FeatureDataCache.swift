@@ -53,6 +53,13 @@ struct WorkerDetailSnapshot: Sendable {
   var tag: String?
 }
 
+/// Accumulated cursor-paginated rows plus the cursor to continue from, so a
+/// revisited screen keeps both its rows and its Load more button.
+struct CursorPageSnapshot<Item: Sendable>: Sendable {
+  var items: [Item]
+  var cursor: String?
+}
+
 @MainActor
 @Observable
 final class FeatureDataCache {

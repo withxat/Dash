@@ -101,16 +101,20 @@ struct R2BucketView: View {
   @Environment(\.dismiss) private var dismiss
   let bucket: String
   @State private var objects: [R2Object] = []
+  @State private var cursor: String?
   @State private var prefix = ""
   @State private var error: String?
   // First load only — `.task(id: prefix)` reloads per keystroke, and
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
+  @State private var loadingMore = false
   @State private var importsFile = false
   @State private var showsMore = false
   @State private var selectedObject: R2Object?
   @State private var deletingObject = false
   @State private var deleteError: String?
+
+  private var canLoadMore: Bool { cursor?.isEmpty == false }
 
   var body: some View {
     DashFeatureList(
@@ -148,6 +152,11 @@ struct R2BucketView: View {
             }
             .buttonStyle(DashPressButtonStyle())
           }
+        }
+      }
+      if canLoadMore {
+        DashLoadMoreFooter(loaded: objects.count, noun: "objects", isLoading: loadingMore) {
+          Task { await loadMore() }
         }
       }
     }
@@ -222,20 +231,38 @@ struct R2BucketView: View {
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
     let key = FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix)
-    if !force, let cached: [R2Object] = model.featureCache.get(key) {
-      objects = cached
+    if !force, let cached: CursorPageSnapshot<R2Object> = model.featureCache.get(key) {
+      objects = cached.items
+      cursor = cached.cursor
       error = nil
       loading = false
       return
     }
     do {
-      objects = try await model.client.listR2Objects(
-        accountID: id, bucket: bucket, prefix: prefix.nilIfEmpty
-      ).items
-      model.featureCache.set(key, objects)
+      let page = try await model.client.listR2Objects(
+        accountID: id, bucket: bucket, prefix: prefix.nilIfEmpty)
+      objects = page.items
+      cursor = page.cursor
+      model.featureCache.set(key, CursorPageSnapshot(items: objects, cursor: cursor))
       error = nil
     } catch { self.error = error.dashActionableMessage }
     loading = false
+  }
+
+  private func loadMore() async {
+    guard let id = model.activeAccountID, canLoadMore, !loadingMore else { return }
+    loadingMore = true
+    defer { loadingMore = false }
+    do {
+      let page = try await model.client.listR2Objects(
+        accountID: id, bucket: bucket, cursor: cursor, prefix: prefix.nilIfEmpty)
+      objects += page.items
+      cursor = page.cursor
+      model.featureCache.set(
+        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix),
+        CursorPageSnapshot(items: objects, cursor: cursor))
+      error = nil
+    } catch { self.error = error.dashActionableMessage }
   }
   private func upload(_ url: URL) async {
     guard let id = model.activeAccountID else { return }
@@ -369,14 +396,18 @@ struct KVNamespaceView: View {
   @Environment(\.dismiss) private var dismissScreen
   let namespaceID: String
   @State private var keys: [KVKey] = []
+  @State private var cursor: String?
   @State private var prefix = ""
   @State private var selected: KVKey?
   @State private var error: String?
   // First load only — `.task(id: prefix)` reloads per keystroke, and
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
+  @State private var loadingMore = false
   @State private var creates = false
   @State private var showsMore = false
+
+  private var canLoadMore: Bool { cursor?.isEmpty == false }
 
   var body: some View {
     DashFeatureList(
@@ -405,6 +436,11 @@ struct KVNamespaceView: View {
             }
             .buttonStyle(DashPressButtonStyle())
           }
+        }
+      }
+      if canLoadMore {
+        DashLoadMoreFooter(loaded: keys.count, noun: "keys", isLoading: loadingMore) {
+          Task { await loadMore() }
         }
       }
     }
@@ -467,20 +503,38 @@ struct KVNamespaceView: View {
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
     let key = FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix)
-    if !force, let cached: [KVKey] = model.featureCache.get(key) {
-      keys = cached
+    if !force, let cached: CursorPageSnapshot<KVKey> = model.featureCache.get(key) {
+      keys = cached.items
+      cursor = cached.cursor
       error = nil
       loading = false
       return
     }
     do {
-      keys = try await model.client.listKVKeys(
-        accountID: id, namespaceID: namespaceID, prefix: prefix.nilIfEmpty
-      ).items
-      model.featureCache.set(key, keys)
+      let page = try await model.client.listKVKeys(
+        accountID: id, namespaceID: namespaceID, prefix: prefix.nilIfEmpty)
+      keys = page.items
+      cursor = page.cursor
+      model.featureCache.set(key, CursorPageSnapshot(items: keys, cursor: cursor))
       error = nil
     } catch { self.error = error.dashActionableMessage }
     loading = false
+  }
+
+  private func loadMore() async {
+    guard let id = model.activeAccountID, canLoadMore, !loadingMore else { return }
+    loadingMore = true
+    defer { loadingMore = false }
+    do {
+      let page = try await model.client.listKVKeys(
+        accountID: id, namespaceID: namespaceID, cursor: cursor, prefix: prefix.nilIfEmpty)
+      keys += page.items
+      cursor = page.cursor
+      model.featureCache.set(
+        FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix),
+        CursorPageSnapshot(items: keys, cursor: cursor))
+      error = nil
+    } catch { self.error = error.dashActionableMessage }
   }
 }
 
