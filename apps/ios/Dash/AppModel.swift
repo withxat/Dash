@@ -271,6 +271,22 @@ final class AppModel {
 
   func signOut() async {
     isAuthenticating = false
+
+    // Push webhooks live in the user's Cloudflare accounts — delete them
+    // before revoking the token, or the client can no longer authenticate.
+    let pushAccountIDs = UserDefaults.standard.dictionaryRepresentation().keys.compactMap {
+      key -> String? in
+      guard key.hasPrefix("dash.push.webhook_id.") else { return nil }
+      return String(key.dropFirst("dash.push.webhook_id.".count))
+    }
+    for accountID in pushAccountIDs {
+      try? await PushRegistrationService.disable(accountID: accountID, client: client)
+    }
+    UIApplication.shared.unregisterForRemoteNotifications()
+    PushRegistrationService.clearAllStoredWebhookIDs()
+    // Watchtower's local "Notify on new issues" preference is intentionally
+    // kept — it has no server-side side effects.
+
     if let token = try? await tokenStore.getAccessToken() {
       try? await OAuth.revoke(clientID: configuration.clientID, token: token)
     }
