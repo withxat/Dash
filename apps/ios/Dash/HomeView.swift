@@ -3,6 +3,7 @@ import SwiftUI
 struct HomeView: View {
   @AppStorage("dash.home_shortcuts") private var shortcutData = "zones,workers,r2,kv"
   @AppStorage("dash.recent_items") private var recentData = ""
+  @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @Environment(\.showsEditShortcuts) private var showsEditShortcuts
   @Environment(AppModel.self) private var model
 
@@ -11,6 +12,9 @@ struct HomeView: View {
   }
   private var recent: [FeatureID] {
     recentData.split(separator: ",").compactMap { FeatureID(rawValue: String($0)) }
+  }
+  private var pinnedZones: [PinnedZone] {
+    PinnedZones.decode(pinnedZoneData).filter { $0.accountID == model.activeAccountID }
   }
 
   var body: some View {
@@ -25,6 +29,18 @@ struct HomeView: View {
           title: "Shortcuts", items: shortcuts, actionTitle: "Edit", actionIcon: SolarAsset.pen
         ) {
           showsEditShortcuts.wrappedValue = true
+        }
+        if !pinnedZones.isEmpty {
+          DashListGroup(title: "Pinned zones") {
+            ForEach(Array(pinnedZones.enumerated()), id: \.element) { index, pin in
+              DashListGroupLink(value: .zone(pin.zoneID)) {
+                DashListRow(title: pin.name, icon: SolarAsset.pin)
+              }
+              if index < pinnedZones.count - 1 {
+                DashListGroupDivider()
+              }
+            }
+          }
         }
         FeatureSection(
           title: "Frequently used",

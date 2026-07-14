@@ -269,10 +269,13 @@ struct ZonesView: View {
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   let zoneID: String
   @State private var zone: CloudflareZone?
   @State private var error: String?
   @State private var showsMore = false
+
+  private var isPinned: Bool { PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID) }
 
   private let tools: [ZoneTool] = [
     ZoneTool(title: "DNS", icon: SolarAsset.globus, endpoint: "dns"),
@@ -353,6 +356,14 @@ struct ZoneDetailView: View {
     .navigationBarTitleDisplayMode(.inline)
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
+        DashToolbarIconButton(
+          asset: isPinned ? SolarAsset.pinFilled : SolarAsset.pin,
+          accessibilityLabel: isPinned ? "Unpin zone" : "Pin zone"
+        ) { togglePin() }
+        .disabled(zone == nil)
+      }
+      .dashSeparateToolbarBackground()
+      ToolbarItem(placement: .topBarTrailing) {
         DashMoreButton(isPresented: $showsMore)
       }
       .dashSeparateToolbarBackground()
@@ -372,6 +383,16 @@ struct ZoneDetailView: View {
       ]
     )
     .refreshable { await load(force: true) }.task { await load() }
+  }
+
+  private func togglePin() {
+    guard let zone, let accountID = model.activeAccountID else { return }
+    withAnimation(DashTheme.Motion.quick) {
+      pinnedZoneData = PinnedZones.toggled(
+        pinnedZoneData,
+        pin: PinnedZone(accountID: accountID, zoneID: zoneID, name: zone.name))
+    }
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
   }
 
   private func deleteZone() async throws {

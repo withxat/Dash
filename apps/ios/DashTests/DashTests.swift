@@ -154,6 +154,30 @@ import UIKit
       == "stream,zones,workers,r2,kv,d1")
 }
 
+@Test func pinnedZonesRoundTripToggleAndAccountFiltering() {
+  let a = PinnedZone(accountID: "acc1", zoneID: "z1", name: "example.com")
+  let b = PinnedZone(accountID: "acc2", zoneID: "z2", name: "xat.sh")
+
+  // Encode/decode round-trip preserves order and fields.
+  let encoded = PinnedZones.encode([a, b])
+  #expect(encoded == "acc1|z1|example.com,acc2|z2|xat.sh")
+  #expect(PinnedZones.decode(encoded) == [a, b])
+
+  // Toggle adds when absent, removes when present.
+  let added = PinnedZones.toggled("", pin: a)
+  #expect(PinnedZones.isPinned(added, zoneID: "z1"))
+  let removed = PinnedZones.toggled(encoded, pin: a)
+  #expect(!PinnedZones.isPinned(removed, zoneID: "z1"))
+  #expect(PinnedZones.decode(removed) == [b])
+
+  // Malformed entries are dropped, not crashed on.
+  #expect(PinnedZones.decode("garbage,acc|only-two") == [])
+
+  // Account filtering keeps other accounts' pins invisible.
+  let mine = PinnedZones.decode(encoded).filter { $0.accountID == "acc1" }
+  #expect(mine == [a])
+}
+
 @Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
   let scopes = AppModel.incrementalScopes(
     granted: ["zone.read"],

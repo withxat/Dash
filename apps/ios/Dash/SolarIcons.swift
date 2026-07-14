@@ -21,6 +21,8 @@ enum SolarAsset {
   static let database = "SolarDatabaseOutline"
   static let box = "SolarBoxMinimalisticOutline"
   static let pinList = "SolarPinListOutline"
+  static let pin = "SolarPinOutline"
+  static let pinFilled = "SolarPinBold"
   static let inbox = "SolarInboxOutline"
   static let gallery = "SolarGalleryOutline"
   static let video = "SolarVideoLibraryOutline"
