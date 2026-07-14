@@ -296,16 +296,17 @@ struct StreamView: View {
         if let uploadError {
           DashNotice(kind: .error, message: uploadError)
         }
-        PhotosPicker(selection: $pickedItem, matching: .videos) {
-          DashListCard {
-            DashListRow(
-              title: "Upload from library",
-              subtitle: "Basic upload, files up to 200 MB",
-              icon: SolarAsset.upload
-            )
-          }
+        // Built outside the picker's label closure, which isn't
+        // main-actor-isolated and so can't construct the card itself.
+        let pickerLabel = DashListCard {
+          DashListRow(
+            title: "Upload from library",
+            subtitle: "Basic upload, files up to 200 MB",
+            icon: SolarAsset.upload
+          )
         }
-        .disabled(uploading)
+        PhotosPicker(selection: $pickedItem, matching: .videos) { pickerLabel }
+          .disabled(uploading)
         DashFormField(label: "…or import from URL", text: $copyURL, keyboard: .URL)
         DashFormField(label: "Name (optional)", text: $copyName)
         DashTrayPillButton(

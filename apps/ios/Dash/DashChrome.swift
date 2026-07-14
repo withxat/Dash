@@ -1128,7 +1128,7 @@ extension AnyTransition {
   /// Softer cross-fade for morphing tray content: fades *and* blurs, so the
   /// before/after content dissolves rather than hard-swapping under the
   /// matchedGeometryEffect hero.
-  static var dashMorph: AnyTransition {
+  @MainActor static var dashMorph: AnyTransition {
     if UIAccessibility.isReduceMotionEnabled { return .opacity }
     return .opacity.combined(
       with: .modifier(

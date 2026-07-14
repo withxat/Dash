@@ -42,19 +42,19 @@ enum DashTheme {
     static let reduced = Animation.easeOut(duration: 0.12)
     /// Deliberate hero morph for matchedGeometryEffect tray transitions — springy
     /// and slower than the micro-interaction tokens so the shape change reads.
-    static var morph: Animation {
+    @MainActor static var morph: Animation {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.85)
     }
     /// Tray present/dismiss — the card slide and dim fade. Slower and eased in and
     /// out so the sheet arrives and leaves gently rather than snapping.
-    static var sheet: Animation {
+    @MainActor static var sheet: Animation {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.timingCurve(0.42, 0, 0.58, 1, duration: 0.34)
     }
     /// Tray reveal — half-height slide, fade, and blur share one strongly
     /// decelerating curve so the short travel still reads as a full open.
-    static var trayOpen: Animation {
+    @MainActor static var trayOpen: Animation {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.4)
     }
@@ -62,7 +62,7 @@ enum DashTheme {
     /// spends its tail at near-zero opacity, where the card fill blends away
     /// before the text does and the content seems to linger. Accelerating,
     /// everything reaches zero together and the close reads as one motion.
-    static var trayClose: Animation {
+    @MainActor static var trayClose: Animation {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.timingCurve(0.64, 0, 0.78, 0, duration: 0.3)
     }
@@ -1046,11 +1046,15 @@ struct DashMenuRow: View {
   var caption: String?
   let options: [String]
   let onSelect: (String) -> Void
+  /// Local mirror of `value` so the picker gets a native binding. Building a
+  /// `Binding(get:set:)` from `onSelect` needs a Sendable conversion that
+  /// warns, and isolating the setter crashes the Xcode 26.4.1 frontend.
+  @State private var selection = ""
 
   var body: some View {
     DashControlSurface(title: title) {
       Menu {
-        Picker(title, selection: Binding(get: { value }, set: onSelect)) {
+        Picker(title, selection: $selection) {
           ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
         }
       } label: {
@@ -1068,6 +1072,15 @@ struct DashMenuRow: View {
       .buttonStyle(DashPressButtonStyle())
     }
     .dashControlCaption(caption)
+    .onAppear { selection = value }
+    .onChange(of: value) { _, newValue in selection = newValue }
+    .onChange(of: selection) { _, chosen in
+      guard chosen != value else { return }
+      onSelect(chosen)
+      // Snap back to the source of truth: a successful save re-syncs through
+      // `value`, and a failed one leaves the same option pickable again.
+      selection = value
+    }
   }
 }
 
