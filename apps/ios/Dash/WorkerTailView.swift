@@ -40,21 +40,28 @@ struct WorkerTailView: View {
         .padding(.horizontal, DashTheme.Spacing.screen)
         .padding(.vertical, 10)
       ScrollViewReader { proxy in
-        List(events) { event in
-          eventRow(event)
-            .id(event.id)
-            .listRowBackground(DashTheme.canvas)
-            .listRowSeparatorTint(DashTheme.line)
+        ScrollView {
+          LazyVStack(alignment: .leading, spacing: 0) {
+            if events.isEmpty, status == .live {
+              DashEmptyState(
+                icon: SolarAsset.bolt,
+                title: "Waiting for events",
+                message: "Hit the Worker to see requests stream in."
+              )
+            } else {
+              ForEach(events) { event in
+                WorkerTailEventRow(event: event)
+                  .id(event.id)
+                DashListGroupDivider()
+                  .padding(.horizontal, DashTheme.Spacing.screen)
+              }
+            }
+          }
+          .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .overlay {
-          if events.isEmpty, status == .live {
-            DashEmptyState(
-              icon: SolarAsset.bolt,
-              title: "Waiting for events",
-              message: "Hit the Worker to see requests stream in."
-            )
+          if events.isEmpty, status == .connecting {
+            DashLoadingRing(color: DashTheme.brand)
           }
         }
         .onChange(of: events.last?.id) { _, id in
@@ -106,35 +113,6 @@ struct WorkerTailView: View {
         DashNotice(kind: .error, message: message)
         DashPillButton(title: "Try again") { restart() }
       }
-    }
-  }
-
-  private func eventRow(_ event: WorkerTailEvent) -> some View {
-    VStack(alignment: .leading, spacing: 3) {
-      HStack(spacing: 8) {
-        if let timestamp = event.timestamp {
-          Text(timestamp, format: .dateTime.hour().minute().second())
-            .foregroundStyle(DashTheme.placeholder)
-        }
-        Text(event.summary)
-          .foregroundStyle(outcomeColor(event.outcome))
-          .lineLimit(2)
-      }
-      ForEach(Array(event.lines.enumerated()), id: \.offset) { _, line in
-        Text(line)
-          .foregroundStyle(DashTheme.subtle)
-          .lineLimit(6)
-      }
-    }
-    .font(.system(size: 12, design: .monospaced))
-    .padding(.vertical, 2)
-  }
-
-  private func outcomeColor(_ outcome: String?) -> Color {
-    switch outcome {
-    case "ok", nil: DashTheme.text
-    case "canceled": DashTheme.warning
-    default: DashTheme.danger
     }
   }
 
@@ -198,5 +176,48 @@ struct WorkerTailView: View {
       }
       return try await model.client.startWorkerTail(accountID: accountID, scriptName: name)
     }
+  }
+}
+
+struct WorkerTailEventRow: View {
+  let event: WorkerTailEvent
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      HStack(spacing: 8) {
+        if let timestamp = event.timestamp {
+          Text(timestamp, format: .dateTime.hour().minute().second())
+            .foregroundStyle(DashTheme.placeholder)
+        }
+        Text(event.summary)
+          .foregroundStyle(Self.outcomeColor(event.outcome))
+          .lineLimit(2)
+      }
+      ForEach(Array(event.lines.enumerated()), id: \.offset) { _, line in
+        Text(line)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(6)
+      }
+    }
+    .dashTextStyle(.code)
+    .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.vertical, 10)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(Self.accessibilityLabel(for: event))
+  }
+
+  static func outcomeColor(_ outcome: String?) -> Color {
+    switch outcome {
+    case "ok", nil: DashTheme.text
+    case "canceled": DashTheme.warning
+    default: DashTheme.danger
+    }
+  }
+
+  static func accessibilityLabel(for event: WorkerTailEvent) -> String {
+    let lines = event.lines.prefix(2).joined(separator: ", ")
+    if lines.isEmpty { return event.summary }
+    return "\(event.summary). \(lines)"
   }
 }

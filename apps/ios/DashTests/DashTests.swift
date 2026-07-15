@@ -531,6 +531,28 @@ import UIKit
   #expect(D1SQL.destructiveKeyword(in: "SELECT 1;") == nil)
 }
 
+@Test func apiExplorerFilteringAndRequestDraftHelpers() {
+  let allProducts = APIExplorerFiltering.products(matching: "")
+  #expect(!allProducts.isEmpty)
+  let narrowed = APIExplorerFiltering.products(matching: "zzzzzz-no-match")
+  #expect(narrowed.isEmpty)
+
+  let endpoints = APIExplorerFiltering.endpoints(matching: "")
+  #expect(!endpoints.isEmpty)
+  #expect(APIRequestDraft.shouldConfirm(isMutation: true))
+  #expect(!APIRequestDraft.shouldConfirm(isMutation: false))
+  #expect(
+    APIRequestDraft.truncatedResponse(String(repeating: "a", count: 10), limit: 5).contains(
+      "truncated"))
+}
+
+@Test func workerTailEventRowAccessibilityIncludesSummary() {
+  let event = WorkerTailEvent(
+    timestamp: nil, outcome: "ok", summary: "GET /", lines: ["hello"])
+  #expect(WorkerTailEventRow.accessibilityLabel(for: event).contains("GET /"))
+  #expect(WorkerTailEventRow.outcomeColor("exception") == DashTheme.danger)
+}
+
 @Test func watchtowerNotificationPlannerDiffsSnapshots() {
   func snapshot(issues: Int, critical: [String], warning: [String] = [])
     -> WatchtowerWidgetSnapshot
