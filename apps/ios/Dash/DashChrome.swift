@@ -120,38 +120,49 @@ enum TrayDragOutcome: Equatable, Sendable {
 }
 
 enum TrayDragDecision {
-  /// Content tray: dismiss on distance or projected end past threshold, or a
-  /// strong downward fling. Settle otherwise.
+  /// Content tray: a deliberate pull can dismiss on distance, while a fling
+  /// must first travel far enough to establish downward intent. This keeps a
+  /// tiny, fast wobble from being amplified into a dismissal by SwiftUI's
+  /// projected endpoint.
   static func content(
     translation: CGFloat,
     predictedEndTranslation: CGFloat,
     distanceThreshold: CGFloat = 120,
     projectedThreshold: CGFloat = 160,
-    velocityThreshold: CGFloat = 900
+    minimumFlingDistance: CGFloat = 32
   ) -> TrayDragOutcome {
-    let velocity = predictedEndTranslation - translation
-    if translation > distanceThreshold
-      || predictedEndTranslation > projectedThreshold
-      || velocity > velocityThreshold
-    {
+    let hasDownwardMomentum = predictedEndTranslation > translation
+    let isDeliberateFling =
+      translation >= minimumFlingDistance
+      && predictedEndTranslation > projectedThreshold
+      && hasDownwardMomentum
+    if translation > distanceThreshold || isDeliberateFling {
       return .dismiss
     }
     return .settle
   }
 
-  /// Expandable tray: dismiss when the projected top passes the floating detent
-  /// by a fraction of the detent span; otherwise snap to the nearer detent.
+  /// Expandable tray: projection chooses a detent, but dismissal also requires
+  /// real downward travel. From the expanded detent the finger must cross the
+  /// floating detent before it can dismiss, so one small flick advances at most
+  /// one resting state.
   static func expandable(
     baseTop: CGFloat,
+    translation: CGFloat? = nil,
     predictedEndTranslation: CGFloat,
     expandedTop: CGFloat,
     floatingTop: CGFloat,
-    dismissPastFloatingFraction: CGFloat = 0.4
+    dismissPastFloatingFraction: CGFloat = 0.4,
+    minimumDismissPull: CGFloat? = nil
   ) -> TrayDragOutcome {
+    let detentSpan = floatingTop - expandedTop
+    let actualTranslation = translation ?? predictedEndTranslation
     let predictedTop = baseTop + predictedEndTranslation
-    let dismissThreshold =
-      floatingTop + (floatingTop - expandedTop) * dismissPastFloatingFraction
-    if predictedTop > dismissThreshold {
+    let dismissThreshold = floatingTop + detentSpan * dismissPastFloatingFraction
+    let intentDistance = minimumDismissPull ?? min(max(detentSpan * 0.18, 56), 72)
+    let distanceToFloating = max(0, floatingTop - baseTop)
+    let crossedDismissIntent = actualTranslation > distanceToFloating + intentDistance
+    if crossedDismissIntent && predictedTop > dismissThreshold {
       return .dismiss
     }
     let snapExpanded = abs(predictedTop - expandedTop) < abs(predictedTop - floatingTop)
@@ -165,6 +176,15 @@ enum TrayDragDecision {
     guard cardTop < expandedTop else { return cardTop }
     return expandedTop - (expandedTop - cardTop) * factor
   }
+}
+
+/// Tray motion is intentionally split by job: presentation settles without a
+/// bounce, while a finger-driven release gets a little elasticity. Keeping the
+/// two separate avoids making programmatic opens feel toy-like.
+private enum DashTrayMotion {
+  static let present = Animation.spring(response: 0.42, dampingFraction: 0.94, blendDuration: 0.12)
+  static let release = Animation.spring(response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
+  static let dismiss = Animation.spring(response: 0.34, dampingFraction: 0.96, blendDuration: 0.08)
 }
 
 /// Shared header (title + close, optional grab bar and trailing action) for both
@@ -271,12 +291,15 @@ private struct DashCustomSheet<Content: View>: View {
         .padding(.horizontal, DashTheme.Sheet.floatingMargin)
         .padding(.bottom, bottomLift(proxy))
         // Always laid out so it moves as one piece; bottom-pinned. The reveal
-        // travels half the card's height while opacity and blur carry the rest,
-        // so the short slide reads as a full open.
+        // uses a bounded fraction of the card height while opacity, blur, and
+        // scale carry the rest, so tall trays never shoot in from far away.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .offset(y: reduceMotion ? drag : (shown ? drag : revealOffset))
+        .offset(
+          y: reduceMotion ? drag : (shown ? drag : max(revealOffset, drag + 48))
+        )
+        .scaleEffect(reduceMotion || shown ? 1 : 0.985, anchor: .bottom)
         .opacity(shown ? 1 : 0)
-        .blur(radius: reduceMotion ? 0 : (shown ? 0 : 2))
+        .blur(radius: reduceMotion ? 0 : (shown ? 0 : 4))
       }
       .ignoresSafeArea(.keyboard)
     }
@@ -302,15 +325,17 @@ private struct DashCustomSheet<Content: View>: View {
     }
     .presentationBackground(.clear)
     .onAppear {
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.trayOpen) {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present) {
         shown = true
       }
     }
   }
 
-  /// Half the measured card height — the reveal's travel distance; fade and blur
-  /// cover the rest of the way, so the card never has to start fully off-screen.
-  private var revealOffset: CGFloat { (cardHeight > 0 ? cardHeight : 400) * 0.5 }
+  /// A bounded travel distance keeps tall trays from shooting through hundreds
+  /// of points. Fade, blur, and a tiny bottom-anchored scale carry the rest.
+  private var revealOffset: CGFloat {
+    min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
+  }
 
   /// How far to lift the card above the keyboard, in the GeometryReader's space.
   /// `keyboardHeight` is measured from the window bottom (home indicator
@@ -338,10 +363,10 @@ private struct DashCustomSheet<Content: View>: View {
         onDismiss()
       }
     } else {
-      withAnimation(DashTheme.Motion.trayClose) {
+      withAnimation(DashTrayMotion.dismiss) {
         shown = false
-        drag = 0
       } completion: {
+        drag = 0
         onDismiss()
       }
     }
@@ -367,8 +392,7 @@ private struct DashCustomSheet<Content: View>: View {
           if reduceMotion {
             drag = 0
           } else {
-            // Settling back to rest is an entrance-like motion — decelerate.
-            withAnimation(DashTheme.Motion.trayOpen) { drag = 0 }
+            withAnimation(DashTrayMotion.release) { drag = 0 }
           }
         }
       }
@@ -418,9 +442,10 @@ private struct DashExpandableSheet<Content: View>: View {
         let metrics = metrics(in: proxy)
         card(metrics)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-          .offset(y: reduceMotion ? 0 : (shown ? 0 : (proxy.size.height - metrics.cardTop) * 0.5))
+          .offset(y: reduceMotion ? 0 : (shown ? 0 : revealOffset(for: metrics)))
+          .scaleEffect(reduceMotion || shown ? 1 : 0.985, anchor: .bottom)
           .opacity(shown ? 1 : 0)
-          .blur(radius: reduceMotion ? 0 : (shown ? 0 : 2))
+          .blur(radius: reduceMotion ? 0 : (shown ? 0 : 4))
       }
       .ignoresSafeArea(edges: .bottom)
     }
@@ -429,10 +454,14 @@ private struct DashExpandableSheet<Content: View>: View {
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .presentationBackground(.clear)
     .onAppear {
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.trayOpen) {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present) {
         shown = true
       }
     }
+  }
+
+  private func revealOffset(for metrics: Metrics) -> CGFloat {
+    min(max((metrics.height - metrics.cardTop) * 0.22, 96), 180)
   }
 
   private func card(_ metrics: Metrics) -> some View {
@@ -500,6 +529,7 @@ private struct DashExpandableSheet<Content: View>: View {
         let baseTop = expanded ? metrics.expandedTop : metrics.floatingTop
         switch TrayDragDecision.expandable(
           baseTop: baseTop,
+          translation: value.translation.height,
           predictedEndTranslation: value.predictedEndTranslation.height,
           expandedTop: metrics.expandedTop,
           floatingTop: metrics.floatingTop
@@ -511,7 +541,7 @@ private struct DashExpandableSheet<Content: View>: View {
             expanded = snapExpanded
             drag = 0
           } else {
-            withAnimation(DashTheme.Motion.morph) {
+            withAnimation(DashTrayMotion.release) {
               expanded = snapExpanded
               drag = 0
             }
@@ -520,7 +550,7 @@ private struct DashExpandableSheet<Content: View>: View {
           if reduceMotion {
             drag = 0
           } else {
-            withAnimation(DashTheme.Motion.morph) { drag = 0 }
+            withAnimation(DashTrayMotion.release) { drag = 0 }
           }
         }
       }
@@ -535,10 +565,10 @@ private struct DashExpandableSheet<Content: View>: View {
         onDismiss()
       }
     } else {
-      withAnimation(DashTheme.Motion.trayClose) {
+      withAnimation(DashTrayMotion.dismiss) {
         shown = false
-        drag = 0
       } completion: {
+        drag = 0
         onDismiss()
       }
     }
