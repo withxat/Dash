@@ -356,7 +356,7 @@ struct WatchtowerView: View {
         }
       }
     }
-    .padding(.vertical, 10)
+    .padding(.vertical, 12)
     .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
@@ -366,11 +366,12 @@ struct WatchtowerView: View {
   private func signalCopy(_ signal: WatchtowerSignal) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(signal.title)
-        .dashTextStyle(.bodyMedium)
+        .dashTextStyle(.bodySemibold)
         .foregroundStyle(DashTheme.text)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
       Text(signal.detail)
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
+        .dashTextStyle(.footnote)
+        .foregroundStyle(DashTheme.rowSubtitle)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
       if let action = signal.suggestedAction, signal.status != .ok {
         Text(action)
@@ -421,21 +422,23 @@ struct WatchtowerView: View {
         }
       }
     }
-    .padding(.vertical, 10)
+    .padding(.vertical, 12)
   }
 
   private func alertCopy(_ alert: NotificationHistoryEntry) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(alert.title)
-        .dashTextStyle(.supportingMedium)
+        .dashTextStyle(.bodySemibold)
         .foregroundStyle(DashTheme.text)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
       if let subtitle = alert.subtitle {
         Text(subtitle)
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .fixedSize(horizontal: false, vertical: true)
     .layoutPriority(1)
   }
