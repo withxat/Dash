@@ -48,6 +48,62 @@ final class WatchtowerScreenState {
   }
 }
 
+/// Watchtower's status lists keep Dash's original two-tone hierarchy: a base
+/// list card with a hairline seated inside an elevated group frame. This style
+/// is intentionally local so feature and resource lists can use their newer
+/// standalone-card treatment without changing Watchtower's denser scan rhythm.
+private struct WatchtowerListGroup<Content: View>: View {
+  let title: String
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        Text(title)
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.subtle)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+
+      VStack(alignment: .leading, spacing: 0) { content() }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DashTheme.base)
+        .clipShape(
+          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        )
+        .overlay {
+          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+            .stroke(DashTheme.line, lineWidth: 0.5)
+        }
+        .padding(.horizontal, -0.5)
+        .padding(.bottom, -0.5)
+    }
+    .background(DashTheme.elevated)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        .stroke(DashTheme.line, lineWidth: 0.5)
+    }
+  }
+}
+
+private struct WatchtowerListRows<Item: Identifiable, Row: View>: View {
+  let items: [Item]
+  @ViewBuilder let row: (Item) -> Row
+
+  var body: some View {
+    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+      row(item)
+      if index < items.count - 1 {
+        DashListGroupDivider()
+      }
+    }
+  }
+}
+
 struct WatchtowerView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -70,8 +126,8 @@ struct WatchtowerView: View {
         }
 
         if !state.loading, !state.issues.isEmpty {
-          DashListGroup(title: "Needs attention") {
-            DashListCardRows(items: state.issues) { signal in
+          WatchtowerListGroup(title: "Needs attention") {
+            WatchtowerListRows(items: state.issues) { signal in
               signalRow(signal)
             }
           }
@@ -79,8 +135,8 @@ struct WatchtowerView: View {
         }
 
         if !state.loading, !state.healthy.isEmpty {
-          DashListGroup(title: "All clear") {
-            DashListCardRows(items: state.healthy) { signal in
+          WatchtowerListGroup(title: "All clear") {
+            WatchtowerListRows(items: state.healthy) { signal in
               signalRow(signal)
             }
           }
@@ -88,7 +144,7 @@ struct WatchtowerView: View {
         }
 
         if state.alertsStatus == .ok {
-          DashListGroup(title: "Recent alerts") {
+          WatchtowerListGroup(title: "Recent alerts") {
             if state.alerts.isEmpty {
               Text("No notifications sent recently.")
                 .dashTextStyle(.footnote)
@@ -96,7 +152,7 @@ struct WatchtowerView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
             } else {
-              DashListCardRows(items: state.alerts) { alert in
+              WatchtowerListRows(items: state.alerts) { alert in
                 alertRow(alert)
               }
             }
