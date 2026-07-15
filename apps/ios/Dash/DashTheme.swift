@@ -59,6 +59,7 @@ enum DashTheme {
   /// state flips stay the shortest.
   enum Motion {
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
+    static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
     static let reduced = Animation.easeOut(duration: 0.12)
     /// Skeleton → loaded content: long enough for blur to read.
     @MainActor static var content: Animation {
@@ -1255,10 +1256,9 @@ struct DashPressButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
-      .opacity(configuration.isPressed ? 0.82 : 1)
+      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
       .animation(
-        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick,
+        reduceMotion ? nil : DashTheme.Motion.press,
         value: configuration.isPressed
       )
   }
