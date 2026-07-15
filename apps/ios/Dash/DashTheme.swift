@@ -987,6 +987,21 @@ struct StatusBadge: View {
   }
 }
 
+/// Sparse delight for rare, high-value moments — not for list filters or typing.
+enum DashDelight {
+  static func celebrateSuccess() {
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+  }
+
+  static func warnImpact() {
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+  }
+
+  static func recoverFromIssue() {
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+  }
+}
+
 struct LoadingStateView: View {
   var body: some View {
     DashListSkeleton()

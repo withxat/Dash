@@ -164,7 +164,13 @@ struct FeatureSection: View {
             record(item)
           } label: {
             FeatureRow(feature: item, iconStyle: iconStyle)
-              .opacity(selection.wrappedValue == item ? 1 : 0.92)
+              .padding(.horizontal, 4)
+              .background(
+                selection.wrappedValue == item
+                  ? DashTheme.brand.opacity(0.08)
+                  : Color.clear,
+                in: RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+              )
           }
           .buttonStyle(DashPressButtonStyle())
           .accessibilityAddTraits(selection.wrappedValue == item ? .isSelected : [])

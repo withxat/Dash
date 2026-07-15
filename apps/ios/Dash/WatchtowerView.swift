@@ -115,6 +115,11 @@ struct WatchtowerView: View {
     .dashCatalogScreen("Watchtower")
     .refreshable { await state.load(model: model, force: true) }
     .task(id: model.activeAccountID) { await state.load(model: model) }
+    .onChange(of: state.issueCount) { previous, current in
+      if previous > 0, current == 0 {
+        DashDelight.recoverFromIssue()
+      }
+    }
   }
 
   @ViewBuilder

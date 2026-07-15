@@ -54,21 +54,22 @@ struct DashDetailTray<Accessory: View>: View {
       actionEnabled: true,
       errorMessage: deleteError,
       action: { onDelete?() },
-      headerDelete: hasDelete
-    ) {
-      // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
-      VStack(alignment: .leading, spacing: 0) {
+      headerDelete: hasDelete,
+      content: {
+        // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-            fieldRow(field)
-            if index < fields.count - 1 { DashListGroupDivider() }
+          VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+              fieldRow(field)
+              if index < fields.count - 1 { DashListGroupDivider() }
+            }
           }
+          accessory
+            .padding(.top, 12)
         }
-        accessory
-          .padding(.top, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
+    )
   }
 
   private func fieldRow(_ field: DashDetailField) -> some View {

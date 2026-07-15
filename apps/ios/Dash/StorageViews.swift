@@ -863,27 +863,28 @@ struct D1ConsoleView: View {
           withAnimation(DashTheme.Motion.morph) { confirmingRun = true }
         }
       },
-      appliesContentPadding: false
-    ) {
-      VStack(spacing: DashTheme.Spacing.section) {
-        DashCodePanel(
-          title: "SQL query",
-          message: "Run a read or write statement against this database.",
-          text: $sql,
-          minHeight: 150
-        )
-
-        if let error, !confirmingRun {
-          DashNotice(kind: .error, message: error)
-        } else if !confirmingRun {
-          DashCodeBlock(
-            title: "Result",
-            text: result,
-            placeholder: "Run a query to see results."
+      appliesContentPadding: false,
+      content: {
+        VStack(spacing: DashTheme.Spacing.section) {
+          DashCodePanel(
+            title: "SQL query",
+            message: "Run a read or write statement against this database.",
+            text: $sql,
+            minHeight: 150
           )
+
+          if let error, !confirmingRun {
+            DashNotice(kind: .error, message: error)
+          } else if !confirmingRun {
+            DashCodeBlock(
+              title: "Result",
+              text: result,
+              placeholder: "Run a query to see results."
+            )
+          }
         }
       }
-    }
+    )
   }
 
   private func loadTables(force: Bool = false) async {

@@ -68,27 +68,33 @@ struct APIExplorerView: View {
           items: APIExplorerMode.allCases.map { ($0.rawValue, $0) },
           selection: $mode
         )
-      }
-    ) {
-      ScrollView {
-        LazyVStack(spacing: DashTheme.Spacing.section) {
-          if mode == .products {
-            productsContent
-          } else {
-            endpointsContent
+      },
+      content: {
+        ScrollView {
+          LazyVStack(spacing: DashTheme.Spacing.section) {
+            if mode == .products {
+              productsContent
+            } else {
+              endpointsContent
+            }
           }
+          .padding(.horizontal, DashTheme.Spacing.screen)
+          .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         }
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       }
-    }
+    )
     .navigationTitle("API Explorer")
-    .dashTray(item: $selected, title: { $0.summary }) { endpoint in
-      APIRequestTray(endpoint: endpoint)
-    }
-    .dashTray(item: $selectedProduct, title: { $0.name }) { product in
-      CapabilityProductTray(product: product) { selected = $0 }
-    }
+    .dashTray(
+      item: $selected, title: { $0.summary },
+      content: { endpoint in
+        APIRequestTray(endpoint: endpoint)
+      }
+    )
+    .dashTray(
+      item: $selectedProduct, title: { $0.name },
+      content: { product in
+        CapabilityProductTray(product: product) { selected = $0 }
+      })
   }
 
   @ViewBuilder
@@ -216,44 +222,49 @@ struct EndpointProductView: View {
   }
 
   var body: some View {
-    DashFeatureScreen(search: $search, prompt: "Search \(feature.title)") {
-      ScrollView {
-        LazyVStack(spacing: DashTheme.Spacing.section) {
-          if !allowsWrites, !feature.capability.write.isEmpty {
-            DashNotice(kind: .warning, message: "This module is currently read-only.")
-            DashSecondaryPillButton(title: "Grant write access") {
-              model.requestAccess(to: feature.capability.all)
-            }
-          }
-
-          DashListGroup(title: "\(endpoints.count) public operations") {
-            if endpoints.isEmpty {
-              Text("No matching operations in the current OpenAPI snapshot.")
-                .dashTextStyle(.supporting)
-                .foregroundStyle(DashTheme.subtle)
-                .padding(.vertical, 10)
-            } else {
-              ForEach(Array(endpoints.enumerated()), id: \.element.id) { index, endpoint in
-                APIEndpointRow(endpoint: endpoint) { selected = endpoint }
-                if index < endpoints.count - 1 { DashListGroupDivider() }
+    DashFeatureScreen(
+      search: $search, prompt: "Search \(feature.title)",
+      content: {
+        ScrollView {
+          LazyVStack(spacing: DashTheme.Spacing.section) {
+            if !allowsWrites, !feature.capability.write.isEmpty {
+              DashNotice(kind: .warning, message: "This module is currently read-only.")
+              DashSecondaryPillButton(title: "Grant write access") {
+                model.requestAccess(to: feature.capability.all)
               }
             }
-          }
 
-          Text(
-            "Generated from Cloudflare OpenAPI \(CloudflareEndpointCatalog.generatedAt)."
-          )
-          .dashTextStyle(.micro)
-          .foregroundStyle(DashTheme.placeholder)
+            DashListGroup(title: "\(endpoints.count) public operations") {
+              if endpoints.isEmpty {
+                Text("No matching operations in the current OpenAPI snapshot.")
+                  .dashTextStyle(.supporting)
+                  .foregroundStyle(DashTheme.subtle)
+                  .padding(.vertical, 10)
+              } else {
+                ForEach(Array(endpoints.enumerated()), id: \.element.id) { index, endpoint in
+                  APIEndpointRow(endpoint: endpoint) { selected = endpoint }
+                  if index < endpoints.count - 1 { DashListGroupDivider() }
+                }
+              }
+            }
+
+            Text(
+              "Generated from Cloudflare OpenAPI \(CloudflareEndpointCatalog.generatedAt)."
+            )
+            .dashTextStyle(.micro)
+            .foregroundStyle(DashTheme.placeholder)
+          }
+          .padding(.horizontal, DashTheme.Spacing.screen)
+          .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         }
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       }
-    }
+    )
     .navigationTitle(feature.title)
-    .dashTray(item: $selected, title: { $0.summary }) { endpoint in
-      APIRequestTray(endpoint: endpoint)
-    }
+    .dashTray(
+      item: $selected, title: { $0.summary },
+      content: { endpoint in
+        APIRequestTray(endpoint: endpoint)
+      })
   }
 }
 
@@ -398,75 +409,76 @@ private struct APIRequestTray: View {
           Task { await run() }
         }
       },
-      appliesContentPadding: true
-    ) {
-      VStack(alignment: .leading, spacing: 14) {
-        Text(endpoint.summary)
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
+      appliesContentPadding: true,
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          Text(endpoint.summary)
+            .dashTextStyle(.supporting)
+            .foregroundStyle(DashTheme.subtle)
 
-        labeled("Method", endpoint.method)
-        Text(endpoint.path)
-          .dashTextStyle(.code)
-          .textSelection(.enabled)
-          .foregroundStyle(DashTheme.text)
+          labeled("Method", endpoint.method)
+          Text(endpoint.path)
+            .dashTextStyle(.code)
+            .textSelection(.enabled)
+            .foregroundStyle(DashTheme.text)
 
-        if !endpoint.pathParameters.isEmpty {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Path parameters")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            ForEach(endpoint.pathParameters, id: \.self) { parameter in
-              TextField(parameter, text: pathBinding(parameter))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(12)
-                .background(DashTheme.recessed, in: DashTheme.buttonShape)
+          if !endpoint.pathParameters.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Path parameters")
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              ForEach(endpoint.pathParameters, id: \.self) { parameter in
+                TextField(parameter, text: pathBinding(parameter))
+                  .textInputAutocapitalization(.never)
+                  .autocorrectionDisabled()
+                  .padding(12)
+                  .background(DashTheme.recessed, in: DashTheme.buttonShape)
+              }
             }
           }
-        }
 
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Query")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          TextField("page=1&per_page=50", text: $queryText)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .dashTextStyle(.code)
-            .padding(12)
-            .background(DashTheme.recessed, in: DashTheme.buttonShape)
-        }
-
-        if endpoint.hasRequestBody {
           VStack(alignment: .leading, spacing: 8) {
-            Text("JSON body")
+            Text("Query")
               .dashTextStyle(.footnoteSemibold)
               .foregroundStyle(DashTheme.subtle)
-            TextEditor(text: $bodyText)
-              .dashTextStyle(.code)
-              .frame(minHeight: 140)
-              .padding(8)
-              .background(DashTheme.recessed, in: DashTheme.buttonShape)
+            TextField("page=1&per_page=50", text: $queryText)
               .textInputAutocapitalization(.never)
               .autocorrectionDisabled()
+              .dashTextStyle(.code)
+              .padding(12)
+              .background(DashTheme.recessed, in: DashTheme.buttonShape)
           }
-        }
 
-        if let responseText {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Response")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            ScrollView(.horizontal) {
-              Text(responseText)
+          if endpoint.hasRequestBody {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("JSON body")
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              TextEditor(text: $bodyText)
                 .dashTextStyle(.code)
-                .textSelection(.enabled)
+                .frame(minHeight: 140)
+                .padding(8)
+                .background(DashTheme.recessed, in: DashTheme.buttonShape)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            }
+          }
+
+          if let responseText {
+            VStack(alignment: .leading, spacing: 8) {
+              Text("Response")
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              ScrollView(.horizontal) {
+                Text(responseText)
+                  .dashTextStyle(.code)
+                  .textSelection(.enabled)
+              }
             }
           }
         }
       }
-    }
+    )
     .dashTrayTitle(phase == .confirm ? "Confirm" : endpoint.method)
     .dashKeyboardDismissal()
     .task { prefillKnownIdentifiers() }

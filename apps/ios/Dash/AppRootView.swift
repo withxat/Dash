@@ -433,11 +433,12 @@ private struct AdaptiveItemsNavigation: View {
               }
               .destinationRouting()
             } else {
-              ContentUnavailableView(
-                "Select a feature",
-                systemImage: "square.grid.2x2",
-                description: Text("Choose something from the Items sidebar.")
+              DashEmptyState(
+                icon: SolarAsset.box,
+                title: "Select a feature",
+                message: "Choose something from the Items sidebar."
               )
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
               .background(DashTheme.canvas)
             }
           }
@@ -478,11 +479,12 @@ private struct AdaptiveWatchtowerNavigation: View {
               DestinationRoutedContent(destination: selectedDestination)
                 .destinationRouting()
             } else {
-              ContentUnavailableView(
-                "Select a check",
-                systemImage: "shield",
-                description: Text("Choose a Watchtower signal to inspect.")
+              DashEmptyState(
+                icon: SolarAsset.shieldCheck,
+                title: "Select a check",
+                message: "Choose a Watchtower signal to inspect."
               )
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
               .background(DashTheme.canvas)
             }
           }
