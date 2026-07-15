@@ -717,6 +717,17 @@ import UIKit
   #expect(initial == TabBarVisibilityChange(hidden: false, animated: false))
 }
 
+@Test func tabBarHideRulesRespectSizeClassAndOverlays() {
+  #expect(
+    shouldHideTabBar(overlaysPresented: true, usesSplitDetail: true, navigationDepth: 0))
+  #expect(
+    shouldHideTabBar(overlaysPresented: false, usesSplitDetail: false, navigationDepth: 1))
+  #expect(
+    !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: true, navigationDepth: 2))
+  #expect(
+    !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: false, navigationDepth: 0))
+}
+
 @Test func d1DestructiveDetectorFlagsWritesNotReads() {
   // Read-safe statements run without a confirm.
   #expect(D1SQL.destructiveKeyword(in: "SELECT * FROM users;") == nil)

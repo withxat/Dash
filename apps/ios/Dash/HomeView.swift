@@ -134,6 +134,8 @@ struct FeatureSection: View {
   var actionTitle: String?
   var actionIcon: String?
   var action: (() -> Void)?
+  /// Regular-width Items sidebar selection; nil keeps NavigationLink push behavior.
+  var selection: Binding<FeatureID?>?
 
   init(
     title: String,
@@ -141,7 +143,8 @@ struct FeatureSection: View {
     iconStyle: CatalogFeatureIcon.Style = .duotone,
     actionTitle: String? = nil,
     actionIcon: String? = nil,
-    action: (() -> Void)? = nil
+    action: (() -> Void)? = nil,
+    selection: Binding<FeatureID?>? = nil
   ) {
     self.title = title
     self.items = items
@@ -149,15 +152,28 @@ struct FeatureSection: View {
     self.actionTitle = actionTitle
     self.actionIcon = actionIcon
     self.action = action
+    self.selection = selection
   }
 
   var body: some View {
     DashListGroup(title: title, actionTitle: actionTitle, actionIcon: actionIcon, action: action) {
       ForEach(Array(items.enumerated()), id: \.element) { index, item in
-        DashListGroupLink(
-          value: .feature(item), onNavigate: { record(item) }
-        ) {
-          FeatureRow(feature: item, iconStyle: iconStyle)
+        if let selection {
+          Button {
+            selection.wrappedValue = item
+            record(item)
+          } label: {
+            FeatureRow(feature: item, iconStyle: iconStyle)
+              .opacity(selection.wrappedValue == item ? 1 : 0.92)
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .accessibilityAddTraits(selection.wrappedValue == item ? .isSelected : [])
+        } else {
+          DashListGroupLink(
+            value: .feature(item), onNavigate: { record(item) }
+          ) {
+            FeatureRow(feature: item, iconStyle: iconStyle)
+          }
         }
         if index < items.count - 1 {
           DashListGroupDivider()

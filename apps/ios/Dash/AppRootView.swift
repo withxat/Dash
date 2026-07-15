@@ -376,6 +376,97 @@ private struct FeatureNavigationStack<Root: View>: View {
   }
 }
 
+/// Regular-width Items: catalog sidebar + detail stack. Compact keeps a single stack.
+private struct AdaptiveItemsNavigation: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @Binding var path: NavigationPath
+  @State private var selectedFeature: FeatureID?
+
+  var body: some View {
+    Group {
+      if sizeClass == .regular {
+        NavigationSplitView {
+          ItemsView(selection: $selectedFeature)
+        } detail: {
+          NavigationStack(path: $path) {
+            if let selectedFeature {
+              FeatureDetailChrome(feature: selectedFeature) {
+                FeatureRouterContent(feature: selectedFeature)
+              }
+              .destinationRouting()
+            } else {
+              ContentUnavailableView(
+                "Select a feature",
+                systemImage: "square.grid.2x2",
+                description: Text("Choose something from the Items sidebar.")
+              )
+              .background(DashTheme.canvas)
+            }
+          }
+        }
+      } else {
+        FeatureNavigationStack(path: $path) { ItemsView() }
+      }
+    }
+    .onChange(of: sizeClass) { _, _ in resetSplitState() }
+    .onChange(of: model.activeAccountID) { _, _ in resetSplitState() }
+    .onChange(of: selectedFeature) { _, feature in
+      path = NavigationPath()
+      if let feature { RecentFeatures.record(feature) }
+    }
+  }
+
+  private func resetSplitState() {
+    selectedFeature = nil
+    path = NavigationPath()
+  }
+}
+
+/// Regular-width Watchtower: signals sidebar + destination detail. Compact stays stacked.
+private struct AdaptiveWatchtowerNavigation: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.horizontalSizeClass) private var sizeClass
+  @Binding var path: NavigationPath
+  @State private var selectedDestination: Destination?
+
+  var body: some View {
+    Group {
+      if sizeClass == .regular {
+        NavigationSplitView {
+          WatchtowerView(selection: $selectedDestination)
+        } detail: {
+          NavigationStack(path: $path) {
+            if let selectedDestination {
+              DestinationRoutedContent(destination: selectedDestination)
+                .destinationRouting()
+            } else {
+              ContentUnavailableView(
+                "Select a check",
+                systemImage: "shield",
+                description: Text("Choose a Watchtower signal to inspect.")
+              )
+              .background(DashTheme.canvas)
+            }
+          }
+        }
+      } else {
+        FeatureNavigationStack(path: $path) { WatchtowerView() }
+      }
+    }
+    .onChange(of: sizeClass) { _, _ in resetSplitState() }
+    .onChange(of: model.activeAccountID) { _, _ in resetSplitState() }
+    .onChange(of: selectedDestination) { _, _ in
+      path = NavigationPath()
+    }
+  }
+
+  private func resetSplitState() {
+    selectedDestination = nil
+    path = NavigationPath()
+  }
+}
+
 /// Search-role tab. The searchable host stays mounted while UIKit animates the
 /// whole tab bar off-screen, preserving the bottom morph across push and pop.
 private struct SearchNavigationStack: View {
@@ -395,6 +486,7 @@ private struct SearchNavigationStack: View {
 private struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var selection: AppTab = .home
   @State private var homePath = NavigationPath()
   @State private var itemsPath = NavigationPath()
@@ -408,8 +500,13 @@ private struct MainTabView: View {
   @State private var tabBarHoldTask: Task<Void, Never>?
 
   private var hidesTabBar: Bool {
-    showsProfile || showsEditShortcuts || nestedTrayPresented || tabBarExitHold
-      || activeNavigationDepth > 0
+    shouldHideTabBar(
+      overlaysPresented: showsProfile || showsEditShortcuts || nestedTrayPresented
+        || tabBarExitHold,
+      usesSplitDetail: sizeClass == .regular
+        && (selection == .items || selection == .watchtower),
+      navigationDepth: activeNavigationDepth
+    )
   }
 
   private var activeNavigationDepth: Int {
@@ -532,14 +629,14 @@ private struct MainTabView: View {
             active: selection == .home)
         }
         Tab(value: AppTab.items) {
-          FeatureNavigationStack(path: $itemsPath) { ItemsView() }
+          AdaptiveItemsNavigation(path: $itemsPath)
         } label: {
           tabLabel(
             "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
             active: selection == .items)
         }
         Tab(value: AppTab.watchtower) {
-          FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
+          AdaptiveWatchtowerNavigation(path: $watchtowerPath)
         } label: {
           tabLabel(
             "Watchtower",
@@ -565,14 +662,14 @@ private struct MainTabView: View {
               active: selection == .home)
           }
           .tag(AppTab.home)
-        FeatureNavigationStack(path: $itemsPath) { ItemsView() }
+        AdaptiveItemsNavigation(path: $itemsPath)
           .tabItem {
             tabLabel(
               "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
               active: selection == .items)
           }
           .tag(AppTab.items)
-        FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
+        AdaptiveWatchtowerNavigation(path: $watchtowerPath)
           .tabItem {
             tabLabel(
               "Watchtower",
@@ -662,6 +759,18 @@ func tabBarVisibilityChange(
 ) -> TabBarVisibilityChange? {
   guard currentlyHidden != targetHidden else { return nil }
   return TabBarVisibilityChange(hidden: targetHidden, animated: transition.animated)
+}
+
+/// Compact stack pushes hide the tab bar; regular Items/Watchtower split keeps
+/// it visible while a detail is selected. Trays / profile overlays always hide.
+func shouldHideTabBar(
+  overlaysPresented: Bool,
+  usesSplitDetail: Bool,
+  navigationDepth: Int
+) -> Bool {
+  if overlaysPresented { return true }
+  if usesSplitDetail { return false }
+  return navigationDepth > 0
 }
 
 @MainActor

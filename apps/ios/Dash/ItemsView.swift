@@ -54,6 +54,12 @@ struct ItemsView: View {
   @Environment(AppModel.self) private var model
   @State private var query = ""
   @State private var accessFilter: ItemsAccessFilter = .all
+  /// When set (regular-width split), rows select into the detail column instead of pushing.
+  var selection: Binding<FeatureID?>?
+
+  init(selection: Binding<FeatureID?>? = nil) {
+    self.selection = selection
+  }
 
   private var grouped: [(String, [FeatureID])] {
     ItemsCatalogFiltering.grouped(
@@ -77,7 +83,7 @@ struct ItemsView: View {
           )
         } else {
           ForEach(grouped, id: \.0) { title, features in
-            FeatureSection(title: title, items: features)
+            FeatureSection(title: title, items: features, selection: selection)
           }
         }
       }

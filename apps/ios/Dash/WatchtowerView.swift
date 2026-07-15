@@ -1,20 +1,21 @@
 import CloudflareAPI
+import Observation
 import SwiftUI
 
-struct WatchtowerView: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @State private var signals: [WatchtowerSignal] = []
-  @State private var alerts: [NotificationHistoryEntry] = []
-  @State private var alertsStatus: WatchtowerAlertsStatus = .loading
-  @State private var missingScopeChecks: [String] = []
-  @State private var failedChecks: [String] = []
-  @State private var fetchedAt: Date?
-  @State private var loading = true
-  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var notificationsEnabled = false
-  @State private var notificationsDenied = false
+/// Shared Watchtower screen state for compact stack and regular split layouts.
+@MainActor
+@Observable
+final class WatchtowerScreenState {
+  var signals: [WatchtowerSignal] = []
+  var alerts: [NotificationHistoryEntry] = []
+  var alertsStatus: WatchtowerAlertsStatus = .loading
+  var missingScopeChecks: [String] = []
+  var failedChecks: [String] = []
+  var fetchedAt: Date?
+  var loading = true
+  var notificationsDenied = false
 
-  private var summary: WatchtowerSummary {
+  var summary: WatchtowerSummary {
     WatchtowerSummary(
       critical: signals.filter { $0.status == .critical }.count,
       warning: signals.filter { $0.status == .warning }.count,
@@ -22,48 +23,80 @@ struct WatchtowerView: View {
     )
   }
 
-  private var issues: [WatchtowerSignal] { signals.filter { $0.status != .ok } }
-  private var healthy: [WatchtowerSignal] { signals.filter { $0.status == .ok } }
-  private var issueCount: Int { summary.critical + summary.warning }
-  private var allClear: Bool { issueCount == 0 }
+  var issues: [WatchtowerSignal] { signals.filter { $0.status != .ok } }
+  var healthy: [WatchtowerSignal] { signals.filter { $0.status == .ok } }
+  var issueCount: Int { summary.critical + summary.warning }
+  var allClear: Bool { issueCount == 0 }
+
+  func load(model: AppModel, force: Bool = false) async {
+    guard model.activeAccountID != nil else {
+      loading = false
+      signals = []
+      alerts = []
+      return
+    }
+    if signals.isEmpty { loading = true }
+    if let snapshot = await model.watchtowerSnapshot(force: force) {
+      signals = snapshot.signals
+      alerts = snapshot.alerts
+      alertsStatus = snapshot.alertsStatus
+      missingScopeChecks = snapshot.missingScopeChecks
+      failedChecks = snapshot.failedChecks
+      fetchedAt = snapshot.fetchedAt
+    }
+    loading = false
+  }
+}
+
+struct WatchtowerView: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @State private var state = WatchtowerScreenState()
+  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var notificationsEnabled = false
+  /// When set (regular-width split), signal rows select a detail destination.
+  var selection: Binding<Destination?>?
+
+  init(selection: Binding<Destination?>? = nil) {
+    self.selection = selection
+  }
 
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         summaryCard
 
-        if loading, model.activeAccountID != nil {
+        if state.loading, model.activeAccountID != nil {
           loadingCard
         }
 
-        if !loading, !issues.isEmpty {
+        if !state.loading, !state.issues.isEmpty {
           DashListGroup(title: "Needs attention") {
-            DashListCardRows(items: issues) { signal in
+            DashListCardRows(items: state.issues) { signal in
               signalRow(signal)
             }
           }
           .dashContentReveal()
         }
 
-        if !loading, !healthy.isEmpty {
+        if !state.loading, !state.healthy.isEmpty {
           DashListGroup(title: "All clear") {
-            DashListCardRows(items: healthy) { signal in
+            DashListCardRows(items: state.healthy) { signal in
               signalRow(signal)
             }
           }
           .dashContentReveal(1)
         }
 
-        if alertsStatus == .ok {
+        if state.alertsStatus == .ok {
           DashListGroup(title: "Recent alerts") {
-            if alerts.isEmpty {
+            if state.alerts.isEmpty {
               Text("No notifications sent recently.")
                 .font(.footnote)
                 .foregroundStyle(DashTheme.subtle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
             } else {
-              DashListCardRows(items: alerts) { alert in
+              DashListCardRows(items: state.alerts) { alert in
                 alertRow(alert)
               }
             }
@@ -80,8 +113,8 @@ struct WatchtowerView: View {
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashCatalogScreen("Watchtower")
-    .refreshable { await load(force: true) }
-    .task(id: model.activeAccountID) { await load() }
+    .refreshable { await state.load(model: model, force: true) }
+    .task(id: model.activeAccountID) { await state.load(model: model) }
   }
 
   @ViewBuilder
@@ -91,14 +124,14 @@ struct WatchtowerView: View {
         Text("No Cloudflare account is available for this user.")
           .font(.subheadline)
           .foregroundStyle(DashTheme.subtle)
-      } else if loading {
+      } else if state.loading {
         VStack(alignment: .leading, spacing: 8) {
           DashLoadingRing(color: DashTheme.brand)
           Text("Checking zones, tunnels, certificates…")
             .font(.footnote)
             .foregroundStyle(DashTheme.subtle)
         }
-      } else if signals.isEmpty {
+      } else if state.signals.isEmpty {
         Text("Nothing to watch yet — no monitored resources found in this account.")
           .font(.subheadline)
           .foregroundStyle(DashTheme.subtle)
@@ -106,23 +139,23 @@ struct WatchtowerView: View {
       } else {
         HStack(alignment: dynamicTypeSize.isAccessibilitySize ? .top : .center, spacing: 12) {
           SolarIcon(
-            asset: allClear ? SolarAsset.shieldCheck : SolarAsset.danger,
+            asset: state.allClear ? SolarAsset.shieldCheck : SolarAsset.danger,
             size: 28,
-            color: allClear
+            color: state.allClear
               ? DashTheme.success
-              : summary.critical > 0 ? DashTheme.danger : DashTheme.warning
+              : state.summary.critical > 0 ? DashTheme.danger : DashTheme.warning
           )
           VStack(alignment: .leading, spacing: 2) {
             Text(
-              allClear
+              state.allClear
                 ? "All systems normal"
-                : "\(issueCount) issue\(issueCount == 1 ? "" : "s") need\(issueCount == 1 ? "s" : "") attention"
+                : "\(state.issueCount) issue\(state.issueCount == 1 ? "" : "s") need\(state.issueCount == 1 ? "s" : "") attention"
             )
             .font(.headline)
             .foregroundStyle(DashTheme.text)
             .fixedSize(horizontal: false, vertical: true)
             Text(
-              "\(signals.count) check\(signals.count == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
+              "\(state.signals.count) check\(state.signals.count == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
             )
             .font(.caption)
             .foregroundStyle(DashTheme.subtle)
@@ -150,7 +183,15 @@ struct WatchtowerView: View {
   private func signalRow(_ signal: WatchtowerSignal) -> some View {
     let content = signalRowContent(signal)
 
-    if let destination = signal.destination {
+    if let selection, let destination = signal.destination {
+      Button {
+        selection.wrappedValue = destination
+      } label: {
+        content
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
+    } else if let destination = signal.destination {
       DashDestinationLink(destination: destination) { content }
     } else {
       content
@@ -263,18 +304,18 @@ struct WatchtowerView: View {
       DashToggleRow(title: "Notify on new issues", isOn: $notificationsEnabled)
         .onChange(of: notificationsEnabled) { _, enabled in
           guard enabled else {
-            notificationsDenied = false
+            state.notificationsDenied = false
             return
           }
           Task {
             let granted = await WatchtowerNotifier.requestAuthorization()
             if !granted {
               notificationsEnabled = false
-              notificationsDenied = true
+              state.notificationsDenied = true
             }
           }
         }
-      if notificationsDenied {
+      if state.notificationsDenied {
         DashNotice(
           kind: .warning,
           message: "Notifications are turned off in Settings. Enable them for Dash to get alerts.")
@@ -285,21 +326,21 @@ struct WatchtowerView: View {
   @ViewBuilder
   private var footerCaption: some View {
     VStack(spacing: 4) {
-      if !missingScopeChecks.isEmpty {
-        Text("Access needed: \(missingScopeChecks.joined(separator: ", "))")
+      if !state.missingScopeChecks.isEmpty {
+        Text("Access needed: \(state.missingScopeChecks.joined(separator: ", "))")
           .foregroundStyle(DashTheme.warning)
       }
-      if !failedChecks.isEmpty {
-        Text("Temporarily unavailable: \(failedChecks.joined(separator: ", "))")
+      if !state.failedChecks.isEmpty {
+        Text("Temporarily unavailable: \(state.failedChecks.joined(separator: ", "))")
           .foregroundStyle(DashTheme.placeholder)
       }
-      if missingScopeChecks.isEmpty, failedChecks.isEmpty {
+      if state.missingScopeChecks.isEmpty, state.failedChecks.isEmpty {
         Text(
           "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
         )
         .foregroundStyle(DashTheme.placeholder)
       }
-      if let fetchedAt {
+      if let fetchedAt = state.fetchedAt {
         Text("Updated \(relativeDate(fetchedAt))")
           .foregroundStyle(DashTheme.placeholder)
       }
@@ -333,24 +374,5 @@ struct WatchtowerView: View {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .abbreviated
     return formatter.localizedString(for: date, relativeTo: Date())
-  }
-
-  private func load(force: Bool = false) async {
-    guard model.activeAccountID != nil else {
-      loading = false
-      signals = []
-      alerts = []
-      return
-    }
-    if signals.isEmpty { loading = true }
-    if let snapshot = await model.watchtowerSnapshot(force: force) {
-      signals = snapshot.signals
-      alerts = snapshot.alerts
-      alertsStatus = snapshot.alertsStatus
-      missingScopeChecks = snapshot.missingScopeChecks
-      failedChecks = snapshot.failedChecks
-      fetchedAt = snapshot.fetchedAt
-    }
-    loading = false
   }
 }

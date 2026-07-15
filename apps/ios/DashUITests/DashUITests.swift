@@ -76,9 +76,12 @@ final class DashUITests: XCTestCase {
 
     searchField.tap()
     searchField.typeText("zo")
-    let zones = app.staticTexts["Zones"]
-    XCTAssertTrue(zones.waitForExistence(timeout: 5))
-    zones.tap()
+    // Prefer the Features row button — Search also has a "Zones" section header.
+    let zonesFeature = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "Domains, DNS")
+    ).firstMatch
+    XCTAssertTrue(zonesFeature.waitForExistence(timeout: 5))
+    zonesFeature.tap()
 
     let back = app.navigationBars.buttons.firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
