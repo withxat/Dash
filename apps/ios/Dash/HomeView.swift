@@ -50,7 +50,7 @@ struct HomeView: View {
           FeatureSection(title: "Continue", items: continueItems)
         }
         Text("Open Items to browse every feature by category.")
-          .font(.system(size: 11))
+          .dashTextStyle(.micro)
           .foregroundStyle(DashTheme.placeholder)
           .frame(maxWidth: .infinity)
       }
@@ -78,13 +78,13 @@ private struct HomeWatchtowerSummaryCard: View {
       DashCard {
         if model.activeAccountID == nil {
           Text("No Cloudflare account is available for this user.")
-            .font(.subheadline)
+            .dashTextStyle(.supporting)
             .foregroundStyle(DashTheme.subtle)
         } else if issueCount == nil {
           HStack(spacing: 12) {
             DashLoadingRing(color: DashTheme.brand)
             Text("Checking account health…")
-              .font(.footnote)
+              .dashTextStyle(.footnote)
               .foregroundStyle(DashTheme.subtle)
             Spacer(minLength: 0)
           }
@@ -106,13 +106,13 @@ private struct HomeWatchtowerSummaryCard: View {
                   ? "All systems normal"
                   : "\(issues) issue\(issues == 1 ? "" : "s") need\(issues == 1 ? "s" : "") attention"
               )
-              .font(.headline)
+              .dashTextStyle(.sectionTitle)
               .foregroundStyle(DashTheme.text)
               .fixedSize(horizontal: false, vertical: true)
               Text(
                 "\(snapshot?.signals.count ?? 0) check\((snapshot?.signals.count ?? 0) == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
               )
-              .font(.caption)
+              .dashTextStyle(.caption)
               .foregroundStyle(DashTheme.subtle)
               .fixedSize(horizontal: false, vertical: true)
             }

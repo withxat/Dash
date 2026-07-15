@@ -353,10 +353,10 @@ private struct PermissionSelectionView: View {
   private func permissionLabel(_ title: String, detail: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(title)
-        .font(.subheadline.weight(.medium))
+        .dashTextStyle(.supportingMedium)
         .foregroundStyle(DashTheme.text)
       Text(detail)
-        .font(.caption2)
+        .dashTextStyle(.micro)
         .foregroundStyle(DashTheme.subtle)
     }
   }
@@ -956,15 +956,15 @@ struct ProfileTrayContent: View {
         UserAvatar(email: model.user?.email ?? "", size: 56)
         VStack(alignment: .leading, spacing: 4) {
           Text(model.profileTitle)
-            .font(.system(size: 18, weight: .semibold))
+            .dashTextStyle(.bodySemibold)
           if let email = model.user?.email, email != model.profileTitle {
             Text(email)
-              .font(.system(size: 14))
+              .dashTextStyle(.supporting)
               .foregroundStyle(DashTheme.subtle)
           }
           if let account = model.activeAccount, account.name != model.profileTitle {
             Text(account.name)
-              .font(.system(size: 13))
+              .dashTextStyle(.footnote)
               .foregroundStyle(DashTheme.placeholder)
           }
         }

@@ -95,11 +95,13 @@ enum DashTheme {
     static let floatingDetentFraction: CGFloat = 0.62
   }
 
-  static let canvas = adaptive(light: 0xFFFFFF, dark: 0x1A1A1A)
-  static let elevated = adaptive(light: 0xFAFAFA, dark: 0x1F1F1F)
-  static let recessed = adaptive(light: 0xF5F5F5, dark: 0x262626)
-  static let base = adaptive(light: 0xFFFFFF, dark: 0x2B2B2B)
-  static let fill = adaptive(light: 0xE5E5E5, dark: 0x404040)
+  // Warm Family-aligned neutrals: peach-tinted canvas after sign-in, matching
+  // the login mesh so authenticity doesn't flip to cold SaaS white.
+  static let canvas = adaptive(light: 0xFFFBF7, dark: 0x1A1A1A)
+  static let elevated = adaptive(light: 0xFFF8F3, dark: 0x1F1F1F)
+  static let recessed = adaptive(light: 0xF6EEE6, dark: 0x262626)
+  static let base = adaptive(light: 0xFFFBF7, dark: 0x2B2B2B)
+  static let fill = adaptive(light: 0xE8DFD6, dark: 0x404040)
 
   static let text = adaptive(light: 0x212126, dark: 0xF5F5F5)
   static let strong = adaptive(light: 0x171717, dark: 0xFAFAFA)
@@ -112,12 +114,13 @@ enum DashTheme {
   static let inverse = adaptive(light: 0xFFFFFF, dark: 0x171717)
 
   static let accent = Color(hex: 0xF6821F)
+  /// Reserved for focus rings, primary CTAs, and rare accents — not catalog decoration.
   static let brand = adaptive(light: 0x1460E6, dark: 0x1256D6)
-  static let line = adaptive(light: 0xE5E5E5, dark: 0x525252)
-  static let hairline = adaptive(light: 0xEEEEEE, dark: 0x404040)
+  static let line = adaptive(light: 0xE8DFD6, dark: 0x525252)
+  static let hairline = adaptive(light: 0xF0E8E0, dark: 0x404040)
   /// Row separators on `recessed` panels — a step darker than `hairline`,
   /// which disappears on gray.
-  static let panelLine = adaptive(light: 0xE8E8EA, dark: 0x3A3A3C)
+  static let panelLine = adaptive(light: 0xE8DFD6, dark: 0x3A3A3C)
   static let danger = adaptive(light: 0xEF4444, dark: 0xDC2626)
   static let dangerTint = adaptive(light: 0xFEE2E2, dark: 0x450A0A)
   static let success = adaptive(light: 0x10B981, dark: 0x34D399)
@@ -192,6 +195,7 @@ enum DashTextStyle {
   case sheetTitle
   case trayTitle
   case sectionTitle
+  case body
   case bodyMedium
   case bodySemibold
   case bodyBold
@@ -201,8 +205,11 @@ enum DashTextStyle {
   case supporting
   case supportingMedium
   case supportingSemibold
+  case footnote
   case footnoteSemibold
+  case caption
   case captionSemibold
+  case micro
   case code
 
   fileprivate var metrics:
@@ -215,6 +222,7 @@ enum DashTextStyle {
     case .sheetTitle: (20, .bold, .default, .title3)
     case .trayTitle: (22, .bold, .default, .title3)
     case .sectionTitle: (18, .semibold, .default, .headline)
+    case .body: (16, .regular, .default, .body)
     case .bodyMedium: (16, .medium, .default, .body)
     case .bodySemibold: (16, .semibold, .default, .body)
     case .bodyBold: (16, .bold, .default, .body)
@@ -224,10 +232,70 @@ enum DashTextStyle {
     case .supporting: (15, .regular, .default, .subheadline)
     case .supportingMedium: (14, .medium, .default, .subheadline)
     case .supportingSemibold: (15, .semibold, .default, .subheadline)
+    case .footnote: (13, .regular, .default, .footnote)
     case .footnoteSemibold: (13, .semibold, .default, .footnote)
+    case .caption: (12, .regular, .default, .caption)
     case .captionSemibold: (12, .semibold, .default, .caption)
+    case .micro: (11, .regular, .default, .caption2)
     case .code: (13, .regular, .monospaced, .footnote)
     }
+  }
+}
+
+/// Stable product color family for icons and hero moments. Catalog lists use
+/// the muted tone; hero/pinned/exception surfaces may use the vivid tone.
+enum FeatureVisualTone: Hashable, Sendable {
+  case soft
+  case brand
+  case success
+  case warning
+  case accent
+
+  var muted: Color {
+    switch self {
+    case .soft: DashTheme.iconMuted
+    case .brand: DashTheme.brand.opacity(0.85)
+    case .success: DashTheme.success.opacity(0.85)
+    case .warning: DashTheme.warning.opacity(0.9)
+    case .accent: DashTheme.accent.opacity(0.9)
+    }
+  }
+
+  var vivid: Color {
+    switch self {
+    case .soft: DashTheme.strong
+    case .brand: DashTheme.brand
+    case .success: DashTheme.success
+    case .warning: DashTheme.warning
+    case .accent: DashTheme.accent
+    }
+  }
+}
+
+enum FeatureVisualIdentity {
+  static func tone(for feature: FeatureID) -> FeatureVisualTone {
+    switch feature {
+    case .zones, .registrar, .tunnels, .loadBalancerPools, .dnsManagement, .dnsFirewall,
+      .sslCertificates:
+      .success
+    case .workers, .turnstile, .accessApps, .emailAddresses, .account, .workersObservability,
+      .apiExplorer:
+      .brand
+    case .analytics, .images, .stream, .secrets, .logpush, .radarIntel:
+      .warning
+    case .r2, .kv, .d1, .queues, .vectorize, .containers, .hyperdrive, .pipelines:
+      .accent
+    default:
+      .soft
+    }
+  }
+
+  static func catalogColor(for feature: FeatureID) -> Color {
+    tone(for: feature).muted
+  }
+
+  static func heroColor(for feature: FeatureID) -> Color {
+    tone(for: feature).vivid
   }
 }
 
@@ -695,16 +763,17 @@ struct CatalogFeatureIcon: View {
   let feature: FeatureID
   var style: Style = .duotone
   var size: Size = .list
+  /// When true, uses vivid tone (pinned/hero). Catalog lists stay muted.
+  var emphasized: Bool = false
   @ScaledMetric(relativeTo: .body) private var listGlyphScale: CGFloat = 1
   @ScaledMetric(relativeTo: .body) private var listTileScale: CGFloat = 1
 
   private var tone: Color {
-    switch feature {
-    case .zones, .registrar, .tunnels, .loadBalancerPools: DashTheme.success
-    case .workers, .turnstile, .accessApps, .emailAddresses, .account: DashTheme.brand
-    case .analytics, .images, .stream, .secrets: DashTheme.warning
-    default: DashTheme.accent
+    let identity = FeatureVisualIdentity.tone(for: feature)
+    if emphasized || size == .hero {
+      return identity.vivid
     }
+    return identity.muted
   }
 
   private var assetName: String {
@@ -745,7 +814,7 @@ struct CatalogFeatureIcon: View {
       .foregroundStyle(tone)
       .frame(width: glyphSize, height: glyphSize)
       .frame(width: tileSize, height: tileSize)
-      .background(tone.opacity(0.15))
+      .background(tone.opacity(emphasized || size == .hero ? 0.16 : 0.1))
       .clipShape(
         RoundedRectangle(
           cornerRadius: size == .compact || size == .shortcut
@@ -768,7 +837,7 @@ private struct FeatureInlineNavigationTitle: View {
     HStack(spacing: 6) {
       CatalogFeatureIcon(feature: feature, size: .compact)
       Text(title)
-        .font(.headline)
+        .dashTextStyle(.sectionTitle)
         .foregroundStyle(DashTheme.strong)
         .lineLimit(1)
     }
@@ -796,6 +865,21 @@ struct FeatureDetailChrome<Content: View>: View {
 struct StatusBadge: View {
   let text: String
 
+  enum Presentation: Equatable {
+    /// Quiet trailing label or check — never a colored capsule.
+    case quiet
+    /// Capsule reserved for warnings, critical states, and access limits.
+    case capsule
+  }
+
+  static func presentation(for text: String) -> Presentation {
+    let value = text.lowercased()
+    if ["active", "ok", "healthy", "success"].contains(value) {
+      return .quiet
+    }
+    return .capsule
+  }
+
   private var colors: (foreground: Color, background: Color) {
     let value = text.lowercased()
     if ["active", "ok", "healthy", "success"].contains(value) {
@@ -811,14 +895,32 @@ struct StatusBadge: View {
   }
 
   var body: some View {
-    Text(text.capitalized)
-      .dashTextStyle(.captionSemibold)
-      .foregroundStyle(colors.foreground)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
-      .background(colors.background, in: Capsule())
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(StatusBadge.accessibilityText(for: text))
+    Group {
+      switch Self.presentation(for: text) {
+      case .quiet:
+        HStack(spacing: 4) {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(colors.foreground)
+          Text(text.capitalized)
+            .dashTextStyle(.captionSemibold)
+            .foregroundStyle(colors.foreground)
+            .lineLimit(1)
+        }
+      case .capsule:
+        Text(text.capitalized)
+          .dashTextStyle(.captionSemibold)
+          .foregroundStyle(colors.foreground)
+          .lineLimit(1)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(colors.background, in: Capsule())
+      }
+    }
+    .fixedSize(horizontal: true, vertical: false)
+    .layoutPriority(1)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(StatusBadge.accessibilityText(for: text))
   }
 
   static func accessibilityText(for text: String) -> String {

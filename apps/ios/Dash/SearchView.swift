@@ -99,7 +99,7 @@ struct SearchView: View {
         HStack(spacing: 12) {
           DashLoadingRing(color: DashTheme.brand)
           Text("Loading zones…")
-            .font(.subheadline)
+            .dashTextStyle(.supporting)
             .foregroundStyle(DashTheme.subtle)
           Spacer(minLength: 0)
         }
@@ -119,7 +119,7 @@ struct SearchView: View {
       if zoneResults.isEmpty {
         DashListGroup(title: "Zones") {
           Text("No matching zones")
-            .font(.subheadline)
+            .dashTextStyle(.supporting)
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 10)

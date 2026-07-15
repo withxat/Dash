@@ -91,7 +91,7 @@ struct WatchtowerView: View {
           DashListGroup(title: "Recent alerts") {
             if state.alerts.isEmpty {
               Text("No notifications sent recently.")
-                .font(.footnote)
+                .dashTextStyle(.footnote)
                 .foregroundStyle(DashTheme.subtle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
@@ -122,18 +122,18 @@ struct WatchtowerView: View {
     DashCard {
       if model.activeAccountID == nil {
         Text("No Cloudflare account is available for this user.")
-          .font(.subheadline)
+          .dashTextStyle(.supporting)
           .foregroundStyle(DashTheme.subtle)
       } else if state.loading {
         VStack(alignment: .leading, spacing: 8) {
           DashLoadingRing(color: DashTheme.brand)
           Text("Checking zones, tunnels, certificates…")
-            .font(.footnote)
+            .dashTextStyle(.footnote)
             .foregroundStyle(DashTheme.subtle)
         }
       } else if state.signals.isEmpty {
         Text("Nothing to watch yet — no monitored resources found in this account.")
-          .font(.subheadline)
+          .dashTextStyle(.supporting)
           .foregroundStyle(DashTheme.subtle)
           .fixedSize(horizontal: false, vertical: true)
       } else {
@@ -151,13 +151,13 @@ struct WatchtowerView: View {
                 ? "All systems normal"
                 : "\(state.issueCount) issue\(state.issueCount == 1 ? "" : "s") need\(state.issueCount == 1 ? "s" : "") attention"
             )
-            .font(.headline)
+            .dashTextStyle(.sectionTitle)
             .foregroundStyle(DashTheme.text)
             .fixedSize(horizontal: false, vertical: true)
             Text(
               "\(state.signals.count) check\(state.signals.count == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
             )
-            .font(.caption)
+            .dashTextStyle(.caption)
             .foregroundStyle(DashTheme.subtle)
             .fixedSize(horizontal: false, vertical: true)
           }
@@ -263,7 +263,7 @@ struct WatchtowerView: View {
           alertCopy(alert)
           if let sent = alert.sent {
             Text(relativeTime(sent))
-              .font(.caption2)
+              .dashTextStyle(.micro)
               .foregroundStyle(DashTheme.placeholder)
           }
         }
@@ -273,7 +273,7 @@ struct WatchtowerView: View {
           Spacer(minLength: 8)
           if let sent = alert.sent {
             Text(relativeTime(sent))
-              .font(.caption2)
+              .dashTextStyle(.micro)
               .foregroundStyle(DashTheme.placeholder)
           }
         }
@@ -285,11 +285,11 @@ struct WatchtowerView: View {
   private func alertCopy(_ alert: NotificationHistoryEntry) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(alert.title)
-        .font(.subheadline.weight(.medium))
+        .dashTextStyle(.supportingMedium)
         .foregroundStyle(DashTheme.text)
       if let subtitle = alert.subtitle {
         Text(subtitle)
-          .font(.caption)
+          .dashTextStyle(.caption)
           .foregroundStyle(DashTheme.subtle)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
       }
@@ -345,7 +345,7 @@ struct WatchtowerView: View {
           .foregroundStyle(DashTheme.placeholder)
       }
     }
-    .font(.caption2)
+    .dashTextStyle(.micro)
     .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
   }

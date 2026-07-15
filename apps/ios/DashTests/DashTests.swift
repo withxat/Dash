@@ -209,10 +209,22 @@ import UIKit
 
 @Test func statusBadgeAndNoticeExposeAccessibleCopy() {
   #expect(StatusBadge.accessibilityText(for: "Read-only") == "Status, Read-only")
+  #expect(StatusBadge.presentation(for: "OK") == .quiet)
+  #expect(StatusBadge.presentation(for: "Critical") == .capsule)
+  #expect(StatusBadge.presentation(for: "Locked") == .capsule)
   #expect(
     DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
       == "Warning: Coverage limited")
   #expect(DashTheme.Spacing.scrollBottomInset == 72)
+}
+
+@Test func featureVisualIdentityMapsStableTones() {
+  #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
+  #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
+  #expect(FeatureVisualIdentity.tone(for: .analytics) == .warning)
+  #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)
+  #expect(FeatureVisualIdentity.tone(for: .magicNetworking) == .soft)
+  #expect(FeatureVisualIdentity.tone(for: .apiExplorer) == .brand)
 }
 
 @Test func recentFeaturesDedupeReorderAndCap() {
