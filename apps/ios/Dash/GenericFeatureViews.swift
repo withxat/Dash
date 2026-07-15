@@ -3,17 +3,68 @@ import SwiftUI
 
 extension Error {
   var dashActionableMessage: String {
-    if let apiError = self as? CloudflareAPIError, apiError.isUnauthorized {
-      return "Your Cloudflare session is no longer valid. Sign in again."
+    DashFailurePresentation.from(error: self).message
+  }
+}
+
+/// Maps Cloudflare / transport failures to a primary recovery action.
+enum DashFailureAction: Equatable, Sendable {
+  case signInAgain
+  case grantAccess
+  case tryAgain
+
+  var title: String {
+    switch self {
+    case .signInAgain: "Sign in again"
+    case .grantAccess: "Grant access"
+    case .tryAgain: "Try again"
     }
-    if let apiError = self as? CloudflareAPIError, apiError.isRateLimited {
-      return "Rate limited by Cloudflare — wait a moment and try again."
+  }
+}
+
+struct DashFailurePresentation: Equatable, Sendable {
+  let message: String
+  let action: DashFailureAction
+
+  static func from(error: Error) -> DashFailurePresentation {
+    if let apiError = error as? CloudflareAPIError, apiError.isUnauthorized {
+      return DashFailurePresentation(
+        message: "Your Cloudflare session is no longer valid. Sign in again.",
+        action: .signInAgain)
     }
-    if let apiError = self as? CloudflareAPIError, apiError.isForbidden {
-      return (apiError.errorDescription ?? "Permission denied")
-        + "\n\nThe granted scopes cover this module, so the account may not include this product or resource."
+    if let apiError = error as? CloudflareAPIError, apiError.isForbidden {
+      return DashFailurePresentation(
+        message: (apiError.errorDescription ?? "Permission denied")
+          + "\n\nGrant access for this product, or confirm the account includes it.",
+        action: .grantAccess)
     }
-    return localizedDescription
+    if let apiError = error as? CloudflareAPIError, apiError.isRateLimited {
+      return DashFailurePresentation(
+        message: "Rate limited by Cloudflare — wait a moment and try again.",
+        action: .tryAgain)
+    }
+    if error is URLError {
+      return DashFailurePresentation(
+        message: error.localizedDescription,
+        action: .tryAgain)
+    }
+    return DashFailurePresentation(
+      message: error.localizedDescription,
+      action: .tryAgain)
+  }
+
+  static func from(message: String) -> DashFailurePresentation {
+    let lower = message.lowercased()
+    if lower.contains("sign in again") || lower.contains("session is no longer valid") {
+      return DashFailurePresentation(message: message, action: .signInAgain)
+    }
+    if lower.contains("permission denied") || lower.contains("grant access")
+      || lower.contains("forbidden") || lower.contains("granted scopes")
+      || lower.contains("may not include this product")
+    {
+      return DashFailurePresentation(message: message, action: .grantAccess)
+    }
+    return DashFailurePresentation(message: message, action: .tryAgain)
   }
 }
 

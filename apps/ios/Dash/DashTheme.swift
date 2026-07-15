@@ -1,3 +1,4 @@
+import CloudflareAPI
 import SwiftUI
 import UIKit
 
@@ -591,17 +592,20 @@ extension DashFeatureScreen where Chrome == EmptyView {
 }
 
 /// What a feature list should render for a given load/error/content state.
-/// An error only takes over the full screen when there is nothing better to
-/// show; with content on hand it degrades to an inline banner above the rows.
+/// Cache-first: when rows already exist, refresh keeps content visible and only
+/// surfaces an inline banner — never flips back to a full-screen loading slot.
 enum DashListPhase: Equatable {
   case loading
   case fullScreenError(String)
-  case content(banner: String?)
+  case content(banner: String?, refreshing: Bool)
 
   static func resolve(isLoading: Bool, error: String?, hasContent: Bool) -> DashListPhase {
+    if hasContent {
+      return .content(banner: error, refreshing: isLoading)
+    }
     if isLoading { return .loading }
-    if let error, !hasContent { return .fullScreenError(error) }
-    return .content(banner: error)
+    if let error { return .fullScreenError(error) }
+    return .content(banner: nil, refreshing: false)
   }
 }
 
@@ -615,6 +619,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
   var retry: () -> Void
   @ViewBuilder var header: () -> Header
   @ViewBuilder var content: () -> Content
+  @Environment(AppModel.self) private var model
 
   init(
     search: Binding<String>? = nil,
@@ -642,16 +647,23 @@ struct DashFeatureList<Header: View, Content: View>: View {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
           case .loading:
-            LoadingStateView()
-              .frame(
-                maxWidth: .infinity,
-                minHeight: DashTheme.Layout.emptyStateMinHeight
-              )
+            DashListSkeleton()
           case .fullScreenError(let message):
             ErrorStateView(message: message, retry: retry)
-          case .content(let banner):
+          case .content(let banner, let refreshing):
+            if refreshing {
+              HStack(spacing: 10) {
+                DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+                Text("Updating…")
+                  .dashTextStyle(.footnote)
+                  .foregroundStyle(DashTheme.subtle)
+                Spacer(minLength: 0)
+              }
+              .accessibilityElement(children: .combine)
+              .accessibilityLabel("Updating")
+            }
             if let banner {
-              DashNotice(kind: .error, message: banner)
+              failureBanner(banner)
             }
             content()
               .dashContentReveal()
@@ -661,6 +673,24 @@ struct DashFeatureList<Header: View, Content: View>: View {
         .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       }
       .scrollDismissesKeyboard(.interactively)
+    }
+  }
+
+  @ViewBuilder
+  private func failureBanner(_ message: String) -> some View {
+    let presentation = DashFailurePresentation.from(message: message)
+    VStack(alignment: .leading, spacing: 10) {
+      DashNotice(kind: .error, message: presentation.message)
+      DashSecondaryPillButton(title: presentation.action.title) {
+        switch presentation.action {
+        case .signInAgain:
+          Task { await model.signOut() }
+        case .grantAccess:
+          model.requestAccess(to: Set(CloudflareScopes.published))
+        case .tryAgain:
+          retry()
+        }
+      }
     }
   }
 }
@@ -930,25 +960,72 @@ struct StatusBadge: View {
 
 struct LoadingStateView: View {
   var body: some View {
-    DashLoadingRing(color: DashTheme.brand)
-      .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.emptyStateMinHeight)
-      .listRowInsets(EdgeInsets())
-      .listRowSeparator(.hidden)
-      .listSectionSeparator(.hidden)
-      .listRowBackground(Color.clear)
+    DashListSkeleton()
+  }
+}
+
+/// Placeholder rows that match `DashListRow` / recessed card geometry so first
+/// paint keeps catalog structure instead of a blank 420pt spinner.
+struct DashListSkeleton: View {
+  var rows: Int = 4
+
+  var body: some View {
+    DashListGroup(title: " ") {
+      ForEach(0..<rows, id: \.self) { index in
+        HStack(spacing: 12) {
+          RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.55))
+            .frame(width: 44, height: 44)
+          VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.55))
+              .frame(height: 14)
+              .frame(maxWidth: 160)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.4))
+              .frame(height: 11)
+              .frame(maxWidth: 220)
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+        .accessibilityHidden(true)
+        if index < rows - 1 {
+          DashListGroupDivider()
+        }
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 }
 
 struct ErrorStateView: View {
   let message: String
   let retry: () -> Void
+  @Environment(AppModel.self) private var model
+
+  private var presentation: DashFailurePresentation {
+    DashFailurePresentation.from(message: message)
+  }
+
   var body: some View {
     DashEmptyState(
       icon: SolarAsset.danger,
       title: "Couldn’t load",
-      message: message,
-      actionTitle: "Try again",
-      action: retry)
+      message: presentation.message,
+      actionTitle: presentation.action.title,
+      action: {
+        switch presentation.action {
+        case .signInAgain:
+          Task { await model.signOut() }
+        case .grantAccess:
+          model.requestAccess(to: Set(CloudflareScopes.published))
+        case .tryAgain:
+          retry()
+        }
+      })
   }
 }
 

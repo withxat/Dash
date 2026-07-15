@@ -88,19 +88,37 @@ import UIKit
   #expect(
     DashListPhase.resolve(isLoading: true, error: nil, hasContent: false) == .loading)
   #expect(
-    DashListPhase.resolve(isLoading: true, error: "boom", hasContent: true) == .loading)
+    DashListPhase.resolve(isLoading: true, error: "boom", hasContent: true)
+      == .content(banner: "boom", refreshing: true))
   #expect(
     DashListPhase.resolve(isLoading: false, error: "boom", hasContent: false)
       == .fullScreenError("boom"))
   #expect(
     DashListPhase.resolve(isLoading: false, error: "boom", hasContent: true)
-      == .content(banner: "boom"))
+      == .content(banner: "boom", refreshing: false))
   #expect(
     DashListPhase.resolve(isLoading: false, error: nil, hasContent: true)
-      == .content(banner: nil))
+      == .content(banner: nil, refreshing: false))
   #expect(
     DashListPhase.resolve(isLoading: false, error: nil, hasContent: false)
-      == .content(banner: nil))
+      == .content(banner: nil, refreshing: false))
+  #expect(
+    DashListPhase.resolve(isLoading: true, error: nil, hasContent: true)
+      == .content(banner: nil, refreshing: true))
+}
+
+@Test func failurePresentationMapsRecoveryActions() {
+  #expect(
+    DashFailurePresentation.from(
+      message: "Your Cloudflare session is no longer valid. Sign in again."
+    )
+    .action == .signInAgain)
+  #expect(
+    DashFailurePresentation.from(message: "Permission denied\n\nGrant access for this product.")
+      .action == .grantAccess)
+  #expect(DashFailurePresentation.from(message: "offline").action == .tryAgain)
+  #expect(DashFailureAction.signInAgain.title == "Sign in again")
+  #expect(DashFailureAction.grantAccess.title == "Grant access")
 }
 
 @Test func pageStateAdvancesAndStopsOnTotals() {

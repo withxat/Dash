@@ -325,28 +325,39 @@ struct WatchtowerView: View {
 
   @ViewBuilder
   private var footerCaption: some View {
-    VStack(spacing: 4) {
+    VStack(spacing: 12) {
       if !state.missingScopeChecks.isEmpty {
-        Text("Access needed: \(state.missingScopeChecks.joined(separator: ", "))")
-          .foregroundStyle(DashTheme.warning)
+        DashNotice(
+          kind: .warning,
+          message:
+            "Some checks need access: \(state.missingScopeChecks.joined(separator: ", ")). Grant access to watch the full account."
+        )
+        DashSecondaryPillButton(title: DashFailureAction.grantAccess.title) {
+          model.requestAccess(to: Set(CloudflareScopes.published))
+        }
       }
       if !state.failedChecks.isEmpty {
-        Text("Temporarily unavailable: \(state.failedChecks.joined(separator: ", "))")
-          .foregroundStyle(DashTheme.placeholder)
+        DashNotice(
+          kind: .error,
+          message:
+            "Temporarily unavailable: \(state.failedChecks.joined(separator: ", ")). Pull to refresh when you’re back online."
+        )
       }
       if state.missingScopeChecks.isEmpty, state.failedChecks.isEmpty {
         Text(
           "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
         )
+        .dashTextStyle(.micro)
         .foregroundStyle(DashTheme.placeholder)
+        .multilineTextAlignment(.center)
       }
       if let fetchedAt = state.fetchedAt {
         Text("Updated \(relativeDate(fetchedAt))")
+          .dashTextStyle(.micro)
           .foregroundStyle(DashTheme.placeholder)
+          .multilineTextAlignment(.center)
       }
     }
-    .dashTextStyle(.micro)
-    .multilineTextAlignment(.center)
     .frame(maxWidth: .infinity)
   }
 

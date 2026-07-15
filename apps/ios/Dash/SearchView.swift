@@ -107,10 +107,18 @@ struct SearchView: View {
       }
     case .failed(let message):
       DashListGroup(title: "Zones") {
+        let presentation = DashFailurePresentation.from(message: message)
         VStack(alignment: .leading, spacing: 10) {
-          DashNotice(kind: .error, message: message)
-          DashSecondaryPillButton(title: "Try again") {
-            Task { await loadZonesIfNeeded(force: true) }
+          DashNotice(kind: .error, message: presentation.message)
+          DashSecondaryPillButton(title: presentation.action.title) {
+            switch presentation.action {
+            case .signInAgain:
+              Task { await model.signOut() }
+            case .grantAccess:
+              model.requestAccess(to: Set(CloudflareScopes.published))
+            case .tryAgain:
+              Task { await loadZonesIfNeeded(force: true) }
+            }
           }
         }
         .padding(.vertical, 8)
