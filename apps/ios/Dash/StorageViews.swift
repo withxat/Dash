@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct R2BucketsView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var buckets: [R2Bucket] = []
   @State private var error: String?
   @State private var loading = true
@@ -21,7 +22,9 @@ struct R2BucketsView: View {
         DashEmptyState(
           icon: SolarAsset.box,
           title: "No buckets yet",
-          message: "Create a bucket with the add button."
+          message: featureAllowsWrites
+            ? "Create a bucket with the add button."
+            : "No R2 buckets in this account."
         )
       } else {
         DashListCard {
@@ -38,12 +41,14 @@ struct R2BucketsView: View {
       }
     }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New bucket") {
-          creates = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New bucket") {
+            creates = true
+          }
         }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New bucket") {
       DashFormSheet(
@@ -99,6 +104,7 @@ struct R2BucketsView: View {
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let bucket: String
   @State private var objects: [R2Object] = []
   @State private var cursor: String?
@@ -130,7 +136,8 @@ struct R2BucketView: View {
           icon: SolarAsset.box,
           title: prefix.isEmpty ? "Empty bucket" : "Nothing found",
           message: prefix.isEmpty
-            ? "Upload a file to get started."
+            ? (featureAllowsWrites
+              ? "Upload a file to get started." : "This bucket has no objects.")
             : "No object matches \(prefix)."
         )
       } else {
@@ -162,16 +169,18 @@ struct R2BucketView: View {
     }
     .navigationTitle(bucket)
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.upload, accessibilityLabel: "Upload file") {
-          importsFile = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.upload, accessibilityLabel: "Upload file") {
+            importsFile = true
+          }
         }
+        .dashSeparateToolbarBackground()
+        ToolbarItem(placement: .topBarTrailing) {
+          DashMoreButton(isPresented: $showsMore)
+        }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
-      ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
-      }
-      .dashSeparateToolbarBackground()
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
       if case .success(let url) = result { Task { await upload(url) } }
@@ -196,10 +205,11 @@ struct R2BucketView: View {
       content: { object in
         DashDetailTray(
           fields: object.detailFields,
-          deleteMessage: "Permanently delete \(object.key) from \(bucket).",
+          deleteMessage: featureAllowsWrites
+            ? "Permanently delete \(object.key) from \(bucket)." : nil,
           isDeleting: deletingObject,
           deleteError: deleteError,
-          onDelete: { Task { await delete(object) } }
+          onDelete: featureAllowsWrites ? { Task { await delete(object) } } : nil
         ) {
           if let accountID = model.activeAccountID {
             ShareLink(
@@ -300,6 +310,7 @@ struct R2BucketView: View {
 
 struct KVNamespacesView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
   @State private var loading = true
@@ -317,7 +328,9 @@ struct KVNamespacesView: View {
         DashEmptyState(
           icon: SolarAsset.pinList,
           title: "No namespaces",
-          message: "Create a namespace with the add button."
+          message: featureAllowsWrites
+            ? "Create a namespace with the add button."
+            : "No KV namespaces in this account."
         )
       } else {
         DashListCard {
@@ -330,12 +343,14 @@ struct KVNamespacesView: View {
       }
     }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New namespace") {
-          creates = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New namespace") {
+            creates = true
+          }
         }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New namespace") {
       DashFormSheet(
@@ -395,6 +410,7 @@ struct KVNamespacesView: View {
 struct KVNamespaceView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let namespaceID: String
   @State private var keys: [KVKey] = []
   @State private var cursor: String?
@@ -450,16 +466,18 @@ struct KVNamespaceView: View {
       await load()
     }.refreshable { await load(force: true) }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New key") {
-          creates = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New key") {
+            creates = true
+          }
         }
+        .dashSeparateToolbarBackground()
+        ToolbarItem(placement: .topBarTrailing) {
+          DashMoreButton(isPresented: $showsMore)
+        }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
-      ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
-      }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(
       item: $selected,
@@ -618,6 +636,7 @@ private struct KVValueEditor: View {
 
 struct D1DatabasesView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var databases: [D1Database] = []
   @State private var error: String?
   @State private var loading = true
@@ -635,7 +654,9 @@ struct D1DatabasesView: View {
         DashEmptyState(
           icon: SolarAsset.database,
           title: "No databases",
-          message: "Create a database with the add button."
+          message: featureAllowsWrites
+            ? "Create a database with the add button."
+            : "No D1 databases in this account."
         )
       } else {
         DashListCard {
@@ -654,12 +675,14 @@ struct D1DatabasesView: View {
       }
     }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New database") {
-          creates = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New database") {
+            creates = true
+          }
         }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "New database") {
       DashFormSheet(

@@ -16,6 +16,9 @@ struct HomeView: View {
   private var pinnedZones: [PinnedZone] {
     PinnedZones.decode(pinnedZoneData).filter { $0.accountID == model.activeAccountID }
   }
+  private var continueItems: [FeatureID] {
+    RecentFeatures.continueItems(recent: recent, shortcuts: shortcuts)
+  }
 
   var body: some View {
     ScrollView {
@@ -25,6 +28,7 @@ struct HomeView: View {
             kind: .warning,
             message: "Offline — showing cached data. Reconnect to refresh your account.")
         }
+        HomeWatchtowerSummaryCard()
         FeatureSection(
           title: "Shortcuts", items: shortcuts, actionTitle: "Edit", actionIcon: SolarAsset.pen
         ) {
@@ -42,12 +46,8 @@ struct HomeView: View {
             }
           }
         }
-        FeatureSection(
-          title: "Frequently used",
-          items: Array((recent + shortcuts).uniqued().prefix(4))
-        )
-        if !recent.isEmpty {
-          FeatureSection(title: "Recently opened", items: recent)
+        if !continueItems.isEmpty {
+          FeatureSection(title: "Continue", items: continueItems)
         }
         Text("Open Items to browse every feature by category.")
           .font(.system(size: 11))
@@ -58,6 +58,72 @@ struct HomeView: View {
       .padding(.bottom, 100)
     }
     .dashCatalogScreen("Home")
+  }
+}
+
+private struct HomeWatchtowerSummaryCard: View {
+  @Environment(AppModel.self) private var model
+
+  private var snapshot: WatchtowerSnapshot? {
+    guard let accountID = model.activeAccountID else { return nil }
+    return model.featureCache.get(FeatureCacheKey.watchtower(accountID))
+  }
+
+  private var issueCount: Int? { model.watchtowerIssueCount }
+
+  var body: some View {
+    Button {
+      model.pendingRoute = .watchtower
+    } label: {
+      DashCard {
+        if model.activeAccountID == nil {
+          Text("No Cloudflare account is available for this user.")
+            .font(.subheadline)
+            .foregroundStyle(DashTheme.subtle)
+        } else if issueCount == nil {
+          HStack(spacing: 12) {
+            DashLoadingRing(color: DashTheme.brand)
+            Text("Checking account health…")
+              .font(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 0)
+          }
+        } else {
+          let issues = issueCount ?? 0
+          let allClear = issues == 0
+          HStack(alignment: .center, spacing: 12) {
+            SolarIcon(
+              asset: allClear ? SolarAsset.shieldCheck : SolarAsset.danger,
+              size: 28,
+              color: allClear
+                ? DashTheme.success
+                : (snapshot?.signals.contains { $0.status == .critical } == true
+                  ? DashTheme.danger : DashTheme.warning)
+            )
+            VStack(alignment: .leading, spacing: 2) {
+              Text(
+                allClear
+                  ? "All systems normal"
+                  : "\(issues) issue\(issues == 1 ? "" : "s") need\(issues == 1 ? "s" : "") attention"
+              )
+              .font(.headline)
+              .foregroundStyle(DashTheme.text)
+              .fixedSize(horizontal: false, vertical: true)
+              Text(
+                "\(snapshot?.signals.count ?? 0) check\((snapshot?.signals.count ?? 0) == 1 ? "" : "s") · \(model.activeAccount?.name ?? "account")"
+              )
+              .font(.caption)
+              .foregroundStyle(DashTheme.subtle)
+              .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+          }
+        }
+      }
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel("Open Watchtower")
   }
 }
 
@@ -106,12 +172,18 @@ struct FeatureSection: View {
 }
 
 struct FeatureRow: View {
+  @Environment(AppModel.self) private var model
   let feature: FeatureID
   var iconStyle: CatalogFeatureIcon.Style = .duotone
+
+  private var accessLevel: FeatureAccessLevel {
+    feature.capability.accessLevel(grantedScopes: model.grantedScopes)
+  }
 
   var body: some View {
     HStack(spacing: 12) {
       CatalogFeatureIcon(feature: feature, style: iconStyle)
+        .opacity(accessLevel == .locked ? 0.55 : 1)
       VStack(alignment: .leading, spacing: 2) {
         Text(feature.title)
           .font(.body)
@@ -123,10 +195,24 @@ struct FeatureRow: View {
           .lineLimit(1)
       }
       Spacer(minLength: 8)
+      if accessLevel == .readOnly {
+        StatusBadge(text: "Read-only")
+      } else if accessLevel == .locked {
+        StatusBadge(text: "Locked")
+      }
       SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
     }
     .padding(.vertical, 12)
     .contentShape(Rectangle())
+    .accessibilityValue(accessAccessibilityValue)
+  }
+
+  private var accessAccessibilityValue: String {
+    switch accessLevel {
+    case .full: "Available"
+    case .readOnly: "Read-only"
+    case .locked: "Locked"
+    }
   }
 }
 
@@ -211,12 +297,5 @@ private struct ShortcutSelectionToggle: View {
     }
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(isSelected ? "Remove from shortcuts" : "Add to shortcuts")
-  }
-}
-
-extension Sequence where Element: Hashable {
-  fileprivate func uniqued() -> [Element] {
-    var seen = Set<Element>()
-    return filter { seen.insert($0).inserted }
   }
 }

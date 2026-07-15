@@ -17,6 +17,19 @@ enum RecentFeatures {
       .filter { $0 != item.rawValue }
     return ([item.rawValue] + others).prefix(limit).joined(separator: ",")
   }
+
+  /// Home "Continue" list: recent first, then shortcuts, deduped and capped.
+  static func continueItems(
+    recent: [FeatureID], shortcuts: [FeatureID], limit: Int = limit
+  ) -> [FeatureID] {
+    var seen = Set<FeatureID>()
+    var items: [FeatureID] = []
+    for feature in recent + shortcuts where seen.insert(feature).inserted {
+      items.append(feature)
+      if items.count == limit { break }
+    }
+    return items
+  }
 }
 
 /// A zone pinned to Home. Pins for every account share one storage key;

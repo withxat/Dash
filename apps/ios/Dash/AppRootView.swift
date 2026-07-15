@@ -1121,7 +1121,13 @@ struct ProfileView: View {
 }
 
 private struct DestinationRoutedContent: View {
+  @Environment(AppModel.self) private var model
   let destination: Destination
+
+  private var allowsWrites: Bool {
+    guard let feature = featureID(for: destination) else { return true }
+    return feature.capability.accessLevel(grantedScopes: model.grantedScopes) == .full
+  }
 
   var body: some View {
     Group {
@@ -1162,6 +1168,7 @@ private struct DestinationRoutedContent: View {
         D1TableView(databaseID: databaseID, databaseName: databaseName, table: table)
       }
     }
+    .environment(\.featureAllowsWrites, allowsWrites)
   }
 }
 

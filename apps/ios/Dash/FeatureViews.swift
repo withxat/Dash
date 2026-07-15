@@ -9,10 +9,15 @@ struct FeatureRouterContent: View {
     let accessLevel = feature.capability.accessLevel(grantedScopes: model.grantedScopes)
     if accessLevel != .locked {
       routedContent
-        .environment(
-          \.featureAllowsWrites,
-          accessLevel == .full
-        )
+        .environment(\.featureAllowsWrites, accessLevel == .full)
+        .safeAreaInset(edge: .top, spacing: 0) {
+          if accessLevel == .readOnly {
+            FeatureReadOnlyBanner(feature: feature)
+              .padding(.horizontal, DashTheme.Spacing.screen)
+              .padding(.bottom, 8)
+              .background(DashTheme.canvas)
+          }
+        }
     } else {
       FeatureAccessRequiredView(feature: feature)
     }
@@ -60,6 +65,44 @@ struct FeatureRouterContent: View {
       default: GenericFeatureView(feature: feature)
       }
     }
+  }
+}
+
+struct FeatureReadOnlyBanner: View {
+  @Environment(AppModel.self) private var model
+  let feature: FeatureID
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      DashNotice(
+        kind: .warning,
+        message: "Read-only — grant write access to make changes.")
+      DashPillButton(
+        title: "Grant write access",
+        isLoading: model.isAuthenticating
+      ) {
+        model.requestAccess(to: feature.capability.write)
+      }
+    }
+  }
+}
+
+/// Maps a push destination to the catalog feature that owns its write scopes.
+func featureID(for destination: Destination) -> FeatureID? {
+  switch destination {
+  case .profile, .accountDNSSettings: nil
+  case .feature(let feature), .zonePicker(let feature), .zoneFeatureHub(let feature, _, _):
+    feature
+  case .zone, .dns, .cache, .zoneAnalytics, .zoneSettings, .zoneTool:
+    .zones
+  case .botManagement: .botManagement
+  case .cachePerformance: .cacheSettings
+  case .rulesetList, .ruleset: .rulesets
+  case .accessAppPolicies: .accessPolicies
+  case .worker, .workerTail: .workers
+  case .r2Bucket: .r2
+  case .kvNamespace: .kv
+  case .d1Database, .d1Table: .d1
   }
 }
 
@@ -117,6 +160,7 @@ struct ZonesView: View {
   static let pageSize = 50
 
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var zones: [CloudflareZone] = []
   @State private var search = ""
   @State private var error: String?
@@ -144,7 +188,9 @@ struct ZonesView: View {
           icon: SolarAsset.search,
           title: search.isEmpty ? "No zones" : "Nothing found",
           message: search.isEmpty
-            ? "Cloudflare returned no zones for this account."
+            ? (featureAllowsWrites
+              ? "Cloudflare returned no zones for this account."
+              : "Cloudflare returned no zones for this account.")
             : "No zone matches \(search)."
         )
       } else {
@@ -175,12 +221,14 @@ struct ZonesView: View {
       }
     }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Add zone") {
-          creates = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Add zone") {
+            creates = true
+          }
         }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(isPresented: $creates, title: "Add zone") {
       DashFormSheet(
@@ -269,6 +317,7 @@ struct ZonesView: View {
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   let zoneID: String
   @State private var zone: CloudflareZone?
@@ -363,24 +412,27 @@ struct ZoneDetailView: View {
         .disabled(zone == nil)
       }
       .dashSeparateToolbarBackground()
-      ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashMoreButton(isPresented: $showsMore)
+        }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
       title: zone?.name ?? "Zone",
-      actions: [
-        DashDangerAction(
-          title: "Remove zone",
-          message:
-            "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare.",
-          confirmationText: zone?.name
-        ) {
-          try await deleteZone()
-        }
-      ]
+      actions: featureAllowsWrites
+        ? [
+          DashDangerAction(
+            title: "Remove zone",
+            message:
+              "Remove \(zone?.name ?? "this zone") from Cloudflare. DNS records stop resolving through Cloudflare.",
+            confirmationText: zone?.name
+          ) {
+            try await deleteZone()
+          }
+        ] : []
     )
     .refreshable { await load(force: true) }.task { await load() }
   }
@@ -462,6 +514,7 @@ struct DNSRecordsView: View {
   static let pageSize = 100
 
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let zoneID: String
   @State private var records: [DNSRecord] = []
   @State private var selected: DNSRecord?
@@ -526,12 +579,14 @@ struct DNSRecordsView: View {
     .refreshable { await load(force: true) }
     .navigationTitle("DNS")
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New DNS record") {
-          createsRecord = true
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New DNS record") {
+            createsRecord = true
+          }
         }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashTray(
       item: $selected,
@@ -799,6 +854,8 @@ struct WorkerDetailView: View {
 
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismissScreen
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let name: String
   @State private var source: WorkerSource?
   @State private var draft = ""
@@ -811,7 +868,6 @@ struct WorkerDetailView: View {
   @State private var workerTag: String?
   @State private var selectedTab: Tab = .management
   @State private var showsMore = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     DashFeatureScreen(chrome: {
@@ -919,26 +975,29 @@ struct WorkerDetailView: View {
     }
     .navigationTitle(name).task { await load() }
     .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
+      if featureAllowsWrites {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashMoreButton(isPresented: $showsMore)
+        }
+        .dashSeparateToolbarBackground()
       }
-      .dashSeparateToolbarBackground()
     }
     .dashMoreMenu(
       isPresented: $showsMore,
       title: name,
-      actions: [
-        DashDangerAction(
-          title: "Delete Worker",
-          message: "Permanently delete \(name) and its deployments. Routes stop resolving."
-        ) {
-          try await deleteWorker()
-        }
-      ]
+      actions: featureAllowsWrites
+        ? [
+          DashDangerAction(
+            title: "Delete Worker",
+            message: "Permanently delete \(name) and its deployments. Routes stop resolving."
+          ) {
+            try await deleteWorker()
+          }
+        ] : []
     )
   }
   private var hasWriteScope: Bool {
-    model.hasScopes(["workers-scripts.write"])
+    featureAllowsWrites && model.hasScopes(["workers-scripts.write"])
   }
 
   private func deploy() async {

@@ -166,6 +166,47 @@ import UIKit
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
 }
 
+@Test func recentFeaturesContinueItemsPreferRecentAndCap() {
+  #expect(
+    RecentFeatures.continueItems(recent: [.dnsManagement, .zones], shortcuts: [.zones, .r2, .kv])
+      == [.dnsManagement, .zones, .r2, .kv])
+  #expect(
+    RecentFeatures.continueItems(
+      recent: [.zones, .workers, .r2, .kv, .d1, .images],
+      shortcuts: [.stream, .analytics]
+    ) == [.zones, .workers, .r2, .kv, .d1, .images])
+}
+
+@Test func itemsCatalogFilteringRespectsAccessAndQuery() {
+  let scopes: Set<String> = ["zone.read"]
+  let locked = ItemsCatalogFiltering.features(
+    query: "", filter: .locked, grantedScopes: scopes)
+  #expect(locked.contains(.workers))
+  #expect(!locked.contains(.zones))
+
+  let readOnly = ItemsCatalogFiltering.features(
+    query: "zone", filter: .readOnly, grantedScopes: scopes)
+  #expect(readOnly.contains(.zones))
+  #expect(!readOnly.contains(.workers))
+
+  let fullScopes = Set(FeatureID.zones.capability.all)
+  let available = ItemsCatalogFiltering.features(
+    query: "zone", filter: .available, grantedScopes: fullScopes)
+  #expect(available.contains(.zones))
+}
+
+@Test func destinationFeatureMappingCoversDirectRoutes() {
+  #expect(featureID(for: .zone("z1")) == .zones)
+  #expect(featureID(for: .dns("z1")) == .zones)
+  #expect(featureID(for: .worker("api")) == .workers)
+  #expect(featureID(for: .r2Bucket("media")) == .r2)
+  #expect(featureID(for: .kvNamespace("ns")) == .kv)
+  #expect(featureID(for: .d1Database("db", "main")) == .d1)
+  #expect(featureID(for: .rulesetList(basePath: "/x", title: "Rules")) == .rulesets)
+  #expect(featureID(for: .accessAppPolicies(appID: "a", appName: "App")) == .accessPolicies)
+  #expect(featureID(for: .profile) == nil)
+}
+
 @Test func recentFeaturesDedupeReorderAndCap() {
   // A repeat visit moves the feature to the front instead of duplicating it.
   #expect(

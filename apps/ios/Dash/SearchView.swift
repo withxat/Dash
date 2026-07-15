@@ -1,11 +1,17 @@
 import CloudflareAPI
 import SwiftUI
 
+enum SearchZonesPhase: Equatable {
+  case idle
+  case loading
+  case ready
+  case failed(String)
+}
+
 struct SearchView: View {
   @Binding var search: String
   @Environment(AppModel.self) private var model
-  // One lazy zones fetch per account and session; afterwards results come
-  // from the shared cache that ZonesView also reads and warms.
+  @State private var zonesPhase: SearchZonesPhase = .idle
   @State private var fetchedZonesForAccount: String?
 
   private var trimmedSearch: String {
@@ -43,7 +49,9 @@ struct SearchView: View {
       .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
     .dashCatalogScreen("Search")
-    .task(id: trimmedSearch) { await loadZonesIfNeeded() }
+    .task(id: "\(model.activeAccountID ?? "")|\(trimmedSearch)") {
+      await loadZonesIfNeeded()
+    }
   }
 
   @ViewBuilder
@@ -60,18 +68,64 @@ struct SearchView: View {
         title: "Keep typing",
         message: "Enter at least two characters to search."
       )
-    } else if searchResults.isEmpty, zoneResults.isEmpty {
-      DashEmptyState(
-        icon: SolarAsset.search,
-        title: "Nothing found",
-        message: "Nothing matches \(trimmedSearch). Try a service, product, or zone name."
-      )
     } else {
-      if !zoneResults.isEmpty {
-        zoneResultsList
-      }
+      zonesSection
       if !searchResults.isEmpty {
         searchResultsList
+      }
+      if shouldShowNothingFound {
+        DashEmptyState(
+          icon: SolarAsset.search,
+          title: "Nothing found",
+          message: "Nothing matches \(trimmedSearch). Try a service, product, or zone name."
+        )
+      }
+    }
+  }
+
+  private var shouldShowNothingFound: Bool {
+    searchResults.isEmpty
+      && zoneResults.isEmpty
+      && zonesPhase == .ready
+  }
+
+  @ViewBuilder
+  private var zonesSection: some View {
+    switch zonesPhase {
+    case .idle:
+      EmptyView()
+    case .loading:
+      DashListGroup(title: "Zones") {
+        HStack(spacing: 12) {
+          DashLoadingRing(color: DashTheme.brand)
+          Text("Loading zones…")
+            .font(.subheadline)
+            .foregroundStyle(DashTheme.subtle)
+          Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+      }
+    case .failed(let message):
+      DashListGroup(title: "Zones") {
+        VStack(alignment: .leading, spacing: 10) {
+          DashNotice(kind: .error, message: message)
+          DashSecondaryPillButton(title: "Try again") {
+            Task { await loadZonesIfNeeded(force: true) }
+          }
+        }
+        .padding(.vertical, 8)
+      }
+    case .ready:
+      if zoneResults.isEmpty {
+        DashListGroup(title: "Zones") {
+          Text("No matching zones")
+            .font(.subheadline)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 10)
+        }
+      } else {
+        zoneResultsList
       }
     }
   }
@@ -108,19 +162,30 @@ struct SearchView: View {
     }
   }
 
-  private func loadZonesIfNeeded() async {
-    guard trimmedSearch.count >= 2, let accountID = model.activeAccountID,
-      fetchedZonesForAccount != accountID
-    else { return }
-    fetchedZonesForAccount = accountID
-    let key = FeatureCacheKey.zones(accountID)
-    let cached: [CloudflareZone]? = model.featureCache.get(key)
-    guard cached == nil else { return }
-    guard let page = try? await model.client.listZones(accountID: accountID) else {
-      // Leave the marker unset so a later search retries the fetch.
-      fetchedZonesForAccount = nil
+  private func loadZonesIfNeeded(force: Bool = false) async {
+    guard trimmedSearch.count >= 2, let accountID = model.activeAccountID else {
+      zonesPhase = .idle
       return
     }
-    model.featureCache.set(key, page.items)
+    let key = FeatureCacheKey.zones(accountID)
+    if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
+      fetchedZonesForAccount = accountID
+      zonesPhase = .ready
+      return
+    }
+    if !force, fetchedZonesForAccount == accountID, zonesPhase == .ready || zonesPhase == .loading {
+      return
+    }
+
+    zonesPhase = .loading
+    fetchedZonesForAccount = accountID
+    do {
+      let page = try await model.client.listZones(accountID: accountID)
+      model.featureCache.set(key, page.items)
+      zonesPhase = .ready
+    } catch {
+      fetchedZonesForAccount = nil
+      zonesPhase = .failed(error.dashActionableMessage)
+    }
   }
 }
