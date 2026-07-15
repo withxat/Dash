@@ -40,30 +40,26 @@ struct AccessPoliciesView: View {
   }
 
   var body: some View {
-    DashFeatureScreen(
-      chrome: {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: tab == .reusable ? !policies.isEmpty : !apps.isEmpty,
+      retry: { Task { await load(force: true) } },
+      header: {
         DashTextTabs(
           items: [("Reusable", Tab.reusable), ("By app", Tab.byApp)],
           selection: $tab
         )
-      },
-      content: {
-        DashFeatureList(
-          isLoading: loading,
-          error: error,
-          hasContent: tab == .reusable ? !policies.isEmpty : !apps.isEmpty,
-          retry: { Task { await load(force: true) } }
-        ) {
-          if tab == .reusable {
-            AccessPolicyRowsCard(policies: policies, emptyMessage: "No reusable policies yet.") {
-              selected = $0
-            }
-          } else {
-            appRows
-          }
-        }
       }
-    )
+    ) {
+      if tab == .reusable {
+        AccessPolicyRowsCard(policies: policies, emptyMessage: "No reusable policies yet.") {
+          selected = $0
+        }
+      } else {
+        appRows
+      }
+    }
     .toolbar {
       if allowsWrites, tab == .reusable {
         ToolbarItem(placement: .topBarTrailing) {

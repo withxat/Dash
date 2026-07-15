@@ -54,6 +54,7 @@ struct ItemsView: View {
   @Environment(AppModel.self) private var model
   @State private var query = ""
   @State private var accessFilter: ItemsAccessFilter = .all
+  @State private var showsFilter = false
   /// When set (regular-width split), rows select into the detail column instead of pushing.
   var selection: Binding<FeatureID?>?
 
@@ -70,10 +71,22 @@ struct ItemsView: View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         DashInlineSearch(prompt: "Search features", text: $query)
-        DashTextTabs(
-          items: ItemsAccessFilter.allCases.map { ($0.title, $0) },
-          selection: $accessFilter
-        )
+
+        if accessFilter != .all {
+          HStack(spacing: 8) {
+            Text("Showing \(accessFilter.title.lowercased())")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 0)
+            Button("Clear") {
+              accessFilter = .all
+            }
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.brand)
+            .dashCompactHitTarget()
+          }
+          .accessibilityElement(children: .combine)
+        }
 
         if grouped.isEmpty {
           DashEmptyState(
@@ -91,6 +104,44 @@ struct ItemsView: View {
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashCatalogScreen("Items")
+    .toolbar {
+      ToolbarItem(placement: .topBarTrailing) {
+        DashToolbarIconButton(
+          asset: SolarAsset.slider,
+          accessibilityLabel: "Filter by access"
+        ) {
+          showsFilter = true
+        }
+      }
+      .dashSeparateToolbarBackground()
+    }
+    .dashTray(isPresented: $showsFilter, title: "Filter") {
+      VStack(spacing: 10) {
+        ForEach(ItemsAccessFilter.allCases, id: \.self) { filter in
+          Button {
+            accessFilter = filter
+            showsFilter = false
+          } label: {
+            HStack(spacing: 12) {
+              Text(filter.title)
+                .dashTextStyle(.bodyMedium)
+                .foregroundStyle(DashTheme.text)
+              Spacer(minLength: 0)
+              if accessFilter == filter {
+                SolarIcon(asset: SolarAsset.checkCircle, size: 22, color: DashTheme.brand)
+              }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .accessibilityAddTraits(accessFilter == filter ? .isSelected : [])
+        }
+      }
+      .padding(.horizontal, DashTheme.Sheet.content)
+    }
   }
 
   private var emptyTitle: String {
@@ -101,15 +152,11 @@ struct ItemsView: View {
   }
 
   private var emptyMessage: String {
-    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !trimmed.isEmpty {
-      return "Nothing matches \(trimmed)."
+    if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return "Try another search, or clear the access filter."
     }
-    switch accessFilter {
-    case .all: return "The feature catalog is empty."
-    case .available: return "No fully available features for the current scopes."
-    case .readOnly: return "No read-only features for the current scopes."
-    case .locked: return "No locked features for the current scopes."
-    }
+    return accessFilter == .all
+      ? "Features for this account will show up here."
+      : "Nothing matches \(accessFilter.title.lowercased()) right now."
   }
 }

@@ -18,13 +18,15 @@ enum RecentFeatures {
     return ([item.rawValue] + others).prefix(limit).joined(separator: ",")
   }
 
-  /// Home "Continue" list: recent first, then shortcuts, deduped and capped.
+  /// Home "Continue" list: recent tasks only, excluding Shortcuts so the
+  /// section never mirrors the pinned shortcut set.
   static func continueItems(
     recent: [FeatureID], shortcuts: [FeatureID], limit: Int = limit
   ) -> [FeatureID] {
+    let excluded = Set(shortcuts)
     var seen = Set<FeatureID>()
     var items: [FeatureID] = []
-    for feature in recent + shortcuts where seen.insert(feature).inserted {
+    for feature in recent where !excluded.contains(feature) && seen.insert(feature).inserted {
       items.append(feature)
       if items.count == limit { break }
     }

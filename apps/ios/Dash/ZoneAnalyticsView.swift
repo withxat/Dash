@@ -77,39 +77,72 @@ struct ZoneAnalyticsView: View {
   @State private var points: [ZoneAnalyticsChartPoint] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var showsMoreMetrics = false
 
   var body: some View {
-    DashFeatureScreen(chrome: {
-      DashTextTabs(
-        items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
-        selection: $range
-      )
-    }) {
-      DashFeatureList(
-        isLoading: loading,
-        error: error,
-        hasContent: !points.isEmpty,
-        retry: { Task { await load(force: true) } }
-      ) {
-        if points.isEmpty {
-          DashEmptyState(
-            icon: SolarAsset.chart,
-            title: "No traffic yet",
-            message: "HTTP request analytics for this zone will appear here."
-          )
-        } else {
-          chartCard
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: !points.isEmpty,
+      retry: { Task { await load(force: true) } },
+      header: {
+        DashTextTabs(
+          items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+          selection: $range
+        )
+      }
+    ) {
+      if points.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.chart,
+          title: "No traffic yet",
+          message: "HTTP request analytics for this zone will appear here."
+        )
+      } else {
+        requestsHero
+        chartCard
+        if showsMoreMetrics {
           totalsGroup
           if range != .day {
             perBucketGroup
           }
+        } else {
+          Button {
+            withAnimation(DashTheme.Motion.morph) { showsMoreMetrics = true }
+          } label: {
+            Text("Show more metrics")
+              .dashTextStyle(.supportingMedium)
+              .foregroundStyle(DashTheme.brand)
+              .frame(maxWidth: .infinity, minHeight: 44)
+          }
+          .buttonStyle(DashPressButtonStyle())
         }
       }
     }
     .navigationTitle("Analytics")
     .refreshable { await load(force: true) }
-    .onChange(of: range) { points = [] }
+    .onChange(of: range) {
+      points = []
+      showsMoreMetrics = false
+    }
     .task(id: range) { await load() }
+  }
+
+  private var requestsHero: some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 4) {
+        Text("Requests")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+        Text(totalRequests.formatted())
+          .dashTextStyle(.emptyTitle)
+          .foregroundStyle(DashTheme.strong)
+        Text(range.totalsHeading)
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.placeholder)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
   }
 
   private var chartCard: some View {

@@ -185,14 +185,17 @@ import UIKit
 }
 
 @Test func recentFeaturesContinueItemsPreferRecentAndCap() {
+  // Shortcuts are excluded so Continue never clones the Shortcuts section.
   #expect(
     RecentFeatures.continueItems(recent: [.dnsManagement, .zones], shortcuts: [.zones, .r2, .kv])
-      == [.dnsManagement, .zones, .r2, .kv])
+      == [.dnsManagement])
   #expect(
     RecentFeatures.continueItems(
       recent: [.zones, .workers, .r2, .kv, .d1, .images],
       shortcuts: [.stream, .analytics]
     ) == [.zones, .workers, .r2, .kv, .d1, .images])
+  #expect(
+    RecentFeatures.continueItems(recent: [.zones, .r2], shortcuts: [.zones, .r2, .kv]).isEmpty)
 }
 
 @Test func itemsCatalogFilteringRespectsAccessAndQuery() {

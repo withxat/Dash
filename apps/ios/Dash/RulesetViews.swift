@@ -21,28 +21,24 @@ struct RulesetsView: View {
   private var accountBasePath: String { "/accounts/\(model.activeAccountID ?? "")" }
 
   var body: some View {
-    DashFeatureScreen(
-      chrome: {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: tab == .account ? !rulesets.isEmpty : !zones.isEmpty,
+      retry: { Task { await load(force: true) } },
+      header: {
         DashTextTabs(
           items: [("Account", Tab.account), ("Zones", Tab.zones)],
           selection: $tab
         )
-      },
-      content: {
-        DashFeatureList(
-          isLoading: loading,
-          error: error,
-          hasContent: tab == .account ? !rulesets.isEmpty : !zones.isEmpty,
-          retry: { Task { await load(force: true) } }
-        ) {
-          if tab == .account {
-            RulesetRowsCard(rulesets: rulesets, basePath: accountBasePath)
-          } else {
-            zoneRows
-          }
-        }
       }
-    )
+    ) {
+      if tab == .account {
+        RulesetRowsCard(rulesets: rulesets, basePath: accountBasePath)
+      } else {
+        zoneRows
+      }
+    }
     .refreshable { await load(force: true) }
     .task { await load() }
   }

@@ -329,9 +329,12 @@ struct ZoneDetailView: View {
   private var isPinned: Bool { PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID) }
 
   private let tools: [ZoneTool] = [
-    ZoneTool(title: "DNS", icon: SolarAsset.globus, endpoint: "dns"),
-    ZoneTool(title: "Analytics", icon: SolarAsset.chart, endpoint: "analytics"),
-    ZoneTool(title: "Cache", icon: SolarAsset.bolt, endpoint: "cache"),
+    ZoneTool(
+      title: "DNS", icon: SolarAsset.globus, endpoint: "dns", blurb: "Records and proxy status"),
+    ZoneTool(
+      title: "Analytics", icon: SolarAsset.chart, endpoint: "analytics",
+      blurb: "Requests and threats"),
+    ZoneTool(title: "Cache", icon: SolarAsset.bolt, endpoint: "cache", blurb: "Purge and rules"),
     ZoneTool(title: "Settings", icon: SolarAsset.slider, endpoint: "settings"),
     ZoneTool(title: "SSL/TLS", icon: SolarAsset.lock, endpoint: "ssl/certificate_packs?status=all"),
     ZoneTool(
@@ -368,37 +371,15 @@ struct ZoneDetailView: View {
       retry: { Task { await load() } }
     ) {
       if let zone {
-        DashCard {
-          VStack(alignment: .leading, spacing: 12) {
-            HStack {
-              SolarIcon(asset: SolarAsset.globe, size: 28, color: DashTheme.accent)
-              VStack(alignment: .leading) {
-                Text(zone.name).dashTextStyle(.sheetTitle)
-                Text(zone.status ?? "unknown").foregroundStyle(DashTheme.subtle)
-                if let planName = zone.plan?.name {
-                  Text(planName)
-                    .font(.footnote)
-                    .foregroundStyle(DashTheme.placeholder)
-                }
-              }
-              Spacer()
-              StatusBadge(text: zone.status ?? "unknown")
-            }
-            if let servers = zone.nameServers {
-              Text("Nameservers").dashTextStyle(.footnoteSemibold).foregroundStyle(
-                DashTheme.subtle)
-              ForEach(servers, id: \.self) {
-                Text($0).dashTextStyle(.code)
+        zoneHero(zone)
+        primaryActions(zone)
+        if !moreTools(for: zone).isEmpty {
+          DashListGroup(title: "More tools") {
+            DashListCardRows(items: moreTools(for: zone)) { tool in
+              DashListGroupLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
+                DashListRow(title: tool.title, icon: tool.icon)
               }
             }
-          }
-        }
-        DashTileGrid {
-          ForEach(visibleTools(for: zone), id: \.title) { tool in
-            NavigationLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
-              DashToolTile(title: tool.title, icon: tool.icon)
-            }
-            .buttonStyle(DashPressButtonStyle())
           }
         }
       }
@@ -473,6 +454,52 @@ struct ZoneDetailView: View {
     }
   }
 
+  private func zoneHero(_ zone: CloudflareZone) -> some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
+          SolarIcon(
+            asset: SolarAsset.globe, size: 28, color: FeatureVisualIdentity.heroColor(for: .zones))
+          VStack(alignment: .leading, spacing: 2) {
+            Text(zone.name).dashTextStyle(.sheetTitle)
+            if let planName = zone.plan?.name {
+              Text(planName)
+                .dashTextStyle(.footnote)
+                .foregroundStyle(DashTheme.placeholder)
+            }
+          }
+          Spacer(minLength: 8)
+          StatusBadge(text: zone.status ?? "unknown")
+        }
+        if let servers = zone.nameServers, !servers.isEmpty {
+          Text("Nameservers").dashTextStyle(.footnoteSemibold).foregroundStyle(DashTheme.subtle)
+          ForEach(servers, id: \.self) {
+            Text($0).dashTextStyle(.code)
+          }
+        }
+      }
+    }
+  }
+
+  private func primaryActions(_ zone: CloudflareZone) -> some View {
+    let primary = primaryTools(for: zone)
+    return DashListGroup(title: "Quick actions") {
+      DashListCardRows(items: primary) { tool in
+        DashListGroupLink(value: destination(title: tool.title, endpoint: tool.endpoint)) {
+          DashListRow(title: tool.title, subtitle: tool.blurb, icon: tool.icon)
+        }
+      }
+    }
+  }
+
+  private func primaryTools(for zone: CloudflareZone) -> [ZoneTool] {
+    visibleTools(for: zone).filter { ["DNS", "Analytics", "Cache"].contains($0.title) }
+  }
+
+  private func moreTools(for zone: CloudflareZone) -> [ZoneTool] {
+    visibleTools(for: zone).filter { !["DNS", "Analytics", "Cache"].contains($0.title) }
+  }
+
   private func destination(title: String, endpoint: String) -> Destination {
     switch endpoint {
     case "dns": .dns(zoneID)
@@ -485,11 +512,13 @@ struct ZoneDetailView: View {
   }
 }
 
-private struct ZoneTool {
+private struct ZoneTool: Identifiable {
   let title: String
   let icon: String
   let endpoint: String
   var minTier: ZonePlanTier = .free
+  var blurb: String? = nil
+  var id: String { title }
 }
 
 enum ZonePlanTier: Int, Comparable {

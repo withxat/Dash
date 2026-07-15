@@ -11,6 +11,7 @@ struct BotManagementView: View {
   @State private var loading = true
   @State private var error: String?
   @State private var saveError: String?
+  @State private var showsAdvanced = false
 
   /// Response keys the API reports but refuses in a PUT.
   private static let readOnlyKeys: Set<String> = [
@@ -104,28 +105,8 @@ struct BotManagementView: View {
       }
       let enumRows = infoRows.filter { Self.enumOptions[$0.key] != nil }
       if !enumRows.isEmpty {
-        VStack(spacing: 12) {
-          ForEach(enumRows, id: \.key) { row in
-            if let options = Self.enumOptions[row.key], allowsWrites {
-              DashMenuRow(
-                title: Self.labels[row.key]?.title
-                  ?? row.key.replacingOccurrences(of: "_", with: " "),
-                value: row.value,
-                caption: Self.labels[row.key]?.subtitle,
-                options: options
-              ) { chosen in
-                let previous = config
-                config[row.key] = .string(chosen)
-                Task { await save(revertingTo: previous) }
-              }
-            } else {
-              DashValueCard(
-                title: Self.labels[row.key]?.title
-                  ?? row.key.replacingOccurrences(of: "_", with: " "),
-                value: row.value
-              )
-            }
-          }
+        DashSecondaryPillButton(title: "Advanced actions") {
+          showsAdvanced = true
         }
       }
       if !loading, toggleKeys.isEmpty, infoRows.isEmpty, error == nil {
@@ -140,6 +121,32 @@ struct BotManagementView: View {
     .navigationBarTitleDisplayMode(.inline)
     .refreshable { await load(force: true) }
     .task { await load() }
+    .dashTray(isPresented: $showsAdvanced, title: "Advanced") {
+      VStack(spacing: 12) {
+        ForEach(infoRows.filter { Self.enumOptions[$0.key] != nil }, id: \.key) { row in
+          if let options = Self.enumOptions[row.key], allowsWrites {
+            DashMenuRow(
+              title: Self.labels[row.key]?.title
+                ?? row.key.replacingOccurrences(of: "_", with: " "),
+              value: row.value,
+              caption: Self.labels[row.key]?.subtitle,
+              options: options
+            ) { chosen in
+              let previous = config
+              config[row.key] = .string(chosen)
+              Task { await save(revertingTo: previous) }
+            }
+          } else {
+            DashValueCard(
+              title: Self.labels[row.key]?.title
+                ?? row.key.replacingOccurrences(of: "_", with: " "),
+              value: row.value
+            )
+          }
+        }
+      }
+      .padding(.horizontal, DashTheme.Sheet.content)
+    }
   }
 
   private func binding(for key: String) -> Binding<Bool> {

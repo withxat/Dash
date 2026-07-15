@@ -2,6 +2,17 @@ import CloudflareAPI
 import SwiftUI
 import UIKit
 
+private struct FeatureTransitionNamespaceKey: EnvironmentKey {
+  static let defaultValue: Namespace.ID? = nil
+}
+
+extension EnvironmentValues {
+  var featureTransitionNamespace: Namespace.ID? {
+    get { self[FeatureTransitionNamespaceKey.self] }
+    set { self[FeatureTransitionNamespaceKey.self] = newValue }
+  }
+}
+
 enum DashTheme {
   enum Layout {
     /// Reading width for regular-width feature screens. The parent container still
@@ -795,6 +806,8 @@ struct CatalogFeatureIcon: View {
   var size: Size = .list
   /// When true, uses vivid tone (pinned/hero). Catalog lists stay muted.
   var emphasized: Bool = false
+  var enablesNavigationTransition = false
+  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
   @ScaledMetric(relativeTo: .body) private var listGlyphScale: CGFloat = 1
   @ScaledMetric(relativeTo: .body) private var listTileScale: CGFloat = 1
 
@@ -837,7 +850,7 @@ struct CatalogFeatureIcon: View {
   }
 
   var body: some View {
-    Image(assetName)
+    let icon = Image(assetName)
       .resizable()
       .renderingMode(.template)
       .scaledToFit()
@@ -853,6 +866,14 @@ struct CatalogFeatureIcon: View {
         )
       )
       .accessibilityHidden(true)
+
+    if #available(iOS 18.0, *), enablesNavigationTransition,
+      let featureTransitionNamespace
+    {
+      icon.matchedTransitionSource(id: feature, in: featureTransitionNamespace)
+    } else {
+      icon
+    }
   }
 }
 
@@ -878,17 +899,25 @@ private struct FeatureInlineNavigationTitle: View {
 struct FeatureDetailChrome<Content: View>: View {
   let feature: FeatureID
   @ViewBuilder var content: () -> Content
+  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
 
   var body: some View {
-    content()
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .background(DashTheme.canvas)
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .principal) {
-          FeatureInlineNavigationTitle(feature: feature, title: feature.title)
-        }
+    Group {
+      if #available(iOS 18.0, *), let featureTransitionNamespace {
+        content()
+          .navigationTransition(.zoom(sourceID: feature, in: featureTransitionNamespace))
+      } else {
+        content()
       }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .background(DashTheme.canvas)
+    .navigationBarTitleDisplayMode(.inline)
+    .toolbar {
+      ToolbarItem(placement: .principal) {
+        FeatureInlineNavigationTitle(feature: feature, title: feature.title)
+      }
+    }
   }
 }
 

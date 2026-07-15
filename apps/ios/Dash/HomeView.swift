@@ -204,8 +204,10 @@ struct FeatureRow: View {
       if isAccessibilitySize {
         VStack(alignment: .leading, spacing: 8) {
           HStack(spacing: 12) {
-            CatalogFeatureIcon(feature: feature, style: iconStyle)
-              .opacity(accessLevel == .locked ? 0.55 : 1)
+            CatalogFeatureIcon(
+              feature: feature, style: iconStyle, enablesNavigationTransition: true
+            )
+            .opacity(accessLevel == .locked ? 0.55 : 1)
             labels
           }
           HStack {
@@ -216,7 +218,7 @@ struct FeatureRow: View {
         }
       } else {
         HStack(spacing: 12) {
-          CatalogFeatureIcon(feature: feature, style: iconStyle)
+          CatalogFeatureIcon(feature: feature, style: iconStyle, enablesNavigationTransition: true)
             .opacity(accessLevel == .locked ? 0.55 : 1)
           labels
           Spacer(minLength: 8)

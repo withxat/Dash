@@ -366,6 +366,7 @@ private enum AppTab: Hashable { case home, items, watchtower, search }
 
 private struct FeatureNavigationStack<Root: View>: View {
   @Binding var path: NavigationPath
+  @Namespace private var featureTransition
   @ViewBuilder let root: () -> Root
 
   var body: some View {
@@ -373,6 +374,7 @@ private struct FeatureNavigationStack<Root: View>: View {
       root()
         .destinationRouting()
     }
+    .environment(\.featureTransitionNamespace, featureTransition)
   }
 }
 
