@@ -97,6 +97,74 @@ extension View {
   func dashTrayHeaderAction(_ action: DashSheetHeaderAction?) -> some View {
     preference(key: DashSheetHeaderActionKey.self, value: action)
   }
+
+  /// Overrides the tray chrome title for the current step (e.g. Profile → Sign out).
+  func dashTrayTitle(_ title: String?) -> some View {
+    preference(key: DashTrayTitleKey.self, value: title)
+  }
+}
+
+private struct DashTrayTitleKey: PreferenceKey {
+  static var defaultValue: String? { nil }
+  static func reduce(value: inout String?, nextValue: () -> String?) {
+    value = nextValue() ?? value
+  }
+}
+
+/// Pure dismiss / settle decisions for tray drag gestures — shared by content and
+/// expandable trays so velocity thresholds stay testable.
+enum TrayDragOutcome: Equatable, Sendable {
+  case dismiss
+  case settle
+  case settleExpanded(Bool)
+}
+
+enum TrayDragDecision {
+  /// Content tray: dismiss on distance or projected end past threshold, or a
+  /// strong downward fling. Settle otherwise.
+  static func content(
+    translation: CGFloat,
+    predictedEndTranslation: CGFloat,
+    distanceThreshold: CGFloat = 120,
+    projectedThreshold: CGFloat = 160,
+    velocityThreshold: CGFloat = 900
+  ) -> TrayDragOutcome {
+    let velocity = predictedEndTranslation - translation
+    if translation > distanceThreshold
+      || predictedEndTranslation > projectedThreshold
+      || velocity > velocityThreshold
+    {
+      return .dismiss
+    }
+    return .settle
+  }
+
+  /// Expandable tray: dismiss when the projected top passes the floating detent
+  /// by a fraction of the detent span; otherwise snap to the nearer detent.
+  static func expandable(
+    baseTop: CGFloat,
+    predictedEndTranslation: CGFloat,
+    expandedTop: CGFloat,
+    floatingTop: CGFloat,
+    dismissPastFloatingFraction: CGFloat = 0.4
+  ) -> TrayDragOutcome {
+    let predictedTop = baseTop + predictedEndTranslation
+    let dismissThreshold =
+      floatingTop + (floatingTop - expandedTop) * dismissPastFloatingFraction
+    if predictedTop > dismissThreshold {
+      return .dismiss
+    }
+    let snapExpanded = abs(predictedTop - expandedTop) < abs(predictedTop - floatingTop)
+    return .settleExpanded(snapExpanded)
+  }
+
+  /// Rubber-band offset when dragging past the expanded top detent.
+  static func rubberBand(cardTop: CGFloat, expandedTop: CGFloat, factor: CGFloat = 0.15)
+    -> CGFloat
+  {
+    guard cardTop < expandedTop else { return cardTop }
+    return expandedTop - (expandedTop - cardTop) * factor
+  }
 }
 
 /// Shared header (title + close, optional grab bar and trailing action) for both
@@ -106,6 +174,7 @@ private struct DashSheetHeader: View {
   var showsGrabBar = false
   var trailingAction: DashSheetHeaderAction? = nil
   let dismiss: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(spacing: 0) {
@@ -115,6 +184,13 @@ private struct DashSheetHeader: View {
         Text(title)
           .dashTextStyle(.trayTitle)
           .foregroundStyle(DashTheme.strong)
+          .lineLimit(1)
+          .minimumScaleFactor(0.85)
+          .contentTransition(reduceMotion ? .identity : .opacity)
+          .animation(
+            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph, value: title
+          )
+          .id(title)
         Spacer(minLength: 12)
         if let trailingAction {
           Button(action: trailingAction.perform) {
@@ -159,6 +235,9 @@ private struct DashCustomSheet<Content: View>: View {
   @State private var cardHeight: CGFloat = 0
   @State private var keyboardHeight: CGFloat = 0
   @State private var headerAction: DashSheetHeaderAction?
+  @State private var contentTitle: String?
+
+  private var resolvedTitle: String { contentTitle ?? title }
 
   var body: some View {
     ZStack(alignment: .bottom) {
@@ -179,7 +258,7 @@ private struct DashCustomSheet<Content: View>: View {
         ) {
           // Drag-to-dismiss lives on the header only, so the scrollable body
           // keeps its own vertical scroll.
-          DashSheetHeader(title: title, trailingAction: headerAction, dismiss: close)
+          DashSheetHeader(title: resolvedTitle, trailingAction: headerAction, dismiss: close)
             .contentShape(Rectangle())
             .gesture(dragGesture)
         } content: {
@@ -205,6 +284,7 @@ private struct DashCustomSheet<Content: View>: View {
     .environment(\.dashTrayDismiss, close)
     .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
+    .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
     ) { note in
@@ -271,15 +351,25 @@ private struct DashCustomSheet<Content: View>: View {
     // Global space: measuring in the header's own (moving) coordinates feeds the
     // offset back into the translation and makes the drag flicker.
     DragGesture(coordinateSpace: .global)
-      .onChanged { value in drag = max(0, value.translation.height) }
+      .onChanged { value in
+        let raw = value.translation.height
+        // Upward overshoot rubber-bands; downward follows 1:1 for dismiss.
+        drag = raw < 0 ? TrayDragDecision.rubberBand(cardTop: raw, expandedTop: 0) : raw
+      }
       .onEnded { value in
-        if value.translation.height > 120 {
+        switch TrayDragDecision.content(
+          translation: value.translation.height,
+          predictedEndTranslation: value.predictedEndTranslation.height
+        ) {
+        case .dismiss:
           close()
-        } else if reduceMotion {
-          drag = 0
-        } else {
-          // Settling back to rest is an entrance-like motion — decelerate.
-          withAnimation(DashTheme.Motion.trayOpen) { drag = 0 }
+        case .settle, .settleExpanded:
+          if reduceMotion {
+            drag = 0
+          } else {
+            // Settling back to rest is an entrance-like motion — decelerate.
+            withAnimation(DashTheme.Motion.trayOpen) { drag = 0 }
+          }
         }
       }
   }
@@ -301,6 +391,9 @@ private struct DashExpandableSheet<Content: View>: View {
   @State private var shown = false
   @State private var expanded = true
   @State private var drag: CGFloat = 0
+  @State private var contentTitle: String?
+
+  private var resolvedTitle: String { contentTitle ?? title }
 
   private struct Metrics {
     let cardTop: CGFloat
@@ -333,6 +426,7 @@ private struct DashExpandableSheet<Content: View>: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .environment(\.dashTrayDismiss, close)
+    .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .presentationBackground(.clear)
     .onAppear {
       withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.trayOpen) {
@@ -350,7 +444,7 @@ private struct DashExpandableSheet<Content: View>: View {
       style: .continuous
     )
     return VStack(spacing: 0) {
-      DashSheetHeader(title: title, showsGrabBar: true, dismiss: close)
+      DashSheetHeader(title: resolvedTitle, showsGrabBar: true, dismiss: close)
         .contentShape(Rectangle())
         .gesture(detentGesture(metrics))
       // No top padding here: the gap below the header border belongs to the
@@ -380,11 +474,8 @@ private struct DashExpandableSheet<Content: View>: View {
     let floatingTop = proxy.size.height - floatingBottomMargin - floatingHeight
 
     let baseTop = expanded ? expandedTop : floatingTop
-    var cardTop = baseTop + drag
-    if cardTop < expandedTop {
-      // Rubber-band past the top detent, like a native sheet.
-      cardTop = expandedTop - (expandedTop - cardTop) * 0.15
-    }
+    let cardTop = TrayDragDecision.rubberBand(
+      cardTop: baseTop + drag, expandedTop: expandedTop)
     let progress = min(max((cardTop - expandedTop) / (floatingTop - expandedTop), 0), 1)
 
     func lerp(_ from: CGFloat, _ to: CGFloat) -> CGFloat { from + (to - from) * progress }
@@ -407,14 +498,15 @@ private struct DashExpandableSheet<Content: View>: View {
       .onChanged { value in drag = value.translation.height }
       .onEnded { value in
         let baseTop = expanded ? metrics.expandedTop : metrics.floatingTop
-        let predictedTop = baseTop + value.predictedEndTranslation.height
-        let dismissThreshold =
-          metrics.floatingTop + (metrics.floatingTop - metrics.expandedTop) * 0.4
-        if predictedTop > dismissThreshold {
+        switch TrayDragDecision.expandable(
+          baseTop: baseTop,
+          predictedEndTranslation: value.predictedEndTranslation.height,
+          expandedTop: metrics.expandedTop,
+          floatingTop: metrics.floatingTop
+        ) {
+        case .dismiss:
           close()
-        } else {
-          let snapExpanded =
-            abs(predictedTop - metrics.expandedTop) < abs(predictedTop - metrics.floatingTop)
+        case .settleExpanded(let snapExpanded):
           if reduceMotion {
             expanded = snapExpanded
             drag = 0
@@ -423,6 +515,12 @@ private struct DashExpandableSheet<Content: View>: View {
               expanded = snapExpanded
               drag = 0
             }
+          }
+        case .settle:
+          if reduceMotion {
+            drag = 0
+          } else {
+            withAnimation(DashTheme.Motion.morph) { drag = 0 }
           }
         }
       }
@@ -728,8 +826,10 @@ struct DashFormSheet<Content: View>: View {
       confirming: $confirmingDelete,
       message: deleteMessage,
       isBusy: confirmingDelete ? isDeleting : isSaving,
-      actionTitle: confirmingDelete ? "Confirm" : saveTitle,
-      actionRole: confirmingDelete ? .destructive : nil,
+      actionTitle: saveTitle,
+      confirmingActionTitle: "Confirm",
+      actionRole: nil,
+      confirmingActionRole: .destructive,
       actionEnabled: confirmingDelete || canSave,
       errorMessage: confirmingDelete ? deleteError : nil,
       action: { confirmingDelete ? onDelete?() : onSave() },
@@ -745,21 +845,33 @@ struct DashFormSheet<Content: View>: View {
 /// that morphs in place (e.g. Save → Confirm). A header trash button flips
 /// `confirming`. Reused by editor and detail trays so the whole app shares one
 /// "a tray has one action button, or none" interaction.
-private struct DashConfirmMorph<Content: View>: View {
+struct DashConfirmMorph<Content: View>: View {
   @Binding var confirming: Bool
-  let message: String?
-  let isBusy: Bool
-  let actionTitle: String
-  let actionRole: ButtonRole?
-  let actionEnabled: Bool
+  var message: String?
+  var isBusy: Bool
+  /// Idle primary action title. `nil` hides the footer button until confirming
+  /// (detail trays that only offer header delete).
+  var actionTitle: String?
+  var confirmingActionTitle: String = "Confirm"
+  var actionRole: ButtonRole? = nil
+  var confirmingActionRole: ButtonRole? = .destructive
+  var actionEnabled: Bool = true
   var errorMessage: String? = nil
-  let action: () -> Void
+  var action: () -> Void
   var headerDelete = false
-  @ViewBuilder let content: () -> Content
+  @ViewBuilder var content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var morphAnimation: Animation {
     reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
+  }
+
+  private var resolvedActionTitle: String? {
+    confirming ? confirmingActionTitle : actionTitle
+  }
+
+  private var resolvedActionRole: ButtonRole? {
+    confirming ? confirmingActionRole : actionRole
   }
 
   var body: some View {
@@ -798,11 +910,13 @@ private struct DashConfirmMorph<Content: View>: View {
         .transition(reduceMotion ? .opacity : .dashMorph)
       }
 
-      DashActionButton(
-        title: actionTitle, role: actionRole, isLoading: isBusy, action: action
-      )
-      .disabled(!actionEnabled)
-      .opacity(actionEnabled ? 1 : 0.45)
+      if let resolvedActionTitle {
+        DashActionButton(
+          title: resolvedActionTitle, role: resolvedActionRole, isLoading: isBusy, action: action
+        )
+        .disabled(!actionEnabled)
+        .opacity(actionEnabled ? 1 : 0.45)
+      }
     }
     .padding(.horizontal, DashTheme.Sheet.content)
     .dashTrayHeaderAction(

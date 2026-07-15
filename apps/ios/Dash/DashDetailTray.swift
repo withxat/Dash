@@ -44,73 +44,40 @@ struct DashDetailTray<Accessory: View>: View {
   private var hasDelete: Bool { deleteMessage != nil && onDelete != nil }
 
   var body: some View {
-    ZStack {
-      if confirmingDelete, let deleteMessage, let onDelete {
-        VStack(spacing: 16) {
-          Text(deleteMessage)
-            .font(.system(size: 15))
-            .foregroundStyle(DashTheme.subtle)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 4)
-
-          if let deleteError {
-            DashNotice(kind: .error, message: deleteError)
-          }
-
-          VStack(spacing: 4) {
-            Button {
-              withAnimation(DashTheme.Motion.morph) { confirmingDelete = false }
-            } label: {
-              Text("Cancel")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(DashTheme.subtle)
-                .frame(maxWidth: .infinity, minHeight: 44)
-            }
-            .buttonStyle(DashPressButtonStyle())
-
-            DashActionButton(
-              title: "Confirm", role: .destructive, isLoading: isDeleting, action: onDelete)
-          }
-        }
-        .padding(.horizontal, DashTheme.Sheet.content)
-        .transition(.dashMorph)
-      } else {
-        // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
+    DashConfirmMorph(
+      confirming: $confirmingDelete,
+      message: deleteMessage,
+      isBusy: isDeleting,
+      actionTitle: nil,
+      confirmingActionTitle: "Confirm",
+      confirmingActionRole: .destructive,
+      actionEnabled: true,
+      errorMessage: deleteError,
+      action: { onDelete?() },
+      headerDelete: hasDelete
+    ) {
+      // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
+      VStack(alignment: .leading, spacing: 0) {
         VStack(alignment: .leading, spacing: 0) {
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-              fieldRow(field)
-              if index < fields.count - 1 { DashListGroupDivider() }
-            }
+          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+            fieldRow(field)
+            if index < fields.count - 1 { DashListGroupDivider() }
           }
-          accessory
-            .padding(.top, 12)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, DashTheme.Sheet.content)
-        .transition(.dashMorph)
+        accessory
+          .padding(.top, 12)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .dashTrayHeaderAction(
-      hasDelete && !confirmingDelete
-        ? DashSheetHeaderAction(
-          id: "delete", icon: SolarAsset.trash, accessibilityLabel: "Delete"
-        ) {
-          withAnimation(DashTheme.Motion.morph) { confirmingDelete = true }
-        }
-        : nil
-    )
   }
 
   private func fieldRow(_ field: DashDetailField) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(field.label)
-        .font(.system(size: 13, weight: .semibold))
+        .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       Text(field.value)
-        .font(field.mono ? .system(size: 14, design: .monospaced) : .system(size: 15))
+        .dashTextStyle(field.mono ? .code : .supporting)
         .foregroundStyle(DashTheme.text)
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)

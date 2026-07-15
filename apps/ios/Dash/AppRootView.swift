@@ -928,8 +928,8 @@ struct ProfileTrayContent: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Dismisses the tray and pushes the Profile page onto the active tab.
   let openProfile: () -> Void
-  @State private var showsAccounts = false
-  @State private var pendingAccount: CloudflareAccount?
+  @State private var phase: ProfileTrayPhase = .menu
+  @State private var isSigningOut = false
 
   private var morphAnimation: Animation {
     reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
@@ -937,17 +937,22 @@ struct ProfileTrayContent: View {
 
   var body: some View {
     ZStack {
-      if let pendingAccount {
-        accountSwitchConfirmation(pendingAccount)
+      switch phase {
+      case .menu:
+        menu
           .transition(reduceMotion ? .opacity : .dashMorph)
-      } else if showsAccounts {
+      case .accounts:
         accountList
           .transition(reduceMotion ? .opacity : .dashMorph)
-      } else {
-        menu
+      case .switchAccount(let account):
+        accountSwitchConfirmation(account)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      case .signOut:
+        signOutConfirmation
           .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
+    .dashTrayTitle(phase.title)
   }
 
   private var menu: some View {
@@ -976,20 +981,13 @@ struct ProfileTrayContent: View {
         menuRow(title: "Profile", icon: SolarAsset.userCircle, action: openProfile)
         if model.accounts.count > 1 {
           menuRow(title: "Switch account", icon: SolarAsset.users) {
-            withAnimation(morphAnimation) { showsAccounts = true }
+            withAnimation(morphAnimation) { phase = .accounts }
           }
         }
 
-        DashConfirmableActions(
-          actions: [
-            DashDangerAction(
-              title: "Sign out",
-              icon: SolarAsset.danger,
-              message: "You'll need to reconnect your Cloudflare account to use Dash again."
-            ) {
-              await model.signOut()
-            }
-          ], horizontalInset: 0)
+        menuRow(title: "Sign out", icon: SolarAsset.danger, tint: DashTheme.danger) {
+          withAnimation(morphAnimation) { phase = .signOut }
+        }
       }
       .padding(.horizontal, DashTheme.Sheet.content)
     }
@@ -1004,7 +1002,7 @@ struct ProfileTrayContent: View {
               dismiss()
               return
             }
-            withAnimation(morphAnimation) { pendingAccount = account }
+            withAnimation(morphAnimation) { phase = .switchAccount(account) }
           } label: {
             HStack(spacing: 12) {
               Text(account.name)
@@ -1030,7 +1028,7 @@ struct ProfileTrayContent: View {
       }
 
       Button {
-        withAnimation(morphAnimation) { showsAccounts = false }
+        withAnimation(morphAnimation) { phase = .menu }
       } label: {
         Text("Back")
           .dashTextStyle(.buttonMedium)
@@ -1056,7 +1054,7 @@ struct ProfileTrayContent: View {
 
       VStack(spacing: 4) {
         Button {
-          withAnimation(morphAnimation) { pendingAccount = nil }
+          withAnimation(morphAnimation) { phase = .accounts }
         } label: {
           Text("Cancel")
             .dashTextStyle(.buttonMedium)
@@ -1074,13 +1072,51 @@ struct ProfileTrayContent: View {
     .padding(.horizontal, DashTheme.Sheet.content)
   }
 
-  private func menuRow(title: String, icon: String, action: @escaping () -> Void) -> some View {
+  private var signOutConfirmation: some View {
+    VStack(spacing: 16) {
+      Text("You'll need to reconnect your Cloudflare account to use Dash again.")
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+
+      VStack(spacing: 4) {
+        Button {
+          withAnimation(morphAnimation) { phase = .menu }
+        } label: {
+          Text("Cancel")
+            .dashTextStyle(.buttonMedium)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .disabled(isSigningOut)
+
+        DashActionButton(title: "Sign out", role: .destructive, isLoading: isSigningOut) {
+          Task {
+            isSigningOut = true
+            await model.signOut()
+            isSigningOut = false
+            dismiss()
+          }
+        }
+      }
+    }
+    .padding(.horizontal, DashTheme.Sheet.content)
+  }
+
+  private func menuRow(
+    title: String, icon: String, tint: Color = DashTheme.iconMuted,
+    action: @escaping () -> Void
+  ) -> some View {
     Button(action: action) {
       HStack(spacing: 12) {
-        SolarIcon(asset: icon, size: 22, color: DashTheme.iconMuted)
+        SolarIcon(asset: icon, size: 22, color: tint)
         Text(title)
           .dashTextStyle(.bodyMedium)
-          .foregroundStyle(DashTheme.text)
+          .foregroundStyle(tint == DashTheme.danger ? DashTheme.danger : DashTheme.text)
           .lineLimit(1)
         Spacer(minLength: 0)
         SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
@@ -1091,6 +1127,21 @@ struct ProfileTrayContent: View {
       .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
     }
     .buttonStyle(DashPressButtonStyle())
+  }
+}
+
+enum ProfileTrayPhase: Equatable, Sendable {
+  case menu
+  case accounts
+  case switchAccount(CloudflareAccount)
+  case signOut
+
+  var title: String {
+    switch self {
+    case .menu: "Profile"
+    case .accounts, .switchAccount: "Switch account"
+    case .signOut: "Sign out"
+    }
   }
 }
 

@@ -227,6 +227,33 @@ import UIKit
   #expect(FeatureVisualIdentity.tone(for: .apiExplorer) == .brand)
 }
 
+@Test func trayDragDecisionUsesProjectionAndVelocity() {
+  #expect(
+    TrayDragDecision.content(translation: 40, predictedEndTranslation: 40) == .settle)
+  #expect(
+    TrayDragDecision.content(translation: 130, predictedEndTranslation: 130) == .dismiss)
+  #expect(
+    TrayDragDecision.content(translation: 40, predictedEndTranslation: 200) == .dismiss)
+  #expect(
+    TrayDragDecision.content(translation: 40, predictedEndTranslation: 1000) == .dismiss)
+
+  #expect(
+    TrayDragDecision.expandable(
+      baseTop: 100, predictedEndTranslation: 20, expandedTop: 80, floatingTop: 400
+    ) == .settleExpanded(true))
+  #expect(
+    TrayDragDecision.expandable(
+      baseTop: 400, predictedEndTranslation: 300, expandedTop: 80, floatingTop: 400
+    ) == .dismiss)
+  #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
+}
+
+@Test func profileTrayPhaseTitlesFollowFocus() {
+  #expect(ProfileTrayPhase.menu.title == "Profile")
+  #expect(ProfileTrayPhase.accounts.title == "Switch account")
+  #expect(ProfileTrayPhase.signOut.title == "Sign out")
+}
+
 @Test func recentFeaturesDedupeReorderAndCap() {
   // A repeat visit moves the feature to the front instead of duplicating it.
   #expect(
