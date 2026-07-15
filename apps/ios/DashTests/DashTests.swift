@@ -553,6 +553,20 @@ import UIKit
   #expect(WorkerTailEventRow.outcomeColor("exception") == DashTheme.danger)
 }
 
+@Test func genericDetailFieldMapSeparatesPrimaryAndAdvanced() {
+  let json = """
+    {"name":"example.com","status":"active","id":"abc","custom_meta":"x"}
+    """
+  let resource = try! JSONDecoder().decode(GenericResource.self, from: Data(json.utf8))
+  let primary = GenericDetailFieldMap.primaryFields(from: resource)
+  let advanced = GenericDetailFieldMap.advancedFields(from: resource)
+  #expect(primary.contains { $0.label == "Name" })
+  #expect(primary.contains { $0.label == "Status" })
+  #expect(advanced.contains { $0.value == "abc" || $0.value == "x" })
+  #expect(GenericDetailFieldMap.humanCategoryTitle("Workers & Pages") == "Workers")
+  #expect(GenericDetailFieldMap.humanCategoryTitle("Domains & DNS") == "DNS")
+}
+
 @Test func watchtowerNotificationPlannerDiffsSnapshots() {
   func snapshot(issues: Int, critical: [String], warning: [String] = [])
     -> WatchtowerWidgetSnapshot

@@ -38,7 +38,15 @@ struct AppRootView: View {
               removal: .opacity.animation(.easeOut(duration: 0.2))
             ))
       case .loading, nil:
-        Color.clear
+        // Keep the launch canvas visible until the authenticated catalog is
+        // ready — never flash a blank intermediate frame.
+        Color("LaunchBackground").ignoresSafeArea()
+          .overlay {
+            Image("LoginAppIcon")
+              .resizable()
+              .scaledToFit()
+              .frame(width: 96, height: 96)
+          }
       }
     }
     .onAppear { stage = model.authState }
@@ -268,36 +276,68 @@ private struct LoginStaticGradient: View {
 
 private struct PermissionSelectionView: View {
   @Environment(AppModel.self) private var model
+  @State private var showsAdvanced = false
   private var categories: [(key: String, values: [OAuthScopeDefinition])] {
     OAuthScopeCatalog.categories
       .map { ($0.key, $0.value.sorted { $0.name < $1.name }) }
-      .sorted { ($0.1.first?.categoryTitle ?? $0.0) < ($1.1.first?.categoryTitle ?? $1.0) }
+      .sorted {
+        GenericDetailFieldMap.humanCategoryTitle($0.1.first?.categoryTitle ?? $0.0)
+          < GenericDetailFieldMap.humanCategoryTitle($1.1.first?.categoryTitle ?? $1.0)
+      }
   }
 
   var body: some View {
     VStack(spacing: 14) {
-      Text("All published capabilities are selected by default.")
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .frame(maxWidth: .infinity, alignment: .leading)
+      Text(
+        "Choose what Dash can read and change in your Cloudflare account. You can grant more later from locked features."
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .frame(maxWidth: .infinity, alignment: .leading)
 
       permissionRow(
-        "All OAuth-enabled permissions",
-        detail: "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) selected",
+        "Everything Dash can request",
+        detail: "Recommended for full account control",
         isOn: allBinding
       )
 
       ForEach(categories, id: \.key) { category in
         permissionRow(
-          category.values.first?.categoryTitle ?? category.key,
-          detail: categoryDetail(category.values),
+          GenericDetailFieldMap.humanCategoryTitle(
+            category.values.first?.categoryTitle ?? category.key),
+          detail: humanCategoryDetail(category.values),
           isOn: categoryBinding(category.values),
           disabled:
             Set(category.values.map(\.id)).intersection(CloudflareScopes.requestable).isEmpty
         )
       }
+
+      DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+        VStack(alignment: .leading, spacing: 8) {
+          Text(
+            "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) OAuth scopes selected"
+          )
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          Text(model.selectedScopes.sorted().joined(separator: "\n"))
+            .dashTextStyle(.code)
+            .foregroundStyle(DashTheme.placeholder)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, 8)
+      }
+      .dashTextStyle(.supportingMedium)
+      .foregroundStyle(DashTheme.subtle)
     }
     .padding(.horizontal, DashTheme.Sheet.content)
+  }
+
+  private func humanCategoryDetail(_ scopes: [OAuthScopeDefinition]) -> String {
+    let titles = scopes.prefix(2).map(\.name)
+    if scopes.count <= 2 {
+      return titles.joined(separator: ", ")
+    }
+    return "\(titles.joined(separator: ", ")) +\(scopes.count - 2) more"
   }
 
   /// A whole-row toggle target: the bare switch ignores taps on its empty track
@@ -325,11 +365,6 @@ private struct PermissionSelectionView: View {
     .buttonStyle(DashPressButtonStyle())
     .disabled(disabled)
     .accessibilityElement(children: .combine)
-  }
-
-  private func categoryDetail(_ scopes: [OAuthScopeDefinition]) -> String {
-    let count = scopes.count
-    return count == 1 ? "1 permission" : "\(count) permissions"
   }
 
   private var allBinding: Binding<Bool> {

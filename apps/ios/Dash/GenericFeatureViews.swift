@@ -986,11 +986,28 @@ struct GenericResourcesView: View {
       headerDelete: false
     ) {
       VStack(alignment: .leading, spacing: 0) {
+        let primary = resource.primaryDetailFields
+        let advanced = resource.advancedDetailFields
+        let fields = primary.isEmpty ? resource.detailFields : primary
         VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(resource.detailFields.enumerated()), id: \.offset) { index, field in
+          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
             detailFieldRow(field)
-            if index < resource.detailFields.count - 1 { DashListGroupDivider() }
+            if index < fields.count - 1 { DashListGroupDivider() }
           }
+        }
+
+        if !advanced.isEmpty, !primary.isEmpty {
+          DisclosureGroup("All fields") {
+            VStack(alignment: .leading, spacing: 0) {
+              ForEach(Array(advanced.enumerated()), id: \.offset) { index, field in
+                detailFieldRow(field)
+                if index < advanced.count - 1 { DashListGroupDivider() }
+              }
+            }
+          }
+          .dashTextStyle(.supportingMedium)
+          .foregroundStyle(DashTheme.subtle)
+          .padding(.top, 8)
         }
 
         if !capabilities.updates.isEmpty {

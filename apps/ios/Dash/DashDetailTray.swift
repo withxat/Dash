@@ -105,19 +105,31 @@ extension DashDetailTray where Accessory == EmptyView {
 
 // MARK: - Field builders
 
-extension GenericResource {
-  /// Every field the endpoint returned, well-known keys first, then the rest
-  /// alphabetically. Empty and null values are dropped.
-  var detailFields: [DashDetailField] {
-    let preferred = [
-      "name", "title", "hostname", "email", "id", "uuid", "tag",
-      "status", "state", "type", "description", "created_on", "modified_on",
-    ]
+enum GenericDetailFieldMap {
+  /// High-value keys shown by default in resource detail trays.
+  static let preferredKeys = [
+    "name", "title", "hostname", "email", "status", "state", "type", "description",
+    "created_on", "modified_on",
+  ]
+
+  static func primaryFields(from resource: GenericResource) -> [DashDetailField] {
+    fields(from: resource, keys: preferredKeys, includeRemainder: false)
+  }
+
+  static func advancedFields(from resource: GenericResource) -> [DashDetailField] {
+    let preferred = Set(preferredKeys)
+    let remainder = resource.raw.keys.sorted().filter { !preferred.contains($0) }
+    return fields(from: resource, keys: remainder, includeRemainder: false)
+  }
+
+  static func fields(
+    from resource: GenericResource, keys: [String], includeRemainder: Bool
+  ) -> [DashDetailField] {
     var seen = Set<String>()
     var fields: [DashDetailField] = []
 
     func add(_ key: String) {
-      guard !seen.contains(key), let value = raw[key] else { return }
+      guard !seen.contains(key), let value = resource.raw[key] else { return }
       let text = value.displayText
       guard !text.isEmpty, text != "Not set", text != "None" else { return }
       seen.insert(key)
@@ -125,9 +137,42 @@ extension GenericResource {
         DashDetailField(label: key.humanizedFieldLabel, value: text, mono: key.isMonoKey))
     }
 
-    for key in preferred { add(key) }
-    for key in raw.keys.sorted() { add(key) }
+    for key in keys { add(key) }
+    if includeRemainder {
+      for key in resource.raw.keys.sorted() { add(key) }
+    }
     return fields
+  }
+
+  static func humanCategoryTitle(_ raw: String) -> String {
+    switch raw.lowercased() {
+    case "account": "Account"
+    case "dns", "domains & dns", "zones": "DNS"
+    case "workers", "workers & pages", "compute": "Workers"
+    case "storage", "r2", "kv", "d1": "Storage"
+    case "security", "zero trust", "access": "Security"
+    case "ai", "artificial intelligence": "AI"
+    case "network", "networking": "Network"
+    case "analytics", "observability": "Analytics"
+    default: raw
+    }
+  }
+}
+
+extension GenericResource {
+  /// Every field the endpoint returned, well-known keys first, then the rest
+  /// alphabetically. Empty and null values are dropped.
+  var detailFields: [DashDetailField] {
+    GenericDetailFieldMap.fields(
+      from: self, keys: GenericDetailFieldMap.preferredKeys, includeRemainder: true)
+  }
+
+  var primaryDetailFields: [DashDetailField] {
+    GenericDetailFieldMap.primaryFields(from: self)
+  }
+
+  var advancedDetailFields: [DashDetailField] {
+    GenericDetailFieldMap.advancedFields(from: self)
   }
 }
 
