@@ -16,7 +16,7 @@
 		B00000000000000000000006 /* Catalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* Catalog.swift */; };
 		B00000000000000000000007 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* AppRootView.swift */; };
 		B00000000000000000000008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* HomeView.swift */; };
-		B00000000000000000000009 /* ItemsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* ItemsView.swift */; };
+		B00000000000000000000009 /* FeatureCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* FeatureCatalogView.swift */; };
 		B0000000000000000000000A /* WatchtowerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000A /* WatchtowerView.swift */; };
 		B0000000000000000000000B /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* FeatureViews.swift */; };
 		B0000000000000000000000C /* StorageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* StorageViews.swift */; };
@@ -35,7 +35,6 @@
 		B0000000000000000000001B /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000037 /* SearchView.swift */; };
 		B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* ZoneAnalyticsView.swift */; };
 		B0000000000000000000001D /* DashDetailTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* DashDetailTray.swift */; };
-		B0000000000000000000001E /* APIExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003A /* APIExplorerView.swift */; };
 		B0000000000000000000001F /* HubFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003B /* HubFeatureViews.swift */; };
 		B00000000000000000000020 /* ZoneConfigViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003C /* ZoneConfigViews.swift */; };
 		B00000000000000000000021 /* AIFeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000003D /* AIFeatureViews.swift */; };
@@ -54,6 +53,12 @@
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
+		B0000000000000000000010D /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010D /* LegalDocumentView.swift */; };
+		B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000111 /* WatchtowerMuteStore.swift */; };
+		B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000112 /* DashAuthorizationScopes.swift */; };
+		B00000000000000000000110 /* DashSpotlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000110 /* DashSpotlight.swift */; };
+		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
+		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -83,7 +88,7 @@
 		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
 		F00000000000000000000008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
-		F00000000000000000000009 /* ItemsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItemsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000009 /* FeatureCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureCatalogView.swift; sourceTree = "<group>"; };
 		F0000000000000000000000A /* WatchtowerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerView.swift; sourceTree = "<group>"; };
 		F0000000000000000000000B /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000000C /* StorageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageViews.swift; sourceTree = "<group>"; };
@@ -105,7 +110,6 @@
 		F00000000000000000000037 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		F00000000000000000000038 /* ZoneAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAnalyticsView.swift; sourceTree = "<group>"; };
 		F00000000000000000000039 /* DashDetailTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDetailTray.swift; sourceTree = "<group>"; };
-		F0000000000000000000003A /* APIExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIExplorerView.swift; sourceTree = "<group>"; };
 		F0000000000000000000003B /* HubFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HubFeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000003C /* ZoneConfigViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneConfigViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000003D /* AIFeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIFeatureViews.swift; sourceTree = "<group>"; };
@@ -124,6 +128,12 @@
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
+		F0000000000000000000010D /* LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentView.swift; sourceTree = "<group>"; };
+		F00000000000000000000111 /* WatchtowerMuteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMuteStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
+		F00000000000000000000110 /* DashSpotlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSpotlight.swift; sourceTree = "<group>"; };
+		F0000000000000000000010E /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
+		F0000000000000000000010F /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
 		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -217,11 +227,10 @@
 				F00000000000000000000006 /* Catalog.swift */,
 				F00000000000000000000007 /* AppRootView.swift */,
 				F00000000000000000000008 /* HomeView.swift */,
-				F00000000000000000000009 /* ItemsView.swift */,
+				F00000000000000000000009 /* FeatureCatalogView.swift */,
 				F00000000000000000000037 /* SearchView.swift */,
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
 				F00000000000000000000039 /* DashDetailTray.swift */,
-				F0000000000000000000003A /* APIExplorerView.swift */,
 				F0000000000000000000003B /* HubFeatureViews.swift */,
 				F0000000000000000000003C /* ZoneConfigViews.swift */,
 				F0000000000000000000003D /* AIFeatureViews.swift */,
@@ -245,6 +254,10 @@
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F00000000000000000000108 /* WatchtowerNotifications.swift */,
 				F0000000000000000000010C /* PushRegistration.swift */,
+				F0000000000000000000010D /* LegalDocumentView.swift */,
+				F00000000000000000000111 /* WatchtowerMuteStore.swift */,
+				F00000000000000000000112 /* DashAuthorizationScopes.swift */,
+				F00000000000000000000110 /* DashSpotlight.swift */,
 				F00000000000000000000040 /* LoginGrain.metal */,
 				A00000000000000000000016 /* Resources */,
 				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
@@ -291,8 +304,18 @@
 			children = (
 				F0000000000000000000000E /* Assets.xcassets */,
 				5BD28D9B30006EA10012912F /* AppIcon.icon */,
+				A00000000000000000000018 /* Legal */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000018 /* Legal */ = {
+			isa = PBXGroup;
+			children = (
+				F0000000000000000000010E /* TermsOfUse.md */,
+				F0000000000000000000010F /* PrivacyPolicy.md */,
+			);
+			path = Legal;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -431,6 +454,8 @@
 				B0000000000000000000000E /* Assets.xcassets in Resources */,
 				5BD28D9C30006EA10012912F /* AppIcon.icon in Resources */,
 				B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */,
+				B0000000000000000000010E /* TermsOfUse.md in Resources */,
+				B0000000000000000000010F /* PrivacyPolicy.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -470,11 +495,10 @@
 				B00000000000000000000006 /* Catalog.swift in Sources */,
 				B00000000000000000000007 /* AppRootView.swift in Sources */,
 				B00000000000000000000008 /* HomeView.swift in Sources */,
-				B00000000000000000000009 /* ItemsView.swift in Sources */,
+				B00000000000000000000009 /* FeatureCatalogView.swift in Sources */,
 				B0000000000000000000001B /* SearchView.swift in Sources */,
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
-				B0000000000000000000001E /* APIExplorerView.swift in Sources */,
 				B0000000000000000000001F /* HubFeatureViews.swift in Sources */,
 				B00000000000000000000020 /* ZoneConfigViews.swift in Sources */,
 				B00000000000000000000021 /* AIFeatureViews.swift in Sources */,
@@ -499,6 +523,10 @@
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
 				B0000000000000000000010C /* PushRegistration.swift in Sources */,
+				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,
+				B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */,
+				B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */,
+				B00000000000000000000110 /* DashSpotlight.swift in Sources */,
 				B00000000000000000000024 /* LoginGrain.metal in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -630,6 +658,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";
 			};
 			name = Debug;
@@ -647,6 +676,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Dash.app/Dash";
 			};
 			name = Release;
@@ -663,6 +693,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = Dash;
 			};
 			name = Debug;
@@ -679,6 +710,7 @@
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
 				TEST_TARGET_NAME = Dash;
 			};
 			name = Release;

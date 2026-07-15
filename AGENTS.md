@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Dash for Cloudflare is a native iOS/iPadOS Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
+Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
 
 ## Workspace
 
@@ -8,7 +8,7 @@ Dash for Cloudflare is a native iOS/iPadOS Cloudflare client. The installed name
 | --- | --- |
 | `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
 | `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
-| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker: OAuth callback relay + APNs push bridge (`dash-relay` at `dash.xat.sh`) |
+| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker: OAuth callback relay; dormant APNs bridge remains deployed but is not exposed by the app |
 | `packages/ui` | Web-only component library; do not import it into Dash |
 
 ## Commands
@@ -44,16 +44,17 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 ### iOS app
 
 - One `AppModel` (`@Observable @MainActor`, created in `DashApp`, injected via `.environment`) owns the `CloudflareClient`, `KeychainTokenStore`, `FeatureDataCache`, auth state, accounts, and active-account selection. Switching accounts or signing out clears the cache.
-- `AppRootView` switches on auth state into `MainTabView` — three tabs (Home, Items, Watchtower), each its own `NavigationStack`. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
+- `AppRootView` switches on auth state into `MainTabView` — three primary tabs (Home, Features, Watchtower) plus the tab-bar Search role, each with its own navigation container. Features stays a browse-only catalog; cross-resource search lives behind the bottom Search button. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
 - `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar asset, and category per feature. Rich features (zones, workers, R2, KV, D1, account) have dedicated views in `FeatureViews.swift`, `StorageViews.swift`, and `AccountFeatureViews.swift`; the rest fall through to `GenericFeatureView`, which maps the `FeatureID` to a REST path and lists `GenericResource` rows. A simple list feature needs only a `FeatureID` case and a path there — no new view.
 - `FeatureDataCache` is an in-memory, session-scoped cache keyed by `FeatureCacheKey` strings. Views read the cache in `.task` and bypass it from `refreshable` with `force: true`.
 - Shared chrome (cards, trays/sheets, pill buttons, catalog toolbar) lives in `DashChrome.swift`; all palette, typography, and spacing tokens in `DashTheme.swift`.
 - Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals.
-- Home shortcuts and recents persist in `AppStorage` as comma-separated `FeatureID` raw values.
+- Home shortcuts persist as comma-separated `FeatureID` raw values. Recently opened concrete zones, Workers, R2 buckets, KV namespaces, and D1 databases use `RecentResources`; bare feature recents are not shown.
 
 ### Auth flow
 
 - `AppModel.signIn()` builds a PKCE authorize URL and opens `ASWebAuthenticationSession`; Cloudflare redirects to the relay's HTTPS callback, which 302s to `dash://oauth/callback`; the app exchanges the code and stores tokens through `KeychainTokenStore` (an actor implementing the package's `TokenStore` protocol).
+- Fresh sign-in requests `DashAuthorizationScopes.core` (66 scopes), not every published Cloudflare permission. Workers AI, Browser Rendering, Images, and Stream are hidden behind the experimental-features setting and add their eight scopes incrementally.
 - Configuration plumbing: `Config/Base.xcconfig` `#include?`s the ignored `Signing.xcconfig` and `Secrets.xcconfig`; `DASH_CLIENT_ID`/`DASH_REDIRECT_URI` flow into Info.plist keys read by `AppConfiguration.current`. Unexpanded `$(...)` values mean unconfigured, which disables sign-in with a hint instead of crashing.
 
 ### Tests
@@ -78,12 +79,17 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 - Public response types are `Codable` and `Sendable`; public operations use `async throws`.
 - Binary endpoints use `Data` or file URLs. Do not decode unbounded bodies as text unless the endpoint is known to be bounded.
 
-## Relay worker (OAuth + push)
+## Relay worker (OAuth + dormant push)
 
 Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is
 deployed as `dash-relay` on Workers at `https://dash.xat.sh`, which redirects
 OAuth to `dash://oauth/callback` and also bridges Cloudflare alert webhooks to
 APNs under `/push/*`.
+
+The iOS app does not register for remote notifications or expose the APNs
+workflow. Keep `/push/*` dormant for rollback and cleanup compatibility; do not
+ship it as a user-facing capability until the entitlement and device flow are
+explicitly restored and verified.
 
 Invariants that still hold:
 
@@ -94,8 +100,5 @@ Invariants that still hold:
   (the URL is a bearer capability). Logs only APNs status codes via
   `wrangler tail`.
 
-Honest additions: the worker now holds the APNs `.p8` signing key and processes
-APNs device tokens when registering and notifying. Redeploy it before releasing
-a Dash build that expects new `/push/*` behavior. `wrangler dev` cannot reach
-APNs (HTTP/2); verify with a deployed worker and
-`POST /accounts/{id}/alerting/v3/policies/{id}/test`.
+The worker still holds the APNs `.p8` signing key and can process APNs device
+tokens for dormant `/push/*` routes. `wrangler dev` cannot reach APNs (HTTP/2).

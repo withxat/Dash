@@ -25,6 +25,14 @@ enum ZoneAnalyticsChartModel {
     return parser
   }()
 
+  static func chartAccessibilitySummary(rangeLabel: String, requests: Int, threats: Int) -> String {
+    var summary =
+      "Requests chart for \(rangeLabel). Total \(requests.formatted()) requests"
+    if threats > 0 {
+      summary += ", \(threats.formatted()) threats"
+    }
+    return summary + "."
+  }
   static func points(fromDaily days: [ZoneAnalyticsDay]) -> [ZoneAnalyticsChartPoint] {
     days.compactMap { day in
       guard let date = dayParser.date(from: day.date) else { return nil }
@@ -186,11 +194,19 @@ struct ZoneAnalyticsView: View {
           }
         }
         .frame(height: 180)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+          ZoneAnalyticsChartModel.chartAccessibilitySummary(
+            rangeLabel: range.totalsHeading,
+            requests: totalRequests,
+            threats: totalThreats
+          ))
         if totalThreats > 0 {
           HStack(spacing: 12) {
             legendDot(DashTheme.brand, "Requests")
             legendDot(DashTheme.warning, "Threats")
           }
+          .accessibilityElement(children: .combine)
         }
       }
     }
@@ -212,11 +228,8 @@ struct ZoneAnalyticsView: View {
   private var totalsGroup: some View {
     DashListGroup(title: range.totalsHeading) {
       DashValueRow(title: "Requests", value: totalRequests.formatted())
-      DashListGroupDivider()
       DashValueRow(title: "Bandwidth", value: bandwidth(totalBytes))
-      DashListGroupDivider()
       DashValueRow(title: "Page views", value: totalPageViews.formatted())
-      DashListGroupDivider()
       DashValueRow(title: "Threats", value: totalThreats.formatted())
     }
   }
@@ -230,7 +243,6 @@ struct ZoneAnalyticsView: View {
           value: "\(point.requests.formatted()) req",
           subtitle: bandwidth(point.bytes)
         )
-        if index < points.count - 1 { DashListGroupDivider() }
       }
     }
   }

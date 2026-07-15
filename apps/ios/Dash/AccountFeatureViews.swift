@@ -601,123 +601,6 @@ private struct MemberInviteForm: View {
   }
 }
 
-/// Create an alert policy bound to a specific webhook by id (names are not
-/// unique, so the menu renders labels while selection stores the id).
-private struct AlertPolicyCreateForm: View {
-  @Environment(AppModel.self) private var model
-  let webhookID: String
-  let onCreated: () -> Void
-
-  @State private var name = ""
-  @State private var alerts: [AvailableAlert] = []
-  @State private var selectedType = ""
-  @State private var loading = true
-  @State private var saving = false
-  @State private var saveError: String?
-
-  var body: some View {
-    DashFormSheet(
-      saveTitle: "Create",
-      isSaving: saving,
-      canSave: !name.isEmpty && !selectedType.isEmpty,
-      onSave: { Task { await create() } },
-      content: {
-        VStack(alignment: .leading, spacing: 16) {
-          if let saveError {
-            DashNotice(kind: .error, message: saveError)
-          }
-          DashFormField(label: "Policy name", text: $name)
-          if loading {
-            DashLoadingRing(color: DashTheme.brand).frame(maxWidth: .infinity)
-          } else if alerts.isEmpty {
-            DashNotice(
-              kind: .warning,
-              message: "No alert types were returned for this account.")
-          } else {
-            alertTypeMenu
-          }
-          Text(
-            "Delivers through your Dash webhook. Alert text is forwarded via dash.xat.sh to this iPhone."
-          )
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
-        }
-      }
-    )
-    .task { await loadAlerts() }
-  }
-
-  private var alertTypeMenu: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Alert type")
-        .dashTextStyle(.footnoteSemibold)
-        .foregroundStyle(DashTheme.subtle)
-      Menu {
-        Picker("Alert type", selection: $selectedType) {
-          ForEach(alerts) { alert in
-            Text(alert.title).tag(alert.type ?? "")
-          }
-        }
-      } label: {
-        HStack(spacing: 8) {
-          Text(selectedLabel)
-            .dashTextStyle(.bodyMedium)
-            .foregroundStyle(DashTheme.text)
-          Spacer(minLength: 0)
-          SolarIcon(asset: SolarAsset.chevronRight, size: 14, color: DashTheme.placeholder)
-            .rotationEffect(.degrees(90))
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DashTheme.recessed)
-        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-      }
-    }
-  }
-
-  private var selectedLabel: String {
-    alerts.first { $0.type == selectedType }?.title ?? "Choose an alert type"
-  }
-
-  private func loadAlerts() async {
-    guard let accountID = model.activeAccountID else { return }
-    do {
-      alerts = try await model.client.listAvailableAlerts(accountID: accountID)
-      if selectedType.isEmpty {
-        selectedType = alerts.first?.type ?? ""
-      }
-    } catch {
-      saveError = error.dashActionableMessage
-    }
-    loading = false
-  }
-
-  private func create() async {
-    guard let accountID = model.activeAccountID, !selectedType.isEmpty else { return }
-    saving = true
-    saveError = nil
-    do {
-      _ = try await model.client.createNotificationPolicy(
-        accountID: accountID,
-        input: NotificationPolicyInput(
-          name: name,
-          alertType: selectedType,
-          enabled: true,
-          mechanisms: NotificationMechanisms(webhooks: [
-            NotificationMechanismTarget(id: webhookID)
-          ])
-        ))
-      UINotificationFeedbackGenerator().notificationOccurred(.success)
-      onCreated()
-    } catch {
-      saveError = error.dashActionableMessage
-      UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-    saving = false
-  }
-}
-
 struct AccountView: View {
   private enum Tab: Hashable { case members, alerts, audit }
 
@@ -737,19 +620,14 @@ struct AccountView: View {
   @State private var deletingPolicy = false
   @State private var deletePolicyError: String?
   @State private var invites = false
-  @State private var creatingPolicy = false
   @State private var removingMember = false
   @State private var removeMemberError: String?
-  @State private var pushEnabled = false
-  @State private var pushBusy = false
-  @State private var pushError: String?
 
   var body: some View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: !(members.isEmpty && policies.isEmpty && history.isEmpty && auditLogs.isEmpty)
-        || pushEnabled,
+      hasContent: !(members.isEmpty && policies.isEmpty && history.isEmpty && auditLogs.isEmpty),
       retry: { Task { await load() } },
       header: {
         DashTextTabs(
@@ -784,14 +662,11 @@ struct AccountView: View {
           }
         }
       case .alerts:
-        pushCard
         if policies.isEmpty && history.isEmpty {
           DashEmptyState(
             icon: SolarAsset.bolt,
             title: "No alerts",
-            message: pushEnabled
-              ? "Create a policy to choose which Cloudflare alerts reach this iPhone."
-              : "Notification policies and recent alerts will appear here."
+            message: "Notification policies and recent alerts will appear here."
           )
         } else {
           DashListCard {
@@ -809,9 +684,6 @@ struct AccountView: View {
                 )
               }
               .buttonStyle(DashPressButtonStyle())
-            }
-            if !policies.isEmpty && !history.isEmpty {
-              DashListGroupDivider()
             }
             DashListCardRows(items: history) { entry in
               Button {
@@ -934,17 +806,6 @@ struct AccountView: View {
           }
         }
         .dashSeparateToolbarBackground()
-      } else if featureAllowsWrites, selectedTab == .alerts, pushEnabled,
-        model.activeAccountID.flatMap({
-          PushRegistrationService.storedWebhookID(accountID: $0)
-        }) != nil
-      {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Create alert policy") {
-            creatingPolicy = true
-          }
-        }
-        .dashSeparateToolbarBackground()
       }
     }
     .dashTray(isPresented: $invites, title: "Invite member") {
@@ -956,104 +817,10 @@ struct AccountView: View {
         Task { await load(force: true) }
       }
     }
-    .dashTray(isPresented: $creatingPolicy, title: "Create alert policy") {
-      if let accountID = model.activeAccountID,
-        let webhookID = PushRegistrationService.storedWebhookID(accountID: accountID)
-      {
-        AlertPolicyCreateForm(webhookID: webhookID) {
-          creatingPolicy = false
-          model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
-          Task { await load(force: true) }
-        }
-      }
-    }
     .refreshable { await load(force: true) }
     .task(id: model.activeAccountID) {
-      syncPushToggle()
       await load()
-      await reconcilePushIfNeeded()
     }
-  }
-
-  @ViewBuilder
-  private var pushCard: some View {
-    DashListCard {
-      VStack(alignment: .leading, spacing: 10) {
-        DashToggleRow(
-          title: "Push Cloudflare alerts to this iPhone",
-          isOn: Binding(
-            get: { pushEnabled },
-            set: { newValue in
-              Task { await setPushEnabled(newValue) }
-            }
-          )
-        )
-        .disabled(pushBusy || model.configuration.pushBaseURL == nil)
-        Text(
-          "Turns on a webhook and alert policies in this Cloudflare account. Alert payloads are forwarded through dash.xat.sh to Apple Push Notification service."
-        )
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        if let pushError {
-          DashNotice(kind: .error, message: pushError)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-        }
-      }
-    }
-  }
-
-  private func syncPushToggle() {
-    guard let accountID = model.activeAccountID else {
-      pushEnabled = false
-      return
-    }
-    pushEnabled = PushRegistrationService.isEnabled(accountID: accountID)
-  }
-
-  private func setPushEnabled(_ enabled: Bool) async {
-    guard let accountID = model.activeAccountID else { return }
-    pushBusy = true
-    pushError = nil
-    do {
-      if enabled {
-        let granted = await WatchtowerNotifier.requestAuthorization()
-        guard granted else {
-          pushError = "Notifications are turned off in Settings."
-          pushEnabled = false
-          pushBusy = false
-          return
-        }
-        guard let token = await PushRegistrationService.waitForDeviceToken(in: model) else {
-          throw PushRegistrationError.missingDeviceToken
-        }
-        try await PushRegistrationService.enable(
-          accountID: accountID, client: model.client,
-          configuration: model.configuration, deviceToken: token)
-        pushEnabled = true
-      } else {
-        try await PushRegistrationService.disable(accountID: accountID, client: model.client)
-        pushEnabled = false
-      }
-      UINotificationFeedbackGenerator().notificationOccurred(.success)
-    } catch {
-      pushError = error.dashActionableMessage
-      syncPushToggle()
-      UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-    pushBusy = false
-  }
-
-  private func reconcilePushIfNeeded() async {
-    guard let accountID = model.activeAccountID,
-      PushRegistrationService.isEnabled(accountID: accountID),
-      let token = model.pendingDeviceToken
-    else { return }
-    try? await PushRegistrationService.reconcile(
-      accountID: accountID, client: model.client,
-      configuration: model.configuration, deviceToken: token)
   }
 
   private func removeMember(_ member: AccountMember) async {

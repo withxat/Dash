@@ -13,6 +13,12 @@ struct WatchtowerSignal: Identifiable, Hashable, Sendable {
   let detail: String
   let status: WatchtowerStatus
   let destination: Destination?
+  /// When the check last observed this state.
+  var observedAt: Date = .now
+  /// Short remediation hint for the issues list.
+  var suggestedAction: String? = nil
+  /// Concrete resource label when the signal points at one item.
+  var resourceName: String? = nil
 }
 
 struct WatchtowerSummary: Hashable, Sendable {
@@ -305,6 +311,7 @@ enum WatchtowerEngine {
   private static func zonesSignal(_ zones: [CloudflareZone]) -> WatchtowerSignal? {
     guard !zones.isEmpty else { return nil }
     let inactive = zones.filter { ($0.status ?? "") != "active" }
+    let first = inactive.first
     return WatchtowerSignal(
       id: "zones",
       title: "Zones",
@@ -312,12 +319,15 @@ enum WatchtowerEngine {
         ? "All \(plural(zones.count, "zone")) active"
         : "\(plural(inactive.count, "zone")) not active",
       status: inactive.isEmpty ? .ok : .warning,
-      destination: .feature(.zones)
+      destination: first.map { .zone($0.id) } ?? .feature(.zones),
+      suggestedAction: inactive.isEmpty ? nil : "Open zone settings and confirm DNS / plan status",
+      resourceName: first?.name
     )
   }
 
   private static func tunnelsSignal(_ tunnels: [CloudflareTunnel]) -> WatchtowerSignal? {
     guard !tunnels.isEmpty else { return nil }
+    let problem = tunnels.first { $0.status == "down" || $0.status == "degraded" }
     let down = tunnels.filter { $0.status == "down" }.count
     let degraded = tunnels.filter { $0.status == "degraded" }.count
     let inactive = tunnels.filter { $0.status == "inactive" }.count
@@ -338,13 +348,16 @@ enum WatchtowerEngine {
     }
     return WatchtowerSignal(
       id: "tunnels", title: "Tunnels", detail: detail, status: status,
-      destination: .feature(.tunnels)
+      destination: .feature(.tunnels),
+      suggestedAction: status == .ok ? nil : "Check cloudflared and reconnect the tunnel",
+      resourceName: problem?.name
     )
   }
 
   private static func poolsSignal(_ pools: [LoadBalancerPool]) -> WatchtowerSignal? {
     guard !pools.isEmpty else { return nil }
-    let disabled = pools.filter { $0.enabled == false }.count
+    let disabledPools = pools.filter { $0.enabled == false }
+    let disabled = disabledPools.count
     return WatchtowerSignal(
       id: "lb-pools",
       title: "LB Pools",
@@ -352,7 +365,10 @@ enum WatchtowerEngine {
         ? "\(plural(disabled, "pool")) disabled"
         : "All \(plural(pools.count, "pool")) enabled",
       status: disabled > 0 ? .warning : .ok,
-      destination: .feature(.loadBalancerPools)
+      destination: .feature(.loadBalancerPools),
+      suggestedAction: disabled > 0
+        ? "Re-enable the pool or remove it from the load balancer" : nil,
+      resourceName: disabledPools.first?.name
     )
   }
 
@@ -382,7 +398,9 @@ enum WatchtowerEngine {
     }
     return WatchtowerSignal(
       id: "registrar", title: "Registrar", detail: detail, status: status,
-      destination: .feature(.registrar)
+      destination: .feature(.registrar),
+      suggestedAction: status == .ok ? nil : "Renew the domain before it expires",
+      resourceName: worst?.0.name
     )
   }
 
@@ -396,7 +414,9 @@ enum WatchtowerEngine {
       detail: first.map { "\($0.name): latest deployment failed" }
         ?? "All \(plural(projects.count, "project")) deployed",
       status: failed.isEmpty ? .ok : .warning,
-      destination: .feature(.workers)
+      destination: .feature(.workers),
+      suggestedAction: failed.isEmpty ? nil : "Open the failed deployment and redeploy",
+      resourceName: first?.name
     )
   }
 
@@ -424,7 +444,10 @@ enum WatchtowerEngine {
       detail: firstProblem.map { "\($0.zone.name): \($0.desc)\(suffix)" }
         ?? "\(plural(total, "certificate pack")) healthy\(suffix)",
       status: statuses.isEmpty ? .ok : worstStatus(statuses),
-      destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones)
+      destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones),
+      suggestedAction: firstProblem == nil
+        ? nil : "Open the zone SSL settings and renew or reissue the pack",
+      resourceName: firstProblem?.zone.name
     )
   }
 
@@ -476,7 +499,10 @@ enum WatchtowerEngine {
         "\($0.check.name ?? "A healthcheck") \($0.check.status ?? "unknown") (\($0.zone.name))"
       } ?? "All \(plural(total, "healthcheck")) healthy\(suffix)",
       status: statuses.isEmpty ? .ok : worstStatus(statuses),
-      destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones)
+      destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones),
+      suggestedAction: firstProblem == nil
+        ? nil : "Inspect the origin and resume or fix the failing healthcheck",
+      resourceName: firstProblem?.check.name ?? firstProblem?.zone.name
     )
   }
 }

@@ -1,5 +1,6 @@
 import CloudflareAPI
 import Foundation
+import UIKit
 
 enum FeatureCacheKey {
   static func zones(_ accountID: String) -> String { "zones:\(accountID)" }
@@ -12,6 +13,9 @@ enum FeatureCacheKey {
   }
   static func workerSubdomain(accountID: String, name: String) -> String {
     "workerSubdomain:\(accountID):\(name)"
+  }
+  static func workerAnalytics(accountID: String, name: String) -> String {
+    "workerAnalytics:\(accountID):\(name)"
   }
   static func zoneSettings(_ zoneID: String) -> String { "zoneSettings:\(zoneID)" }
   static func zoneAnalytics(_ zoneID: String, days: Int) -> String {
@@ -102,14 +106,32 @@ struct CursorPageSnapshot<Item: Sendable>: Sendable {
 @MainActor
 @Observable
 final class FeatureDataCache {
-  private var storage: [String: Any] = [:]
-
-  func get<T>(_ key: String) -> T? {
-    storage[key] as? T
+  private struct Entry {
+    var value: Any
+    var fetchedAt: Date
+    var ttl: TimeInterval?
   }
 
-  func set<T>(_ key: String, _ value: T) {
-    storage[key] = value
+  /// Default freshness for general feature lists. Watchtower uses its own TTL
+  /// via `WatchtowerSnapshot.isStale` and is stored with `ttl: nil`.
+  static let defaultTTL: TimeInterval = 15 * 60
+  static let maxEntries = 200
+
+  private var storage: [String: Entry] = [:]
+
+  func get<T>(_ key: String, maxAge: TimeInterval? = nil) -> T? {
+    guard let entry = storage[key] else { return nil }
+    let limit = maxAge ?? entry.ttl
+    if let limit, Date().timeIntervalSince(entry.fetchedAt) > limit {
+      storage.removeValue(forKey: key)
+      return nil
+    }
+    return entry.value as? T
+  }
+
+  func set<T>(_ key: String, _ value: T, ttl: TimeInterval? = defaultTTL) {
+    storage[key] = Entry(value: value, fetchedAt: .now, ttl: ttl)
+    trimIfNeeded()
   }
 
   func remove(_ key: String) {
@@ -118,5 +140,33 @@ final class FeatureDataCache {
 
   func clear() {
     storage.removeAll()
+  }
+
+  /// Drops everything except Watchtower snapshots when memory is tight.
+  func purgeForMemoryPressure(keepingPrefix prefix: String = "watchtower:") {
+    storage = storage.filter { $0.key.hasPrefix(prefix) }
+  }
+
+  private func trimIfNeeded() {
+    guard storage.count > Self.maxEntries else { return }
+    let sorted = storage.sorted { $0.value.fetchedAt < $1.value.fetchedAt }
+    let dropCount = storage.count - Self.maxEntries
+    for entry in sorted.prefix(dropCount) {
+      storage.removeValue(forKey: entry.key)
+    }
+  }
+}
+
+extension AppModel {
+  func installMemoryWarningObserver() {
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didReceiveMemoryWarningNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        self?.featureCache.purgeForMemoryPressure()
+      }
+    }
   }
 }

@@ -8,7 +8,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts["Dash"].waitForExistence(timeout: 10)
         || app.tabBars.firstMatch.waitForExistence(timeout: 10)
-        || app.buttons["Search"].waitForExistence(timeout: 2))
+        || app.buttons["Features"].waitForExistence(timeout: 2))
   }
 
   func testFormKeyboardCanBeDismissed() {
@@ -31,36 +31,44 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 2))
   }
 
-  /// Items → feature hides the tab bar; back restores it (and detached Search).
-  func testTabBarReturnsAfterItemsFeaturePop() {
+  func testPrimaryTabsAndBottomSearchSurviveFeaturePop() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
     app.launch()
 
+    XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
+    let featuresTab = app.tabBars.buttons["Features"]
+    XCTAssertTrue(featuresTab.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.tabBars.buttons["Watchtower"].waitForExistence(timeout: 5))
     let searchTab = app.tabBars.buttons["Search"]
     XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
-    let itemsTab = app.tabBars.buttons["Items"]
-    XCTAssertTrue(itemsTab.waitForExistence(timeout: 5))
-    itemsTab.tap()
-    XCTAssertTrue(app.navigationBars["Items"].waitForExistence(timeout: 5))
 
-    let zones = app.staticTexts["Zones"].firstMatch
-    XCTAssertTrue(zones.waitForExistence(timeout: 5))
-    zones.tap()
+    featuresTab.tap()
+    XCTAssertTrue(app.navigationBars["Features"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.searchFields.firstMatch.exists)
+
+    searchTab.tap()
+    let searchField = app.searchFields.firstMatch
+    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+    searchField.tap()
+    searchField.typeText("zo")
+
+    let zonesFeature = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "Domains, DNS")
+    ).firstMatch
+    XCTAssertTrue(zonesFeature.waitForExistence(timeout: 5))
+    zonesFeature.tap()
 
     let back = app.navigationBars.buttons.firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
-    XCTAssertTrue(searchTab.waitForNonExistence(timeout: 2))
+    XCTAssertTrue(app.tabBars.firstMatch.waitForNonExistence(timeout: 2))
 
     back.tap()
 
-    XCTAssertTrue(app.navigationBars["Items"].waitForExistence(timeout: 5))
-    XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
+    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
   }
 
-  /// Search → feature hides the bottom search morph with the tab bar; back
-  /// restores the bottom field (not a top nav-bar search).
-  func testSearchFieldStaysBottomAfterFeaturePop() {
+  func testBottomSearchOpensConcreteResource() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
     app.launch()
@@ -71,35 +79,42 @@ final class DashUITests: XCTestCase {
 
     let searchField = app.searchFields.firstMatch
     XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-    let bottomYBefore = searchField.frame.midY
-    XCTAssertGreaterThan(bottomYBefore, app.frame.midY)
-
     searchField.tap()
-    searchField.typeText("zo")
-    // Prefer the Features row button — Search also has a "Zones" section header.
-    let zonesFeature = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", "Domains, DNS")
-    ).firstMatch
-    XCTAssertTrue(zonesFeature.waitForExistence(timeout: 5))
-    zonesFeature.tap()
+    searchField.typeText("example")
+
+    let zone = app.staticTexts["example.com"].firstMatch
+    XCTAssertTrue(zone.waitForExistence(timeout: 5))
+    zone.tap()
 
     let back = app.navigationBars.buttons.firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
-    // Feature page: no search field and no tab-bar search morph.
-    XCTAssertTrue(app.searchFields.firstMatch.waitForNonExistence(timeout: 2))
-    XCTAssertTrue(searchTab.waitForNonExistence(timeout: 2))
-
     back.tap()
+    XCTAssertTrue(
+      searchField.waitForExistence(timeout: 5)
+        || app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
+  }
 
-    // The bottom search morph returns with the tab chrome, never in the top bar.
+  func testAccountAlertsDoNotExposeRemotePush() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-preview"]
+    app.launch()
+
+    let searchTab = app.tabBars.buttons["Search"]
+    XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
+    searchTab.tap()
+    let searchField = app.searchFields.firstMatch
     XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-    var bottomYAfter = searchField.frame.midY
-    let deadline = Date().addingTimeInterval(2)
-    while bottomYAfter <= app.frame.midY, Date() < deadline {
-      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-      bottomYAfter = searchField.frame.midY
-    }
-    XCTAssertGreaterThan(bottomYAfter, app.frame.midY)
-    XCTAssertEqual(bottomYBefore, bottomYAfter, accuracy: 40)
+    searchField.tap()
+    searchField.typeText("account")
+
+    let account = app.staticTexts["Account"].firstMatch
+    XCTAssertTrue(account.waitForExistence(timeout: 5))
+    account.tap()
+
+    let alerts = app.buttons["Alerts"]
+    XCTAssertTrue(alerts.waitForExistence(timeout: 5))
+    alerts.tap()
+    XCTAssertFalse(app.staticTexts["Push Cloudflare alerts to this iPhone"].exists)
+    XCTAssertFalse(app.buttons["Send test alert"].exists)
   }
 }

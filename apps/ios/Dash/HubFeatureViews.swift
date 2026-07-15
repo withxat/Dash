@@ -23,8 +23,8 @@ func zoneDestination(for feature: FeatureID, zoneID: String, zoneName: String) -
 }
 
 /// Curated hub for products whose surface is a handful of sibling resource
-/// lists (Calls, Zero Trust connectors, Workers observability, DNS
-/// management). Each row pushes a generic resource list or another
+/// lists (Zero Trust connectors, Workers observability, DNS management).
+/// Each row pushes a generic resource list or another
 /// destination; writes come from the capability registry.
 struct FeatureHubView: View {
   @Environment(AppModel.self) private var model
@@ -40,18 +40,6 @@ struct FeatureHubView: View {
           path: path.replacingOccurrences(of: "{account}", with: account)))
     }
     switch feature {
-    case .calls:
-      return [
-        list(
-          "Apps", "SFU applications and tokens", SolarAsset.video,
-          "/accounts/{account}/calls/apps"),
-        list(
-          "TURN keys", "Credentials for TURN service", SolarAsset.key,
-          "/accounts/{account}/calls/turn_keys"),
-        list(
-          "MoQ relays", "Media over QUIC relays", SolarAsset.routing,
-          "/accounts/{account}/moq/relays"),
-      ]
     case .zeroTrustConnectors:
       return [
         list(

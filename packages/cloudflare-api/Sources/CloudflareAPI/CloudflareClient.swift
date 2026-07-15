@@ -345,15 +345,107 @@ public actor CloudflareClient {
   public func listNotificationHistory(accountID: String, perPage: Int = 10) async throws
     -> [NotificationHistoryEntry]
   {
-    try await list(
-      "/accounts/\(accountID)/alerting/v3/history", query: ["per_page": String(perPage)]
-    ).items
+    let data = try await raw(
+      "/accounts/\(accountID)/alerting/v3/history", query: ["per_page": String(perPage)])
+    let envelope = try JSONDecoder().decode(
+      APIEnvelope<[NotificationHistoryEntry]?>.self, from: data)
+    guard envelope.success else {
+      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+    }
+    return envelope.result ?? []
   }
   public func listAuditLogs(accountID: String, perPage: Int = 10) async throws -> [AuditLogEntry] {
-    try await list(
-      "/accounts/\(accountID)/audit_logs",
-      query: ["direction": "desc", "per_page": String(perPage)]
+    // Prefer Audit Logs v2; fall back to v1 when the account lacks access.
+    do {
+      return try await listAuditLogsV2(accountID: accountID, limit: perPage)
+    } catch {
+      return try await list(
+        "/accounts/\(accountID)/audit_logs",
+        query: ["direction": "desc", "per_page": String(perPage)]
+      ).items
+    }
+  }
+
+  public func listAuditLogsV2(accountID: String, limit: Int = 10) async throws -> [AuditLogEntry] {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withFullDate]
+    let since = formatter.string(from: Date().addingTimeInterval(-7 * 24 * 3600))
+    let before = formatter.string(from: Date().addingTimeInterval(24 * 3600))
+    let entries: [AuditLogV2Entry] = try await list(
+      "/accounts/\(accountID)/logs/audit",
+      query: [
+        "direction": "desc",
+        "limit": String(limit),
+        "since": since,
+        "before": before,
+      ]
     ).items
+    return entries.map(\.asLegacyEntry)
+  }
+
+  /// Asks Cloudflare to send a test notification for a policy.
+  public func testNotificationPolicy(accountID: String, policyID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/alerting/v3/policies/\(policyID)/test", method: "POST")
+  }
+
+  /// Worker invocation totals for the last `hours` via GraphQL Analytics.
+  public func workerAnalytics(accountID: String, scriptName: String, hours: Int = 24)
+    async throws -> WorkerAnalyticsPayload
+  {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let escaped = scriptName.replacingOccurrences(of: "\"", with: "\\\"")
+    let query = """
+      { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
+      workersInvocationsAdaptive(limit: 100, filter: { \
+      scriptName: "\(escaped)", \
+      datetime_geq: "\(formatter.string(from: since))", \
+      datetime_leq: "\(formatter.string(from: until))" \
+      }) { sum { requests errors } quantiles { cpuTimeP50 } \
+      dimensions { datetimeFiveMinutes status } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response = try await raw(
+      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
+      contentType: "application/json")
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<WorkerAnalyticsData>.self, from: response)
+    if let message = envelope.errors?.first?.message {
+      throw CloudflareAPIError.request(
+        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+    }
+    let rows = envelope.data?.viewer.accounts.first?.workersInvocationsAdaptive ?? []
+    var requests = 0
+    var errors = 0
+    var cpuSamples: [Double] = []
+    var byBucket: [String: (requests: Int, errors: Int)] = [:]
+    for row in rows {
+      let req = row.sum.requests
+      let err = row.sum.errors
+      requests += req
+      errors += err
+      if let cpu = row.quantiles?.cpuTimeP50 { cpuSamples.append(cpu) }
+      let key = row.dimensions.datetimeFiveMinutes ?? row.dimensions.datetime ?? "unknown"
+      var bucket = byBucket[key] ?? (0, 0)
+      bucket.requests += req
+      bucket.errors += err
+      byBucket[key] = bucket
+    }
+    let points = byBucket.keys.sorted().map { key in
+      let bucket = byBucket[key]!
+      return WorkerAnalyticsBucket(
+        datetime: key, requests: bucket.requests, errors: bucket.errors)
+    }
+    return WorkerAnalyticsPayload(
+      requests: requests,
+      errors: errors,
+      cpuTimeP50Us: cpuSamples.isEmpty ? 0 : cpuSamples.reduce(0, +) / Double(cpuSamples.count),
+      points: points
+    )
   }
   public func listRumSites(accountID: String) async throws -> [RumSite] {
     try await list("/accounts/\(accountID)/rum/site_info/list").items
@@ -738,6 +830,34 @@ private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
     }
   }
 }
+
+private struct WorkerAnalyticsData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let accounts: [Account] }
+  struct Account: Decodable, Sendable {
+    let workersInvocationsAdaptive: [Row]
+  }
+  struct Row: Decodable, Sendable {
+    let sum: Sum
+    let quantiles: Quantiles?
+    let dimensions: Dimensions
+
+    struct Sum: Decodable, Sendable {
+      let requests: Int
+      let errors: Int
+    }
+    struct Quantiles: Decodable, Sendable {
+      let cpuTimeP50: Double?
+    }
+    struct Dimensions: Decodable, Sendable {
+      let datetimeFiveMinutes: String?
+      let datetime: String?
+      let status: String?
+    }
+  }
+}
+
 private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
 private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
 private struct R2ObjectResult: Decodable, Sendable {

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Dash is a native iOS and iPadOS Cloudflare client built with SwiftUI. It signs in with OAuth 2.0 Authorization Code + PKCE and manages zones, DNS, cache, security settings, Workers, Pages, R2, KV, D1, Queues, Vectorize, Secrets Store, account services, and analytics.
+Dash is a native iPhone Cloudflare client built with SwiftUI. It signs in with OAuth 2.0 Authorization Code + PKCE and manages zones, DNS, cache, security settings, Workers, Pages, R2, KV, D1, Queues, Vectorize, Secrets Store, account services, and analytics.
 
 The installed app is named **Dash**. Its bundle identifier is `sh.xat.dash`, its callback is `dash://oauth/callback`, and its App Store name is **Dash for Cloudflare**.
 

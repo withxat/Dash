@@ -5,6 +5,11 @@ extension Error {
   var dashActionableMessage: String {
     DashFailurePresentation.from(error: self).message
   }
+
+  /// Task / URLSession cancellations from `.task` identity changes — not user-facing failures.
+  var dashIsCancellation: Bool {
+    self is CancellationError || (self as? URLError)?.code == .cancelled
+  }
 }
 
 /// Maps Cloudflare / transport failures to a primary recovery action.
@@ -609,22 +614,6 @@ struct GenericResourceCapabilities {
       caps.deleteMessage = {
         "Permanently delete the certificate pack \($0.id). Hosts covered only by it lose HTTPS."
       }
-    } else if path.hasSuffix("/calls/apps") {
-      caps.create = GenericCreateSpec(
-        title: "New app",
-        fields: [GenericCreateField("name", "App name")],
-        body: { values in ["name": .string(values["name"] ?? "")] })
-      caps.deleteMessage = { "Permanently delete the Calls app \($0.name) and its tokens." }
-    } else if path.hasSuffix("/calls/turn_keys") {
-      caps.create = GenericCreateSpec(
-        title: "New TURN key",
-        fields: [GenericCreateField("name", "Key name")],
-        body: { values in ["name": .string(values["name"] ?? "")] })
-      caps.deleteMessage = {
-        "Permanently delete the TURN key \($0.name). Clients using it lose TURN access."
-      }
-    } else if path.hasSuffix("/moq/relays") {
-      caps.deleteMessage = { "Permanently delete the MoQ relay \($0.name)." }
     } else if path.hasSuffix("/warp_connector") {
       caps.deleteMessage = { "Permanently delete the WARP connector tunnel \($0.name)." }
     } else if path.hasSuffix("/teamnet/routes") {
@@ -658,23 +647,6 @@ struct GenericResourceCapabilities {
       caps.deleteMessage = {
         "Permanently delete the application \($0.name) and stop its instances."
       }
-    } else if path.hasSuffix("/r2-catalog") {
-      caps.updates = [
-        GenericRowUpdate(
-          id: "toggle-catalog",
-          title: { $0.string("status") == "active" ? "Disable catalog" : "Enable catalog" },
-          method: "POST",
-          path: { "\($0)/\($1.name)/\($1.string("status") == "active" ? "disable" : "enable")" },
-          body: { _ in [:] })
-      ]
-    } else if path.hasSuffix("/dex/devices/dex_tests") {
-      caps.deleteMessage = { "Permanently delete the DEX test \($0.name)." }
-    } else if path.hasSuffix("/email/sending/suppression") {
-      caps.create = GenericCreateSpec(
-        title: "New suppression",
-        fields: [GenericCreateField("email", "Email address")],
-        body: { values in ["email": .string(values["email"] ?? "")] })
-      caps.deleteMessage = { "Remove \($0.name) from the suppression list." }
     } else if path.contains("/pages/projects/"), path.hasSuffix("/deployments") {
       caps.screenActions = [
         GenericScreenAction(
@@ -992,7 +964,6 @@ struct GenericResourcesView: View {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
             detailFieldRow(field)
-            if index < fields.count - 1 { DashListGroupDivider() }
           }
         }
 
@@ -1001,7 +972,6 @@ struct GenericResourcesView: View {
             VStack(alignment: .leading, spacing: 0) {
               ForEach(Array(advanced.enumerated()), id: \.offset) { index, field in
                 detailFieldRow(field)
-                if index < advanced.count - 1 { DashListGroupDivider() }
               }
             }
           }

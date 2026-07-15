@@ -37,6 +37,7 @@ import UIKit
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
+  #expect(FeatureID.allCases.count == 39)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -51,11 +52,29 @@ import UIKit
   }
 }
 
-@Test @MainActor func appModelDefaultsToPublishedPermissions() {
+@Test @MainActor func appModelDefaultsToCorePermissions() {
+  let defaults = UserDefaults.standard
+  let previous = defaults.object(forKey: AppModel.experimentalFeaturesDefaultsKey)
+  defaults.set(false, forKey: AppModel.experimentalFeaturesDefaultsKey)
+  defer {
+    if let previous {
+      defaults.set(previous, forKey: AppModel.experimentalFeaturesDefaultsKey)
+    } else {
+      defaults.removeObject(forKey: AppModel.experimentalFeaturesDefaultsKey)
+    }
+  }
+
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
-  #expect(model.selectedScopes == Set(CloudflareScopes.published))
+  #expect(model.selectedScopes == DashAuthorizationScopes.core)
+  #expect(DashAuthorizationScopes.core.count == 66)
+  #expect(DashAuthorizationScopes.experimental.count == 8)
+  #expect(DashAuthorizationScopes.core.isStrictSubset(of: Set(CloudflareScopes.published)))
+  #expect(DashAuthorizationScopes.experimental.isDisjoint(with: DashAuthorizationScopes.core))
+  #expect(
+    DashAuthorizationScopes.searchResources.isSubset(of: DashAuthorizationScopes.core))
+  #expect(DashAuthorizationScopes.watchtower.isSubset(of: DashAuthorizationScopes.core))
   #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
-  #expect(!model.selectedScopes.contains("ai-search.metadata_read"))
+  #expect(!model.selectedScopes.contains("ai.read"))
 }
 
 @Test @MainActor func identityFailuresOnlySignOutOnDefinitive401() {
@@ -184,36 +203,54 @@ import UIKit
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
 }
 
-@Test func recentFeaturesContinueItemsPreferRecentAndCap() {
-  // Shortcuts are excluded so Continue never clones the Shortcuts section.
-  #expect(
-    RecentFeatures.continueItems(recent: [.dnsManagement, .zones], shortcuts: [.zones, .r2, .kv])
-      == [.dnsManagement])
-  #expect(
-    RecentFeatures.continueItems(
-      recent: [.zones, .workers, .r2, .kv, .d1, .images],
-      shortcuts: [.stream, .analytics]
-    ) == [.zones, .workers, .r2, .kv, .d1, .images])
-  #expect(
-    RecentFeatures.continueItems(recent: [.zones, .r2], shortcuts: [.zones, .r2, .kv]).isEmpty)
+/// The Features tab opens on `.available`, which is only safe because unknown
+/// scopes resolve to `.full`. If that ever flips, a cold launch shows an empty
+/// catalog before the token store answers.
+@MainActor
+@Test func featureCatalogDefaultFilterListsEverythingBeforeScopesLoad() {
+  #expect(FeatureCatalogView.defaultFilter == .available)
+  let coldLaunch = FeatureCatalogFiltering.features(
+    filter: FeatureCatalogView.defaultFilter,
+    grantedScopes: nil,
+    experimentalEnabled: false)
+  #expect(coldLaunch.count == FeatureCatalog.all.count - 4)
 }
 
-@Test func itemsCatalogFilteringRespectsAccessAndQuery() {
+@Test func featureCatalogFilteringRespectsAccess() {
   let scopes: Set<String> = ["zone.read"]
-  let locked = ItemsCatalogFiltering.features(
-    query: "", filter: .locked, grantedScopes: scopes)
+  let locked = FeatureCatalogFiltering.features(
+    filter: .locked, grantedScopes: scopes, experimentalEnabled: false)
   #expect(locked.contains(.workers))
   #expect(!locked.contains(.zones))
 
-  let readOnly = ItemsCatalogFiltering.features(
-    query: "zone", filter: .readOnly, grantedScopes: scopes)
+  let readOnly = FeatureCatalogFiltering.features(
+    filter: .readOnly, grantedScopes: scopes, experimentalEnabled: false)
   #expect(readOnly.contains(.zones))
   #expect(!readOnly.contains(.workers))
 
   let fullScopes = Set(FeatureID.zones.capability.all)
-  let available = ItemsCatalogFiltering.features(
-    query: "zone", filter: .available, grantedScopes: fullScopes)
+  let available = FeatureCatalogFiltering.features(
+    filter: .available, grantedScopes: fullScopes, experimentalEnabled: false)
   #expect(available.contains(.zones))
+}
+
+@Test func experimentalFeatureVisibilityRequiresOptIn() {
+  let hidden = FeatureCatalogFiltering.features(
+    filter: .all, grantedScopes: nil, experimentalEnabled: false)
+  let shown = FeatureCatalogFiltering.features(
+    filter: .all, grantedScopes: nil, experimentalEnabled: true)
+  #expect(
+    DashAuthorizationScopes.experimentalFeatures.allSatisfy {
+      !hidden.contains($0) && shown.contains($0)
+    })
+}
+
+/// Text search lives behind the tab-bar Search role; the catalog itself does not take a query.
+@Test func featureSearchMatchesTitleSubtitleAndID() {
+  #expect(FeatureCatalog.matchesSearch(.zones, query: "ZoNe"))
+  #expect(FeatureCatalog.matchesSearch(.r2, query: "bucket"))
+  #expect(FeatureCatalog.matchesSearch(.kv, query: "namespace"))
+  #expect(!FeatureCatalog.matchesSearch(.zones, query: "queue"))
 }
 
 @Test func destinationFeatureMappingCoversDirectRoutes() {
@@ -228,6 +265,9 @@ import UIKit
   #expect(featureID(for: .profile) == nil)
 }
 
+// `View` is a @MainActor protocol, so StatusBadge/DashNotice statics are
+// isolated too — the test has to hop on as well.
+@MainActor
 @Test func statusBadgeAndNoticeExposeAccessibleCopy() {
   #expect(StatusBadge.accessibilityText(for: "Read-only") == "Status, Read-only")
   #expect(StatusBadge.presentation(for: "OK") == .quiet)
@@ -237,15 +277,66 @@ import UIKit
     DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
       == "Warning: Coverage limited")
   #expect(DashTheme.Spacing.scrollBottomInset == 72)
+  #expect(DashTheme.Layout.minimumHitTarget == 44)
 }
 
-@Test func featureVisualIdentityMapsStableTones() {
+@Test func widgetSeverityHeadlineNamesCriticalAndWarning() {
+  #expect(
+    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 0, warningCount: 0) == "All clear")
+  #expect(
+    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 2, warningCount: 0) == "2 critical")
+  #expect(
+    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 0, warningCount: 1) == "1 warning")
+  #expect(
+    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 2, warningCount: 1)
+      == "2 critical, 1 warning")
+}
+
+@Test func analyticsChartAccessibilitySummaryIncludesTotals() {
+  let summary = ZoneAnalyticsChartModel.chartAccessibilitySummary(
+    rangeLabel: "Last 24 hours", requests: 1200, threats: 3)
+  #expect(summary.contains("Last 24 hours"))
+  #expect(summary.contains("1,200") || summary.contains("1200"))
+  #expect(summary.contains("3"))
+  #expect(summary.contains("threats"))
+}
+
+@Test func searchCancellationIsRecognized() {
+  #expect(CancellationError().dashIsCancellation)
+  #expect(URLError(.cancelled).dashIsCancellation)
+  #expect(!URLError(.timedOut).dashIsCancellation)
+}
+
+@Test func legalDocumentsExposeStableTitles() {
+  #expect(LegalDocument.termsOfUse.title == "Terms of Use")
+  #expect(LegalDocument.privacyPolicy.title == "Privacy Policy")
+  #expect(LegalDocument.termsOfUse.resourceName == "TermsOfUse")
+  #expect(LegalDocument.privacyPolicy.resourceName == "PrivacyPolicy")
+}
+
+@Test func featureVisualIdentityMapsStableTonesByCategory() {
   #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
+  #expect(FeatureVisualIdentity.tone(for: .dnsFirewall) == .success)
   #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
-  #expect(FeatureVisualIdentity.tone(for: .analytics) == .warning)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)
-  #expect(FeatureVisualIdentity.tone(for: .magicNetworking) == .soft)
-  #expect(FeatureVisualIdentity.tone(for: .apiExplorer) == .brand)
+  #expect(FeatureVisualIdentity.tone(for: .analytics) == .accent)
+  #expect(FeatureVisualIdentity.tone(for: .workersAI) == .warning)
+  #expect(FeatureVisualIdentity.tone(for: .turnstile) == .danger)
+  #expect(FeatureVisualIdentity.tone(for: .accessApps) == .info)
+  #expect(FeatureVisualIdentity.tone(for: .tunnels) == .brand)
+  #expect(FeatureVisualIdentity.tone(for: .account) == .soft)
+
+  for (_, features) in FeatureCatalog.grouped {
+    let tones = Set(features.map { FeatureVisualIdentity.tone(for: $0) })
+    #expect(tones.count == 1)
+  }
+}
+
+@Test func featureCatalogIconsAreUnique() {
+  let duotone = FeatureCatalog.descriptors.map(\.solarAssetName)
+  let outline = FeatureCatalog.descriptors.map(\.solarOutlineAssetName)
+  #expect(Set(duotone).count == duotone.count)
+  #expect(Set(outline).count == outline.count)
 }
 
 @Test func trayDragDecisionUsesProjectionAndVelocity() {
@@ -275,17 +366,31 @@ import UIKit
   #expect(ProfileTrayPhase.signOut.title == "Sign out")
 }
 
-@Test func recentFeaturesDedupeReorderAndCap() {
-  // A repeat visit moves the feature to the front instead of duplicating it.
+@Test func recentResourcesRoundTripAndFilterByAccount() {
+  let worker = RecentResource.worker(accountID: "acc1", name: "api")
+  let zone = RecentResource.zone(accountID: "acc2", id: "z1", title: "example.com")
+  let encoded = RecentResources.updated(
+    existing: RecentResources.updated(existing: "", adding: zone), adding: worker)
+  let decoded = RecentResources.decode(encoded)
+  #expect(decoded.map(\.title) == ["api", "example.com"])
   #expect(
-    RecentFeatures.updated(existing: "zones,workers,r2", adding: .workers)
-      == "workers,zones,r2")
-  // New entries prepend.
-  #expect(RecentFeatures.updated(existing: "", adding: .d1) == "d1")
-  // The list caps at six.
+    RecentResources.continueItems(recent: decoded, accountID: "acc1").map(\.title) == ["api"])
+  #expect(worker.destination == .worker("api"))
+  #expect(zone.destination == .zone("z1"))
+}
+
+@Test func oldAndExperimentalShortcutsDecodeSafely() {
+  let decoded = "zones,apiExplorer,workersAI,magicNetworking"
+    .split(separator: ",")
+    .compactMap { FeatureID(rawValue: String($0)) }
+  #expect(decoded == [.zones, .workersAI])
   #expect(
-    RecentFeatures.updated(existing: "zones,workers,r2,kv,d1,images", adding: .stream)
-      == "stream,zones,workers,r2,kv,d1")
+    decoded.filter { !DashAuthorizationScopes.experimentalFeatures.contains($0) } == [.zones])
+}
+
+@Test func searchResourceFilteringMatchesNames() {
+  #expect(SearchResourceFiltering.matches("my-worker", query: "work"))
+  #expect(!SearchResourceFiltering.matches("kv-prod", query: "d1"))
 }
 
 @Test func pinnedZonesRoundTripToggleAndAccountFiltering() {
@@ -312,6 +417,7 @@ import UIKit
   #expect(mine == [a])
 }
 
+@MainActor
 @Test func tailBufferTrimsOldestBeyondLimit() {
   let event = { (summary: String) in
     WorkerTailEvent(timestamp: nil, outcome: "ok", summary: summary, lines: [])
@@ -363,6 +469,10 @@ import UIKit
   #expect(parse("dash://zone/abc/unknown") == .zone("abc"))  // unknown subpath falls back
   #expect(parse("dash://feature/workers") == .feature(.workers))
   #expect(parse("dash://worker/my%20worker") == .worker("my worker"))  // percent-decoded
+  #expect(parse("dash://r2/my-bucket") == .r2("my-bucket"))
+  #expect(parse("dash://kv/ns1") == .kv("ns1"))
+  #expect(parse("dash://d1/db-uuid/analytics") == .d1(id: "db-uuid", name: "analytics"))
+  #expect(parse("dash://d1/db-uuid") == .d1(id: "db-uuid", name: "db-uuid"))
 
   // Rejections.
   #expect(parse("dash://oauth/callback?code=x") == nil)  // owned by the auth session
@@ -376,6 +486,9 @@ import UIKit
   #expect(DashRoute.zoneDNS("z").destination == .dns("z"))
   #expect(DashRoute.feature(.r2).destination == .feature(.r2))
   #expect(DashRoute.worker("w").destination == .worker("w"))
+  #expect(DashRoute.r2("b").destination == .r2Bucket("b"))
+  #expect(DashRoute.kv("n").destination == .kvNamespace("n"))
+  #expect(DashRoute.d1(id: "i", name: "n").destination == .d1Database("i", "n"))
 }
 
 @Test func underAttackRestoreLevelFallsBackToMedium() {
@@ -512,9 +625,6 @@ import UIKit
 
   let registrar = GenericResourceCapabilities.forPath("/accounts/abc/registrar/domains")
   #expect(registrar.updates.allSatisfy { $0.confirmMessage == nil })
-
-  let catalog = GenericResourceCapabilities.forPath("/accounts/abc/r2-catalog")
-  #expect(catalog.updates.first?.confirmMessage == nil)
 }
 
 @Test func genericDetailPhaseAllowsOnlyOneDecision() {
@@ -531,21 +641,7 @@ import UIKit
   #expect(D1SQL.destructiveKeyword(in: "SELECT 1;") == nil)
 }
 
-@Test func apiExplorerFilteringAndRequestDraftHelpers() {
-  let allProducts = APIExplorerFiltering.products(matching: "")
-  #expect(!allProducts.isEmpty)
-  let narrowed = APIExplorerFiltering.products(matching: "zzzzzz-no-match")
-  #expect(narrowed.isEmpty)
-
-  let endpoints = APIExplorerFiltering.endpoints(matching: "")
-  #expect(!endpoints.isEmpty)
-  #expect(APIRequestDraft.shouldConfirm(isMutation: true))
-  #expect(!APIRequestDraft.shouldConfirm(isMutation: false))
-  #expect(
-    APIRequestDraft.truncatedResponse(String(repeating: "a", count: 10), limit: 5).contains(
-      "truncated"))
-}
-
+@MainActor
 @Test func workerTailEventRowAccessibilityIncludesSummary() {
   let event = WorkerTailEvent(
     timestamp: nil, outcome: "ok", summary: "GET /", lines: ["hello"])
@@ -620,42 +716,13 @@ import UIKit
   #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
 }
 
-@Test func batchOneRegistryPathsCarryTheirWrites() {
+@Test func remainingRegistryPathsCarryTheirWrites() {
   let containers = GenericResourceCapabilities.forPath("/accounts/abc/containers/applications")
   #expect(containers.deleteMessage != nil)
   #expect(containers.create == nil)
-
-  let catalog = GenericResourceCapabilities.forPath("/accounts/abc/r2-catalog")
-  #expect(catalog.updates.count == 1)
-  #expect(catalog.deleteMessage == nil)
-
-  let dex = GenericResourceCapabilities.forPath("/accounts/abc/dex/devices/dex_tests")
-  #expect(dex.deleteMessage != nil)
-
-  let suppression = GenericResourceCapabilities.forPath(
-    "/accounts/abc/email/sending/suppression")
-  #expect(suppression.create != nil)
-  #expect(suppression.deleteMessage != nil)
-
-  let namespaces = GenericResourceCapabilities.forPath("/accounts/abc/artifacts/namespaces")
-  #expect(namespaces.create == nil)
-  #expect(namespaces.deleteMessage == nil)
-  #expect(namespaces.updates.isEmpty)
 }
 
 @Test func hubRegistryPathsCarryTheirWrites() {
-  let apps = GenericResourceCapabilities.forPath("/accounts/abc/calls/apps")
-  #expect(apps.create != nil)
-  #expect(apps.deleteMessage != nil)
-
-  let turnKeys = GenericResourceCapabilities.forPath("/accounts/abc/calls/turn_keys")
-  #expect(turnKeys.create != nil)
-  #expect(turnKeys.deleteMessage != nil)
-
-  let relays = GenericResourceCapabilities.forPath("/accounts/abc/moq/relays")
-  #expect(relays.create == nil)
-  #expect(relays.deleteMessage != nil)
-
   let warp = GenericResourceCapabilities.forPath("/accounts/abc/warp_connector")
   #expect(warp.deleteMessage != nil)
 
@@ -803,6 +870,45 @@ import UIKit
   cache.set("workers:test", 3)
   cache.clear()
   #expect(cache.get("workers:test") as Int? == nil)
+}
+
+@Test @MainActor func featureDataCacheHonorsTTLAndMemoryPurge() {
+  let cache = FeatureDataCache()
+  cache.set("zones:a", 1, ttl: 0.001)
+  cache.set("watchtower:acc", 2, ttl: nil)
+  // Force expiry for the short-TTL entry.
+  Thread.sleep(forTimeInterval: 0.01)
+  #expect(cache.get("zones:a") as Int? == nil)
+  #expect(cache.get("watchtower:acc") as Int? == 2)
+  cache.set("zones:b", 3)
+  cache.purgeForMemoryPressure()
+  #expect(cache.get("zones:b") as Int? == nil)
+  #expect(cache.get("watchtower:acc") as Int? == 2)
+}
+
+@Test func watchtowerMuteStoreSnoozesAndExpires() {
+  let suite = "dash.tests.mute.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+
+  WatchtowerMuteStore.mute("sig-1", title: "Tunnel down", for: 60, defaults: defaults)
+  #expect(WatchtowerMuteStore.isMuted("sig-1", defaults: defaults))
+  #expect(WatchtowerMuteStore.mutedTitles(defaults: defaults).contains("Tunnel down"))
+
+  WatchtowerMuteStore.unmute("sig-1", defaults: defaults)
+  #expect(!WatchtowerMuteStore.isMuted("sig-1", defaults: defaults))
+
+  // Already-expired entries are filtered out on read.
+  WatchtowerMuteStore.mute("sig-2", title: "Cert", for: -1, defaults: defaults)
+  #expect(!WatchtowerMuteStore.isMuted("sig-2", defaults: defaults))
+}
+
+@Test func dashCapabilityStatusMapsAPIErrors() {
+  #expect(DashCapabilityStatus.from(apiError: nil) == .unknown)
+  let forbidden = CloudflareAPIError.request(status: 403, errors: [])
+  #expect(DashCapabilityStatus.from(apiError: forbidden) == .needsPermission)
+  let plan = CloudflareAPIError.transport("Account not entitled")
+  #expect(DashCapabilityStatus.from(apiError: plan) == .needsPlan)
 }
 
 @Test func tabBarNavigationVisibilityChangesAnimateAndIgnoreDuplicates() {

@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 import UserNotifications
 
 /// Decides which local notifications a Watchtower refresh should fire, by
@@ -23,7 +22,8 @@ enum WatchtowerNotificationPlanner {
   }
 
   static func plans(
-    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot
+    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot,
+    mutedTitles: Set<String> = []
   ) -> [Plan] {
     // Nothing to compare against on a first run.
     guard let previous else { return [] }
@@ -34,6 +34,7 @@ enum WatchtowerNotificationPlanner {
       previous.signals.filter { $0.status == "critical" && isNotifiable($0) }.map(\.title))
     let newCritical = current.signals.filter {
       $0.status == "critical" && isNotifiable($0) && !previousCritical.contains($0.title)
+        && !mutedTitles.contains($0.title)
     }
     if !newCritical.isEmpty {
       return newCritical.map { signal in
@@ -76,29 +77,25 @@ enum WatchtowerNotifier {
     let settings = await center.notificationSettings()
     guard settings.authorizationStatus == .authorized else { return }
 
-    for plan in WatchtowerNotificationPlanner.plans(previous: previous, current: current) {
+    let mutedTitles = WatchtowerMuteStore.mutedTitles()
+
+    for plan in WatchtowerNotificationPlanner.plans(
+      previous: previous, current: current, mutedTitles: mutedTitles
+    ) {
       let content = UNMutableNotificationContent()
       content.title = plan.title
       content.body = plan.body
       content.sound = .default
+      content.userInfo = ["dashRoute": "dash://watchtower"]
       let request = UNNotificationRequest(
         identifier: plan.identifier, content: content, trigger: nil)
       try? await center.add(request)
     }
   }
 
-  /// Prompts for authorization; returns whether alerts are allowed.
-  /// On grant, also registers for remote notifications so Account → Alerts
-  /// push can mint a device token (local Watchtower alerts need only the
-  /// authorization; remote registration is idempotent and cheap).
+  /// Prompts only for local notification authorization.
   static func requestAuthorization() async -> Bool {
     let center = UNUserNotificationCenter.current()
-    let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-    if granted {
-      await MainActor.run {
-        UIApplication.shared.registerForRemoteNotifications()
-      }
-    }
-    return granted
+    return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
   }
 }

@@ -106,6 +106,8 @@ struct WatchtowerWidgetView: View {
           .minimumScaleFactor(0.8)
         Spacer(minLength: 0)
       }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(snapshot.severityHeadline)
       if let account = snapshot.accountName {
         Text(account)
           .font(.caption2)
@@ -125,6 +127,8 @@ struct WatchtowerWidgetView: View {
               Text(signal.title).font(.caption).lineLimit(1)
               Spacer(minLength: 0)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(signal.status), \(signal.title)")
           }
         }
       }
@@ -158,8 +162,7 @@ struct WatchtowerWidgetView: View {
   }
 
   private func headline(_ snapshot: WatchtowerWidgetSnapshot) -> String {
-    guard snapshot.issueCount > 0 else { return "All clear" }
-    return "\(snapshot.issueCount) \(snapshot.issueCount == 1 ? "issue" : "issues")"
+    snapshot.severityHeadline
   }
 
   private func statusColor(_ snapshot: WatchtowerWidgetSnapshot) -> Color {

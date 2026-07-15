@@ -1,6 +1,7 @@
 import CloudflareAPI
 import Foundation
 import UIKit
+import UserNotifications
 
 /// Sink that receives APNs device tokens from `PushDelegate`.
 @MainActor
@@ -11,10 +12,19 @@ protocol PushTokenInbox: AnyObject {
 /// UIApplicationDelegate that forwards device tokens into an explicit sink.
 /// Prefer this over resolving App Intents' `AppDependencyManager` from the
 /// delegate — that dependency surface is for intents, not system callbacks.
-final class PushDelegate: NSObject, UIApplicationDelegate {
+@MainActor
+final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
   weak var inbox: (any PushTokenInbox)?
 
-  func application(
+  nonisolated func application(
+    _ application: UIApplication,
+    didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+  ) -> Bool {
+    UNUserNotificationCenter.current().delegate = self
+    return true
+  }
+
+  nonisolated func application(
     _ application: UIApplication,
     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
@@ -23,11 +33,27 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     }
   }
 
-  func application(
+  nonisolated func application(
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
     // Silent — push degrades; Watchtower local notifications still work.
+  }
+
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let routeString = response.notification.request.content.userInfo["dashRoute"] as? String
+    Task { @MainActor in
+      if let routeString, let url = URL(string: routeString), let route = DashRoute.parse(url),
+        let model = inbox as? AppModel
+      {
+        model.pendingRoute = route
+      }
+    }
+    completionHandler()
   }
 }
 

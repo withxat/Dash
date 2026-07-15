@@ -23,13 +23,27 @@ struct WorkerTailView: View {
   @State private var session = 0
 
   /// Pure so tests can pin the trim behavior: append, keep the newest `limit`.
+  /// Uses a single suffix slice instead of repeated `removeFirst` copies.
   static func appending(
     _ event: WorkerTailEvent, to buffer: [WorkerTailEvent], limit: Int
   ) -> [WorkerTailEvent] {
     var buffer = buffer
     buffer.append(event)
     if buffer.count > limit {
-      buffer.removeFirst(buffer.count - limit)
+      return Array(buffer.suffix(limit))
+    }
+    return buffer
+  }
+
+  /// Batches a burst of events into one array update for smoother Live Tail.
+  static func appending(
+    _ events: [WorkerTailEvent], to buffer: [WorkerTailEvent], limit: Int
+  ) -> [WorkerTailEvent] {
+    guard !events.isEmpty else { return buffer }
+    var buffer = buffer
+    buffer.append(contentsOf: events)
+    if buffer.count > limit {
+      return Array(buffer.suffix(limit))
     }
     return buffer
   }
@@ -52,8 +66,6 @@ struct WorkerTailView: View {
               ForEach(events) { event in
                 WorkerTailEventRow(event: event)
                   .id(event.id)
-                DashListGroupDivider()
-                  .padding(.horizontal, DashTheme.Spacing.screen)
               }
             }
           }

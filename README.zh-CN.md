@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Dash 是使用 SwiftUI 构建的原生 iOS/iPadOS Cloudflare 客户端。它通过 OAuth 2.0 Authorization Code + PKCE 登录，可管理 Zones、DNS、缓存、安全设置、Workers、Pages、R2、KV、D1、Queues、Vectorize、Secrets Store、账户服务和分析数据。
+Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 OAuth 2.0 Authorization Code + PKCE 登录，可管理 Zones、DNS、缓存、安全设置、Workers、Pages、R2、KV、D1、Queues、Vectorize、Secrets Store、账户服务和分析数据。
 
 安装后的名称是 **Dash**，Bundle ID 为 `sh.xat.dash`，回调地址为 `dash://oauth/callback`，App Store 名称使用 **Dash for Cloudflare**。
 

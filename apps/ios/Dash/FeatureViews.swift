@@ -10,6 +10,7 @@ struct FeatureRouterContent: View {
     if accessLevel != .locked {
       routedContent
         .environment(\.featureAllowsWrites, accessLevel == .full)
+        .environment(\.featureRequiredScopes, feature.capability.all)
         .safeAreaInset(edge: .top, spacing: 0) {
           if accessLevel == .readOnly {
             FeatureReadOnlyBanner(feature: feature)
@@ -36,32 +37,18 @@ struct FeatureRouterContent: View {
       case .stream: StreamView()
       case .analytics: AnalyticsView()
       case .account: AccountView()
-      case .apiExplorer: APIExplorerView()
       case .workersAI: WorkersAIView()
       case .browserRendering: BrowserRenderingView()
-      case .aiSearch:
-        EndpointProductView(feature: feature, matching: ["ai-search", "autorag", "/rag/"])
-      case .calls, .zeroTrustConnectors, .workersObservability:
+      case .zeroTrustConnectors, .workersObservability:
         FeatureHubView(feature: feature)
       case .rulesets: RulesetsView()
       case .botManagement, .cacheSettings:
         FeatureZonePickerView(feature: feature)
-      case .zaraz:
-        EndpointProductView(feature: feature, matching: ["zaraz"])
       case .accessPolicies: AccessPoliciesView()
-      case .magicNetworking:
-        EndpointProductView(
-          feature: feature,
-          matching: [
-            "magic-wan", "magic-transit", "magic-firewall", "ip-prefix", "address-map", "pcap",
-          ]
-        )
       case .dnsManagement:
         FeatureHubView(feature: feature)
       case .sslCertificates, .apiSecurity:
         FeatureZonePickerView(feature: feature)
-      case .radarIntel:
-        EndpointProductView(feature: feature, matching: ["/radar/", "/intel/"])
       default: GenericFeatureView(feature: feature)
       }
     }
@@ -90,7 +77,7 @@ struct FeatureReadOnlyBanner: View {
 /// Maps a push destination to the catalog feature that owns its write scopes.
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
-  case .profile, .accountDNSSettings: nil
+  case .profile, .settings, .accountDNSSettings: nil
   case .feature(let feature), .zonePicker(let feature), .zoneFeatureHub(let feature, _, _):
     feature
   case .zone, .dns, .cache, .zoneAnalytics, .zoneSettings, .zoneTool:
@@ -106,6 +93,25 @@ func featureID(for destination: Destination) -> FeatureID? {
   }
 }
 
+func requiredScopes(for destination: Destination) -> Set<String> {
+  switch destination {
+  case .profile, .settings:
+    []
+  case .accountDNSSettings:
+    FeatureID.dnsManagement.capability.all
+  case .dns:
+    FeatureID.dnsManagement.capability.all
+  case .cache, .cachePerformance:
+    FeatureID.cacheSettings.capability.all
+  case .zoneSettings:
+    ["zone.read", "zone-settings.read", "zone-settings.write"]
+  case .workerTail:
+    FeatureID.workers.capability.all.union(["workers-tail.read"])
+  default:
+    featureID(for: destination)?.capability.all ?? []
+  }
+}
+
 /// Editing is safe only for classic scripts (0 module parts) or single-module
 /// workers; multi-module uploads through /content would drop sibling modules.
 func workerSourceIsEditable(moduleCount: Int, hasWriteScope: Bool) -> Bool {
@@ -116,10 +122,19 @@ private struct FeatureWriteAccessKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+private struct FeatureRequiredScopesKey: EnvironmentKey {
+  static let defaultValue: Set<String> = []
+}
+
 extension EnvironmentValues {
   var featureAllowsWrites: Bool {
     get { self[FeatureWriteAccessKey.self] }
     set { self[FeatureWriteAccessKey.self] = newValue }
+  }
+
+  var featureRequiredScopes: Set<String> {
+    get { self[FeatureRequiredScopesKey.self] }
+    set { self[FeatureRequiredScopesKey.self] = newValue }
   }
 }
 
@@ -937,6 +952,8 @@ struct WorkerDetailView: View {
   @State private var draft = ""
   @State private var deploying = false
   @State private var deployError: String?
+  @State private var analytics: WorkerAnalyticsPayload?
+  @State private var analyticsError: String?
   @State private var confirmsDeploy = false
   @State private var error: String?
   @State private var loadedSubdomain = false
@@ -955,6 +972,11 @@ struct WorkerDetailView: View {
       ScrollView {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           if selectedTab == .management {
+            if let analytics {
+              workerMetricsCard(analytics)
+            } else if let analyticsError {
+              DashNotice(kind: .warning, message: analyticsError)
+            }
             DashToggleRow(title: "workers.dev", isOn: $subdomainEnabled)
               .onChange(of: subdomainEnabled) { _, enabled in
                 if loadedSubdomain { Task { await setSubdomain(enabled) } }
@@ -969,7 +991,6 @@ struct WorkerDetailView: View {
               ) {
                 DashListRow(title: "Deployments", icon: SolarAsset.clock)
               }
-              DashListGroupDivider()
               DashListGroupLink(
                 value: .zoneTool(
                   zoneID: "", title: "Custom domains",
@@ -980,7 +1001,6 @@ struct WorkerDetailView: View {
               // Builds APIs key on the immutable script tag, so the row waits
               // for the tag to resolve.
               if let workerTag {
-                DashListGroupDivider()
                 DashListGroupLink(
                   value: .zoneTool(
                     zoneID: "", title: "Builds",
@@ -992,7 +1012,6 @@ struct WorkerDetailView: View {
                 }
               }
               if model.hasScopes(["workers-tail.read"]) {
-                DashListGroupDivider()
                 DashListGroupLink(value: .workerTail(name)) {
                   DashListRow(title: "Live tail", icon: SolarAsset.bolt)
                 }
@@ -1043,6 +1062,7 @@ struct WorkerDetailView: View {
       }
     }
     .navigationTitle(name).task { await load() }
+    .refreshable { await load(force: true) }
     .toolbar {
       if featureAllowsWrites {
         ToolbarItem(placement: .topBarTrailing) {
@@ -1074,6 +1094,47 @@ struct WorkerDetailView: View {
       )
     }
   }
+
+  private func workerMetricsCard(_ summary: WorkerAnalyticsPayload) -> some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Last 24 hours")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+        HStack(spacing: 12) {
+          workerMetric("Requests", summary.requests.formatted())
+          workerMetric("Errors", summary.errors.formatted())
+          workerMetric(
+            "CPU p50",
+            String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+        }
+        if summary.requests > 0 {
+          let rate = Double(summary.errors) / Double(summary.requests)
+          Text("Error rate \(String(format: "%.2f%%", rate * 100))")
+            .dashTextStyle(.caption)
+            .foregroundStyle(rate > 0.05 ? DashTheme.danger : DashTheme.subtle)
+        }
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "Worker metrics. \(summary.requests) requests, \(summary.errors) errors"
+    )
+  }
+
+  private func workerMetric(_ title: String, _ value: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(value)
+        .dashTextStyle(.sectionTitle)
+        .foregroundStyle(DashTheme.text)
+        .monospacedDigit()
+      Text(title)
+        .dashTextStyle(.caption)
+        .foregroundStyle(DashTheme.subtle)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
   private var hasWriteScope: Bool {
     featureAllowsWrites && model.hasScopes(["workers-scripts.write"])
   }
@@ -1107,6 +1168,10 @@ struct WorkerDetailView: View {
   private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }
     let key = FeatureCacheKey.workerSource(accountID: accountID, name: name)
+    let analyticsKey = FeatureCacheKey.workerAnalytics(accountID: accountID, name: name)
+    if !force, let cached: WorkerAnalyticsPayload = model.featureCache.get(analyticsKey) {
+      analytics = cached
+    }
     if !force, let cached: WorkerDetailSnapshot = model.featureCache.get(key) {
       source = cached.source
       draft = cached.source.content
@@ -1114,6 +1179,7 @@ struct WorkerDetailView: View {
       workerTag = cached.tag
       loadedSubdomain = true
       error = nil
+      if analytics == nil { await loadAnalytics(accountID: accountID, force: force) }
       return
     }
     do {
@@ -1140,6 +1206,24 @@ struct WorkerDetailView: View {
       error = nil
     } catch {
       self.error = error.dashActionableMessage
+    }
+    await loadAnalytics(accountID: accountID, force: force)
+  }
+
+  private func loadAnalytics(accountID: String, force: Bool) async {
+    let key = FeatureCacheKey.workerAnalytics(accountID: accountID, name: name)
+    if !force, let cached: WorkerAnalyticsPayload = model.featureCache.get(key) {
+      analytics = cached
+      return
+    }
+    do {
+      let summary = try await model.client.workerAnalytics(
+        accountID: accountID, scriptName: name, hours: 24)
+      analytics = summary
+      analyticsError = nil
+      model.featureCache.set(key, summary)
+    } catch {
+      analyticsError = error.dashActionableMessage
     }
   }
 

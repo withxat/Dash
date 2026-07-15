@@ -44,7 +44,13 @@ enum DashTheme {
     static let screen: CGFloat = 16
     static let section: CGFloat = 20
     static let card: CGFloat = 16
+    /// Gap between tiles in home shortcut grids and similar 2-up layouts.
+    static let itemGap: CGFloat = 12
     static let listInset: CGFloat = 0
+    /// Optical inset for bare list rows, matching the group title above them.
+    static let rowInset: CGFloat = 4
+    /// Inner horizontal padding of a single item card (tiles, vivid hero cards).
+    static let itemCardInset: CGFloat = 14
     /// Extra scroll padding above the floating tab bar / home indicator.
     static let scrollBottomInset: CGFloat = 72
   }
@@ -54,6 +60,11 @@ enum DashTheme {
   enum Motion {
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let reduced = Animation.easeOut(duration: 0.12)
+    /// Skeleton → loaded content: long enough for blur to read.
+    @MainActor static var content: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.36)
+    }
     /// Deliberate hero morph for matchedGeometryEffect tray transitions — springy
     /// and slower than the micro-interaction tokens so the shape change reads.
     @MainActor static var morph: Animation {
@@ -93,8 +104,8 @@ enum DashTheme {
     static let grabBarTop: CGFloat = 10
     static let grabBarBottom: CGFloat = 8
     static let closeIcon = Color(hex: 0x9B9A9D)
-    static let headerBorder = adaptive(light: 0xF9F7FA, dark: 0x262626)
-    static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
+    static let headerBorder = adaptive(light: 0xF6F8FA, dark: 0x262626)
+    static let shortcutItem = adaptive(light: 0xF6F8FA, dark: 0x262626)
     static let scrimOpacity: CGFloat = 0.35
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
@@ -107,45 +118,75 @@ enum DashTheme {
     static let floatingDetentFraction: CGFloat = 0.62
   }
 
-  // Warm Family-aligned neutrals: peach-tinted canvas after sign-in, matching
-  // the login mesh so authenticity doesn't flip to cold SaaS white.
-  static let canvas = adaptive(light: 0xFFFBF7, dark: 0x1A1A1A)
-  static let elevated = adaptive(light: 0xFFF8F3, dark: 0x1F1F1F)
-  static let recessed = adaptive(light: 0xF6EEE6, dark: 0x262626)
-  static let base = adaptive(light: 0xFFFBF7, dark: 0x2B2B2B)
-  static let fill = adaptive(light: 0xE8DFD6, dark: 0x404040)
+  // Cool neutral surfaces: controls and grouped elements share one light fill,
+  // while the white canvas keeps their boundaries visible without warm tinting.
+  static let canvas = adaptive(light: 0xFFFFFF, dark: 0x1A1A1A)
+  static let elevated = adaptive(light: 0xF6F8FA, dark: 0x1F1F1F)
+  static let recessed = adaptive(light: 0xF6F8FA, dark: 0x262626)
+  static let base = adaptive(light: 0xF6F8FA, dark: 0x2B2B2B)
+  static let fill = adaptive(light: 0xD0D7DE, dark: 0x404040)
 
   static let text = adaptive(light: 0x212126, dark: 0xF5F5F5)
   static let strong = adaptive(light: 0x171717, dark: 0xFAFAFA)
-  static let subtle = adaptive(light: 0x717171, dark: 0xA3A3A3)
+  /// Supporting copy on canvas — tuned for ≥4.5:1 on `canvas` in both modes.
+  static let subtle = adaptive(
+    light: 0x5C5C5C, dark: 0xA3A3A3, highLight: 0x404040, highDark: 0xD4D4D4)
+  /// List-row descriptions: quieter than `subtle` so titles carry the row.
+  /// Sits below AA in light mode (~2.7:1 on canvas) — deliberate, decorative
+  /// tier; Increased Contrast promotes it back to the `subtle` stops.
+  static let rowSubtitle = adaptive(
+    light: 0x9B9B9B, dark: 0x9B9B9B, highLight: 0x404040, highDark: 0xD4D4D4)
   /// Quiet icon actions (e.g. list-header edit); a tier fainter than `subtle`.
-  static let faint = Color(hex: 0xB3B3B3)
+  static let faint = adaptive(
+    light: 0x8A8A8A, dark: 0x8A8A8A, highLight: 0x6B6B6B, highDark: 0xB3B3B3)
   /// Leading icons on neutral tray menu rows; danger rows keep `danger`.
-  static let iconMuted = Color(hex: 0x8E908F)
-  static let placeholder = adaptive(light: 0xA3A3A3, dark: 0x717171)
+  static let iconMuted = adaptive(
+    light: 0x6F7170, dark: 0x9A9C9B, highLight: 0x525252, highDark: 0xC4C4C4)
+  static let placeholder = adaptive(
+    light: 0x6B6B6B, dark: 0xA3A3A3, highLight: 0x525252, highDark: 0xD4D4D4)
   static let inverse = adaptive(light: 0xFFFFFF, dark: 0x171717)
 
   static let accent = Color(hex: 0xF6821F)
   /// Reserved for focus rings, primary CTAs, and rare accents — not catalog decoration.
-  static let brand = adaptive(light: 0x1460E6, dark: 0x1256D6)
-  static let line = adaptive(light: 0xE8DFD6, dark: 0x525252)
-  static let hairline = adaptive(light: 0xF0E8E0, dark: 0x404040)
+  static let brand = adaptive(
+    light: 0x1460E6, dark: 0x5B9BFF, highLight: 0x0B4FCF, highDark: 0x93C5FD)
+  static let line = adaptive(light: 0xD0D7DE, dark: 0x525252)
+  static let hairline = adaptive(light: 0xEAEEF2, dark: 0x404040)
   /// Row separators on `recessed` panels — a step darker than `hairline`,
   /// which disappears on gray.
-  static let panelLine = adaptive(light: 0xE8DFD6, dark: 0x3A3A3C)
-  static let danger = adaptive(light: 0xEF4444, dark: 0xDC2626)
+  static let panelLine = adaptive(light: 0xD8DEE4, dark: 0x3A3A3C)
+  /// Status foregrounds — readable as small text on canvas and on matching tints.
+  static let danger = adaptive(
+    light: 0xDC2626, dark: 0xF87171, highLight: 0xB91C1C, highDark: 0xFCA5A5)
   static let dangerTint = adaptive(light: 0xFEE2E2, dark: 0x450A0A)
-  static let success = adaptive(light: 0x10B981, dark: 0x34D399)
+  static let success = adaptive(
+    light: 0x047857, dark: 0x6EE7B7, highLight: 0x065F46, highDark: 0xA7F3D0)
   static let successTint = adaptive(light: 0xD1FAE5, dark: 0x064E3B)
-  static let warning = adaptive(light: 0xEAB308, dark: 0xFACC15)
+  static let warning = adaptive(
+    light: 0xA16207, dark: 0xFDE68A, highLight: 0x854D0E, highDark: 0xFEF08A)
   static let warningTint = adaptive(light: 0xFEF9C3, dark: 0x713F12)
-  static let info = adaptive(light: 0x3B82F6, dark: 0x60A5FA)
+  static let info = adaptive(
+    light: 0x1D4ED8, dark: 0x93C5FD, highLight: 0x1E40AF, highDark: 0xBFDBFE)
   static let infoTint = adaptive(light: 0xDBEAFE, dark: 0x1E3A8A)
 
-  private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+  /// Resolves light/dark, and swaps to higher-contrast stops when Increased Contrast is on.
+  private static func adaptive(
+    light: UInt32,
+    dark: UInt32,
+    highLight: UInt32? = nil,
+    highDark: UInt32? = nil
+  ) -> Color {
     Color(
       uiColor: UIColor { traits in
-        UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+        let high = traits.accessibilityContrast == .high
+        let useDark = traits.userInterfaceStyle == .dark
+        let hex: UInt32
+        if useDark {
+          hex = high ? (highDark ?? dark) : dark
+        } else {
+          hex = high ? (highLight ?? light) : light
+        }
+        return UIColor(hex: hex)
       })
   }
 
@@ -262,6 +303,8 @@ enum FeatureVisualTone: Hashable, Sendable {
   case success
   case warning
   case accent
+  case danger
+  case info
 
   var muted: Color {
     switch self {
@@ -270,6 +313,8 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .success: DashTheme.success.opacity(0.85)
     case .warning: DashTheme.warning.opacity(0.9)
     case .accent: DashTheme.accent.opacity(0.9)
+    case .danger: DashTheme.danger.opacity(0.85)
+    case .info: DashTheme.info.opacity(0.85)
     }
   }
 
@@ -280,26 +325,35 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .success: DashTheme.success
     case .warning: DashTheme.warning
     case .accent: DashTheme.accent
+    case .danger: DashTheme.danger
+    case .info: DashTheme.info
     }
   }
+
 }
 
 enum FeatureVisualIdentity {
-  static func tone(for feature: FeatureID) -> FeatureVisualTone {
-    switch feature {
-    case .zones, .registrar, .tunnels, .loadBalancerPools, .dnsManagement, .dnsFirewall,
-      .sslCertificates:
-      .success
-    case .workers, .turnstile, .accessApps, .emailAddresses, .account, .workersObservability,
-      .apiExplorer:
-      .brand
-    case .analytics, .images, .stream, .secrets, .logpush, .radarIntel:
-      .warning
-    case .r2, .kv, .d1, .queues, .vectorize, .containers, .hyperdrive, .pipelines:
-      .accent
-    default:
-      .soft
+  /// One color family per catalog section so a group reads as a set.
+  static func tone(forCategory category: String) -> FeatureVisualTone {
+    switch category {
+    case "Domains & DNS": .success
+    case "Compute": .brand
+    case "Storage & Data": .accent
+    case "AI": .warning
+    case "Security": .danger
+    case "Zero Trust": .info
+    case "Network": .brand
+    case "Web & Performance": .info
+    case "Email": .soft
+    case "Media": .warning
+    case "Analytics & Logs": .accent
+    case "Account & Tools": .soft
+    default: .soft
     }
+  }
+
+  static func tone(for feature: FeatureID) -> FeatureVisualTone {
+    tone(forCategory: feature.category)
   }
 
   static func catalogColor(for feature: FeatureID) -> Color {
@@ -308,6 +362,51 @@ enum FeatureVisualIdentity {
 
   static func heroColor(for feature: FeatureID) -> Color {
     tone(for: feature).vivid
+  }
+
+  /// Saturated fill for rare vivid feature cards.
+  static func cardColor(for feature: FeatureID) -> Color {
+    tone(for: feature).vivid
+  }
+
+  /// Text/icon color on a vivid feature card.
+  static func onCardColor(for feature: FeatureID) -> Color {
+    DashTheme.inverse
+  }
+}
+
+/// UILabel-backed footnote text that fills each line to the full proposed width
+/// before wrapping. SwiftUI's `Text` breaks with the system "balanced" strategy
+/// — it shortens the first line rather than leave a lone word on the last —
+/// which reads as wasted width in a list row with a trailing chevron. UILabel
+/// with an empty `lineBreakStrategy` wraps greedily; SwiftUI has no API for it.
+struct DashGreedyWrapText: UIViewRepresentable {
+  let text: String
+  var color: Color = DashTheme.rowSubtitle
+  var lines: Int = 2
+
+  func makeUIView(context: Context) -> UILabel {
+    let label = UILabel()
+    label.lineBreakStrategy = []
+    label.lineBreakMode = .byTruncatingTail
+    // Mirrors `DashTextStyle.footnote` (13pt regular, scaling with .footnote).
+    label.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 13))
+    label.adjustsFontForContentSizeCategory = true
+    label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    return label
+  }
+
+  func updateUIView(_ label: UILabel, context: Context) {
+    label.text = text
+    label.numberOfLines = lines
+    label.textColor = UIColor(color)
+  }
+
+  func sizeThatFits(
+    _ proposal: ProposedViewSize, uiView label: UILabel, context: Context
+  ) -> CGSize? {
+    let width = proposal.width ?? UIView.layoutFittingExpandedSize.width
+    return label.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
   }
 }
 
@@ -342,6 +441,16 @@ private struct DashContentColumnModifier: ViewModifier {
 }
 
 extension View {
+  /// Gives a single item its own card. Catalog lists deliberately do NOT use
+  /// this — they stay bare rows on the canvas, with colour living on the icon
+  /// tile. Reserved for tiles and the rare vivid hero card.
+  func dashListItemCard(fill: Color = DashTheme.recessed) -> some View {
+    padding(.horizontal, DashTheme.Spacing.itemCardInset)
+      .background(
+        fill,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+  }
+
   func dashTextStyle(_ style: DashTextStyle) -> some View {
     modifier(DashTypographyModifier(style: style))
   }
@@ -463,17 +572,15 @@ struct DashListGroupDivider: View {
   }
 }
 
-/// Home/Items-style list card without a section title.
+/// Home/Features-style list group without a section title. Bare rows on the
+/// canvas — no fill, no separators; the row's own padding carries the rhythm.
 struct DashListCard<Content: View>: View {
   @ViewBuilder let content: () -> Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) { content() }
-      .padding(.horizontal, 16)
+      .padding(.horizontal, DashTheme.Spacing.rowInset)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(
-        DashTheme.recessed,
-        in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -482,11 +589,8 @@ struct DashListCardRows<Item: Identifiable, Row: View>: View {
   @ViewBuilder let row: (Item) -> Row
 
   var body: some View {
-    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+    ForEach(Array(items.enumerated()), id: \.element.id) { _, item in
       row(item)
-      if index < items.count - 1 {
-        DashListGroupDivider()
-      }
     }
   }
 }
@@ -548,11 +652,8 @@ struct DashInlineSearch: View {
       DashTheme.recessed,
       in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
     )
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.brand.opacity(0.45), lineWidth: 1.5)
-        .opacity(focusBinding.wrappedValue ? 1 : 0)
-    }
+    // No focus ring: the caret and the brand-tinted search icon already say
+    // "focused", and panels never carry strokes in this design language.
   }
 }
 
@@ -560,19 +661,26 @@ struct DashInlineSearch: View {
 struct DashFeatureScreen<Chrome: View, Content: View>: View {
   var search: Binding<String>?
   var prompt: String = ""
+  var chromeAttachesToTitle: Bool
   @ViewBuilder var chrome: () -> Chrome
   @ViewBuilder var content: () -> Content
 
   init(
     search: Binding<String>? = nil,
     prompt: String = "",
+    chromeAttachesToTitle: Bool = true,
     @ViewBuilder chrome: @escaping () -> Chrome,
     @ViewBuilder content: @escaping () -> Content
   ) {
     self.search = search
     self.prompt = prompt
+    self.chromeAttachesToTitle = chromeAttachesToTitle
     self.chrome = chrome
     self.content = content
+  }
+
+  private var usesTitleAttachedChrome: Bool {
+    chromeAttachesToTitle && search == nil
   }
 
   var body: some View {
@@ -585,8 +693,11 @@ struct DashFeatureScreen<Chrome: View, Content: View>: View {
       chrome()
         .padding(.horizontal, DashTheme.Spacing.screen)
       content()
+        // Title-attached chrome (the text tabs) stays flush with the navigation
+        // title; the shared content gap belongs below its divider.
+        .padding(.top, usesTitleAttachedChrome ? DashTheme.Spacing.section : 0)
     }
-    .padding(.top, 12)
+    .padding(.top, usesTitleAttachedChrome ? 0 : DashTheme.Spacing.section)
     .dashContentColumn()
     .background(DashTheme.canvas)
   }
@@ -598,7 +709,13 @@ extension DashFeatureScreen where Chrome == EmptyView {
     prompt: String = "",
     @ViewBuilder content: @escaping () -> Content
   ) {
-    self.init(search: search, prompt: prompt, chrome: { EmptyView() }, content: content)
+    self.init(
+      search: search,
+      prompt: prompt,
+      chromeAttachesToTitle: false,
+      chrome: { EmptyView() },
+      content: content
+    )
   }
 }
 
@@ -628,9 +745,11 @@ struct DashFeatureList<Header: View, Content: View>: View {
   var error: String?
   var hasContent: Bool = false
   var retry: () -> Void
+  var headerAttachesToTitle: Bool
   @ViewBuilder var header: () -> Header
   @ViewBuilder var content: () -> Content
   @Environment(AppModel.self) private var model
+  @Environment(\.featureRequiredScopes) private var featureRequiredScopes
 
   init(
     search: Binding<String>? = nil,
@@ -639,6 +758,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
     error: String? = nil,
     hasContent: Bool = false,
     retry: @escaping () -> Void = {},
+    headerAttachesToTitle: Bool = true,
     @ViewBuilder header: @escaping () -> Header,
     @ViewBuilder content: @escaping () -> Content
   ) {
@@ -648,12 +768,18 @@ struct DashFeatureList<Header: View, Content: View>: View {
     self.error = error
     self.hasContent = hasContent
     self.retry = retry
+    self.headerAttachesToTitle = headerAttachesToTitle
     self.header = header
     self.content = content
   }
 
   var body: some View {
-    DashFeatureScreen(search: search, prompt: prompt, chrome: header) {
+    DashFeatureScreen(
+      search: search,
+      prompt: prompt,
+      chromeAttachesToTitle: headerAttachesToTitle,
+      chrome: header
+    ) {
       ScrollView {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
@@ -697,7 +823,9 @@ struct DashFeatureList<Header: View, Content: View>: View {
         case .signInAgain:
           Task { await model.signOut() }
         case .grantAccess:
-          model.requestAccess(to: Set(CloudflareScopes.published))
+          model.requestAccess(
+            to: featureRequiredScopes.isEmpty
+              ? DashAuthorizationScopes.core : featureRequiredScopes)
         case .tryAgain:
           retry()
         }
@@ -723,6 +851,7 @@ extension DashFeatureList where Header == EmptyView {
       error: error,
       hasContent: hasContent,
       retry: retry,
+      headerAttachesToTitle: false,
       header: { EmptyView() },
       content: content
     )
@@ -776,14 +905,11 @@ struct DashListGroup<Content: View>: View {
       }
       .padding(.horizontal, 4)
 
-      // Single recessed card — title stays outside so catalog groups read lighter
-      // than the old elevated frame wrapped around another card.
+      // Bare rows on the canvas — no fill, no separators. Rows inset to match
+      // the title above them, so the group reads as one column.
       VStack(alignment: .leading, spacing: 0) { content }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, DashTheme.Spacing.rowInset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-          DashTheme.recessed,
-          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
     }
   }
 }
@@ -806,13 +932,17 @@ struct CatalogFeatureIcon: View {
   var size: Size = .list
   /// When true, uses vivid tone (pinned/hero). Catalog lists stay muted.
   var emphasized: Bool = false
-  var enablesNavigationTransition = false
-  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
+  /// Sitting on a card already filled with the feature's tone: the glyph flips
+  /// to the on-card color and drops its tile, which would otherwise tint-on-tint.
+  var onColor: Bool = false
   @ScaledMetric(relativeTo: .body) private var listGlyphScale: CGFloat = 1
   @ScaledMetric(relativeTo: .body) private var listTileScale: CGFloat = 1
 
   private var tone: Color {
     let identity = FeatureVisualIdentity.tone(for: feature)
+    if onColor {
+      return FeatureVisualIdentity.onCardColor(for: feature)
+    }
     if emphasized || size == .hero {
       return identity.vivid
     }
@@ -820,7 +950,10 @@ struct CatalogFeatureIcon: View {
   }
 
   private var assetName: String {
-    style == .duotone ? feature.solarAssetName : feature.solarOutlineAssetName
+    // Duotone assets are two layers — a low-alpha backdrop under the glyph.
+    // `.renderingMode(.template)` flattens both to the tint, so on a colored
+    // card the backdrop resurfaces as a ghost tile. Outline has one layer.
+    style == .duotone && !onColor ? feature.solarAssetName : feature.solarOutlineAssetName
   }
 
   private var scaleClamp: CGFloat {
@@ -850,14 +983,14 @@ struct CatalogFeatureIcon: View {
   }
 
   var body: some View {
-    let icon = Image(assetName)
+    Image(assetName)
       .resizable()
       .renderingMode(.template)
       .scaledToFit()
       .foregroundStyle(tone)
       .frame(width: glyphSize, height: glyphSize)
-      .frame(width: tileSize, height: tileSize)
-      .background(tone.opacity(emphasized || size == .hero ? 0.16 : 0.1))
+      .frame(width: tileSize, height: tileSize, alignment: onColor ? .leading : .center)
+      .background(onColor ? Color.clear : tone.opacity(emphasized || size == .hero ? 0.16 : 0.1))
       .clipShape(
         RoundedRectangle(
           cornerRadius: size == .compact || size == .shortcut
@@ -866,18 +999,68 @@ struct CatalogFeatureIcon: View {
         )
       )
       .accessibilityHidden(true)
-
-    if #available(iOS 18.0, *), enablesNavigationTransition,
-      let featureTransitionNamespace
-    {
-      icon.matchedTransitionSource(id: feature, in: featureTransitionNamespace)
-    } else {
-      icon
-    }
   }
 }
 
 // MARK: - Feature navigation
+
+private struct FeatureTransitionSourceModifier: ViewModifier {
+  let feature: FeatureID
+  let background: Color
+  let cornerRadius: CGFloat
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if #available(iOS 18.0, *), !reduceMotion, let featureTransitionNamespace {
+      content.matchedTransitionSource(id: feature, in: featureTransitionNamespace) { source in
+        source
+          .background(background)
+          .clipShape(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+          )
+      }
+    } else {
+      content
+    }
+  }
+}
+
+private struct FeatureTransitionDestinationModifier: ViewModifier {
+  let feature: FeatureID
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if #available(iOS 18.0, *), !reduceMotion, let featureTransitionNamespace {
+      content.navigationTransition(.zoom(sourceID: feature, in: featureTransitionNamespace))
+    } else {
+      content
+    }
+  }
+}
+
+extension View {
+  func dashFeatureTransitionSource(
+    _ feature: FeatureID,
+    background: Color,
+    cornerRadius: CGFloat
+  ) -> some View {
+    modifier(
+      FeatureTransitionSourceModifier(
+        feature: feature,
+        background: background,
+        cornerRadius: cornerRadius
+      )
+    )
+  }
+
+  fileprivate func dashFeatureTransitionDestination(_ feature: FeatureID) -> some View {
+    modifier(FeatureTransitionDestinationModifier(feature: feature))
+  }
+}
 
 /// Collapsed header title: compact icon before text.
 private struct FeatureInlineNavigationTitle: View {
@@ -899,25 +1082,18 @@ private struct FeatureInlineNavigationTitle: View {
 struct FeatureDetailChrome<Content: View>: View {
   let feature: FeatureID
   @ViewBuilder var content: () -> Content
-  @Environment(\.featureTransitionNamespace) private var featureTransitionNamespace
 
   var body: some View {
-    Group {
-      if #available(iOS 18.0, *), let featureTransitionNamespace {
-        content()
-          .navigationTransition(.zoom(sourceID: feature, in: featureTransitionNamespace))
-      } else {
-        content()
+    content()
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background(DashTheme.canvas)
+      .navigationBarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .principal) {
+          FeatureInlineNavigationTitle(feature: feature, title: feature.title)
+        }
       }
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .background(DashTheme.canvas)
-    .navigationBarTitleDisplayMode(.inline)
-    .toolbar {
-      ToolbarItem(placement: .principal) {
-        FeatureInlineNavigationTitle(feature: feature, title: feature.title)
-      }
-    }
+      .dashFeatureTransitionDestination(feature)
   }
 }
 
@@ -988,6 +1164,7 @@ struct StatusBadge: View {
 }
 
 /// Sparse delight for rare, high-value moments — not for list filters or typing.
+@MainActor
 enum DashDelight {
   static func celebrateSuccess() {
     UINotificationFeedbackGenerator().notificationOccurred(.success)
@@ -1035,9 +1212,6 @@ struct DashListSkeleton: View {
         .padding(.vertical, 12)
         .frame(minHeight: DashTheme.Layout.minimumHitTarget)
         .accessibilityHidden(true)
-        if index < rows - 1 {
-          DashListGroupDivider()
-        }
       }
     }
     .accessibilityElement(children: .ignore)
@@ -1049,6 +1223,7 @@ struct ErrorStateView: View {
   let message: String
   let retry: () -> Void
   @Environment(AppModel.self) private var model
+  @Environment(\.featureRequiredScopes) private var featureRequiredScopes
 
   private var presentation: DashFailurePresentation {
     DashFailurePresentation.from(message: message)
@@ -1065,7 +1240,9 @@ struct ErrorStateView: View {
         case .signInAgain:
           Task { await model.signOut() }
         case .grantAccess:
-          model.requestAccess(to: Set(CloudflareScopes.published))
+          model.requestAccess(
+            to: featureRequiredScopes.isEmpty
+              ? DashAuthorizationScopes.core : featureRequiredScopes)
         case .tryAgain:
           retry()
         }
@@ -1187,10 +1364,11 @@ struct DashListRow<Accessory: View>: View {
           }
         }
       } else {
+        // labelStack's greedy frame fills the row and pushes the trailing
+        // accessory/chevron to the edge; no Spacer needed.
         HStack(spacing: 12) {
           leadingIcon
           labelStack
-          Spacer(minLength: 8)
           accessory()
           if let trailing {
             Text(trailing)
@@ -1226,8 +1404,8 @@ struct DashListRow<Accessory: View>: View {
         .lineLimit(isAccessibilitySize ? nil : 1)
       if let subtitle {
         Text(subtitle)
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
           .lineLimit(isAccessibilitySize ? nil : 1)
       }
     }
@@ -1259,27 +1437,48 @@ struct DashValueRow: View {
   let title: String
   let value: String
   var subtitle: String?
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
 
   var body: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 16) {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(title)
-          .dashTextStyle(.bodyMedium)
-          .foregroundStyle(DashTheme.text)
-        if let subtitle {
-          Text(subtitle)
-            .font(.caption)
+    Group {
+      if isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 6) {
+          titleBlock
+          Text(value)
+            .dashTextStyle(.supportingMedium)
             .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      } else {
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+          titleBlock
+          Spacer(minLength: 12)
+          Text(value)
+            .dashTextStyle(.supportingMedium)
+            .foregroundStyle(DashTheme.subtle)
+            .multilineTextAlignment(.trailing)
+            .lineLimit(2)
         }
       }
-      Spacer(minLength: 12)
-      Text(value)
-        .dashTextStyle(.supportingMedium)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.trailing)
-        .lineLimit(2)
     }
     .padding(.vertical, 14)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .accessibilityElement(children: .combine)
+  }
+
+  private var titleBlock: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(title)
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.text)
+      if let subtitle {
+        Text(subtitle)
+          .font(.caption)
+          .foregroundStyle(DashTheme.subtle)
+      }
+    }
   }
 }
 
@@ -1441,7 +1640,6 @@ struct DashReadOnlySettingsCard: View {
       DashListCard {
         ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
           DashValueRow(title: row.0, value: row.1)
-          if index < rows.count - 1 { DashListGroupDivider() }
         }
       }
     }
@@ -1685,7 +1883,6 @@ struct DashTextTabs<Selection: Hashable>: View {
         .fill(DashTheme.Sheet.headerBorder)
         .frame(height: 1)
     }
-    .padding(.bottom, 12)
   }
 }
 

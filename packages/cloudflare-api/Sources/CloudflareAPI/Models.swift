@@ -739,16 +739,32 @@ public struct AuditLogEntry: Codable, Hashable, Sendable {
   public let action: AuditLogAction?
   public let actor: AuditLogActor?
   public let resource: AuditLogResource?
+  public let occurredAt: String?
 
-  public var title: String { action?.type ?? "Action" }
+  public var title: String {
+    action?.description ?? action?.type ?? "Action"
+  }
   public var subtitle: String? {
-    [actor?.email ?? actor?.type, resource?.type].compactMap { $0 }.joined(separator: " · ")
+    [actor?.email ?? actor?.type, resource?.product ?? resource?.type, occurredAt]
+      .compactMap { $0 }.joined(separator: " · ")
       .nilIfEmpty
   }
 
   enum CodingKeys: String, CodingKey {
     case logID = "id"
     case action, actor, resource
+    case occurredAt = "when"
+  }
+
+  public init(
+    logID: String?, action: AuditLogAction?, actor: AuditLogActor?, resource: AuditLogResource?,
+    occurredAt: String? = nil
+  ) {
+    self.logID = logID
+    self.action = action
+    self.actor = actor
+    self.resource = resource
+    self.occurredAt = occurredAt
   }
 }
 
@@ -760,15 +776,105 @@ extension AuditLogEntry: Identifiable {
 
 public struct AuditLogAction: Codable, Hashable, Sendable {
   public let type: String?
+  public let description: String?
+  public let result: String?
+  public let time: String?
+
+  public init(type: String?, description: String? = nil, result: String? = nil, time: String? = nil)
+  {
+    self.type = type
+    self.description = description
+    self.result = result
+    self.time = time
+  }
 }
 
 public struct AuditLogActor: Codable, Hashable, Sendable {
   public let email: String?
   public let type: String?
+
+  public init(email: String?, type: String?) {
+    self.email = email
+    self.type = type
+  }
 }
 
 public struct AuditLogResource: Codable, Hashable, Sendable {
   public let type: String?
+  public let product: String?
+  public let id: String?
+
+  public init(type: String?, product: String? = nil, id: String? = nil) {
+    self.type = type
+    self.product = product
+    self.id = id
+  }
+}
+
+/// Audit Logs API v2 row — mapped into `AuditLogEntry` for shared UI.
+public struct AuditLogV2Entry: Codable, Hashable, Sendable {
+  public let id: String?
+  public let action: AuditLogV2Action?
+  public let actor: AuditLogV2Actor?
+  public let resource: AuditLogV2Resource?
+
+  public var asLegacyEntry: AuditLogEntry {
+    AuditLogEntry(
+      logID: id,
+      action: AuditLogAction(
+        type: action?.type, description: action?.description, result: action?.result,
+        time: action?.time),
+      actor: AuditLogActor(email: actor?.email, type: actor?.type),
+      resource: AuditLogResource(
+        type: resource?.type, product: resource?.product, id: resource?.id),
+      occurredAt: action?.time
+    )
+  }
+}
+
+public struct AuditLogV2Action: Codable, Hashable, Sendable {
+  public let description: String?
+  public let result: String?
+  public let time: String?
+  public let type: String?
+}
+
+public struct AuditLogV2Actor: Codable, Hashable, Sendable {
+  public let email: String?
+  public let type: String?
+}
+
+public struct AuditLogV2Resource: Codable, Hashable, Sendable {
+  public let id: String?
+  public let product: String?
+  public let type: String?
+}
+
+public struct WorkerAnalyticsPayload: Hashable, Sendable {
+  public var requests: Int
+  public var errors: Int
+  public var cpuTimeP50Us: Double
+  public var points: [WorkerAnalyticsBucket]
+
+  public init(requests: Int, errors: Int, cpuTimeP50Us: Double, points: [WorkerAnalyticsBucket]) {
+    self.requests = requests
+    self.errors = errors
+    self.cpuTimeP50Us = cpuTimeP50Us
+    self.points = points
+  }
+}
+
+public struct WorkerAnalyticsBucket: Hashable, Sendable, Identifiable {
+  public var id: String { datetime }
+  public var datetime: String
+  public var requests: Int
+  public var errors: Int
+
+  public init(datetime: String, requests: Int, errors: Int) {
+    self.datetime = datetime
+    self.requests = requests
+    self.errors = errors
+  }
 }
 
 public struct CloudflareTunnel: Codable, Hashable, Identifiable, Sendable {
@@ -791,6 +897,22 @@ public struct RegistrarDomain: CloudflareResource, Hashable {
   enum CodingKeys: String, CodingKey {
     case id, name
     case expiresAt = "expires_at"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let decodedID = try container.decodeIfPresent(String.self, forKey: .id)?.nilIfEmpty
+    let decodedName = try container.decodeIfPresent(String.self, forKey: .name)?.nilIfEmpty
+    guard let identity = decodedName ?? decodedID else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .name,
+        in: container,
+        debugDescription: "Registrar domain requires either name or id."
+      )
+    }
+    id = decodedID ?? identity
+    name = decodedName ?? identity
+    expiresAt = try container.decodeIfPresent(String.self, forKey: .expiresAt)
   }
 }
 

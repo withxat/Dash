@@ -1,4 +1,5 @@
 import AppIntents
+import CoreSpotlight
 import SwiftUI
 
 @main
@@ -101,6 +102,18 @@ private struct RootWithSplash: View {
       .environment(model)
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
+      }
+      .onContinueUserActivity(CSSearchableItemActionType) { activity in
+        if let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+          let url = URL(string: identifier),
+          let route = DashRoute.parse(url)
+        {
+          model.pendingRoute = route
+        } else if let url = activity.contentAttributeSet?.url,
+          let route = DashRoute.parse(url)
+        {
+          model.pendingRoute = route
+        }
       }
       .environment(\.dashSplashLifted, phase != .holding)
       .environment(\.dashLoginIconCloaked, phase != .done)

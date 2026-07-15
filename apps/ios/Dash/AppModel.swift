@@ -27,7 +27,8 @@ final class AppModel {
   var errorMessage: String?
   var isAuthenticating = false
   var grantedScopes: Set<String>?
-  var selectedScopes = Set(CloudflareScopes.published)
+  var selectedScopes: Set<String>
+  var experimentalFeaturesEnabled: Bool
   var user: CloudflareUser?
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
@@ -36,6 +37,7 @@ final class AppModel {
   /// badge. nil until the first check completes for the active account.
   var watchtowerIssueCount: Int?
 
+  static let experimentalFeaturesDefaultsKey = "dash.experimental_features"
   static let watchtowerTTL: TimeInterval = 5 * 60
 
   /// A deep link / App Intent target waiting to be consumed by MainTabView.
@@ -52,11 +54,17 @@ final class AppModel {
   private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
 
   init(configuration: AppConfiguration = .current) {
+    let experimentalEnabled = UserDefaults.standard.bool(
+      forKey: Self.experimentalFeaturesDefaultsKey)
     self.configuration = configuration
+    experimentalFeaturesEnabled = experimentalEnabled
+    selectedScopes = DashAuthorizationScopes.initial(
+      experimentalEnabled: experimentalEnabled)
     let store = KeychainTokenStore()
     tokenStore = store
     client = CloudflareClient(clientID: configuration.clientID, tokenStore: store)
     activeAccountID = UserDefaults.standard.string(forKey: "dash.active_account_id")
+    installMemoryWarningObserver()
   }
 
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
@@ -81,6 +89,18 @@ final class AppModel {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
         grantedScopes = Set(CloudflareScopes.published)
+        activeAccountID = "ui-account"
+        if let zone = try? JSONDecoder().decode(
+          CloudflareZone.self,
+          from: Data(
+            #"{"id":"ui-zone","name":"example.com","status":"active"}"#.utf8))
+        {
+          featureCache.set(FeatureCacheKey.zones("ui-account"), [zone])
+        }
+        featureCache.set(FeatureCacheKey.workers("ui-account"), [WorkerScript]())
+        featureCache.set(FeatureCacheKey.r2Buckets("ui-account"), [R2Bucket]())
+        featureCache.set(FeatureCacheKey.kvNamespaces("ui-account"), [KVNamespace]())
+        featureCache.set(FeatureCacheKey.d1Databases("ui-account"), [D1Database]())
         authState = .authenticated
         return
       }
@@ -154,13 +174,17 @@ final class AppModel {
     return scopes.isSubset(of: grantedScopes)
   }
 
-  func setScopeCategory(_ definitions: [OAuthScopeDefinition], enabled: Bool) {
-    let ids = Set(definitions.map(\.id)).intersection(CloudflareScopes.requestable)
-    if enabled {
-      selectedScopes.formUnion(ids)
-    } else {
-      selectedScopes.subtract(ids)
-      selectedScopes.formUnion(CloudflareScopes.required)
+  func setExperimentalFeaturesEnabled(_ enabled: Bool) {
+    experimentalFeaturesEnabled = enabled
+    UserDefaults.standard.set(enabled, forKey: Self.experimentalFeaturesDefaultsKey)
+
+    guard authState == .authenticated else {
+      selectedScopes = DashAuthorizationScopes.initial(experimentalEnabled: enabled)
+      return
+    }
+
+    if enabled, !hasScopes(DashAuthorizationScopes.experimental) {
+      requestAccess(to: DashAuthorizationScopes.experimental)
     }
   }
 
@@ -238,7 +262,7 @@ final class AppModel {
           // Let the browser sheet finish dismissing first, or the login →
           // catalog transition plays hidden behind it and sign-in reads as a
           // hard cut.
-          try? await Task.sleep(for: .milliseconds(450))
+          try? await Task.sleep(for: .milliseconds(280))
           // isAuthenticating stays true: the ring should survive the login
           // screen's exit fade instead of vanishing mid-transition. signOut()
           // resets it for the next visit.
@@ -297,7 +321,8 @@ final class AppModel {
     user = nil
     activeAccountID = nil
     grantedScopes = nil
-    selectedScopes = Set(CloudflareScopes.published)
+    selectedScopes = DashAuthorizationScopes.initial(
+      experimentalEnabled: experimentalFeaturesEnabled)
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
@@ -309,6 +334,7 @@ final class AppModel {
       WidgetCenter.shared.reloadAllTimelines()
     }
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
+    DashSpotlight.clearAll()
     authState = .unauthenticated
   }
 
@@ -352,7 +378,7 @@ final class AppModel {
     // The user may have switched accounts mid-flight; never let a stale
     // account's result touch the cache or the badge.
     guard activeAccountID == accountID else { return snapshot }
-    featureCache.set(key, snapshot)
+    featureCache.set(key, snapshot, ttl: nil)
     watchtowerIssueCount = snapshot.issueCount
     publishWidgetSnapshot(snapshot)
     return snapshot

@@ -51,20 +51,10 @@ import Testing
   #expect(CloudflareScopes.invalid(in: CloudflareScopes.all).isEmpty)
 }
 
-@Test func generatedCatalogsCoverOfficialScopesAndOpenAPI() {
+@Test func generatedCatalogCoversOfficialOAuthScopes() {
   #expect(OAuthScopeCatalog.all.count == 368)
   #expect(Set(OAuthScopeCatalog.allIDs).count == OAuthScopeCatalog.all.count)
   #expect(OAuthScopeCatalog.byID["query-cache.read"]?.name == "Hyperdrive Read")
-  #expect(CloudflareEndpointCatalog.all.count == 3_243)
-  #expect(CloudflareEndpointCatalog.all.contains { $0.path == "/oauth/scopes" })
-  #expect(OAuthScopeCoverage.all.count == OAuthScopeCatalog.all.count)
-  #expect(Set(OAuthScopeCoverage.all.map(\.scopeID)) == Set(OAuthScopeCatalog.allIDs))
-  #expect(
-    OAuthScopeCoverage.all
-      .filter { $0.disposition == .noPublicEndpoint }
-      .allSatisfy { $0.reason?.isEmpty == false }
-  )
-  #expect(OAuthScopeCoverage.protocolManaged.map(\.scopeID) == ["offline_access"])
   #expect(CloudflareScopes.invalid(in: CloudflareScopes.published).isEmpty)
   #expect(Set(CloudflareScopes.required).isSubset(of: Set(CloudflareScopes.published)))
   #expect(!CloudflareScopes.published.contains("ai-search.metadata_read"))
@@ -206,6 +196,46 @@ struct NetworkTests {
     #expect(alerts.count == 1)
     #expect(alerts.first?.type == "http_alert_origin_error")
     #expect(alerts.first?.displayName == "Origin Error Rate Alert")
+  }
+
+  @Test func treatsNullNotificationHistoryAsEmpty() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/acct/alerting/v3/history")
+      #expect(
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "per_page" }?.value == "10")
+      return (200, Data(#"{"success":true,"result":null}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let history = try await client.listNotificationHistory(accountID: "acct")
+
+    #expect(history.isEmpty)
+  }
+
+  @Test func registrarDomainsAcceptNameOrIDAsIdentity() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/acct/registrar/domains")
+      let body = #"""
+        {"success":true,"result":[
+          {"name":"live.example","expires_at":"2027-01-01T00:00:00Z"},
+          {"id":"documented.example","expires_at":"2027-02-01T00:00:00Z"}
+        ]}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let domains = try await client.listRegistrarDomains(accountID: "acct")
+
+    #expect(domains.map(\.id) == ["live.example", "documented.example"])
+    #expect(domains.map(\.name) == ["live.example", "documented.example"])
   }
 
   @Test func decodesZoneAnalyticsGraphQL() async throws {

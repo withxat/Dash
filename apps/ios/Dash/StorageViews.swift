@@ -153,7 +153,7 @@ struct R2BucketView: View {
                   ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
                 },
                 icon: SolarAsset.file,
-                iconColor: DashTheme.text,
+                iconColor: DashTheme.iconMuted,
                 showsChevron: false
               )
             }

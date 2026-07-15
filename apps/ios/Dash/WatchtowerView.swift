@@ -16,17 +16,25 @@ final class WatchtowerScreenState {
   var notificationsDenied = false
 
   var summary: WatchtowerSummary {
-    WatchtowerSummary(
-      critical: signals.filter { $0.status == .critical }.count,
-      warning: signals.filter { $0.status == .warning }.count,
-      ok: signals.filter { $0.status == .ok }.count
+    let scored = signals.filter { $0.status == .ok || !WatchtowerMuteStore.isMuted($0.id) }
+    return WatchtowerSummary(
+      critical: scored.filter { $0.status == .critical }.count,
+      warning: scored.filter { $0.status == .warning }.count,
+      ok: scored.filter { $0.status == .ok }.count
     )
   }
 
-  var issues: [WatchtowerSignal] { signals.filter { $0.status != .ok } }
+  var issues: [WatchtowerSignal] {
+    signals.filter { $0.status != .ok && !WatchtowerMuteStore.isMuted($0.id) }
+  }
+  var mutedIssues: [WatchtowerSignal] {
+    signals.filter { $0.status != .ok && WatchtowerMuteStore.isMuted($0.id) }
+  }
   var healthy: [WatchtowerSignal] { signals.filter { $0.status == .ok } }
   var issueCount: Int { summary.critical + summary.warning }
   var allClear: Bool { issueCount == 0 }
+  var recheckBanner: String?
+  var capabilityNotes: [String] = []
 
   func load(model: AppModel, force: Bool = false) async {
     guard model.activeAccountID != nil else {
@@ -35,6 +43,7 @@ final class WatchtowerScreenState {
       alerts = []
       return
     }
+    let previousIssueIDs = Set(signals.filter { $0.status != .ok }.map(\.id))
     if signals.isEmpty { loading = true }
     if let snapshot = await model.watchtowerSnapshot(force: force) {
       signals = snapshot.signals
@@ -43,6 +52,21 @@ final class WatchtowerScreenState {
       missingScopeChecks = snapshot.missingScopeChecks
       failedChecks = snapshot.failedChecks
       fetchedAt = snapshot.fetchedAt
+      capabilityNotes =
+        snapshot.missingScopeChecks.map { "Needs permission: \($0)" }
+        + snapshot.failedChecks.map { "Check failed: \($0)" }
+      let currentIssueIDs = Set(snapshot.signals.filter { $0.status != .ok }.map(\.id))
+      if force, !previousIssueIDs.isEmpty {
+        let resolved = previousIssueIDs.subtracting(currentIssueIDs)
+        if currentIssueIDs.isEmpty {
+          recheckBanner = "Resolved — all clear"
+        } else if !resolved.isEmpty {
+          recheckBanner =
+            "\(resolved.count) recovered · \(currentIssueIDs.count) still failing"
+        } else {
+          recheckBanner = "Still failing"
+        }
+      }
     }
     loading = false
   }
@@ -117,12 +141,36 @@ struct WatchtowerView: View {
   }
 
   var body: some View {
+    let capabilityIndex = state.recheckBanner == nil ? 0 : 1
+    let issuesIndex = capabilityIndex + (state.capabilityNotes.isEmpty ? 0 : 1)
+    let mutedIndex = issuesIndex + (state.issues.isEmpty ? 0 : 1)
+    let healthyIndex = mutedIndex + (state.mutedIssues.isEmpty ? 0 : 1)
+    let alertsIndex = healthyIndex + (state.healthy.isEmpty ? 0 : 1)
+
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         summaryCard
+          .dashSectionReveal()
+
+        if let recheckBanner = state.recheckBanner {
+          DashNotice(
+            kind: recheckBanner.hasPrefix("Resolved") ? .success : .warning,
+            message: recheckBanner
+          )
+          .dashSectionContentReveal()
+        }
+
+        if !state.capabilityNotes.isEmpty {
+          DashNotice(
+            kind: .warning,
+            message: state.capabilityNotes.prefix(3).joined(separator: "\n")
+          )
+          .dashSectionContentReveal(capabilityIndex)
+        }
 
         if state.loading, model.activeAccountID != nil {
           loadingCard
+            .dashSectionReveal(1)
         }
 
         if !state.loading, !state.issues.isEmpty {
@@ -131,7 +179,16 @@ struct WatchtowerView: View {
               signalRow(signal)
             }
           }
-          .dashContentReveal()
+          .dashSectionContentReveal(issuesIndex)
+        }
+
+        if !state.loading, !state.mutedIssues.isEmpty {
+          WatchtowerListGroup(title: "Muted") {
+            WatchtowerListRows(items: state.mutedIssues) { signal in
+              signalRow(signal)
+            }
+          }
+          .dashSectionContentReveal(mutedIndex)
         }
 
         if !state.loading, !state.healthy.isEmpty {
@@ -140,7 +197,7 @@ struct WatchtowerView: View {
               signalRow(signal)
             }
           }
-          .dashContentReveal(1)
+          .dashSectionContentReveal(healthyIndex)
         }
 
         if state.alertsStatus == .ok {
@@ -157,17 +214,21 @@ struct WatchtowerView: View {
               }
             }
           }
+          .dashSectionContentReveal(alertsIndex)
         }
 
         if model.activeAccountID != nil {
           notificationsGroup
+            .dashSectionReveal(2)
         }
 
         footerCaption
+          .dashSectionReveal(3)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
+    .dashSectionEntrance()
     .dashCatalogScreen("Watchtower")
     .refreshable { await state.load(model: model, force: true) }
     .task(id: model.activeAccountID) { await state.load(model: model) }
@@ -244,18 +305,29 @@ struct WatchtowerView: View {
   private func signalRow(_ signal: WatchtowerSignal) -> some View {
     let content = signalRowContent(signal)
 
-    if let selection, let destination = signal.destination {
-      Button {
-        selection.wrappedValue = destination
-      } label: {
+    Group {
+      if let selection, let destination = signal.destination {
+        Button {
+          selection.wrappedValue = destination
+        } label: {
+          content
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
+      } else if let destination = signal.destination {
+        DashDestinationLink(destination: destination) { content }
+      } else {
         content
       }
-      .buttonStyle(DashPressButtonStyle())
-      .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
-    } else if let destination = signal.destination {
-      DashDestinationLink(destination: destination) { content }
-    } else {
-      content
+    }
+    .contextMenu {
+      if WatchtowerMuteStore.isMuted(signal.id) {
+        Button("Unmute") { WatchtowerMuteStore.unmute(signal.id) }
+      } else {
+        Button("Mute for 24 hours") {
+          WatchtowerMuteStore.mute(signal.id, title: signal.title)
+        }
+      }
     }
   }
 
@@ -300,6 +372,12 @@ struct WatchtowerView: View {
         .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+      if let action = signal.suggestedAction, signal.status != .ok {
+        Text(action)
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.brand)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .fixedSize(horizontal: false, vertical: true)
@@ -313,7 +391,10 @@ struct WatchtowerView: View {
       case .warning: "Warning"
       case .critical: "Critical"
       }
-    return "\(signal.title), \(signal.detail), \(StatusBadge.accessibilityText(for: statusText))"
+    var label =
+      "\(signal.title), \(signal.detail), \(StatusBadge.accessibilityText(for: statusText))"
+    if let action = signal.suggestedAction { label += ", \(action)" }
+    return label
   }
 
   @ViewBuilder
@@ -394,7 +475,7 @@ struct WatchtowerView: View {
             "Some checks need access: \(state.missingScopeChecks.joined(separator: ", ")). Grant access to watch the full account."
         )
         DashSecondaryPillButton(title: DashFailureAction.grantAccess.title) {
-          model.requestAccess(to: Set(CloudflareScopes.published))
+          model.requestAccess(to: DashAuthorizationScopes.watchtower)
         }
       }
       if !state.failedChecks.isEmpty {

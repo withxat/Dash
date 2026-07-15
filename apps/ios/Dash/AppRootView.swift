@@ -73,6 +73,7 @@ private struct LoginView: View {
   @Environment(\.dashSplashLifted) private var splashLifted
   @Environment(\.dashLoginIconCloaked) private var iconCloaked
   @State private var showsPermissions = false
+  @State private var legalDocument: LegalDocument?
   @State private var revealed = false
   /// Under the splash the icon skips the stagger: the launch logo glides onto
   /// its spot and hands off in place. Later visits (sign-out) stagger it.
@@ -158,6 +159,16 @@ private struct LoginView: View {
     .dashTray(isPresented: $showsPermissions, title: "Permissions") {
       PermissionSelectionView()
     }
+    .sheet(item: $legalDocument) { document in
+      NavigationStack {
+        LegalDocumentView(document: document)
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Done") { legalDocument = nil }
+            }
+          }
+      }
+    }
     .onAppear {
       iconJoinsReveal = splashLifted
       if splashLifted { revealed = true }
@@ -167,21 +178,27 @@ private struct LoginView: View {
     }
   }
 
-  /// Terms/privacy notice. The highlighted spans are styling only for now —
-  /// they'll become links once the documents exist.
   private var legalCaption: some View {
-    (Text("By using Dash, you agree to accept our\n")
-      + Text("Terms of Use").foregroundStyle(DashTheme.text).fontWeight(.medium)
-      + Text(" and ")
-      + Text("Privacy Policy").foregroundStyle(DashTheme.text).fontWeight(.medium)
-      + Text("."))
-      .font(.system(size: 12))
-      .lineSpacing(5)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.top, 20)
+    VStack(spacing: 6) {
+      Text("By using Dash, you agree to accept our")
+      HStack(spacing: 4) {
+        Button("Terms of Use") { legalDocument = .termsOfUse }
+          .fontWeight(.medium)
+          .foregroundStyle(DashTheme.text)
+        Text("and")
+        Button("Privacy Policy") { legalDocument = .privacyPolicy }
+          .fontWeight(.medium)
+          .foregroundStyle(DashTheme.text)
+        Text(".")
+      }
+    }
+    .font(.system(size: 12))
+    .lineSpacing(5)
+    .foregroundStyle(DashTheme.subtle)
+    .multilineTextAlignment(.center)
+    .fixedSize(horizontal: false, vertical: true)
+    .frame(maxWidth: .infinity)
+    .padding(.top, 20)
   }
 
   /// A raster copy of the app icon (`LoginAppIcon`). Never read the compiled
@@ -277,48 +294,34 @@ private struct LoginStaticGradient: View {
 private struct PermissionSelectionView: View {
   @Environment(AppModel.self) private var model
   @State private var showsAdvanced = false
-  private var categories: [(key: String, values: [OAuthScopeDefinition])] {
-    OAuthScopeCatalog.categories
-      .map { ($0.key, $0.value.sorted { $0.name < $1.name }) }
-      .sorted {
-        GenericDetailFieldMap.humanCategoryTitle($0.1.first?.categoryTitle ?? $0.0)
-          < GenericDetailFieldMap.humanCategoryTitle($1.1.first?.categoryTitle ?? $1.0)
-      }
-  }
 
   var body: some View {
     VStack(spacing: 14) {
       Text(
-        "Choose what Dash can read and change in your Cloudflare account. You can grant more later from locked features."
+        "Dash requests only the permissions needed for core mobile operations. Locked features can ask for their own access later."
       )
       .dashTextStyle(.supporting)
       .foregroundStyle(DashTheme.subtle)
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      permissionRow(
-        "Everything Dash can request",
-        detail: "Recommended for full account control",
-        isOn: allBinding
-      )
-
-      ForEach(categories, id: \.key) { category in
-        permissionRow(
-          GenericDetailFieldMap.humanCategoryTitle(
-            category.values.first?.categoryTitle ?? category.key),
-          detail: humanCategoryDetail(category.values),
-          isOn: categoryBinding(category.values),
-          disabled:
-            Set(category.values.map(\.id)).intersection(CloudflareScopes.requestable).isEmpty
-        )
+      DashCard {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Core operations")
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
+          Text(
+            "Zones and DNS · SSL and cache · Workers and Pages · R2, KV, D1, and Queues · Tunnels and Access · Analytics, Account, and Watchtower"
+          )
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          Text("\(model.selectedScopes.count) OAuth permissions")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.brand)
+        }
       }
 
-      DisclosureGroup("Advanced", isExpanded: $showsAdvanced) {
+      DisclosureGroup("Exact permissions", isExpanded: $showsAdvanced) {
         VStack(alignment: .leading, spacing: 8) {
-          Text(
-            "\(model.selectedScopes.count) of \(CloudflareScopes.published.count) OAuth scopes selected"
-          )
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
           Text(model.selectedScopes.sorted().joined(separator: "\n"))
             .dashTextStyle(.code)
             .foregroundStyle(DashTheme.placeholder)
@@ -331,73 +334,9 @@ private struct PermissionSelectionView: View {
     }
     .padding(.horizontal, DashTheme.Sheet.content)
   }
-
-  private func humanCategoryDetail(_ scopes: [OAuthScopeDefinition]) -> String {
-    let titles = scopes.prefix(2).map(\.name)
-    if scopes.count <= 2 {
-      return titles.joined(separator: ", ")
-    }
-    return "\(titles.joined(separator: ", ")) +\(scopes.count - 2) more"
-  }
-
-  /// A whole-row toggle target: the bare switch ignores taps on its empty track
-  /// on this iOS, and a full row is the friendlier target anyway. The switch is
-  /// display-only; the row button flips the binding.
-  private func permissionRow(
-    _ title: String,
-    detail: String,
-    isOn: Binding<Bool>,
-    disabled: Bool = false
-  ) -> some View {
-    Button {
-      isOn.wrappedValue.toggle()
-    } label: {
-      HStack(spacing: 12) {
-        permissionLabel(title, detail: detail)
-        Spacer(minLength: 12)
-        Toggle("", isOn: isOn)
-          .labelsHidden()
-          .tint(DashTheme.brand)
-          .allowsHitTesting(false)
-      }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(DashPressButtonStyle())
-    .disabled(disabled)
-    .accessibilityElement(children: .combine)
-  }
-
-  private var allBinding: Binding<Bool> {
-    Binding(
-      get: { Set(CloudflareScopes.published).isSubset(of: model.selectedScopes) },
-      set: { enabled in
-        model.selectedScopes =
-          enabled ? Set(CloudflareScopes.published) : Set(CloudflareScopes.required)
-      }
-    )
-  }
-
-  private func categoryBinding(_ scopes: [OAuthScopeDefinition]) -> Binding<Bool> {
-    let requestable = Set(scopes.map(\.id)).intersection(CloudflareScopes.requestable)
-    return Binding(
-      get: { requestable.isSubset(of: model.selectedScopes) },
-      set: { model.setScopeCategory(scopes, enabled: $0) }
-    )
-  }
-
-  private func permissionLabel(_ title: String, detail: String) -> some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(title)
-        .dashTextStyle(.supportingMedium)
-        .foregroundStyle(DashTheme.text)
-      Text(detail)
-        .dashTextStyle(.micro)
-        .foregroundStyle(DashTheme.subtle)
-    }
-  }
 }
 
-private enum AppTab: Hashable { case home, items, watchtower, search }
+private enum AppTab: Hashable { case home, features, watchtower, search }
 
 private struct FeatureNavigationStack<Root: View>: View {
   @Binding var path: NavigationPath
@@ -413,30 +352,39 @@ private struct FeatureNavigationStack<Root: View>: View {
   }
 }
 
-/// Regular-width Items: catalog sidebar + detail stack. Compact keeps a single stack.
-private struct AdaptiveItemsNavigation: View {
+/// Regular-width Features: catalog sidebar + detail stack. Compact keeps a single stack.
+private struct AdaptiveFeaturesNavigation: View {
   @Environment(AppModel.self) private var model
   @Environment(\.horizontalSizeClass) private var sizeClass
   @Binding var path: NavigationPath
-  @State private var selectedFeature: FeatureID?
+  @State private var selectedDestination: Destination?
+
+  private var featureSelection: Binding<FeatureID?> {
+    Binding(
+      get: {
+        guard case .feature(let feature) = selectedDestination else { return nil }
+        return feature
+      },
+      set: { feature in
+        selectedDestination = feature.map(Destination.feature)
+      })
+  }
 
   var body: some View {
     Group {
       if sizeClass == .regular {
         NavigationSplitView {
-          ItemsView(selection: $selectedFeature)
+          FeatureCatalogView(selection: featureSelection)
         } detail: {
           NavigationStack(path: $path) {
-            if let selectedFeature {
-              FeatureDetailChrome(feature: selectedFeature) {
-                FeatureRouterContent(feature: selectedFeature)
-              }
-              .destinationRouting()
+            if let selectedDestination {
+              DestinationRoutedContent(destination: selectedDestination)
+                .destinationRouting()
             } else {
               DashEmptyState(
-                icon: SolarAsset.box,
-                title: "Select a feature",
-                message: "Choose something from the Items sidebar."
+                icon: SolarAsset.search,
+                title: "Select an item",
+                message: "Choose a feature or resource from the sidebar."
               )
               .frame(maxWidth: .infinity, maxHeight: .infinity)
               .background(DashTheme.canvas)
@@ -444,19 +392,18 @@ private struct AdaptiveItemsNavigation: View {
           }
         }
       } else {
-        FeatureNavigationStack(path: $path) { ItemsView() }
+        FeatureNavigationStack(path: $path) { FeatureCatalogView() }
       }
     }
     .onChange(of: sizeClass) { _, _ in resetSplitState() }
     .onChange(of: model.activeAccountID) { _, _ in resetSplitState() }
-    .onChange(of: selectedFeature) { _, feature in
+    .onChange(of: selectedDestination) { _, _ in
       path = NavigationPath()
-      if let feature { RecentFeatures.record(feature) }
     }
   }
 
   private func resetSplitState() {
-    selectedFeature = nil
+    selectedDestination = nil
     path = NavigationPath()
   }
 }
@@ -506,8 +453,8 @@ private struct AdaptiveWatchtowerNavigation: View {
   }
 }
 
-/// Search-role tab. The searchable host stays mounted while UIKit animates the
-/// whole tab bar off-screen, preserving the bottom morph across push and pop.
+/// The tab-bar Search role owns cross-resource search. Keeping this host
+/// mounted preserves the search field when a result is pushed and popped.
 private struct SearchNavigationStack: View {
   @Binding var search: String
   @Binding var path: NavigationPath
@@ -517,8 +464,7 @@ private struct SearchNavigationStack: View {
       SearchView(search: $search)
         .destinationRouting()
     }
-    // Plain `.searchable` only — no `isPresented` / toolbar placement overrides.
-    .searchable(text: $search, prompt: "Features, zones…")
+    .searchable(text: $search, prompt: "Features, zones, Workers…")
   }
 }
 
@@ -528,7 +474,7 @@ private struct MainTabView: View {
   @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var selection: AppTab = .home
   @State private var homePath = NavigationPath()
-  @State private var itemsPath = NavigationPath()
+  @State private var featuresPath = NavigationPath()
   @State private var watchtowerPath = NavigationPath()
   @State private var search = ""
   @State private var searchPath = NavigationPath()
@@ -543,7 +489,7 @@ private struct MainTabView: View {
       overlaysPresented: showsProfile || showsEditShortcuts || nestedTrayPresented
         || tabBarExitHold,
       usesSplitDetail: sizeClass == .regular
-        && (selection == .items || selection == .watchtower),
+        && (selection == .features || selection == .watchtower),
       navigationDepth: activeNavigationDepth
     )
   }
@@ -551,7 +497,7 @@ private struct MainTabView: View {
   private var activeNavigationDepth: Int {
     switch selection {
     case .home: homePath.count
-    case .items: itemsPath.count
+    case .features: featuresPath.count
     case .watchtower: watchtowerPath.count
     case .search: searchPath.count
     }
@@ -560,7 +506,7 @@ private struct MainTabView: View {
   private func pushOnActiveTab(_ destination: Destination) {
     switch selection {
     case .home: homePath.append(destination)
-    case .items: itemsPath.append(destination)
+    case .features: featuresPath.append(destination)
     case .watchtower: watchtowerPath.append(destination)
     case .search: searchPath.append(destination)
     }
@@ -592,8 +538,6 @@ private struct MainTabView: View {
             await model.retryIdentityIfNeeded()
             await model.refreshWatchtowerIfStale()
           }
-          // Idempotent — re-delivers the token if the system rotated it.
-          UIApplication.shared.registerForRemoteNotifications()
         case .background:
           model.scheduleWatchtowerBackgroundRefresh()
         default:
@@ -634,7 +578,7 @@ private struct MainTabView: View {
       }
       .onChange(of: model.activeAccountID) { _, _ in
         homePath = NavigationPath()
-        itemsPath = NavigationPath()
+        featuresPath = NavigationPath()
         watchtowerPath = NavigationPath()
         searchPath = NavigationPath()
         search = ""
@@ -644,18 +588,21 @@ private struct MainTabView: View {
       .environment(\.showsProfile, $showsProfile)
       .environment(\.showsEditShortcuts, $showsEditShortcuts)
       .dashTray(isPresented: $showsProfile, title: "Profile") {
-        ProfileTrayContent {
-          showsProfile = false
-          pushOnActiveTab(.profile)
-        }
+        ProfileTrayContent(
+          openProfile: {
+            showsProfile = false
+            pushOnActiveTab(.profile)
+          },
+          openSettings: {
+            showsProfile = false
+            pushOnActiveTab(.settings)
+          })
       }
       .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
         EditShortcutsView()
       }
   }
 
-  // Tab(role: .search) detaches the search button beside the tab bar on
-  // iOS 26; on 18–25 it renders as a regular trailing tab.
   @ViewBuilder
   private var tabContainer: some View {
     if #available(iOS 18.0, *) {
@@ -667,12 +614,13 @@ private struct MainTabView: View {
             "Home", asset: selection == .home ? "SolarTabHomeFill" : "SolarTabHomeLine",
             active: selection == .home)
         }
-        Tab(value: AppTab.items) {
-          AdaptiveItemsNavigation(path: $itemsPath)
+        Tab(value: AppTab.features) {
+          AdaptiveFeaturesNavigation(path: $featuresPath)
         } label: {
           tabLabel(
-            "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
-            active: selection == .items)
+            "Features",
+            asset: selection == .features ? "SolarTabFeaturesFill" : "SolarTabFeaturesLine",
+            active: selection == .features)
         }
         Tab(value: AppTab.watchtower) {
           AdaptiveWatchtowerNavigation(path: $watchtowerPath)
@@ -686,9 +634,7 @@ private struct MainTabView: View {
         Tab(value: AppTab.search, role: .search) {
           SearchNavigationStack(search: $search, path: $searchPath)
         } label: {
-          tabLabel(
-            "Search", asset: selection == .search ? "SolarTabSearchFill" : "SolarTabSearchLine",
-            active: selection == .search)
+          tabLabel("Search", asset: SolarAsset.search, active: selection == .search)
         }
       }
       .modifier(TabBarChrome(hidden: hidesTabBar))
@@ -701,13 +647,14 @@ private struct MainTabView: View {
               active: selection == .home)
           }
           .tag(AppTab.home)
-        AdaptiveItemsNavigation(path: $itemsPath)
+        AdaptiveFeaturesNavigation(path: $featuresPath)
           .tabItem {
             tabLabel(
-              "Items", asset: selection == .items ? "SolarTabItemsFill" : "SolarTabItemsLine",
-              active: selection == .items)
+              "Features",
+              asset: selection == .features ? "SolarTabFeaturesFill" : "SolarTabFeaturesLine",
+              active: selection == .features)
           }
-          .tag(AppTab.items)
+          .tag(AppTab.features)
         AdaptiveWatchtowerNavigation(path: $watchtowerPath)
           .tabItem {
             tabLabel(
@@ -719,9 +666,7 @@ private struct MainTabView: View {
           .badge(model.watchtowerIssueCount ?? 0)
         SearchNavigationStack(search: $search, path: $searchPath)
           .tabItem {
-            tabLabel(
-              "Search", asset: selection == .search ? "SolarTabSearchFill" : "SolarTabSearchLine",
-              active: selection == .search)
+            tabLabel("Search", asset: SolarAsset.search, active: selection == .search)
           }
           .tag(AppTab.search)
       }
@@ -800,7 +745,7 @@ func tabBarVisibilityChange(
   return TabBarVisibilityChange(hidden: targetHidden, animated: transition.animated)
 }
 
-/// Compact stack pushes hide the tab bar; regular Items/Watchtower split keeps
+/// Compact stack pushes hide the tab bar; regular Features/Watchtower split keeps
 /// it visible while a detail is selected. Trays / profile overlays always hide.
 func shouldHideTabBar(
   overlaysPresented: Bool,
@@ -967,6 +912,7 @@ struct ProfileTrayContent: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Dismisses the tray and pushes the Profile page onto the active tab.
   let openProfile: () -> Void
+  let openSettings: () -> Void
   @State private var phase: ProfileTrayPhase = .menu
   @State private var isSigningOut = false
 
@@ -1018,6 +964,7 @@ struct ProfileTrayContent: View {
 
       VStack(spacing: 10) {
         menuRow(title: "Profile", icon: SolarAsset.userCircle, action: openProfile)
+        menuRow(title: "Settings", icon: SolarAsset.settings, action: openSettings)
         if model.accounts.count > 1 {
           menuRow(title: "Switch account", icon: SolarAsset.users) {
             withAnimation(morphAnimation) { phase = .accounts }
@@ -1051,7 +998,7 @@ struct ProfileTrayContent: View {
               Spacer(minLength: 0)
               SolarIcon(
                 asset: account.id == model.activeAccountID
-                  ? SolarAsset.checkCircle : SolarAsset.circle,
+                  ? SolarAsset.checkCircleFill : SolarAsset.circle,
                 size: 22,
                 color: account.id == model.activeAccountID
                   ? DashTheme.brand : DashTheme.placeholder)
@@ -1181,6 +1128,59 @@ enum ProfileTrayPhase: Equatable, Sendable {
     case .accounts, .switchAccount: "Switch account"
     case .signOut: "Sign out"
     }
+  }
+}
+
+struct SettingsView: View {
+  @Environment(AppModel.self) private var model
+
+  private var experimentalBinding: Binding<Bool> {
+    Binding(
+      get: { model.experimentalFeaturesEnabled },
+      set: { model.setExperimentalFeaturesEnabled($0) })
+  }
+
+  var body: some View {
+    ScrollView {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
+        DashListGroup(title: "Features") {
+          VStack(alignment: .leading, spacing: 10) {
+            DashToggleRow(
+              title: "Show experimental features",
+              isOn: experimentalBinding)
+            Text(
+              "Shows Workers AI, Browser Rendering, Images, and Stream. Turning this on may open Cloudflare sign-in to grant 8 additional permissions."
+            )
+            .dashTextStyle(.supporting)
+            .foregroundStyle(DashTheme.subtle)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+          }
+        }
+
+        if model.experimentalFeaturesEnabled,
+          !model.hasScopes(DashAuthorizationScopes.experimental)
+        {
+          DashNotice(
+            kind: .warning,
+            message:
+              "Experimental features are visible but still locked. Open one to grant access.")
+        }
+
+        Text(
+          "Hiding experimental features does not revoke permissions already granted to the current Cloudflare session. Signing out revokes the session."
+        )
+        .dashTextStyle(.micro)
+        .foregroundStyle(DashTheme.placeholder)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+      .dashContentColumn()
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.vertical, DashTheme.Spacing.section)
+    }
+    .background(DashTheme.canvas)
+    .navigationTitle("Settings")
+    .navigationBarTitleDisplayMode(.inline)
   }
 }
 
@@ -1332,6 +1332,7 @@ private struct DestinationRoutedContent: View {
     Group {
       switch destination {
       case .profile: ProfileView()
+      case .settings: SettingsView()
       case .accountDNSSettings: AccountDNSSettingsView()
       case .feature(let feature):
         FeatureDetailChrome(feature: feature) {
@@ -1368,6 +1369,7 @@ private struct DestinationRoutedContent: View {
       }
     }
     .environment(\.featureAllowsWrites, allowsWrites)
+    .environment(\.featureRequiredScopes, requiredScopes(for: destination))
   }
 }
 

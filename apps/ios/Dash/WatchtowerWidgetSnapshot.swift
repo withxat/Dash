@@ -21,6 +21,23 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   var accountName: String?
   var fetchedAt: Date
 
+  /// VoiceOver / widget headline that names severity instead of relying on color alone.
+  var severityHeadline: String {
+    Self.severityHeadline(criticalCount: criticalCount, warningCount: warningCount)
+  }
+
+  static func severityHeadline(criticalCount: Int, warningCount: Int) -> String {
+    if criticalCount == 0, warningCount == 0 { return "All clear" }
+    var parts: [String] = []
+    if criticalCount > 0 {
+      parts.append("\(criticalCount) critical")
+    }
+    if warningCount > 0 {
+      parts.append("\(warningCount) warning\(warningCount == 1 ? "" : "s")")
+    }
+    return parts.joined(separator: ", ")
+  }
+
   static let appGroupID = "group.sh.xat.dash"
   static let fileName = "watchtower-widget-snapshot.json"
 

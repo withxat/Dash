@@ -77,6 +77,9 @@ struct PurgeCacheIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
+    // The non-deprecated requestConfirmation(conditions:actionName:dialog:) is
+    // iOS 18+, and the old overload is deprecated unconditionally (no version),
+    // so this warns until IPHONEOS_DEPLOYMENT_TARGET reaches 18.0.
     try await requestConfirmation(
       result: .result(dialog: "Purge everything from \(zone.name)'s cache?"))
     try await model.client.purgeCache(zoneID: zone.id, files: nil)

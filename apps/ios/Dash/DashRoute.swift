@@ -9,6 +9,9 @@ import Foundation
 ///   dash://zone/<id>[/dns|cache|settings|analytics]
 ///   dash://feature/<FeatureID.rawValue>
 ///   dash://worker/<name>
+///   dash://r2/<name>
+///   dash://kv/<id>
+///   dash://d1/<uuid>[/<name>]
 enum DashRoute: Hashable, Sendable {
   case watchtower
   case zone(String)
@@ -18,6 +21,9 @@ enum DashRoute: Hashable, Sendable {
   case zoneAnalytics(String)
   case feature(FeatureID)
   case worker(String)
+  case r2(String)
+  case kv(String)
+  case d1(id: String, name: String)
 
   static func parse(_ url: URL) -> DashRoute? {
     guard url.scheme == "dash" else { return nil }
@@ -47,6 +53,16 @@ enum DashRoute: Hashable, Sendable {
     case "worker":
       guard let name = segments.first else { return nil }
       return .worker(name)
+    case "r2":
+      guard let name = segments.first else { return nil }
+      return .r2(name)
+    case "kv":
+      guard let id = segments.first else { return nil }
+      return .kv(id)
+    case "d1":
+      guard let id = segments.first else { return nil }
+      let name = segments.count >= 2 ? segments[1] : id
+      return .d1(id: id, name: name)
     default:
       return nil
     }
@@ -63,6 +79,9 @@ enum DashRoute: Hashable, Sendable {
     case .zoneAnalytics(let id): .zoneAnalytics(id)
     case .feature(let feature): .feature(feature)
     case .worker(let name): .worker(name)
+    case .r2(let name): .r2Bucket(name)
+    case .kv(let id): .kvNamespace(id)
+    case .d1(let id, let name): .d1Database(id, name)
     }
   }
 }

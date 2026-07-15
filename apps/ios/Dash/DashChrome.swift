@@ -195,6 +195,7 @@ private struct DashSheetHeader: View {
   var trailingAction: DashSheetHeaderAction? = nil
   let dismiss: () -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @AccessibilityFocusState private var titleFocused: Bool
 
   var body: some View {
     VStack(spacing: 0) {
@@ -211,6 +212,8 @@ private struct DashSheetHeader: View {
             reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph, value: title
           )
           .id(title)
+          .accessibilityAddTraits(.isHeader)
+          .accessibilityFocused($titleFocused)
         Spacer(minLength: 12)
         if let trailingAction {
           Button(action: trailingAction.perform) {
@@ -234,6 +237,14 @@ private struct DashSheetHeader: View {
         .fill(DashTheme.Sheet.headerBorder)
         .frame(height: 1)
         .padding(.horizontal, DashTheme.Sheet.content)
+    }
+    .onAppear {
+      titleFocused = true
+      UIAccessibility.post(notification: .screenChanged, argument: title)
+    }
+    .onChange(of: title) { _, newTitle in
+      titleFocused = true
+      UIAccessibility.post(notification: .screenChanged, argument: newTitle)
     }
   }
 }
@@ -265,6 +276,8 @@ private struct DashCustomSheet<Content: View>: View {
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture { close() }
+        .accessibilityLabel("Dismiss")
+        .accessibilityAddTraits(.isButton)
 
       // We position the card above the keyboard ourselves (padding + an observed
       // height) rather than let SwiftUI's automatic avoidance also push it, which
@@ -437,6 +450,8 @@ private struct DashExpandableSheet<Content: View>: View {
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture { close() }
+        .accessibilityLabel("Dismiss")
+        .accessibilityAddTraits(.isButton)
 
       GeometryReader { proxy in
         let metrics = metrics(in: proxy)
@@ -821,6 +836,9 @@ extension View {
   func dashCatalogScreen(_ title: String) -> some View {
     navigationTitle(title)
       .navigationBarTitleDisplayMode(.large)
+      // Breathing room between the large title and the first group — one
+      // section gap, so entering a screen reads like scrolling between groups.
+      .contentMargins(.top, DashTheme.Spacing.section, for: .scrollContent)
       .toolbar {
         CatalogToolbar()
       }
@@ -1095,6 +1113,10 @@ private struct DashSplashLiftedKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+private struct DashSectionsRevealedKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
 private struct DashLoginIconCloakedKey: EnvironmentKey {
   static let defaultValue = false
 }
@@ -1105,6 +1127,12 @@ extension EnvironmentValues {
   var dashSplashLifted: Bool {
     get { self[DashSplashLiftedKey.self] }
     set { self[DashSplashLiftedKey.self] = newValue }
+  }
+
+  /// Shared entrance phase for the semantic sections on a catalog screen.
+  fileprivate var dashSectionsRevealed: Bool {
+    get { self[DashSectionsRevealedKey.self] }
+    set { self[DashSectionsRevealedKey.self] = newValue }
   }
 
   /// True while the splash overlay's gliding logo stands in for the login
@@ -1126,12 +1154,19 @@ struct DashLoginIconAnchorKey: PreferenceKey {
 }
 
 /// Entrance reveal (after Transitions.dev "Texts reveal"): rises 12pt out of
-/// a 3pt blur on a 0.5s deceleration curve, held back 40ms per `index` so
-/// siblings land top to bottom. Works on any view, not just text. Exits
-/// should stay a plain short fade — never replay the stagger in reverse.
+/// a 3pt blur on a 0.5s deceleration curve. Elements stagger by 40ms and
+/// semantic sections by 100ms so siblings land top to bottom. Works on any
+/// view, not just text. Exits stay a plain short fade — never replay the
+/// stagger in reverse.
+private enum DashRevealCadence {
+  static let element = 0.04
+  static let section = 0.1
+}
+
 private struct DashRevealModifier: ViewModifier {
   let index: Int
   let shown: Bool
+  let stagger: Double
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   func body(content: Content) -> some View {
@@ -1143,7 +1178,8 @@ private struct DashRevealModifier: ViewModifier {
       .animation(
         reduceMotion
           ? nil
-          : .timingCurve(0.22, 1, 0.36, 1, duration: 0.5).delay(Double(index) * 0.04),
+          : .timingCurve(0.22, 1, 0.36, 1, duration: 0.5)
+            .delay(Double(max(index, 0)) * stagger),
         value: shown
       )
   }
@@ -1153,7 +1189,9 @@ extension View {
   /// Staggered entrance; drive `shown` from state flipped on appear (waiting
   /// for `dashSplashLifted` when the view can sit under the launch splash).
   func dashReveal(_ index: Int = 0, shown: Bool) -> some View {
-    modifier(DashRevealModifier(index: index, shown: shown))
+    modifier(
+      DashRevealModifier(index: index, shown: shown, stagger: DashRevealCadence.element)
+    )
   }
 
   /// Self-driving entrance for loaded content: plays once when the view first
@@ -1161,19 +1199,42 @@ extension View {
   /// refreshes and scroll-backs never replay it. Applied to a `@ViewBuilder`
   /// product it distributes per element, so lazy stacks stay lazy.
   func dashContentReveal(_ index: Int = 0, ready: Bool = true) -> some View {
-    modifier(DashContentRevealModifier(index: index, ready: ready))
+    modifier(
+      DashContentRevealModifier(
+        index: index, ready: ready, stagger: DashRevealCadence.element)
+    )
+  }
+
+  /// Marks a semantic screen section for the shared top-to-bottom entrance.
+  func dashSectionReveal(_ index: Int = 0) -> some View {
+    modifier(DashSectionRevealModifier(index: index))
+  }
+
+  /// Coordinates all `dashSectionReveal` descendants from one screen-level
+  /// phase. Lazy sections created after the entrance are immediately visible.
+  func dashSectionEntrance() -> some View {
+    modifier(DashSectionEntranceModifier())
+  }
+
+  /// Self-driving reveal for sections inserted after async content loads.
+  func dashSectionContentReveal(_ index: Int = 0, ready: Bool = true) -> some View {
+    modifier(
+      DashContentRevealModifier(
+        index: index, ready: ready, stagger: DashRevealCadence.section)
+    )
   }
 }
 
 private struct DashContentRevealModifier: ViewModifier {
   let index: Int
   let ready: Bool
+  let stagger: Double
   @Environment(\.dashSplashLifted) private var splashLifted
   @State private var revealed = false
 
   func body(content: Content) -> some View {
     content
-      .dashReveal(index, shown: revealed)
+      .modifier(DashRevealModifier(index: index, shown: revealed, stagger: stagger))
       .onAppear { maybeReveal() }
       .onChange(of: ready) { _, _ in maybeReveal() }
       .onChange(of: splashLifted) { _, _ in maybeReveal() }
@@ -1181,6 +1242,34 @@ private struct DashContentRevealModifier: ViewModifier {
 
   private func maybeReveal() {
     if ready && splashLifted { revealed = true }
+  }
+}
+
+private struct DashSectionRevealModifier: ViewModifier {
+  let index: Int
+  @Environment(\.dashSectionsRevealed) private var revealed
+
+  func body(content: Content) -> some View {
+    content.modifier(
+      DashRevealModifier(
+        index: index, shown: revealed, stagger: DashRevealCadence.section)
+    )
+  }
+}
+
+private struct DashSectionEntranceModifier: ViewModifier {
+  @Environment(\.dashSplashLifted) private var splashLifted
+  @State private var revealed = false
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.dashSectionsRevealed, revealed)
+      .onAppear { maybeReveal() }
+      .onChange(of: splashLifted) { _, _ in maybeReveal() }
+  }
+
+  private func maybeReveal() {
+    if splashLifted { revealed = true }
   }
 }
 
@@ -1296,6 +1385,7 @@ extension AnyTransition {
         active: DashBlurModifier(radius: 3),
         identity: DashBlurModifier(radius: 0)))
   }
+
 }
 
 /// A single high-risk action presented inside a tray. Tapping its row morphs —
