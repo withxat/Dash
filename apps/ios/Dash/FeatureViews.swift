@@ -851,6 +851,51 @@ struct WorkersView: View {
   }
 }
 
+/// Deploy confirmation that owns the tray body — success closes the tray; failure
+/// keeps it open with an inline error so the user can retry without losing context.
+private struct WorkerDeployConfirmTray: View {
+  let workerName: String
+  let isDeploying: Bool
+  let deployError: String?
+  let onCancel: () -> Void
+  let onConfirm: () -> Void
+
+  var body: some View {
+    VStack(spacing: 16) {
+      Text(
+        "Deploy \(workerName) to production? The new content serves on all routes as soon as Cloudflare accepts it."
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.top, 4)
+
+      if let deployError {
+        DashNotice(kind: .error, message: deployError)
+      }
+
+      Button(action: onCancel) {
+        Text("Cancel")
+          .dashTextStyle(.buttonMedium)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, minHeight: 44)
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .disabled(isDeploying)
+
+      DashActionButton(
+        title: "Deploy to production",
+        role: .destructive,
+        isLoading: isDeploying,
+        action: onConfirm
+      )
+    }
+    .padding(.horizontal, DashTheme.Sheet.content)
+  }
+}
+
 struct WorkerDetailView: View {
   private enum Tab: Hashable { case management, source }
 
@@ -930,7 +975,7 @@ struct WorkerDetailView: View {
             if workerSourceIsEditable(
               moduleCount: source.moduleCount, hasWriteScope: hasWriteScope)
             {
-              if let deployError {
+              if let deployError, !confirmsDeploy {
                 DashNotice(kind: .error, message: deployError)
               }
               DashCodePanel(
@@ -944,16 +989,9 @@ struct WorkerDetailView: View {
                 isLoading: deploying,
                 isEnabled: !draft.isEmpty && draft != source.content
               ) {
+                deployError = nil
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 confirmsDeploy = true
-              }
-              .confirmationDialog(
-                "Deploy \(name)?", isPresented: $confirmsDeploy, titleVisibility: .visible
-              ) {
-                Button("Deploy to production", role: .destructive) {
-                  Task { await deploy() }
-                }
-              } message: {
-                Text("The new content serves on all routes as soon as Cloudflare accepts it.")
               }
             } else {
               if source.moduleCount > 1 {
@@ -997,6 +1035,15 @@ struct WorkerDetailView: View {
           }
         ] : []
     )
+    .dashTray(isPresented: $confirmsDeploy, title: "Deploy") {
+      WorkerDeployConfirmTray(
+        workerName: name,
+        isDeploying: deploying,
+        deployError: deployError,
+        onCancel: { confirmsDeploy = false },
+        onConfirm: { Task { await deploy() } }
+      )
+    }
   }
   private var hasWriteScope: Bool {
     featureAllowsWrites && model.hasScopes(["workers-scripts.write"])
@@ -1010,9 +1057,12 @@ struct WorkerDetailView: View {
       _ = try await model.client.uploadWorkerScript(
         accountID: accountID, name: name, source: source, content: draft)
       model.featureCache.remove(FeatureCacheKey.workerSource(accountID: accountID, name: name))
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      confirmsDeploy = false
       await load(force: true)
     } catch {
       deployError = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
     deploying = false
   }

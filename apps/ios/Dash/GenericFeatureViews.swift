@@ -72,6 +72,21 @@ struct GenericRowUpdate: Identifiable {
   var confirmMessage: ((GenericResource) -> String)? = nil
 }
 
+/// Exactly one focused decision inside a generic resource tray.
+enum GenericDetailPhase: Equatable, Sendable {
+  case details
+  case delete
+  case update(id: String)
+
+  func title(for resourceName: String) -> String {
+    switch self {
+    case .details: resourceName
+    case .delete: "Delete"
+    case .update: "Confirm"
+    }
+  }
+}
+
 /// A high-risk action on the whole screen (header more-menu), e.g. redeploy or
 /// delete-project on a Pages deployments list.
 struct GenericScreenAction {
@@ -742,7 +757,7 @@ struct GenericResourcesView: View {
   @State private var showsMore = false
   @State private var updatingID: String?
   @State private var updateError: String?
-  @State private var pendingUpdate: GenericRowUpdate?
+  @State private var detailPhase: GenericDetailPhase = .details
 
   private var capabilities: GenericResourceCapabilities {
     var capabilities = GenericResourceCapabilities.forPath(path)
@@ -832,66 +847,14 @@ struct GenericResourcesView: View {
       item: $selected,
       title: { $0.name },
       content: { resource in
-        DashDetailTray(
-          fields: resource.detailFields,
-          deleteMessage: capabilities.deleteMessage?(resource),
-          isDeleting: deleting,
-          deleteError: deleteError,
-          onDelete: capabilities.deleteMessage != nil
-            ? { Task { await delete(resource) } }
-            : nil
-        ) {
-          if !capabilities.updates.isEmpty {
-            VStack(spacing: 10) {
-              if let pendingUpdate, let message = pendingUpdate.confirmMessage?(resource) {
-                Text(message)
-                  .dashTextStyle(.supporting)
-                  .foregroundStyle(DashTheme.subtle)
-                  .multilineTextAlignment(.center)
-                  .fixedSize(horizontal: false, vertical: true)
-                  .frame(maxWidth: .infinity)
-                Button {
-                  withAnimation(DashTheme.Motion.morph) { self.pendingUpdate = nil }
-                } label: {
-                  Text("Cancel")
-                    .dashTextStyle(.buttonMedium)
-                    .foregroundStyle(DashTheme.subtle)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                }
-                .buttonStyle(DashPressButtonStyle())
-                DashActionButton(
-                  title: "Confirm",
-                  role: .destructive,
-                  isLoading: updatingID == pendingUpdate.id
-                ) {
-                  Task { await perform(pendingUpdate, on: resource) }
-                }
-              } else {
-                ForEach(capabilities.updates) { update in
-                  DashTrayPillButton(
-                    title: update.title(resource),
-                    isLoading: updatingID == update.id
-                  ) {
-                    if update.confirmMessage != nil {
-                      updateError = nil
-                      withAnimation(DashTheme.Motion.morph) { pendingUpdate = update }
-                    } else {
-                      Task { await perform(update, on: resource) }
-                    }
-                  }
-                }
-              }
-              if let updateError {
-                DashNotice(kind: .error, message: updateError)
-              }
-            }
-          }
-        }
+        genericDetailTray(resource)
+          .dashTrayTitle(detailPhase.title(for: resource.name))
       }
     )
     .onChange(of: selected?.id) { _, _ in
-      pendingUpdate = nil
+      detailPhase = .details
       updateError = nil
+      deleteError = nil
     }
     .dashTray(isPresented: $creates, title: capabilities.create?.title ?? "New") {
       if let spec = capabilities.create {
@@ -913,6 +876,121 @@ struct GenericResourcesView: View {
       }
     )
     .refreshable { await load(force: true) }.task { await load() }
+  }
+
+  @ViewBuilder
+  private func genericDetailTray(_ resource: GenericResource) -> some View {
+    let deleteMessage = capabilities.deleteMessage?(resource)
+    let confirming = detailPhase != .details
+    let confirmMessage: String? = {
+      switch detailPhase {
+      case .details: nil
+      case .delete: deleteMessage
+      case .update(let id):
+        capabilities.updates.first { $0.id == id }?.confirmMessage?(resource)
+      }
+    }()
+
+    DashConfirmMorph(
+      confirming: Binding(
+        get: { confirming },
+        set: { active in
+          if !active {
+            withAnimation(DashTheme.Motion.morph) { detailPhase = .details }
+          }
+        }
+      ),
+      message: confirmMessage,
+      isBusy: deleting || updatingID != nil,
+      actionTitle: nil,
+      confirmingActionTitle: {
+        switch detailPhase {
+        case .update(let id):
+          capabilities.updates.first { $0.id == id }?.title(resource) ?? "Confirm"
+        case .delete: "Delete"
+        case .details: "Confirm"
+        }
+      }(),
+      confirmingActionRole: .destructive,
+      actionEnabled: true,
+      errorMessage: {
+        switch detailPhase {
+        case .delete: deleteError
+        case .update: updateError
+        case .details: nil
+        }
+      }(),
+      action: {
+        switch detailPhase {
+        case .delete:
+          Task { await delete(resource) }
+        case .update(let id):
+          if let update = capabilities.updates.first(where: { $0.id == id }) {
+            Task { await perform(update, on: resource) }
+          }
+        case .details:
+          break
+        }
+      },
+      headerDelete: false
+    ) {
+      VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(resource.detailFields.enumerated()), id: \.offset) { index, field in
+            detailFieldRow(field)
+            if index < resource.detailFields.count - 1 { DashListGroupDivider() }
+          }
+        }
+
+        if !capabilities.updates.isEmpty {
+          VStack(spacing: 10) {
+            ForEach(capabilities.updates) { update in
+              DashTrayPillButton(
+                title: update.title(resource),
+                isLoading: updatingID == update.id
+              ) {
+                if update.confirmMessage != nil {
+                  updateError = nil
+                  UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                  withAnimation(DashTheme.Motion.morph) { detailPhase = .update(id: update.id) }
+                } else {
+                  Task { await perform(update, on: resource) }
+                }
+              }
+            }
+          }
+          .padding(.top, 12)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .dashTrayHeaderAction(
+      deleteMessage != nil && detailPhase == .details
+        ? DashSheetHeaderAction(
+          id: "delete", icon: SolarAsset.trash, accessibilityLabel: "Delete"
+        ) {
+          deleteError = nil
+          UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+          withAnimation(DashTheme.Motion.morph) { detailPhase = .delete }
+        }
+        : nil
+    )
+  }
+
+  private func detailFieldRow(_ field: DashDetailField) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(field.label)
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+      Text(field.value)
+        .dashTextStyle(field.mono ? .code : .supporting)
+        .foregroundStyle(DashTheme.text)
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func delete(_ resource: GenericResource) async {
@@ -939,7 +1017,7 @@ struct GenericResourcesView: View {
         path: update.path(basePath, resource), method: update.method,
         body: update.body(resource))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
-      pendingUpdate = nil
+      detailPhase = .details
       selected = nil
       await invalidateAndReload()
     } catch {

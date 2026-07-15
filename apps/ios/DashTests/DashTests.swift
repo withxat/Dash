@@ -496,6 +496,20 @@ import UIKit
   #expect(catalog.updates.first?.confirmMessage == nil)
 }
 
+@Test func genericDetailPhaseAllowsOnlyOneDecision() {
+  #expect(GenericDetailPhase.details.title(for: "pool-1") == "pool-1")
+  #expect(GenericDetailPhase.delete.title(for: "pool-1") == "Delete")
+  #expect(GenericDetailPhase.update(id: "enable").title(for: "pool-1") == "Confirm")
+  #expect(GenericDetailPhase.details != .delete)
+  #expect(GenericDetailPhase.update(id: "a") != .update(id: "b"))
+}
+
+@Test func workerDeployAndD1RiskClassification() {
+  #expect(workerSourceIsEditable(moduleCount: 1, hasWriteScope: true))
+  #expect(D1SQL.destructiveKeyword(in: "DROP TABLE t;") == "DROP")
+  #expect(D1SQL.destructiveKeyword(in: "SELECT 1;") == nil)
+}
+
 @Test func watchtowerNotificationPlannerDiffsSnapshots() {
   func snapshot(issues: Int, critical: [String], warning: [String] = [])
     -> WatchtowerWidgetSnapshot

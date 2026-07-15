@@ -353,6 +353,7 @@ private struct APIRequestView: View {
       Section {
         Button(endpoint.isMutation ? "Review and run" : "Run request") {
           if endpoint.isMutation {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             confirmsMutation = true
           } else {
             Task { await run() }
@@ -409,17 +410,41 @@ private struct APIRequestView: View {
         Button("Done") { dismiss() }
       }
     }
-    .confirmationDialog(
-      "Run \(endpoint.method) request?",
-      isPresented: $confirmsMutation,
-      titleVisibility: .visible
-    ) {
-      Button("Run \(endpoint.method)", role: endpoint.method == "DELETE" ? .destructive : nil) {
-        Task { await run() }
+    .dashTray(isPresented: $confirmsMutation, title: "Run \(endpoint.method)") {
+      VStack(spacing: 16) {
+        Text(endpoint.path)
+          .dashTextStyle(.code)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity)
+          .padding(.top, 4)
+
+        Text("This operation can change Cloudflare account state.")
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+
+        Button {
+          confirmsMutation = false
+        } label: {
+          Text("Cancel")
+            .dashTextStyle(.buttonMedium)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .disabled(isRunning)
+
+        DashActionButton(
+          title: "Run \(endpoint.method)",
+          role: endpoint.method == "DELETE" ? .destructive : nil,
+          isLoading: isRunning
+        ) {
+          Task { await run() }
+        }
       }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text(endpoint.path)
+      .padding(.horizontal, DashTheme.Sheet.content)
     }
     .task { prefillKnownIdentifiers() }
   }
@@ -490,8 +515,11 @@ private struct APIRequestView: View {
         rendered.count > 100_000
         ? String(rendered.prefix(100_000)) + "\n\n…response truncated for display"
         : rendered
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      confirmsMutation = false
     } catch {
       self.error = error
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
     isRunning = false
   }

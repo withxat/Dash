@@ -761,7 +761,8 @@ struct D1ConsoleView: View {
   @State private var error: String?
   @State private var running = false
   @State private var showsMore = false
-  @State private var confirmsRun = false
+  @State private var confirmingRun = false
+  @State private var runError: String?
 
   private var destructiveKeyword: String? { D1SQL.destructiveKeyword(in: sql) }
   var body: some View {
@@ -794,18 +795,6 @@ struct D1ConsoleView: View {
         DashMoreButton(isPresented: $showsMore)
       }
       .dashSeparateToolbarBackground()
-    }
-    .dashTray(isPresented: $confirmsRun, title: "Write statement") {
-      DashConfirmableActions(actions: [
-        DashDangerAction(
-          title: "Run \(destructiveKeyword ?? "write") statement",
-          icon: SolarAsset.danger,
-          message:
-            "This statement can modify or delete data in \(name). This cannot be undone."
-        ) {
-          try await performQuery()
-        }
-      ])
     }
     .dashMoreMenu(
       isPresented: $showsMore,
@@ -855,33 +844,45 @@ struct D1ConsoleView: View {
 
   @ViewBuilder
   private var consoleContent: some View {
-    DashCodePanel(
-      title: "SQL query",
-      message: "Run a read or write statement against this database.",
-      text: $sql,
-      minHeight: 150
-    )
-
-    DashPillButton(
-      title: destructiveKeyword.map { "Run \($0) statement" } ?? "Run query",
-      isLoading: running,
-      isEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    DashConfirmMorph(
+      confirming: $confirmingRun,
+      message:
+        "This \(destructiveKeyword ?? "write") statement can modify or delete data in \(name). This cannot be undone.",
+      isBusy: running,
+      actionTitle: destructiveKeyword.map { "Run \($0) statement" } ?? "Run query",
+      confirmingActionTitle: destructiveKeyword.map { "Run \($0)" } ?? "Run query",
+      confirmingActionRole: .destructive,
+      actionEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      errorMessage: runError,
+      action: {
+        if confirmingRun || destructiveKeyword == nil {
+          Task { await runConfirmed() }
+        } else {
+          runError = nil
+          UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+          withAnimation(DashTheme.Motion.morph) { confirmingRun = true }
+        }
+      },
+      appliesContentPadding: false
     ) {
-      if destructiveKeyword != nil {
-        confirmsRun = true
-      } else {
-        Task { await run() }
-      }
-    }
+      VStack(spacing: DashTheme.Spacing.section) {
+        DashCodePanel(
+          title: "SQL query",
+          message: "Run a read or write statement against this database.",
+          text: $sql,
+          minHeight: 150
+        )
 
-    if let error {
-      DashNotice(kind: .error, message: error)
-    } else {
-      DashCodeBlock(
-        title: "Result",
-        text: result,
-        placeholder: "Run a query to see results."
-      )
+        if let error, !confirmingRun {
+          DashNotice(kind: .error, message: error)
+        } else if !confirmingRun {
+          DashCodeBlock(
+            title: "Result",
+            text: result,
+            placeholder: "Run a query to see results."
+          )
+        }
+      }
     }
   }
 
@@ -920,16 +921,28 @@ struct D1ConsoleView: View {
     model.featureCache.remove(FeatureCacheKey.d1Databases(id))
     dismissScreen()
   }
-  private func run() async {
+  private func runConfirmed() async {
+    running = true
+    runError = nil
+    error = nil
     do {
       try await performQuery()
-    } catch { self.error = error.dashActionableMessage }
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+      withAnimation(DashTheme.Motion.morph) { confirmingRun = false }
+    } catch {
+      let message = error.dashActionableMessage
+      if confirmingRun {
+        runError = message
+      } else {
+        self.error = message
+      }
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
+    running = false
   }
 
   private func performQuery() async throws {
     guard let id = model.activeAccountID else { return }
-    running = true
-    defer { running = false }
     let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
     result = Self.format(rows: values.flatMap { $0.results ?? [] })
     error = nil

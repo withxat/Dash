@@ -859,6 +859,8 @@ struct DashConfirmMorph<Content: View>: View {
   var errorMessage: String? = nil
   var action: () -> Void
   var headerDelete = false
+  /// When false, the caller owns horizontal insets (inline page morphs).
+  var appliesContentPadding = true
   @ViewBuilder var content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -918,7 +920,7 @@ struct DashConfirmMorph<Content: View>: View {
         .opacity(actionEnabled ? 1 : 0.45)
       }
     }
-    .padding(.horizontal, DashTheme.Sheet.content)
+    .padding(.horizontal, appliesContentPadding ? DashTheme.Sheet.content : 0)
     .dashTrayHeaderAction(
       headerDelete && !confirming
         ? DashSheetHeaderAction(
