@@ -207,6 +207,14 @@ import UIKit
   #expect(featureID(for: .profile) == nil)
 }
 
+@Test func statusBadgeAndNoticeExposeAccessibleCopy() {
+  #expect(StatusBadge.accessibilityText(for: "Read-only") == "Status, Read-only")
+  #expect(
+    DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
+      == "Warning: Coverage limited")
+  #expect(DashTheme.Spacing.scrollBottomInset == 72)
+}
+
 @Test func recentFeaturesDedupeReorderAndCap() {
   // A repeat visit moves the feature to the front instead of duplicating it.
   #expect(

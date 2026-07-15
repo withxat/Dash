@@ -45,7 +45,7 @@ struct SearchView: View {
         listContent
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
     .dashCatalogScreen("Search")

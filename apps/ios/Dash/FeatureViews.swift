@@ -199,12 +199,10 @@ struct ZonesView: View {
             DashListGroupLink(value: .zone(zone.id)) {
               DashListRow(
                 title: zone.name,
-                subtitle: zone.status ?? "unknown",
+                subtitle: zonePlanSubtitle(zone),
                 icon: SolarAsset.globe
-              )
-              .overlay(alignment: .trailing) {
+              ) {
                 StatusBadge(text: zone.status ?? "unknown")
-                  .padding(.trailing, 28)
               }
             }
           }
@@ -250,6 +248,10 @@ struct ZonesView: View {
     guard let accountID = model.activeAccountID, !zones.isEmpty else { return }
     let cached: [CloudflareZone]? = model.featureCache.get(FeatureCacheKey.zones(accountID))
     if cached == nil { Task { await load(force: true) } }
+  }
+
+  private func zonePlanSubtitle(_ zone: CloudflareZone) -> String? {
+    zone.plan?.name
   }
 
   private func create() async {
@@ -968,7 +970,7 @@ struct WorkerDetailView: View {
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, 100)
+        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         .animation(
           reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: workerTag)
       }
@@ -1121,7 +1123,7 @@ struct CachePurgeView: View {
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, 100)
+        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         .animation(
           reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: status)
       }

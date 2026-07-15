@@ -77,7 +77,7 @@ struct WatchtowerView: View {
         footerCaption
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashCatalogScreen("Watchtower")
     .refreshable { await load(force: true) }
@@ -167,7 +167,7 @@ struct WatchtowerView: View {
             signalBadge(signal.status)
             Spacer(minLength: 0)
             if signal.destination != nil {
-              SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+              SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
             }
           }
         }
@@ -177,27 +177,41 @@ struct WatchtowerView: View {
           Spacer(minLength: 8)
           signalBadge(signal.status)
           if signal.destination != nil {
-            SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
           }
         }
       }
     }
     .padding(.vertical, 10)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(signalAccessibilityLabel(signal))
   }
 
   private func signalCopy(_ signal: WatchtowerSignal) -> some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(signal.title)
-        .font(.subheadline.weight(.semibold))
+        .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.text)
       Text(signal.detail)
-        .font(.caption)
+        .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .fixedSize(horizontal: false, vertical: true)
     .layoutPriority(1)
+  }
+
+  private func signalAccessibilityLabel(_ signal: WatchtowerSignal) -> String {
+    let statusText: String =
+      switch signal.status {
+      case .ok: "OK"
+      case .warning: "Warning"
+      case .critical: "Critical"
+      }
+    return "\(signal.title), \(signal.detail), \(StatusBadge.accessibilityText(for: statusText))"
   }
 
   @ViewBuilder

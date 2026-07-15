@@ -33,6 +33,8 @@ enum DashTheme {
     static let section: CGFloat = 20
     static let card: CGFloat = 16
     static let listInset: CGFloat = 0
+    /// Extra scroll padding above the floating tab bar / home indicator.
+    static let scrollBottomInset: CGFloat = 72
   }
 
   /// Strong ease-out motion tokens — built-in easings feel soft, and frequent
@@ -588,7 +590,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, 100)
+        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       }
       .scrollDismissesKeyboard(.interactively)
     }
@@ -638,18 +640,12 @@ struct DashListGroup<Content: View>: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
+    VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 12) {
         Text(title)
           .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.subtle)
         Spacer(minLength: 0)
-      }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
-      // The action rides an overlay so its 44pt hit target never stretches
-      // the header: with or without an action, headers stay the same height.
-      .overlay(alignment: .trailing) {
         if let action {
           Group {
             if let actionIcon {
@@ -667,31 +663,18 @@ struct DashListGroup<Content: View>: View {
                 .buttonStyle(DashPressButtonStyle())
             }
           }
-          .padding(.trailing, 16)
         }
       }
+      .padding(.horizontal, 4)
 
-      // The signature two-tone group: a white, hairlined card seated in an
-      // elevated frame. Deliberately exempt from the strokeless panel language;
-      // inlined rather than reusing DashListCard so the panels can evolve
-      // without dragging this along.
+      // Single recessed card — title stays outside so catalog groups read lighter
+      // than the old elevated frame wrapped around another card.
       VStack(alignment: .leading, spacing: 0) { content }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DashTheme.base)
-        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-        .overlay {
-          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-            .stroke(DashTheme.line, lineWidth: 0.5)
-        }
-        .padding(.horizontal, -0.5)
-        .padding(.bottom, -0.5)
-    }
-    .background(DashTheme.elevated)
-    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .overlay {
-      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        .stroke(DashTheme.line, lineWidth: 0.5)
+        .background(
+          DashTheme.recessed,
+          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
     }
   }
 }
@@ -712,6 +695,8 @@ struct CatalogFeatureIcon: View {
   let feature: FeatureID
   var style: Style = .duotone
   var size: Size = .list
+  @ScaledMetric(relativeTo: .body) private var listGlyphScale: CGFloat = 1
+  @ScaledMetric(relativeTo: .body) private var listTileScale: CGFloat = 1
 
   private var tone: Color {
     switch feature {
@@ -726,22 +711,30 @@ struct CatalogFeatureIcon: View {
     style == .duotone ? feature.solarAssetName : feature.solarOutlineAssetName
   }
 
+  private var scaleClamp: CGFloat {
+    min(max(listGlyphScale, 1), 1.3)
+  }
+
   private var glyphSize: CGFloat {
-    switch size {
-    case .list: 24
-    case .shortcut: 20
-    case .compact: 18
-    case .hero: 36
-    }
+    let base: CGFloat =
+      switch size {
+      case .list: 24
+      case .shortcut: 20
+      case .compact: 18
+      case .hero: 36
+      }
+    return size == .list || size == .shortcut ? base * scaleClamp : base
   }
 
   private var tileSize: CGFloat {
-    switch size {
-    case .list: 44
-    case .shortcut: 34
-    case .compact: 28
-    case .hero: 56
-    }
+    let base: CGFloat =
+      switch size {
+      case .list: 44
+      case .shortcut: 34
+      case .compact: 28
+      case .hero: 56
+      }
+    return size == .list || size == .shortcut ? base * min(max(listTileScale, 1), 1.3) : base
   }
 
   var body: some View {
@@ -808,7 +801,7 @@ struct StatusBadge: View {
     if ["active", "ok", "healthy", "success"].contains(value) {
       return (DashTheme.success, DashTheme.successTint)
     }
-    if ["warning", "pending", "degraded"].contains(value) {
+    if ["warning", "pending", "degraded", "read-only", "locked"].contains(value) {
       return (DashTheme.warning, DashTheme.warningTint)
     }
     if ["error", "failed", "critical", "inactive"].contains(value) {
@@ -824,6 +817,12 @@ struct StatusBadge: View {
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(colors.background, in: Capsule())
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(StatusBadge.accessibilityText(for: text))
+  }
+
+  static func accessibilityText(for text: String) -> String {
+    "Status, \(text)"
   }
 }
 
@@ -913,45 +912,123 @@ extension View {
   }
 }
 
-struct DashListRow: View {
+struct DashListRow<Accessory: View>: View {
   let title: String
   var subtitle: String?
   var icon: String?
   var iconColor: Color = DashTheme.brand
   var trailing: String?
   var showsChevron = true
+  @ViewBuilder var accessory: () -> Accessory
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .body) private var iconScale: CGFloat = 1
+
+  init(
+    title: String,
+    subtitle: String? = nil,
+    icon: String? = nil,
+    iconColor: Color = DashTheme.brand,
+    trailing: String? = nil,
+    showsChevron: Bool = true,
+    @ViewBuilder accessory: @escaping () -> Accessory
+  ) {
+    self.title = title
+    self.subtitle = subtitle
+    self.icon = icon
+    self.iconColor = iconColor
+    self.trailing = trailing
+    self.showsChevron = showsChevron
+    self.accessory = accessory
+  }
+
+  private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
+  private var iconPointSize: CGFloat { 22 * min(max(iconScale, 1), 1.3) }
+  private var iconFrame: CGFloat { 40 * min(max(iconScale, 1), 1.3) }
 
   var body: some View {
-    HStack(spacing: 12) {
-      if let icon {
-        SolarIcon(asset: icon, size: 22, color: iconColor)
-          .frame(width: 40, height: 40)
-          .background(iconColor.opacity(0.15), in: Circle())
-      }
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .font(.body)
-          .foregroundStyle(DashTheme.text)
-          .lineLimit(1)
-        if let subtitle {
-          Text(subtitle)
-            .font(.caption)
-            .foregroundStyle(DashTheme.subtle)
-            .lineLimit(1)
+    Group {
+      if isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 8) {
+          labelStack
+          HStack(spacing: 8) {
+            accessory()
+            if let trailing {
+              Text(trailing)
+                .dashTextStyle(.supporting)
+                .foregroundStyle(DashTheme.subtle)
+            }
+            Spacer(minLength: 0)
+            if showsChevron {
+              SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+            }
+          }
         }
-      }
-      Spacer(minLength: 8)
-      if let trailing {
-        Text(trailing)
-          .font(.caption)
-          .foregroundStyle(DashTheme.subtle)
-      }
-      if showsChevron {
-        SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+      } else {
+        HStack(spacing: 12) {
+          leadingIcon
+          labelStack
+          Spacer(minLength: 8)
+          accessory()
+          if let trailing {
+            Text(trailing)
+              .dashTextStyle(.supporting)
+              .foregroundStyle(DashTheme.subtle)
+          }
+          if showsChevron {
+            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+          }
+        }
       }
     }
     .padding(.vertical, 12)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+
+  @ViewBuilder
+  private var leadingIcon: some View {
+    if let icon {
+      SolarIcon(asset: icon, size: iconPointSize, color: iconColor)
+        .frame(width: iconFrame, height: iconFrame)
+        .background(iconColor.opacity(0.15), in: Circle())
+    }
+  }
+
+  private var labelStack: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(title)
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.text)
+        .lineLimit(isAccessibilitySize ? nil : 1)
+      if let subtitle {
+        Text(subtitle)
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(isAccessibilitySize ? nil : 1)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+extension DashListRow where Accessory == EmptyView {
+  init(
+    title: String,
+    subtitle: String? = nil,
+    icon: String? = nil,
+    iconColor: Color = DashTheme.brand,
+    trailing: String? = nil,
+    showsChevron: Bool = true
+  ) {
+    self.init(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      iconColor: iconColor,
+      trailing: trailing,
+      showsChevron: showsChevron,
+      accessory: { EmptyView() })
   }
 }
 
@@ -1243,6 +1320,16 @@ struct DashNotice: View {
     .padding(16)
     .background(colors.background)
     .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(DashNotice.accessibilityText(kind: kind, message: message))
+  }
+
+  static func accessibilityText(kind: Kind, message: String) -> String {
+    switch kind {
+    case .success: "Success: \(message)"
+    case .error: "Error: \(message)"
+    case .warning: "Warning: \(message)"
+    }
   }
 }
 
@@ -1385,7 +1472,7 @@ private struct DashGroupedListModifier: ViewModifier {
       .listStyle(.insetGrouped)
       .contentMargins(.horizontal, DashTheme.Spacing.screen, for: .scrollContent)
       .contentMargins(.top, 0, for: .scrollContent)
-      .contentMargins(.bottom, 72, for: .scrollContent)
+      .contentMargins(.bottom, DashTheme.Spacing.scrollBottomInset, for: .scrollContent)
       .listSectionSpacing(DashTheme.Spacing.section)
       .listRowSpacing(0)
       .listRowSeparator(.hidden)

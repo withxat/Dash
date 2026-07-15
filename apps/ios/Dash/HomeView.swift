@@ -55,7 +55,7 @@ struct HomeView: View {
           .frame(maxWidth: .infinity)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashCatalogScreen("Home")
   }
@@ -173,6 +173,7 @@ struct FeatureSection: View {
 
 struct FeatureRow: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let feature: FeatureID
   var iconStyle: CatalogFeatureIcon.Style = .duotone
 
@@ -180,31 +181,69 @@ struct FeatureRow: View {
     feature.capability.accessLevel(grantedScopes: model.grantedScopes)
   }
 
+  private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
+
   var body: some View {
-    HStack(spacing: 12) {
-      CatalogFeatureIcon(feature: feature, style: iconStyle)
-        .opacity(accessLevel == .locked ? 0.55 : 1)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(feature.title)
-          .font(.body)
-          .foregroundStyle(DashTheme.text)
-          .lineLimit(1)
-        Text(feature.subtitle)
-          .font(.caption)
-          .foregroundStyle(DashTheme.subtle)
-          .lineLimit(1)
+    Group {
+      if isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 8) {
+          HStack(spacing: 12) {
+            CatalogFeatureIcon(feature: feature, style: iconStyle)
+              .opacity(accessLevel == .locked ? 0.55 : 1)
+            labels
+          }
+          HStack {
+            accessBadge
+            Spacer(minLength: 0)
+            SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+          }
+        }
+      } else {
+        HStack(spacing: 12) {
+          CatalogFeatureIcon(feature: feature, style: iconStyle)
+            .opacity(accessLevel == .locked ? 0.55 : 1)
+          labels
+          Spacer(minLength: 8)
+          accessBadge
+          SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+        }
       }
-      Spacer(minLength: 8)
-      if accessLevel == .readOnly {
-        StatusBadge(text: "Read-only")
-      } else if accessLevel == .locked {
-        StatusBadge(text: "Locked")
-      }
-      SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
     }
     .padding(.vertical, 12)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .contentShape(Rectangle())
-    .accessibilityValue(accessAccessibilityValue)
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(accessibilityLabel)
+  }
+
+  private var labels: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(feature.title)
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.text)
+        .lineLimit(isAccessibilitySize ? nil : 1)
+      Text(feature.subtitle)
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .lineLimit(isAccessibilitySize ? nil : 1)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  @ViewBuilder
+  private var accessBadge: some View {
+    switch accessLevel {
+    case .full:
+      EmptyView()
+    case .readOnly:
+      StatusBadge(text: "Read-only")
+    case .locked:
+      StatusBadge(text: "Locked")
+    }
+  }
+
+  private var accessibilityLabel: String {
+    "\(feature.title), \(feature.subtitle), \(accessAccessibilityValue)"
   }
 
   private var accessAccessibilityValue: String {

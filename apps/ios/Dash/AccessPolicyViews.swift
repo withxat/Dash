@@ -278,11 +278,9 @@ private struct AccessPolicyRowsCard: View {
               title: policy.name,
               subtitle: includeSummary(policy),
               icon: SolarAsset.shieldCheck
-            )
-            .overlay(alignment: .trailing) {
+            ) {
               if let decision = policy.decision {
                 StatusBadge(text: decision)
-                  .padding(.trailing, 28)
               }
             }
           }

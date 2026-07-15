@@ -780,7 +780,7 @@ struct D1ConsoleView: View {
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, 100)
+        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
         .animation(
           reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: error)
       }
@@ -982,7 +982,7 @@ struct D1TableView: View {
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .navigationTitle(table)
     .navigationBarTitleDisplayMode(.inline)

@@ -169,11 +169,9 @@ private struct RulesetRowsCard: View {
               title: ruleset.name,
               subtitle: ruleset.phase?.replacingOccurrences(of: "_", with: " "),
               icon: SolarAsset.settings
-            )
-            .overlay(alignment: .trailing) {
+            ) {
               if let kind = ruleset.kind {
                 StatusBadge(text: kind)
-                  .padding(.trailing, 28)
               }
             }
           }
@@ -233,11 +231,9 @@ struct RulesetDetailView: View {
                   title: ruleTitle(rule),
                   subtitle: rule.expression,
                   icon: rule.enabled == false ? SolarAsset.circle : SolarAsset.checkCircle
-                )
-                .overlay(alignment: .trailing) {
+                ) {
                   if let action = rule.action {
                     StatusBadge(text: action)
-                      .padding(.trailing, 28)
                   }
                 }
               }

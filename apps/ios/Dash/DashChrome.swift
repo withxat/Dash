@@ -1045,6 +1045,7 @@ struct DashLoadingRing: View {
   var color: Color = DashTheme.inverse
   var size: CGFloat = 20
   var lineWidth: CGFloat = 3
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var spinning = false
 
   var body: some View {
@@ -1054,11 +1055,12 @@ struct DashLoadingRing: View {
       Circle()
         .trim(from: 0, to: 0.25)
         .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-        .rotationEffect(.degrees(spinning ? 360 : 0))
+        .rotationEffect(.degrees(reduceMotion ? -90 : (spinning ? 360 : 0)))
     }
     .frame(width: size, height: size)
     .padding(lineWidth / 2)
     .onAppear {
+      guard !reduceMotion else { return }
       withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
         spinning = true
       }

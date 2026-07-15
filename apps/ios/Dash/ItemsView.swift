@@ -82,7 +82,7 @@ struct ItemsView: View {
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, 100)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashCatalogScreen("Items")
   }
