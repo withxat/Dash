@@ -733,6 +733,7 @@ struct AccountView: View {
   @State private var selectedTab: Tab = .members
   @State private var togglingPolicy = false
   @State private var toggleError: String?
+  @State private var confirmingPolicyToggle = false
   @State private var deletingPolicy = false
   @State private var deletePolicyError: String?
   @State private var invites = false
@@ -866,11 +867,41 @@ struct AccountView: View {
             onDelete: { Task { await deletePolicy(policy) } }
           ) {
             VStack(spacing: 10) {
-              DashTrayPillButton(
-                title: policy.enabled == false ? "Enable policy" : "Disable policy",
-                isLoading: togglingPolicy
-              ) {
-                Task { await toggle(policy) }
+              if confirmingPolicyToggle {
+                Text(
+                  policy.enabled == false
+                    ? "Enable policy \(policy.title)? Matching Cloudflare alerts can reach this account again."
+                    : "Disable policy \(policy.title)? Matching Cloudflare alerts stop notifying this account."
+                )
+                .dashTextStyle(.supporting)
+                .foregroundStyle(DashTheme.subtle)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity)
+                Button {
+                  withAnimation(DashTheme.Motion.morph) { confirmingPolicyToggle = false }
+                } label: {
+                  Text("Cancel")
+                    .dashTextStyle(.buttonMedium)
+                    .foregroundStyle(DashTheme.subtle)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(DashPressButtonStyle())
+                DashActionButton(
+                  title: "Confirm",
+                  role: .destructive,
+                  isLoading: togglingPolicy
+                ) {
+                  Task { await toggle(policy) }
+                }
+              } else {
+                DashTrayPillButton(
+                  title: policy.enabled == false ? "Enable policy" : "Disable policy",
+                  isLoading: togglingPolicy
+                ) {
+                  toggleError = nil
+                  withAnimation(DashTheme.Motion.morph) { confirmingPolicyToggle = true }
+                }
               }
               if let toggleError {
                 DashNotice(kind: .error, message: toggleError)
@@ -891,6 +922,10 @@ struct AccountView: View {
         }
       }
     )
+    .onChange(of: detail?.id) { _, _ in
+      confirmingPolicyToggle = false
+      toggleError = nil
+    }
     .toolbar {
       if featureAllowsWrites, selectedTab == .members {
         ToolbarItem(placement: .topBarTrailing) {
@@ -1067,6 +1102,7 @@ struct AccountView: View {
         policyID: policy.id,
         input: policy.input(enabled: !(policy.enabled ?? true)))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
+      confirmingPolicyToggle = false
       detail = nil
       model.featureCache.remove(FeatureCacheKey.accountSnapshot(accountID))
       await load(force: true)

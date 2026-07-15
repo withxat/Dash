@@ -323,6 +323,91 @@ import UIKit
   #expect(base.staleness(now: Date(timeIntervalSince1970: 25 * 3600)) == .stale)
 }
 
+@Test func watchtowerCoverageSignalWarnsWhenZonesExceedFanout() {
+  #expect(WatchtowerEngine.coverageSignal(totalZones: 10) == nil)
+  #expect(WatchtowerEngine.coverageSignal(totalZones: 9) == nil)
+
+  let signal = WatchtowerEngine.coverageSignal(totalZones: 15)
+  #expect(signal?.id == WatchtowerEngine.coverageSignalID)
+  #expect(signal?.title == WatchtowerEngine.coverageSignalTitle)
+  #expect(signal?.status == .warning)
+  #expect(signal?.destination == .feature(.zones))
+  #expect(signal?.detail.contains("5 of 15") == true)
+
+  let snapshot = WatchtowerSnapshot(
+    signals: [signal!],
+    alerts: [],
+    alertsStatus: .ok,
+    missingScopeChecks: [],
+    failedChecks: [],
+    fetchedAt: Date(timeIntervalSince1970: 0))
+  #expect(snapshot.issueCount == 1)
+}
+
+@Test func watchtowerNotificationPlannerIgnoresCoverageSignal() {
+  func snapshot(issues: Int, signals: [WatchtowerWidgetSnapshot.Signal])
+    -> WatchtowerWidgetSnapshot
+  {
+    WatchtowerWidgetSnapshot(
+      issueCount: issues,
+      criticalCount: signals.filter { $0.status == "critical" }.count,
+      warningCount: signals.filter { $0.status == "warning" }.count,
+      signals: signals,
+      accountName: nil,
+      fetchedAt: Date(timeIntervalSince1970: 0))
+  }
+  let coverage = WatchtowerWidgetSnapshot.Signal(
+    title: WatchtowerEngine.coverageSignalTitle,
+    detail: "5 of 15 zones not checked",
+    status: "warning")
+  typealias Planner = WatchtowerNotificationPlanner
+
+  // Coverage appearing alone must not fire a local notification.
+  #expect(
+    Planner.plans(
+      previous: snapshot(issues: 0, signals: []),
+      current: snapshot(issues: 1, signals: [coverage])
+    ).isEmpty)
+
+  // A real warning rise still notifies, counting only notifiable issues.
+  let plans = Planner.plans(
+    previous: snapshot(issues: 1, signals: [coverage]),
+    current: snapshot(
+      issues: 2,
+      signals: [
+        coverage,
+        WatchtowerWidgetSnapshot.Signal(title: "tunnel", detail: "down", status: "warning"),
+      ]))
+  #expect(plans.map(\.identifier) == ["watchtower.issues"])
+  #expect(plans.first?.body.contains("1 issue needs") == true)
+}
+
+@Test func highImpactGenericTogglesRequireConfirmation() {
+  let pools = GenericResourceCapabilities.forPath("/accounts/abc/load_balancers/pools")
+  #expect(pools.updates.first?.confirmMessage != nil)
+
+  let balancers = GenericResourceCapabilities.forPath("/zones/xyz/load_balancers")
+  #expect(balancers.updates.first?.confirmMessage != nil)
+
+  let pageRules = GenericResourceCapabilities.forPath("/zones/xyz/pagerules")
+  #expect(pageRules.updates.first?.confirmMessage != nil)
+
+  let waitingRooms = GenericResourceCapabilities.forPath("/zones/xyz/waiting_rooms")
+  #expect(waitingRooms.updates.first?.confirmMessage != nil)
+
+  let healthchecks = GenericResourceCapabilities.forPath("/zones/xyz/healthchecks")
+  #expect(healthchecks.updates.first?.confirmMessage != nil)
+
+  let logpush = GenericResourceCapabilities.forPath("/accounts/abc/logpush/jobs")
+  #expect(logpush.updates.first?.confirmMessage != nil)
+
+  let registrar = GenericResourceCapabilities.forPath("/accounts/abc/registrar/domains")
+  #expect(registrar.updates.allSatisfy { $0.confirmMessage == nil })
+
+  let catalog = GenericResourceCapabilities.forPath("/accounts/abc/r2-catalog")
+  #expect(catalog.updates.first?.confirmMessage == nil)
+}
+
 @Test func watchtowerNotificationPlannerDiffsSnapshots() {
   func snapshot(issues: Int, critical: [String], warning: [String] = [])
     -> WatchtowerWidgetSnapshot

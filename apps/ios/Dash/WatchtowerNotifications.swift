@@ -13,6 +13,15 @@ enum WatchtowerNotificationPlanner {
     var body: String
   }
 
+  /// Coverage is a permanent sampling limit, not a new operational issue.
+  private static func isNotifiable(_ signal: WatchtowerWidgetSnapshot.Signal) -> Bool {
+    signal.title != WatchtowerEngine.coverageSignalTitle
+  }
+
+  private static func notifiableIssueCount(_ snapshot: WatchtowerWidgetSnapshot) -> Int {
+    snapshot.signals.filter { $0.status != "ok" && isNotifiable($0) }.count
+  }
+
   static func plans(
     previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot
   ) -> [Plan] {
@@ -22,9 +31,9 @@ enum WatchtowerNotificationPlanner {
     // Signals that are critical now but weren't before → one alert each, with
     // a stable identifier so a still-critical signal never re-notifies.
     let previousCritical = Set(
-      previous.signals.filter { $0.status == "critical" }.map(\.title))
+      previous.signals.filter { $0.status == "critical" && isNotifiable($0) }.map(\.title))
     let newCritical = current.signals.filter {
-      $0.status == "critical" && !previousCritical.contains($0.title)
+      $0.status == "critical" && isNotifiable($0) && !previousCritical.contains($0.title)
     }
     if !newCritical.isEmpty {
       return newCritical.map { signal in
@@ -36,13 +45,15 @@ enum WatchtowerNotificationPlanner {
     }
 
     // Otherwise, a rise in the overall issue count → one summary alert.
-    if current.issueCount > previous.issueCount {
+    let previousCount = notifiableIssueCount(previous)
+    let currentCount = notifiableIssueCount(current)
+    if currentCount > previousCount {
       return [
         Plan(
           identifier: "watchtower.issues",
           title: "Watchtower",
           body:
-            "\(current.issueCount) \(current.issueCount == 1 ? "issue needs" : "issues need") attention."
+            "\(currentCount) \(currentCount == 1 ? "issue needs" : "issues need") attention."
         )
       ]
     }

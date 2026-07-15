@@ -58,8 +58,9 @@ struct GenericCreateSpec {
   var revealResult: ((JSONValue) -> String?)?
 }
 
-/// A neutral, reversible write on a single row (enable/disable, lock/unlock),
-/// rendered as a pill under the row's detail fields — no confirm step.
+/// A write on a single row (enable/disable, lock/unlock), rendered as a pill
+/// under the row's detail fields. Set `confirmMessage` for high-impact toggles
+/// that need a second tap; leave it nil for low-risk reversible writes.
 struct GenericRowUpdate: Identifiable {
   let id: String
   let title: (GenericResource) -> String
@@ -67,6 +68,8 @@ struct GenericRowUpdate: Identifiable {
   /// Builds the request path from the list's base path and the row.
   let path: (String, GenericResource) -> String
   let body: (GenericResource) -> [String: JSONValue]
+  /// When set, the first tap shows this message and a Confirm button.
+  var confirmMessage: ((GenericResource) -> String)? = nil
 }
 
 /// A high-risk action on the whole screen (header more-menu), e.g. redeploy or
@@ -175,7 +178,12 @@ struct GenericResourceCapabilities {
           title: { $0.bool("enabled") == false ? "Enable pool" : "Disable pool" },
           method: "PATCH",
           path: { "\($0)/\($1.id)" },
-          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] },
+          confirmMessage: {
+            $0.bool("enabled") == false
+              ? "Enable pool \($0.name)? Traffic can start routing to its origins."
+              : "Disable pool \($0.name)? Load balancers stop using its origins."
+          })
       ]
       caps.deleteMessage = {
         "Permanently delete the pool \($0.name). Load balancers stop using its origins."
@@ -189,6 +197,11 @@ struct GenericResourceCapabilities {
           path: { "\($0)/\($1.id)" },
           body: {
             ["status": .string($0.string("status") == "active" ? "disabled" : "active")]
+          },
+          confirmMessage: {
+            $0.string("status") == "active"
+              ? "Disable this page rule? Matching requests stop applying its actions."
+              : "Enable this page rule? Matching requests will apply its actions."
           })
       ]
       caps.deleteMessage = { _ in "Permanently delete this page rule." }
@@ -262,7 +275,12 @@ struct GenericResourceCapabilities {
           title: { $0.bool("suspended") == true ? "Resume checks" : "Suspend checks" },
           method: "PATCH",
           path: { "\($0)/\($1.id)" },
-          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] })
+          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] },
+          confirmMessage: {
+            $0.bool("suspended") == true
+              ? "Resume health checks for \($0.name)?"
+              : "Suspend health checks for \($0.name)? Monitoring for this target pauses."
+          })
       ]
       caps.deleteMessage = { "Permanently delete the health check \($0.name)." }
     } else if path.hasSuffix("/waiting_rooms") {
@@ -288,7 +306,12 @@ struct GenericResourceCapabilities {
           title: { $0.bool("suspended") == true ? "Resume room" : "Suspend room" },
           method: "PATCH",
           path: { "\($0)/\($1.id)" },
-          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] })
+          body: { ["suspended": .bool(!($0.bool("suspended") ?? false))] },
+          confirmMessage: {
+            $0.bool("suspended") == true
+              ? "Resume waiting room \($0.name)?"
+              : "Suspend waiting room \($0.name)? Visitors stop entering the queue."
+          })
       ]
       caps.deleteMessage = { "Permanently delete the waiting room \($0.name)." }
     } else if path.hasSuffix("/load_balancers") {
@@ -298,7 +321,12 @@ struct GenericResourceCapabilities {
           title: { $0.bool("enabled") == false ? "Enable load balancer" : "Disable load balancer" },
           method: "PATCH",
           path: { "\($0)/\($1.id)" },
-          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] },
+          confirmMessage: {
+            $0.bool("enabled") == false
+              ? "Enable load balancer \($0.name)? Traffic starts following its pools."
+              : "Disable load balancer \($0.name)? Traffic falls back to DNS."
+          })
       ]
       caps.deleteMessage = {
         "Permanently delete the load balancer \($0.name). Traffic falls back to DNS."
@@ -370,7 +398,12 @@ struct GenericResourceCapabilities {
           title: { $0.bool("enabled") == false ? "Enable job" : "Disable job" },
           method: "PUT",
           path: { "\($0)/\($1.id)" },
-          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] })
+          body: { ["enabled": .bool(!($0.bool("enabled") ?? true))] },
+          confirmMessage: {
+            $0.bool("enabled") == false
+              ? "Enable this Logpush job (\($0.name))?"
+              : "Disable this Logpush job (\($0.name))? Log delivery pauses."
+          })
       ]
       caps.deleteMessage = { "Permanently delete this Logpush job (\($0.name))." }
     } else if path.hasSuffix("/dns_firewall") {
@@ -709,6 +742,7 @@ struct GenericResourcesView: View {
   @State private var showsMore = false
   @State private var updatingID: String?
   @State private var updateError: String?
+  @State private var pendingUpdate: GenericRowUpdate?
 
   private var capabilities: GenericResourceCapabilities {
     var capabilities = GenericResourceCapabilities.forPath(path)
@@ -809,12 +843,42 @@ struct GenericResourcesView: View {
         ) {
           if !capabilities.updates.isEmpty {
             VStack(spacing: 10) {
-              ForEach(capabilities.updates) { update in
-                DashTrayPillButton(
-                  title: update.title(resource),
-                  isLoading: updatingID == update.id
+              if let pendingUpdate, let message = pendingUpdate.confirmMessage?(resource) {
+                Text(message)
+                  .dashTextStyle(.supporting)
+                  .foregroundStyle(DashTheme.subtle)
+                  .multilineTextAlignment(.center)
+                  .fixedSize(horizontal: false, vertical: true)
+                  .frame(maxWidth: .infinity)
+                Button {
+                  withAnimation(DashTheme.Motion.morph) { self.pendingUpdate = nil }
+                } label: {
+                  Text("Cancel")
+                    .dashTextStyle(.buttonMedium)
+                    .foregroundStyle(DashTheme.subtle)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(DashPressButtonStyle())
+                DashActionButton(
+                  title: "Confirm",
+                  role: .destructive,
+                  isLoading: updatingID == pendingUpdate.id
                 ) {
-                  Task { await perform(update, on: resource) }
+                  Task { await perform(pendingUpdate, on: resource) }
+                }
+              } else {
+                ForEach(capabilities.updates) { update in
+                  DashTrayPillButton(
+                    title: update.title(resource),
+                    isLoading: updatingID == update.id
+                  ) {
+                    if update.confirmMessage != nil {
+                      updateError = nil
+                      withAnimation(DashTheme.Motion.morph) { pendingUpdate = update }
+                    } else {
+                      Task { await perform(update, on: resource) }
+                    }
+                  }
                 }
               }
               if let updateError {
@@ -825,6 +889,10 @@ struct GenericResourcesView: View {
         }
       }
     )
+    .onChange(of: selected?.id) { _, _ in
+      pendingUpdate = nil
+      updateError = nil
+    }
     .dashTray(isPresented: $creates, title: capabilities.create?.title ?? "New") {
       if let spec = capabilities.create {
         GenericCreateSheet(spec: spec) { body in
@@ -871,6 +939,7 @@ struct GenericResourcesView: View {
         path: update.path(basePath, resource), method: update.method,
         body: update.body(resource))
       UINotificationFeedbackGenerator().notificationOccurred(.success)
+      pendingUpdate = nil
       selected = nil
       await invalidateAndReload()
     } catch {

@@ -29,9 +29,28 @@ enum WatchtowerAlertsStatus: Sendable {
 }
 
 enum WatchtowerEngine {
-  private static let zoneFanoutLimit = 10
+  static let zoneFanoutLimit = 10
+  static let coverageSignalID = "zone-coverage"
+  static let coverageSignalTitle = "Zone coverage"
   private static let expiryWarningDays = 30
   private static let expiryCriticalDays = 7
+
+  /// Warns when certificates and healthchecks only cover a prefix of zones.
+  /// Returns nil when every zone is in scope.
+  static func coverageSignal(totalZones: Int, checkedLimit: Int = zoneFanoutLimit)
+    -> WatchtowerSignal?
+  {
+    guard totalZones > checkedLimit else { return nil }
+    let uncovered = totalZones - checkedLimit
+    return WatchtowerSignal(
+      id: coverageSignalID,
+      title: coverageSignalTitle,
+      detail:
+        "\(uncovered) of \(totalZones) zones not checked for certificates & healthchecks",
+      status: .warning,
+      destination: .feature(.zones)
+    )
+  }
 
   static func load(client: CloudflareClient, accountID: String) async -> (
     signals: [WatchtowerSignal],
@@ -143,6 +162,8 @@ enum WatchtowerEngine {
         "Recent alerts", result: alertsResult, missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     }
+
+    append(&signals, coverageSignal(totalZones: zones.count))
 
     return (
       signals: signals,

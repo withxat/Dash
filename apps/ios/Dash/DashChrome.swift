@@ -650,6 +650,7 @@ extension EnvironmentValues {
 struct CatalogToolbar: ToolbarContent {
   @Environment(AppModel.self) private var model
   @Environment(\.showsProfile) private var showsProfile
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   var body: some ToolbarContent {
     leadingAvatarItem
@@ -665,14 +666,26 @@ struct CatalogToolbar: ToolbarContent {
     }
   }
 
+  private var accountLabel: String {
+    model.activeAccount?.name ?? model.profileTitle
+  }
+
   private var profileButton: some View {
     Button {
       showsProfile.wrappedValue = true
     } label: {
-      HeaderProfileAvatar(email: model.user?.email ?? "")
+      HStack(spacing: 8) {
+        HeaderProfileAvatar(email: model.user?.email ?? "")
+        if !dynamicTypeSize.isAccessibilitySize {
+          Text(accountLabel)
+            .dashTextStyle(.supportingMedium)
+            .foregroundStyle(DashTheme.subtle)
+            .lineLimit(1)
+        }
+      }
     }
     .buttonStyle(DashPressButtonStyle())
-    .accessibilityLabel("Open profile")
+    .accessibilityLabel("Profile, \(accountLabel)")
   }
 }
 
@@ -1367,9 +1380,9 @@ struct DashActionButton: View {
   }
 }
 
-/// A neutral secondary pill for tray accessories — reversible writes like
-/// enable/disable or lock/unlock that need no confirm step, styled to match
-/// the R2 Download pill.
+/// A secondary pill for tray accessories — reversible writes like enable/disable
+/// or lock/unlock. High-impact toggles pair this with `GenericRowUpdate.confirmMessage`
+/// so the first tap asks for confirmation instead of mutating immediately.
 struct DashTrayPillButton: View {
   let title: String
   var isLoading = false

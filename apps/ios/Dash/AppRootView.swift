@@ -496,6 +496,15 @@ private struct MainTabView: View {
           scheduleTabBarRestore()
         }
       }
+      .onChange(of: model.activeAccountID) { _, _ in
+        homePath = NavigationPath()
+        itemsPath = NavigationPath()
+        watchtowerPath = NavigationPath()
+        searchPath = NavigationPath()
+        search = ""
+        showsProfile = false
+        showsEditShortcuts = false
+      }
       .environment(\.showsProfile, $showsProfile)
       .environment(\.showsEditShortcuts, $showsEditShortcuts)
       .dashTray(isPresented: $showsProfile, title: "Profile") {
@@ -811,6 +820,7 @@ struct ProfileTrayContent: View {
   /// Dismisses the tray and pushes the Profile page onto the active tab.
   let openProfile: () -> Void
   @State private var showsAccounts = false
+  @State private var pendingAccount: CloudflareAccount?
 
   private var morphAnimation: Animation {
     reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
@@ -818,7 +828,10 @@ struct ProfileTrayContent: View {
 
   var body: some View {
     ZStack {
-      if showsAccounts {
+      if let pendingAccount {
+        accountSwitchConfirmation(pendingAccount)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      } else if showsAccounts {
         accountList
           .transition(reduceMotion ? .opacity : .dashMorph)
       } else {
@@ -878,8 +891,11 @@ struct ProfileTrayContent: View {
       VStack(spacing: 10) {
         ForEach(model.accounts) { account in
           Button {
-            model.selectAccount(account)
-            dismiss()
+            if account.id == model.activeAccountID {
+              dismiss()
+              return
+            }
+            withAnimation(morphAnimation) { pendingAccount = account }
           } label: {
             HStack(spacing: 12) {
               Text(account.name)
@@ -913,6 +929,38 @@ struct ProfileTrayContent: View {
           .frame(maxWidth: .infinity, minHeight: 44)
       }
       .buttonStyle(DashPressButtonStyle())
+    }
+    .padding(.horizontal, DashTheme.Sheet.content)
+  }
+
+  private func accountSwitchConfirmation(_ account: CloudflareAccount) -> some View {
+    VStack(spacing: 16) {
+      Text(
+        "Switch to \(account.name)? Cached data and open screens for the current account will reset."
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.top, 4)
+
+      VStack(spacing: 4) {
+        Button {
+          withAnimation(morphAnimation) { pendingAccount = nil }
+        } label: {
+          Text("Cancel")
+            .dashTextStyle(.buttonMedium)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .buttonStyle(DashPressButtonStyle())
+
+        DashActionButton(title: "Switch account") {
+          model.selectAccount(account)
+          dismiss()
+        }
+      }
     }
     .padding(.horizontal, DashTheme.Sheet.content)
   }
