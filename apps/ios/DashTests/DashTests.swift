@@ -37,7 +37,7 @@ import UIKit
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 39)
+  #expect(FeatureID.allCases.count == 4)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -52,29 +52,47 @@ import UIKit
   }
 }
 
-@Test @MainActor func appModelDefaultsToCorePermissions() {
-  let defaults = UserDefaults.standard
-  let previous = defaults.object(forKey: AppModel.experimentalFeaturesDefaultsKey)
-  defaults.set(false, forKey: AppModel.experimentalFeaturesDefaultsKey)
-  defer {
-    if let previous {
-      defaults.set(previous, forKey: AppModel.experimentalFeaturesDefaultsKey)
-    } else {
-      defaults.removeObject(forKey: AppModel.experimentalFeaturesDefaultsKey)
-    }
+/// The catalog is the default grant. Every feature the Features tab shows must
+/// be fully usable without an incremental authorization, so nothing can resolve
+/// to `.locked` or `.readOnly` out of the box. A new FeatureID belongs in
+/// `coreFeatures` at the same time it gets a descriptor, or it does not ship.
+@Test func everyFeatureIsFullyUsableOnADefaultGrant() {
+  #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
+  for feature in FeatureID.allCases {
+    #expect(
+      feature.capability.accessLevel(grantedScopes: DashAuthorizationScopes.core) == .full)
   }
+}
 
+@Test @MainActor func appModelDefaultsToCorePermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.core.count == 66)
-  #expect(DashAuthorizationScopes.experimental.count == 8)
+  #expect(DashAuthorizationScopes.core.count == 27)
   #expect(DashAuthorizationScopes.core.isStrictSubset(of: Set(CloudflareScopes.published)))
-  #expect(DashAuthorizationScopes.experimental.isDisjoint(with: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.searchResources.isSubset(of: DashAuthorizationScopes.core))
   #expect(DashAuthorizationScopes.watchtower.isSubset(of: DashAuthorizationScopes.core))
   #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
-  #expect(!model.selectedScopes.contains("ai.read"))
+}
+
+/// Scopes that no surviving FeatureID declares, but that kept screens and App
+/// Intents still call. `core` is derived from `coreFeatures`, so retiring a
+/// feature drops its scopes from the grant with no build error and no runtime
+/// error here — just a 403 on a screen that stayed. Each of these outlived the
+/// feature that used to carry it.
+@Test func scopesOutliveTheRetiredFeaturesThatDeclaredThem() {
+  let operational: Set<String> = [
+    "dns.read", "dns.write",  // DNSRecordsView, including create and delete
+    "cache.purge",  // CachePurgeView and PurgeCacheIntent
+    "argotunnel.read",  // Watchtower tunnelsSignal
+    "notifications.read",  // Watchtower alerts
+    "ssl-and-certificates.read",  // Watchtower certsSignal
+    "account-analytics.read",  // Worker metrics card (account-scoped GraphQL)
+    "page.read",  // Watchtower pagesSignal
+    "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
+    "workers-tail.read",  // WorkerTailView
+  ]
+  #expect(operational.isSubset(of: DashAuthorizationScopes.core))
 }
 
 @Test @MainActor func identityFailuresOnlySignOutOnDefinitive401() {
@@ -211,41 +229,28 @@ import UIKit
   #expect(FeatureCatalogView.defaultFilter == .available)
   let coldLaunch = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
-    grantedScopes: nil,
-    experimentalEnabled: false)
-  #expect(coldLaunch.count == FeatureCatalog.all.count - 4)
+    grantedScopes: nil)
+  #expect(coldLaunch.count == FeatureCatalog.all.count)
 }
 
 @Test func featureCatalogFilteringRespectsAccess() {
   let scopes: Set<String> = ["zone.read"]
   let locked = FeatureCatalogFiltering.features(
-    filter: .locked, grantedScopes: scopes, experimentalEnabled: false)
+    filter: .locked, grantedScopes: scopes)
   #expect(locked.contains(.workers))
   #expect(!locked.contains(.zones))
 
   let readOnly = FeatureCatalogFiltering.features(
-    filter: .readOnly, grantedScopes: scopes, experimentalEnabled: false)
+    filter: .readOnly, grantedScopes: scopes)
   #expect(readOnly.contains(.zones))
   #expect(!readOnly.contains(.workers))
 
   let fullScopes = Set(FeatureID.zones.capability.all)
   let available = FeatureCatalogFiltering.features(
-    filter: .available, grantedScopes: fullScopes, experimentalEnabled: false)
+    filter: .available, grantedScopes: fullScopes)
   #expect(available.contains(.zones))
 }
 
-@Test func experimentalFeatureVisibilityRequiresOptIn() {
-  let hidden = FeatureCatalogFiltering.features(
-    filter: .all, grantedScopes: nil, experimentalEnabled: false)
-  let shown = FeatureCatalogFiltering.features(
-    filter: .all, grantedScopes: nil, experimentalEnabled: true)
-  #expect(
-    DashAuthorizationScopes.experimentalFeatures.allSatisfy {
-      !hidden.contains($0) && shown.contains($0)
-    })
-}
-
-/// Text search lives behind the tab-bar Search role; the catalog itself does not take a query.
 @Test func featureSearchMatchesTitleSubtitleAndID() {
   #expect(FeatureCatalog.matchesSearch(.zones, query: "ZoNe"))
   #expect(FeatureCatalog.matchesSearch(.r2, query: "bucket"))
@@ -259,10 +264,46 @@ import UIKit
   #expect(featureID(for: .worker("api")) == .workers)
   #expect(featureID(for: .r2Bucket("media")) == .r2)
   #expect(featureID(for: .kvNamespace("ns")) == .kv)
-  #expect(featureID(for: .d1Database("db", "main")) == .d1)
-  #expect(featureID(for: .rulesetList(basePath: "/x", title: "Rules")) == .rulesets)
-  #expect(featureID(for: .accessAppPolicies(appID: "a", appName: "App")) == .accessPolicies)
   #expect(featureID(for: .profile) == nil)
+}
+
+/// Tunnels and Pages report problems the app has no screen for, so their rows
+/// no longer push anywhere. The row has to name the broken resource or it is a
+/// dead end: "1 tunnel down", which one, nowhere to tap.
+@MainActor
+@Test func watchtowerRowsNameTheResourceTheyCannotPushTo() {
+  func signal(
+    _ detail: String, resource: String?, status: WatchtowerStatus = .critical
+  ) -> WatchtowerSignal {
+    WatchtowerSignal(
+      id: "t", title: "Tunnels", detail: detail, status: status,
+      destination: nil, resourceName: resource)
+  }
+  #expect(
+    WatchtowerView.signalDetail(signal("1 tunnel down", resource: "homelab-01"))
+      == "1 tunnel down · homelab-01")
+  // Healthy signals have no offender to name.
+  #expect(
+    WatchtowerView.signalDetail(signal("All 3 healthy", resource: "x", status: .ok))
+      == "All 3 healthy")
+  // Pages already interpolates the project name — don't say it twice.
+  #expect(
+    WatchtowerView.signalDetail(signal("site: latest deployment failed", resource: "site"))
+      == "site: latest deployment failed")
+  #expect(WatchtowerView.signalDetail(signal("1 down", resource: nil)) == "1 down")
+}
+
+/// The scopes with no FeatureID of their own. `requiredScopes` must name them
+/// literally: falling through to `.zones.capability.all` compiles clean and
+/// silently drops them, and the screen 403s on save.
+@Test func requiredScopesNameTheOperationalScopesLiterally() {
+  #expect(requiredScopes(for: .dns("z1")).contains("dns.write"))
+  #expect(requiredScopes(for: .cache("z1")).contains("cache.purge"))
+  #expect(requiredScopes(for: .zoneSettings("z1")).contains("zone-settings.write"))
+  #expect(requiredScopes(for: .workerTail("api")).contains("workers-tail.read"))
+  // Each is absent from the feature the destination maps to.
+  #expect(!FeatureID.zones.capability.all.contains("dns.write"))
+  #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
 }
 
 // `View` is a @MainActor protocol, so StatusBadge/DashNotice statics are
@@ -316,19 +357,16 @@ import UIKit
 
 @Test func featureVisualIdentityMapsStableTonesByCategory() {
   #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
-  #expect(FeatureVisualIdentity.tone(for: .dnsFirewall) == .success)
   #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)
-  #expect(FeatureVisualIdentity.tone(for: .analytics) == .accent)
-  #expect(FeatureVisualIdentity.tone(for: .workersAI) == .warning)
-  #expect(FeatureVisualIdentity.tone(for: .turnstile) == .danger)
-  #expect(FeatureVisualIdentity.tone(for: .accessApps) == .info)
-  #expect(FeatureVisualIdentity.tone(for: .tunnels) == .brand)
-  #expect(FeatureVisualIdentity.tone(for: .account) == .soft)
+  #expect(FeatureVisualIdentity.tone(for: .kv) == .accent)
 
+  // Every catalog section reads as one color family, and no surviving feature
+  // falls through to the `default:` tone.
   for (_, features) in FeatureCatalog.grouped {
     let tones = Set(features.map { FeatureVisualIdentity.tone(for: $0) })
     #expect(tones.count == 1)
+    #expect(tones != [.soft])
   }
 }
 
@@ -339,7 +377,7 @@ import UIKit
   #expect(Set(outline).count == outline.count)
 }
 
-@Test func trayDragDecisionUsesProjectionAndVelocity() {
+@Test func contentTrayDragDecisionUsesProjectionAndVelocity() {
   #expect(
     TrayDragDecision.content(translation: 40, predictedEndTranslation: 40) == .settle)
   #expect(
@@ -348,15 +386,53 @@ import UIKit
     TrayDragDecision.content(translation: 40, predictedEndTranslation: 200) == .dismiss)
   #expect(
     TrayDragDecision.content(translation: 40, predictedEndTranslation: 1000) == .dismiss)
+}
 
+@Test func expandableTraySlowSmallDragsDoNotDismiss() {
   #expect(
     TrayDragDecision.expandable(
-      baseTop: 100, predictedEndTranslation: 20, expandedTop: 80, floatingTop: 400
+      startDetent: .expanded, translation: 60, predictedEndTranslation: 140, velocity: 320,
+      expandedTop: 80, floatingTop: 400
     ) == .settleExpanded(true))
   #expect(
     TrayDragDecision.expandable(
-      baseTop: 400, predictedEndTranslation: 300, expandedTop: 80, floatingTop: 400
+      startDetent: .floating, translation: 60, predictedEndTranslation: 140, velocity: 320,
+      expandedTop: 80, floatingTop: 400
+    ) == .settleExpanded(false))
+}
+
+@Test func expandableTrayFastFlickUsesStartingDetent() {
+  #expect(
+    TrayDragDecision.expandable(
+      startDetent: .floating, translation: 40, predictedEndTranslation: 300, velocity: 1_040,
+      expandedTop: 80, floatingTop: 400
     ) == .dismiss)
+  #expect(
+    TrayDragDecision.expandable(
+      startDetent: .expanded, translation: 40, predictedEndTranslation: 300, velocity: 1_040,
+      expandedTop: 80, floatingTop: 400
+    ) == .settleExpanded(false))
+}
+
+@Test func expandableTrayDeliberatePullUsesDistancePastFloatingDetent() {
+  #expect(
+    TrayDragDecision.expandable(
+      startDetent: .floating, translation: 130, predictedEndTranslation: 130, velocity: 0,
+      expandedTop: 80, floatingTop: 400
+    ) == .dismiss)
+  #expect(
+    TrayDragDecision.expandable(
+      startDetent: .expanded, translation: 130, predictedEndTranslation: 430, velocity: 1_200,
+      expandedTop: 80, floatingTop: 400
+    ) == .settleExpanded(false))
+  #expect(
+    TrayDragDecision.expandable(
+      startDetent: .expanded, translation: 450, predictedEndTranslation: 450, velocity: 0,
+      expandedTop: 80, floatingTop: 400
+    ) == .dismiss)
+}
+
+@Test func trayDragRubberBandsAboveExpandedDetent() {
   #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
 }
 
@@ -379,13 +455,13 @@ import UIKit
   #expect(zone.destination == .zone("z1"))
 }
 
-@Test func oldAndExperimentalShortcutsDecodeSafely() {
+/// Raw values of removed features must drop out of a persisted shortcut list
+/// rather than break Home. `compactMap` is the only migration path there is.
+@Test func oldShortcutsDecodeSafely() {
   let decoded = "zones,apiExplorer,workersAI,magicNetworking"
     .split(separator: ",")
     .compactMap { FeatureID(rawValue: String($0)) }
-  #expect(decoded == [.zones, .workersAI])
-  #expect(
-    decoded.filter { !DashAuthorizationScopes.experimentalFeatures.contains($0) } == [.zones])
+  #expect(decoded == [.zones])
 }
 
 @Test func searchResourceFilteringMatchesNames() {
@@ -405,6 +481,8 @@ import UIKit
   // Toggle adds when absent, removes when present.
   let added = PinnedZones.toggled("", pin: a)
   #expect(PinnedZones.isPinned(added, zoneID: "z1"))
+  let newest = PinnedZone(accountID: "acc1", zoneID: "z3", name: "new.example")
+  #expect(PinnedZones.decode(PinnedZones.toggled(added, pin: newest)) == [newest, a])
   let removed = PinnedZones.toggled(encoded, pin: a)
   #expect(!PinnedZones.isPinned(removed, zoneID: "z1"))
   #expect(PinnedZones.decode(removed) == [b])
@@ -415,6 +493,54 @@ import UIKit
   // Account filtering keeps other accounts' pins invisible.
   let mine = PinnedZones.decode(encoded).filter { $0.accountID == "acc1" }
   #expect(mine == [a])
+}
+
+@Test func pinnedZonesBootstrapOnceAndPrioritizePins() {
+  let defaults = (1...5).map {
+    PinnedZone(accountID: "acc1", zoneID: "z\($0)", name: "zone-\($0).example")
+  }
+  let bootstrapped = PinnedZones.bootstrapped(
+    "",
+    initializedAccountsRaw: "",
+    accountID: "acc1",
+    defaults: defaults)
+
+  #expect(PinnedZones.decode(bootstrapped.pins) == Array(defaults.prefix(4)))
+  #expect(bootstrapped.initializedAccounts == "acc1")
+  #expect(
+    PinnedZones.pinnedZoneIDs(in: bootstrapped.pins, accountID: "acc1")
+      == ["z1", "z2", "z3", "z4"])
+  #expect(
+    PinnedZones.prioritizedZoneIDs(
+      ["z5", "z3", "z2", "z1", "z4"],
+      pinsRaw: bootstrapped.pins,
+      accountID: "acc1"
+    ) == ["z1", "z2", "z3", "z4", "z5"])
+
+  // Once initialized, a deliberate empty pin set stays empty.
+  let afterManualClear = PinnedZones.bootstrapped(
+    "",
+    initializedAccountsRaw: bootstrapped.initializedAccounts,
+    accountID: "acc1",
+    defaults: defaults)
+  #expect(afterManualClear.pins.isEmpty)
+
+  // Another account still initializes independently.
+  let other = PinnedZones.bootstrapped(
+    bootstrapped.pins,
+    initializedAccountsRaw: bootstrapped.initializedAccounts,
+    accountID: "acc2",
+    defaults: [PinnedZone(accountID: "acc2", zoneID: "other", name: "other.example")])
+  #expect(other.initializedAccounts == "acc1,acc2")
+  #expect(PinnedZones.decode(other.pins).first?.accountID == "acc2")
+}
+
+@Test func homeZonesTrailingPullRequiresThresholdDistance() {
+  #expect(HomeZonesPullDecision.progress(distance: 0) == 0)
+  #expect(HomeZonesPullDecision.progress(distance: 32) == 0.5)
+  #expect(HomeZonesPullDecision.progress(distance: 80) == 1)
+  #expect(!HomeZonesPullDecision.shouldOpen(distance: 63))
+  #expect(HomeZonesPullDecision.shouldOpen(distance: 64))
 }
 
 @MainActor
@@ -471,12 +597,12 @@ import UIKit
   #expect(parse("dash://worker/my%20worker") == .worker("my worker"))  // percent-decoded
   #expect(parse("dash://r2/my-bucket") == .r2("my-bucket"))
   #expect(parse("dash://kv/ns1") == .kv("ns1"))
-  #expect(parse("dash://d1/db-uuid/analytics") == .d1(id: "db-uuid", name: "analytics"))
-  #expect(parse("dash://d1/db-uuid") == .d1(id: "db-uuid", name: "db-uuid"))
 
   // Rejections.
   #expect(parse("dash://oauth/callback?code=x") == nil)  // owned by the auth session
   #expect(parse("dash://feature/bogus") == nil)  // unknown FeatureID
+  #expect(parse("dash://feature/d1") == nil)  // retired FeatureID
+  #expect(parse("dash://d1/db-uuid") == nil)  // retired host; stale Spotlight items land here
   #expect(parse("dash://zone") == nil)  // missing id
   #expect(parse("https://watchtower") == nil)  // wrong scheme
   #expect(parse("dash://unknownhost") == nil)
@@ -488,7 +614,6 @@ import UIKit
   #expect(DashRoute.worker("w").destination == .worker("w"))
   #expect(DashRoute.r2("b").destination == .r2Bucket("b"))
   #expect(DashRoute.kv("n").destination == .kvNamespace("n"))
-  #expect(DashRoute.d1(id: "i", name: "n").destination == .d1Database("i", "n"))
 }
 
 @Test func underAttackRestoreLevelFallsBackToMedium() {
@@ -604,63 +729,12 @@ import UIKit
   #expect(plans.first?.body.contains("1 issue needs") == true)
 }
 
-@Test func highImpactGenericTogglesRequireConfirmation() {
-  let pools = GenericResourceCapabilities.forPath("/accounts/abc/load_balancers/pools")
-  #expect(pools.updates.first?.confirmMessage != nil)
-
-  let balancers = GenericResourceCapabilities.forPath("/zones/xyz/load_balancers")
-  #expect(balancers.updates.first?.confirmMessage != nil)
-
-  let pageRules = GenericResourceCapabilities.forPath("/zones/xyz/pagerules")
-  #expect(pageRules.updates.first?.confirmMessage != nil)
-
-  let waitingRooms = GenericResourceCapabilities.forPath("/zones/xyz/waiting_rooms")
-  #expect(waitingRooms.updates.first?.confirmMessage != nil)
-
-  let healthchecks = GenericResourceCapabilities.forPath("/zones/xyz/healthchecks")
-  #expect(healthchecks.updates.first?.confirmMessage != nil)
-
-  let logpush = GenericResourceCapabilities.forPath("/accounts/abc/logpush/jobs")
-  #expect(logpush.updates.first?.confirmMessage != nil)
-
-  let registrar = GenericResourceCapabilities.forPath("/accounts/abc/registrar/domains")
-  #expect(registrar.updates.allSatisfy { $0.confirmMessage == nil })
-}
-
-@Test func genericDetailPhaseAllowsOnlyOneDecision() {
-  #expect(GenericDetailPhase.details.title(for: "pool-1") == "pool-1")
-  #expect(GenericDetailPhase.delete.title(for: "pool-1") == "Delete")
-  #expect(GenericDetailPhase.update(id: "enable").title(for: "pool-1") == "Confirm")
-  #expect(GenericDetailPhase.details != .delete)
-  #expect(GenericDetailPhase.update(id: "a") != .update(id: "b"))
-}
-
-@Test func workerDeployAndD1RiskClassification() {
-  #expect(workerSourceIsEditable(moduleCount: 1, hasWriteScope: true))
-  #expect(D1SQL.destructiveKeyword(in: "DROP TABLE t;") == "DROP")
-  #expect(D1SQL.destructiveKeyword(in: "SELECT 1;") == nil)
-}
-
 @MainActor
 @Test func workerTailEventRowAccessibilityIncludesSummary() {
   let event = WorkerTailEvent(
     timestamp: nil, outcome: "ok", summary: "GET /", lines: ["hello"])
   #expect(WorkerTailEventRow.accessibilityLabel(for: event).contains("GET /"))
   #expect(WorkerTailEventRow.outcomeColor("exception") == DashTheme.danger)
-}
-
-@Test func genericDetailFieldMapSeparatesPrimaryAndAdvanced() {
-  let json = """
-    {"name":"example.com","status":"active","id":"abc","custom_meta":"x"}
-    """
-  let resource = try! JSONDecoder().decode(GenericResource.self, from: Data(json.utf8))
-  let primary = GenericDetailFieldMap.primaryFields(from: resource)
-  let advanced = GenericDetailFieldMap.advancedFields(from: resource)
-  #expect(primary.contains { $0.label == "Name" })
-  #expect(primary.contains { $0.label == "Status" })
-  #expect(advanced.contains { $0.value == "abc" || $0.value == "x" })
-  #expect(GenericDetailFieldMap.humanCategoryTitle("Workers & Pages") == "Workers")
-  #expect(GenericDetailFieldMap.humanCategoryTitle("Domains & DNS") == "DNS")
 }
 
 @Test func watchtowerNotificationPlannerDiffsSnapshots() {
@@ -714,142 +788,6 @@ import UIKit
   #expect(scopes.contains("zone.read"))
   #expect(scopes.contains("workers-scripts.read"))
   #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
-}
-
-@Test func remainingRegistryPathsCarryTheirWrites() {
-  let containers = GenericResourceCapabilities.forPath("/accounts/abc/containers/applications")
-  #expect(containers.deleteMessage != nil)
-  #expect(containers.create == nil)
-}
-
-@Test func hubRegistryPathsCarryTheirWrites() {
-  let warp = GenericResourceCapabilities.forPath("/accounts/abc/warp_connector")
-  #expect(warp.deleteMessage != nil)
-
-  let virtualNetworks = GenericResourceCapabilities.forPath(
-    "/accounts/abc/teamnet/virtual_networks")
-  #expect(virtualNetworks.create != nil)
-  #expect(virtualNetworks.deleteMessage != nil)
-
-  let queries = GenericResourceCapabilities.forPath(
-    "/accounts/abc/workers/observability/queries")
-  #expect(queries.deleteMessage != nil)
-
-  let destinations = GenericResourceCapabilities.forPath(
-    "/accounts/abc/workers/observability/destinations")
-  #expect(destinations.deleteMessage != nil)
-  #expect(destinations.deletePath != nil)
-}
-
-@Test func teamnetRoutesStayDistinctFromWorkerRoutes() {
-  // Both end in "/routes"; each must resolve to its own capabilities.
-  let teamnet = GenericResourceCapabilities.forPath("/accounts/abc/teamnet/routes")
-  #expect(teamnet.create == nil)
-  #expect(teamnet.deleteMessage != nil)
-
-  let workerRoutes = GenericResourceCapabilities.forPath("/zones/xyz/workers/routes")
-  #expect(workerRoutes.create != nil)
-  #expect(workerRoutes.deleteMessage != nil)
-}
-
-@Test func zonePickerRoutesEachFeatureToItsSurface() {
-  #expect(
-    zoneDestination(for: .sslCertificates, zoneID: "z1", zoneName: "example.com")
-      == .zoneFeatureHub(feature: .sslCertificates, zoneID: "z1", zoneName: "example.com"))
-  #expect(
-    zoneDestination(for: .apiSecurity, zoneID: "z1", zoneName: "example.com")
-      == .zoneFeatureHub(feature: .apiSecurity, zoneID: "z1", zoneName: "example.com"))
-  #expect(
-    zoneDestination(for: .botManagement, zoneID: "z1", zoneName: "example.com")
-      == .botManagement(zoneID: "z1", zoneName: "example.com"))
-  #expect(
-    zoneDestination(for: .cacheSettings, zoneID: "z1", zoneName: "example.com")
-      == .cachePerformance(zoneID: "z1", zoneName: "example.com"))
-}
-
-@Test func zoneHubRegistryPathsCarryTheirWrites() {
-  let views = GenericResourceCapabilities.forPath("/accounts/abc/dns_settings/views")
-  #expect(views.create != nil)
-  #expect(views.deleteMessage != nil)
-
-  let hostnames = GenericResourceCapabilities.forPath("/zones/xyz/custom_hostnames")
-  #expect(hostnames.create != nil)
-  #expect(hostnames.deleteMessage != nil)
-
-  let certificates = GenericResourceCapabilities.forPath("/zones/xyz/custom_certificates")
-  #expect(certificates.create == nil)
-  #expect(certificates.deleteMessage != nil)
-
-  // The query suffix must not defeat path matching.
-  let packs = GenericResourceCapabilities.forPath(
-    "/zones/xyz/ssl/certificate_packs?status=all")
-  #expect(packs.deleteMessage != nil)
-}
-
-@Test func onlyUnmanagedRulesetsAreEditable() {
-  #expect(rulesetKindIsEditable("custom"))
-  #expect(rulesetKindIsEditable("root"))
-  #expect(rulesetKindIsEditable("zone"))
-  #expect(!rulesetKindIsEditable("managed"))
-  #expect(!rulesetKindIsEditable(nil))
-}
-
-@Test func accessIncludeRulesBuildDocumentedShapes() {
-  let rules = accessIncludeRules([
-    (kind: "Everyone", value: ""),
-    (kind: "Email", value: "i@xat.sh"),
-    (kind: "Email domain", value: "xat.sh"),
-  ])
-  #expect(
-    rules == [
-      .object(["everyone": .object([:])]),
-      .object(["email": .object(["email": .string("i@xat.sh")])]),
-      .object(["email_domain": .object(["domain": .string("xat.sh")])]),
-    ])
-  // Empty values drop the row instead of sending an invalid rule.
-  #expect(accessIncludeRules([(kind: "Email", value: "")]).isEmpty)
-}
-
-@Test func accessAppsRegistryOffersCreateAndDelete() {
-  let apps = GenericResourceCapabilities.forPath("/accounts/abc/access/apps")
-  #expect(apps.create != nil)
-  #expect(apps.deleteMessage != nil)
-}
-
-@Test func workerEditingRequiresScopeAndSingleModule() {
-  #expect(workerSourceIsEditable(moduleCount: 0, hasWriteScope: true))
-  #expect(workerSourceIsEditable(moduleCount: 1, hasWriteScope: true))
-  #expect(!workerSourceIsEditable(moduleCount: 2, hasWriteScope: true))
-  #expect(!workerSourceIsEditable(moduleCount: 1, hasWriteScope: false))
-}
-
-@Test func certificatePackOrderAndServiceTokenRegistryEntries() {
-  let packs = GenericResourceCapabilities.forPath("/zones/xyz/ssl/certificate_packs?status=all")
-  #expect(packs.create != nil)
-  #expect(
-    packs.createPath?("/zones/xyz/ssl/certificate_packs")
-      == "/zones/xyz/ssl/certificate_packs/order")
-  #expect(packs.create?.revealResult != nil)
-  let orderBody = packs.create?.body([
-    "hosts": "example.com, www.example.com",
-    "certificate_authority": "lets_encrypt",
-    "validation_method": "txt",
-    "validity_days": "90",
-  ])
-  #expect(orderBody?["type"] == .string("advanced"))
-  #expect(orderBody?["hosts"] == .array([.string("example.com"), .string("www.example.com")]))
-  #expect(orderBody?["validity_days"] == .number(90))
-
-  let tokens = GenericResourceCapabilities.forPath("/accounts/abc/access/service_tokens")
-  #expect(tokens.create != nil)
-  #expect(tokens.deleteMessage != nil)
-  let revealed = tokens.create?.revealResult?(
-    .object([
-      "id": .string("t1"),
-      "client_id": .string("cid.access"),
-      "client_secret": .string("shh"),
-    ]))
-  #expect(revealed == "CF-Access-Client-Id: cid.access\nCF-Access-Client-Secret: shh")
 }
 
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {
@@ -942,158 +880,4 @@ import UIKit
     !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: true, navigationDepth: 2))
   #expect(
     !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: false, navigationDepth: 0))
-}
-
-@Test func d1DestructiveDetectorFlagsWritesNotReads() {
-  // Read-safe statements run without a confirm.
-  #expect(D1SQL.destructiveKeyword(in: "SELECT * FROM users;") == nil)
-  #expect(D1SQL.destructiveKeyword(in: "PRAGMA table_info(users);") == nil)
-  #expect(D1SQL.destructiveKeyword(in: "CREATE TABLE t (id INTEGER);") == nil)
-  #expect(D1SQL.destructiveKeyword(in: "EXPLAIN QUERY PLAN SELECT 1;") == nil)
-  #expect(D1SQL.destructiveKeyword(in: "INSERT INTO t VALUES (1);") == nil)
-  #expect(D1SQL.destructiveKeyword(in: "") == nil)
-
-  // Destructive statements are flagged with their keyword.
-  #expect(D1SQL.destructiveKeyword(in: "DROP TABLE users;") == "DROP")
-  #expect(D1SQL.destructiveKeyword(in: "delete from users where id = 1") == "DELETE")
-  #expect(D1SQL.destructiveKeyword(in: "Update users SET name = 'x';") == "UPDATE")
-  #expect(D1SQL.destructiveKeyword(in: "ALTER TABLE t ADD COLUMN c;") == "ALTER")
-  #expect(D1SQL.destructiveKeyword(in: "REPLACE INTO t VALUES (1);") == "REPLACE")
-
-  // Multi-statement input: any destructive statement flags the batch.
-  #expect(D1SQL.destructiveKeyword(in: "SELECT 1; DROP TABLE x;") == "DROP")
-
-  // Comments and whitespace do not hide the verb.
-  #expect(D1SQL.destructiveKeyword(in: "-- cleanup\ndrop table x") == "DROP")
-  #expect(D1SQL.destructiveKeyword(in: "/* audit */ DELETE FROM t;") == "DELETE")
-  // A commented-out write stays read-safe.
-  #expect(D1SQL.destructiveKeyword(in: "-- DROP TABLE x\nSELECT 1;") == nil)
-
-  // CTEs and upserts get the word-boundary scan.
-  #expect(
-    D1SQL.destructiveKeyword(in: "WITH old AS (SELECT id FROM t) DELETE FROM t;") == "DELETE")
-  #expect(D1SQL.destructiveKeyword(in: "INSERT OR REPLACE INTO t VALUES (1);") == "REPLACE")
-  #expect(
-    D1SQL.destructiveKeyword(
-      in: "INSERT INTO t VALUES (1) ON CONFLICT DO UPDATE SET x = 2;") == "UPDATE")
-
-  // Identifiers containing keyword substrings stay safe.
-  #expect(D1SQL.destructiveKeyword(in: "SELECT * FROM legacy_update;") == nil)
-  #expect(
-    D1SQL.destructiveKeyword(in: "WITH d AS (SELECT * FROM audit_delete_log) SELECT * FROM d;")
-      == nil)
-}
-
-@Test func d1QuotedIdentifierEscapesKeywordsAndEmbeddedQuotes() {
-  #expect(d1QuotedIdentifier("users") == "\"users\"")
-  #expect(d1QuotedIdentifier("order") == "\"order\"")
-  #expect(d1QuotedIdentifier("has space") == "\"has space\"")
-  #expect(d1QuotedIdentifier("weird\"name") == "\"weird\"\"name\"")
-  #expect(d1QuotedIdentifier("a\"b\"c") == "\"a\"\"b\"\"c\"")
-}
-
-// MARK: - AvatarStore
-
-/// Serialized because the mock protocol's handler is a shared static.
-@Suite(.serialized) struct AvatarStoreTests {
-  @MainActor
-  private func makeStore(
-    handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)
-  ) -> AvatarStore {
-    AvatarMockURLProtocol.handler = handler
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [AvatarMockURLProtocol.self]
-    return AvatarStore(session: URLSession(configuration: configuration))
-  }
-
-  @MainActor
-  private func waitForImage(in store: AvatarStore, email: String) async throws -> Bool {
-    for _ in 0..<200 {
-      if store.image(for: email) != nil { return true }
-      try await Task.sleep(for: .milliseconds(10))
-    }
-    return false
-  }
-
-  private var pixel: Data {
-    UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).pngData { context in
-      UIColor.orange.setFill()
-      context.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
-    }
-  }
-
-  @Test @MainActor func singleFlightsAndNormalizesRepeatRequests() async throws {
-    let log = RequestLog()
-    let image = pixel
-    let store = makeStore { _ in
-      _ = log.next()
-      return (200, image)
-    }
-    store.ensureLoaded("i@xat.sh")
-    store.ensureLoaded(" I@XAT.SH ")
-    #expect(try await waitForImage(in: store, email: "i@xat.sh"))
-    store.ensureLoaded("i@xat.sh")
-    #expect(store.image(for: " I@Xat.sh ") != nil)
-    #expect(log.count == 1)
-  }
-
-  @Test @MainActor func treats404AsDefinitiveNoAvatar() async throws {
-    let log = RequestLog()
-    let store = makeStore { _ in
-      _ = log.next()
-      return (404, Data())
-    }
-    store.ensureLoaded("i@xat.sh")
-    for _ in 0..<20 {
-      store.ensureLoaded("i@xat.sh")
-      try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(store.image(for: "i@xat.sh") == nil)
-    #expect(log.count == 1)
-  }
-
-  @Test @MainActor func retriesAfterTransientFailure() async throws {
-    let log = RequestLog()
-    let image = pixel
-    let store = makeStore { _ in
-      if log.next() == 1 { throw URLError(.notConnectedToInternet) }
-      return (200, image)
-    }
-    for _ in 0..<200 {
-      store.ensureLoaded("i@xat.sh")
-      if store.image(for: "i@xat.sh") != nil { break }
-      try await Task.sleep(for: .milliseconds(10))
-    }
-    #expect(store.image(for: "i@xat.sh") != nil)
-    #expect(log.count == 2)
-  }
-}
-
-private final class RequestLog: @unchecked Sendable {
-  private let lock = NSLock()
-  private var value = 0
-  var count: Int { lock.withLock { value } }
-  func next() -> Int {
-    lock.withLock {
-      value += 1
-      return value
-    }
-  }
-}
-
-private final class AvatarMockURLProtocol: URLProtocol, @unchecked Sendable {
-  nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
-  override class func canInit(with _: URLRequest) -> Bool { true }
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-  override func startLoading() {
-    do {
-      let (status, data) = try Self.handler?(request) ?? (500, Data())
-      let response = HTTPURLResponse(
-        url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
-      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-      client?.urlProtocol(self, didLoad: data)
-      client?.urlProtocolDidFinishLoading(self)
-    } catch { client?.urlProtocol(self, didFailWithError: error) }
-  }
-  override func stopLoading() {}
 }

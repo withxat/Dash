@@ -68,6 +68,17 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(searchField.waitForExistence(timeout: 5))
   }
 
+  func testHomeShowsZonesAndShortcutsWithoutWatchtowerSummary() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-preview"]
+    app.launch()
+
+    XCTAssertTrue(app.staticTexts["Your Zones"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Shortcuts"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["All systems normal"].exists)
+  }
+
   func testBottomSearchOpensConcreteResource() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
@@ -94,27 +105,20 @@ final class DashUITests: XCTestCase {
         || app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
   }
 
-  func testAccountAlertsDoNotExposeRemotePush() {
+  /// The relay keeps `/push/*` deployed for rollback, but the app must never
+  /// offer it. Alerts moved from the Account feature to Watchtower in the
+  /// catalog trim; the invariant did not move with them.
+  func testWatchtowerAlertsDoNotExposeRemotePush() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
     app.launch()
 
-    let searchTab = app.tabBars.buttons["Search"]
-    XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
-    searchTab.tap()
-    let searchField = app.searchFields.firstMatch
-    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-    searchField.tap()
-    searchField.typeText("account")
+    let watchtower = app.tabBars.buttons["Watchtower"]
+    XCTAssertTrue(watchtower.waitForExistence(timeout: 5))
+    watchtower.tap()
 
-    let account = app.staticTexts["Account"].firstMatch
-    XCTAssertTrue(account.waitForExistence(timeout: 5))
-    account.tap()
-
-    let alerts = app.buttons["Alerts"]
-    XCTAssertTrue(alerts.waitForExistence(timeout: 5))
-    alerts.tap()
     XCTAssertFalse(app.staticTexts["Push Cloudflare alerts to this iPhone"].exists)
     XCTAssertFalse(app.buttons["Send test alert"].exists)
+    XCTAssertFalse(app.switches["Push alerts"].exists)
   }
 }
