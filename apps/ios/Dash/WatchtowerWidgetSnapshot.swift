@@ -1,5 +1,43 @@
 import Foundation
 
+enum WatchtowerFreshness: Equatable, Sendable {
+  case fresh
+  case aging
+  case stale
+
+  static func classify(fetchedAt: Date, now: Date = .now) -> WatchtowerFreshness {
+    let age = max(0, now.timeIntervalSince(fetchedAt))
+    if age > 24 * 3_600 { return .stale }
+    if age > 2 * 3_600 { return .aging }
+    return .fresh
+  }
+
+  static func checkedText(fetchedAt: Date?, now: Date = .now) -> String {
+    guard let fetchedAt else { return "Open Watchtower to check this account" }
+    let age = max(0, now.timeIntervalSince(fetchedAt))
+    let relative: String
+    if age < 60 {
+      relative = "just now"
+    } else if age < 3_600 {
+      relative = "\(Int(age / 60)) min ago"
+    } else if age < 86_400 {
+      relative = "\(Int(age / 3_600)) hr ago"
+    } else {
+      let days = Int(age / 86_400)
+      relative = "\(days) day\(days == 1 ? "" : "s") ago"
+    }
+
+    switch classify(fetchedAt: fetchedAt, now: now) {
+    case .fresh:
+      return "Checked \(relative)"
+    case .aging:
+      return "Checked \(relative) · Refresh recommended"
+    case .stale:
+      return "Checked \(relative) · Refresh now"
+    }
+  }
+}
+
 /// The Watchtower state shared from the app to the widget through the App
 /// Group container. Deliberately Foundation-only and Codable with no
 /// dependency on the CloudflareAPI or app types, so the widget target can
@@ -41,19 +79,14 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   static let appGroupID = "group.sh.xat.dash"
   static let fileName = "watchtower-widget-snapshot.json"
 
-  enum Staleness { case fresh, aging, stale }
-
   static var containerFileURL: URL? {
     FileManager.default
       .containerURL(forSecurityApplicationGroupIdentifier: appGroupID)?
       .appendingPathComponent(fileName)
   }
 
-  func staleness(now: Date = .now) -> Staleness {
-    let age = now.timeIntervalSince(fetchedAt)
-    if age > 24 * 3600 { return .stale }
-    if age > 2 * 3600 { return .aging }
-    return .fresh
+  func staleness(now: Date = .now) -> WatchtowerFreshness {
+    WatchtowerFreshness.classify(fetchedAt: fetchedAt, now: now)
   }
 
   static func load(from url: URL) throws -> WatchtowerWidgetSnapshot {

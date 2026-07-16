@@ -1104,7 +1104,9 @@ struct SettingsView: View {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         DashListGroup(title: "Watchtower") {
           DashToggleRow(
-            title: "Notify on new issues",
+            title: "Notify after background checks",
+            subtitle:
+              "Dash checks opportunistically when iOS allows background refresh. Alerts are local and only fire for newly detected issues.",
             isOn: $watchtowerNotifications
           )
           .onChange(of: watchtowerNotifications) { _, enabled in

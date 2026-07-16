@@ -134,7 +134,7 @@ struct WatchtowerWidgetView: View {
       }
       Spacer(minLength: 0)
       if snapshot.staleness(now: entry.date) == .aging {
-        Text("Updated \(snapshot.fetchedAt, style: .relative) ago")
+        Text(WatchtowerFreshness.checkedText(fetchedAt: snapshot.fetchedAt, now: entry.date))
           .font(.caption2)
           .foregroundStyle(.tertiary)
       }

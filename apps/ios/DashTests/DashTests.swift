@@ -488,7 +488,7 @@ import UIKit
       == "Checked 2 hr ago")
   #expect(
     homeWatchtowerCheckedText(fetchedAt: now.addingTimeInterval(-172_800), now: now)
-      == "Checked 2 days ago")
+      == "Checked 2 days ago · Refresh now")
 }
 
 /// Raw values of removed features must drop out of a persisted shortcut list
@@ -730,6 +730,16 @@ import UIKit
   #expect(base.staleness(now: Date(timeIntervalSince1970: 3600)) == .fresh)
   #expect(base.staleness(now: Date(timeIntervalSince1970: 3 * 3600)) == .aging)
   #expect(base.staleness(now: Date(timeIntervalSince1970: 25 * 3600)) == .stale)
+  #expect(
+    WatchtowerFreshness.checkedText(
+      fetchedAt: base.fetchedAt,
+      now: Date(timeIntervalSince1970: 3 * 3_600))
+      == "Checked 3 hr ago · Refresh recommended")
+  #expect(
+    WatchtowerFreshness.checkedText(
+      fetchedAt: base.fetchedAt,
+      now: Date(timeIntervalSince1970: 25 * 3_600))
+      == "Checked 1 day ago · Refresh now")
 }
 
 @Test func watchtowerCoverageSignalWarnsWhenZonesExceedFanout() {

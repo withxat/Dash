@@ -13,9 +13,10 @@ final class WatchtowerScreenState {
   var failedChecks: [String] = []
   var fetchedAt: Date?
   var loading = true
+  var mutedSignalIDs: Set<String> = []
 
   var summary: WatchtowerSummary {
-    let scored = signals.filter { $0.status == .ok || !WatchtowerMuteStore.isMuted($0.id) }
+    let scored = signals.filter { $0.status == .ok || !mutedSignalIDs.contains($0.id) }
     return WatchtowerSummary(
       critical: scored.filter { $0.status == .critical }.count,
       warning: scored.filter { $0.status == .warning }.count,
@@ -24,10 +25,10 @@ final class WatchtowerScreenState {
   }
 
   var issues: [WatchtowerSignal] {
-    signals.filter { $0.status != .ok && !WatchtowerMuteStore.isMuted($0.id) }
+    signals.filter { $0.status != .ok && !mutedSignalIDs.contains($0.id) }
   }
   var mutedIssues: [WatchtowerSignal] {
-    signals.filter { $0.status != .ok && WatchtowerMuteStore.isMuted($0.id) }
+    signals.filter { $0.status != .ok && mutedSignalIDs.contains($0.id) }
   }
   var healthy: [WatchtowerSignal] { signals.filter { $0.status == .ok } }
   var issueCount: Int { summary.critical + summary.warning }
@@ -35,7 +36,12 @@ final class WatchtowerScreenState {
   var recheckBanner: String?
   var capabilityNotes: [String] = []
 
+  func refreshMutedSignals() {
+    mutedSignalIDs = WatchtowerMuteStore.mutedIDs()
+  }
+
   func load(model: AppModel, force: Bool = false) async {
+    refreshMutedSignals()
     guard model.activeAccountID != nil else {
       loading = false
       signals = []
@@ -131,6 +137,7 @@ struct WatchtowerView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var state = WatchtowerScreenState()
+  @State private var selectedSignal: WatchtowerSignal?
   /// When set (regular-width split), signal rows select a detail destination.
   var selection: Binding<Destination?>?
 
@@ -198,18 +205,10 @@ struct WatchtowerView: View {
           .dashSectionContentReveal(healthyIndex)
         }
 
-        if state.alertsStatus == .ok {
+        if state.alertsStatus == .ok, !state.alerts.isEmpty {
           WatchtowerListGroup(title: "Recent alerts") {
-            if state.alerts.isEmpty {
-              Text("No notifications sent recently.")
-                .dashTextStyle(.footnote)
-                .foregroundStyle(DashTheme.subtle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 20)
-            } else {
-              WatchtowerListRows(items: state.alerts) { alert in
-                alertRow(alert)
-              }
+            WatchtowerListRows(items: state.alerts) { alert in
+              alertRow(alert)
             }
           }
           .dashSectionContentReveal(alertsIndex)
@@ -228,6 +227,13 @@ struct WatchtowerView: View {
     .dashCatalogScreen("Watchtower")
     .refreshable { await state.load(model: model, force: true) }
     .task(id: model.activeAccountID) { await state.load(model: model) }
+    .dashTray(item: $selectedSignal, title: { $0.title }) { signal in
+      WatchtowerSignalTray(
+        signal: signal,
+        isMuted: state.mutedSignalIDs.contains(signal.id),
+        toggleMute: { toggleMute(signal) }
+      )
+    }
     .onChange(of: state.issueCount) { previous, current in
       if previous > 0, current == 0 {
         DashDelight.recoverFromIssue()
@@ -278,6 +284,15 @@ struct WatchtowerView: View {
             .dashTextStyle(.caption)
             .foregroundStyle(DashTheme.subtle)
             .fixedSize(horizontal: false, vertical: true)
+            if let fetchedAt = state.fetchedAt {
+              HStack(spacing: 4) {
+                SolarIcon(asset: SolarAsset.clock, size: 13, color: freshnessColor(fetchedAt))
+                Text(WatchtowerFreshness.checkedText(fetchedAt: fetchedAt))
+                  .dashTextStyle(.caption)
+                  .foregroundStyle(freshnessColor(fetchedAt))
+              }
+              .fixedSize(horizontal: false, vertical: true)
+            }
           }
           Spacer(minLength: 0)
         }
@@ -305,29 +320,63 @@ struct WatchtowerView: View {
   private func signalRow(_ signal: WatchtowerSignal) -> some View {
     let content = signalRowContent(signal)
 
-    Group {
-      if let selection, let destination = signal.destination {
-        Button {
-          selection.wrappedValue = destination
-        } label: {
-          content
+    HStack(spacing: 2) {
+      Group {
+        if let selection, let destination = signal.destination {
+          Button {
+            selection.wrappedValue = destination
+          } label: {
+            content
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
+        } else if let destination = signal.destination {
+          DashDestinationLink(destination: destination) { content }
+        } else {
+          Button {
+            selectedSignal = signal
+          } label: {
+            content
+          }
+          .buttonStyle(DashPressButtonStyle())
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
-      } else if let destination = signal.destination {
-        DashDestinationLink(destination: destination) { content }
-      } else {
-        content
       }
+      Button {
+        selectedSignal = signal
+      } label: {
+        SolarIcon(asset: SolarAsset.menuDots, size: 18, color: DashTheme.faint)
+          .dashCompactHitTarget()
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .accessibilityLabel("Actions for \(signal.title)")
+      .accessibilityIdentifier("watchtower-actions-\(signal.id)")
     }
     .contextMenu {
-      if WatchtowerMuteStore.isMuted(signal.id) {
-        Button("Unmute") { WatchtowerMuteStore.unmute(signal.id) }
-      } else {
-        Button("Mute for 24 hours") {
-          WatchtowerMuteStore.mute(signal.id, title: signal.title)
+      if signal.status != .ok {
+        if state.mutedSignalIDs.contains(signal.id) {
+          Button("Unmute") { toggleMute(signal) }
+        } else {
+          Button("Mute for 24 hours") { toggleMute(signal) }
         }
       }
+    }
+  }
+
+  private func toggleMute(_ signal: WatchtowerSignal) {
+    if state.mutedSignalIDs.contains(signal.id) {
+      WatchtowerMuteStore.unmute(signal.id)
+    } else {
+      WatchtowerMuteStore.mute(signal.id, title: signal.title)
+    }
+    state.refreshMutedSignals()
+    UISelectionFeedbackGenerator().selectionChanged()
+  }
+
+  private func freshnessColor(_ fetchedAt: Date) -> Color {
+    switch WatchtowerFreshness.classify(fetchedAt: fetchedAt) {
+    case .fresh: DashTheme.subtle
+    case .aging: DashTheme.warning
+    case .stale: DashTheme.danger
     }
   }
 
@@ -498,5 +547,41 @@ struct WatchtowerView: View {
     let formatter = RelativeDateTimeFormatter()
     formatter.unitsStyle = .abbreviated
     return formatter.localizedString(for: date, relativeTo: Date())
+  }
+}
+
+private struct WatchtowerSignalTray: View {
+  let signal: WatchtowerSignal
+  let isMuted: Bool
+  let toggleMute: () -> Void
+
+  private var status: String {
+    switch signal.status {
+    case .ok: "OK"
+    case .warning: "Warning"
+    case .critical: "Critical"
+    }
+  }
+
+  private var fields: [DashDetailField] {
+    [
+      DashDetailField(label: "Status", value: status),
+      signal.resourceName.map { DashDetailField(label: "Resource", value: $0) },
+      DashDetailField(label: "Details", value: WatchtowerView.signalDetail(signal)),
+      signal.suggestedAction.map { DashDetailField(label: "Suggested action", value: $0) },
+      DashDetailField(
+        label: "Observed",
+        value: signal.observedAt.formatted(date: .abbreviated, time: .shortened)),
+    ].compactMap { $0 }
+  }
+
+  var body: some View {
+    DashDetailTray(fields: fields) {
+      if signal.status != .ok {
+        DashTrayPillButton(title: isMuted ? "Unmute" : "Mute for 24 hours") {
+          toggleMute()
+        }
+      }
+    }
   }
 }

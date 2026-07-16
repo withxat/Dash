@@ -84,13 +84,7 @@ struct HomeView: View {
 }
 
 func homeWatchtowerCheckedText(fetchedAt: Date?, now: Date = .now) -> String {
-  guard let fetchedAt else { return "Open Watchtower to check this account" }
-  let age = max(0, now.timeIntervalSince(fetchedAt))
-  if age < 60 { return "Checked just now" }
-  if age < 3_600 { return "Checked \(Int(age / 60)) min ago" }
-  if age < 86_400 { return "Checked \(Int(age / 3_600)) hr ago" }
-  let days = Int(age / 86_400)
-  return "Checked \(days) day\(days == 1 ? "" : "s") ago"
+  WatchtowerFreshness.checkedText(fetchedAt: fetchedAt, now: now)
 }
 
 private struct HomeWatchtowerSummary: View {

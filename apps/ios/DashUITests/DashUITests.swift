@@ -188,5 +188,13 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.staticTexts["Push Cloudflare alerts to this iPhone"].exists)
     XCTAssertFalse(app.buttons["Send test alert"].exists)
     XCTAssertFalse(app.switches["Push alerts"].exists)
+    XCTAssertFalse(app.staticTexts["Recent alerts"].exists)
+
+    let tunnelActions = app.buttons["watchtower-actions-tunnels"]
+    XCTAssertTrue(tunnelActions.waitForExistence(timeout: 5))
+    tunnelActions.tap()
+    XCTAssertTrue(app.staticTexts["Tunnels"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Suggested action"].exists)
+    XCTAssertTrue(app.buttons["Mute for 24 hours"].exists)
   }
 }
