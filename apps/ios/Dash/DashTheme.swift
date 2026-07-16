@@ -72,6 +72,12 @@ enum DashTheme {
       UIAccessibility.isReduceMotionEnabled
         ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.85)
     }
+    /// A small threshold-crossing pop for pull affordances — enough overshoot to
+    /// snap without wobbling.
+    @MainActor static var pop: Animation {
+      UIAccessibility.isReduceMotionEnabled
+        ? reduced : Animation.spring(response: 0.3, dampingFraction: 0.6)
+    }
     /// Tray present/dismiss — the card slide and dim fade. Slower and eased in and
     /// out so the sheet arrives and leaves gently rather than snapping.
     @MainActor static var sheet: Animation {

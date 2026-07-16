@@ -377,18 +377,21 @@ private struct HomeZonesPullToOpenModifier: ViewModifier {
     let progress = HomeZonesPullDecision.progress(distance: overscroll)
     return ZStack {
       Circle()
-        .fill(progress >= 1 ? DashTheme.infoTint : DashTheme.recessed)
+        .fill(armed ? DashTheme.infoTint : DashTheme.recessed)
       SolarIcon(
         asset: SolarAsset.chevronRight,
         size: 18,
-        color: progress >= 1 ? DashTheme.brand : DashTheme.subtle)
+        color: armed ? DashTheme.brand : DashTheme.subtle)
     }
     .frame(width: 44, height: 44)
+    // Tracks the finger while pulling, then springs a small pop past 1 the
+    // moment it arms, pairing with the threshold haptic.
     .scaleEffect(reduceMotion ? 1 : 0.72 + 0.28 * progress)
+    .scaleEffect(reduceMotion || !armed ? 1 : 1.16)
     .opacity(progress)
     .offset(x: reduceMotion ? 0 : 16 * (1 - progress))
     .padding(.trailing, 6)
-    .animation(reduceMotion ? nil : DashTheme.Motion.quick, value: progress >= 1)
+    .animation(reduceMotion ? nil : DashTheme.Motion.pop, value: armed)
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
