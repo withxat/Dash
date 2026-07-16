@@ -785,6 +785,41 @@ struct NetworkTests {
     #expect(page.items.map(\.id) == ["dep-1"])
   }
 
+  @Test func listWorkerDeploymentsDecodesOperationalFields() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(
+        request.url?.path
+          == "/accounts/account/workers/scripts/api/deployments")
+      let body = #"""
+        {"success":true,"result":{"deployments":[{
+          "id":"182bd5e5-6e1a-4fe4-a799-aa6d9a6ab26e",
+          "created_on":"2026-07-16T03:04:05.678Z",
+          "source":"api",
+          "strategy":"percentage",
+          "versions":[{"version_id":"version-1","percentage":100}],
+          "annotations":{"workers/message":"Fix cache key","workers/triggered_by":"upload"},
+          "author_email":"dev@example.com"
+        }]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let deployments = try await client.listWorkerDeployments(
+      accountID: "account", scriptName: "api")
+
+    #expect(deployments.count == 1)
+    #expect(deployments[0].source == "api")
+    #expect(deployments[0].versions.first?.percentage == 100)
+    #expect(deployments[0].versions.first?.versionID == "version-1")
+    #expect(deployments[0].annotations?.message == "Fix cache key")
+    #expect(deployments[0].annotations?.triggeredBy == "upload")
+    #expect(deployments[0].authorEmail == "dev@example.com")
+  }
+
   @Test func concurrent401ResponsesShareOneRefresh() async throws {
     let recorder = RequestRecorder()
     let store = MemoryTokenStore(access: "old", refresh: "refresh")

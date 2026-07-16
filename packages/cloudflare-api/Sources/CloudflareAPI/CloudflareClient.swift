@@ -70,6 +70,13 @@ public actor CloudflareClient {
   public func listWorkers(accountID: String) async throws -> [WorkerScript] {
     try await list("/accounts/\(accountID)/workers/scripts").items
   }
+  public func listWorkerDeployments(accountID: String, scriptName: String) async throws
+    -> [WorkerDeploymentSummary]
+  {
+    let result: WorkerDeploymentListResult = try await request(
+      "/accounts/\(accountID)/workers/scripts/\(scriptName)/deployments")
+    return result.deployments
+  }
   /// Downloads script content. Classic scripts come back as raw JS; module
   /// workers come back as multipart/form-data with one part per module, the
   /// boundary living in the response Content-Type header.
@@ -783,6 +790,10 @@ public actor CloudflareClient {
         throw CloudflareAPIError.request(status: response.statusCode, errors: errors)
       }
       return (body, response)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as URLError where error.code == .cancelled {
+      throw CancellationError()
     } catch let error as CloudflareAPIError { throw error } catch {
       throw CloudflareAPIError.transport(error.localizedDescription)
     }

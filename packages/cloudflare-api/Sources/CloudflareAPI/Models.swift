@@ -411,6 +411,75 @@ public struct WorkerDeploymentsResult: Codable, Sendable {
   public let deployments: [GenericResource]
 }
 
+public struct WorkerDeploymentVersion: Codable, Hashable, Sendable {
+  public let versionID: String
+  public let percentage: Double
+
+  enum CodingKeys: String, CodingKey {
+    case percentage
+    case versionID = "version_id"
+  }
+}
+
+public struct WorkerDeploymentAnnotations: Codable, Hashable, Sendable {
+  public let message: String?
+  public let triggeredBy: String?
+
+  enum CodingKeys: String, CodingKey {
+    case message = "workers/message"
+    case triggeredBy = "workers/triggered_by"
+  }
+}
+
+/// Typed deployment data for the operational Worker detail surface. The API
+/// returns newest first, with the first deployment actively serving traffic.
+public struct WorkerDeploymentSummary: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let createdOn: String
+  public let source: String
+  public let strategy: String?
+  public let versions: [WorkerDeploymentVersion]
+  public let annotations: WorkerDeploymentAnnotations?
+  public let authorEmail: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, source, strategy, versions, annotations
+    case createdOn = "created_on"
+    case authorEmail = "author_email"
+  }
+
+  public init(
+    id: String, createdOn: String, source: String, strategy: String? = nil,
+    versions: [WorkerDeploymentVersion] = [], annotations: WorkerDeploymentAnnotations? = nil,
+    authorEmail: String? = nil
+  ) {
+    self.id = id
+    self.createdOn = createdOn
+    self.source = source
+    self.strategy = strategy
+    self.versions = versions
+    self.annotations = annotations
+    self.authorEmail = authorEmail
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    createdOn = try container.decode(String.self, forKey: .createdOn)
+    source = try container.decode(String.self, forKey: .source)
+    strategy = try container.decodeIfPresent(String.self, forKey: .strategy)
+    versions =
+      try container.decodeIfPresent([WorkerDeploymentVersion].self, forKey: .versions) ?? []
+    annotations = try container.decodeIfPresent(
+      WorkerDeploymentAnnotations.self, forKey: .annotations)
+    authorEmail = try container.decodeIfPresent(String.self, forKey: .authorEmail)
+  }
+}
+
+public struct WorkerDeploymentListResult: Codable, Sendable {
+  public let deployments: [WorkerDeploymentSummary]
+}
+
 public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let value: JSONValue
