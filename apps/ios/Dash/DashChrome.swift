@@ -8,7 +8,7 @@ enum DashSheetSizing: Equatable {
   /// A floating card whose height hugs its content (Profile, forms).
   case content
   /// Presents expanded to a full-height sheet; the grab bar drags it down to
-  /// a floating detent styled like `.content` (Edit shortcuts).
+  /// a floating detent styled like `.content` (small forms and menus).
   case large
 }
 
@@ -794,19 +794,10 @@ private struct ShowsProfileKey: EnvironmentKey {
   static let defaultValue: Binding<Bool> = .constant(false)
 }
 
-private struct ShowsEditShortcutsKey: EnvironmentKey {
-  static let defaultValue: Binding<Bool> = .constant(false)
-}
-
 extension EnvironmentValues {
   var showsProfile: Binding<Bool> {
     get { self[ShowsProfileKey.self] }
     set { self[ShowsProfileKey.self] = newValue }
-  }
-
-  var showsEditShortcuts: Binding<Bool> {
-    get { self[ShowsEditShortcutsKey.self] }
-    set { self[ShowsEditShortcutsKey.self] = newValue }
   }
 }
 
@@ -1489,7 +1480,7 @@ struct DashConfirmableActions: View {
     }
   }
 
-  // List-item styled after Edit shortcuts rows, with an outline icon.
+  // List-item styled as a compact tray row, with an outline icon.
   private func dangerRow(_ action: DashDangerAction) -> some View {
     HStack(spacing: 12) {
       SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)

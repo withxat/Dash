@@ -467,7 +467,7 @@ private struct SearchNavigationStack: View {
       SearchView(search: $search)
         .destinationRouting()
     }
-    .searchable(text: $search, prompt: "Features, zones, Workers…")
+    .searchable(text: $search, prompt: "Resources, zones, Workers…")
   }
 }
 
@@ -482,12 +482,11 @@ private struct MainTabView: View {
   @State private var search = ""
   @State private var searchPath = NavigationPath()
   @State private var showsProfile = false
-  @State private var showsEditShortcuts = false
   @State private var nestedTrayPresented = false
 
   private var hidesTabBar: Bool {
     shouldHideTabBar(
-      overlaysPresented: showsProfile || showsEditShortcuts || nestedTrayPresented,
+      overlaysPresented: showsProfile || nestedTrayPresented,
       usesSplitDetail: sizeClass == .regular
         && (selection == .features || selection == .watchtower),
       navigationDepth: activeNavigationDepth
@@ -562,10 +561,8 @@ private struct MainTabView: View {
         searchPath = NavigationPath()
         search = ""
         showsProfile = false
-        showsEditShortcuts = false
       }
       .environment(\.showsProfile, $showsProfile)
-      .environment(\.showsEditShortcuts, $showsEditShortcuts)
       .dashTray(isPresented: $showsProfile, title: "Profile") {
         ProfileTrayContent(
           openProfile: {
@@ -576,9 +573,6 @@ private struct MainTabView: View {
             showsProfile = false
             pushOnActiveTab(.settings)
           })
-      }
-      .dashTray(isPresented: $showsEditShortcuts, title: "Edit shortcuts", sizing: .large) {
-        EditShortcutsView()
       }
   }
 
@@ -597,7 +591,7 @@ private struct MainTabView: View {
           AdaptiveFeaturesNavigation(path: $featuresPath)
         } label: {
           tabLabel(
-            "Features",
+            "Resources",
             asset: selection == .features ? "SolarTabFeaturesFill" : "SolarTabFeaturesLine",
             active: selection == .features)
         }
@@ -631,7 +625,7 @@ private struct MainTabView: View {
         AdaptiveFeaturesNavigation(path: $featuresPath)
           .tabItem {
             tabLabel(
-              "Features",
+              "Resources",
               asset: selection == .features ? "SolarTabFeaturesFill" : "SolarTabFeaturesLine",
               active: selection == .features)
           }
@@ -715,7 +709,7 @@ func tabBarVisibilityChange(
   return TabBarVisibilityChange(hidden: targetHidden, animated: transition.animated)
 }
 
-/// Compact stack pushes hide the tab bar; regular Features/Watchtower split keeps
+/// Compact stack pushes hide the tab bar; regular Resources/Watchtower split keeps
 /// it visible while a detail is selected. Trays / profile overlays always hide.
 func shouldHideTabBar(
   overlaysPresented: Bool,

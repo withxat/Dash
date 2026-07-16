@@ -566,7 +566,7 @@ struct DashListGroupDivider: View {
   }
 }
 
-/// Home/Features-style list group without a section title. Bare rows on the
+/// Home/Resources-style list group without a section title. Bare rows on the
 /// canvas — no fill, no separators; the row's own padding carries the rhythm.
 struct DashListCard<Content: View>: View {
   @ViewBuilder let content: () -> Content

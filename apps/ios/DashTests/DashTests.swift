@@ -52,7 +52,7 @@ import UIKit
   }
 }
 
-/// The catalog is the default grant. Every feature the Features tab shows must
+/// The catalog is the default grant. Every feature the Resources tab shows must
 /// be fully usable without an incremental authorization, so nothing can resolve
 /// to `.locked` or `.readOnly` out of the box. A new FeatureID belongs in
 /// `coreFeatures` at the same time it gets a descriptor, or it does not ship.
@@ -238,7 +238,7 @@ import UIKit
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
 }
 
-/// The Features tab opens on `.available`, which is only safe because unknown
+/// The Resources tab opens on `.available`, which is only safe because unknown
 /// scopes resolve to `.full`. If that ever flips, a cold launch shows an empty
 /// catalog before the token store answers.
 @MainActor
@@ -470,6 +470,25 @@ import UIKit
     RecentResources.continueItems(recent: decoded, accountID: "acc1").map(\.title) == ["api"])
   #expect(worker.destination == .worker("api"))
   #expect(zone.destination == .zone("z1"))
+}
+
+@Test func homeWatchtowerCheckedTextUsesReadableAgeBuckets() {
+  let now = Date(timeIntervalSince1970: 200_000)
+  #expect(
+    homeWatchtowerCheckedText(fetchedAt: nil, now: now)
+      == "Open Watchtower to check this account")
+  #expect(
+    homeWatchtowerCheckedText(fetchedAt: now.addingTimeInterval(-30), now: now)
+      == "Checked just now")
+  #expect(
+    homeWatchtowerCheckedText(fetchedAt: now.addingTimeInterval(-120), now: now)
+      == "Checked 2 min ago")
+  #expect(
+    homeWatchtowerCheckedText(fetchedAt: now.addingTimeInterval(-7_200), now: now)
+      == "Checked 2 hr ago")
+  #expect(
+    homeWatchtowerCheckedText(fetchedAt: now.addingTimeInterval(-172_800), now: now)
+      == "Checked 2 days ago")
 }
 
 /// Raw values of removed features must drop out of a persisted shortcut list

@@ -44,12 +44,12 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 ### iOS app
 
 - One `AppModel` (`@Observable @MainActor`, created in `DashApp`, injected via `.environment`) owns the `CloudflareClient`, `KeychainTokenStore`, `FeatureDataCache`, auth state, accounts, and active-account selection. Switching accounts or signing out clears the cache.
-- `AppRootView` switches on auth state into `MainTabView` — three primary tabs (Home, Features, Watchtower) plus the tab-bar Search role, each with its own navigation container. Features stays a browse-only catalog; cross-resource search lives behind the bottom Search button. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
+- `AppRootView` switches on auth state into `MainTabView` with three primary tabs (Home, Resources, Watchtower) plus the tab-bar Search role, each with its own navigation container. Resources stays a browse-only catalog; cross-resource search lives behind the bottom Search button. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
 - `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar asset, and category per feature. Rich features (zones, workers, R2, KV, D1, account) have dedicated views in `FeatureViews.swift`, `StorageViews.swift`, and `AccountFeatureViews.swift`; the rest fall through to `GenericFeatureView`, which maps the `FeatureID` to a REST path and lists `GenericResource` rows. A simple list feature needs only a `FeatureID` case and a path there — no new view.
 - `FeatureDataCache` is an in-memory, session-scoped cache keyed by `FeatureCacheKey` strings. Views read the cache in `.task` and bypass it from `refreshable` with `force: true`.
 - Shared chrome (cards, trays/sheets, pill buttons, catalog toolbar) lives in `DashChrome.swift`; all palette, typography, and spacing tokens in `DashTheme.swift`.
 - Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals.
-- Home shortcuts persist as comma-separated `FeatureID` raw values. Recently opened concrete zones, Workers, R2 buckets, KV namespaces, and D1 databases use `RecentResources`; bare feature recents are not shown.
+- Home leads with the Watchtower account summary, pinned zones, and recently opened concrete resources. Recently opened zones, Workers, R2 buckets, and KV namespaces use `RecentResources`; bare catalog entries are not shown. The legacy `dash.home_shortcuts` value remains decodable for rollback, but it is no longer rendered.
 
 ### Auth flow
 

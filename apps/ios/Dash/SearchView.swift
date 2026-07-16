@@ -20,6 +20,7 @@ enum SearchResourceFiltering {
 struct SearchView: View {
   @Binding var search: String
   var selection: Binding<Destination?>?
+  @AppStorage(RecentResources.key) private var recentResourceData = ""
   @Environment(AppModel.self) private var model
   @State private var debouncedQuery = ""
   @State private var resourcesPhase: SearchResourcesPhase = .idle
@@ -36,6 +37,13 @@ struct SearchView: View {
 
   private var activeQuery: String {
     debouncedQuery
+  }
+
+  private var recentResources: [RecentResource] {
+    RecentResources.continueItems(
+      recent: RecentResources.decode(recentResourceData),
+      accountID: model.activeAccountID
+    )
   }
 
   private var featureResults: [FeatureID] {
@@ -111,12 +119,20 @@ struct SearchView: View {
   @ViewBuilder
   private var listContent: some View {
     if trimmedSearch.isEmpty {
-      DashEmptyState(
-        icon: SolarAsset.search,
-        title: "Search",
-        message:
-          "Find a feature, zone, Worker, R2 bucket, or KV namespace."
-      )
+      if recentResources.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.search,
+          title: "Search",
+          message:
+            "Find a resource type, zone, Worker, R2 bucket, or KV namespace."
+        )
+      } else {
+        DashListGroup(title: "Recent") {
+          ForEach(recentResources) { resource in
+            resourceLink(resource, subtitle: resource.kind.displayName)
+          }
+        }
+      }
     } else if trimmedSearch.count < 2 {
       DashEmptyState(
         icon: SolarAsset.search,
@@ -133,7 +149,7 @@ struct SearchView: View {
           icon: SolarAsset.search,
           title: "Nothing found",
           message:
-            "Nothing matches \(trimmedSearch). Try a feature, zone, Worker, or bucket name."
+            "Nothing matches \(trimmedSearch). Try a resource type, zone, Worker, or bucket name."
         )
       }
     }
@@ -146,7 +162,7 @@ struct SearchView: View {
   }
 
   private var featureResultsList: some View {
-    DashListGroup(title: "Features") {
+    DashListGroup(title: "Resource types") {
       ForEach(Array(featureResults.enumerated()), id: \.element) { _, item in
         resultLink(value: .feature(item)) {
           FeatureRow(feature: item, presentation: .catalog)

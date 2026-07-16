@@ -72,8 +72,8 @@ struct FeatureCatalogView: View {
         if visibleFeatures.isEmpty {
           DashEmptyState(
             icon: SolarAsset.search,
-            title: "No features",
-            message: "Features for this account will show up here."
+            title: "No resources",
+            message: "Resources for this account will show up here."
           )
           .dashSectionReveal()
         } else {
@@ -89,6 +89,6 @@ struct FeatureCatalogView: View {
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashSectionEntrance()
-    .dashCatalogScreen("Features")
+    .dashCatalogScreen("Resources")
   }
 }

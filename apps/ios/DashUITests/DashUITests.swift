@@ -8,7 +8,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts["Dash"].waitForExistence(timeout: 10)
         || app.tabBars.firstMatch.waitForExistence(timeout: 10)
-        || app.buttons["Features"].waitForExistence(timeout: 2))
+        || app.buttons["Resources"].waitForExistence(timeout: 2))
   }
 
   func testFormKeyboardCanBeDismissed() {
@@ -37,14 +37,14 @@ final class DashUITests: XCTestCase {
     app.launch()
 
     XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
-    let featuresTab = app.tabBars.buttons["Features"]
-    XCTAssertTrue(featuresTab.waitForExistence(timeout: 5))
+    let resourcesTab = app.tabBars.buttons["Resources"]
+    XCTAssertTrue(resourcesTab.waitForExistence(timeout: 5))
     XCTAssertTrue(app.tabBars.buttons["Watchtower"].waitForExistence(timeout: 5))
     let searchTab = app.tabBars.buttons["Search"]
     XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
 
-    featuresTab.tap()
-    XCTAssertTrue(app.navigationBars["Features"].waitForExistence(timeout: 5))
+    resourcesTab.tap()
+    XCTAssertTrue(app.navigationBars["Resources"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.searchFields.firstMatch.exists)
 
     searchTab.tap()
@@ -68,15 +68,19 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(searchField.waitForExistence(timeout: 5))
   }
 
-  func testHomeShowsZonesAndShortcutsWithoutWatchtowerSummary() {
+  func testHomeShowsOperationalSummaryWithoutShortcutDuplication() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
     app.launch()
 
     XCTAssertTrue(app.staticTexts["Your Zones"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Shortcuts"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["All systems normal"].exists)
+    XCTAssertTrue(app.staticTexts["Account status"].waitForExistence(timeout: 5))
+    let summary = app.buttons["home-watchtower-summary"]
+    XCTAssertTrue(summary.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["Shortcuts"].exists)
+    summary.tap()
+    XCTAssertTrue(app.navigationBars["Watchtower"].waitForExistence(timeout: 5))
   }
 
   func testHomeZonesOverscrollPastEndOpensAllZones() {
@@ -87,9 +91,8 @@ final class DashUITests: XCTestCase {
     let strip = app.scrollViews["home-zones-strip"]
     XCTAssertTrue(strip.waitForExistence(timeout: 5))
 
-    // Feature screens title themselves with an inline principal view, and
-    // Home's Shortcuts list also contains a "Zones" row, so the pushed screen
-    // is detected by title text scoped to the navigation bar.
+    // Resource screens title themselves with an inline principal view, so the
+    // pushed screen is detected by title text scoped to the navigation bar.
     let pushedTitle = app.navigationBars.staticTexts["Zones"]
 
     // One fling from the strip's start cannot overscroll while the finger is

@@ -2,15 +2,11 @@ import CloudflareAPI
 import SwiftUI
 
 struct HomeView: View {
-  @AppStorage("dash.home_shortcuts") private var shortcutData = FeatureCatalog.defaultShortcutData
   @AppStorage(RecentResources.key) private var recentResourceData = ""
-  @Environment(\.showsEditShortcuts) private var showsEditShortcuts
   @Environment(AppModel.self) private var model
+  @State private var watchtowerSnapshot: WatchtowerSnapshot?
+  @State private var watchtowerLoading = true
 
-  private var shortcuts: [FeatureID] {
-    shortcutData.split(separator: ",")
-      .compactMap { FeatureID(rawValue: String($0)) }
-  }
   private var continueResources: [RecentResource] {
     RecentResources.continueItems(
       recent: RecentResources.decode(recentResourceData),
@@ -19,8 +15,9 @@ struct HomeView: View {
 
   var body: some View {
     let zonesIndex = model.identityStale ? 1 : 0
-    let shortcutsIndex = zonesIndex + 1
-    let continueResourcesIndex = shortcutsIndex + 1
+    let watchtowerIndex = zonesIndex
+    let pinnedZonesIndex = watchtowerIndex + 1
+    let continueResourcesIndex = pinnedZonesIndex + 1
 
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
@@ -32,17 +29,23 @@ struct HomeView: View {
           )
           .dashSectionReveal()
         }
-        HomeZonesSection()
-          .dashSectionReveal(zonesIndex)
-        DashListGroup(
-          title: "Shortcuts", actionTitle: "Edit", actionIcon: SolarAsset.pen,
-          action: { showsEditShortcuts.wrappedValue = true }
-        ) {
-          FeatureRows(items: shortcuts)
+        DashListGroup(title: "Account status") {
+          Button {
+            model.pendingRoute = .watchtower
+          } label: {
+            HomeWatchtowerSummary(
+              snapshot: watchtowerSnapshot,
+              isLoading: watchtowerLoading
+            )
+          }
+          .buttonStyle(DashPressButtonStyle())
+          .accessibilityIdentifier("home-watchtower-summary")
         }
-        .dashSectionReveal(shortcutsIndex)
+        .dashSectionReveal(watchtowerIndex)
+        HomeZonesSection()
+          .dashSectionReveal(pinnedZonesIndex)
         if !continueResources.isEmpty {
-          DashListGroup(title: "Continue") {
+          DashListGroup(title: "Recent") {
             ForEach(continueResources) { resource in
               DashListGroupLink(
                 value: resource.destination,
@@ -66,6 +69,87 @@ struct HomeView: View {
     }
     .dashSectionEntrance()
     .dashCatalogScreen("Home")
+    .task(id: model.activeAccountID) { await loadWatchtowerSummary() }
+  }
+
+  private func loadWatchtowerSummary() async {
+    let accountID = model.activeAccountID
+    watchtowerSnapshot = nil
+    watchtowerLoading = true
+    let snapshot = await model.watchtowerSnapshot()
+    guard !Task.isCancelled, model.activeAccountID == accountID else { return }
+    watchtowerSnapshot = snapshot
+    watchtowerLoading = false
+  }
+}
+
+func homeWatchtowerCheckedText(fetchedAt: Date?, now: Date = .now) -> String {
+  guard let fetchedAt else { return "Open Watchtower to check this account" }
+  let age = max(0, now.timeIntervalSince(fetchedAt))
+  if age < 60 { return "Checked just now" }
+  if age < 3_600 { return "Checked \(Int(age / 60)) min ago" }
+  if age < 86_400 { return "Checked \(Int(age / 3_600)) hr ago" }
+  let days = Int(age / 86_400)
+  return "Checked \(days) day\(days == 1 ? "" : "s") ago"
+}
+
+private struct HomeWatchtowerSummary: View {
+  let snapshot: WatchtowerSnapshot?
+  let isLoading: Bool
+
+  private var criticalCount: Int {
+    snapshot?.signals.count { $0.status == .critical } ?? 0
+  }
+
+  private var warningCount: Int {
+    snapshot?.signals.count { $0.status == .warning } ?? 0
+  }
+
+  private var title: String {
+    guard let snapshot else { return isLoading ? "Checking account" : "Watchtower" }
+    if snapshot.issueCount == 0 { return "All systems normal" }
+    return "\(snapshot.issueCount) issue\(snapshot.issueCount == 1 ? "" : "s") need attention"
+  }
+
+  private var icon: String {
+    criticalCount > 0 || warningCount > 0 ? SolarAsset.danger : SolarAsset.shieldCheck
+  }
+
+  private var color: Color {
+    if criticalCount > 0 { return DashTheme.danger }
+    if warningCount > 0 { return DashTheme.warning }
+    return DashTheme.success
+  }
+
+  private var subtitle: String {
+    if isLoading, snapshot == nil { return "Running account checks…" }
+    return homeWatchtowerCheckedText(fetchedAt: snapshot?.fetchedAt)
+  }
+
+  var body: some View {
+    HStack(spacing: 12) {
+      SolarIcon(asset: icon, size: 22, color: color)
+        .frame(width: 40, height: 40)
+        .background(color.opacity(0.12), in: DashTheme.buttonShape)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .dashTextStyle(.bodySemibold)
+          .foregroundStyle(DashTheme.text)
+        Text(subtitle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if isLoading, snapshot == nil {
+        DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
+      } else {
+        SolarIcon(asset: SolarAsset.chevronRight, size: 16, color: DashTheme.placeholder)
+      }
+    }
+    .padding(.vertical, 10)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+    .accessibilityHint("Opens Watchtower")
   }
 }
 
@@ -353,7 +437,7 @@ struct FeatureSection: View {
   var actionTitle: String?
   var actionIcon: String?
   var action: (() -> Void)?
-  /// Regular-width Features sidebar selection; nil keeps NavigationLink push behavior.
+  /// Regular-width Resources sidebar selection; nil keeps NavigationLink push behavior.
   var selection: Binding<FeatureID?>?
 
   init(
@@ -573,91 +657,5 @@ struct FeatureRow: View {
     case .readOnly: "Read-only"
     case .locked: "Locked"
     }
-  }
-}
-
-struct EditShortcutsView: View {
-  @AppStorage("dash.home_shortcuts") private var shortcutData = FeatureCatalog.defaultShortcutData
-
-  private var selection: [FeatureID] {
-    shortcutData.split(separator: ",")
-      .compactMap { FeatureID(rawValue: String($0)) }
-  }
-
-  var body: some View {
-    ScrollView {
-      VStack(spacing: 12) {
-        ForEach(FeatureCatalog.all) { feature in
-          HStack(spacing: 12) {
-            DashListGroupLink(value: .feature(feature)) {
-              HStack(spacing: 12) {
-                CatalogFeatureIcon(feature: feature, size: .shortcut)
-                Text(feature.title)
-                  .dashTextStyle(.bodyMedium)
-                  .foregroundStyle(DashTheme.text)
-                  .lineLimit(1)
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            ShortcutSelectionToggle(
-              isSelected: selection.contains(feature),
-              action: { toggle(feature) }
-            )
-          }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .background(DashTheme.Sheet.shortcutItem)
-          .clipShape(DashTheme.buttonShape)
-        }
-      }
-      .padding(.top, DashTheme.Sheet.bodyVertical)
-      .padding(.horizontal, DashTheme.Sheet.content)
-      .padding(.bottom, DashTheme.Sheet.bodyBottom)
-    }
-    .safeAreaPadding(.bottom)
-  }
-
-  private func toggle(_ feature: FeatureID) {
-    var items = selection
-    if let index = items.firstIndex(of: feature) {
-      items.remove(at: index)
-    } else {
-      items.append(feature)
-    }
-    withAnimation(DashTheme.Motion.quick) {
-      shortcutData = items.map(\.rawValue).joined(separator: ",")
-    }
-  }
-}
-
-private struct ShortcutSelectionToggle: View {
-  let isSelected: Bool
-  let action: () -> Void
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    Button(action: action) {
-      ZStack {
-        Image(SolarAsset.circle)
-          .resizable()
-          .renderingMode(.template)
-          .scaledToFit()
-          .foregroundStyle(DashTheme.placeholder)
-          .opacity(isSelected ? 0 : 1)
-
-        Image(SolarAsset.checkCircleFill)
-          .resizable()
-          .renderingMode(.template)
-          .scaledToFit()
-          .foregroundStyle(DashTheme.brand)
-          .opacity(isSelected ? 1 : 0)
-      }
-      .frame(width: 22, height: 22)
-      .animation(reduceMotion ? nil : DashTheme.Motion.quick, value: isSelected)
-    }
-    .buttonStyle(DashPressButtonStyle())
-    .dashCompactHitTarget()
-    .accessibilityLabel(isSelected ? "Remove from shortcuts" : "Add to shortcuts")
   }
 }
