@@ -88,20 +88,26 @@ public struct ResultInfo: Codable, Hashable, Sendable {
   public let perPage: Int?
   public let totalCount: Int?
   public let cursor: String?
+  public let delimited: [String]?
+  public let isTruncated: Bool?
 
   public init(
-    page: Int? = nil, perPage: Int? = nil, totalCount: Int? = nil, cursor: String? = nil
+    page: Int? = nil, perPage: Int? = nil, totalCount: Int? = nil, cursor: String? = nil,
+    delimited: [String]? = nil, isTruncated: Bool? = nil
   ) {
     self.page = page
     self.perPage = perPage
     self.totalCount = totalCount
     self.cursor = cursor
+    self.delimited = delimited
+    self.isTruncated = isTruncated
   }
 
   enum CodingKeys: String, CodingKey {
-    case page, cursor
+    case page, cursor, delimited
     case perPage = "per_page"
     case totalCount = "total_count"
+    case isTruncated = "is_truncated"
   }
 }
 
@@ -460,6 +466,27 @@ public struct R2Object: Codable, Hashable, Identifiable, Sendable {
   public let size: Int?
   public let etag: String?
   public let uploaded: String?
+
+  enum CodingKeys: String, CodingKey {
+    case key, size, etag
+    case uploaded = "last_modified"
+  }
+}
+
+public struct R2ObjectPage: Sendable {
+  public let objects: [R2Object]
+  public let commonPrefixes: [String]
+  public let cursor: String?
+  public let isTruncated: Bool
+
+  public init(
+    objects: [R2Object], commonPrefixes: [String], cursor: String?, isTruncated: Bool
+  ) {
+    self.objects = objects
+    self.commonPrefixes = commonPrefixes
+    self.cursor = cursor
+    self.isTruncated = isTruncated
+  }
 }
 
 public struct KVNamespace: CloudflareResource, Hashable {
@@ -913,6 +940,27 @@ public struct RegistrarDomain: CloudflareResource, Hashable {
     id = decodedID ?? identity
     name = decodedName ?? identity
     expiresAt = try container.decodeIfPresent(String.self, forKey: .expiresAt)
+  }
+}
+
+/// Canonical registration state returned by `/registrar/registrations/{domain}`.
+public struct RegistrarRegistration: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { domainName }
+  public let domainName: String
+  public let status: String
+  public let createdAt: String?
+  public let expiresAt: String?
+  public let autoRenew: Bool
+  public let privacyMode: String
+  public let locked: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case status, locked
+    case domainName = "domain_name"
+    case createdAt = "created_at"
+    case expiresAt = "expires_at"
+    case autoRenew = "auto_renew"
+    case privacyMode = "privacy_mode"
   }
 }
 

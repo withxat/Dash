@@ -238,6 +238,39 @@ struct NetworkTests {
     #expect(domains.map(\.name) == ["live.example", "documented.example"])
   }
 
+  @Test func decodesCanonicalRegistrarRegistration() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/acct/registrar/registrations/example.com")
+      let body = #"""
+        {"success":true,"result":{
+          "domain_name":"example.com",
+          "status":"active",
+          "created_at":"2025-01-15T10:00:00Z",
+          "expires_at":"2027-01-15T10:00:00Z",
+          "auto_renew":true,
+          "privacy_mode":"redaction",
+          "locked":true
+        }}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let registration = try await client.getRegistrarRegistration(
+      accountID: "acct", domainName: "example.com")
+
+    #expect(registration.id == "example.com")
+    #expect(registration.status == "active")
+    #expect(registration.createdAt == "2025-01-15T10:00:00Z")
+    #expect(registration.expiresAt == "2027-01-15T10:00:00Z")
+    #expect(registration.autoRenew)
+    #expect(registration.privacyMode == "redaction")
+    #expect(registration.locked)
+  }
+
   @Test func decodesZoneAnalyticsGraphQL() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
@@ -333,6 +366,88 @@ struct NetworkTests {
       session: session)
     let buckets = try await client.listR2Buckets(accountID: "account")
     #expect(buckets.map(\.name) == ["assets"])
+  }
+
+  @Test func listsR2ObjectsAndVirtualFolders() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let query = Dictionary(
+        uniqueKeysWithValues:
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.map {
+            ($0.name, $0.value ?? "")
+          })
+      #expect(query["prefix"] == "photos/")
+      #expect(query["delimiter"] == "/")
+      #expect(query["per_page"] == "100")
+      let body = #"""
+        {"success":true,"result":[
+          {"key":"photos/cover.jpg","size":1048576,"etag":"abc123",
+           "last_modified":"2026-07-15T08:00:00Z","storage_class":"Standard"}
+        ],"result_info":{
+          "cursor":"next-page","delimited":["photos/2025/","photos/raw/"],
+          "is_truncated":true,"per_page":100
+        }}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let page = try await client.listR2Objects(
+      accountID: "account", bucket: "assets", prefix: "photos/", delimiter: "/")
+
+    #expect(page.objects.map(\.key) == ["photos/cover.jpg"])
+    #expect(page.objects.first?.size == 1_048_576)
+    #expect(page.objects.first?.etag == "abc123")
+    #expect(page.objects.first?.uploaded == "2026-07-15T08:00:00Z")
+    #expect(page.commonPrefixes == ["photos/2025/", "photos/raw/"])
+    #expect(page.cursor == "next-page")
+    #expect(page.isTruncated)
+  }
+
+  @Test func paginatesR2ObjectsWithCursor() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let query = Dictionary(
+        uniqueKeysWithValues:
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!.map {
+            ($0.name, $0.value ?? "")
+          })
+      #expect(query["prefix"] == "logs/")
+      #expect(query["delimiter"] == "/")
+      if let cursor = query["cursor"] {
+        #expect(cursor == "opaque-cursor")
+        let body = #"""
+          {"success":true,"result":[
+            {"key":"logs/latest.txt","size":12,"etag":"second",
+             "last_modified":"2026-07-15T09:00:00Z"}
+          ],"result_info":{"is_truncated":false,"per_page":100}}
+          """#
+        return (200, Data(body.utf8))
+      }
+      let body = #"""
+        {"success":true,"result":[],
+         "result_info":{"cursor":"opaque-cursor","delimited":["logs/2025/"],
+                        "is_truncated":true,"per_page":100}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let first = try await client.listR2Objects(
+      accountID: "account", bucket: "archive", prefix: "logs/", delimiter: "/")
+    let second = try await client.listR2Objects(
+      accountID: "account", bucket: "archive", cursor: first.cursor, prefix: "logs/",
+      delimiter: "/")
+
+    #expect(first.commonPrefixes == ["logs/2025/"])
+    #expect(first.cursor == "opaque-cursor")
+    #expect(second.objects.map(\.key) == ["logs/latest.txt"])
+    #expect(second.cursor == nil)
+    #expect(!second.isTruncated)
   }
 
   @Test func returnsRawR2ObjectBody() async throws {

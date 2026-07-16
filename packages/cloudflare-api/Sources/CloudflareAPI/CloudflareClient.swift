@@ -171,12 +171,25 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/r2/buckets/\(name)", method: "DELETE")
   }
   public func listR2Objects(
-    accountID: String, bucket: String, cursor: String? = nil, prefix: String? = nil
-  ) async throws -> CursorPage<R2Object> {
-    let result: R2ObjectResult = try await request(
+    accountID: String, bucket: String, cursor: String? = nil, prefix: String? = nil,
+    delimiter: String? = nil
+  ) async throws -> R2ObjectPage {
+    let data = try await raw(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects",
-      query: ["cursor": cursor, "prefix": prefix])
-    return CursorPage(items: result.objects, cursor: result.cursor)
+      query: [
+        "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "per_page": "100",
+      ])
+    let envelope = try JSONDecoder().decode(APIEnvelope<[R2Object]>.self, from: data)
+    guard envelope.success else {
+      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+    }
+    let isTruncated =
+      envelope.resultInfo?.isTruncated ?? (envelope.resultInfo?.cursor?.isEmpty == false)
+    return R2ObjectPage(
+      objects: envelope.result,
+      commonPrefixes: envelope.resultInfo?.delimited ?? [],
+      cursor: isTruncated ? envelope.resultInfo?.cursor : nil,
+      isTruncated: isTruncated)
   }
   public func putR2Object(
     accountID: String, bucket: String, key: String, data: Data, contentType: String?
@@ -462,6 +475,11 @@ public actor CloudflareClient {
   }
   public func listRegistrarDomains(accountID: String) async throws -> [RegistrarDomain] {
     try await list("/accounts/\(accountID)/registrar/domains").items
+  }
+  public func getRegistrarRegistration(accountID: String, domainName: String) async throws
+    -> RegistrarRegistration
+  {
+    try await request("/accounts/\(accountID)/registrar/registrations/\(domainName)")
   }
   public func listCertificatePacks(zoneID: String) async throws -> [CertificatePack] {
     try await list("/zones/\(zoneID)/ssl/certificate_packs", query: ["status": "all"]).items
@@ -860,7 +878,3 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
 
 private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
 private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
-private struct R2ObjectResult: Decodable, Sendable {
-  let objects: [R2Object]
-  let cursor: String?
-}
