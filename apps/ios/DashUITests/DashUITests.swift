@@ -163,8 +163,7 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     app.launchArguments = [
       "-ui-preview",
-      "-UIPreferredContentSizeCategoryName",
-      "UICTContentSizeCategoryAccessibilityExtraLarge",
+      "-ui-preview-accessibility-text",
     ]
     app.launch()
 

@@ -90,6 +90,7 @@ struct DashApp: App {
 private struct RootWithSplash: View {
   var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var phase: Phase = .holding
 
   private enum Phase { case holding, revealing, done }
@@ -97,9 +98,19 @@ private struct RootWithSplash: View {
   private static let minimumDuration: Duration = .milliseconds(800)
   private static let revealDuration: TimeInterval = 0.6
 
+  private var effectiveDynamicTypeSize: DynamicTypeSize {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("-ui-preview-accessibility-text") {
+        return .accessibility3
+      }
+    #endif
+    return dynamicTypeSize
+  }
+
   var body: some View {
     AppRootView()
       .environment(model)
+      .environment(\.dynamicTypeSize, effectiveDynamicTypeSize)
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
       }
