@@ -971,6 +971,7 @@ struct ZoneSettingsView: View {
   @State private var settings: [ZoneSetting] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var updatingSettingIDs: Set<String> = []
 
   var body: some View {
     DashFeatureList(
@@ -1007,7 +1008,9 @@ struct ZoneSettingsView: View {
           DashMenuRow(
             title: setting.displayTitle,
             value: value,
-            options: options
+            options: options,
+            isEnabled: !updatingSettingIDs.contains(setting.id),
+            isLoading: updatingSettingIDs.contains(setting.id)
           ) { chosen in
             Task { await update(setting, value: .string(chosen)) }
           }
@@ -1020,7 +1023,9 @@ struct ZoneSettingsView: View {
               get: { value == "on" },
               set: { enabled in
                 Task { await update(setting, value: .string(enabled ? "on" : "off")) }
-              })
+              }),
+            isEnabled: !updatingSettingIDs.contains(setting.id),
+            isLoading: updatingSettingIDs.contains(setting.id)
           )
         } else {
           DashValueCard(title: setting.displayTitle, value: value)
@@ -1030,7 +1035,9 @@ struct ZoneSettingsView: View {
           title: setting.displayTitle,
           isOn: Binding(
             get: { enabled },
-            set: { value in Task { await update(setting, value: .bool(value)) } })
+            set: { value in Task { await update(setting, value: .bool(value)) } }),
+          isEnabled: !updatingSettingIDs.contains(setting.id),
+          isLoading: updatingSettingIDs.contains(setting.id)
         )
       default:
         DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
@@ -1055,18 +1062,37 @@ struct ZoneSettingsView: View {
   }
 
   private func update(_ setting: ZoneSetting, value: JSONValue) async {
+    guard !updatingSettingIDs.contains(setting.id) else { return }
+    updatingSettingIDs.insert(setting.id)
+    defer { updatingSettingIDs.remove(setting.id) }
+    error = nil
     do {
-      _ = try await model.client.updateZoneSetting(
+      let updated = try await model.client.updateZoneSetting(
         zoneID: zoneID, settingID: setting.id, value: value)
-      model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
-      await load(force: true)
-    } catch { self.error = error.dashActionableMessage }
+      if let index = settings.firstIndex(where: { $0.id == setting.id }) {
+        settings[index] = updated
+      }
+      model.featureCache.set(FeatureCacheKey.zoneSettings(zoneID), settings)
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+    } catch {
+      self.error = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
   }
 }
 
 extension ZoneSetting {
   fileprivate var displayTitle: String {
-    id.replacingOccurrences(of: "_", with: " ").capitalized
+    zoneSettingDisplayTitle(id)
+  }
+}
+
+func zoneSettingDisplayTitle(_ id: String) -> String {
+  switch id {
+  case "ssl": "SSL"
+  case "always_use_https": "Always Use HTTPS"
+  case "min_tls_version": "Minimum TLS version"
+  default: id.replacingOccurrences(of: "_", with: " ").capitalized
   }
 }
 

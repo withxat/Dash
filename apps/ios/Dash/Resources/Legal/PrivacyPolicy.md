@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-_Draft — effective date to be set when published._
+Effective July 16, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. It is built so that your data stays between your device

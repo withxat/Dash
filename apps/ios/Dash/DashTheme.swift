@@ -1519,21 +1519,27 @@ struct DashToggleRow: View {
   var subtitle: String?
   @Binding var isOn: Bool
   var isEnabled = true
+  var isLoading = false
 
   var body: some View {
     Button {
       isOn.toggle()
     } label: {
       DashControlSurface(title: title) {
-        Toggle("", isOn: $isOn)
-          .labelsHidden()
-          .tint(DashTheme.brand)
-          .allowsHitTesting(false)
+        if isLoading {
+          DashLoadingRing(color: DashTheme.brand)
+            .frame(width: 31, height: 31)
+        } else {
+          Toggle("", isOn: $isOn)
+            .labelsHidden()
+            .tint(DashTheme.brand)
+            .allowsHitTesting(false)
+        }
       }
       .contentShape(Rectangle())
     }
     .buttonStyle(DashPressButtonStyle())
-    .disabled(!isEnabled)
+    .disabled(!isEnabled || isLoading)
     .opacity(isEnabled ? 1 : 0.55)
     .accessibilityElement(children: .combine)
     .dashControlCaption(subtitle)
@@ -1548,6 +1554,8 @@ struct DashMenuRow: View {
   let value: String
   var caption: String?
   let options: [String]
+  var isEnabled = true
+  var isLoading = false
   let onSelect: (String) -> Void
   /// Local mirror of `value` so the picker gets a native binding. Building a
   /// `Binding(get:set:)` from `onSelect` needs a Sendable conversion that
@@ -1556,24 +1564,31 @@ struct DashMenuRow: View {
 
   var body: some View {
     DashControlSurface(title: title) {
-      Menu {
-        Picker(title, selection: $selection) {
-          ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
+      if isLoading {
+        DashLoadingRing(color: DashTheme.brand)
+          .frame(width: 31, height: 31)
+      } else {
+        Menu {
+          Picker(title, selection: $selection) {
+            ForEach(options, id: \.self) { Text($0.replacingOccurrences(of: "_", with: " ")) }
+          }
+        } label: {
+          HStack(spacing: 6) {
+            Text(value.replacingOccurrences(of: "_", with: " "))
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.subtle)
+              .lineLimit(1)
+            SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
+              .rotationEffect(.degrees(90))
+          }
+          .frame(minHeight: 31)
+          .contentShape(Rectangle())
         }
-      } label: {
-        HStack(spacing: 6) {
-          Text(value.replacingOccurrences(of: "_", with: " "))
-            .dashTextStyle(.bodyMedium)
-            .foregroundStyle(DashTheme.subtle)
-            .lineLimit(1)
-          SolarIcon(asset: SolarAsset.chevronRight, size: 12, color: DashTheme.placeholder)
-            .rotationEffect(.degrees(90))
-        }
-        .frame(minHeight: 31)
-        .contentShape(Rectangle())
+        .buttonStyle(DashPressButtonStyle())
       }
-      .buttonStyle(DashPressButtonStyle())
     }
+    .disabled(!isEnabled || isLoading)
+    .opacity(isEnabled ? 1 : 0.55)
     .dashControlCaption(caption)
     .onAppear { selection = value }
     .onChange(of: value) { _, newValue in selection = newValue }

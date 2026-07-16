@@ -156,6 +156,23 @@ import UIKit
   #expect(DashFailurePresentation.from(message: "offline").action == .tryAgain)
   #expect(DashFailureAction.signInAgain.title == "Sign in again")
   #expect(DashFailureAction.grantAccess.title == "Grant access")
+  #expect(
+    DashFailurePresentation.from(
+      error: CloudflareAPIError.request(status: 404, errors: [])
+    ).message
+      == "Cloudflare couldn’t find this resource. It may have been removed or belong to another account."
+  )
+  #expect(
+    DashFailurePresentation.from(error: CloudflareAPIError.transport("timed out")).message
+      == "Dash couldn’t reach Cloudflare. Check your connection and try again."
+  )
+}
+
+@Test func zoneSettingTitlesPreserveTechnicalAcronyms() {
+  #expect(zoneSettingDisplayTitle("ssl") == "SSL")
+  #expect(zoneSettingDisplayTitle("always_use_https") == "Always Use HTTPS")
+  #expect(zoneSettingDisplayTitle("min_tls_version") == "Minimum TLS version")
+  #expect(zoneSettingDisplayTitle("development_mode") == "Development Mode")
 }
 
 @Test func pageStateAdvancesAndStopsOnTotals() {

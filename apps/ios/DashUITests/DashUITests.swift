@@ -134,6 +134,20 @@ final class DashUITests: XCTestCase {
         || app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
   }
 
+  func testHomeZonesUseReadableRowsAtAccessibilityTextSizes() {
+    let app = XCUIApplication()
+    app.launchArguments = [
+      "-ui-preview",
+      "-UIPreferredContentSizeCategoryName",
+      "UICTContentSizeCategoryAccessibilityExtraLarge",
+    ]
+    app.launch()
+
+    XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["docs.example.com"].exists)
+    XCTAssertFalse(app.scrollViews["home-zones-strip"].exists)
+  }
+
   /// The relay keeps `/push/*` deployed for rollback, but the app must never
   /// offer it. Alerts moved from the Account feature to Watchtower in the
   /// catalog trim; the invariant did not move with them.

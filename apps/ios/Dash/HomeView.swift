@@ -96,6 +96,7 @@ private struct HomeZonesSection: View {
   private static let limit = 4
 
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(PinnedZones.initializedAccountsKey) private var initializedAccounts = ""
   @State private var zones: [CloudflareZone] = []
@@ -127,6 +128,8 @@ private struct HomeZonesSection: View {
             .foregroundStyle(DashTheme.subtle)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 16)
+        } else if dynamicTypeSize.isAccessibilitySize {
+          accessibleZoneList
         } else {
           zoneStrip
         }
@@ -169,6 +172,24 @@ private struct HomeZonesSection: View {
     .frame(height: 112)
     .accessibilityIdentifier("home-zones-strip")
     .dashHomeZonesPullToOpen(perform: openAllZones)
+  }
+
+  private var accessibleZoneList: some View {
+    VStack(spacing: 0) {
+      ForEach(Array(displayedZones.enumerated()), id: \.element.id) { index, zone in
+        DashListGroupLink(value: .zone(zone.id)) {
+          DashListRow(
+            title: zone.name,
+            subtitle: (zone.status ?? "unknown").capitalized,
+            icon: SolarAsset.globus,
+            iconColor: DashTheme.success
+          )
+        }
+        if index < displayedZones.count - 1 {
+          DashListGroupDivider()
+        }
+      }
+    }
   }
 
   private func openAllZones() {

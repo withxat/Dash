@@ -99,6 +99,11 @@ private struct LoginView: View {
               .foregroundStyle(DashTheme.subtle)
               .multilineTextAlignment(.center)
               .dashReveal(2, shown: revealed)
+            Text("Independent Cloudflare client")
+              .font(.system(size: 12, weight: .medium))
+              .foregroundStyle(DashTheme.placeholder)
+              .multilineTextAlignment(.center)
+              .dashReveal(2, shown: revealed)
           }
         }
         Spacer()
@@ -129,7 +134,7 @@ private struct LoginView: View {
           Button {
             showsPermissions = true
           } label: {
-            Text("Permissions")
+            Text("Review permissions")
               .dashTextStyle(.buttonMedium)
               .foregroundStyle(DashTheme.subtle)
               .frame(maxWidth: .infinity, minHeight: 44)
@@ -138,7 +143,7 @@ private struct LoginView: View {
           .dashReveal(3, shown: revealed)
 
           DashPillButton(
-            title: "Start your engine!",
+            title: "Connect Cloudflare",
             icon: SolarAsset.cloudflare,
             isLoading: model.isAuthenticating,
             action: { model.signIn() }
@@ -180,7 +185,7 @@ private struct LoginView: View {
 
   private var legalCaption: some View {
     VStack(spacing: 6) {
-      Text("By using Dash, you agree to accept our")
+      Text("By continuing, you agree to our")
       HStack(spacing: 4) {
         Button("Terms of Use") { legalDocument = .termsOfUse }
           .fontWeight(.medium)
@@ -608,7 +613,9 @@ private struct MainTabView: View {
         Tab(value: AppTab.search, role: .search) {
           SearchNavigationStack(search: $search, path: $searchPath)
         } label: {
-          tabLabel("Search", asset: SolarAsset.search, active: selection == .search)
+          tabLabel(
+            "Search", asset: SolarAsset.search, active: selection == .search,
+            alwaysTemplate: true)
         }
       }
       .modifier(TabBarChrome(hidden: hidesTabBar))
@@ -640,7 +647,9 @@ private struct MainTabView: View {
           .badge(model.watchtowerIssueCount ?? 0)
         SearchNavigationStack(search: $search, path: $searchPath)
           .tabItem {
-            tabLabel("Search", asset: SolarAsset.search, active: selection == .search)
+            tabLabel(
+              "Search", asset: SolarAsset.search, active: selection == .search,
+              alwaysTemplate: true)
           }
           .tag(AppTab.search)
       }
@@ -652,9 +661,14 @@ private struct MainTabView: View {
   /// icon color applies; inactive tabs render original with the quiet gray
   /// baked into the Line SVGs, because the iOS 26 tab bar ignores both
   /// `normal.iconColor` and `unselectedItemTintColor`.
-  private func tabLabel(_ title: String, asset: String, active: Bool) -> some View {
+  private func tabLabel(
+    _ title: String,
+    asset: String,
+    active: Bool,
+    alwaysTemplate: Bool = false
+  ) -> some View {
     Image(asset)
-      .renderingMode(active ? .template : .original)
+      .renderingMode(active || alwaysTemplate ? .template : .original)
       .accessibilityLabel(title)
   }
 }

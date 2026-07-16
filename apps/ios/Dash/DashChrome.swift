@@ -1733,8 +1733,8 @@ struct DashFailurePresentation: Equatable, Sendable {
     }
     if let apiError = error as? CloudflareAPIError, apiError.isForbidden {
       return DashFailurePresentation(
-        message: (apiError.errorDescription ?? "Permission denied")
-          + "\n\nGrant access for this product, or confirm the account includes it.",
+        message:
+          "Dash doesn’t have access to this resource. Grant access, or confirm the active account includes it.",
         action: .grantAccess)
     }
     if let apiError = error as? CloudflareAPIError, apiError.isRateLimited {
@@ -1742,9 +1742,45 @@ struct DashFailurePresentation: Equatable, Sendable {
         message: "Rate limited by Cloudflare — wait a moment and try again.",
         action: .tryAgain)
     }
+    if let apiError = error as? CloudflareAPIError {
+      switch apiError {
+      case .transport:
+        return DashFailurePresentation(
+          message: "Dash couldn’t reach Cloudflare. Check your connection and try again.",
+          action: .tryAgain)
+      case .invalidResponse:
+        return DashFailurePresentation(
+          message: "Cloudflare returned a response Dash couldn’t read. Try again.",
+          action: .tryAgain)
+      case .oauth:
+        return DashFailurePresentation(
+          message: "Cloudflare couldn’t complete sign-in. Try again.",
+          action: .tryAgain)
+      case .request(let status, _):
+        if status == 404 {
+          return DashFailurePresentation(
+            message:
+              "Cloudflare couldn’t find this resource. It may have been removed or belong to another account.",
+            action: .tryAgain)
+        }
+        if status == 400 || status == 422 {
+          return DashFailurePresentation(
+            message: "Cloudflare couldn’t process this request. Check the resource and try again.",
+            action: .tryAgain)
+        }
+        if status >= 500 {
+          return DashFailurePresentation(
+            message: "Cloudflare is temporarily unavailable. Try again in a moment.",
+            action: .tryAgain)
+        }
+        return DashFailurePresentation(
+          message: "Cloudflare couldn’t complete this request. Try again.",
+          action: .tryAgain)
+      }
+    }
     if error is URLError {
       return DashFailurePresentation(
-        message: error.localizedDescription,
+        message: "Dash couldn’t reach Cloudflare. Check your connection and try again.",
         action: .tryAgain)
     }
     return DashFailurePresentation(

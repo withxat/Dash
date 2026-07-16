@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Terms of Use
 
-_Draft — effective date to be set when published._
+Effective July 16, 2026.
 
 ## 1. What Dash is
 
@@ -18,9 +18,9 @@ account.
 
 ## 3. You are responsible for write operations
 
-Dash can create, modify, and delete real infrastructure: DNS records, zones,
-Workers deployments, WAF rules, storage buckets and objects, database rows,
-and more. Destructive operations ask for confirmation, but **you are solely
+Dash can create, modify, and delete real infrastructure: DNS records, zone
+settings, Worker routing, storage buckets and objects, and key-value data.
+Destructive operations ask for confirmation, but **you are solely
 responsible for the changes you make**, including changes that take your
 sites or services offline or delete data irrecoverably. Test against
 non-production resources when in doubt.
