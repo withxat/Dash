@@ -1,10 +1,10 @@
 import Foundation
 
 /// A concrete account resource opened from Search or a deep link. Home's
-/// Continue section returns to the same Worker, zone, bucket, namespace, or DB.
+/// Continue section returns to the same Worker, zone, bucket, or namespace.
 struct RecentResource: Hashable, Identifiable, Sendable {
   enum Kind: String, Sendable {
-    case zone, worker, r2, kv, d1
+    case zone, worker, r2, kv
 
     var displayName: String {
       switch self {
@@ -12,14 +12,13 @@ struct RecentResource: Hashable, Identifiable, Sendable {
       case .worker: "Worker"
       case .r2: "R2"
       case .kv: "KV"
-      case .d1: "D1"
       }
     }
   }
 
   let kind: Kind
   let accountID: String
-  /// Zone id, Worker name, R2 bucket name, KV namespace id, or D1 uuid.
+  /// Zone id, Worker name, R2 bucket name, or KV namespace id.
   let resourceID: String
   let title: String
 
@@ -31,7 +30,6 @@ struct RecentResource: Hashable, Identifiable, Sendable {
     case .worker: .worker(resourceID)
     case .r2: .r2Bucket(resourceID)
     case .kv: .kvNamespace(resourceID)
-    case .d1: .d1Database(resourceID, title)
     }
   }
 
@@ -41,7 +39,6 @@ struct RecentResource: Hashable, Identifiable, Sendable {
     case .worker: .workers
     case .r2: .r2
     case .kv: .kv
-    case .d1: .d1
     }
   }
 }
@@ -98,8 +95,6 @@ enum RecentResources {
   }
 }
 
-/// A zone pinned to Home. Pins for every account share one storage key;
-/// render-time filtering by accountID keeps accounts separated.
 struct PinnedZone: Hashable, Identifiable, Sendable {
   let accountID: String
   let zoneID: String
@@ -112,6 +107,12 @@ struct PinnedZone: Hashable, Identifiable, Sendable {
 /// names cannot contain `|` or `,`, so the encoding is unambiguous.
 enum PinnedZones {
   static let key = "dash.pinned_zones"
+  /// Accounts whose pins have been seeded once. Separate from `key` so that a
+  /// deliberately emptied pin set stays empty instead of re-seeding on the next
+  /// zone load.
+  static let initializedAccountsKey = "dash.pinned_zones_initialized"
+
+  static let defaultLimit = 4
 
   static func decode(_ raw: String) -> [PinnedZone] {
     raw.split(separator: ",").compactMap { entry in
@@ -129,14 +130,53 @@ enum PinnedZones {
     decode(raw).contains { $0.zoneID == zoneID }
   }
 
-  /// Adds the pin, or removes it when the zone is already pinned.
+  /// Adds the pin newest-first, or removes it when the zone is already pinned.
   static func toggled(_ raw: String, pin: PinnedZone) -> String {
     var pins = decode(raw)
     if pins.contains(where: { $0.zoneID == pin.zoneID }) {
       pins.removeAll { $0.zoneID == pin.zoneID }
     } else {
-      pins.append(pin)
+      pins.insert(pin, at: 0)
     }
     return encode(pins)
+  }
+
+  /// This account's pinned zone ids, in pin order.
+  static func pinnedZoneIDs(in raw: String, accountID: String) -> [String] {
+    decode(raw).filter { $0.accountID == accountID }.map(\.zoneID)
+  }
+
+  /// `ids` reordered so this account's pins lead, in pin order; everything else
+  /// keeps its incoming order behind them.
+  static func prioritizedZoneIDs(
+    _ ids: [String],
+    pinsRaw: String,
+    accountID: String
+  ) -> [String] {
+    let pinned = pinnedZoneIDs(in: pinsRaw, accountID: accountID)
+    let available = Set(ids)
+    let leading = pinned.filter(available.contains)
+    let leadingSet = Set(leading)
+    return leading + ids.filter { !leadingSet.contains($0) }
+  }
+
+  /// Seeds an account's pins from `defaults` the first time its zones load, and
+  /// records that it happened. Already-initialized accounts are returned
+  /// untouched, so clearing every pin is a decision the app respects.
+  static func bootstrapped(
+    _ raw: String,
+    initializedAccountsRaw: String,
+    accountID: String,
+    defaults: [PinnedZone],
+    limit: Int = defaultLimit
+  ) -> (pins: String, initializedAccounts: String) {
+    var initialized = initializedAccountsRaw.split(separator: ",").map(String.init)
+    guard !initialized.contains(accountID) else {
+      return (raw, initializedAccountsRaw)
+    }
+    initialized.append(accountID)
+    let seeded = defaults.filter { $0.accountID == accountID }.prefix(limit)
+    let pins = Array(seeded) + decode(raw).filter { $0.accountID != accountID }
+    return (encode(pins), initialized.joined(separator: ","))
   }
 }
