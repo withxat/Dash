@@ -137,7 +137,32 @@ final class AppModel {
         {
           featureCache.set(FeatureCacheKey.zoneSettings("ui-zone"), settings)
         }
-        featureCache.set(FeatureCacheKey.workers("ui-account"), [WorkerScript]())
+        if let workers = try? JSONDecoder().decode(
+          [WorkerScript].self,
+          from: Data(
+            """
+            [{"id":"api-worker","tag":"worker-tag","modified_on":"2026-07-16T03:04:05Z"}]
+            """.utf8))
+        {
+          featureCache.set(FeatureCacheKey.workers("ui-account"), workers)
+        }
+        featureCache.set(
+          FeatureCacheKey.workerSubdomain(accountID: "ui-account", name: "api-worker"), true)
+        featureCache.set(
+          FeatureCacheKey.workerDeployments(accountID: "ui-account", name: "api-worker"),
+          [
+            WorkerDeploymentSummary(
+              id: "preview-deployment",
+              createdOn: ISO8601DateFormatter().string(
+                from: Date().addingTimeInterval(-18 * 60)),
+              source: "api",
+              versions: [])
+          ])
+        featureCache.set(
+          FeatureCacheKey.workerAnalytics(accountID: "ui-account", name: "api-worker"),
+          WorkerAnalyticsPayload(
+            requests: 12_480, errors: 7, cpuTimeP50Us: 840,
+            points: []))
         featureCache.set(FeatureCacheKey.r2Buckets("ui-account"), [R2Bucket]())
         featureCache.set(FeatureCacheKey.kvNamespaces("ui-account"), [KVNamespace]())
         // One signal of each routing shape: pushes a screen, and the two that

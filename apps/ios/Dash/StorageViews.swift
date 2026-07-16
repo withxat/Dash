@@ -82,6 +82,10 @@ struct R2BucketView: View {
   @State private var loadingMore = false
   @State private var importsFile = false
   @State private var selectedObject: R2Object?
+  @State private var uploadTask: Task<Void, Never>?
+  @State private var uploadingFileName: String?
+  @State private var uploadNotice: String?
+  @State private var uploadNoticeKind: DashNotice.Kind = .success
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
   private var requestPrefix: String { folderPrefix + prefix }
@@ -106,6 +110,12 @@ struct R2BucketView: View {
       hasContent: !objects.isEmpty || !folders.isEmpty || parentPrefix != nil,
       retry: { Task { await load() } }
     ) {
+      if let uploadingFileName {
+        uploadProgressCard(uploadingFileName)
+      }
+      if let uploadNotice {
+        DashNotice(kind: uploadNoticeKind, message: uploadNotice)
+      }
       if parentPrefix != nil || !folders.isEmpty || !objects.isEmpty {
         DashListCard {
           if let parentPrefix {
@@ -181,12 +191,14 @@ struct R2BucketView: View {
           DashToolbarIconButton(asset: SolarAsset.upload, accessibilityLabel: "Upload file") {
             importsFile = true
           }
+          .disabled(uploadTask != nil)
+          .opacity(uploadTask == nil ? 1 : 0.45)
         }
         .dashSeparateToolbarBackground()
       }
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
-      if case .success(let url) = result { Task { await upload(url) } }
+      if case .success(let url) = result { beginUpload(url) }
     }
     .dashTray(
       item: $selectedObject,
@@ -214,6 +226,33 @@ struct R2BucketView: View {
       }
     )
     .refreshable { await load(force: true) }.task(id: requestPrefix) { await load() }
+    .onDisappear { uploadTask?.cancel() }
+  }
+
+  private func uploadProgressCard(_ fileName: String) -> some View {
+    DashCard {
+      HStack(spacing: 12) {
+        DashLoadingRing(color: DashTheme.brand)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Uploading \(fileName)")
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
+            .lineLimit(1)
+          Text("Keep Dash open until the upload finishes.")
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.subtle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        Button("Cancel") {
+          uploadTask?.cancel()
+        }
+        .dashTextStyle(.supportingSemibold)
+        .foregroundStyle(DashTheme.danger)
+        .buttonStyle(DashPressButtonStyle())
+        .dashCompactHitTarget()
+      }
+    }
+    .accessibilityElement(children: .contain)
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -263,8 +302,23 @@ struct R2BucketView: View {
   /// good for ~5 GiB, but iOS jetsams the app long before that.
   private static let uploadSizeLimit = 100 * 1024 * 1024
 
+  private func beginUpload(_ url: URL) {
+    guard uploadTask == nil else { return }
+    uploadingFileName = url.lastPathComponent
+    uploadNotice = nil
+    uploadTask = Task { await upload(url) }
+  }
+
   private func upload(_ url: URL) async {
-    guard let id = model.activeAccountID else { return }
+    guard let id = model.activeAccountID else {
+      uploadTask = nil
+      uploadingFileName = nil
+      return
+    }
+    defer {
+      uploadTask = nil
+      uploadingFileName = nil
+    }
     do {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -273,18 +327,43 @@ struct R2BucketView: View {
         return
       }
       guard size <= Self.uploadSizeLimit else {
-        error =
-          "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(Self.uploadSizeLimit.formatted(.byteCount(style: .file))) — use wrangler or the dashboard for this one."
+        uploadNoticeKind = .error
+        uploadNotice =
+          "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(Self.uploadSizeLimit.formatted(.byteCount(style: .file))). Use wrangler or the dashboard for this one."
         return
       }
-      let data = try Data(contentsOf: url)
+      let readTask = Task.detached(priority: .userInitiated) {
+        try Task.checkCancellation()
+        let data = try Data(contentsOf: url)
+        try Task.checkCancellation()
+        return data
+      }
+      let data = try await withTaskCancellationHandler {
+        try await readTask.value
+      } onCancel: {
+        readTask.cancel()
+      }
+      try Task.checkCancellation()
       try await model.client.putR2Object(
         accountID: id, bucket: bucket, key: folderPrefix + url.lastPathComponent, data: data,
         contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
+      try Task.checkCancellation()
       model.featureCache.remove(
         FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: requestPrefix))
       await load(force: true)
-    } catch { self.error = error.dashActionableMessage }
+      uploadNoticeKind = .success
+      uploadNotice = "Uploaded \(url.lastPathComponent)."
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
+    } catch {
+      if error.dashIsCancellation || Task.isCancelled {
+        uploadNoticeKind = .warning
+        uploadNotice = "Upload cancelled."
+        return
+      }
+      uploadNoticeKind = .error
+      uploadNotice = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
+    }
   }
   private func navigate(to prefix: String) {
     folderPrefix = prefix

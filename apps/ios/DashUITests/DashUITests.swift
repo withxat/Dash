@@ -173,6 +173,32 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.scrollViews["home-zones-strip"].exists)
   }
 
+  func testWorkerDetailShowsLatestActiveDeployment() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-preview"]
+    app.launch()
+
+    let resources = app.tabBars.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let workers = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "Scripts, metrics")
+    ).firstMatch
+    XCTAssertTrue(workers.waitForExistence(timeout: 5))
+    workers.tap()
+
+    let worker = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "api-worker")
+    ).firstMatch
+    XCTAssertTrue(worker.waitForExistence(timeout: 5))
+    worker.tap()
+
+    XCTAssertTrue(app.staticTexts["Latest deployment"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Serving production traffic"].exists)
+    XCTAssertTrue(app.staticTexts["Active"].exists)
+  }
+
   /// The relay keeps `/push/*` deployed for rollback, but the app must never
   /// offer it. Alerts moved from the Account feature to Watchtower in the
   /// catalog trim; the invariant did not move with them.

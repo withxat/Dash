@@ -13,6 +13,9 @@ enum FeatureCacheKey {
   static func workerAnalytics(accountID: String, name: String) -> String {
     "workerAnalytics:\(accountID):\(name)"
   }
+  static func workerDeployments(accountID: String, name: String) -> String {
+    "workerDeployments:\(accountID):\(name)"
+  }
   static func zoneSettings(_ zoneID: String) -> String { "zoneSettings:\(zoneID)" }
   static func zoneAnalytics(_ zoneID: String, days: Int) -> String {
     "zoneAnalytics:\(zoneID):\(days)"

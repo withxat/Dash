@@ -726,29 +726,48 @@ struct WorkersView: View {
 
 struct WorkerDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let name: String
   @State private var analytics: WorkerAnalyticsPayload?
   @State private var analyticsError: String?
+  @State private var deployments: [WorkerDeploymentSummary] = []
+  @State private var deploymentError: String?
   @State private var error: String?
+  @State private var loading = true
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
+  @State private var subdomainUpdating = false
+  @State private var subdomainNotice: String?
+  @State private var subdomainFailed = false
 
   var body: some View {
     DashFeatureList(
-      isLoading: analytics == nil && error == nil,
+      isLoading: loading,
       error: error,
       hasContent: true,
       retry: { Task { await load(force: true) } }
     ) {
+      if let latestDeployment = deployments.first {
+        workerDeploymentCard(latestDeployment)
+      } else if let deploymentError {
+        DashNotice(kind: .warning, message: deploymentError)
+      }
       if let analytics {
         workerMetricsCard(analytics)
       } else if let analyticsError {
         DashNotice(kind: .warning, message: analyticsError)
       }
-      DashToggleRow(title: "workers.dev", isOn: $subdomainEnabled)
-        .onChange(of: subdomainEnabled) { _, enabled in
-          if loadedSubdomain { Task { await setSubdomain(enabled) } }
-        }
+      DashToggleRow(
+        title: "workers.dev",
+        subtitle: featureAllowsWrites ? nil : "Grant Workers write access to change this setting.",
+        isOn: subdomainBinding,
+        isEnabled: loadedSubdomain && featureAllowsWrites,
+        isLoading: subdomainUpdating
+      )
+      if let subdomainNotice {
+        DashNotice(kind: subdomainFailed ? .error : .success, message: subdomainNotice)
+      }
       if model.hasScopes(["workers-tail.read"]) {
         DashListCard {
           DashListGroupLink(value: .workerTail(name)) {
@@ -761,18 +780,92 @@ struct WorkerDetailView: View {
     .refreshable { await load(force: true) }
   }
 
+  private var subdomainBinding: Binding<Bool> {
+    Binding(
+      get: { subdomainEnabled },
+      set: { enabled in
+        guard loadedSubdomain, featureAllowsWrites, !subdomainUpdating else { return }
+        subdomainEnabled = enabled
+        Task { await setSubdomain(enabled) }
+      })
+  }
+
+  private func workerDeploymentCard(_ deployment: WorkerDeploymentSummary) -> some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 10) {
+        workerDeploymentHeader
+        Text(deployment.annotations?.message ?? "Serving production traffic")
+          .dashTextStyle(.bodySemibold)
+          .foregroundStyle(DashTheme.text)
+          .fixedSize(horizontal: false, vertical: true)
+        Text(workerDeploymentAgeText(deployment.createdOn))
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.subtle)
+        Text(workerDeploymentTrafficText(deployment))
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.rowSubtitle)
+          .fixedSize(horizontal: false, vertical: true)
+        if let author = deployment.authorEmail {
+          Text(author)
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.placeholder)
+            .lineLimit(1)
+        }
+      }
+    }
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(
+      "Latest deployment, active, \(workerDeploymentAgeText(deployment.createdOn)), \(workerDeploymentTrafficText(deployment))"
+    )
+  }
+
+  @ViewBuilder private var workerDeploymentHeader: some View {
+    if dynamicTypeSize.isAccessibilitySize {
+      VStack(alignment: .leading, spacing: 8) {
+        workerDeploymentLabel
+        StatusBadge(text: "Active")
+      }
+    } else {
+      HStack(spacing: 10) {
+        workerDeploymentLabel
+        Spacer(minLength: 0)
+        StatusBadge(text: "Active")
+      }
+    }
+  }
+
+  private var workerDeploymentLabel: some View {
+    HStack(spacing: 10) {
+      SolarIcon(asset: SolarAsset.cloud, size: 20, color: DashTheme.brand)
+      Text("Latest deployment")
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
+
   private func workerMetricsCard(_ summary: WorkerAnalyticsPayload) -> some View {
     DashCard {
       VStack(alignment: .leading, spacing: 10) {
         Text("Last 24 hours")
           .dashTextStyle(.footnoteSemibold)
           .foregroundStyle(DashTheme.subtle)
-        HStack(spacing: 12) {
-          workerMetric("Requests", summary.requests.formatted())
-          workerMetric("Errors", summary.errors.formatted())
-          workerMetric(
-            "CPU p50",
-            String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: 12) {
+            workerMetric("Requests", summary.requests.formatted())
+            workerMetric("Errors", summary.errors.formatted())
+            workerMetric(
+              "CPU p50",
+              String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+          }
+        } else {
+          HStack(spacing: 12) {
+            workerMetric("Requests", summary.requests.formatted())
+            workerMetric("Errors", summary.errors.formatted())
+            workerMetric(
+              "CPU p50",
+              String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+          }
         }
         if summary.requests > 0 {
           let rate = Double(summary.errors) / Double(summary.requests)
@@ -802,26 +895,47 @@ struct WorkerDetailView: View {
   }
 
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let accountID = model.activeAccountID else {
+      loading = false
+      return
+    }
+    if analytics == nil, deployments.isEmpty { loading = true }
+    error = nil
     let key = FeatureCacheKey.workerSubdomain(accountID: accountID, name: name)
     if !force, let cached: Bool = model.featureCache.get(key) {
       subdomainEnabled = cached
       loadedSubdomain = true
-      error = nil
-      await loadAnalytics(accountID: accountID, force: force)
+    } else {
+      do {
+        subdomainEnabled = try await model.client.getWorkerSubdomain(
+          accountID: accountID, name: name
+        ).enabled
+        loadedSubdomain = true
+        model.featureCache.set(key, subdomainEnabled)
+      } catch {
+        self.error = error.dashActionableMessage
+      }
+    }
+    await loadDeployments(accountID: accountID, force: force)
+    await loadAnalytics(accountID: accountID, force: force)
+    loading = false
+  }
+
+  private func loadDeployments(accountID: String, force: Bool) async {
+    let key = FeatureCacheKey.workerDeployments(accountID: accountID, name: name)
+    if !force, let cached: [WorkerDeploymentSummary] = model.featureCache.get(key) {
+      deployments = cached
+      deploymentError = nil
       return
     }
     do {
-      subdomainEnabled = try await model.client.getWorkerSubdomain(
-        accountID: accountID, name: name
-      ).enabled
-      loadedSubdomain = true
-      model.featureCache.set(key, subdomainEnabled)
-      error = nil
+      deployments = try await model.client.listWorkerDeployments(
+        accountID: accountID, scriptName: name)
+      deploymentError = nil
+      model.featureCache.set(key, deployments)
     } catch {
-      self.error = error.dashActionableMessage
+      deploymentError = error.dashActionableMessage
     }
-    await loadAnalytics(accountID: accountID, force: force)
   }
 
   private func loadAnalytics(accountID: String, force: Bool) async {
@@ -843,17 +957,46 @@ struct WorkerDetailView: View {
 
   private func setSubdomain(_ enabled: Bool) async {
     guard let accountID = model.activeAccountID else { return }
+    subdomainUpdating = true
+    subdomainNotice = nil
+    defer { subdomainUpdating = false }
     do {
       let result = try await model.client.setWorkerSubdomain(
         accountID: accountID, name: name, enabled: enabled)
       subdomainEnabled = result.enabled
       model.featureCache.set(
         FeatureCacheKey.workerSubdomain(accountID: accountID, name: name), result.enabled)
+      subdomainFailed = false
+      subdomainNotice = "workers.dev \(result.enabled ? "enabled" : "disabled")."
+      UINotificationFeedbackGenerator().notificationOccurred(.success)
     } catch {
-      subdomainEnabled.toggle()
-      self.error = error.dashActionableMessage
+      subdomainEnabled = !enabled
+      subdomainFailed = true
+      subdomainNotice = error.dashActionableMessage
+      UINotificationFeedbackGenerator().notificationOccurred(.error)
     }
   }
+}
+
+private func workerDeploymentAgeText(_ value: String, now: Date = .now) -> String {
+  let fractional = ISO8601DateFormatter()
+  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+  let plain = ISO8601DateFormatter()
+  plain.formatOptions = [.withInternetDateTime]
+  guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
+    return "Deployed \(value)"
+  }
+  let formatter = RelativeDateTimeFormatter()
+  formatter.unitsStyle = .abbreviated
+  return "Deployed \(formatter.localizedString(for: date, relativeTo: now))"
+}
+
+private func workerDeploymentTrafficText(_ deployment: WorkerDeploymentSummary) -> String {
+  guard !deployment.versions.isEmpty else { return deployment.source.capitalized }
+  if deployment.versions.count == 1, let version = deployment.versions.first {
+    return "Version \(version.versionID.prefix(8)) · \(version.percentage.formatted())% traffic"
+  }
+  return "Traffic split across \(deployment.versions.count) versions"
 }
 
 struct CachePurgeView: View {
