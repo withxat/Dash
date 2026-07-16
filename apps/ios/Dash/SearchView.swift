@@ -42,9 +42,7 @@ struct SearchView: View {
     guard trimmedSearch.count >= 2 else { return [] }
     return FeatureCatalog.sorted(
       FeatureCatalog.all.filter {
-        DashAuthorizationScopes.isVisible(
-          $0, experimentalEnabled: model.experimentalFeaturesEnabled)
-          && FeatureCatalog.matchesSearch($0, query: trimmedSearch)
+        FeatureCatalog.matchesSearch($0, query: trimmedSearch)
       }
     )
   }
@@ -86,19 +84,9 @@ struct SearchView: View {
     )
   }
 
-  private var d1Results: [D1Database] {
-    guard activeQuery.count >= 2, let accountID = model.activeAccountID else { return [] }
-    let databases: [D1Database] =
-      model.featureCache.get(FeatureCacheKey.d1Databases(accountID)) ?? []
-    return Array(
-      databases.filter { SearchResourceFiltering.matches($0.name, query: activeQuery) }
-        .prefix(SearchResourceFiltering.resultLimit)
-    )
-  }
-
   private var hasResourceHits: Bool {
     !zoneResults.isEmpty || !workerResults.isEmpty || !bucketResults.isEmpty
-      || !kvResults.isEmpty || !d1Results.isEmpty
+      || !kvResults.isEmpty
   }
 
   var body: some View {
@@ -107,6 +95,7 @@ struct SearchView: View {
         listContent
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       .animation(DashTheme.Motion.quick, value: trimmedSearch)
     }
@@ -126,7 +115,7 @@ struct SearchView: View {
         icon: SolarAsset.search,
         title: "Search",
         message:
-          "Find a feature, zone, Worker, R2 bucket, KV namespace, or D1 database."
+          "Find a feature, zone, Worker, R2 bucket, or KV namespace."
       )
     } else if trimmedSearch.count < 2 {
       DashEmptyState(
@@ -242,17 +231,6 @@ struct SearchView: View {
           }
         }
       }
-      if !d1Results.isEmpty {
-        resourceGroup(title: "D1 databases") {
-          ForEach(d1Results, id: \.id) { database in
-            resourceLink(
-              .d1(
-                accountID: model.activeAccountID ?? "", id: database.id, title: database.name),
-              subtitle: "D1"
-            )
-          }
-        }
-      }
     }
   }
 
@@ -326,7 +304,6 @@ struct SearchView: View {
       || model.featureCache.get(FeatureCacheKey.workers(accountID)) as [WorkerScript]? != nil
       || model.featureCache.get(FeatureCacheKey.r2Buckets(accountID)) as [R2Bucket]? != nil
       || model.featureCache.get(FeatureCacheKey.kvNamespaces(accountID)) as [KVNamespace]? != nil
-      || model.featureCache.get(FeatureCacheKey.d1Databases(accountID)) as [D1Database]? != nil
 
     if !force, hasCache, fetchedAccountID == accountID {
       resourcesPhase = .ready
@@ -393,16 +370,6 @@ struct SearchView: View {
           }
         }
       }
-      if force
-        || model.featureCache.get(FeatureCacheKey.d1Databases(accountID)) as [D1Database]? == nil
-      {
-        group.addTask {
-          let page = try await model.client.listD1Databases(accountID: accountID)
-          await MainActor.run {
-            model.featureCache.set(FeatureCacheKey.d1Databases(accountID), page.items)
-          }
-        }
-      }
       try await group.waitForAll()
     }
   }
@@ -425,7 +392,4 @@ extension RecentResource {
     RecentResource(kind: .kv, accountID: accountID, resourceID: id, title: title)
   }
 
-  static func d1(accountID: String, id: String, title: String) -> RecentResource {
-    RecentResource(kind: .d1, accountID: accountID, resourceID: id, title: title)
-  }
 }

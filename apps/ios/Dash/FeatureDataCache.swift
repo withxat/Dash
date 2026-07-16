@@ -7,10 +7,6 @@ enum FeatureCacheKey {
   static func zone(_ zoneID: String) -> String { "zone:\(zoneID)" }
   static func dnsRecords(_ zoneID: String) -> String { "dns:\(zoneID)" }
   static func workers(_ accountID: String) -> String { "workers:\(accountID)" }
-  static func pages(_ accountID: String) -> String { "pages:\(accountID)" }
-  static func workerSource(accountID: String, name: String) -> String {
-    "workerSource:\(accountID):\(name)"
-  }
   static func workerSubdomain(accountID: String, name: String) -> String {
     "workerSubdomain:\(accountID):\(name)"
   }
@@ -22,11 +18,6 @@ enum FeatureCacheKey {
     "zoneAnalytics:\(zoneID):\(days)"
   }
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
-  static func generic(path: String) -> String { "generic:\(path)" }
-  static func images(_ accountID: String) -> String { "images:\(accountID)" }
-  static func stream(_ accountID: String) -> String { "stream:\(accountID)" }
-  static func rumSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
-  static func accountSnapshot(_ accountID: String) -> String { "account:\(accountID)" }
   static func r2Buckets(_ accountID: String) -> String { "r2:\(accountID)" }
   static func r2Objects(accountID: String, bucket: String, prefix: String) -> String {
     "r2:\(accountID):\(bucket):\(prefix)"
@@ -35,15 +26,7 @@ enum FeatureCacheKey {
   static func kvKeys(accountID: String, namespaceID: String, prefix: String) -> String {
     "kvKeys:\(accountID):\(namespaceID):\(prefix)"
   }
-  static func d1Databases(_ accountID: String) -> String { "d1:\(accountID)" }
   static func watchtower(_ accountID: String) -> String { "watchtower:\(accountID)" }
-}
-
-struct AccountFeatureSnapshot: Sendable {
-  var members: [AccountMember]
-  var policies: [NotificationPolicy]
-  var history: [NotificationHistoryEntry]
-  var auditLogs: [AuditLogEntry]
 }
 
 struct WatchtowerSnapshot: Sendable {
@@ -88,12 +71,6 @@ extension WatchtowerStatus {
     case .critical: "critical"
     }
   }
-}
-
-struct WorkerDetailSnapshot: Sendable {
-  var source: WorkerSource
-  var subdomainEnabled: Bool
-  var tag: String?
 }
 
 /// Accumulated cursor-paginated rows plus the cursor to continue from, so a

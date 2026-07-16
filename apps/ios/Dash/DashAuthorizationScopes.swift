@@ -5,31 +5,21 @@ import Foundation
 /// catalog; Dash owns which capabilities its mobile operations workflow asks
 /// for by default.
 enum DashAuthorizationScopes {
-  static let experimentalFeatures: Set<FeatureID> = [
-    .workersAI, .browserRendering, .images, .stream,
-  ]
-
   static let coreFeatures: Set<FeatureID> = [
     .zones,
-    .dnsManagement,
     .workers,
     .r2,
     .kv,
-    .d1,
-    .queues,
-    .accessApps,
-    .accessGroups,
-    .accessPolicies,
-    .serviceTokens,
-    .tunnels,
-    .sslCertificates,
-    .cacheSettings,
-    .analytics,
-    .account,
   ]
 
   /// Operational scopes used by nested screens, Watchtower, and App Intents
   /// that are not represented by a standalone FeatureID.
+  ///
+  /// `core` is derived from `coreFeatures`, so a scope that lives only in a
+  /// feature's capability disappears from the OAuth request the moment that
+  /// feature leaves the catalog — silently, and only for accounts that sign in
+  /// afterwards. Anything a surviving screen calls belongs here instead.
+  /// `scopesOutlivingTheirFeature` in DashTests is the guard.
   private static let coreOperations: Set<String> = [
     "zone-settings.read",
     "zone-settings.write",
@@ -37,6 +27,13 @@ enum DashAuthorizationScopes {
     "healthcheck.read",
     "load-balancing-monitors-and-pools.read",
     "registrar-domains.read",
+    "dns.read",
+    "dns.write",
+    "cache.purge",
+    "argotunnel.read",
+    "notifications.read",
+    "ssl-and-certificates.read",
+    "account-analytics.read",
   ]
 
   static let core: Set<String> = {
@@ -49,23 +46,11 @@ enum DashAuthorizationScopes {
       .union(CloudflareScopes.required)
   }()
 
-  static let experimental: Set<String> = [
-    "ai.read",
-    "ai.write",
-    "browser-rendering.read",
-    "browser-rendering.write",
-    "images.read",
-    "images.write",
-    "stream.read",
-    "stream.write",
-  ]
-
   static let searchResources: Set<String> = [
     "zone.read",
     "workers-scripts.read",
     "workers-r2.read",
     "workers-kv-storage.read",
-    "d1.read",
   ]
 
   static let watchtower: Set<String> = [
@@ -78,15 +63,4 @@ enum DashAuthorizationScopes {
     "ssl-and-certificates.read",
     "healthcheck.read",
   ]
-
-  static func initial(experimentalEnabled: Bool) -> Set<String> {
-    experimentalEnabled ? core.union(experimental) : core
-  }
-
-  static func isVisible(
-    _ feature: FeatureID,
-    experimentalEnabled: Bool
-  ) -> Bool {
-    experimentalEnabled || !experimentalFeatures.contains(feature)
-  }
 }

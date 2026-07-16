@@ -1,3 +1,4 @@
+import CloudflareAPI
 import Combine
 import SwiftUI
 
@@ -119,6 +120,11 @@ enum TrayDragOutcome: Equatable, Sendable {
   case settleExpanded(Bool)
 }
 
+enum TrayDragStartDetent: Equatable, Sendable {
+  case expanded
+  case floating
+}
+
 enum TrayDragDecision {
   /// Content tray: a deliberate pull can dismiss on distance, while a fling
   /// must first travel far enough to establish downward intent. This keeps a
@@ -142,27 +148,31 @@ enum TrayDragDecision {
     return .settle
   }
 
-  /// Expandable tray: projection chooses a detent, but dismissal also requires
-  /// real downward travel. From the expanded detent the finger must cross the
-  /// floating detent before it can dismiss, so one small flick advances at most
-  /// one resting state.
+  /// Expandable tray: projection chooses a detent, while dismissal requires
+  /// either a deliberate pull or a downward flick with enough real travel.
+  /// A gesture that starts expanded must cross the floating detent before its
+  /// dismissal thresholds begin, so a short flick advances only one detent.
   static func expandable(
-    baseTop: CGFloat,
-    translation: CGFloat? = nil,
+    startDetent: TrayDragStartDetent,
+    translation: CGFloat,
     predictedEndTranslation: CGFloat,
+    velocity: CGFloat,
     expandedTop: CGFloat,
     floatingTop: CGFloat,
-    dismissPastFloatingFraction: CGFloat = 0.4,
-    minimumDismissPull: CGFloat? = nil
+    dismissDistance: CGFloat = 120,
+    minimumFlingDistance: CGFloat = 32,
+    velocityThreshold: CGFloat = 900
   ) -> TrayDragOutcome {
-    let detentSpan = floatingTop - expandedTop
-    let actualTranslation = translation ?? predictedEndTranslation
+    let baseTop = startDetent == .expanded ? expandedTop : floatingTop
     let predictedTop = baseTop + predictedEndTranslation
-    let dismissThreshold = floatingTop + detentSpan * dismissPastFloatingFraction
-    let intentDistance = minimumDismissPull ?? min(max(detentSpan * 0.18, 56), 72)
-    let distanceToFloating = max(0, floatingTop - baseTop)
-    let crossedDismissIntent = actualTranslation > distanceToFloating + intentDistance
-    if crossedDismissIntent && predictedTop > dismissThreshold {
+    let distanceToFloating =
+      startDetent == .expanded ? max(0, floatingTop - expandedTop) : 0
+    let travelPastFloating = translation - distanceToFloating
+    let isDeliberatePull = travelPastFloating > dismissDistance
+    let isDeliberateFling =
+      travelPastFloating >= minimumFlingDistance
+      && velocity > velocityThreshold
+    if isDeliberatePull || isDeliberateFling {
       return .dismiss
     }
     let snapExpanded = abs(predictedTop - expandedTop) < abs(predictedTop - floatingTop)
@@ -201,7 +211,10 @@ private struct DashSheetHeader: View {
     VStack(spacing: 0) {
       if showsGrabBar { DashSheetGrabBar() }
 
-      HStack(alignment: .center, spacing: 8) {
+      // Both circular controls already carry independent 44pt hit targets.
+      // Zero stack spacing keeps those targets adjacent (never overlapping)
+      // and reduces the visible action-to-close gap from 20pt to 12pt.
+      HStack(alignment: .center, spacing: 0) {
         Text(title)
           .dashTextStyle(.trayTitle)
           .foregroundStyle(DashTheme.strong)
@@ -229,7 +242,11 @@ private struct DashSheetHeader: View {
         }
         DashCloseButton { dismiss() }
       }
-      .padding(.horizontal, DashTheme.Sheet.content)
+      .padding(.leading, DashTheme.Sheet.content)
+      // The close circle is 32pt inside a centered 44pt hit target. Let the
+      // invisible 6pt trailing half extend into the inset so the visible circle
+      // aligns with the title's 28pt leading edge.
+      .padding(.trailing, DashTheme.Sheet.content - 6)
       .padding(.top, showsGrabBar ? 12 : DashTheme.Sheet.headerTop)
       .padding(.bottom, DashTheme.Sheet.headerBottom)
 
@@ -359,12 +376,13 @@ private struct DashCustomSheet<Content: View>: View {
   }
 
   /// Bottom gap under the floating card: the keyboard plus a margin while
-  /// typing; otherwise the home-indicator inset already reads as the gap, so
-  /// an explicit margin is added only on square-bottomed devices.
+  /// typing. At rest, tuck the card slightly into the home-indicator safe area
+  /// so it does not appear to float too high above the screen edge.
   private func bottomLift(_ proxy: GeometryProxy) -> CGFloat {
     let keyboard = keyboardInset(proxy)
     if keyboard > 0 { return keyboard + DashTheme.Sheet.floatingMargin }
-    return proxy.safeAreaInsets.bottom > 0 ? 0 : DashTheme.Sheet.floatingMargin
+    return proxy.safeAreaInsets.bottom > 0
+      ? -DashTheme.Sheet.floatingBottomTuck : DashTheme.Sheet.floatingMargin
   }
 
   private func close() {
@@ -513,7 +531,9 @@ private struct DashExpandableSheet<Content: View>: View {
   private func metrics(in proxy: GeometryProxy) -> Metrics {
     let safeBottom = proxy.safeAreaInsets.bottom
     let expandedTop = DashTheme.Sheet.expandedTopGap
-    let floatingBottomMargin = max(safeBottom, DashTheme.Sheet.floatingMargin)
+    let floatingBottomMargin = max(
+      safeBottom - DashTheme.Sheet.floatingBottomTuck,
+      DashTheme.Sheet.floatingMargin)
     let floatingHeight = proxy.size.height * DashTheme.Sheet.floatingDetentFraction
     let floatingTop = proxy.size.height - floatingBottomMargin - floatingHeight
 
@@ -541,11 +561,11 @@ private struct DashExpandableSheet<Content: View>: View {
     DragGesture(coordinateSpace: .global)
       .onChanged { value in drag = value.translation.height }
       .onEnded { value in
-        let baseTop = expanded ? metrics.expandedTop : metrics.floatingTop
         switch TrayDragDecision.expandable(
-          baseTop: baseTop,
+          startDetent: expanded ? .expanded : .floating,
           translation: value.translation.height,
           predictedEndTranslation: value.predictedEndTranslation.height,
+          velocity: value.velocity.height,
           expandedTop: metrics.expandedTop,
           floatingTop: metrics.floatingTop
         ) {
@@ -836,9 +856,6 @@ extension View {
   func dashCatalogScreen(_ title: String) -> some View {
     navigationTitle(title)
       .navigationBarTitleDisplayMode(.large)
-      // Breathing room between the large title and the first group — one
-      // section gap, so entering a screen reads like scrolling between groups.
-      .contentMargins(.top, DashTheme.Spacing.section, for: .scrollContent)
       .toolbar {
         CatalogToolbar()
       }
@@ -1675,5 +1692,77 @@ extension View {
     dashTray(isPresented: isPresented, title: title) {
       DashConfirmableActions(actions: actions)
     }
+  }
+}
+
+extension Error {
+  var dashActionableMessage: String {
+    DashFailurePresentation.from(error: self).message
+  }
+
+  /// Task / URLSession cancellations from `.task` identity changes — not user-facing failures.
+  var dashIsCancellation: Bool {
+    self is CancellationError || (self as? URLError)?.code == .cancelled
+  }
+}
+
+/// Maps Cloudflare / transport failures to a primary recovery action.
+enum DashFailureAction: Equatable, Sendable {
+  case signInAgain
+  case grantAccess
+  case tryAgain
+
+  var title: String {
+    switch self {
+    case .signInAgain: "Sign in again"
+    case .grantAccess: "Grant access"
+    case .tryAgain: "Try again"
+    }
+  }
+}
+
+struct DashFailurePresentation: Equatable, Sendable {
+  let message: String
+  let action: DashFailureAction
+
+  static func from(error: Error) -> DashFailurePresentation {
+    if let apiError = error as? CloudflareAPIError, apiError.isUnauthorized {
+      return DashFailurePresentation(
+        message: "Your Cloudflare session is no longer valid. Sign in again.",
+        action: .signInAgain)
+    }
+    if let apiError = error as? CloudflareAPIError, apiError.isForbidden {
+      return DashFailurePresentation(
+        message: (apiError.errorDescription ?? "Permission denied")
+          + "\n\nGrant access for this product, or confirm the account includes it.",
+        action: .grantAccess)
+    }
+    if let apiError = error as? CloudflareAPIError, apiError.isRateLimited {
+      return DashFailurePresentation(
+        message: "Rate limited by Cloudflare — wait a moment and try again.",
+        action: .tryAgain)
+    }
+    if error is URLError {
+      return DashFailurePresentation(
+        message: error.localizedDescription,
+        action: .tryAgain)
+    }
+    return DashFailurePresentation(
+      message: error.localizedDescription,
+      action: .tryAgain)
+  }
+
+  static func from(message: String) -> DashFailurePresentation {
+    let lower = message.lowercased()
+    if lower.contains("sign in again") || lower.contains("session is no longer valid") {
+      return DashFailurePresentation(message: message, action: .signInAgain)
+    }
+    if lower.contains("permission denied") || lower.contains("grant access")
+      || lower.contains("forbidden") || lower.contains("granted scopes")
+      || lower.contains("may not include this product")
+    {
+      return DashFailurePresentation(message: message, action: .grantAccess)
+    }
+    return DashFailurePresentation(message: message, action: .tryAgain)
   }
 }

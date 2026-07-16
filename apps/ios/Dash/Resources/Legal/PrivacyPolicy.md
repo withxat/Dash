@@ -23,7 +23,7 @@ general-purpose backend that stores your account data.
   and `api.cloudflare.com` over HTTPS. Dash displays it and caches some of it
   in memory for the current session only; nothing is written to disk.
 - **Preferences** (home-screen shortcuts, recently opened resources, pinned
-  zones, the selected account, experimental-feature visibility, and Watchtower notification opt-in) are stored
+  zones, the selected account, and Watchtower notification opt-in) are stored
   locally in the app's own settings storage on your device.
 
 ## The relay worker

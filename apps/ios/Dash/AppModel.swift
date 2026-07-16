@@ -28,7 +28,6 @@ final class AppModel {
   var isAuthenticating = false
   var grantedScopes: Set<String>?
   var selectedScopes: Set<String>
-  var experimentalFeaturesEnabled: Bool
   var user: CloudflareUser?
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
@@ -37,7 +36,6 @@ final class AppModel {
   /// badge. nil until the first check completes for the active account.
   var watchtowerIssueCount: Int?
 
-  static let experimentalFeaturesDefaultsKey = "dash.experimental_features"
   static let watchtowerTTL: TimeInterval = 5 * 60
 
   /// A deep link / App Intent target waiting to be consumed by MainTabView.
@@ -54,12 +52,8 @@ final class AppModel {
   private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
 
   init(configuration: AppConfiguration = .current) {
-    let experimentalEnabled = UserDefaults.standard.bool(
-      forKey: Self.experimentalFeaturesDefaultsKey)
     self.configuration = configuration
-    experimentalFeaturesEnabled = experimentalEnabled
-    selectedScopes = DashAuthorizationScopes.initial(
-      experimentalEnabled: experimentalEnabled)
+    selectedScopes = DashAuthorizationScopes.core
     let store = KeychainTokenStore()
     tokenStore = store
     client = CloudflareClient(clientID: configuration.clientID, tokenStore: store)
@@ -90,17 +84,74 @@ final class AppModel {
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
         grantedScopes = Set(CloudflareScopes.published)
         activeAccountID = "ui-account"
-        if let zone = try? JSONDecoder().decode(
-          CloudflareZone.self,
+        if let zones = try? JSONDecoder().decode(
+          [CloudflareZone].self,
           from: Data(
-            #"{"id":"ui-zone","name":"example.com","status":"active"}"#.utf8))
+            """
+            [
+              {"id":"ui-zone","name":"example.com","status":"active"},
+              {"id":"ui-zone-docs","name":"docs.example.com","status":"active"},
+              {"id":"ui-zone-api","name":"api.example.net","status":"pending"},
+              {"id":"ui-zone-shop","name":"shop.example.org","status":"active"}
+            ]
+            """.utf8))
         {
-          featureCache.set(FeatureCacheKey.zones("ui-account"), [zone])
+          featureCache.set(FeatureCacheKey.zones("ui-account"), zones)
+          // Zone detail reads a per-zone key, not the list, so seed it too or
+          // the screen is unreachable without a live token.
+          for zone in zones {
+            featureCache.set(FeatureCacheKey.zone(zone.id), zone)
+          }
+        }
+        // A realistic slice of the ~60 settings Cloudflare returns: the five the
+        // curated panel keeps, plus ones it must drop (a plan-locked toggle, a
+        // set-once choice, and the array-valued key that used to render as
+        // "N values, N values").
+        if let settings = try? JSONDecoder().decode(
+          [ZoneSetting].self,
+          from: Data(
+            """
+            [
+              {"id":"security_level","value":"medium","editable":true},
+              {"id":"development_mode","value":"off","editable":true},
+              {"id":"ssl","value":"full","editable":true},
+              {"id":"always_online","value":"on","editable":true},
+              {"id":"always_use_https","value":"off","editable":true},
+              {"id":"advanced_ddos","value":"on","editable":false},
+              {"id":"min_tls_version","value":"1.2","editable":true},
+              {"id":"browser_cache_ttl","value":14400,"editable":true},
+              {"id":"transformations","value":[{"a":1},{"b":2}],"editable":false}
+            ]
+            """.utf8))
+        {
+          featureCache.set(FeatureCacheKey.zoneSettings("ui-zone"), settings)
         }
         featureCache.set(FeatureCacheKey.workers("ui-account"), [WorkerScript]())
         featureCache.set(FeatureCacheKey.r2Buckets("ui-account"), [R2Bucket]())
         featureCache.set(FeatureCacheKey.kvNamespaces("ui-account"), [KVNamespace]())
-        featureCache.set(FeatureCacheKey.d1Databases("ui-account"), [D1Database]())
+        // One signal of each routing shape: pushes a screen, and the two that
+        // report a problem the app has no screen for.
+        featureCache.set(
+          FeatureCacheKey.watchtower("ui-account"),
+          WatchtowerSnapshot(
+            signals: [
+              WatchtowerSignal(
+                id: "zones", title: "Zones", detail: "1 zone pending",
+                status: .warning, destination: .feature(.zones),
+                suggestedAction: "Finish the nameserver move",
+                resourceName: "api.example.net"),
+              WatchtowerSignal(
+                id: "tunnels", title: "Tunnels", detail: "1 tunnel down",
+                status: .critical, destination: nil,
+                suggestedAction: "Check cloudflared and reconnect the tunnel",
+                resourceName: "homelab-01"),
+              WatchtowerSignal(
+                id: "pages", title: "Pages deployments",
+                detail: "site: latest deployment failed",
+                status: .warning, destination: nil, resourceName: "site"),
+            ],
+            alerts: [], alertsStatus: .ok, missingScopeChecks: [],
+            failedChecks: [], fetchedAt: .now))
         authState = .authenticated
         return
       }
@@ -172,20 +223,6 @@ final class AppModel {
   func hasScopes(_ scopes: Set<String>) -> Bool {
     guard let grantedScopes else { return true }
     return scopes.isSubset(of: grantedScopes)
-  }
-
-  func setExperimentalFeaturesEnabled(_ enabled: Bool) {
-    experimentalFeaturesEnabled = enabled
-    UserDefaults.standard.set(enabled, forKey: Self.experimentalFeaturesDefaultsKey)
-
-    guard authState == .authenticated else {
-      selectedScopes = DashAuthorizationScopes.initial(experimentalEnabled: enabled)
-      return
-    }
-
-    if enabled, !hasScopes(DashAuthorizationScopes.experimental) {
-      requestAccess(to: DashAuthorizationScopes.experimental)
-    }
   }
 
   private func authorize(scopes: Set<String>, preservesExistingSession: Bool) {
@@ -321,8 +358,7 @@ final class AppModel {
     user = nil
     activeAccountID = nil
     grantedScopes = nil
-    selectedScopes = DashAuthorizationScopes.initial(
-      experimentalEnabled: experimentalFeaturesEnabled)
+    selectedScopes = DashAuthorizationScopes.core
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil

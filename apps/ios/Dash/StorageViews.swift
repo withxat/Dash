@@ -4,12 +4,9 @@ import UniformTypeIdentifiers
 
 struct R2BucketsView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var buckets: [R2Bucket] = []
   @State private var error: String?
   @State private var loading = true
-  @State private var newName = ""
-  @State private var creates = false
 
   var body: some View {
     DashFeatureList(
@@ -22,9 +19,7 @@ struct R2BucketsView: View {
         DashEmptyState(
           icon: SolarAsset.box,
           title: "No buckets yet",
-          message: featureAllowsWrites
-            ? "Create a bucket with the add button."
-            : "No R2 buckets in this account."
+          message: "No R2 buckets in this account."
         )
       } else {
         DashListCard {
@@ -40,33 +35,13 @@ struct R2BucketsView: View {
         }
       }
     }
-    .toolbar {
-      if featureAllowsWrites {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New bucket") {
-            creates = true
-          }
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
-    .dashTray(isPresented: $creates, title: "New bucket") {
-      DashFormSheet(
-        saveTitle: "Create",
-        canSave: !newName.isEmpty,
-        onSave: { Task { await create() } },
-        content: {
-          DashFormField(label: "Bucket name", text: $newName)
-        }
-      )
-    }
     .refreshable { await load(force: true) }
     .task { await load() }
     .onAppear { reloadIfInvalidated() }
   }
 
-  /// A child (bucket screen) may delete a bucket and clear the cache while this
-  /// list stays alive below it; refresh on return when the cache went cold.
+  /// The cache drops under this list on memory pressure while it stays alive
+  /// below a child screen; refresh on return when the cache went cold.
   private func reloadIfInvalidated() {
     guard let id = model.activeAccountID, !buckets.isEmpty else { return }
     let cached: [R2Bucket]? = model.featureCache.get(FeatureCacheKey.r2Buckets(id))
@@ -89,66 +64,83 @@ struct R2BucketsView: View {
     } catch { self.error = error.dashActionableMessage }
     loading = false
   }
-  private func create() async {
-    guard let id = model.activeAccountID, !newName.isEmpty else { return }
-    do {
-      _ = try await model.client.createR2Bucket(accountID: id, name: newName)
-      newName = ""
-      creates = false
-      model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
-      await load(force: true)
-    } catch { self.error = error.dashActionableMessage }
-  }
 }
 
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismiss
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let bucket: String
   @State private var objects: [R2Object] = []
+  @State private var folders: [String] = []
   @State private var cursor: String?
+  @State private var folderPrefix = ""
   @State private var prefix = ""
   @State private var error: String?
-  // First load only — `.task(id: prefix)` reloads per keystroke, and
+  // First load only — `.task(id: requestPrefix)` reloads per keystroke or folder, and
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
   @State private var loadingMore = false
   @State private var importsFile = false
-  @State private var showsMore = false
   @State private var selectedObject: R2Object?
-  @State private var deletingObject = false
-  @State private var deleteError: String?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
+  private var requestPrefix: String { folderPrefix + prefix }
+  private var parentPrefix: String? {
+    guard !folderPrefix.isEmpty else { return nil }
+    var parent = folderPrefix
+    if parent.hasSuffix("/") { parent.removeLast() }
+    guard let separator = parent.lastIndex(of: "/") else { return "" }
+    return String(parent[...separator])
+  }
+  private var currentFolderName: String {
+    guard !folderPrefix.isEmpty else { return bucket }
+    return folderPrefix.dropLast().split(separator: "/").last.map(String.init) ?? bucket
+  }
 
   var body: some View {
     DashFeatureList(
       search: $prefix,
-      prompt: "Filter by prefix",
+      prompt: "Starts with",
       isLoading: loading,
       error: error,
-      hasContent: !objects.isEmpty,
+      hasContent: !objects.isEmpty || !folders.isEmpty || parentPrefix != nil,
       retry: { Task { await load() } }
     ) {
-      if objects.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.box,
-          title: prefix.isEmpty ? "Empty bucket" : "Nothing found",
-          message: prefix.isEmpty
-            ? (featureAllowsWrites
-              ? "Upload a file to get started." : "This bucket has no objects.")
-            : "No object matches \(prefix)."
-        )
-      } else {
+      if parentPrefix != nil || !folders.isEmpty || !objects.isEmpty {
         DashListCard {
+          if let parentPrefix {
+            Button {
+              navigate(to: parentPrefix)
+            } label: {
+              DashListRow(
+                title: "Parent folder",
+                subtitle: "Up one level",
+                icon: SolarAsset.chevronLeft,
+                iconColor: DashTheme.iconMuted,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
+          }
+          ForEach(folders, id: \.self) { folder in
+            Button {
+              navigate(to: folder)
+            } label: {
+              DashListRow(
+                title: folderName(folder),
+                subtitle: "Virtual folder",
+                icon: SolarAsset.boxMinimalistic,
+                iconColor: DashTheme.iconMuted
+              )
+            }
+            .buttonStyle(DashPressButtonStyle())
+          }
           DashListCardRows(items: objects) { object in
             Button {
-              deleteError = nil
               selectedObject = object
             } label: {
               DashListRow(
-                title: object.key,
+                title: objectName(object.key),
                 subtitle: object.size.map {
                   ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
                 },
@@ -161,13 +153,28 @@ struct R2BucketView: View {
           }
         }
       }
+      if folders.isEmpty && objects.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.box,
+          title: prefix.isEmpty
+            ? (folderPrefix.isEmpty ? "Empty bucket" : "Empty folder") : "Nothing found",
+          message: prefix.isEmpty
+            ? (folderPrefix.isEmpty
+              ? (featureAllowsWrites
+                ? "Upload a file to get started." : "This bucket has no objects.")
+              : "This virtual folder has no objects.")
+            : "Nothing in this folder starts with \(prefix)."
+        )
+      }
       if canLoadMore {
-        DashLoadMoreFooter(loaded: objects.count, noun: "objects", isLoading: loadingMore) {
+        DashLoadMoreFooter(
+          loaded: folders.count + objects.count, noun: "items", isLoading: loadingMore
+        ) {
           Task { await loadMore() }
         }
       }
     }
-    .navigationTitle(bucket)
+    .navigationTitle(currentFolderName)
     .toolbar {
       if featureAllowsWrites {
         ToolbarItem(placement: .topBarTrailing) {
@@ -176,41 +183,16 @@ struct R2BucketView: View {
           }
         }
         .dashSeparateToolbarBackground()
-        ToolbarItem(placement: .topBarTrailing) {
-          DashMoreButton(isPresented: $showsMore)
-        }
-        .dashSeparateToolbarBackground()
       }
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
       if case .success(let url) = result { Task { await upload(url) } }
     }
-    .dashMoreMenu(
-      isPresented: $showsMore,
-      title: bucket,
-      actions: [
-        DashDangerAction(
-          title: "Delete bucket",
-          message:
-            "Permanently delete \(bucket) and everything in it. This cannot be undone.",
-          confirmationText: bucket
-        ) {
-          try await deleteBucket()
-        }
-      ]
-    )
     .dashTray(
       item: $selectedObject,
       title: { $0.key },
       content: { object in
-        DashDetailTray(
-          fields: object.detailFields,
-          deleteMessage: featureAllowsWrites
-            ? "Permanently delete \(object.key) from \(bucket)." : nil,
-          isDeleting: deletingObject,
-          deleteError: deleteError,
-          onDelete: featureAllowsWrites ? { Task { await delete(object) } } : nil
-        ) {
+        DashDetailTray(fields: object.detailFields) {
           if let accountID = model.activeAccountID {
             ShareLink(
               item: R2ObjectExport(
@@ -231,19 +213,14 @@ struct R2BucketView: View {
         }
       }
     )
-    .refreshable { await load(force: true) }.task(id: prefix) { await load() }
-  }
-  private func deleteBucket() async throws {
-    guard let id = model.activeAccountID else { return }
-    try await model.client.deleteR2Bucket(accountID: id, name: bucket)
-    model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
-    dismiss()
+    .refreshable { await load(force: true) }.task(id: requestPrefix) { await load() }
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
-    let key = FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix)
-    if !force, let cached: CursorPageSnapshot<R2Object> = model.featureCache.get(key) {
-      objects = cached.items
+    let key = FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: requestPrefix)
+    if !force, let cached: R2BrowserSnapshot = model.featureCache.get(key) {
+      objects = cached.objects
+      folders = cached.commonPrefixes
       cursor = cached.cursor
       error = nil
       loading = false
@@ -251,10 +228,12 @@ struct R2BucketView: View {
     }
     do {
       let page = try await model.client.listR2Objects(
-        accountID: id, bucket: bucket, prefix: prefix.nilIfEmpty)
-      objects = page.items
+        accountID: id, bucket: bucket, prefix: requestPrefix.nilIfEmpty, delimiter: "/")
+      objects = page.objects
+      folders = page.commonPrefixes
       cursor = page.cursor
-      model.featureCache.set(key, CursorPageSnapshot(items: objects, cursor: cursor))
+      model.featureCache.set(
+        key, R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
       error = nil
     } catch { self.error = error.dashActionableMessage }
     loading = false
@@ -266,56 +245,83 @@ struct R2BucketView: View {
     defer { loadingMore = false }
     do {
       let page = try await model.client.listR2Objects(
-        accountID: id, bucket: bucket, cursor: cursor, prefix: prefix.nilIfEmpty)
-      objects += page.items
+        accountID: id, bucket: bucket, cursor: cursor, prefix: requestPrefix.nilIfEmpty,
+        delimiter: "/")
+      objects += page.objects
+      for folder in page.commonPrefixes where !folders.contains(folder) {
+        folders.append(folder)
+      }
       cursor = page.cursor
       model.featureCache.set(
-        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix),
-        CursorPageSnapshot(items: objects, cursor: cursor))
+        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: requestPrefix),
+        R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
       error = nil
     } catch { self.error = error.dashActionableMessage }
   }
+  /// `putR2Object` holds the body in memory and URLSession copies it again, so
+  /// the ceiling here is the phone's, not Cloudflare's — a single-part PUT is
+  /// good for ~5 GiB, but iOS jetsams the app long before that.
+  private static let uploadSizeLimit = 100 * 1024 * 1024
+
   private func upload(_ url: URL) async {
     guard let id = model.activeAccountID else { return }
     do {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
+      guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+        error = "Can't read that file's size."
+        return
+      }
+      guard size <= Self.uploadSizeLimit else {
+        error =
+          "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(Self.uploadSizeLimit.formatted(.byteCount(style: .file))) — use wrangler or the dashboard for this one."
+        return
+      }
       let data = try Data(contentsOf: url)
       try await model.client.putR2Object(
-        accountID: id, bucket: bucket, key: url.lastPathComponent, data: data,
+        accountID: id, bucket: bucket, key: folderPrefix + url.lastPathComponent, data: data,
         contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
       model.featureCache.remove(
-        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
+        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: requestPrefix))
       await load(force: true)
     } catch { self.error = error.dashActionableMessage }
   }
-  private func delete(_ object: R2Object) async {
-    guard let id = model.activeAccountID else { return }
-    deletingObject = true
-    deleteError = nil
-    do {
-      try await model.client.deleteR2Object(accountID: id, bucket: bucket, key: object.key)
-      UINotificationFeedbackGenerator().notificationOccurred(.success)
-      model.featureCache.remove(
-        FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: prefix))
-      selectedObject = nil
-      await load(force: true)
-    } catch {
-      deleteError = error.dashActionableMessage
-      UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-    deletingObject = false
+  private func navigate(to prefix: String) {
+    folderPrefix = prefix
+    self.prefix = ""
+    objects = []
+    folders = []
+    cursor = nil
+    error = nil
+    selectedObject = nil
+    loading = true
   }
+
+  private func folderName(_ prefix: String) -> String {
+    let relative =
+      prefix.hasPrefix(folderPrefix) ? String(prefix.dropFirst(folderPrefix.count)) : prefix
+    let name = relative.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    return name.isEmpty ? prefix : name
+  }
+
+  private func objectName(_ key: String) -> String {
+    guard key.hasPrefix(folderPrefix) else { return key }
+    let relative = String(key.dropFirst(folderPrefix.count))
+    return relative.isEmpty ? key : relative
+  }
+}
+
+private struct R2BrowserSnapshot: Sendable {
+  let objects: [R2Object]
+  let commonPrefixes: [String]
+  let cursor: String?
 }
 
 struct KVNamespacesView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
   @State private var loading = true
-  @State private var creates = false
-  @State private var newTitle = ""
 
   var body: some View {
     DashFeatureList(
@@ -328,9 +334,7 @@ struct KVNamespacesView: View {
         DashEmptyState(
           icon: SolarAsset.pinList,
           title: "No namespaces",
-          message: featureAllowsWrites
-            ? "Create a namespace with the add button."
-            : "No KV namespaces in this account."
+          message: "No KV namespaces in this account."
         )
       } else {
         DashListCard {
@@ -342,50 +346,17 @@ struct KVNamespacesView: View {
         }
       }
     }
-    .toolbar {
-      if featureAllowsWrites {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New namespace") {
-            creates = true
-          }
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
-    .dashTray(isPresented: $creates, title: "New namespace") {
-      DashFormSheet(
-        saveTitle: "Create",
-        canSave: !newTitle.isEmpty,
-        onSave: { Task { await create() } },
-        content: {
-          DashFormField(label: "Namespace title", text: $newTitle)
-        }
-      )
-    }
     .refreshable { await load(force: true) }
     .task { await load() }
     .onAppear { reloadIfInvalidated() }
   }
 
-  /// A child (namespace screen) may delete a namespace and clear the cache while
-  /// this list stays alive below it; refresh on return when the cache went cold.
+  /// The cache drops under this list on memory pressure while it stays alive
+  /// below a child screen; refresh on return when the cache went cold.
   private func reloadIfInvalidated() {
     guard let id = model.activeAccountID, !namespaces.isEmpty else { return }
     let cached: [KVNamespace]? = model.featureCache.get(FeatureCacheKey.kvNamespaces(id))
     if cached == nil { Task { await load(force: true) } }
-  }
-
-  private func create() async {
-    guard let id = model.activeAccountID, !newTitle.isEmpty else { return }
-    do {
-      _ = try await model.client.mutate(
-        path: "/accounts/\(id)/storage/kv/namespaces", method: "POST",
-        body: ["title": .string(newTitle)])
-      newTitle = ""
-      creates = false
-      model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
-      await load(force: true)
-    } catch { self.error = error.dashActionableMessage }
   }
 
   private func load(force: Bool = false) async {
@@ -409,8 +380,6 @@ struct KVNamespacesView: View {
 
 struct KVNamespaceView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismissScreen
-  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let namespaceID: String
   @State private var keys: [KVKey] = []
   @State private var cursor: String?
@@ -421,8 +390,6 @@ struct KVNamespaceView: View {
   // re-arming this would flash the full-screen spinner while typing.
   @State private var loading = true
   @State private var loadingMore = false
-  @State private var creates = false
-  @State private var showsMore = false
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
 
@@ -465,59 +432,13 @@ struct KVNamespaceView: View {
     .task(id: prefix) {
       await load()
     }.refreshable { await load(force: true) }
-    .toolbar {
-      if featureAllowsWrites {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New key") {
-            creates = true
-          }
-        }
-        .dashSeparateToolbarBackground()
-        ToolbarItem(placement: .topBarTrailing) {
-          DashMoreButton(isPresented: $showsMore)
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
     .dashTray(
       item: $selected,
       title: { $0.name },
       content: { key in
-        KVValueEditor(namespaceID: namespaceID, existingKey: key.name) {
-          reloadKeys()
-        }
+        KVValueEditor(namespaceID: namespaceID, key: key.name)
       }
     )
-    .dashTray(isPresented: $creates, title: "New key") {
-      KVValueEditor(namespaceID: namespaceID, existingKey: nil) {
-        reloadKeys()
-      }
-    }
-    .dashMoreMenu(
-      isPresented: $showsMore,
-      title: "KV namespace",
-      actions: [
-        DashDangerAction(
-          title: "Delete namespace",
-          message: "Permanently delete this namespace and every key in it."
-        ) {
-          try await deleteNamespace()
-        }
-      ]
-    )
-  }
-  private func reloadKeys() {
-    guard let id = model.activeAccountID else { return }
-    model.featureCache.remove(
-      FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: prefix))
-    Task { await load(force: true) }
-  }
-  private func deleteNamespace() async throws {
-    guard let id = model.activeAccountID else { return }
-    _ = try await model.client.mutate(
-      path: "/accounts/\(id)/storage/kv/namespaces/\(namespaceID)", method: "DELETE")
-    model.featureCache.remove(FeatureCacheKey.kvNamespaces(id))
-    dismissScreen()
   }
   private func load(force: Bool = false) async {
     guard let id = model.activeAccountID else { return }
@@ -557,39 +478,25 @@ struct KVNamespaceView: View {
   }
 }
 
-/// Edits an existing KV value (`existingKey` set) or creates a new key/value
-/// pair (`existingKey` nil — adds a key-name field, skips the value fetch).
+/// Edits the value of one existing KV key. Creating and deleting keys is a
+/// wrangler job — this exists for the flag you need to flip from a phone.
 private struct KVValueEditor: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   let namespaceID: String
-  let existingKey: String?
+  let key: String
   var onChanged: () -> Void = {}
-  @State private var newKeyName = ""
   @State private var value = ""
   @State private var error: String?
   // Saving before the fetch lands would overwrite the stored value with "".
   @State private var loaded = false
-  @State private var deleting = false
-
-  private var keyName: String { existingKey ?? newKeyName }
-  private var canSave: Bool {
-    existingKey != nil ? loaded : !newKeyName.isEmpty
-  }
 
   var body: some View {
     DashFormSheet(
-      canSave: canSave,
-      deleteMessage: existingKey.map { "Permanently delete \($0) from this namespace." },
-      isDeleting: deleting,
-      deleteError: error,
-      onDelete: existingKey != nil ? { Task { await delete() } } : nil,
+      canSave: loaded,
       onSave: { Task { await save() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
-          if existingKey == nil {
-            DashFormField(label: "Key", text: $newKeyName)
-          }
           DashFormCodeField(label: "Value", text: $value)
           if let error {
             DashNotice(kind: .error, message: error)
@@ -597,29 +504,14 @@ private struct KVValueEditor: View {
         }
       }
     )
-    .task { if existingKey != nil { await load() } }
-  }
-  private func delete() async {
-    guard let id = model.activeAccountID else { return }
-    deleting = true
-    error = nil
-    do {
-      try await model.client.deleteKVValue(accountID: id, namespaceID: namespaceID, key: keyName)
-      UINotificationFeedbackGenerator().notificationOccurred(.success)
-      onChanged()
-      dismiss()
-    } catch {
-      self.error = error.dashActionableMessage
-      UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-    deleting = false
+    .task { await load() }
   }
   private func load() async {
     guard let id = model.activeAccountID else { return }
     do {
       value = String(
         decoding: try await model.client.getKVValue(
-          accountID: id, namespaceID: namespaceID, key: keyName), as: UTF8.self)
+          accountID: id, namespaceID: namespaceID, key: key), as: UTF8.self)
       loaded = true
     } catch { self.error = error.dashActionableMessage }
   }
@@ -627,528 +519,12 @@ private struct KVValueEditor: View {
     guard let id = model.activeAccountID else { return }
     do {
       try await model.client.putKVValue(
-        accountID: id, namespaceID: namespaceID, key: keyName, data: Data(value.utf8))
-      if existingKey == nil { onChanged() }
+        accountID: id, namespaceID: namespaceID, key: key, data: Data(value.utf8))
       dismiss()
     } catch { self.error = error.dashActionableMessage }
   }
 }
 
-struct D1DatabasesView: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
-  @State private var databases: [D1Database] = []
-  @State private var error: String?
-  @State private var loading = true
-  @State private var creates = false
-  @State private var newName = ""
-
-  var body: some View {
-    DashFeatureList(
-      isLoading: loading,
-      error: error,
-      hasContent: !databases.isEmpty,
-      retry: { Task { await load() } }
-    ) {
-      if databases.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.database,
-          title: "No databases",
-          message: featureAllowsWrites
-            ? "Create a database with the add button."
-            : "No D1 databases in this account."
-        )
-      } else {
-        DashListCard {
-          DashListCardRows(items: databases) { database in
-            DashListGroupLink(value: .d1Database(database.id, database.name)) {
-              DashListRow(
-                title: database.name,
-                subtitle: database.fileSize.map {
-                  ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
-                },
-                icon: SolarAsset.database
-              )
-            }
-          }
-        }
-      }
-    }
-    .toolbar {
-      if featureAllowsWrites {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New database") {
-            creates = true
-          }
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
-    .dashTray(isPresented: $creates, title: "New database") {
-      DashFormSheet(
-        saveTitle: "Create",
-        canSave: !newName.isEmpty,
-        onSave: { Task { await create() } },
-        content: {
-          DashFormField(label: "Database name", text: $newName)
-        }
-      )
-    }
-    .refreshable { await load(force: true) }.task { await load() }
-    .onAppear { reloadIfInvalidated() }
-  }
-
-  /// A child (console screen) may delete a database and clear the cache while
-  /// this list stays alive below it; refresh on return when the cache went cold.
-  private func reloadIfInvalidated() {
-    guard let id = model.activeAccountID, !databases.isEmpty else { return }
-    let cached: [D1Database]? = model.featureCache.get(FeatureCacheKey.d1Databases(id))
-    if cached == nil { Task { await load(force: true) } }
-  }
-
-  private func create() async {
-    guard let id = model.activeAccountID, !newName.isEmpty else { return }
-    do {
-      _ = try await model.client.mutate(
-        path: "/accounts/\(id)/d1/database", method: "POST",
-        body: ["name": .string(newName)])
-      newName = ""
-      creates = false
-      model.featureCache.remove(FeatureCacheKey.d1Databases(id))
-      await load(force: true)
-    } catch { self.error = error.dashActionableMessage }
-  }
-
-  private func load(force: Bool = false) async {
-    guard let id = model.activeAccountID else { return }
-    let key = FeatureCacheKey.d1Databases(id)
-    if !force, let cached: [D1Database] = model.featureCache.get(key) {
-      databases = cached
-      loading = false
-      error = nil
-      return
-    }
-    if databases.isEmpty { loading = true }
-    do {
-      databases = try await model.client.listD1Databases(accountID: id).items
-      model.featureCache.set(key, databases)
-      error = nil
-    } catch { self.error = error.dashActionableMessage }
-    loading = false
-  }
-}
-
-/// Double-quotes a SQLite identifier so table names from sqlite_master can be
-/// interpolated safely (keywords, spaces, embedded quotes).
-func d1QuotedIdentifier(_ name: String) -> String {
-  "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
-}
-
-struct D1ConsoleView: View {
-  private enum Tab: Hashable { case tables, console }
-
-  @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismissScreen
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  let databaseID: String
-  let name: String
-  @State private var selectedTab: Tab = .tables
-  @State private var tables: [String] = []
-  @State private var tablesError: String?
-  @State private var loadingTables = true
-  @State private var sql = "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name;"
-  @State private var result = ""
-  @State private var error: String?
-  @State private var running = false
-  @State private var showsMore = false
-  @State private var confirmingRun = false
-  @State private var runError: String?
-
-  private var destructiveKeyword: String? { D1SQL.destructiveKeyword(in: sql) }
-  var body: some View {
-    DashFeatureScreen(chrome: {
-      DashTextTabs(
-        items: [("Tables", Tab.tables), ("Console", Tab.console)],
-        selection: $selectedTab
-      )
-    }) {
-      ScrollView {
-        VStack(spacing: DashTheme.Spacing.section) {
-          if selectedTab == .tables {
-            tablesContent
-          } else {
-            consoleContent
-          }
-        }
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
-        .animation(
-          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: error)
-      }
-      .dashKeyboardDismissal()
-    }
-    .navigationTitle(name)
-    .task { await loadTables() }
-    .refreshable { await loadTables(force: true) }
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
-      }
-      .dashSeparateToolbarBackground()
-    }
-    .dashMoreMenu(
-      isPresented: $showsMore,
-      title: name,
-      actions: [
-        DashDangerAction(
-          title: "Delete database",
-          message: "Permanently delete \(name) and all of its data. This cannot be undone.",
-          confirmationText: name
-        ) {
-          try await deleteDatabase()
-        }
-      ]
-    )
-  }
-  @ViewBuilder
-  private var tablesContent: some View {
-    if let tablesError {
-      DashNotice(kind: .error, message: tablesError)
-    } else if loadingTables {
-      LoadingStateView()
-    } else if tables.isEmpty {
-      DashEmptyState(
-        icon: SolarAsset.database,
-        title: "No tables",
-        message: "This database has no user tables yet. Create one from the Console tab."
-      )
-      .dashContentReveal()
-    } else {
-      DashListCard {
-        DashListCardRows(items: tables.map(TableRow.init)) { row in
-          DashListGroupLink(
-            value: .d1Table(databaseID: databaseID, databaseName: name, table: row.name)
-          ) {
-            DashListRow(title: row.name, icon: SolarAsset.database)
-          }
-        }
-      }
-      .dashContentReveal()
-    }
-  }
-
-  private struct TableRow: Identifiable {
-    let name: String
-    var id: String { name }
-  }
-
-  @ViewBuilder
-  private var consoleContent: some View {
-    DashConfirmMorph(
-      confirming: $confirmingRun,
-      message:
-        "This \(destructiveKeyword ?? "write") statement can modify or delete data in \(name). This cannot be undone.",
-      isBusy: running,
-      actionTitle: destructiveKeyword.map { "Run \($0) statement" } ?? "Run query",
-      confirmingActionTitle: destructiveKeyword.map { "Run \($0)" } ?? "Run query",
-      confirmingActionRole: .destructive,
-      actionEnabled: !sql.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-      errorMessage: runError,
-      action: {
-        if confirmingRun || destructiveKeyword == nil {
-          Task { await runConfirmed() }
-        } else {
-          runError = nil
-          UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-          withAnimation(DashTheme.Motion.morph) { confirmingRun = true }
-        }
-      },
-      appliesContentPadding: false,
-      content: {
-        VStack(spacing: DashTheme.Spacing.section) {
-          DashCodePanel(
-            title: "SQL query",
-            message: "Run a read or write statement against this database.",
-            text: $sql,
-            minHeight: 150
-          )
-
-          if let error, !confirmingRun {
-            DashNotice(kind: .error, message: error)
-          } else if !confirmingRun {
-            DashCodeBlock(
-              title: "Result",
-              text: result,
-              placeholder: "Run a query to see results."
-            )
-          }
-        }
-      }
-    )
-  }
-
-  private func loadTables(force: Bool = false) async {
-    guard let id = model.activeAccountID else { return }
-    let key = FeatureCacheKey.generic(path: "/d1/\(databaseID)/tables")
-    if !force, let cached: [String] = model.featureCache.get(key) {
-      tables = cached
-      loadingTables = false
-      return
-    }
-    if tables.isEmpty { loadingTables = true }
-    tablesError = nil
-    do {
-      let values = try await model.client.queryD1(
-        accountID: id, databaseID: databaseID,
-        sql: """
-          SELECT name FROM sqlite_master WHERE type = 'table' \
-          AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name;
-          """)
-      tables = values.flatMap { $0.results ?? [] }.compactMap { row in
-        if case .string(let name)? = row["name"] { return name }
-        return nil
-      }
-      model.featureCache.set(key, tables)
-    } catch {
-      tablesError = error.dashActionableMessage
-    }
-    loadingTables = false
-  }
-
-  private func deleteDatabase() async throws {
-    guard let id = model.activeAccountID else { return }
-    _ = try await model.client.mutate(
-      path: "/accounts/\(id)/d1/database/\(databaseID)", method: "DELETE")
-    model.featureCache.remove(FeatureCacheKey.d1Databases(id))
-    dismissScreen()
-  }
-  private func runConfirmed() async {
-    running = true
-    runError = nil
-    error = nil
-    do {
-      try await performQuery()
-      UINotificationFeedbackGenerator().notificationOccurred(.success)
-      withAnimation(DashTheme.Motion.morph) { confirmingRun = false }
-    } catch {
-      let message = error.dashActionableMessage
-      if confirmingRun {
-        runError = message
-      } else {
-        self.error = message
-      }
-      UINotificationFeedbackGenerator().notificationOccurred(.error)
-    }
-    running = false
-  }
-
-  private func performQuery() async throws {
-    guard let id = model.activeAccountID else { return }
-    let values = try await model.client.queryD1(accountID: id, databaseID: databaseID, sql: sql)
-    result = Self.format(rows: values.flatMap { $0.results ?? [] })
-    error = nil
-  }
-
-  private static func format(rows: [[String: JSONValue]]) -> String {
-    guard !rows.isEmpty else { return "No rows returned." }
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    guard let data = try? encoder.encode(rows) else { return String(describing: rows) }
-    return String(decoding: data, as: UTF8.self)
-  }
-}
-
-/// Paginated `SELECT *` browser for one D1 table. Table names come from
-/// `sqlite_master` (quoted via `d1QuotedIdentifier`); never from free text.
-struct D1TableView: View {
-  private static let pageSize = 50
-  private static let columnWidth: CGFloat = 140
-
-  @Environment(AppModel.self) private var model
-  let databaseID: String
-  let databaseName: String
-  let table: String
-  @State private var columns: [String] = []
-  @State private var rows: [D1TableRow] = []
-  @State private var error: String?
-  @State private var loading = true
-  @State private var loadingMore = false
-  @State private var canLoadMore = false
-  @State private var selectedRow: D1TableRow?
-
-  var body: some View {
-    DashFeatureScreen {
-      Group {
-        if loading && rows.isEmpty {
-          LoadingStateView()
-        } else if let error, rows.isEmpty {
-          ErrorStateView(message: error) { Task { await load(reset: true) } }
-        } else if rows.isEmpty {
-          DashEmptyState(
-            icon: SolarAsset.database,
-            title: "Empty table",
-            message: "\(table) in \(databaseName) has no rows yet."
-          )
-          .dashContentReveal()
-        } else {
-          tableContent
-            .dashContentReveal()
-        }
-      }
-      .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
-    }
-    .navigationTitle(table)
-    .navigationBarTitleDisplayMode(.inline)
-    .task { await load(reset: true) }
-    .refreshable { await load(reset: true) }
-    .dashTray(
-      item: $selectedRow,
-      title: { rowTitle($0) },
-      content: { row in
-        DashDetailTray(fields: detailFields(for: row))
-      }
-    )
-  }
-
-  @ViewBuilder
-  private var tableContent: some View {
-    VStack(spacing: DashTheme.Spacing.section) {
-      if let error {
-        DashNotice(kind: .error, message: error)
-      }
-
-      ScrollView([.horizontal, .vertical]) {
-        LazyVStack(alignment: .leading, spacing: 0) {
-          headerRow
-          DashListGroupDivider()
-          ForEach(rows) { row in
-            Button {
-              selectedRow = row
-            } label: {
-              dataRow(row)
-            }
-            .buttonStyle(DashPressButtonStyle())
-            DashListGroupDivider()
-          }
-        }
-        .background(
-          DashTheme.recessed,
-          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        )
-      }
-
-      if canLoadMore {
-        DashPillButton(title: "Load more", isLoading: loadingMore) {
-          Task { await load(reset: false) }
-        }
-      }
-    }
-  }
-
-  private var headerRow: some View {
-    HStack(spacing: 0) {
-      ForEach(columns, id: \.self) { column in
-        Text(column)
-          .dashTextStyle(.code)
-          .fontWeight(.semibold)
-          .foregroundStyle(DashTheme.subtle)
-          .lineLimit(1)
-          .frame(width: Self.columnWidth, alignment: .leading)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 12)
-      }
-    }
-  }
-
-  private func dataRow(_ row: D1TableRow) -> some View {
-    HStack(spacing: 0) {
-      ForEach(columns, id: \.self) { column in
-        Text(cellText(row.cells[column]))
-          .dashTextStyle(.code)
-          .foregroundStyle(DashTheme.text)
-          .lineLimit(1)
-          .frame(width: Self.columnWidth, alignment: .leading)
-          .padding(.horizontal, 10)
-          .padding(.vertical, 12)
-      }
-    }
-    .contentShape(Rectangle())
-  }
-
-  private func load(reset: Bool) async {
-    guard let id = model.activeAccountID else { return }
-    if reset {
-      loading = true
-      error = nil
-    } else {
-      loadingMore = true
-    }
-    defer {
-      loading = false
-      loadingMore = false
-    }
-
-    let offset = reset ? 0 : rows.count
-    let sql =
-      "SELECT * FROM \(d1QuotedIdentifier(table)) LIMIT \(Self.pageSize) OFFSET \(offset);"
-    do {
-      let values = try await model.client.queryD1(
-        accountID: id, databaseID: databaseID, sql: sql)
-      let fetched = values.flatMap { $0.results ?? [] }
-      if reset {
-        columns = fetched.first.map { $0.keys.sorted() } ?? []
-        rows = fetched.enumerated().map { D1TableRow(id: $0.offset, cells: $0.element) }
-      } else {
-        let base = rows.count
-        rows.append(
-          contentsOf: fetched.enumerated().map {
-            D1TableRow(id: base + $0.offset, cells: $0.element)
-          })
-      }
-      canLoadMore = fetched.count == Self.pageSize
-      error = nil
-    } catch {
-      self.error = error.dashActionableMessage
-      if reset {
-        rows = []
-        columns = []
-        canLoadMore = false
-      }
-    }
-  }
-
-  private func rowTitle(_ row: D1TableRow) -> String {
-    if let key = columns.first {
-      let text = cellText(row.cells[key])
-      if !text.isEmpty { return text }
-    }
-    return "Row \(row.id + 1)"
-  }
-
-  private func detailFields(for row: D1TableRow) -> [DashDetailField] {
-    let keys = columns.isEmpty ? row.cells.keys.sorted() : columns
-    return keys.map { key in
-      DashDetailField(label: key, value: cellText(row.cells[key]), mono: true)
-    }
-  }
-
-  private func cellText(_ value: JSONValue?) -> String {
-    guard let value else { return "" }
-    switch value {
-    case .null: return ""
-    default: return value.displayText
-    }
-  }
-}
-
-private struct D1TableRow: Identifiable, Hashable {
-  let id: Int
-  let cells: [String: JSONValue]
-}
-
-/// Lazily downloads an R2 object into a temp file when the share sheet resolves
-/// it — no separate download-then-share state machine.
 private struct R2ObjectExport: Transferable {
   let client: CloudflareClient
   let accountID: String

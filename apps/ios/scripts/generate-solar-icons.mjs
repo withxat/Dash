@@ -16,94 +16,53 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const assetsDir = path.join(__dirname, '../Dash/Resources/Assets.xcassets')
 const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/package.json'))
 
-/** @typedef {{ tag: 'path' | 'circle' | 'g', d?: string, cx?: string, cy?: string, r?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, children?: Element[] }} Element */
+/** @typedef {{ tag: 'path' | 'circle' | 'ellipse' | 'rect' | 'g', d?: string, cx?: string, cy?: string, r?: string, rx?: string, ry?: string, x?: string, y?: string, width?: string, height?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, children?: Element[] }} Element */
 
 /** Catalog Bold Duotone icons (Items layer). */
 const DUOTONE_CATALOG = {
 	SolarGlobal: 'map/BoldDuotone/Global',
 	SolarGlobus: 'map/BoldDuotone/Globus',
-	SolarMapPoint: 'map/BoldDuotone/MapPoint',
-	SolarShieldNetwork: 'security/BoldDuotone/ShieldNetwork',
 	SolarCodeSquare: 'it/BoldDuotone/CodeSquare',
-	SolarBox: 'ui/BoldDuotone/Box',
-	SolarScreencast2: 'it/BoldDuotone/Screencast2',
-	SolarHeartPulse: 'medicine/BoldDuotone/HeartPulse',
 	SolarCloudStorage: 'devices/BoldDuotone/CloudStorage',
 	SolarKeyMinimalistic: 'security/BoldDuotone/KeyMinimalistic',
 	SolarDatabase: 'ui/BoldDuotone/Database',
 	SolarInbox: 'messages/BoldDuotone/Inbox',
-	SolarBolt: 'ui/BoldDuotone/Bolt',
-	SolarRoute: 'map/BoldDuotone/Route',
-	SolarLockKeyhole: 'security/BoldDuotone/LockKeyhole',
-	SolarStructure: 'it/BoldDuotone/Structure',
-	SolarInfinite: 'astronomy/BoldDuotone/Infinite',
-	SolarCommand: 'it/BoldDuotone/Command',
-	SolarShieldCheck: 'security/BoldDuotone/ShieldCheck',
-	SolarTuning2: 'settings/BoldDuotone/Tuning2',
-	SolarInboxArchive: 'messages/BoldDuotone/InboxArchive',
-	SolarBug: 'it/BoldDuotone/Bug',
-	SolarShieldKeyhole: 'security/BoldDuotone/ShieldKeyhole',
 	SolarShieldUser: 'security/BoldDuotone/ShieldUser',
 	SolarUsersGroupRounded: 'users/BoldDuotone/UsersGroupRounded',
 	SolarShieldStar: 'security/BoldDuotone/ShieldStar',
 	SolarKey: 'security/BoldDuotone/Key',
-	SolarShield: 'security/BoldDuotone/Shield',
-	SolarGps: 'map/BoldDuotone/Gps',
 	SolarRouting: 'map/BoldDuotone/Routing',
-	SolarBranchingPathsUp: 'map/BoldDuotone/BranchingPathsUp',
 	SolarLockPassword: 'security/BoldDuotone/LockPassword',
 	SolarBoltCircle: 'ui/BoldDuotone/BoltCircle',
-	SolarLetter: 'messages/BoldDuotone/Letter',
-	SolarGallery: 'video/BoldDuotone/Gallery',
-	SolarVideoLibrary: 'video/BoldDuotone/VideoLibrary',
 	SolarChart2: 'business/BoldDuotone/Chart2',
-	SolarExport: 'arrows-action/BoldDuotone/Export',
 	SolarUserCircle: 'users/BoldDuotone/UserCircle',
-	// Kept for chrome / legacy references outside the feature catalog.
-	SolarBoxMinimalistic: 'ui/BoldDuotone/BoxMinimalistic',
-	SolarSettingsMinimalistic: 'settings/BoldDuotone/SettingsMinimalistic',
 }
 
 /** Catalog + UI Linear outline icons (sub-pages). */
 const OUTLINE_ICONS = {
 	SolarGlobalOutline: 'map/Linear/Global',
 	SolarGlobusOutline: 'map/Linear/Globus',
-	SolarMapPointOutline: 'map/Linear/MapPoint',
-	SolarShieldNetworkOutline: 'security/Linear/ShieldNetwork',
 	SolarCodeSquareOutline: 'it/Linear/CodeSquare',
 	SolarBoxOutline: 'ui/Linear/Box',
-	SolarScreencast2Outline: 'it/Linear/Screencast2',
 	SolarHeartPulseOutline: 'medicine/Linear/HeartPulse',
 	SolarCloudStorageOutline: 'devices/Linear/CloudStorage',
 	SolarKeyMinimalisticOutline: 'security/Linear/KeyMinimalistic',
 	SolarDatabaseOutline: 'ui/Linear/Database',
 	SolarInboxOutline: 'messages/Linear/Inbox',
 	SolarBoltOutline: 'ui/Linear/Bolt',
-	SolarRouteOutline: 'map/Linear/Route',
 	SolarLockKeyholeOutline: 'security/Linear/LockKeyhole',
-	SolarStructureOutline: 'it/Linear/Structure',
-	SolarInfiniteOutline: 'astronomy/Linear/Infinite',
-	SolarCommandOutline: 'it/Linear/Command',
 	SolarShieldCheckOutline: 'security/Linear/ShieldCheck',
-	SolarTuning2Outline: 'settings/Linear/Tuning2',
-	SolarInboxArchiveOutline: 'messages/Linear/InboxArchive',
-	SolarBugOutline: 'it/Linear/Bug',
-	SolarShieldKeyholeOutline: 'security/Linear/ShieldKeyhole',
 	SolarShieldUserOutline: 'security/Linear/ShieldUser',
 	SolarUsersGroupRoundedOutline: 'users/Linear/UsersGroupRounded',
 	SolarShieldStarOutline: 'security/Linear/ShieldStar',
 	SolarKeyOutline: 'security/Linear/Key',
 	SolarShieldOutline: 'security/Linear/Shield',
-	SolarGpsOutline: 'map/Linear/Gps',
 	SolarRoutingOutline: 'map/Linear/Routing',
-	SolarBranchingPathsUpOutline: 'map/Linear/BranchingPathsUp',
 	SolarLockPasswordOutline: 'security/Linear/LockPassword',
 	SolarBoltCircleOutline: 'ui/Linear/BoltCircle',
-	SolarLetterOutline: 'messages/Linear/Letter',
 	SolarGalleryOutline: 'video/Linear/Gallery',
 	SolarVideoLibraryOutline: 'video/Linear/VideoLibrary',
 	SolarChart2Outline: 'business/Linear/Chart2',
-	SolarExportOutline: 'arrows-action/Linear/Export',
 	SolarUserCircleOutline: 'users/Linear/UserCircle',
 	SolarBoxMinimalisticOutline: 'ui/Linear/BoxMinimalistic',
 	SolarSettingsMinimalisticOutline: 'settings/Linear/SettingsMinimalistic',
@@ -111,24 +70,25 @@ const OUTLINE_ICONS = {
 	SolarAltArrowLeftOutline: 'arrows/Linear/AltArrowLeft',
 	SolarDangerTriangleOutline: 'ui/Linear/DangerTriangle',
 	SolarCodeCircleOutline: 'it/Linear/CodeCircle',
-	SolarPenOutline: 'messages/Linear/Pen',
 	SolarPenNewSquareOutline: 'messages/Linear/PenNewSquare',
 	SolarTrashBinOutline: 'ui/Linear/TrashBinMinimalistic',
 	SolarCloudOutline: 'weather/Linear/Cloud',
 	SolarFileOutline: 'files/Linear/File',
 	SolarUploadOutline: 'arrows-action/Linear/Upload',
-	SolarUnreadOutline: 'messages/Linear/Unread',
 	SolarMagnifierOutline: 'search/Linear/MinimalisticMagnifier',
-	SolarCloseCircleOutline: 'ui/Linear/CloseCircle',
 	SolarCheckCircleOutline: 'ui/Linear/CheckCircle',
 	SolarClockCircleOutline: 'time/Linear/ClockCircle',
-	SolarSledgehammerOutline: 'ui/Linear/Sledgehammer',
 	SolarSliderHorizontalOutline: 'ui/Linear/SliderMinimalisticHorizontal',
 	SolarPinListOutline: 'ui/Linear/PinList',
 	SolarPinOutline: 'ui/Linear/Pin',
 	SolarPinBold: 'ui/Bold/Pin',
 	SolarCheckCircleBold: 'ui/Bold/CheckCircle',
 	SolarUsersGroupOutline: 'users/Linear/UsersGroupRounded',
+}
+
+const OUTLINE_STROKE_WIDTHS = {
+	SolarAltArrowRightOutline: '2.5',
+	SolarAltArrowLeftOutline: '2.5',
 }
 
 /** Simple stroke icons Solar doesn't ship as standalone assets. */
@@ -144,9 +104,104 @@ const HAND_TUNED_ICONS = {
 		'<circle cx="5" cy="12" r="2" fill="#000"/><circle cx="12" cy="12" r="2" fill="#000"/><circle cx="19" cy="12" r="2" fill="#000"/>',
 }
 
+const FLAT_DRAWABLE_TAGS = new Set(['Path', 'Circle', 'Ellipse', 'Rect'])
+
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function importAliases(source, moduleName) {
+	const match = source.match(
+		new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*"${escapeRegExp(moduleName)}"`),
+	)
+	if (!match)
+		throw new Error(`Missing named import from ${moduleName}`)
+
+	return new Map(match[1].split(',').map((entry) => {
+		const [importedName, localName = importedName] = entry.trim().split(/\s+as\s+/)
+		return [localName, importedName]
+	}))
+}
+
+function templateAttribute(attributes, name) {
+	return attributes.match(new RegExp(`${escapeRegExp(name)}:\`([^\`]*)\``))?.[1]
+}
+
+/** @returns {Element} */
+function elementFromAttributes(tagName, attributes) {
+	const base = {
+		stroke: templateAttribute(attributes, 'stroke') !== undefined,
+		strokeWidth: templateAttribute(attributes, 'strokeWidth') ?? '1.5',
+		strokeLinecap: templateAttribute(attributes, 'strokeLinecap'),
+		strokeLinejoin: templateAttribute(attributes, 'strokeLinejoin'),
+		fillRule: templateAttribute(attributes, 'fillRule'),
+		clipRule: templateAttribute(attributes, 'clipRule'),
+		opacity: templateAttribute(attributes, 'opacity'),
+	}
+
+	switch (tagName) {
+		case 'Path': {
+			const d = templateAttribute(attributes, 'd')
+			if (!d)
+				throw new Error('Path is missing d')
+			return { tag: 'path', d, ...base }
+		}
+		case 'Circle': {
+			const cx = templateAttribute(attributes, 'cx')
+			const cy = templateAttribute(attributes, 'cy')
+			const r = templateAttribute(attributes, 'r')
+			if (!(cx && cy && r))
+				throw new Error('Circle is missing cx, cy, or r')
+			return { tag: 'circle', cx, cy, r, ...base }
+		}
+		case 'Ellipse': {
+			const cx = templateAttribute(attributes, 'cx')
+			const cy = templateAttribute(attributes, 'cy')
+			const rx = templateAttribute(attributes, 'rx')
+			const ry = templateAttribute(attributes, 'ry')
+			if (!(cx && cy && rx && ry))
+				throw new Error('Ellipse is missing cx, cy, rx, or ry')
+			return { tag: 'ellipse', cx, cy, rx, ry, ...base }
+		}
+		case 'Rect': {
+			const x = templateAttribute(attributes, 'x')
+			const y = templateAttribute(attributes, 'y')
+			const width = templateAttribute(attributes, 'width')
+			const height = templateAttribute(attributes, 'height')
+			if (!(x && y && width && height))
+				throw new Error('Rect is missing x, y, width, or height')
+			return {
+				tag: 'rect',
+				x,
+				y,
+				width,
+				height,
+				rx: templateAttribute(attributes, 'rx'),
+				ry: templateAttribute(attributes, 'ry'),
+				...base,
+			}
+		}
+		default:
+			throw new Error(`Unsupported flat SVG tag: ${tagName}`)
+	}
+}
+
 /** @returns {Element[]} */
-function extractElements(iconPath) {
-	const source = fs.readFileSync(path.join(solarRoot, 'dist/icons', `${iconPath}.mjs`), 'utf8')
+function extractFlatElements(source, svgAliases, jsxAliases) {
+	const drawableAliases = [...svgAliases]
+		.filter(([, tagName]) => FLAT_DRAWABLE_TAGS.has(tagName))
+		.map(([alias]) => escapeRegExp(alias))
+	const pattern = new RegExp(
+		`(?:${jsxAliases.map(escapeRegExp).join('|')})\\((${drawableAliases.join('|')}),\\{([^}]*)\\}\\)`,
+		'g',
+	)
+
+	return [...source.matchAll(pattern)].map((match) =>
+		elementFromAttributes(svgAliases.get(match[1]), match[2]))
+}
+
+/** Preserves the existing flattening behavior for Solar assets that contain groups. */
+function extractGroupedElements(source) {
 	/** @type {Element[]} */
 	const elements = []
 
@@ -191,8 +246,53 @@ function extractElements(iconPath) {
 		elements.push(element)
 	}
 
+	return elements
+}
+
+function sourceDrawableCount(source, svgAliases, jsxAliases) {
+	const jsxPattern = jsxAliases.map(escapeRegExp).join('|')
+	let count = 0
+
+	for (const [alias, tagName] of svgAliases) {
+		if (!FLAT_DRAWABLE_TAGS.has(tagName))
+			continue
+		count += [...source.matchAll(
+			new RegExp(`(?:${jsxPattern})\\(${escapeRegExp(alias)},\\{`, 'g'),
+		)].length
+	}
+
+	return count
+}
+
+function extractedDrawableCount(elements) {
+	return elements.reduce(
+		(count, element) =>
+			count + (element.tag === 'g' ? extractedDrawableCount(element.children ?? []) : 1),
+		0,
+	)
+}
+
+/** @returns {Element[]} */
+function extractElements(iconPath) {
+	const source = fs.readFileSync(path.join(solarRoot, 'dist/icons', `${iconPath}.mjs`), 'utf8')
+	const svgAliases = importAliases(source, 'react-native-svg')
+	const jsxAliases = [...importAliases(source, 'react/jsx-runtime')]
+		.filter(([, importedName]) => importedName === 'jsx' || importedName === 'jsxs')
+		.map(([alias]) => alias)
+	const hasGroup = [...svgAliases.values()].includes('G')
+	const elements = hasGroup
+		? extractGroupedElements(source)
+		: extractFlatElements(source, svgAliases, jsxAliases)
+	const expectedCount = sourceDrawableCount(source, svgAliases, jsxAliases)
+	const actualCount = extractedDrawableCount(elements)
+
 	if (elements.length === 0)
 		throw new Error(`${iconPath}: no drawable elements found`)
+	if (actualCount !== expectedCount) {
+		throw new Error(
+			`${iconPath}: extracted ${actualCount} of ${expectedCount} drawable elements`,
+		)
+	}
 	return elements
 }
 
@@ -210,11 +310,20 @@ function renderElement(el, template, strokeWidth) {
 		return `<g${opacity}>${children}</g>`
 	}
 
-	if (el.tag === 'circle') {
+	if (el.tag === 'circle' || el.tag === 'ellipse' || el.tag === 'rect') {
+		const geometry =
+			el.tag === 'circle'
+				? `cx="${el.cx}" cy="${el.cy}" r="${el.r}"`
+				: el.tag === 'ellipse'
+					? `cx="${el.cx}" cy="${el.cy}" rx="${el.rx}" ry="${el.ry}"`
+					: `x="${el.x}" y="${el.y}" width="${el.width}" height="${el.height}"${
+						el.rx ? ` rx="${el.rx}"` : ''
+					}${el.ry ? ` ry="${el.ry}"` : ''}`
 		const paint = el.stroke
 			? `fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"`
 			: `fill="#000"`
-		return `<circle cx="${el.cx}" cy="${el.cy}" r="${el.r}" ${paint}/>`
+		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
+		return `<${el.tag} ${geometry} ${paint}${opacity}/>`
 	}
 
 	const fillRule = el.fillRule ? ` fill-rule="${el.fillRule}"` : ''
@@ -252,25 +361,35 @@ function writeImageset(name, svg, template) {
 	}, null, 2)}\n`)
 }
 
-for (const [name, iconPath] of Object.entries(DUOTONE_CATALOG)) {
-	const svg = svgFor(extractElements(iconPath), { template: true })
-	writeImageset(name, svg, true)
-	console.log(`duotone ${name}`)
+function generateAllIcons() {
+	for (const [name, iconPath] of Object.entries(DUOTONE_CATALOG)) {
+		const svg = svgFor(extractElements(iconPath), { template: true })
+		writeImageset(name, svg, true)
+		console.log(`duotone ${name}`)
+	}
+
+	// Outline assets render at stroke-width 2 (Solar ships 1.5) — see SolarIcons.swift.
+	for (const [name, iconPath] of Object.entries(OUTLINE_ICONS)) {
+		const svg = svgFor(extractElements(iconPath), {
+			template: true,
+			strokeWidth: OUTLINE_STROKE_WIDTHS[name] ?? '2',
+		})
+		writeImageset(name, svg, true)
+		console.log(`outline ${name}`)
+	}
+
+	for (const [name, paths] of Object.entries(STROKE_ICONS)) {
+		writeImageset(name, strokeSvgFor(paths), true)
+		console.log(`stroke ${name}`)
+	}
+
+	for (const [name, body] of Object.entries(HAND_TUNED_ICONS)) {
+		writeImageset(name, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`, true)
+		console.log(`hand-tuned ${name}`)
+	}
 }
 
-// Outline assets render at stroke-width 2 (Solar ships 1.5) — see SolarIcons.swift.
-for (const [name, iconPath] of Object.entries(OUTLINE_ICONS)) {
-	const svg = svgFor(extractElements(iconPath), { template: true, strokeWidth: '2' })
-	writeImageset(name, svg, true)
-	console.log(`outline ${name}`)
-}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))
+	generateAllIcons()
 
-for (const [name, paths] of Object.entries(STROKE_ICONS)) {
-	writeImageset(name, strokeSvgFor(paths), true)
-	console.log(`stroke ${name}`)
-}
-
-for (const [name, body] of Object.entries(HAND_TUNED_ICONS)) {
-	writeImageset(name, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`, true)
-	console.log(`hand-tuned ${name}`)
-}
+export { extractElements, generateAllIcons, svgFor }

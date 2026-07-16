@@ -13,7 +13,6 @@ final class WatchtowerScreenState {
   var failedChecks: [String] = []
   var fetchedAt: Date?
   var loading = true
-  var notificationsDenied = false
 
   var summary: WatchtowerSummary {
     let scored = signals.filter { $0.status == .ok || !WatchtowerMuteStore.isMuted($0.id) }
@@ -132,7 +131,6 @@ struct WatchtowerView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var state = WatchtowerScreenState()
-  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var notificationsEnabled = false
   /// When set (regular-width split), signal rows select a detail destination.
   var selection: Binding<Destination?>?
 
@@ -207,7 +205,7 @@ struct WatchtowerView: View {
                 .dashTextStyle(.footnote)
                 .foregroundStyle(DashTheme.subtle)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 10)
+                .padding(.vertical, 20)
             } else {
               WatchtowerListRows(items: state.alerts) { alert in
                 alertRow(alert)
@@ -217,15 +215,13 @@ struct WatchtowerView: View {
           .dashSectionContentReveal(alertsIndex)
         }
 
-        if model.activeAccountID != nil {
-          notificationsGroup
+        if !state.missingScopeChecks.isEmpty || !state.failedChecks.isEmpty {
+          footerNotices
             .dashSectionReveal(2)
         }
-
-        footerCaption
-          .dashSectionReveal(3)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .dashSectionEntrance()
@@ -286,6 +282,10 @@ struct WatchtowerView: View {
           Spacer(minLength: 0)
         }
       }
+    }
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+        .stroke(DashTheme.line, lineWidth: 0.5)
     }
   }
 
@@ -369,7 +369,7 @@ struct WatchtowerView: View {
         .dashTextStyle(.bodySemibold)
         .foregroundStyle(DashTheme.text)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-      Text(signal.detail)
+      Text(signalDetail(signal))
         .dashTextStyle(.footnote)
         .foregroundStyle(DashTheme.rowSubtitle)
         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
@@ -385,6 +385,20 @@ struct WatchtowerView: View {
     .layoutPriority(1)
   }
 
+  /// Names the offending resource on the row. Signals that no longer push a
+  /// screen — tunnels, Pages — are the whole answer or they are not an answer:
+  /// "1 tunnel down" with no name and nowhere to tap is a dead end.
+  static func signalDetail(_ signal: WatchtowerSignal) -> String {
+    guard let resource = signal.resourceName, signal.status != .ok,
+      !signal.detail.contains(resource)
+    else { return signal.detail }
+    return "\(signal.detail) · \(resource)"
+  }
+
+  private func signalDetail(_ signal: WatchtowerSignal) -> String {
+    Self.signalDetail(signal)
+  }
+
   private func signalAccessibilityLabel(_ signal: WatchtowerSignal) -> String {
     let statusText: String =
       switch signal.status {
@@ -393,7 +407,7 @@ struct WatchtowerView: View {
       case .critical: "Critical"
       }
     var label =
-      "\(signal.title), \(signal.detail), \(StatusBadge.accessibilityText(for: statusText))"
+      "\(signal.title), \(signalDetail(signal)), \(StatusBadge.accessibilityText(for: statusText))"
     if let action = signal.suggestedAction { label += ", \(action)" }
     return label
   }
@@ -444,32 +458,7 @@ struct WatchtowerView: View {
   }
 
   @ViewBuilder
-  private var notificationsGroup: some View {
-    DashListGroup(title: "Notifications") {
-      DashToggleRow(title: "Notify on new issues", isOn: $notificationsEnabled)
-        .onChange(of: notificationsEnabled) { _, enabled in
-          guard enabled else {
-            state.notificationsDenied = false
-            return
-          }
-          Task {
-            let granted = await WatchtowerNotifier.requestAuthorization()
-            if !granted {
-              notificationsEnabled = false
-              state.notificationsDenied = true
-            }
-          }
-        }
-      if state.notificationsDenied {
-        DashNotice(
-          kind: .warning,
-          message: "Notifications are turned off in Settings. Enable them for Dash to get alerts.")
-      }
-    }
-  }
-
-  @ViewBuilder
-  private var footerCaption: some View {
+  private var footerNotices: some View {
     VStack(spacing: 12) {
       if !state.missingScopeChecks.isEmpty {
         DashNotice(
@@ -488,29 +477,8 @@ struct WatchtowerView: View {
             "Temporarily unavailable: \(state.failedChecks.joined(separator: ", ")). Pull to refresh when you’re back online."
         )
       }
-      if state.missingScopeChecks.isEmpty, state.failedChecks.isEmpty {
-        Text(
-          "Watching \(model.activeAccount?.name ?? "this account") across zones, tunnels, certificates, and deployments"
-        )
-        .dashTextStyle(.micro)
-        .foregroundStyle(DashTheme.placeholder)
-        .multilineTextAlignment(.center)
-      }
-      if let fetchedAt = state.fetchedAt {
-        Text("Updated \(relativeDate(fetchedAt))")
-          .dashTextStyle(.micro)
-          .foregroundStyle(DashTheme.placeholder)
-          .multilineTextAlignment(.center)
-      }
     }
     .frame(maxWidth: .infinity)
-  }
-
-  private func relativeDate(_ date: Date) -> String {
-    guard Date().timeIntervalSince(date) >= 60 else { return "just now" }
-    let formatter = RelativeDateTimeFormatter()
-    formatter.unitsStyle = .abbreviated
-    return formatter.localizedString(for: date, relativeTo: Date())
   }
 
   @ViewBuilder

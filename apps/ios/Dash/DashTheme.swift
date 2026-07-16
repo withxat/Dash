@@ -110,6 +110,8 @@ enum DashTheme {
     static let scrimOpacity: CGFloat = 0.35
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
+    /// Lets floating trays sit slightly inside the home-indicator safe area.
+    static let floatingBottomTuck: CGFloat = 6
     /// Native-sheet-like top corners while an expandable tray is expanded.
     static let expandedTopRadius: CGFloat = 12
     /// Gap kept below the top safe area while expanded.
@@ -340,15 +342,6 @@ enum FeatureVisualIdentity {
     case "Domains & DNS": .success
     case "Compute": .brand
     case "Storage & Data": .accent
-    case "AI": .warning
-    case "Security": .danger
-    case "Zero Trust": .info
-    case "Network": .brand
-    case "Web & Performance": .info
-    case "Email": .soft
-    case "Media": .warning
-    case "Analytics & Logs": .accent
-    case "Account & Tools": .soft
     default: .soft
     }
   }
@@ -662,26 +655,19 @@ struct DashInlineSearch: View {
 struct DashFeatureScreen<Chrome: View, Content: View>: View {
   var search: Binding<String>?
   var prompt: String = ""
-  var chromeAttachesToTitle: Bool
   @ViewBuilder var chrome: () -> Chrome
   @ViewBuilder var content: () -> Content
 
   init(
     search: Binding<String>? = nil,
     prompt: String = "",
-    chromeAttachesToTitle: Bool = true,
     @ViewBuilder chrome: @escaping () -> Chrome,
     @ViewBuilder content: @escaping () -> Content
   ) {
     self.search = search
     self.prompt = prompt
-    self.chromeAttachesToTitle = chromeAttachesToTitle
     self.chrome = chrome
     self.content = content
-  }
-
-  private var usesTitleAttachedChrome: Bool {
-    chromeAttachesToTitle && search == nil
   }
 
   var body: some View {
@@ -694,11 +680,7 @@ struct DashFeatureScreen<Chrome: View, Content: View>: View {
       chrome()
         .padding(.horizontal, DashTheme.Spacing.screen)
       content()
-        // Title-attached chrome (the text tabs) stays flush with the navigation
-        // title; the shared content gap belongs below its divider.
-        .padding(.top, usesTitleAttachedChrome ? DashTheme.Spacing.section : 0)
     }
-    .padding(.top, usesTitleAttachedChrome ? 0 : DashTheme.Spacing.section)
     .dashContentColumn()
     .background(DashTheme.canvas)
   }
@@ -713,7 +695,6 @@ extension DashFeatureScreen where Chrome == EmptyView {
     self.init(
       search: search,
       prompt: prompt,
-      chromeAttachesToTitle: false,
       chrome: { EmptyView() },
       content: content
     )
@@ -746,7 +727,6 @@ struct DashFeatureList<Header: View, Content: View>: View {
   var error: String?
   var hasContent: Bool = false
   var retry: () -> Void
-  var headerAttachesToTitle: Bool
   @ViewBuilder var header: () -> Header
   @ViewBuilder var content: () -> Content
   @Environment(AppModel.self) private var model
@@ -759,7 +739,6 @@ struct DashFeatureList<Header: View, Content: View>: View {
     error: String? = nil,
     hasContent: Bool = false,
     retry: @escaping () -> Void = {},
-    headerAttachesToTitle: Bool = true,
     @ViewBuilder header: @escaping () -> Header,
     @ViewBuilder content: @escaping () -> Content
   ) {
@@ -769,7 +748,6 @@ struct DashFeatureList<Header: View, Content: View>: View {
     self.error = error
     self.hasContent = hasContent
     self.retry = retry
-    self.headerAttachesToTitle = headerAttachesToTitle
     self.header = header
     self.content = content
   }
@@ -778,7 +756,6 @@ struct DashFeatureList<Header: View, Content: View>: View {
     DashFeatureScreen(
       search: search,
       prompt: prompt,
-      chromeAttachesToTitle: headerAttachesToTitle,
       chrome: header
     ) {
       ScrollView {
@@ -808,6 +785,9 @@ struct DashFeatureList<Header: View, Content: View>: View {
           }
         }
         .padding(.horizontal, DashTheme.Spacing.screen)
+        // This gap belongs to the scroll content. Putting it on
+        // DashFeatureScreen turns it into fixed header chrome.
+        .padding(.top, DashTheme.Spacing.section)
         .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
       }
       .scrollDismissesKeyboard(.interactively)
@@ -852,7 +832,6 @@ extension DashFeatureList where Header == EmptyView {
       error: error,
       hasContent: hasContent,
       retry: retry,
-      headerAttachesToTitle: false,
       header: { EmptyView() },
       content: content
     )
@@ -882,14 +861,14 @@ struct DashListGroup<Content: View>: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 12) {
         Text(title)
-          .dashTextStyle(.bodyMedium)
+          .dashTextStyle(.supportingMedium)
           .foregroundStyle(DashTheme.subtle)
         Spacer(minLength: 0)
         if let action {
           Group {
             if let actionIcon {
               Button(action: action) {
-                SolarIcon(asset: actionIcon, size: 20, color: DashTheme.faint)
+                SolarIcon(asset: actionIcon, size: 16, color: DashTheme.faint)
                   .dashCompactHitTarget()
               }
               .buttonStyle(DashPressButtonStyle())
@@ -980,7 +959,8 @@ struct CatalogFeatureIcon: View {
       case .compact: 28
       case .hero: 56
       }
-    return size == .list || size == .shortcut ? base * min(max(listTileScale, 1), 1.3) : base
+    return size == .list || size == .shortcut
+      ? base * min(max(listTileScale, 1), 1.3) : base
   }
 
   var body: some View {
@@ -1795,6 +1775,20 @@ struct DashToolbarActionIcon: View {
     SolarIcon(asset: asset, size: 24, color: DashTheme.strong)
       .frame(width: 24, height: 24)
       .accessibilityHidden(true)
+  }
+}
+
+/// Keeps adjacent nav-bar actions visually grouped without shrinking their
+/// 44pt touch targets. Native spacing between separate `ToolbarItem`s is too
+/// loose for a compact pair, so paired actions share one item and sit edge to
+/// edge while retaining their own circular glass.
+struct DashToolbarActionGroup<Content: View>: View {
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    HStack(spacing: 0) {
+      content()
+    }
   }
 }
 

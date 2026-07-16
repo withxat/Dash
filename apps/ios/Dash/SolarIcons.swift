@@ -1,6 +1,7 @@
 import SwiftUI
 
 // Outline / line Solar assets use stroke-width 2 in their 24×24 SVGs.
+// Chevrons use a 2.5 outline so they stay legible when scaled below 24pt.
 
 enum SolarAsset {
   static let chevronRight = "SolarAltArrowRightOutline"
@@ -37,13 +38,10 @@ enum SolarAsset {
   static let settings = "SolarSettingsMinimalisticOutline"
   static let code = "SolarCodeSquareOutline"
   static let codeCircle = "SolarCodeCircleOutline"
-  static let letter = "SolarLetterOutline"
   static let routing = "SolarRoutingOutline"
   static let globus = "SolarGlobusOutline"
-  static let branching = "SolarBranchingPathsUpOutline"
   static let lock = "SolarLockKeyholeOutline"
   static let heartPulse = "SolarHeartPulseOutline"
-  static let sledgehammer = "SolarSledgehammerOutline"
   static let clock = "SolarClockCircleOutline"
   static let slider = "SolarSliderHorizontalOutline"
   static let search = "SolarMagnifierOutline"

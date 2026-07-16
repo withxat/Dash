@@ -22,11 +22,6 @@ enum DashSpotlight {
           "dash://r2/\(resource.resourceID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? resource.resourceID)"
       )
     case .kv: routeURL = URL(string: "dash://kv/\(resource.resourceID)")
-    case .d1:
-      let name =
-        resource.title.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)
-        ?? resource.title
-      routeURL = URL(string: "dash://d1/\(resource.resourceID)/\(name)")
     }
     guard let routeURL else { return }
 

@@ -309,11 +309,9 @@ private struct PermissionSelectionView: View {
           Text("Core operations")
             .dashTextStyle(.bodySemibold)
             .foregroundStyle(DashTheme.text)
-          Text(
-            "Zones and DNS · SSL and cache · Workers and Pages · R2, KV, D1, and Queues · Tunnels and Access · Analytics, Account, and Watchtower"
-          )
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
+          Text("Zones and DNS · Cache · Workers · R2 and KV · Watchtower")
+            .dashTextStyle(.supporting)
+            .foregroundStyle(DashTheme.subtle)
           Text("\(model.selectedScopes.count) OAuth permissions")
             .dashTextStyle(.footnoteSemibold)
             .foregroundStyle(DashTheme.brand)
@@ -481,13 +479,10 @@ private struct MainTabView: View {
   @State private var showsProfile = false
   @State private var showsEditShortcuts = false
   @State private var nestedTrayPresented = false
-  @State private var tabBarExitHold = false
-  @State private var tabBarHoldTask: Task<Void, Never>?
 
   private var hidesTabBar: Bool {
     shouldHideTabBar(
-      overlaysPresented: showsProfile || showsEditShortcuts || nestedTrayPresented
-        || tabBarExitHold,
+      overlaysPresented: showsProfile || showsEditShortcuts || nestedTrayPresented,
       usesSplitDetail: sizeClass == .regular
         && (selection == .features || selection == .watchtower),
       navigationDepth: activeNavigationDepth
@@ -554,27 +549,6 @@ private struct MainTabView: View {
       }
       .onChange(of: model.pendingRoute) { _, route in
         if let route { consume(route) }
-      }
-      .onChange(of: showsProfile) { _, presented in
-        if presented {
-          cancelTabBarHold()
-        } else {
-          scheduleTabBarRestore()
-        }
-      }
-      .onChange(of: showsEditShortcuts) { _, presented in
-        if presented {
-          cancelTabBarHold()
-        } else {
-          scheduleTabBarRestore()
-        }
-      }
-      .onChange(of: nestedTrayPresented) { _, presented in
-        if presented {
-          cancelTabBarHold()
-        } else {
-          scheduleTabBarRestore()
-        }
       }
       .onChange(of: model.activeAccountID) { _, _ in
         homePath = NavigationPath()
@@ -682,24 +656,6 @@ private struct MainTabView: View {
     Image(asset)
       .renderingMode(active ? .template : .original)
       .accessibilityLabel(title)
-  }
-
-  private func cancelTabBarHold() {
-    tabBarHoldTask?.cancel()
-    tabBarHoldTask = nil
-    tabBarExitHold = false
-  }
-
-  private func scheduleTabBarRestore() {
-    tabBarHoldTask?.cancel()
-    guard !showsProfile, !showsEditShortcuts, !nestedTrayPresented else { return }
-    tabBarExitHold = true
-    tabBarHoldTask = Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(400))
-      guard !Task.isCancelled else { return }
-      tabBarExitHold = false
-      tabBarHoldTask = nil
-    }
   }
 }
 
@@ -1132,47 +1088,37 @@ enum ProfileTrayPhase: Equatable, Sendable {
 }
 
 struct SettingsView: View {
-  @Environment(AppModel.self) private var model
-
-  private var experimentalBinding: Binding<Bool> {
-    Binding(
-      get: { model.experimentalFeaturesEnabled },
-      set: { model.setExperimentalFeaturesEnabled($0) })
-  }
+  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var watchtowerNotifications = false
+  @State private var watchtowerNotificationsDenied = false
 
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
-        DashListGroup(title: "Features") {
-          VStack(alignment: .leading, spacing: 10) {
-            DashToggleRow(
-              title: "Show experimental features",
-              isOn: experimentalBinding)
-            Text(
-              "Shows Workers AI, Browser Rendering, Images, and Stream. Turning this on may open Cloudflare sign-in to grant 8 additional permissions."
-            )
-            .dashTextStyle(.supporting)
-            .foregroundStyle(DashTheme.subtle)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
+        DashListGroup(title: "Watchtower") {
+          DashToggleRow(
+            title: "Notify on new issues",
+            isOn: $watchtowerNotifications
+          )
+          .onChange(of: watchtowerNotifications) { _, enabled in
+            guard enabled else {
+              watchtowerNotificationsDenied = false
+              return
+            }
+            Task {
+              let granted = await WatchtowerNotifier.requestAuthorization()
+              if !granted {
+                watchtowerNotifications = false
+                watchtowerNotificationsDenied = true
+              }
+            }
+          }
+          if watchtowerNotificationsDenied {
+            DashNotice(
+              kind: .warning,
+              message:
+                "Notifications are turned off in iOS Settings. Enable them for Dash to get alerts.")
           }
         }
-
-        if model.experimentalFeaturesEnabled,
-          !model.hasScopes(DashAuthorizationScopes.experimental)
-        {
-          DashNotice(
-            kind: .warning,
-            message:
-              "Experimental features are visible but still locked. Open one to grant access.")
-        }
-
-        Text(
-          "Hiding experimental features does not revoke permissions already granted to the current Cloudflare session. Signing out revokes the session."
-        )
-        .dashTextStyle(.micro)
-        .foregroundStyle(DashTheme.placeholder)
-        .fixedSize(horizontal: false, vertical: true)
       }
       .dashContentColumn()
       .padding(.horizontal, DashTheme.Spacing.screen)
@@ -1333,7 +1279,6 @@ private struct DestinationRoutedContent: View {
       switch destination {
       case .profile: ProfileView()
       case .settings: SettingsView()
-      case .accountDNSSettings: AccountDNSSettingsView()
       case .feature(let feature):
         FeatureDetailChrome(feature: feature) {
           FeatureRouterContent(feature: feature)
@@ -1343,29 +1288,10 @@ private struct DestinationRoutedContent: View {
       case .cache(let id): CachePurgeView(zoneID: id)
       case .zoneAnalytics(let id): ZoneAnalyticsView(zoneID: id)
       case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
-      case .zoneTool(let zoneID, let title, let path):
-        GenericResourcesView(
-          title: title, path: path.replacingOccurrences(of: "{zone}", with: zoneID))
-      case .zonePicker(let feature): FeatureZonePickerView(feature: feature)
-      case .zoneFeatureHub(let feature, let zoneID, let zoneName):
-        ZoneFeatureHubView(feature: feature, zoneID: zoneID, zoneName: zoneName)
-      case .botManagement(let zoneID, let zoneName):
-        BotManagementView(zoneID: zoneID, zoneName: zoneName)
-      case .cachePerformance(let zoneID, let zoneName):
-        CachePerformanceView(zoneID: zoneID, zoneName: zoneName)
-      case .rulesetList(let basePath, let title):
-        RulesetListView(basePath: basePath, title: title)
-      case .ruleset(let basePath, let rulesetID, let name):
-        RulesetDetailView(basePath: basePath, rulesetID: rulesetID, name: name)
-      case .accessAppPolicies(let appID, let appName):
-        AccessAppPoliciesView(appID: appID, appName: appName)
       case .worker(let name): WorkerDetailView(name: name)
       case .workerTail(let name): WorkerTailView(name: name)
       case .r2Bucket(let name): R2BucketView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)
-      case .d1Database(let id, let name): D1ConsoleView(databaseID: id, name: name)
-      case .d1Table(let databaseID, let databaseName, let table):
-        D1TableView(databaseID: databaseID, databaseName: databaseName, table: table)
       }
     }
     .environment(\.featureAllowsWrites, allowsWrites)

@@ -348,7 +348,9 @@ enum WatchtowerEngine {
     }
     return WatchtowerSignal(
       id: "tunnels", title: "Tunnels", detail: detail, status: status,
-      destination: .feature(.tunnels),
+      // The card already names the broken tunnel; the next step is cloudflared
+      // on the box, not a screen here.
+      destination: nil,
       suggestedAction: status == .ok ? nil : "Check cloudflared and reconnect the tunnel",
       resourceName: problem?.name
     )
@@ -365,7 +367,7 @@ enum WatchtowerEngine {
         ? "\(plural(disabled, "pool")) disabled"
         : "All \(plural(pools.count, "pool")) enabled",
       status: disabled > 0 ? .warning : .ok,
-      destination: .feature(.loadBalancerPools),
+      destination: nil,
       suggestedAction: disabled > 0
         ? "Re-enable the pool or remove it from the load balancer" : nil,
       resourceName: disabledPools.first?.name
@@ -398,7 +400,7 @@ enum WatchtowerEngine {
     }
     return WatchtowerSignal(
       id: "registrar", title: "Registrar", detail: detail, status: status,
-      destination: .feature(.registrar),
+      destination: nil,
       suggestedAction: status == .ok ? nil : "Renew the domain before it expires",
       resourceName: worst?.0.name
     )
@@ -414,8 +416,9 @@ enum WatchtowerEngine {
       detail: first.map { "\($0.name): latest deployment failed" }
         ?? "All \(plural(projects.count, "project")) deployed",
       status: failed.isEmpty ? .ok : .warning,
-      destination: .feature(.workers),
-      suggestedAction: failed.isEmpty ? nil : "Open the failed deployment and redeploy",
+      // Pages has no screen of its own here; redeploying is a laptop job.
+      destination: nil,
+      suggestedAction: nil,
       resourceName: first?.name
     )
   }
