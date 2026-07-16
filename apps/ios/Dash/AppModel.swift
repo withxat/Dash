@@ -82,6 +82,12 @@ final class AppModel {
   func bootstrap() async {
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
+        // Pin bootstrap is one-shot per account and persists in UserDefaults,
+        // so stub launches must shed pins and recents from earlier runs or
+        // strip layout — and every test built on it — becomes order-dependent.
+        for key in [PinnedZones.key, PinnedZones.initializedAccountsKey, RecentResources.key] {
+          UserDefaults.standard.removeObject(forKey: key)
+        }
         grantedScopes = Set(CloudflareScopes.published)
         activeAccountID = "ui-account"
         if let zones = try? JSONDecoder().decode(
@@ -96,10 +102,15 @@ final class AppModel {
             ]
             """.utf8))
         {
-          featureCache.set(FeatureCacheKey.zones("ui-account"), zones)
+          // Two zones fill the Home strip without scrolling — the case where
+          // pull-to-open must ride on always-on bounce instead of scroll.
+          let visible =
+            ProcessInfo.processInfo.arguments.contains("-ui-preview-two-zones")
+            ? Array(zones.prefix(2)) : zones
+          featureCache.set(FeatureCacheKey.zones("ui-account"), visible)
           // Zone detail reads a per-zone key, not the list, so seed it too or
           // the screen is unreachable without a live token.
-          for zone in zones {
+          for zone in visible {
             featureCache.set(FeatureCacheKey.zone(zone.id), zone)
           }
         }

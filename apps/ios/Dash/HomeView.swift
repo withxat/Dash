@@ -157,13 +157,13 @@ enum HomeZonesPullDecision {
   static let threshold: CGFloat = 64
 
   /// Rubber-band distance past the trailing edge of the strip. Zero while the
-  /// content still has room to scroll, and always zero for a strip too short
-  /// to scroll at all, so it can never trigger.
+  /// content still has room to scroll and during leading bounces. The strip
+  /// always bounces horizontally, so a strip too short to scroll reports any
+  /// leftward pull as overscroll.
   static func overscroll(
     contentOffsetX: CGFloat, containerWidth: CGFloat, contentWidth: CGFloat
   ) -> CGFloat {
-    guard contentWidth > containerWidth else { return 0 }
-    return max(0, contentOffsetX + containerWidth - contentWidth)
+    max(0, contentOffsetX - max(0, contentWidth - containerWidth))
   }
 
   static func progress(distance: CGFloat, threshold: CGFloat = threshold) -> CGFloat {
@@ -253,6 +253,9 @@ private struct HomeZonesSection: View {
       .scrollTargetLayout()
     }
     .scrollTargetBehavior(.viewAligned)
+    // Always bounce so a strip with too few zones to scroll can still be
+    // pulled past its trailing edge to open the full list.
+    .scrollBounceBehavior(.always, axes: .horizontal)
     .frame(height: 112)
     .accessibilityIdentifier("home-zones-strip")
     .dashHomeZonesPullToOpen(perform: openAllZones)

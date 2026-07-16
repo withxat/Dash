@@ -591,10 +591,18 @@ import UIKit
   #expect(
     HomeZonesPullDecision.overscroll(
       contentOffsetX: 472, containerWidth: 360, contentWidth: 760) == 72)
-  // A strip too short to scroll can never overscroll, even while bouncing.
+  // A leading bounce is not overscroll.
   #expect(
     HomeZonesPullDecision.overscroll(
-      contentOffsetX: 40, containerWidth: 360, contentWidth: 300) == 0)
+      contentOffsetX: -30, containerWidth: 360, contentWidth: 760) == 0)
+  // A strip too short to scroll rests at zero; any leftward pull is
+  // overscroll so short strips can still open the full list.
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 0, containerWidth: 360, contentWidth: 300) == 0)
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 40, containerWidth: 360, contentWidth: 300) == 40)
 }
 
 @MainActor

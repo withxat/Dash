@@ -111,6 +111,28 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(pushedTitle.waitForExistence(timeout: 5))
   }
 
+  func testHomeZonesShortStripPullOpensAllZonesWithoutScrollableContent() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-preview", "-ui-preview-two-zones"]
+    app.launch()
+
+    let strip = app.scrollViews["home-zones-strip"]
+    XCTAssertTrue(strip.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["docs.example.com"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.staticTexts["api.example.net"].exists)
+
+    let pushedTitle = app.navigationBars.staticTexts["Zones"]
+    XCTAssertFalse(pushedTitle.exists)
+
+    // With nothing to scroll the strip still bounces, so one sustained pull
+    // past the trailing edge opens the full list.
+    let start = strip.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+    let end = strip.coordinate(withNormalizedOffset: CGVector(dx: -1.5, dy: 0.5))
+    start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+
+    XCTAssertTrue(pushedTitle.waitForExistence(timeout: 5))
+  }
+
   func testBottomSearchOpensConcreteResource() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
