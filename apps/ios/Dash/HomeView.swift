@@ -343,8 +343,9 @@ private struct HomeZonesPullToOpenModifier: ViewModifier {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var overscroll: CGFloat = 0
-  @State private var dragging = false
   @State private var triggered = false
+
+  private var armed: Bool { HomeZonesPullDecision.shouldOpen(distance: overscroll) }
 
   func body(content: Content) -> some View {
     content
@@ -355,24 +356,20 @@ private struct HomeZonesPullToOpenModifier: ViewModifier {
           contentWidth: geometry.contentSize.width)
       } action: { _, distance in
         overscroll = distance
-        if distance == 0 {
-          triggered = false
-          return
-        }
-        // Only a live drag opens the list; a fling that bounces off the end
-        // stays a scroll.
-        guard !triggered, dragging, HomeZonesPullDecision.shouldOpen(distance: distance) else {
-          return
-        }
+        if distance == 0 { triggered = false }
+      }
+      .onScrollPhaseChange { oldPhase, newPhase in
+        // Release-to-open: lifting the finger past the threshold confirms;
+        // dragging back below it first cancels, and a fling's bounce arrives
+        // after the release, so it stays a scroll.
+        guard oldPhase == .interacting, newPhase != .interacting else { return }
+        guard !triggered, armed else { return }
         triggered = true
         onPull()
       }
-      .onScrollPhaseChange { _, newPhase in
-        dragging = newPhase == .interacting
-      }
       .overlay(alignment: .trailing) { indicator }
-      .sensoryFeedback(.impact(weight: .medium), trigger: triggered) { _, isTriggered in
-        isTriggered
+      .sensoryFeedback(.impact(weight: .medium), trigger: armed) { _, isArmed in
+        isArmed
       }
   }
 
