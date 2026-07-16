@@ -72,6 +72,16 @@ struct HomeView: View {
 enum HomeZonesPullDecision {
   static let threshold: CGFloat = 64
 
+  /// Rubber-band distance past the trailing edge of the strip. Zero while the
+  /// content still has room to scroll, and always zero for a strip too short
+  /// to scroll at all, so it can never trigger.
+  static func overscroll(
+    contentOffsetX: CGFloat, containerWidth: CGFloat, contentWidth: CGFloat
+  ) -> CGFloat {
+    guard contentWidth > containerWidth else { return 0 }
+    return max(0, contentOffsetX + containerWidth - contentWidth)
+  }
+
   static func progress(distance: CGFloat, threshold: CGFloat = threshold) -> CGFloat {
     guard threshold > 0 else { return 1 }
     return min(max(distance / threshold, 0), 1)
@@ -82,30 +92,15 @@ enum HomeZonesPullDecision {
   }
 }
 
-private struct HomeZonesPullTargetPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = nextValue()
-  }
-}
-
 private struct HomeZonesSection: View {
   private static let limit = 4
-  private static let scrollSpace = "home-zones-scroll"
-  private static let pullTargetID = "all-zones"
-  private static let pullTargetWidth: CGFloat = 72
 
   @Environment(AppModel.self) private var model
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(PinnedZones.initializedAccountsKey) private var initializedAccounts = ""
   @State private var zones: [CloudflareZone] = []
   @State private var loading = true
   @State private var error: String?
-  @State private var pullTargetMinX: CGFloat = 0
-  @State private var initialPullTargetMinX: CGFloat?
-  @State private var pullTriggered = false
 
   private var displayedZones: [CloudflareZone] {
     guard let accountID = model.activeAccountID else { return [] }
@@ -153,80 +148,27 @@ private struct HomeZonesSection: View {
   }
 
   private var zoneStrip: some View {
-    GeometryReader { proxy in
-      let pullDistance = exposedPullTargetDistance(containerWidth: proxy.size.width)
-      let progress = HomeZonesPullDecision.progress(distance: pullDistance)
-
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(spacing: DashTheme.Spacing.itemGap) {
-          ForEach(displayedZones) { zone in
-            DashListGroupLink(value: .zone(zone.id)) {
-              HomeZoneTile(zone: zone)
-            }
-            .containerRelativeFrame(
-              .horizontal,
-              count: 2,
-              span: 1,
-              spacing: DashTheme.Spacing.itemGap
-            )
-            .id(zone.id)
+    ScrollView(.horizontal, showsIndicators: false) {
+      LazyHStack(spacing: DashTheme.Spacing.itemGap) {
+        ForEach(displayedZones) { zone in
+          DashListGroupLink(value: .zone(zone.id)) {
+            HomeZoneTile(zone: zone)
           }
-
-          pullTarget(progress: progress)
-            .frame(width: Self.pullTargetWidth, height: 112)
-            .id(Self.pullTargetID)
-            .background {
-              GeometryReader { edgeProxy in
-                Color.clear.preference(
-                  key: HomeZonesPullTargetPreferenceKey.self,
-                  value: edgeProxy.frame(in: .named(Self.scrollSpace)).minX)
-              }
-            }
+          .containerRelativeFrame(
+            .horizontal,
+            count: 2,
+            span: 1,
+            spacing: DashTheme.Spacing.itemGap
+          )
+          .id(zone.id)
         }
-        .scrollTargetLayout()
       }
-      .scrollTargetBehavior(.viewAligned)
-      .coordinateSpace(name: Self.scrollSpace)
-      .accessibilityIdentifier("home-zones-strip")
-      .onPreferenceChange(HomeZonesPullTargetPreferenceKey.self) { minX in
-        guard minX > 0 else { return }
-        if initialPullTargetMinX == nil { initialPullTargetMinX = minX }
-        pullTargetMinX = minX
-
-        let distance = min(Self.pullTargetWidth, max(0, proxy.size.width - minX))
-        if distance == 0 { pullTriggered = false }
-        guard
-          !pullTriggered,
-          let initialPullTargetMinX,
-          minX < initialPullTargetMinX - 8,
-          HomeZonesPullDecision.shouldOpen(distance: distance)
-        else { return }
-        pullTriggered = true
-        openAllZones()
-      }
+      .scrollTargetLayout()
     }
+    .scrollTargetBehavior(.viewAligned)
     .frame(height: 112)
-  }
-
-  private func pullTarget(progress: CGFloat) -> some View {
-    ZStack {
-      Circle()
-        .fill(progress >= 1 ? DashTheme.infoTint : DashTheme.recessed)
-      SolarIcon(
-        asset: SolarAsset.chevronRight,
-        size: 18,
-        color: progress >= 1 ? DashTheme.brand : DashTheme.subtle)
-    }
-    .frame(width: 44, height: 44)
-    .scaleEffect(reduceMotion ? 1 : 0.72 + 0.28 * progress)
-    .opacity(progress)
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
-  }
-
-  private func exposedPullTargetDistance(containerWidth: CGFloat) -> CGFloat {
-    guard pullTargetMinX > 0 else { return 0 }
-    return min(Self.pullTargetWidth, max(0, containerWidth - pullTargetMinX))
+    .accessibilityIdentifier("home-zones-strip")
+    .dashHomeZonesPullToOpen(perform: openAllZones)
   }
 
   private func openAllZones() {
@@ -277,6 +219,79 @@ private struct HomeZonesSection: View {
       limit: Self.limit)
     pinnedZoneData = bootstrapped.pins
     initializedAccounts = bootstrapped.initializedAccounts
+  }
+}
+
+extension View {
+  /// Trailing overscroll-to-open for the zones strip. Scroll geometry APIs
+  /// need iOS 18; on iOS 17 the header's View all button stays the only way in.
+  @ViewBuilder
+  fileprivate func dashHomeZonesPullToOpen(perform action: @escaping () -> Void) -> some View {
+    if #available(iOS 18.0, *) {
+      modifier(HomeZonesPullToOpenModifier(onPull: action))
+    } else {
+      self
+    }
+  }
+}
+
+@available(iOS 18.0, *)
+private struct HomeZonesPullToOpenModifier: ViewModifier {
+  let onPull: () -> Void
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var overscroll: CGFloat = 0
+  @State private var dragging = false
+  @State private var triggered = false
+
+  func body(content: Content) -> some View {
+    content
+      .onScrollGeometryChange(for: CGFloat.self) { geometry in
+        HomeZonesPullDecision.overscroll(
+          contentOffsetX: geometry.contentOffset.x,
+          containerWidth: geometry.containerSize.width,
+          contentWidth: geometry.contentSize.width)
+      } action: { _, distance in
+        overscroll = distance
+        if distance == 0 {
+          triggered = false
+          return
+        }
+        // Only a live drag opens the list; a fling that bounces off the end
+        // stays a scroll.
+        guard !triggered, dragging, HomeZonesPullDecision.shouldOpen(distance: distance) else {
+          return
+        }
+        triggered = true
+        onPull()
+      }
+      .onScrollPhaseChange { _, newPhase in
+        dragging = newPhase == .interacting
+      }
+      .overlay(alignment: .trailing) { indicator }
+      .sensoryFeedback(.impact(weight: .medium), trigger: triggered) { _, isTriggered in
+        isTriggered
+      }
+  }
+
+  private var indicator: some View {
+    let progress = HomeZonesPullDecision.progress(distance: overscroll)
+    return ZStack {
+      Circle()
+        .fill(progress >= 1 ? DashTheme.infoTint : DashTheme.recessed)
+      SolarIcon(
+        asset: SolarAsset.chevronRight,
+        size: 18,
+        color: progress >= 1 ? DashTheme.brand : DashTheme.subtle)
+    }
+    .frame(width: 44, height: 44)
+    .scaleEffect(reduceMotion ? 1 : 0.72 + 0.28 * progress)
+    .opacity(progress)
+    .offset(x: reduceMotion ? 0 : 16 * (1 - progress))
+    .padding(.trailing, 6)
+    .animation(reduceMotion ? nil : DashTheme.Motion.quick, value: progress >= 1)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }
 

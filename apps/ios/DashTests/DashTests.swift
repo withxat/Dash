@@ -543,6 +543,24 @@ import UIKit
   #expect(HomeZonesPullDecision.shouldOpen(distance: 64))
 }
 
+@Test func homeZonesOverscrollCountsOnlyRubberBandPastTrailingEdge() {
+  // Mid-scroll and exactly at the end are not overscroll.
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 200, containerWidth: 360, contentWidth: 760) == 0)
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 400, containerWidth: 360, contentWidth: 760) == 0)
+  // Rubber-banding past the end reports the exposed distance.
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 472, containerWidth: 360, contentWidth: 760) == 72)
+  // A strip too short to scroll can never overscroll, even while bouncing.
+  #expect(
+    HomeZonesPullDecision.overscroll(
+      contentOffsetX: 40, containerWidth: 360, contentWidth: 300) == 0)
+}
+
 @MainActor
 @Test func tailBufferTrimsOldestBeyondLimit() {
   let event = { (summary: String) in

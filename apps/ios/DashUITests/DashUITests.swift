@@ -79,6 +79,35 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.staticTexts["All systems normal"].exists)
   }
 
+  func testHomeZonesOverscrollPastEndOpensAllZones() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-ui-preview"]
+    app.launch()
+
+    let strip = app.scrollViews["home-zones-strip"]
+    XCTAssertTrue(strip.waitForExistence(timeout: 5))
+
+    // Feature screens title themselves with an inline principal view, and
+    // Home's Shortcuts list also contains a "Zones" row, so the pushed screen
+    // is detected by title text scoped to the navigation bar.
+    let pushedTitle = app.navigationBars.staticTexts["Zones"]
+
+    // One fling from the strip's start cannot overscroll while the finger is
+    // down (a page of content remains), and its bounce off the end happens
+    // after the finger lifts — so it must stay a scroll. A second fling could
+    // legitimately trigger mid-drag, so only one is safe to assert on.
+    strip.swipeLeft()
+    XCTAssertFalse(pushedTitle.exists)
+
+    // One sustained drag through the end and past the trailing edge opens
+    // the full list.
+    let start = strip.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+    let end = strip.coordinate(withNormalizedOffset: CGVector(dx: -1.5, dy: 0.5))
+    start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
+
+    XCTAssertTrue(pushedTitle.waitForExistence(timeout: 5))
+  }
+
   func testBottomSearchOpensConcreteResource() {
     let app = XCUIApplication()
     app.launchArguments = ["-ui-preview"]
