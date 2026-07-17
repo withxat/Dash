@@ -1,0 +1,14 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "dash-relay",
+	"main": "./src/worker/index.ts",
+	"compatibility_date": "2026-07-01",
+	"vars": {
+		"APNS_TEAM_ID": "J4CCPX9K6H",
+		"APNS_TOPIC": "sh.xat.dash"
+	},
+	"assets": {
+		"not_found_handling": "single-page-application",
+		"run_worker_first": ["/oauth/*", "/push/*", "/api/*", "/health"]
+	}
+}

@@ -12,7 +12,7 @@ The installed app is named **Dash**. Its bundle identifier is `sh.xat.dash`, its
 | --- | --- |
 | `apps/ios` | iOS 17+ SwiftUI app, Xcode project, unit tests, and UI tests |
 | `packages/cloudflare-api` | Dependency-free Swift Package for OAuth and Cloudflare REST/GraphQL APIs |
-| `apps/relay-worker` | Stateless Worker that redirects the registered HTTPS callback to `dash://` |
+| `apps/web` | Landing page + Hono edge app (`dash-relay`) at `https://dash.xat.sh` |
 | `packages/ui` | Unused web component library retained from the original workspace |
 
 ## Requirements
@@ -47,17 +47,29 @@ pnpm typecheck
 
 The API client stores tokens through a `TokenStore` abstraction. Dash implements it with a device-only Keychain service. The client serializes refreshes, retries one request after a 401, and clears credentials on sign-out.
 
-## OAuth relay
+## Landing + OAuth relay (`apps/web`)
 
-The relay is intentionally stateless. It never logs callback parameters and never receives the PKCE verifier.
+`apps/web` deploys as worker `dash-relay` on `https://dash.xat.sh`. It serves the
+marketing landing page, redirects OAuth to `dash://oauth/callback`, and keeps
+the dormant `/push/*` APNs bridge. The relay path is intentionally stateless: it
+never logs callback parameters and never receives the PKCE verifier.
 
 ```sh
 pnpm install
-pnpm --filter @dash/relay-worker exec wrangler login
-pnpm --filter @dash/relay-worker run deploy
+pnpm --filter @dash/web exec wrangler login
+pnpm web:deploy
 ```
 
-Redeploy the Worker before using Dash so its callback target is `dash://oauth/callback`. After deploy, update the Cloudflare OAuth client and `DASH_REDIRECT_URI` to `https://dash-relay.<subdomain>.workers.dev/oauth/callback`.
+After deploy, verify:
+
+```sh
+curl -sf https://dash.xat.sh/health
+curl -sI 'https://dash.xat.sh/oauth/callback?x=1'
+curl -sf https://dash.xat.sh/
+```
+
+Register `https://dash.xat.sh/oauth/callback` on the Cloudflare OAuth client and
+in `DASH_REDIRECT_URI`.
 
 ## Verification
 

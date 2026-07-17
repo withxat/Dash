@@ -12,7 +12,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | --- | --- |
 | `apps/ios` | iOS 17+ SwiftUI App、Xcode 工程、单元测试和 UI 测试 |
 | `packages/cloudflare-api` | 无第三方依赖的 Swift OAuth 与 Cloudflare REST/GraphQL 客户端 |
-| `apps/relay-worker` | 将注册的 HTTPS OAuth 回调转到 `dash://` 的无状态 Worker |
+| `apps/web` | 落地页 + Hono 边缘应用（`dash-relay`），域名 `https://dash.xat.sh` |
 | `packages/ui` | 从原 workspace 保留、未被 App 使用的 Web 组件库 |
 
 ## 配置 OAuth
@@ -35,15 +35,15 @@ pnpm lint:fix
 pnpm typecheck
 ```
 
-发布新版 App 前需要重新部署 relay：
+发布新版 App 前需要重新部署边缘应用（落地页 + OAuth relay）：
 
 ```sh
 pnpm install
-pnpm --filter @dash/relay-worker exec wrangler login
-pnpm --filter @dash/relay-worker run deploy
+pnpm --filter @dash/web exec wrangler login
+pnpm web:deploy
 ```
 
-部署后，把 Cloudflare OAuth 客户端和 `DASH_REDIRECT_URI` 更新为 `https://dash-relay.<subdomain>.workers.dev/oauth/callback`。
+部署后确认 `https://dash.xat.sh/oauth/callback` 仍 302 到 `dash://oauth/callback`，并在 Cloudflare OAuth 客户端与 `DASH_REDIRECT_URI` 中使用该 HTTPS 地址。
 
 ## License
 

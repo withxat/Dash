@@ -1,9 +1,0 @@
-{
-  "name": "dash-relay",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-07-01",
-  "vars": {
-    "APNS_TEAM_ID": "J4CCPX9K6H",
-    "APNS_TOPIC": "sh.xat.dash"
-  }
-}

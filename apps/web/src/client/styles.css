@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+
+@theme {
+	--font-display: 'Fraunces', ui-serif, Georgia, serif;
+	--font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+	--color-dash-accent: #f6821f;
+	--color-dash-ink: #1a1a1a;
+	--color-dash-peach: #ffe4c7;
+	--color-dash-cream: #fff7ef;
+	--color-dash-sand: #ffebd6;
+	--color-dash-mist: #ffeedd;
+}
+
+@layer base {
+	html {
+		color-scheme: light;
+	}
+
+	body {
+		margin: 0;
+		min-height: 100dvh;
+		font-family: var(--font-sans);
+		color: var(--color-dash-ink);
+		background: var(--color-dash-cream);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		*,
+		*::before,
+		*::after {
+			animation-duration: 0.01ms !important;
+			animation-iteration-count: 1 !important;
+			transition-duration: 0.01ms !important;
+		}
+	}
+}
+
+@keyframes rise {
+	from {
+		opacity: 0;
+		transform: translateY(18px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes drift {
+	0%,
+	100% {
+		transform: translate3d(0, 0, 0) scale(1);
+	}
+	50% {
+		transform: translate3d(12px, -10px, 0) scale(1.04);
+	}
+}
+
+@keyframes glow-pulse {
+	0%,
+	100% {
+		opacity: 0.55;
+	}
+	50% {
+		opacity: 0.85;
+	}
+}
+
+@utility animate-rise {
+	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-rise-delay-1 {
+	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+
+@utility animate-rise-delay-2 {
+	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
+}
+
+@utility animate-drift {
+	animation: drift 10s ease-in-out infinite;
+}
+
+@utility animate-glow-drift {
+	animation:
+		glow-pulse 5s ease-in-out infinite,
+		drift 10s ease-in-out infinite;
+}

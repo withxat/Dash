@@ -21,7 +21,9 @@
 		"lint": "turbo lint && pnpm lint:swift",
 		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api",
 		"lint:fix": "turbo lint -- --fix && pnpm lint:fix:swift",
-		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api"
+		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashTests apps/ios/DashUITests packages/cloudflare-api",
+		"web:dev": "pnpm --filter @dash/web run dev",
+		"web:deploy": "pnpm --filter @dash/web run deploy"
 	},
 	"devDependencies": {
 		"@solar-icons/react-native": "^1.1.1",

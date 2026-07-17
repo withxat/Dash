@@ -10,8 +10,8 @@
  * upstream keeps APNs from being hammered.
  */
 
+import type { Env } from '../env'
 import type { AlertPayload } from './alert'
-import type { Env } from './env'
 
 const JWT_TTL_SECONDS = 50 * 60
 

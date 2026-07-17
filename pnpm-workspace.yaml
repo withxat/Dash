@@ -9,7 +9,7 @@ catalogs:
   devtool:
     '@withxat/eslint-config': ^1.1.5
     '@withxat/tsconfig': ^1.0.4
-    eslint: ^10.6.0
+    eslint: ^10.7.0
     jiti: ^2.7.0
     lefthook: ^2.1.9
     turbo: ^2.10.2
@@ -20,7 +20,15 @@ catalogs:
     react: ^19.2.7
     react-dom: ^19.2.7
   tailwind:
+    '@tailwindcss/vite': ^4.3.3
     tailwindcss: ^4.3.2
+  web:
+    '@cloudflare/vite-plugin': ^1.45.0
+    '@cloudflare/workers-types': ^5.20260716.1
+    '@vitejs/plugin-react': ^6.0.3
+    hono: ^4.12.30
+    vite: ^8.1.5
+    wrangler: ^4.111.0
 allowBuilds:
   esbuild: true
   lefthook: true
@@ -37,5 +45,27 @@ minimumReleaseAgeExclude:
   - '@turbo/windows-64@2.10.2'
   - '@turbo/windows-arm64@2.10.2'
   - '@withxat/eslint-config@1.1.5'
-  - recharts@3.9.1
+  - recharts@3.9.2
   - turbo@2.10.2
+  - vite@8.1.5
+  - '@cloudflare/vite-plugin@1.45.0'
+  - '@vitejs/plugin-react@6.0.3'
+  - hono@4.12.30
+  - wrangler@4.111.0
+  - '@cloudflare/workers-types@5.20260716.1'
+  - '@tailwindcss/vite@4.3.3'
+  - tailwindcss@4.3.3
+  - '@tailwindcss/node@4.3.3'
+  - '@tailwindcss/oxide-android-arm64@4.3.3'
+  - '@tailwindcss/oxide-darwin-arm64@4.3.3'
+  - '@tailwindcss/oxide-darwin-x64@4.3.3'
+  - '@tailwindcss/oxide-freebsd-x64@4.3.3'
+  - '@tailwindcss/oxide-linux-arm-gnueabihf@4.3.3'
+  - '@tailwindcss/oxide-linux-arm64-gnu@4.3.3'
+  - '@tailwindcss/oxide-linux-arm64-musl@4.3.3'
+  - '@tailwindcss/oxide-linux-x64-gnu@4.3.3'
+  - '@tailwindcss/oxide-linux-x64-musl@4.3.3'
+  - '@tailwindcss/oxide-wasm32-wasi@4.3.3'
+  - '@tailwindcss/oxide-win32-arm64-msvc@4.3.3'
+  - '@tailwindcss/oxide-win32-x64-msvc@4.3.3'
+  - '@tailwindcss/oxide@4.3.3'

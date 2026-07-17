@@ -8,8 +8,8 @@
  * cannot disable the whole webhook destination.
  */
 
+import type { Env } from '../env'
 import type { APNsHost } from './apns'
-import type { Env } from './env'
 
 import { mapAlert } from './alert'
 import {

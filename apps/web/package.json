@@ -1,0 +1,37 @@
+{
+	"name": "@dash/web",
+	"type": "module",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Dash landing page and edge app — Hono + Vite SPA on dash-relay.",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc -b && vite build",
+		"deploy": "pnpm run build && wrangler deploy",
+		"preview": "pnpm run build && vite preview",
+		"typecheck": "tsc -b --noEmit",
+		"lint": "eslint .",
+		"cf-typegen": "wrangler types"
+	},
+	"dependencies": {
+		"hono": "catalog:web",
+		"react": "catalog:react",
+		"react-dom": "catalog:react"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "catalog:web",
+		"@cloudflare/workers-types": "catalog:web",
+		"@tailwindcss/vite": "catalog:tailwind",
+		"@types/react": "catalog:react",
+		"@types/react-dom": "catalog:react",
+		"@vitejs/plugin-react": "catalog:web",
+		"@withxat/eslint-config": "catalog:devtool",
+		"@withxat/tsconfig": "catalog:devtool",
+		"eslint": "catalog:devtool",
+		"jiti": "catalog:devtool",
+		"tailwindcss": "catalog:tailwind",
+		"typescript": "catalog:devtool",
+		"vite": "catalog:web",
+		"wrangler": "catalog:web"
+	}
+}

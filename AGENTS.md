@@ -5,7 +5,7 @@ Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is 
 ## Product scope (UI)
 
 - **iPhone only.** The Xcode target is `TARGETED_DEVICE_FAMILY = 1`. Design, implement, and polish for portrait iPhone. Do not design, implement, polish, or “fix” iPad / iPadOS / Stage Manager / Split View layouts unless the user explicitly asks.
-- **One compact canvas per tab.** Navigation is a single phone stack per tab — not `NavigationSplitView`, not sidebar + detail, not dual adaptive layouts. Prefer the compact path for all new work.
+- **One compact canvas per tab.** Navigation is workspace layers on a single phone stack — not `NavigationSplitView`, not sidebar + detail, not dual adaptive layouts. Prefer the compact path for all new work.
 - **Do not reintroduce regular-width layout forks.** No `horizontalSizeClass == .regular` chrome, no split selection APIs, no reading-width content columns for “iPad readiness.” Optimize for iPhone; ignore iPad parity.
 
 ## Workspace
@@ -14,7 +14,7 @@ Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is 
 | --- | --- |
 | `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
 | `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
-| `apps/relay-worker` | Stateless TypeScript Cloudflare Worker: OAuth callback relay; dormant APNs bridge remains deployed but is not exposed by the app |
+| `apps/web` | Vite + React landing page and Hono edge app at `dash.xat.sh` (worker `dash-relay`); hosts OAuth callback and dormant `/push/*` |
 | `packages/ui` | Web-only component library; do not import it into Dash |
 
 ## Commands
@@ -29,7 +29,8 @@ pnpm typecheck      # turbo typecheck + api:test + full simulator build (slow)
 pnpm lint
 pnpm lint:fix
 pnpm ios:icons      # regenerate Solar icon assets
-pnpm --filter @dash/relay-worker run deploy
+pnpm web:dev        # landing + edge worker locally
+pnpm web:deploy     # deploy dash-relay (landing + OAuth relay)
 ```
 
 Single tests:
@@ -50,13 +51,13 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 ### iOS app
 
 - One `AppModel` (`@Observable @MainActor`, created in `DashApp`, injected via `.environment`) owns the `CloudflareClient`, `KeychainTokenStore`, `FeatureDataCache`, auth state, accounts, and active-account selection. Switching accounts or signing out clears the cache.
-- `AppRootView` switches on auth state into `MainTabView` with three primary tabs (Home, Resources, Watchtower) plus the tab-bar Search role, each with its own navigation container. Resources stays a browse-only catalog; cross-resource search lives behind the bottom Search button. Every push routes through the `Destination` enum (`Catalog.swift`) resolved in `destinationRouting()` (`AppRootView.swift`). A new screen means a new `Destination` case plus a branch there.
+- `AppRootView` switches on auth state into `MainTabView` with three primary tabs (Home, Resources, Watchtower), each with its own `WorkspaceHost` canvas. Resources stays a browse-only catalog. Every drill-down routes through the `Destination` enum (`Catalog.swift`) opened on the tab's `WorkspaceController` and rendered by `DestinationRoutedContent` (`DashWorkspace.swift`). A new screen means a new `Destination` case plus a branch there — layers morph in place instead of using `NavigationPath` push.
 - `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar asset, and category per feature. Rich features (zones, workers, R2, KV, D1, account) have dedicated views in `FeatureViews.swift`, `StorageViews.swift`, and `AccountFeatureViews.swift`; the rest fall through to `GenericFeatureView`, which maps the `FeatureID` to a REST path and lists `GenericResource` rows. A simple list feature needs only a `FeatureID` case and a path there — no new view.
 - `FeatureDataCache` is an in-memory, session-scoped cache keyed by `FeatureCacheKey` strings. Views read the cache in `.task` and bypass it from `refreshable` with `force: true`.
 - Worker detail shows the latest actively serving deployment from the typed deployments endpoint, plus cached analytics and `workers.dev` controls. R2 uploads are capped at 100 MB, stay off the main actor while reading, and expose in-view progress, cancellation, and completion feedback.
 - Shared chrome (cards, trays/sheets, pill buttons, catalog toolbar) lives in `DashChrome.swift`; all palette, typography, and spacing tokens in `DashTheme.swift`.
 - Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals. Snapshot freshness is shared with the widget: fresh through 2 hours, aging through 24 hours, then stale. Signals without an in-app destination open a detail tray instead of becoming dead rows.
-- Home leads with the Watchtower account summary, pinned zones, and recently opened concrete resources. Recently opened zones, Workers, R2 buckets, and KV namespaces use `RecentResources`; bare catalog entries are not shown. The legacy `dash.home_shortcuts` value remains decodable for rollback, but it is no longer rendered.
+- Home is a launcher: the animated Kumo cloud mascot (`CloudMascotBody`/`CloudMascotEyes` template assets, deterministic sway/blink in `HomeMascotMotion`) over a greeting, three preset quick-action tiles (Add domain opens a tray backed by `createZone`; Workers and R2 open their features), a collapsed-by-default Domains group (deterministic on-device dither avatars from the local `GradientAvatars` package; expanding morphs them into the zone rows plus View all), a static Shortcuts group of all four features, and a Recently used group fed by `RecentResources` (JSON in `@AppStorage`, recorded by zone/worker/R2/KV screens, filtered per account). Watchtower stays on its own tab. Zone pinning remains on zone detail. The legacy `dash.home_shortcuts` value remains decodable for rollback, but it is no longer rendered.
 
 ### Auth flow
 
@@ -87,12 +88,19 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 - Public response types are `Codable` and `Sendable`; public operations use `async throws`.
 - Binary endpoints use `Data` or file URLs. Do not decode unbounded bodies as text unless the endpoint is known to be bounded.
 
-## Relay worker (OAuth + dormant push)
+## Edge app (landing + OAuth + dormant push)
 
 Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is
-deployed as `dash-relay` on Workers at `https://dash.xat.sh`, which redirects
-OAuth to `dash://oauth/callback` and also bridges Cloudflare alert webhooks to
-APNs under `/push/*`.
+served by worker `dash-relay` at `https://dash.xat.sh` (`apps/web`): a Vite React
+landing SPA plus a Hono Worker that redirects OAuth to `dash://oauth/callback`
+and bridges Cloudflare alert webhooks to APNs under `/push/*`.
+
+Route ownership:
+
+- `GET /` and SPA navigations → Workers Assets (landing)
+- `GET /health` → liveness probe
+- `GET /oauth/callback` → 302 to `dash://oauth/callback` (worker-first)
+- `/push/*` → dormant APNs bridge (worker-first)
 
 The iOS app does not register for remote notifications or expose the APNs
 workflow. Keep `/push/*` dormant for rollback and cleanup compatibility; do not
