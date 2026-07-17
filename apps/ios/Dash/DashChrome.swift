@@ -277,7 +277,6 @@ private struct DashCustomSheet<Content: View>: View {
   let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var shown = false
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
@@ -314,10 +313,7 @@ private struct DashCustomSheet<Content: View>: View {
         } content: {
           content()
         }
-        .frame(
-          maxWidth: horizontalSizeClass == .regular
-            ? DashTheme.Layout.trayMaxWidth : .infinity
-        )
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, DashTheme.Sheet.floatingMargin)
         .padding(.bottom, bottomLift(proxy))
         // Always laid out so it moves as one piece; bottom-pinned. The reveal
@@ -442,7 +438,6 @@ private struct DashExpandableSheet<Content: View>: View {
   let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @State private var shown = false
   @State private var expanded = true
   @State private var drag: CGFloat = 0
@@ -517,9 +512,7 @@ private struct DashExpandableSheet<Content: View>: View {
         .safeAreaPadding(.bottom, metrics.contentBottomInset)
     }
     .frame(height: metrics.height)
-    .frame(
-      maxWidth: horizontalSizeClass == .regular ? DashTheme.Layout.trayMaxWidth : .infinity
-    )
+    .frame(maxWidth: .infinity)
     .background { shape.fill(DashTheme.canvas) }
     .clipShape(shape)
     .padding(.horizontal, metrics.horizontalMargin)

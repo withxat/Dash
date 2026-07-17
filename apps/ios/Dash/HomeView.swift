@@ -434,8 +434,6 @@ struct FeatureSection: View {
   var actionTitle: String?
   var actionIcon: String?
   var action: (() -> Void)?
-  /// Regular-width Resources sidebar selection; nil keeps NavigationLink push behavior.
-  var selection: Binding<FeatureID?>?
 
   init(
     title: String,
@@ -444,8 +442,7 @@ struct FeatureSection: View {
     presentation: FeatureRow.Presentation = .catalog,
     actionTitle: String? = nil,
     actionIcon: String? = nil,
-    action: (() -> Void)? = nil,
-    selection: Binding<FeatureID?>? = nil
+    action: (() -> Void)? = nil
   ) {
     self.title = title
     self.items = items
@@ -454,7 +451,6 @@ struct FeatureSection: View {
     self.actionTitle = actionTitle
     self.actionIcon = actionIcon
     self.action = action
-    self.selection = selection
   }
 
   var body: some View {
@@ -462,8 +458,7 @@ struct FeatureSection: View {
       FeatureRows(
         items: items,
         iconStyle: iconStyle,
-        presentation: presentation,
-        selection: selection
+        presentation: presentation
       )
     }
   }
@@ -475,27 +470,11 @@ struct FeatureRows: View {
   let items: [FeatureID]
   var iconStyle: CatalogFeatureIcon.Style = .duotone
   var presentation: FeatureRow.Presentation = .catalog
-  var selection: Binding<FeatureID?>?
 
   var body: some View {
     ForEach(items, id: \.self) { item in
-      if let selection {
-        Button {
-          selection.wrappedValue = item
-        } label: {
-          FeatureRow(feature: item, iconStyle: iconStyle, presentation: presentation)
-            .overlay {
-              RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
-                .stroke(DashTheme.brand, lineWidth: 2)
-                .opacity(selection.wrappedValue == item ? 1 : 0)
-            }
-        }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityAddTraits(selection.wrappedValue == item ? .isSelected : [])
-      } else {
-        DashListGroupLink(value: .feature(item)) {
-          FeatureRow(feature: item, iconStyle: iconStyle, presentation: presentation)
-        }
+      DashListGroupLink(value: .feature(item)) {
+        FeatureRow(feature: item, iconStyle: iconStyle, presentation: presentation)
       }
     }
   }

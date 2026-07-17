@@ -49,12 +49,6 @@ struct FeatureCatalogView: View {
   static let defaultFilter: FeatureAccessFilter = .available
 
   @Environment(AppModel.self) private var model
-  /// When set (regular-width split), rows select into the detail column instead of pushing.
-  var selection: Binding<FeatureID?>?
-
-  init(selection: Binding<FeatureID?>? = nil) {
-    self.selection = selection
-  }
 
   private var visibleFeatures: [FeatureID] {
     FeatureCatalogFiltering.features(
@@ -79,7 +73,7 @@ struct FeatureCatalogView: View {
         } else {
           ForEach(Array(grouped.enumerated()), id: \.element.0) { index, section in
             let (title, features) = section
-            FeatureSection(title: title, items: features, selection: selection)
+            FeatureSection(title: title, items: features)
               .dashSectionReveal(index)
           }
         }

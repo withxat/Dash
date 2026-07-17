@@ -2,7 +2,7 @@ import CloudflareAPI
 import Observation
 import SwiftUI
 
-/// Shared Watchtower screen state for compact stack and regular split layouts.
+/// Shared Watchtower screen state for the phone stack.
 @MainActor
 @Observable
 final class WatchtowerScreenState {
@@ -138,12 +138,6 @@ struct WatchtowerView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var state = WatchtowerScreenState()
   @State private var selectedSignal: WatchtowerSignal?
-  /// When set (regular-width split), signal rows select a detail destination.
-  var selection: Binding<Destination?>?
-
-  init(selection: Binding<Destination?>? = nil) {
-    self.selection = selection
-  }
 
   var body: some View {
     let capabilityIndex = state.recheckBanner == nil ? 0 : 1
@@ -322,15 +316,7 @@ struct WatchtowerView: View {
 
     HStack(spacing: 2) {
       Group {
-        if let selection, let destination = signal.destination {
-          Button {
-            selection.wrappedValue = destination
-          } label: {
-            content
-          }
-          .buttonStyle(DashPressButtonStyle())
-          .accessibilityAddTraits(selection.wrappedValue == destination ? .isSelected : [])
-        } else if let destination = signal.destination {
+        if let destination = signal.destination {
           DashDestinationLink(destination: destination) { content }
         } else {
           Button {

@@ -2,6 +2,12 @@
 
 Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
 
+## Product scope (UI)
+
+- **iPhone only.** The Xcode target is `TARGETED_DEVICE_FAMILY = 1`. Design, implement, and polish for portrait iPhone. Do not design, implement, polish, or “fix” iPad / iPadOS / Stage Manager / Split View layouts unless the user explicitly asks.
+- **One compact canvas per tab.** Navigation is a single phone stack per tab — not `NavigationSplitView`, not sidebar + detail, not dual adaptive layouts. Prefer the compact path for all new work.
+- **Do not reintroduce regular-width layout forks.** No `horizontalSizeClass == .regular` chrome, no split selection APIs, no reading-width content columns for “iPad readiness.” Optimize for iPhone; ignore iPad parity.
+
 ## Workspace
 
 | Path | Purpose |
@@ -66,6 +72,7 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 
 - Use Swift 6 strict concurrency, `async throws`, actors for shared mutable state, and `@Observable @MainActor` for UI state.
 - Prefer SwiftUI system navigation, lists, searchable, refreshable, sheets, semantic colors, SF Symbols, and Dynamic Type.
+- Phone-first: do not add iPad adaptive layouts, regular-width split navigation, or size-class layout forks (see Product scope above).
 - The Kumo-aligned palette is defined in `DashTheme`; do not scatter literal colors through feature views.
 - App code depends on `CloudflareAPI`, never on JavaScript packages or `packages/ui`.
 - Tokens belong in the Keychain. Local OAuth values belong in ignored `Config/Secrets.xcconfig`; never commit credentials.

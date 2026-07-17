@@ -943,13 +943,9 @@ import UIKit
   #expect(initial == TabBarVisibilityChange(hidden: false, animated: false))
 }
 
-@Test func tabBarHideRulesRespectSizeClassAndOverlays() {
-  #expect(
-    shouldHideTabBar(overlaysPresented: true, usesSplitDetail: true, navigationDepth: 0))
-  #expect(
-    shouldHideTabBar(overlaysPresented: false, usesSplitDetail: false, navigationDepth: 1))
-  #expect(
-    !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: true, navigationDepth: 2))
-  #expect(
-    !shouldHideTabBar(overlaysPresented: false, usesSplitDetail: false, navigationDepth: 0))
+@Test func tabBarHideRulesRespectDepthAndOverlays() {
+  #expect(shouldHideTabBar(overlaysPresented: true, navigationDepth: 0))
+  #expect(shouldHideTabBar(overlaysPresented: false, navigationDepth: 1))
+  #expect(shouldHideTabBar(overlaysPresented: false, navigationDepth: 2))
+  #expect(!shouldHideTabBar(overlaysPresented: false, navigationDepth: 0))
 }

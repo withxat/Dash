@@ -15,10 +15,6 @@ extension EnvironmentValues {
 
 enum DashTheme {
   enum Layout {
-    /// Reading width for regular-width feature screens. The parent container still
-    /// wins when Split View or Stage Manager gives the app less room.
-    static let contentMaxWidth: CGFloat = 760
-    static let trayMaxWidth: CGFloat = 640
     static let emptyStateMinHeight: CGFloat = 420
     static let minimumHitTarget: CGFloat = 44
   }
@@ -426,20 +422,6 @@ private struct DashTypographyModifier: ViewModifier {
   }
 }
 
-private struct DashContentColumnModifier: ViewModifier {
-  let regularMaxWidth: CGFloat
-  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
-  func body(content: Content) -> some View {
-    content
-      .frame(
-        maxWidth: horizontalSizeClass == .regular ? regularMaxWidth : .infinity,
-        alignment: .top
-      )
-      .frame(maxWidth: .infinity, alignment: .top)
-  }
-}
-
 extension View {
   /// Gives a single item its own card. Catalog lists deliberately do NOT use
   /// this — they stay bare rows on the canvas, with colour living on the icon
@@ -453,12 +435,6 @@ extension View {
 
   func dashTextStyle(_ style: DashTextStyle) -> some View {
     modifier(DashTypographyModifier(style: style))
-  }
-
-  func dashContentColumn(
-    maxWidth: CGFloat = DashTheme.Layout.contentMaxWidth
-  ) -> some View {
-    modifier(DashContentColumnModifier(regularMaxWidth: maxWidth))
   }
 
   func dashCompactHitTarget() -> some View {
@@ -508,9 +484,8 @@ struct DashToolTile: View {
   }
 }
 
-/// Tool-tile grid that reflows with available width — two-up on iPhone (kept
-/// down to 320pt Display Zoom windows), four or five inside the regular-width
-/// content column.
+/// Tool-tile grid that reflows with available width — typically two-up on
+/// iPhone, kept usable down to 320pt Display Zoom windows.
 struct DashTileGrid<Content: View>: View {
   @ViewBuilder let content: () -> Content
 
@@ -687,7 +662,6 @@ struct DashFeatureScreen<Chrome: View, Content: View>: View {
         .padding(.horizontal, DashTheme.Spacing.screen)
       content()
     }
-    .dashContentColumn()
     .background(DashTheme.canvas)
   }
 }

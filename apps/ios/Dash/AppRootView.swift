@@ -355,107 +355,6 @@ private struct FeatureNavigationStack<Root: View>: View {
   }
 }
 
-/// Regular-width Features: catalog sidebar + detail stack. Compact keeps a single stack.
-private struct AdaptiveFeaturesNavigation: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.horizontalSizeClass) private var sizeClass
-  @Binding var path: NavigationPath
-  @State private var selectedDestination: Destination?
-
-  private var featureSelection: Binding<FeatureID?> {
-    Binding(
-      get: {
-        guard case .feature(let feature) = selectedDestination else { return nil }
-        return feature
-      },
-      set: { feature in
-        selectedDestination = feature.map(Destination.feature)
-      })
-  }
-
-  var body: some View {
-    Group {
-      if sizeClass == .regular {
-        NavigationSplitView {
-          FeatureCatalogView(selection: featureSelection)
-        } detail: {
-          NavigationStack(path: $path) {
-            if let selectedDestination {
-              DestinationRoutedContent(destination: selectedDestination)
-                .destinationRouting()
-            } else {
-              DashEmptyState(
-                icon: SolarAsset.search,
-                title: "Select an item",
-                message: "Choose a feature or resource from the sidebar."
-              )
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .background(DashTheme.canvas)
-            }
-          }
-        }
-      } else {
-        FeatureNavigationStack(path: $path) { FeatureCatalogView() }
-      }
-    }
-    .onChange(of: sizeClass) { _, _ in resetSplitState() }
-    .onChange(of: model.activeAccountID) { _, _ in resetSplitState() }
-    .onChange(of: selectedDestination) { _, _ in
-      path = NavigationPath()
-    }
-  }
-
-  private func resetSplitState() {
-    selectedDestination = nil
-    path = NavigationPath()
-  }
-}
-
-/// Regular-width Watchtower: signals sidebar + destination detail. Compact stays stacked.
-private struct AdaptiveWatchtowerNavigation: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.horizontalSizeClass) private var sizeClass
-  @Binding var path: NavigationPath
-  @State private var selectedDestination: Destination?
-
-  var body: some View {
-    Group {
-      if sizeClass == .regular {
-        NavigationSplitView {
-          WatchtowerView(selection: $selectedDestination)
-        } detail: {
-          NavigationStack(path: $path) {
-            if let selectedDestination {
-              DestinationRoutedContent(destination: selectedDestination)
-                .destinationRouting()
-            } else {
-              DashEmptyState(
-                icon: SolarAsset.shieldCheck,
-                title: "Select a check",
-                message: "Choose a Watchtower signal to inspect."
-              )
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .background(DashTheme.canvas)
-            }
-          }
-        }
-      } else {
-        FeatureNavigationStack(path: $path) { WatchtowerView() }
-      }
-    }
-    .onChange(of: sizeClass) { _, _ in resetSplitState() }
-    .onChange(of: model.activeAccountID) { _, _ in resetSplitState() }
-    .onChange(of: selectedDestination) { _, _ in
-      path = NavigationPath()
-    }
-  }
-
-  private func resetSplitState() {
-    selectedDestination = nil
-    path = NavigationPath()
-  }
-}
-
 /// The tab-bar Search role owns cross-resource search. Keeping this host
 /// mounted preserves the search field when a result is pushed and popped.
 private struct SearchNavigationStack: View {
@@ -474,7 +373,6 @@ private struct SearchNavigationStack: View {
 private struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
-  @Environment(\.horizontalSizeClass) private var sizeClass
   @State private var selection: AppTab = .home
   @State private var homePath = NavigationPath()
   @State private var featuresPath = NavigationPath()
@@ -487,8 +385,6 @@ private struct MainTabView: View {
   private var hidesTabBar: Bool {
     shouldHideTabBar(
       overlaysPresented: showsProfile || nestedTrayPresented,
-      usesSplitDetail: sizeClass == .regular
-        && (selection == .features || selection == .watchtower),
       navigationDepth: activeNavigationDepth
     )
   }
@@ -588,7 +484,7 @@ private struct MainTabView: View {
             active: selection == .home)
         }
         Tab(value: AppTab.features) {
-          AdaptiveFeaturesNavigation(path: $featuresPath)
+          FeatureNavigationStack(path: $featuresPath) { FeatureCatalogView() }
         } label: {
           tabLabel(
             "Resources",
@@ -596,7 +492,7 @@ private struct MainTabView: View {
             active: selection == .features)
         }
         Tab(value: AppTab.watchtower) {
-          AdaptiveWatchtowerNavigation(path: $watchtowerPath)
+          FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
         } label: {
           tabLabel(
             "Watchtower",
@@ -622,7 +518,7 @@ private struct MainTabView: View {
               active: selection == .home)
           }
           .tag(AppTab.home)
-        AdaptiveFeaturesNavigation(path: $featuresPath)
+        FeatureNavigationStack(path: $featuresPath) { FeatureCatalogView() }
           .tabItem {
             tabLabel(
               "Resources",
@@ -630,7 +526,7 @@ private struct MainTabView: View {
               active: selection == .features)
           }
           .tag(AppTab.features)
-        AdaptiveWatchtowerNavigation(path: $watchtowerPath)
+        FeatureNavigationStack(path: $watchtowerPath) { WatchtowerView() }
           .tabItem {
             tabLabel(
               "Watchtower",
@@ -709,16 +605,12 @@ func tabBarVisibilityChange(
   return TabBarVisibilityChange(hidden: targetHidden, animated: transition.animated)
 }
 
-/// Compact stack pushes hide the tab bar; regular Resources/Watchtower split keeps
-/// it visible while a detail is selected. Trays / profile overlays always hide.
+/// Stack pushes hide the tab bar. Trays / profile overlays always hide it too.
 func shouldHideTabBar(
   overlaysPresented: Bool,
-  usesSplitDetail: Bool,
   navigationDepth: Int
 ) -> Bool {
-  if overlaysPresented { return true }
-  if usesSplitDetail { return false }
-  return navigationDepth > 0
+  overlaysPresented || navigationDepth > 0
 }
 
 @MainActor
@@ -1130,7 +1022,6 @@ struct SettingsView: View {
           }
         }
       }
-      .dashContentColumn()
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.vertical, DashTheme.Spacing.section)
     }
@@ -1211,7 +1102,6 @@ struct ProfileView: View {
         }
 
       }
-      .dashContentColumn()
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.vertical, DashTheme.Spacing.section)
     }
