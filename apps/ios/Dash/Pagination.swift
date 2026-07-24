@@ -59,10 +59,14 @@ struct DashLoadMoreFooter: View {
       DashPillButton(title: "Load more", isLoading: isLoading, action: action)
     }
     .frame(maxWidth: .infinity)
+    // Feature lists keep LazyVStack spacing at 0 for virtualized rows; the
+    // footer opts into the same item gap used between adjacent surfaces.
+    .dashItemBoundary()
   }
 
   private var defaultCaption: String? {
     guard let total, total > loaded else { return nil }
-    return "Showing \(loaded) of \(total) \(noun)"
+    let localizedNoun = DashL10n.ui(noun)
+    return DashL10n.string("Showing \(loaded) of \(total) \(localizedNoun)")
   }
 }

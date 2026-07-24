@@ -7,23 +7,63 @@ enum FeatureCacheKey {
   static func zone(_ zoneID: String) -> String { "zone:\(zoneID)" }
   static func dnsRecords(_ zoneID: String) -> String { "dns:\(zoneID)" }
   static func workers(_ accountID: String) -> String { "workers:\(accountID)" }
+  static func workersAccountSubdomain(_ accountID: String) -> String {
+    "workersAccountSubdomain:\(accountID)"
+  }
   static func workerSubdomain(accountID: String, name: String) -> String {
     "workerSubdomain:\(accountID):\(name)"
   }
   static func workerAnalytics(accountID: String, name: String) -> String {
     "workerAnalytics:\(accountID):\(name)"
   }
+  static func accountAnalytics(_ accountID: String, hours: Int) -> String {
+    "accountAnalytics:\(accountID):\(hours)"
+  }
   static func workerDeployments(accountID: String, name: String) -> String {
     "workerDeployments:\(accountID):\(name)"
+  }
+  static func workerDomains(accountID: String, name: String) -> String {
+    "workerDomains:\(accountID):\(name)"
+  }
+  /// Account-wide: routes for every zone in one entry, filtered per worker at
+  /// read time, so the per-zone fan-out happens once per session, not once per
+  /// worker screen.
+  static func workerRoutes(_ accountID: String) -> String { "workerRoutes:\(accountID)" }
+  static func pagesProjects(_ accountID: String) -> String { "pages:\(accountID)" }
+  static func pagesProject(accountID: String, name: String) -> String {
+    "pagesProject:\(accountID):\(name)"
+  }
+  static func pagesDeployments(accountID: String, name: String) -> String {
+    "pagesDeployments:\(accountID):\(name)"
+  }
+  static func pagesDomains(accountID: String, name: String) -> String {
+    "pagesDomains:\(accountID):\(name)"
   }
   static func zoneSettings(_ zoneID: String) -> String { "zoneSettings:\(zoneID)" }
   static func zoneAnalytics(_ zoneID: String, days: Int) -> String {
     "zoneAnalytics:\(zoneID):\(days)"
   }
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
+  static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
+  static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
+  static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
+  static func webAnalyticsPageviews(_ siteTag: String, days: Int) -> String {
+    "rumPageviews:\(siteTag):\(days)"
+  }
+  static func zoneRdap(_ zoneID: String) -> String { "zoneRdap:\(zoneID)" }
+  static func auditLogs(_ accountID: String) -> String { "auditLogs:\(accountID)" }
   static func r2Buckets(_ accountID: String) -> String { "r2:\(accountID)" }
   static func r2Objects(accountID: String, bucket: String, prefix: String) -> String {
     "r2:\(accountID):\(bucket):\(prefix)"
+  }
+  /// Prefix under which every object listing of one bucket lives — rename and
+  /// move invalidate all of them at once, since the destination folder's
+  /// snapshot goes stale along with the source's.
+  static func r2ObjectsPrefix(accountID: String, bucket: String) -> String {
+    "r2:\(accountID):\(bucket):"
+  }
+  static func r2Domains(accountID: String, bucket: String) -> String {
+    "r2Domains:\(accountID):\(bucket)"
   }
   static func kvNamespaces(_ accountID: String) -> String { "kv:\(accountID)" }
   static func kvKeys(accountID: String, namespaceID: String, prefix: String) -> String {
@@ -114,8 +154,31 @@ final class FeatureDataCache {
     trimIfNeeded()
   }
 
+  /// Account zone list plus per-id entries so zone detail can paint the
+  /// header from Home / Domains cache without waiting on `getZone`.
+  func storeZones(_ zones: [CloudflareZone], accountID: String) {
+    set(FeatureCacheKey.zones(accountID), zones)
+    for zone in zones {
+      set(FeatureCacheKey.zone(zone.id), zone)
+    }
+  }
+
+  /// Prefer the dedicated zone entry, then the account list snapshot.
+  func cachedZone(id: String, accountID: String?) -> CloudflareZone? {
+    if let zone: CloudflareZone = get(FeatureCacheKey.zone(id)) { return zone }
+    guard let accountID else { return nil }
+    let zones: [CloudflareZone]? = get(FeatureCacheKey.zones(accountID))
+    return zones?.first { $0.id == id }
+  }
+
   func remove(_ key: String) {
     storage.removeValue(forKey: key)
+  }
+
+  /// Drops every entry under a key prefix (e.g. all cached listings of one
+  /// bucket after a rename touched two folders).
+  func remove(prefix: String) {
+    storage = storage.filter { !$0.key.hasPrefix(prefix) }
   }
 
   func clear() {

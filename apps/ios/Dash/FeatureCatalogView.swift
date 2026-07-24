@@ -25,8 +25,7 @@ enum FeatureAccessFilter: String, CaseIterable, Hashable {
   }
 }
 
-/// Access filtering. Text search is rendered by the tab-bar Search role
-/// (`FeatureCatalog.matchesSearch`), not in the catalog list.
+/// Access filtering for the Resources catalog.
 enum FeatureCatalogFiltering {
   static func features(
     filter: FeatureAccessFilter,
@@ -65,7 +64,7 @@ struct FeatureCatalogView: View {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         if visibleFeatures.isEmpty {
           DashEmptyState(
-            icon: SolarAsset.search,
+            icon: SolarAsset.Content.search,
             title: "No resources",
             message: "Resources for this account will show up here."
           )
@@ -73,7 +72,7 @@ struct FeatureCatalogView: View {
         } else {
           ForEach(Array(grouped.enumerated()), id: \.element.0) { index, section in
             let (title, features) = section
-            FeatureSection(title: title, items: features)
+            catalogSection(title: title, features: features)
               .dashSectionReveal(index)
           }
         }
@@ -82,7 +81,19 @@ struct FeatureCatalogView: View {
       .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
+    .modifier(DashScrollEdgeEffectsHidden())
     .dashSectionEntrance()
-    .dashCatalogScreen("Resources")
+    .dashCatalogScreen()
+  }
+
+  @ViewBuilder
+  private func catalogSection(title: String, features: [FeatureID]) -> some View {
+    DashListGroup(title: title) {
+      ForEach(features, id: \.self) { feature in
+        DashListGroupLink(value: .feature(feature)) {
+          FeatureRow(feature: feature)
+        }
+      }
+    }
   }
 }
