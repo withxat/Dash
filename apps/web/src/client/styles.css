@@ -1,32 +1,32 @@
+@source '../../../../node_modules/@cloudflare/kumo/dist/**/*.{js,jsx,ts,tsx}';
+@import '@cloudflare/kumo/styles/tailwind';
 @import 'tailwindcss';
-
-@theme {
-	--font-display: 'Fraunces', ui-serif, Georgia, serif;
-	--font-sans: 'Outfit', ui-sans-serif, system-ui, sans-serif;
-	--color-dash-accent: #f6821f;
-	--color-dash-ink: #1a1a1a;
-	--color-dash-peach: #ffe4c7;
-	--color-dash-cream: #fff7ef;
-	--color-dash-sand: #ffebd6;
-	--color-dash-mist: #ffeedd;
-}
 
 @layer base {
 	html {
 		color-scheme: light;
+		scroll-behavior: smooth;
 	}
 
 	body {
 		margin: 0;
 		min-height: 100dvh;
-		font-family: var(--font-sans);
-		color: var(--color-dash-ink);
-		background: var(--color-dash-cream);
+		background: var(--color-kumo-canvas);
 		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
 		text-rendering: optimizeLegibility;
 	}
 
+	a,
+	button {
+		touch-action: manipulation;
+	}
+
 	@media (prefers-reduced-motion: reduce) {
+		html {
+			scroll-behavior: auto;
+		}
+
 		*,
 		*::before,
 		*::after {
@@ -37,10 +37,10 @@
 	}
 }
 
-@keyframes rise {
+@keyframes hero-enter {
 	from {
 		opacity: 0;
-		transform: translateY(18px);
+		transform: translateY(10px);
 	}
 	to {
 		opacity: 1;
@@ -48,44 +48,40 @@
 	}
 }
 
-@keyframes drift {
-	0%,
-	100% {
-		transform: translate3d(0, 0, 0) scale(1);
+@utility hero-enter {
+	animation: hero-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@utility hero-enter-1 {
+	animation-delay: 0ms;
+}
+
+@utility hero-enter-2 {
+	animation-delay: 70ms;
+}
+
+@utility hero-enter-3 {
+	animation-delay: 140ms;
+}
+
+@utility pressable {
+	transition-property: scale;
+	transition-duration: 150ms;
+	transition-timing-function: cubic-bezier(0.23, 1, 0.32, 1);
+
+	&:active {
+		scale: 0.96;
 	}
-	50% {
-		transform: translate3d(12px, -10px, 0) scale(1.04);
-	}
 }
 
-@keyframes glow-pulse {
-	0%,
-	100% {
-		opacity: 0.55;
-	}
-	50% {
-		opacity: 0.85;
-	}
+@utility app-shot-frame {
+	box-shadow:
+		0 0 0 1px rgb(0 0 0 / 0.08),
+		0 2px 8px -2px rgb(0 0 0 / 0.14),
+		0 20px 48px -24px rgb(0 0 0 / 0.28);
 }
 
-@utility animate-rise {
-	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@utility animate-rise-delay-1 {
-	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
-}
-
-@utility animate-rise-delay-2 {
-	animation: rise 0.7s cubic-bezier(0.22, 1, 0.36, 1) 0.2s both;
-}
-
-@utility animate-drift {
-	animation: drift 10s ease-in-out infinite;
-}
-
-@utility animate-glow-drift {
-	animation:
-		glow-pulse 5s ease-in-out infinite,
-		drift 10s ease-in-out infinite;
+@utility app-shot-image {
+	outline: 1px solid rgb(0 0 0 / 0.1);
+	outline-offset: -1px;
 }
