@@ -2,19 +2,95 @@ import XCTest
 
 @MainActor
 final class DashUITests: XCTestCase {
+  /// Pin English so zh-Hans String Catalog never breaks label assertions.
+  private static let englishLaunchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+
+  private func launch(_ app: XCUIApplication, arguments: [String] = []) {
+    app.launchArguments = Self.englishLaunchArguments + arguments
+    app.launch()
+  }
+
+  /// Inactive tabs stay mounted; pick the first hittable match so we don't tap
+  /// a covered duplicate from Home while Resources is active.
+  static func hittableButton(in app: XCUIApplication, labelContaining text: String) -> XCUIElement {
+    let matches = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", text)
+    )
+    let deadline = Date().addingTimeInterval(5)
+    while Date() < deadline {
+      let count = matches.count
+      for index in 0..<count {
+        let element = matches.element(boundBy: index)
+        if element.exists && element.isHittable { return element }
+      }
+      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+    }
+    return matches.firstMatch
+  }
+
   func testLaunchesWithDashBrand() {
     let app = XCUIApplication()
-    app.launch()
+    launch(app)
     XCTAssertTrue(
       app.staticTexts["Dash"].waitForExistence(timeout: 10)
-        || app.tabBars.firstMatch.waitForExistence(timeout: 10)
-        || app.buttons["Resources"].waitForExistence(timeout: 2))
+        || app.buttons["Resources"].waitForExistence(timeout: 10))
+  }
+
+  func testOnboardingPermissionsUseUniformFullCardActions() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview-onboarding"])
+
+    let start = app.buttons["Start your engine!"]
+    XCTAssertTrue(start.waitForExistence(timeout: 5))
+    let legal = app.staticTexts["By continuing, you agree to our"]
+    XCTAssertTrue(legal.waitForExistence(timeout: 2))
+    let buttonFrame = start.frame
+    let legalFrame = legal.frame
+    start.tap()
+
+    XCTAssertTrue(app.staticTexts["Permissions"].waitForExistence(timeout: 5))
+    let connect = app.buttons["Connect Cloudflare"]
+    XCTAssertTrue(connect.exists)
+    XCTAssertFalse(app.buttons["Review permissions"].exists)
+    XCTAssertEqual(buttonFrame.minY, connect.frame.minY, accuracy: 1)
+    XCTAssertEqual(
+      legalFrame.minY,
+      app.staticTexts["By continuing, you agree to our"].frame.minY,
+      accuracy: 1
+    )
+
+    let network = app.buttons["onboarding-permission-network"]
+    let notifications = app.buttons["onboarding-permission-notifications"]
+    XCTAssertTrue(network.waitForExistence(timeout: 5))
+    XCTAssertTrue(notifications.waitForExistence(timeout: 5))
+    XCTAssertEqual(network.frame.height, notifications.frame.height, accuracy: 1)
+    // Network auto-probes on appear; non-China / simulator settles to Enabled.
+    let networkEnabled = network.label.contains("Enabled")
+    let networkSettling =
+      network.label.contains("Requesting") || network.label.contains("Tap to enable")
+    if !networkEnabled {
+      XCTAssertTrue(networkSettling)
+      let enabled = NSPredicate(format: "label CONTAINS[c] %@", "Enabled")
+      expectation(for: enabled, evaluatedWith: network)
+      waitForExpectations(timeout: 10)
+    }
+    XCTAssertTrue(notifications.label.contains("Tap to enable"))
+
+    let back = app.buttons["onboarding-back"]
+    XCTAssertTrue(back.waitForExistence(timeout: 2))
+    back.tap()
+    XCTAssertTrue(app.staticTexts["Dash"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Start your engine!"].exists)
+    XCTAssertEqual(
+      legalFrame.minY,
+      app.staticTexts["By continuing, you agree to our"].frame.minY,
+      accuracy: 1
+    )
   }
 
   func testFormKeyboardCanBeDismissed() {
     let app = XCUIApplication()
-    app.launchArguments = ["-uiTestKeyboardForm"]
-    app.launch()
+    launch(app, arguments: ["-uiTestKeyboardForm"])
 
     let nameField = app.textFields["Name"]
     XCTAssertTrue(nameField.waitForExistence(timeout: 5))
@@ -31,182 +107,222 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 2))
   }
 
-  func testPrimaryTabsAndBottomSearchSurviveFeaturePop() {
+  func testPrimaryTabsSurviveFeaturePop() {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
-    XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 5))
-    let resourcesTab = app.tabBars.buttons["Resources"]
+    XCTAssertTrue(app.buttons["Home"].waitForExistence(timeout: 5))
+    let resourcesTab = app.buttons["Resources"]
     XCTAssertTrue(resourcesTab.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.tabBars.buttons["Watchtower"].waitForExistence(timeout: 5))
-    let searchTab = app.tabBars.buttons["Search"]
-    XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Watchtower"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["Search"].exists)
 
     resourcesTab.tap()
-    XCTAssertTrue(app.navigationBars["Resources"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.searchFields.firstMatch.exists)
 
-    searchTab.tap()
-    let searchField = app.searchFields.firstMatch
-    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-    searchField.tap()
-    searchField.typeText("zo")
-
-    let zonesFeature = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", "Domains, DNS")
-    ).firstMatch
+    let zonesFeature = Self.hittableButton(in: app, labelContaining: "Domains, DNS")
     XCTAssertTrue(zonesFeature.waitForExistence(timeout: 5))
+    XCTAssertTrue(zonesFeature.isHittable)
     zonesFeature.tap()
 
-    let back = app.navigationBars.buttons.firstMatch
+    // Feature detail is a system push; the catalog root has no navigation
+    // title, so the native back button reads "Back".
+    let back = app.buttons["Back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.tabBars.firstMatch.waitForNonExistence(timeout: 2))
+    // Feature detail immerses — the floating tab bar leaves the hierarchy.
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
     back.tap()
 
-    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 
-  func testHomeShowsOperationalSummaryWithoutShortcutDuplication() {
+  func testNavigationDrillDownWorkersAndBack() {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
-    XCTAssertTrue(app.staticTexts["Your Zones"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Account status"].waitForExistence(timeout: 5))
-    let summary = app.buttons["home-watchtower-summary"]
-    XCTAssertTrue(summary.waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["Shortcuts"].exists)
-    summary.tap()
-    XCTAssertTrue(app.navigationBars["Watchtower"].waitForExistence(timeout: 5))
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let workers = Self.hittableButton(in: app, labelContaining: "Deployments, domains")
+    XCTAssertTrue(workers.waitForExistence(timeout: 5))
+    XCTAssertTrue(workers.isHittable)
+    workers.tap()
+
+    // Prefer the hittable row on the active stack — inactive tabs can still
+    // expose identically labeled elements to XCTest.
+    let worker = Self.hittableButton(in: app, labelContaining: "api-worker")
+    XCTAssertTrue(worker.waitForExistence(timeout: 5))
+    XCTAssertTrue(worker.isHittable)
+    worker.tap()
+
+    let deployments = app.staticTexts["Deployments"]
+    XCTAssertTrue(deployments.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+
+    // Leading-edge swipe pops the Worker detail.
+    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+    let interior = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+    edge.press(forDuration: 0.05, thenDragTo: interior)
+
+    let workerAgain = Self.hittableButton(in: app, labelContaining: "api-worker")
+    XCTAssertTrue(workerAgain.waitForExistence(timeout: 5))
+    XCTAssertTrue(deployments.waitForNonExistence(timeout: 2))
+
+    // Back to Resources catalog — the untitled catalog root leaves the feature
+    // screen's native back button labeled "Back".
+    let backToCatalog = app.buttons["Back"].firstMatch
+    XCTAssertTrue(backToCatalog.waitForExistence(timeout: 5))
+    backToCatalog.tap()
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 
-  func testHomeZonesOverscrollPastEndOpensAllZones() {
-    let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
-
-    let strip = app.scrollViews["home-zones-strip"]
-    XCTAssertTrue(strip.waitForExistence(timeout: 5))
-
-    // Resource screens title themselves with an inline principal view, so the
-    // pushed screen is detected by title text scoped to the navigation bar.
-    let pushedTitle = app.navigationBars.staticTexts["Zones"]
-
-    // One fling from the strip's start cannot overscroll while the finger is
-    // down (a page of content remains), and its bounce off the end happens
-    // after the finger lifts — so it must stay a scroll. A second fling could
-    // legitimately trigger mid-drag, so only one is safe to assert on.
-    strip.swipeLeft()
-    XCTAssertFalse(pushedTitle.exists)
-
-    // One sustained drag through the end and past the trailing edge opens
-    // the full list.
-    let start = strip.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-    let end = strip.coordinate(withNormalizedOffset: CGVector(dx: -1.5, dy: 0.5))
-    start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
-
-    XCTAssertTrue(pushedTitle.waitForExistence(timeout: 5))
+  /// Expands the collapsed Domains group on Home, scrolling it into reach
+  /// first when large type pushes it below the fold.
+  private func expandHomeDomains(in app: XCUIApplication) {
+    let toggle = app.buttons["home-domains-toggle"]
+    if !toggle.waitForExistence(timeout: 2) {
+      for _ in 0..<3 where !toggle.exists { app.swipeUp() }
+    }
+    XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+    if !toggle.isHittable { app.swipeUp() }
+    toggle.tap()
   }
 
-  func testHomeZonesShortStripPullOpensAllZonesWithoutScrollableContent() {
+  func testHomeZoneOpensDomainDetail() {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview", "-ui-preview-two-zones"]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
-    let strip = app.scrollViews["home-zones-strip"]
-    XCTAssertTrue(strip.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["docs.example.com"].waitForExistence(timeout: 5))
-    XCTAssertFalse(app.staticTexts["api.example.net"].exists)
+    expandHomeDomains(in: app)
+    let domainRow = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(domainRow.waitForExistence(timeout: 5))
+    domainRow.tap()
 
-    let pushedTitle = app.navigationBars.staticTexts["Zones"]
-    XCTAssertFalse(pushedTitle.exists)
-
-    // With nothing to scroll the strip still bounces, so one sustained pull
-    // past the trailing edge opens the full list.
-    let start = strip.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-    let end = strip.coordinate(withNormalizedOffset: CGVector(dx: -1.5, dy: 0.5))
-    start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.3)
-
-    XCTAssertTrue(pushedTitle.waitForExistence(timeout: 5))
-  }
-
-  func testBottomSearchOpensConcreteResource() {
-    let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
-
-    let searchTab = app.tabBars.buttons["Search"]
-    XCTAssertTrue(searchTab.waitForExistence(timeout: 5))
-    searchTab.tap()
-
-    let searchField = app.searchFields.firstMatch
-    XCTAssertTrue(searchField.waitForExistence(timeout: 5))
-    searchField.tap()
-    searchField.typeText("example")
-
-    let zone = app.staticTexts["example.com"].firstMatch
-    XCTAssertTrue(zone.waitForExistence(timeout: 5))
-    zone.tap()
-
-    let back = app.navigationBars.buttons.firstMatch
+    let back = app.buttons["Back"].firstMatch
+    let customize = app.buttons["domain-card-customize"]
     XCTAssertTrue(back.waitForExistence(timeout: 5))
+    XCTAssertTrue(customize.waitForExistence(timeout: 5))
+    XCTAssertTrue(back.isHittable)
+    XCTAssertTrue(customize.isHittable)
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+
+    // Returning surfaces the visit under Recently used; Domains expand morph
+    // still owns the zone identities on Home.
     back.tap()
-    XCTAssertTrue(
-      searchField.waitForExistence(timeout: 5)
-        || app.tabBars.buttons["Search"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Recently used"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Domain"].firstMatch.exists)
   }
 
-  func testHomeZonesUseReadableRowsAtAccessibilityTextSizes() {
+  func testHomeShowsGreetingQuickActionsAndCollapsedDomains() {
     let app = XCUIApplication()
-    app.launchArguments = [
-      "-ui-preview",
-      "-ui-preview-accessibility-text",
-    ]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
+    XCTAssertTrue(app.staticTexts["What are we doing today?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["home-quick-add-domain"].exists)
+    XCTAssertTrue(app.buttons["home-quick-upload-r2"].exists)
+    XCTAssertTrue(app.buttons["home-quick-add-dns"].exists)
+
+    // Domains ships collapsed: the group header is there, zone names are not.
+    let domainsToggle = app.buttons["home-domains-toggle"]
+    if !domainsToggle.exists { app.swipeUp() }
+    XCTAssertTrue(domainsToggle.waitForExistence(timeout: 3))
+    XCTAssertFalse(app.staticTexts["example.com"].exists)
+
+    XCTAssertTrue(app.staticTexts["Shortcuts"].exists)
+    XCTAssertTrue(app.buttons["Edit"].exists)
+    // Recently used stays hidden until a resource has been opened.
+    XCTAssertFalse(app.staticTexts["Recently used"].exists)
+    XCTAssertFalse(app.staticTexts["Account status"].exists)
+    XCTAssertFalse(app.buttons["home-watchtower-summary"].exists)
+
+    expandHomeDomains(in: app)
     XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["docs.example.com"].exists)
-    XCTAssertFalse(app.scrollViews["home-zones-strip"].exists)
+    XCTAssertFalse(app.staticTexts["View all domains"].exists)
+  }
+
+  func testHomeQuickActionOpensAddDomainTray() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let addDomain = app.buttons["home-quick-add-domain"]
+    XCTAssertTrue(addDomain.waitForExistence(timeout: 5))
+    addDomain.tap()
+
+    XCTAssertTrue(app.textFields["Domain"].waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      app.staticTexts
+        .matching(NSPredicate(format: "label CONTAINS[c] %@", "name servers"))
+        .firstMatch.exists)
+  }
+
+  func testDomainCardColorCanBeCustomized() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    expandHomeDomains(in: app)
+    let domainRow = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(domainRow.waitForExistence(timeout: 5))
+    domainRow.tap()
+
+    let customize = app.buttons["domain-card-customize"]
+    XCTAssertTrue(customize.waitForExistence(timeout: 5))
+    customize.tap()
+
+    let close = app.buttons["domain-card-customize-close"]
+    let save = app.buttons["domain-card-customize-save"]
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    XCTAssertTrue(save.waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      app.otherElements["Color palette"].waitForExistence(timeout: 5)
+        || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "card preview"))
+          .firstMatch.waitForExistence(timeout: 5)
+    )
+    close.tap()
+    XCTAssertTrue(app.buttons["domain-card-customize"].waitForExistence(timeout: 5))
+  }
+
+  func testHomeListsResourcesAtAccessibilityTextSizes() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview", "-ui-preview-accessibility-text"])
+
+    XCTAssertTrue(app.staticTexts["Domains"].waitForExistence(timeout: 5))
+    expandHomeDomains(in: app)
+    XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
   }
 
   func testWorkerDetailShowsLatestActiveDeployment() {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
-    let resources = app.tabBars.buttons["Resources"]
+    let resources = app.buttons["Resources"]
     XCTAssertTrue(resources.waitForExistence(timeout: 5))
     resources.tap()
 
-    let workers = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", "Scripts, metrics")
-    ).firstMatch
+    let workers = Self.hittableButton(in: app, labelContaining: "Deployments, domains")
     XCTAssertTrue(workers.waitForExistence(timeout: 5))
+    XCTAssertTrue(workers.isHittable)
     workers.tap()
 
-    let worker = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", "api-worker")
-    ).firstMatch
+    let worker = Self.hittableButton(in: app, labelContaining: "api-worker")
     XCTAssertTrue(worker.waitForExistence(timeout: 5))
+    XCTAssertTrue(worker.isHittable)
     worker.tap()
 
-    XCTAssertTrue(app.staticTexts["Latest deployment"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Serving production traffic"].exists)
+    XCTAssertTrue(app.staticTexts["Deployments"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Active"].exists)
   }
 
-  /// The relay keeps `/push/*` deployed for rollback, but the app must never
-  /// offer it. Alerts moved from the Account feature to Watchtower in the
-  /// catalog trim; the invariant did not move with them.
+  /// Push alerts live in Settings — Watchtower stays local-only.
   func testWatchtowerAlertsDoNotExposeRemotePush() {
     let app = XCUIApplication()
-    app.launchArguments = ["-ui-preview"]
-    app.launch()
+    launch(app, arguments: ["-ui-preview"])
 
-    let watchtower = app.tabBars.buttons["Watchtower"]
+    let watchtower = app.buttons["Watchtower"]
     XCTAssertTrue(watchtower.waitForExistence(timeout: 5))
     watchtower.tap()
 
@@ -215,11 +331,40 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.switches["Push alerts"].exists)
     XCTAssertFalse(app.staticTexts["Recent alerts"].exists)
 
-    let tunnelActions = app.buttons["watchtower-actions-tunnels"]
-    XCTAssertTrue(tunnelActions.waitForExistence(timeout: 5))
-    tunnelActions.tap()
+    let inbox = app.buttons["watchtower-inbox-button"]
+    XCTAssertTrue(inbox.waitForExistence(timeout: 5))
+    inbox.tap()
+    XCTAssertTrue(app.staticTexts["Alerts"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Pending"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Ignored"].exists)
+
+    // Live Dash warnings land in the inbox as normal rows.
+    let tunnelAlert = app.buttons.matching(
+      NSPredicate(format: "identifier CONTAINS %@", "dash:live:tunnels")
+    ).firstMatch
+    XCTAssertTrue(tunnelAlert.waitForExistence(timeout: 5))
+    tunnelAlert.tap()
     XCTAssertTrue(app.staticTexts["Tunnels"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Suggested action"].exists)
-    XCTAssertTrue(app.buttons["Mute for 24 hours"].exists)
+    XCTAssertTrue(app.buttons["Ignore"].waitForExistence(timeout: 5))
+  }
+
+  func testSettingsExposesPushAlerts() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let profile = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "Profile,")
+    ).firstMatch
+    XCTAssertTrue(profile.waitForExistence(timeout: 5))
+    profile.tap()
+
+    let settings = app.buttons["Settings"]
+    XCTAssertTrue(settings.waitForExistence(timeout: 5))
+    settings.tap()
+
+    XCTAssertTrue(app.staticTexts["Push alerts"].waitForExistence(timeout: 5))
+    // DashToggleRow combines title + switch into one accessibility element.
+    XCTAssertTrue(
+      app.buttons["Push alerts"].exists || app.switches["Push alerts"].exists)
   }
 }
