@@ -4,8 +4,12 @@
 	"main": "./src/worker/index.ts",
 	"compatibility_date": "2026-07-01",
 	"vars": {
-		"APNS_TEAM_ID": "J4CCPX9K6H",
-		"APNS_TOPIC": "sh.xat.dash"
+		"APNS_TEAM_ID": "UH4FQTHMG2",
+		"APNS_TOPIC": "sh.xat.dash.app"
+	},
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
 	},
 	"assets": {
 		"not_found_handling": "single-page-application",

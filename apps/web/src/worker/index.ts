@@ -11,6 +11,7 @@ import { Hono } from 'hono'
 
 import { handleOAuth } from './relay/oauth'
 import { handlePush } from './relay/push'
+import { handleRegistration } from './relay/registration'
 
 const app = new Hono<{ Bindings: Env }>()
 
@@ -22,6 +23,10 @@ app.get('/health', (c) => {
 
 app.get('/api/health', (c) => {
 	return c.json({ ok: true })
+})
+
+app.get('/api/registration/:domain', (c) => {
+	return handleRegistration(c.req.raw, c.req.param('domain'))
 })
 
 app.get('/oauth/callback', (c) => {

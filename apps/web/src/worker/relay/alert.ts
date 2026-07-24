@@ -8,6 +8,8 @@
 export interface AlertPayload {
 	body: string
 	collapseID?: string
+	/** Deep link the iOS app opens on tap, e.g. `dash://watchtower`. */
+	dashRoute?: string
 	title: string
 }
 
@@ -39,6 +41,50 @@ function truncateBytes(text: string, maxBytes: number): string {
 	return text.slice(0, end)
 }
 
+function dashRouteForAlert(obj: Record<string, unknown>, alertType: string | undefined): string {
+	const data = obj.data && typeof obj.data === 'object' ? (obj.data as Record<string, unknown>) : {}
+	const project
+		= asString(data.project_name)
+			?? asString(data.projectName)
+			?? asString(obj.project_name)
+	const deployment
+		= asString(data.deployment_id)
+			?? asString(data.deploymentId)
+			?? asString(obj.deployment_id)
+	const zoneID = asString(data.zone_id) ?? asString(data.zoneId) ?? asString(obj.zone_id)
+	const worker
+		= asString(data.script_name)
+			?? asString(data.scriptName)
+			?? asString(data.worker_name)
+			?? asString(data.workerName)
+			?? asString(obj.script_name)
+
+	if (project && deployment) {
+		return `dash://pages/${encodeURIComponent(project)}/deployments/${encodeURIComponent(deployment)}`
+	}
+	if (project && (alertType?.includes('pages') || !zoneID)) {
+		return `dash://pages/${encodeURIComponent(project)}`
+	}
+	if (worker && (alertType?.includes('worker') || alertType?.includes('workers'))) {
+		return `dash://worker/${encodeURIComponent(worker)}`
+	}
+	if (zoneID) {
+		// Health / SSL / WAF alerts land on the zone; cache-specific types open purge.
+		if (alertType?.includes('cache')) {
+			return `dash://zone/${encodeURIComponent(zoneID)}/cache`
+		}
+		if (alertType?.includes('waf') || alertType?.includes('firewall')) {
+			return `dash://zone/${encodeURIComponent(zoneID)}/waf`
+		}
+		return `dash://zone/${encodeURIComponent(zoneID)}`
+	}
+	// Zone name without id — open Domains, not a dead Watchtower row.
+	if (asString(data.zone_name) ?? asString(data.zoneName)) {
+		return 'dash://feature/zones'
+	}
+	return 'dash://watchtower'
+}
+
 export function mapAlert(body: unknown): AlertPayload {
 	const obj = body && typeof body === 'object' ? (body as Record<string, unknown>) : {}
 	const alertType = asString(obj.alert_type)
@@ -53,6 +99,7 @@ export function mapAlert(body: unknown): AlertPayload {
 	return {
 		body: truncate(text, MAX_BODY_CHARS),
 		collapseID: correlation ? truncateBytes(correlation, MAX_COLLAPSE_BYTES) : undefined,
+		dashRoute: dashRouteForAlert(obj, alertType),
 		title,
 	}
 }

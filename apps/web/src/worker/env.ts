@@ -1,5 +1,5 @@
 /**
- * Bindings for the Dash edge worker (landing + OAuth relay + dormant push).
+ * Bindings for the Dash edge worker (landing + OAuth relay + push + registration).
  *
  * Secrets (wrangler secret put): APNS_KEY_P8, APNS_KEY_ID, PUSH_HMAC_SECRET.
  * Plain vars (wrangler.jsonc): APNS_TEAM_ID, APNS_TOPIC.

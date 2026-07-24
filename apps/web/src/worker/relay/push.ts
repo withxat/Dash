@@ -20,20 +20,22 @@ import {
 	sendAlert,
 } from './apns'
 import { mintNotifyMAC, verifyNotifyMAC, webhookSecret } from './hmac'
+import {
+	isDeviceToken,
+	isPushEnvironment,
+	parseNotifyPath,
+} from './push-validate'
 
-const TOKEN_RE = /^[0-9a-f]{64,200}$/i
-const ENVIRONMENTS = new Set(['sandbox', 'production'])
 const MAX_BODY_BYTES = 64 * 1024
-const NOTIFY_PATH = /^\/push\/notify\/(sandbox|production)\.([0-9a-f]+)\.([0-9a-f]+)$/i
 
 export async function handlePush(request: Request, url: URL, env: Env): Promise<Response> {
 	if (url.pathname === '/push/register') {
 		return register(request, url, env)
 	}
 
-	const notify = url.pathname.match(NOTIFY_PATH)
+	const notify = parseNotifyPath(url.pathname)
 	if (notify) {
-		return notifyDevice(request, env, notify[1].toLowerCase(), notify[2].toLowerCase(), notify[3].toLowerCase())
+		return notifyDevice(request, env, notify.environment, notify.token, notify.mac)
 	}
 
 	return new Response('Not Found', { status: 404 })
@@ -66,10 +68,10 @@ async function register(request: Request, url: URL, env: Env): Promise<Response>
 	}
 
 	const { environment, token } = body as Record<string, unknown>
-	if (typeof token !== 'string' || !TOKEN_RE.test(token)) {
+	if (typeof token !== 'string' || !isDeviceToken(token)) {
 		return new Response('Bad Request', { status: 400 })
 	}
-	if (typeof environment !== 'string' || !ENVIRONMENTS.has(environment)) {
+	if (typeof environment !== 'string' || !isPushEnvironment(environment)) {
 		return new Response('Bad Request', { status: 400 })
 	}
 

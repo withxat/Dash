@@ -108,7 +108,11 @@ export async function sendAlert(
 		'interruption-level': 'time-sensitive',
 		'sound': 'default',
 	}
-	const payload = JSON.stringify({ aps })
+	const payloadObject: Record<string, unknown> = { aps }
+	if (alert.dashRoute) {
+		payloadObject.dashRoute = alert.dashRoute
+	}
+	const payload = JSON.stringify(payloadObject)
 
 	const headers: Record<string, string> = {
 		'apns-priority': '10',
