@@ -1,97 +1,203 @@
 import Foundation
 
-/// A concrete account resource opened from Search or a deep link. Home's
-/// Continue section returns to the same Worker, zone, bucket, or namespace.
-struct RecentResource: Hashable, Identifiable, Sendable {
-  enum Kind: String, Sendable {
-    case zone, worker, r2, kv
+/// Watchtower account-analytics card layout. Each preference is stored as a
+/// comma-separated list of metric raw values so a new metric can be appended
+/// automatically without invalidating an existing layout.
+enum WatchtowerAnalyticsCardLayout {
+  static let key = "dash.watchtower_analytics_collapsed"
+  static let orderKey = "dash.watchtower_analytics_order"
+  static let hiddenKey = "dash.watchtower_analytics_hidden"
 
-    var displayName: String {
-      switch self {
-      case .zone: "Zone"
-      case .worker: "Worker"
-      case .r2: "R2"
-      case .kv: "KV"
+  static func collapsedIDs(in raw: String) -> Set<String> {
+    Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+  }
+
+  static func hiddenIDs(in raw: String) -> Set<String> {
+    Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
+  }
+
+  static func isExpanded(_ metricID: String, raw: String) -> Bool {
+    !collapsedIDs(in: raw).contains(metricID)
+  }
+
+  static func encode(_ collapsed: Set<String>) -> String {
+    collapsed.sorted().joined(separator: ",")
+  }
+
+  static func toggled(_ metricID: String, in raw: String) -> String {
+    var next = collapsedIDs(in: raw)
+    if next.contains(metricID) {
+      next.remove(metricID)
+    } else {
+      next.insert(metricID)
+    }
+    return encode(next)
+  }
+
+  static func orderedMetrics(
+    in raw: String,
+    available: [WatchtowerAnalyticsMetric] = Array(WatchtowerAnalyticsMetric.allCases)
+  ) -> [WatchtowerAnalyticsMetric] {
+    let availableSet = Set(available)
+    var seen = Set<WatchtowerAnalyticsMetric>()
+    var ordered = raw.split(separator: ",").compactMap { token -> WatchtowerAnalyticsMetric? in
+      guard let metric = WatchtowerAnalyticsMetric(rawValue: String(token)),
+        availableSet.contains(metric),
+        seen.insert(metric).inserted
+      else { return nil }
+      return metric
+    }
+    ordered.append(contentsOf: available.filter { seen.insert($0).inserted })
+    return ordered
+  }
+
+  static func encodeOrder(_ metrics: [WatchtowerAnalyticsMetric]) -> String {
+    metrics.map(\.rawValue).joined(separator: ",")
+  }
+
+  static func encodeHidden(_ metrics: Set<WatchtowerAnalyticsMetric>) -> String {
+    metrics.map(\.rawValue).sorted().joined(separator: ",")
+  }
+
+  /// Moves a dragged card across its target. Downward moves land after the
+  /// target; upward moves land before it, matching the native list reorder
+  /// convention as the pointer crosses a row.
+  static func moving(
+    _ metrics: [WatchtowerAnalyticsMetric],
+    item: WatchtowerAnalyticsMetric,
+    across target: WatchtowerAnalyticsMetric
+  ) -> [WatchtowerAnalyticsMetric] {
+    guard item != target,
+      let sourceIndex = metrics.firstIndex(of: item),
+      let targetIndex = metrics.firstIndex(of: target)
+    else { return metrics }
+
+    var next = metrics
+    let moved = next.remove(at: sourceIndex)
+    next.insert(moved, at: targetIndex)
+    return next
+  }
+
+  /// Packs metrics into visual rows: each expanded metric owns a solo row;
+  /// collapsed metrics pair into two-up rows (a leftover occupies half width).
+  static func rows(
+    _ metrics: [WatchtowerAnalyticsMetric],
+    collapsedRaw: String,
+    forceExpanded: Bool
+  ) -> [[WatchtowerAnalyticsMetric]] {
+    var rows: [[WatchtowerAnalyticsMetric]] = []
+    var collapsedBuffer: [WatchtowerAnalyticsMetric] = []
+
+    func flushCollapsed() {
+      var index = 0
+      while index < collapsedBuffer.count {
+        if index + 1 < collapsedBuffer.count {
+          rows.append([collapsedBuffer[index], collapsedBuffer[index + 1]])
+          index += 2
+        } else {
+          rows.append([collapsedBuffer[index]])
+          index += 1
+        }
+      }
+      collapsedBuffer.removeAll(keepingCapacity: true)
+    }
+
+    for metric in metrics {
+      if forceExpanded || isExpanded(metric.rawValue, raw: collapsedRaw) {
+        flushCollapsed()
+        rows.append([metric])
+      } else {
+        collapsedBuffer.append(metric)
       }
     }
-  }
-
-  let kind: Kind
-  let accountID: String
-  /// Zone id, Worker name, R2 bucket name, or KV namespace id.
-  let resourceID: String
-  let title: String
-
-  var id: String { "\(kind.rawValue)|\(accountID)|\(resourceID)" }
-
-  var destination: Destination {
-    switch kind {
-    case .zone: .zone(resourceID)
-    case .worker: .worker(resourceID)
-    case .r2: .r2Bucket(resourceID)
-    case .kv: .kvNamespace(resourceID)
-    }
-  }
-
-  var featureID: FeatureID {
-    switch kind {
-    case .zone: .zones
-    case .worker: .workers
-    case .r2: .r2
-    case .kv: .kv
-    }
+    flushCollapsed()
+    return rows
   }
 }
 
-enum RecentResources {
-  static let key = "dash.recent_resources"
-  static let limit = 6
+/// The feature launchers shown in Home's editable Shortcuts card.
+///
+/// The raw value is deliberately just a comma-separated list of `FeatureID`
+/// values: feature ids cannot contain commas, and an empty stored value remains
+/// a valid explicit choice instead of being mistaken for an uninitialized state.
+enum HomeShortcuts {
+  static let key = "dash.home_shortcuts"
+  static let defaults: [FeatureID] = [.zones, .workers, .pages, .r2]
+  static let defaultValue = encode(defaults)
 
-  static func record(_ resource: RecentResource, defaults: UserDefaults = .standard) {
-    let existing = defaults.string(forKey: key) ?? ""
-    defaults.set(updated(existing: existing, adding: resource), forKey: key)
-    DashSpotlight.index(resource)
-  }
-
-  static func updated(existing: String, adding resource: RecentResource) -> String {
-    let token = encodeToken(resource)
-    let others = existing.split(separator: ",").map(String.init).filter { $0 != token }
-    return ([token] + others).prefix(limit).joined(separator: ",")
-  }
-
-  static func decode(_ raw: String) -> [RecentResource] {
-    raw.split(separator: ",").compactMap { decodeToken(String($0)) }
-  }
-
-  static func continueItems(
-    recent: [RecentResource], accountID: String?, limit: Int = limit
-  ) -> [RecentResource] {
-    guard let accountID else { return [] }
-    var seen = Set<String>()
-    var items: [RecentResource] = []
-    for resource in recent where resource.accountID == accountID {
-      guard seen.insert(resource.id).inserted else { continue }
-      items.append(resource)
-      if items.count == limit { break }
+  static func decode(_ raw: String) -> [FeatureID] {
+    var seen = Set<FeatureID>()
+    return raw.split(separator: ",").compactMap { token in
+      guard let feature = FeatureID(rawValue: String(token)), seen.insert(feature).inserted else {
+        return nil
+      }
+      return feature
     }
-    return items
   }
 
-  private static func encodeToken(_ resource: RecentResource) -> String {
-    [
-      resource.kind.rawValue,
-      resource.accountID,
-      resource.resourceID,
-      resource.title.replacingOccurrences(of: "|", with: "/").replacingOccurrences(
-        of: ",", with: " "),
-    ].joined(separator: "|")
+  static func encode(_ features: [FeatureID]) -> String {
+    features.map(\.rawValue).joined(separator: ",")
   }
 
-  private static func decodeToken(_ token: String) -> RecentResource? {
-    let parts = token.split(separator: "|", maxSplits: 3).map(String.init)
-    guard parts.count == 4, let kind = RecentResource.Kind(rawValue: parts[0]) else { return nil }
-    return RecentResource(
-      kind: kind, accountID: parts[1], resourceID: parts[2], title: parts[3])
+  static func toggled(_ feature: FeatureID, in raw: String) -> String {
+    var features = decode(raw)
+    if let index = features.firstIndex(of: feature) {
+      features.remove(at: index)
+    } else {
+      features.append(feature)
+    }
+    return encode(features)
+  }
+}
+
+enum HomeActionID: String, CaseIterable, Hashable, Identifiable, Sendable {
+  case addDomain
+  case uploadR2
+  case addDNSRecord
+  case createKVKey
+  case createR2Bucket
+  case addPagesDomain
+  case addWorkerDomain
+  case enableDevelopmentMode
+  case enableUnderAttackMode
+  case purgeCache
+
+  var id: String { rawValue }
+}
+
+/// Home's operation buttons are independent from feature Shortcuts. A maximum
+/// of three keeps the compact iPhone row stable while still letting people tune
+/// the launcher to the work they actually do.
+enum HomeActions {
+  static let key = "dash.home_actions"
+  static let limit = 3
+  static let defaults: [HomeActionID] = [.addDomain, .uploadR2, .addDNSRecord]
+  static let defaultValue = encode(defaults)
+
+  static func decode(_ raw: String) -> [HomeActionID] {
+    var seen = Set<HomeActionID>()
+    return raw.split(separator: ",").compactMap { token in
+      guard let action = HomeActionID(rawValue: String(token)), seen.insert(action).inserted else {
+        return nil
+      }
+      return action
+    }
+    .prefix(limit)
+    .map { $0 }
+  }
+
+  static func encode(_ actions: [HomeActionID]) -> String {
+    actions.prefix(limit).map(\.rawValue).joined(separator: ",")
+  }
+
+  static func toggled(_ action: HomeActionID, in raw: String) -> String {
+    var actions = decode(raw)
+    if let index = actions.firstIndex(of: action) {
+      actions.remove(at: index)
+    } else if actions.count < limit {
+      actions.append(action)
+    }
+    return encode(actions)
   }
 }
 
@@ -178,5 +284,222 @@ enum PinnedZones {
     let seeded = defaults.filter { $0.accountID == accountID }.prefix(limit)
     let pins = Array(seeded) + decode(raw).filter { $0.accountID != accountID }
     return (encode(pins), initialized.joined(separator: ","))
+  }
+}
+
+/// A resource the user drilled into, remembered so Home can offer the way
+/// back. Kinds mirror the `Destination` cases that carry a resource identity.
+struct RecentResource: Codable, Hashable, Identifiable, Sendable {
+  enum Kind: String, Codable, Sendable {
+    case zone
+    case worker
+    case pagesProject
+    case r2Bucket
+    case kvNamespace
+
+    var displayName: String {
+      switch self {
+      case .zone: DashL10n.string("Domain")
+      case .worker: DashL10n.string("Worker")
+      case .pagesProject: DashL10n.string("Pages")
+      case .r2Bucket: DashL10n.string("R2 bucket")
+      case .kvNamespace: DashL10n.string("KV namespace")
+      }
+    }
+
+    /// Content-row glyph for Home Recently used — matches the feature list
+    /// item (box / pin / code square), not the catalog tile (cloud / key).
+    var listIcon: String? {
+      switch self {
+      case .zone: nil
+      case .worker: SolarAsset.Content.code
+      case .pagesProject: SolarAsset.Content.codeCircle
+      case .r2Bucket: SolarAsset.Content.box
+      case .kvNamespace: SolarAsset.Content.pinList
+      }
+    }
+  }
+
+  let accountID: String
+  let kind: Kind
+  let resourceID: String
+  let title: String
+
+  var id: String { "\(accountID)|\(kind.rawValue)|\(resourceID)" }
+
+  /// Where reopening this resource lands.
+  var destination: Destination {
+    switch kind {
+    case .zone: .zone(resourceID)
+    case .worker: .worker(resourceID)
+    case .pagesProject: .pagesProject(resourceID)
+    case .r2Bucket: .r2Bucket(resourceID, prefix: "")
+    case .kvNamespace: .kvNamespace(resourceID)
+    }
+  }
+
+  /// The feature whose visual identity (icon tone, outline asset) the row borrows.
+  var featureID: FeatureID {
+    switch kind {
+    case .zone: .zones
+    case .worker: .workers
+    case .pagesProject: .pages
+    case .r2Bucket: .r2
+    case .kvNamespace: .kv
+    }
+  }
+}
+
+/// Recently opened resources as a JSON blob in `@AppStorage`. Unlike pins,
+/// titles here include KV namespace names, which can contain `|` and `,` —
+/// so the pipe encoding the other keys use is not safe for this one.
+enum RecentResources {
+  static let key = "dash.recent_resources"
+  /// Enough to remember across accounts without growing unbounded.
+  static let limit = 24
+  /// Rows Home actually shows for the active account.
+  static let displayLimit = 5
+
+  static func decode(_ raw: String) -> [RecentResource] {
+    guard !raw.isEmpty, let data = raw.data(using: .utf8) else { return [] }
+    return (try? JSONDecoder().decode([RecentResource].self, from: data)) ?? []
+  }
+
+  static func encode(_ recents: [RecentResource]) -> String {
+    guard let data = try? JSONEncoder().encode(recents) else { return "" }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  /// The entry moves (or inserts) to the front; the tail is trimmed so the
+  /// stored list stays bounded.
+  static func recording(_ entry: RecentResource, in raw: String) -> String {
+    var recents = decode(raw)
+    recents.removeAll { $0.id == entry.id }
+    recents.insert(entry, at: 0)
+    return encode(Array(recents.prefix(limit)))
+  }
+
+  /// This account's recents, newest first, capped for display.
+  static func visible(in raw: String, accountID: String) -> [RecentResource] {
+    Array(decode(raw).filter { $0.accountID == accountID }.prefix(displayLimit))
+  }
+}
+
+/// The Add domain form accepts anything Cloudflare could plausibly take as a
+/// zone name and leaves real validation to the API, which owns the rules.
+enum AddDomainValidation {
+  static func normalized(_ input: String) -> String {
+    input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+  }
+
+  static func isPlausibleZoneName(_ input: String) -> Bool {
+    let name = normalized(input)
+    guard name.count >= 3, name.count <= 253, !name.contains(" ") else { return false }
+    let labels = name.split(separator: ".", omittingEmptySubsequences: false)
+    guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else { return false }
+    guard let tld = labels.last, tld.count >= 2 else { return false }
+    return name.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }
+  }
+}
+
+struct DomainCardColorSelection: Hashable, Sendable {
+  let accountID: String
+  let zoneID: String
+  let hex: UInt32
+}
+
+/// Per-account domain card colors encoded as `accountID|zoneID|#RRGGBB`.
+/// Legacy named tints (`emerald`, `ocean`, …) still decode for existing installs.
+enum DomainCardColors {
+  static let key = "dash.domain_card_colors"
+
+  /// Former named palette — also used for stable per-domain defaults.
+  static let defaultPalette: [UInt32] = [
+    0x047857,  // emerald
+    0x0369A1,  // ocean
+    0x4F46E5,  // indigo
+    0x7E22CE,  // violet
+    0xBE123C,  // rose
+    0xB45309,  // orange
+  ]
+
+  private static let legacyNames: [String: UInt32] = [
+    "emerald": 0x047857,
+    "ocean": 0x0369A1,
+    "indigo": 0x4F46E5,
+    "violet": 0x7E22CE,
+    "rose": 0xBE123C,
+    "orange": 0xB45309,
+  ]
+
+  static func decode(_ raw: String) -> [DomainCardColorSelection] {
+    raw.split(separator: ",").compactMap { entry in
+      let parts = entry.split(separator: "|", maxSplits: 2).map(String.init)
+      guard parts.count == 3, let hex = parseToken(parts[2]) else { return nil }
+      return DomainCardColorSelection(accountID: parts[0], zoneID: parts[1], hex: hex)
+    }
+  }
+
+  static func encode(_ selections: [DomainCardColorSelection]) -> String {
+    selections.map { "\($0.accountID)|\($0.zoneID)|\(formatHex($0.hex))" }
+      .joined(separator: ",")
+  }
+
+  static func hex(
+    in raw: String,
+    accountID: String,
+    zoneID: String,
+    seed: String
+  ) -> UInt32 {
+    decode(raw).first { $0.accountID == accountID && $0.zoneID == zoneID }?.hex
+      ?? defaultHex(for: seed)
+  }
+
+  static func setting(
+    _ hex: UInt32,
+    in raw: String,
+    accountID: String,
+    zoneID: String
+  ) -> String {
+    var selections = decode(raw)
+    selections.removeAll { $0.accountID == accountID && $0.zoneID == zoneID }
+    selections.append(
+      DomainCardColorSelection(accountID: accountID, zoneID: zoneID, hex: hex))
+    return encode(selections)
+  }
+
+  /// A stable default gives each domain a recognizable card color without
+  /// persisting anything until the user makes an explicit choice.
+  static func defaultHex(for seed: String) -> UInt32 {
+    var hash: UInt32 = 2_166_136_261
+    for byte in seed.utf8 {
+      hash = (hash ^ UInt32(byte)) &* 16_777_619
+    }
+    return defaultPalette[Int(hash % UInt32(defaultPalette.count))]
+  }
+
+  static func formatHex(_ value: UInt32) -> String {
+    String(format: "#%06X", value & 0xFFFFFF)
+  }
+
+  static func parseToken(_ token: String) -> UInt32? {
+    if let legacy = legacyNames[token] { return legacy }
+    var hex = token
+    if hex.hasPrefix("#") { hex.removeFirst() }
+    guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }
+    return value
+  }
+
+  /// Relative luminance under sRGB; below the cutoff, white card text stays readable.
+  static func prefersLightContent(_ hex: UInt32) -> Bool {
+    func channel(_ value: UInt32) -> Double {
+      let c = Double(value) / 255
+      return c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    }
+    let r = channel((hex >> 16) & 0xFF)
+    let g = channel((hex >> 8) & 0xFF)
+    let b = channel(hex & 0xFF)
+    let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    return luminance < 0.55
   }
 }
