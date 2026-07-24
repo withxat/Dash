@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
+Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is `Dash`, the bundle identifier is `sh.xat.dash.app`, and OAuth returns through `dash://oauth/callback` after the stateless HTTPS relay.
 
 ## Product scope (UI)
 
@@ -14,7 +14,7 @@ Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is 
 | --- | --- |
 | `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
 | `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
-| `apps/web` | Vite + React landing page and Hono edge app at `dash.xat.sh` (worker `dash-relay`); hosts OAuth callback and dormant `/push/*` |
+| `apps/web` | Vite + React landing page and Hono edge app at `dash.xat.sh` (worker `dash-relay`); hosts OAuth callback and `/push/*` APNs bridge |
 | `packages/ui` | Web-only component library; do not import it into Dash |
 
 ## Commands
@@ -28,9 +28,9 @@ pnpm api:test       # Swift Package tests, no simulator needed
 pnpm typecheck      # turbo typecheck + api:test + full simulator build (slow)
 pnpm lint
 pnpm lint:fix
-pnpm ios:icons      # regenerate Solar icon assets
+pnpm ios:icons      # regenerate Solar chrome + Hugeicons file-format assets
 pnpm web:dev        # landing + edge worker locally
-pnpm web:deploy     # deploy dash-relay (landing + OAuth relay)
+pnpm web:deploy     # versions upload → deploy dash-relay (landing + OAuth relay)
 ```
 
 Single tests:
@@ -42,27 +42,35 @@ xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash \
   -allowProvisioningUpdates -only-testing:DashTests test
 ```
 
-All iOS build and test commands use Automatic signing with team `J4CCPX9K6H` (`apps/ios/Config/Signing.xcconfig`). OAuth secrets stay in ignored `Config/Secrets.xcconfig`.
+All iOS build and test commands use Automatic signing with team `UH4FQTHMG2` (`apps/ios/Config/Signing.xcconfig`). OAuth secrets stay in ignored `Config/Secrets.xcconfig`.
 
-Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and `pnpm ios:test`. Fix failures before committing. Commit frequently using Conventional Commits. Lefthook's pre-commit hook runs `lint:fix` and `typecheck` on staged changes, so commits trigger a simulator build.
+Before finishing a task, run `pnpm lint:fix` and `pnpm lint`. Do NOT run simulator builds or tests (`pnpm ios:build`, `pnpm ios:test`, `pnpm typecheck`) unless explicitly asked — they take too long; the user batch-verifies everything themselves later. `pnpm api:test` is seconds-fast and fine when `packages/cloudflare-api` changed. Commit frequently using Conventional Commits, but note Lefthook's pre-commit hook runs `lint:fix` and `typecheck` on staged changes, so a commit itself triggers a simulator build — ask before committing when that wait matters.
 
 ## Architecture
 
 ### iOS app
 
 - One `AppModel` (`@Observable @MainActor`, created in `DashApp`, injected via `.environment`) owns the `CloudflareClient`, `KeychainTokenStore`, `FeatureDataCache`, auth state, accounts, and active-account selection. Switching accounts or signing out clears the cache.
-- `AppRootView` switches on auth state into `MainTabView` with three primary tabs (Home, Resources, Watchtower), each with its own `WorkspaceHost` canvas. Resources stays a browse-only catalog. Every drill-down routes through the `Destination` enum (`Catalog.swift`) opened on the tab's `WorkspaceController` and rendered by `DestinationRoutedContent` (`DashWorkspace.swift`). A new screen means a new `Destination` case plus a branch there — layers morph in place instead of using `NavigationPath` push.
-- `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar asset, and category per feature. Rich features (zones, workers, R2, KV, D1, account) have dedicated views in `FeatureViews.swift`, `StorageViews.swift`, and `AccountFeatureViews.swift`; the rest fall through to `GenericFeatureView`, which maps the `FeatureID` to a REST path and lists `GenericResource` rows. A simple list feature needs only a `FeatureID` case and a path there — no new view.
+- `AppRootView` switches on auth state into `MainTabView` with three primary tabs (Home, Resources, Watchtower), each with its own `NavigationStack` path (`DestinationNavigator` in `DashWorkspace.swift`). Resources stays a browse-only catalog. Every drill-down routes through the `Destination` enum (`Catalog.swift`) via `navigationDestination` into `DestinationRoutedContent`. A new screen means a new `Destination` case plus a branch there — standard push/pop.
+- Root header invariant (`dashCatalogScreen` + `MainTabView`): every tab root shows a REAL titleless inline nav bar, propped open by an invisible clear `principal` item — a bar with no title and no items collapses to zero inset. Keeping the bar mounted means a push never changes the bar height (no content shift), and pushed screens' `detailHeader` (icon + title principal) lands on the same metrics. The profile avatar is ONE `HeaderProfileButton` floated by `MainTabView` above the pager (so it neither rides along on tab swipes nor gets squashed by the nav bar's item-height clamp), hand-positioned over the leading slot so the push crossfade reads as the avatar morphing into the back button. Do not seat the avatar as a per-page toolbar item.
+- `FeatureID` (`Catalog.swift`) is the feature registry: title, subtitle, SF Symbol, Solar fill/outline assets, and category per feature. All five features (zones, workers, pages, r2, kv) are rich, with dedicated views in `FeatureViews.swift`, `StorageViews.swift`, `R2ObjectViews.swift`, and `PagesViews.swift`; the feature router is an exhaustive switch with no `default:`, so a new `FeatureID` must name its screen or it does not build. `GenericFeatureView` is gone.
 - `FeatureDataCache` is an in-memory, session-scoped cache keyed by `FeatureCacheKey` strings. Views read the cache in `.task` and bypass it from `refreshable` with `force: true`.
-- Worker detail shows the latest actively serving deployment from the typed deployments endpoint, plus cached analytics and `workers.dev` controls. R2 uploads are capped at 100 MB, stay off the main actor while reading, and expose in-view progress, cancellation, and completion feedback.
+- Loading contract (`DashListPhase` via `DashFeatureList`): **Cold** (no cached primary payload) → `DashListSkeleton` only — never an empty shell plus “Updating…”. **Warm** (content already shown) → keep content and the inline “Updating…” strip. **Empty settled** → `DashEmptyState` inside content. Secondary fetches inside a loaded detail (build log, traffic, preview) may use a local ring + short copy (section cold). Do not invent a fifth full-screen spinner.
+- Switches and setting menus are optimistic: flip the control immediately, disable while the request is in flight, and revert + surface an error on failure. Never replace a `DashSwitch` / menu value with a loading ring — trailing rings stay on submit pills (Connect, Save, Delete, Load more, Purge) and long-running transfer cards (R2 upload/move).
+- Worker detail shows the full deployment history from the typed deployments endpoint (active deployment badged; any older deployment can take 100% of traffic via a confirmed cut-over — gradual splits are unsupported on purpose), custom domain attach/detach, plus cached analytics and `workers.dev` controls. R2 uploads are capped at 100 MB (`R2Media.transferSizeLimit`), stay off the main actor while reading, and expose in-view progress, cancellation, and completion feedback.
+- The R2 browser (`StorageViews.swift` + `R2ObjectViews.swift`) is a small file manager: image rows show downsampled thumbnails (`R2ThumbnailStore` actor on `AppModel`, session-scoped like the feature cache) while non-image rows show a Hugeicons "02" file-format glyph keyed off the extension (`FileTypeIcons.swift`, generated by `generate-file-icons.mjs`). Tapping an object opens a full-screen preview (`R2ObjectPreview.swift`): the object is downloaded to a temp file and handed to a native `QLPreviewController` inside a `UINavigationController` (system chrome kept — Done + share; Dash only adds ⋯). Objects over the 100 MB transfer ceiling fall back to their glyph. The ⋯ button opens the actions sheet — Copy public URL, Rename/move (download → PUT new key → delete old; there is no server-side copy), Download, and delete. Multi-select batch delete and move stay on the bucket screen. Bucket settings (`Destination.r2BucketSettings`) manage the r2.dev toggle, custom domains, and empty-bucket delete (Cancel + hold Delete — no type-to-confirm); the resulting `R2DomainsSnapshot` is cached per bucket and decides the copyable URL (serving custom domain beats rate-limited r2.dev). KV namespaces support list / create·edit·delete keys in-app (namespace create stays on the dashboard/Wrangler). Tapping a key pushes `Destination.kvKey` (`KVKeyDetailView`) — view-first `CodeEditor` (JSON) with Copy, then Edit → Format / Save; delete confirms in-page and pops. Create key stays a tray on the namespace screen.
+- The DashShare share extension (`apps/ios/DashShare`, bundle `sh.xat.dash.app.share`) uploads shared images to the last-used bucket/prefix and copies the public URL. It reuses `KeychainTokenStore` through the shared keychain access group and reads `R2ShareDestination` records plus the mirrored active-account id from App Group defaults (`group.sh.xat.dash.app`) — `AppModel` keeps that mirror in sync. `UploadToR2Intent` does the same from Shortcuts inside the app process.
 - Shared chrome (cards, trays/sheets, pill buttons, catalog toolbar) lives in `DashChrome.swift`; all palette, typography, and spacing tokens in `DashTheme.swift`.
-- Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals. Snapshot freshness is shared with the widget: fresh through 2 hours, aging through 24 hours, then stale. Signals without an in-app destination open a detail tray instead of becoming dead rows.
-- Home is a launcher: the animated Kumo cloud mascot (`CloudMascotBody`/`CloudMascotEyes` template assets, deterministic sway/blink in `HomeMascotMotion`) over a greeting, three preset quick-action tiles (Add domain opens a tray backed by `createZone`; Workers and R2 open their features), a collapsed-by-default Domains group (deterministic on-device dither avatars from the local `GradientAvatars` package; expanding morphs them into the zone rows plus View all), a static Shortcuts group of all four features, and a Recently used group fed by `RecentResources` (JSON in `@AppStorage`, recorded by zone/worker/R2/KV screens, filtered per account). Watchtower stays on its own tab. Zone pinning remains on zone detail. The legacy `dash.home_shortcuts` value remains decodable for rollback, but it is no longer rendered.
+- Feature-screen spacing is semantic, not page-specific: summary/status cards come before resource rows and settings; bounded groups of independent cards or controls use `DashSurfaceStack` (`itemGap`); conditional feedback beside a control uses `dashItemBoundary`; every following titled group uses `dashSectionBoundary`. Keep `DashFeatureList`'s outer stack at zero spacing so large row `ForEach` collections stay lazy, and never compensate with ad-hoc per-page padding.
+- Watchtower (`WatchtowerModel.swift`) fans out account-health requests concurrently (zones, tunnels, LB pools, registrar, Pages, alerts, plus per-zone certificates and healthchecks capped at 10 zones) and folds them into status signals. Snapshot freshness is shared with the widget: fresh through 2 hours, aging through 24 hours, then stale. Signals with an in-app `destination` open that resource from the detail tray; tunnels / LB pools / registrar stay tray-only but carry an `externalURL` (**Open in Cloudflare**) into the account-scoped dashboard. Mute 24h still applies to non-ok rows. A floated trailing inbox (same 44pt glass circle as the profile avatar) opens `Destination.watchtowerInbox`: Cloudflare notification history plus current Dash non-ok signals as one list (source icons, best-effort dedupe, device-local Pending / Ignored). The floating badge count and Watchtower tab red dot share that pending set; long-press the Watchtower tab, long-press the floating inbox, or tap Ignore all in the inbox all open the shared Ignore-all confirmation tray (local ignore only).
+- Home is a launcher: a plain greeting header (`HomeGreetingHeader`) under the warm top wash (`HomeTopWash` — painted on the Home NavigationStack root background under the scroll content so opaque cards keep a true fill and a system push slides the glow away with Home; the root plate expands under the status bar; `HomeView` keeps scroll probes in a local `HomeWashProbes` store via `HomeContentTopPreferenceKey`/`HomeBandBottomPreferenceKey` so the wash follows scroll without re-rendering the tab shell), an editable three-slot Quick actions cluster (backed by `dash.home_actions`; defaults are Add domain / Upload R2 / Add DNS; titleless header with Edit only; Quick-actions edit tray uses `.large` with `DashSheetCard`-matching body insets; Shortcuts edit stays `.content`; both share the selection-list chrome; every choice starts a concrete operation instead of opening a feature catalog), a collapsed-by-default Domains group (deterministic on-device dither avatars from the local `GradientAvatars` package, up to 6 with +N overflow; expanding morphs them into the zone rows with a 6-row viewport that scrolls for the rest; empty unlocked state offers Add domain in-section), an editable Shortcuts group (backed by `dash.home_shortcuts` in `@AppStorage`; defaults are Domains / Workers / Pages / R2; the Edit action opens the `EditShortcutsView` tray listing all five features), and a Recently used group fed by `RecentResources` (JSON in `@AppStorage`, recorded by zone/worker/Pages/R2/KV screens, filtered per account). Recently-used rows claim no matched geometry — the Domains expand morph owns the zone identities on Home, and a second source for the same id makes the animations fight. Watchtower stays on its own tab. Zone pinning remains on zone detail.
+- Settings lists Siri & Shortcuts discoverability (Purge Cache, Under Attack, Development Mode, Upload to R2, Open Watchtower). Settings → About (`Destination.about`, `AboutView` in `AppRootView.swift`) shows the app icon over the app name, tagline, and version. There is no mascot: Kumo and its RealityKit machinery were removed; sign-in hands off to Home with a plain cross-fade. Zone settings note that removing a domain is not available in Dash.
+- Demo: `DemoBackend` serves a read-only world via “Explore the demo” (~60 zones plus bulk workers/Pages/R2/KV for scroll and pagination stress). Watchtower traffic and health paint from session cache on warm tab re-entry; pull-to-refresh still forces a network (or demo) reload.
 
 ### Auth flow
 
 - `AppModel.signIn()` builds a PKCE authorize URL and opens `ASWebAuthenticationSession`; Cloudflare redirects to the relay's HTTPS callback, which 302s to `dash://oauth/callback`; the app exchanges the code and stores tokens through `KeychainTokenStore` (an actor implementing the package's `TokenStore` protocol).
-- Fresh sign-in requests `DashAuthorizationScopes.core` (66 scopes), not every published Cloudflare permission. Workers AI, Browser Rendering, Images, and Stream are hidden behind the experimental-features setting and add their eight scopes incrementally.
+- Fresh sign-in requests `DashAuthorizationScopes.core` (30 scopes), not every published Cloudflare permission. Settings → Push alerts uses `notifications.write` to create the Cloudflare webhook and policies that forward to APNs via the relay.
 - Configuration plumbing: `Config/Base.xcconfig` `#include?`s the ignored `Signing.xcconfig` and `Secrets.xcconfig`; `DASH_CLIENT_ID`/`DASH_REDIRECT_URI` flow into Info.plist keys read by `AppConfiguration.current`. Unexpanded `$(...)` values mean unconfigured, which disables sign-in with a hint instead of crashing.
 
 ### Tests
@@ -74,7 +82,8 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 - Use Swift 6 strict concurrency, `async throws`, actors for shared mutable state, and `@Observable @MainActor` for UI state.
 - Prefer SwiftUI system navigation, lists, searchable, refreshable, sheets, semantic colors, SF Symbols, and Dynamic Type.
 - Phone-first: do not add iPad adaptive layouts, regular-width split navigation, or size-class layout forks (see Product scope above).
-- The Kumo-aligned palette is defined in `DashTheme`; do not scatter literal colors through feature views.
+- The shared palette is defined in `DashTheme`; do not scatter literal colors through feature views.
+- Press feedback: the 0.97 shrink (`DashPressButtonStyle`) is reserved for genuine **button** controls — pills, circular icon buttons, toolbar/back/close actions, small text actions (Cancel, Back, Save, Show more…), and tab labels. Tappable **surfaces** — full-width rows, list items, cards, and tiles — must NOT shrink: give them `DashSurfaceButtonStyle` (no scale, no press animation). `DestinationLink`/`DashListGroupLink` navigation rows already use the surface style. When a tap target reads as a row/card/tile, it is a surface, not a button. Sanctioned exception: the Home Quick-actions tool tiles (`DashToolTile`) are launcher buttons and take `DashPressButtonStyle` — the shrink plus haptic is their press cue, and the tap still opens the action's tray.
 - App code depends on `CloudflareAPI`, never on JavaScript packages or `packages/ui`.
 - Tokens belong in the Keychain. Local OAuth values belong in ignored `Config/Secrets.xcconfig`; never commit credentials.
 - Preserve graceful 403 handling. A missing OAuth scope must affect only its feature and should surface an actionable error.
@@ -88,7 +97,7 @@ Before finishing a task, run `pnpm lint:fix`, `pnpm lint`, `pnpm typecheck`, and
 - Public response types are `Codable` and `Sendable`; public operations use `async throws`.
 - Binary endpoints use `Data` or file URLs. Do not decode unbounded bodies as text unless the endpoint is known to be bounded.
 
-## Edge app (landing + OAuth + dormant push)
+## Edge app (landing + OAuth + push)
 
 Cloudflare accepts only HTTP(S) redirect URIs. The registered HTTPS callback is
 served by worker `dash-relay` at `https://dash.xat.sh` (`apps/web`): a Vite React
@@ -100,12 +109,17 @@ Route ownership:
 - `GET /` and SPA navigations → Workers Assets (landing)
 - `GET /health` → liveness probe
 - `GET /oauth/callback` → 302 to `dash://oauth/callback` (worker-first)
-- `/push/*` → dormant APNs bridge (worker-first)
+- `GET /api/registration/:domain` → RDAP then port-43 WHOIS snapshot for the
+  iOS zone registration card (Cache API only; worker-first)
+- `/push/*` → APNs bridge (worker-first): register mints an HMAC notify URL;
+  notify forwards mapped alerts (including `dashRoute` deep links) to APNs
 
-The iOS app does not register for remote notifications or expose the APNs
-workflow. Keep `/push/*` dormant for rollback and cleanup compatibility; do not
-ship it as a user-facing capability until the entitlement and device flow are
-explicitly restored and verified.
+Settings → Push alerts enables the client path: APNs entitlement, device token
+registration, Cloudflare webhook + policies, and optional test alert. Pages
+build Live Activities poll every 10s in the foreground and continue via
+best-effort `BGAppRefresh` (`sh.xat.dash.app.pages-build-refresh`) while a
+build is in progress; they still request an ActivityKit push token, but the
+relay does not send Live Activity pushes (zero-storage invariant).
 
 Invariants that still hold:
 
@@ -116,5 +130,5 @@ Invariants that still hold:
   (the URL is a bearer capability). Logs only APNs status codes via
   `wrangler tail`.
 
-The worker still holds the APNs `.p8` signing key and can process APNs device
-tokens for dormant `/push/*` routes. `wrangler dev` cannot reach APNs (HTTP/2).
+The worker holds the APNs `.p8` signing key. `wrangler dev` cannot reach APNs
+(HTTP/2).

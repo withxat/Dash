@@ -2,9 +2,25 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Dash is a native iPhone Cloudflare client built with SwiftUI. It signs in with OAuth 2.0 Authorization Code + PKCE and manages zones, DNS, cache, security settings, Workers, Pages, R2, KV, D1, Queues, Vectorize, Secrets Store, account services, and analytics.
+Dash is a native iPhone Cloudflare client built with SwiftUI. It signs in with OAuth 2.0 Authorization Code + PKCE and focuses on the day-to-day resources people manage from a phone.
 
-The installed app is named **Dash**. Its bundle identifier is `sh.xat.dash`, its callback is `dash://oauth/callback`, and its App Store name is **Dash for Cloudflare**.
+The installed app is named **Dash**. Its bundle identifier is `sh.xat.dash.app`, its callback is `dash://oauth/callback`, and its App Store name is **Dash for Cloudflare**.
+
+## MVP features
+
+Five resource surfaces, plus the shell that makes them usable:
+
+| Feature | What you can do |
+| --- | --- |
+| **Domains** | Zones, DNS, cache purge, domain settings, zone analytics |
+| **Workers** | View scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics |
+| **Pages** | View projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
+| **R2** | Buckets, browse/upload/preview, rename/move, public URLs, share extension and Shortcuts |
+| **KV** | Namespaces, key list, read / create·edit·delete keys |
+
+Shell around those features: Home launcher, Resources catalog, Watchtower health signals, Settings (push alerts, About), multi-account OAuth, and iPhone-only single-stack navigation.
+
+Out of MVP scope: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
 ## Workspace
 
@@ -51,13 +67,14 @@ The API client stores tokens through a `TokenStore` abstraction. Dash implements
 
 `apps/web` deploys as worker `dash-relay` on `https://dash.xat.sh`. It serves the
 marketing landing page, redirects OAuth to `dash://oauth/callback`, and keeps
-the dormant `/push/*` APNs bridge. The relay path is intentionally stateless: it
-never logs callback parameters and never receives the PKCE verifier.
+the `/push/*` APNs bridge for Settings → Push alerts. The relay path is
+intentionally stateless: it never logs callback parameters and never receives
+the PKCE verifier.
 
 ```sh
 pnpm install
 pnpm --filter @dash/web exec wrangler login
-pnpm web:deploy
+pnpm web:deploy   # versions upload → versions deploy
 ```
 
 After deploy, verify:
