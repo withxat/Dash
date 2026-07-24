@@ -176,6 +176,35 @@ enum PushRegistrationService {
     return model.pendingDeviceToken
   }
 
+  /// Mint a notify URL for the current token and POST a synthetic Cloudflare
+  /// alert payload so the user can verify APNs end-to-end.
+  @MainActor
+  static func sendTestAlert(configuration: AppConfiguration, deviceToken: String) async throws {
+    guard let base = configuration.pushBaseURL else {
+      throw PushRegistrationError.pushNotConfigured
+    }
+    let registration = try await registerWithRelay(baseURL: base, token: deviceToken)
+    guard let notifyURL = URL(string: registration.url) else {
+      throw PushRegistrationError.relayFailed(status: -1)
+    }
+    var request = URLRequest(url: notifyURL)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue(registration.secret, forHTTPHeaderField: "cf-webhook-auth")
+    request.httpBody = try JSONSerialization.data(withJSONObject: [
+      "name": "Dash test alert",
+      "text": "Push is working. Cloudflare alerts will appear like this.",
+      "alert_type": "dash_test",
+    ])
+    let (_, response) = try await URLSession.shared.data(for: request)
+    guard let http = response as? HTTPURLResponse else {
+      throw PushRegistrationError.relayFailed(status: -1)
+    }
+    guard (200..<300).contains(http.statusCode) else {
+      throw PushRegistrationError.relayFailed(status: http.statusCode)
+    }
+  }
+
   /// Clear every per-account webhook id (used on sign-out).
   static func clearAllStoredWebhookIDs() {
     let defaults = UserDefaults.standard
@@ -244,11 +273,12 @@ enum PushRegistrationError: Error, LocalizedError {
   var errorDescription: String? {
     switch self {
     case .pushNotConfigured:
-      return "Push alerts are not configured for this build."
+      return DashL10n.string("Push alerts are not configured for this build.")
     case .relayFailed(let status):
-      return "Could not register with the push relay (HTTP \(status))."
+      return DashL10n.string("Could not register with the push relay (HTTP \(status)).")
     case .missingDeviceToken:
-      return "This device has not received an APNs token yet. Try again in a moment."
+      return DashL10n.string(
+        "This device has not received an APNs token yet. Try again in a moment.")
     }
   }
 }

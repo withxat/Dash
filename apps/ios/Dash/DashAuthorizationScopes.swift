@@ -8,6 +8,7 @@ enum DashAuthorizationScopes {
   static let coreFeatures: Set<FeatureID> = [
     .zones,
     .workers,
+    .pages,
     .r2,
     .kv,
   ]
@@ -23,17 +24,19 @@ enum DashAuthorizationScopes {
   private static let coreOperations: Set<String> = [
     "zone-settings.read",
     "zone-settings.write",
-    "workers-tail.read",
     "healthcheck.read",
     "load-balancing-monitors-and-pools.read",
     "registrar-domains.read",
     "dns.read",
     "dns.write",
     "cache.purge",
+    "workers-routes.read",
     "argotunnel.read",
     "notifications.read",
+    "notifications.write",
     "ssl-and-certificates.read",
     "account-analytics.read",
+    "analytics.read",
   ]
 
   static let core: Set<String> = {
@@ -46,15 +49,22 @@ enum DashAuthorizationScopes {
       .union(CloudflareScopes.required)
   }()
 
-  static let searchResources: Set<String> = [
-    "zone.read",
-    "workers-scripts.read",
-    "workers-r2.read",
-    "workers-kv-storage.read",
+  /// Zone HTTP Traffic Analytics is separate from account-level analytics.
+  static let zoneAnalytics: Set<String> = ["zone.read", "analytics.read"]
+
+  /// Account overview tiles + series on Watchtower
+  /// (`httpRequestsOverviewAdaptiveGroups` / `workersInvocationsAdaptive`).
+  static let accountAnalytics: Set<String> = [
+    "account-analytics.read",
+    "analytics.read",
   ]
 
-  static let watchtower: Set<String> = [
-    "zone.read",
+  /// Web Analytics (RUM) lives on the account: both the site list and the
+  /// `rum*` GraphQL datasets answer under `account-analytics.read`. Cloudflare
+  /// publishes no OAuth scope for Web Analytics writes, so Dash reads only.
+  static let webAnalytics: Set<String> = ["zone.read", "account-analytics.read"]
+
+  static let watchtower: Set<String> = Set([
     "argotunnel.read",
     "load-balancing-monitors-and-pools.read",
     "registrar-domains.read",
@@ -62,5 +72,5 @@ enum DashAuthorizationScopes {
     "notifications.read",
     "ssl-and-certificates.read",
     "healthcheck.read",
-  ]
+  ]).union(zoneAnalytics).union(accountAnalytics)
 }
