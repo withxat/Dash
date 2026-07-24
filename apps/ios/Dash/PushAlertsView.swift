@@ -9,6 +9,9 @@ struct PushAlertsSettingsCard: View {
   @State private var pushBusy = false
   @State private var pushError: String?
   @State private var testBusy = false
+  private static let requiredScopes: Set<String> = [
+    "notifications.read", "notifications.write",
+  ]
 
   var body: some View {
     DashListGroup(title: "Push alerts") {
@@ -93,6 +96,11 @@ struct PushAlertsSettingsCard: View {
       pushEnabled = false
       return
     }
+    guard model.hasScopes(Self.requiredScopes) else {
+      pushEnabled = PushRegistrationService.isEnabled(accountID: accountID)
+      model.requestAccess(to: Self.requiredScopes)
+      return
+    }
     pushBusy = true
     pushError = nil
     do {
@@ -137,17 +145,18 @@ struct PushAlertsSettingsCard: View {
 
   private func sendTest() async {
     testBusy = true
+    defer { testBusy = false }
     do {
       guard let token = await PushRegistrationService.waitForDeviceToken(in: model) else {
         throw PushRegistrationError.missingDeviceToken
       }
       try await PushRegistrationService.sendTestAlert(
-        configuration: model.configuration, deviceToken: token)
+        configuration: model.configuration,
+        deviceToken: token)
       model.toasts.success(DashL10n.string("Test alert sent. It should appear in a moment."))
     } catch {
       model.toasts.error(error.dashActionableMessage)
     }
-    testBusy = false
   }
 }
 

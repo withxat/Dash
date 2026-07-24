@@ -14,7 +14,8 @@ struct DashDetailField {
 /// read-only tray shows no action button; when a delete is supplied, a header
 /// trash button morphs the fields into a single-Confirm confirmation. The
 /// `accessory` slot renders below the fields — if it has buttons, the primary
-/// verb is a `DashActionButton` and the rest are `DashTrayPillButton`s.
+/// verb is a `DashActionButton` and the rest are `DashTrayPillButton`s, and the
+/// primary `DashActionButton` stays bottom-most (reversible pills above it).
 struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
   var deleteMessage: String?

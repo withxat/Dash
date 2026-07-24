@@ -93,6 +93,7 @@ struct FeatureCatalogView: View {
         DashListGroupLink(value: .feature(feature)) {
           FeatureRow(feature: feature)
         }
+        .accessibilityIdentifier("feature-\(feature.rawValue)")
       }
     }
   }

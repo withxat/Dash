@@ -96,7 +96,7 @@ final class DemoBackend: URLProtocol {
     Reply(
       status: 400,
       json: #"""
-        {"success":false,"errors":[{"code":10061,"message":"This demo is read-only. Sign in with your own Cloudflare account to make changes."}],"messages":[],"result":null}
+        {"success":false,"errors":[{"code":10061,"message":"This demo is read-only. Return to Home and choose Connect your account to make changes."}],"messages":[],"result":null}
         """#)
   }
 

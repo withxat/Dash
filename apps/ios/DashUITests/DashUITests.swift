@@ -10,22 +10,11 @@ final class DashUITests: XCTestCase {
     app.launch()
   }
 
-  /// Inactive tabs stay mounted; pick the first hittable match so we don't tap
-  /// a covered duplicate from Home while Resources is active.
-  static func hittableButton(in app: XCUIApplication, labelContaining text: String) -> XCUIElement {
-    let matches = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", text)
-    )
-    let deadline = Date().addingTimeInterval(5)
-    while Date() < deadline {
-      let count = matches.count
-      for index in 0..<count {
-        let element = matches.element(boundBy: index)
-        if element.exists && element.isHittable { return element }
-      }
-      RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-    }
-    return matches.firstMatch
+  static func waitForHittable(_ element: XCUIElement, timeout: TimeInterval = 5) -> Bool {
+    let expectation = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND hittable == true"),
+      object: element)
+    return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
   }
 
   func testLaunchesWithDashBrand() {
@@ -36,7 +25,7 @@ final class DashUITests: XCTestCase {
         || app.buttons["Resources"].waitForExistence(timeout: 10))
   }
 
-  func testOnboardingPermissionsUseUniformFullCardActions() {
+  func testOnboardingStartsReadOnlyAndDefersNotifications() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview-onboarding"])
 
@@ -48,7 +37,7 @@ final class DashUITests: XCTestCase {
     let legalFrame = legal.frame
     start.tap()
 
-    XCTAssertTrue(app.staticTexts["Permissions"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Connect safely"].waitForExistence(timeout: 5))
     let connect = app.buttons["Connect Cloudflare"]
     XCTAssertTrue(connect.exists)
     XCTAssertFalse(app.buttons["Review permissions"].exists)
@@ -59,11 +48,22 @@ final class DashUITests: XCTestCase {
       accuracy: 1
     )
 
+    let cloudflare =
+      app.descendants(matching: .any)
+      .matching(identifier: "onboarding-permission-cloudflare")
+      .firstMatch
     let network = app.buttons["onboarding-permission-network"]
-    let notifications = app.buttons["onboarding-permission-notifications"]
+    XCTAssertTrue(cloudflare.waitForExistence(timeout: 5))
     XCTAssertTrue(network.waitForExistence(timeout: 5))
-    XCTAssertTrue(notifications.waitForExistence(timeout: 5))
-    XCTAssertEqual(network.frame.height, notifications.frame.height, accuracy: 1)
+    let readOnlyLabel = NSPredicate(format: "label CONTAINS[c] %@", "Read only first")
+    let readOnlyExpectation = XCTNSPredicateExpectation(
+      predicate: readOnlyLabel,
+      object: cloudflare)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [readOnlyExpectation], timeout: 2),
+      .completed,
+      "Unexpected Cloudflare row label: \(cloudflare.label)")
+    XCTAssertFalse(app.buttons["onboarding-permission-notifications"].exists)
     // Network auto-probes on appear; non-China / simulator settles to Enabled.
     let networkEnabled = network.label.contains("Enabled")
     let networkSettling =
@@ -74,8 +74,6 @@ final class DashUITests: XCTestCase {
       expectation(for: enabled, evaluatedWith: network)
       waitForExpectations(timeout: 10)
     }
-    XCTAssertTrue(notifications.label.contains("Tap to enable"))
-
     let back = app.buttons["onboarding-back"]
     XCTAssertTrue(back.waitForExistence(timeout: 2))
     back.tap()
@@ -119,9 +117,8 @@ final class DashUITests: XCTestCase {
 
     resourcesTab.tap()
 
-    let zonesFeature = Self.hittableButton(in: app, labelContaining: "Domains, DNS")
-    XCTAssertTrue(zonesFeature.waitForExistence(timeout: 5))
-    XCTAssertTrue(zonesFeature.isHittable)
+    let zonesFeature = app.buttons["feature-zones"]
+    XCTAssertTrue(Self.waitForHittable(zonesFeature))
     zonesFeature.tap()
 
     // Feature detail is a system push; the catalog root has no navigation
@@ -144,16 +141,14 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(resources.waitForExistence(timeout: 5))
     resources.tap()
 
-    let workers = Self.hittableButton(in: app, labelContaining: "Deployments, domains")
-    XCTAssertTrue(workers.waitForExistence(timeout: 5))
-    XCTAssertTrue(workers.isHittable)
+    let workers = app.buttons["feature-workers"]
+    XCTAssertTrue(Self.waitForHittable(workers))
     workers.tap()
 
     // Prefer the hittable row on the active stack — inactive tabs can still
     // expose identically labeled elements to XCTest.
-    let worker = Self.hittableButton(in: app, labelContaining: "api-worker")
-    XCTAssertTrue(worker.waitForExistence(timeout: 5))
-    XCTAssertTrue(worker.isHittable)
+    let worker = app.buttons["worker-api-worker"]
+    XCTAssertTrue(Self.waitForHittable(worker))
     worker.tap()
 
     let deployments = app.staticTexts["Deployments"]
@@ -165,8 +160,8 @@ final class DashUITests: XCTestCase {
     let interior = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
     edge.press(forDuration: 0.05, thenDragTo: interior)
 
-    let workerAgain = Self.hittableButton(in: app, labelContaining: "api-worker")
-    XCTAssertTrue(workerAgain.waitForExistence(timeout: 5))
+    let workerAgain = app.buttons["worker-api-worker"]
+    XCTAssertTrue(Self.waitForHittable(workerAgain))
     XCTAssertTrue(deployments.waitForNonExistence(timeout: 2))
 
     // Back to Resources catalog — the untitled catalog root leaves the feature
@@ -303,14 +298,12 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(resources.waitForExistence(timeout: 5))
     resources.tap()
 
-    let workers = Self.hittableButton(in: app, labelContaining: "Deployments, domains")
-    XCTAssertTrue(workers.waitForExistence(timeout: 5))
-    XCTAssertTrue(workers.isHittable)
+    let workers = app.buttons["feature-workers"]
+    XCTAssertTrue(Self.waitForHittable(workers))
     workers.tap()
 
-    let worker = Self.hittableButton(in: app, labelContaining: "api-worker")
-    XCTAssertTrue(worker.waitForExistence(timeout: 5))
-    XCTAssertTrue(worker.isHittable)
+    let worker = app.buttons["worker-api-worker"]
+    XCTAssertTrue(Self.waitForHittable(worker))
     worker.tap()
 
     XCTAssertTrue(app.staticTexts["Deployments"].waitForExistence(timeout: 5))
@@ -335,7 +328,8 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(inbox.waitForExistence(timeout: 5))
     inbox.tap()
     XCTAssertTrue(app.staticTexts["Alerts"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Pending"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Inbox"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["History"].exists)
     XCTAssertTrue(app.buttons["Ignored"].exists)
 
     // Live Dash warnings land in the inbox as normal rows.

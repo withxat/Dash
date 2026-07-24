@@ -439,6 +439,25 @@ public struct RUMPageviewsDay: Codable, Hashable, Sendable {
   }
 }
 
+/// One day of Web Analytics (RUM) beacon metrics for a site, matching the three
+/// headline figures on Cloudflare's Web Analytics dashboard. `pageviews` and
+/// `visits` come from the pageload dataset; `pageLoadTimeP50Ms` is the median
+/// page-load time in milliseconds from the separate performance dataset, and is
+/// `nil` on days that reported no Performance-API timings.
+public struct RUMDailyMetrics: Codable, Hashable, Sendable {
+  public let date: String
+  public let pageviews: Int
+  public let visits: Int
+  public let pageLoadTimeP50Ms: Int?
+
+  public init(date: String, pageviews: Int, visits: Int, pageLoadTimeP50Ms: Int?) {
+    self.date = date
+    self.pageviews = pageviews
+    self.visits = visits
+    self.pageLoadTimeP50Ms = pageLoadTimeP50Ms
+  }
+}
+
 /// Aggregated firewall / WAF activity for a zone over a short window.
 public struct FirewallEventsSummary: Codable, Hashable, Sendable {
   public let hours: Int

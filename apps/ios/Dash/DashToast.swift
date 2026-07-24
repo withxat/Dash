@@ -191,10 +191,12 @@ struct DashToastHost: View {
   }
 }
 
+/// The toast host shares the tray's floating-surface springs — one present /
+/// release / dismiss set for both, defined in `DashTheme.Motion`.
 private enum DashToastMotion {
-  static let present = Animation.spring(response: 0.34, dampingFraction: 0.88, blendDuration: 0.1)
-  static let release = Animation.spring(response: 0.3, dampingFraction: 0.84, blendDuration: 0.1)
-  static let dismiss = Animation.spring(response: 0.26, dampingFraction: 0.94, blendDuration: 0.08)
+  static let present = DashTheme.Motion.present
+  static let release = DashTheme.Motion.release
+  static let dismiss = DashTheme.Motion.dismiss
 }
 
 private struct DashToastCard: View {

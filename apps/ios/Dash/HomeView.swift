@@ -24,6 +24,7 @@ struct HomeView: View {
   @State private var showsEnableUnderAttackMode = false
   @State private var showsEditActions = false
   @State private var showsEditShortcuts = false
+  @State private var showsDemoConnect = false
   /// Scroll probes for `HomeTopWash`. Held in an `@Observable` store this
   /// body never reads — per-frame writes must not re-render the whole Home
   /// (or cancel an in-flight push). Only `HomeTopWash` observes the values.
@@ -42,6 +43,10 @@ struct HomeView: View {
     HomeActions.decode(actionsRaw)
   }
 
+  private var revealOffset: Int {
+    model.isDemoSession ? 1 : 0
+  }
+
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
@@ -57,12 +62,21 @@ struct HomeView: View {
         HomeGreetingHeader()
           .dashSectionReveal(0)
 
+        if model.isDemoSession {
+          HomeDemoExperienceSection(
+            openIssue: { navigator?.push(.watchtowerInbox) },
+            openResource: { navigator?.push(.zone("zone-api")) },
+            connect: { showsDemoConnect = true }
+          )
+          .dashSectionReveal(1)
+        }
+
         HomeQuickActionsSection(
           actions: quickActions,
           perform: perform,
           edit: { showsEditActions = true }
         )
-        .dashSectionReveal(1)
+        .dashSectionReveal(1 + revealOffset)
 
         HomeDomainsSection(
           zones: zones,
@@ -72,18 +86,18 @@ struct HomeView: View {
           showsAddDomain: $showsAddDomain,
           retry: { Task { await loadZones(force: true) } }
         )
-        .dashSectionReveal(2)
+        .dashSectionReveal(2 + revealOffset)
 
         HomeShortcutsSection(features: shortcuts) {
           showsEditShortcuts = true
         }
-        .dashSectionReveal(3)
+        .dashSectionReveal(3 + revealOffset)
 
         if !recents.isEmpty {
           HomeRecentsSection(recents: recents) { resource in
             recentsRaw = RecentResources.recording(resource, in: recentsRaw)
           }
-          .dashSectionReveal(4)
+          .dashSectionReveal(4 + revealOffset)
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
@@ -194,9 +208,17 @@ struct HomeView: View {
     .dashTray(isPresented: $showsEditShortcuts, title: DashL10n.string("Edit shortcuts")) {
       EditShortcutsView(selectionRaw: $shortcutsRaw)
     }
+    .dashTray(isPresented: $showsDemoConnect, title: DashL10n.string("Connect your account")) {
+      HomeDemoConnectContent(connect: leaveDemoForConnection)
+    }
   }
 
   private func perform(_ action: HomeActionID) {
+    guard !model.isDemoSession else {
+      showsDemoConnect = true
+      return
+    }
+
     switch action {
     case .addDomain:
       let scopes = FeatureID.zones.capability.all
@@ -253,6 +275,10 @@ struct HomeView: View {
     case .purgeCache:
       beginPurgeCache()
     }
+  }
+
+  private func leaveDemoForConnection() {
+    Task { await model.signOut() }
   }
 
   private func beginZoneMode(scopes: Set<String>, present: () -> Void) {
@@ -493,6 +519,153 @@ struct HomeGreetingHeader: View {
   }
 }
 
+// MARK: - Demo
+
+private struct HomeDemoExperienceSection: View {
+  let openIssue: () -> Void
+  let openResource: () -> Void
+  let connect: () -> Void
+
+  var body: some View {
+    DashCard {
+      VStack(alignment: .leading, spacing: 16) {
+        HStack(spacing: 12) {
+          VStack(alignment: .leading, spacing: 2) {
+            Text("Demo workspace")
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.strong)
+            Text("A safe sample account")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+          }
+          Spacer(minLength: 8)
+          StatusBadge(text: "Read-only")
+        }
+
+        Text(
+          "Follow one issue from the signal to the affected resource. Changes stay locked until you connect Cloudflare."
+        )
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .fixedSize(horizontal: false, vertical: true)
+
+        VStack(alignment: .leading, spacing: 0) {
+          stepButton(
+            number: "01",
+            title: DashL10n.string("Review the issue"),
+            subtitle: DashL10n.string("Start with the pending domain signal"),
+            action: openIssue
+          )
+
+          DashListGroupDivider()
+
+          stepButton(
+            number: "02",
+            title: DashL10n.string("Inspect the resource"),
+            subtitle: DashL10n.string("Open api.example.net and review its state"),
+            action: openResource
+          )
+
+          DashListGroupDivider()
+
+          stepLabel(
+            number: "03",
+            title: DashL10n.string("Take action"),
+            subtitle: DashL10n.string("Connect your account when you are ready to make changes")
+          )
+        }
+
+        DashPillButton(
+          title: "Connect your account",
+          icon: SolarAsset.cloudflare,
+          action: connect
+        )
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("home-demo-guide")
+  }
+
+  private func stepButton(
+    number: String,
+    title: String,
+    subtitle: String,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      stepLabel(number: number, title: title, subtitle: subtitle, showsChevron: true)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+  }
+
+  private func stepLabel(
+    number: String,
+    title: String,
+    subtitle: String,
+    showsChevron: Bool = false
+  ) -> some View {
+    HStack(spacing: 12) {
+      Text(number)
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.brand)
+        .frame(width: 30, height: 30)
+        .background(DashTheme.infoTint, in: Circle())
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.text)
+        Text(subtitle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      if showsChevron {
+        SolarIcon(
+          asset: SolarAsset.chevronRight,
+          size: DashTheme.Chevron.row,
+          color: DashTheme.faint
+        )
+      }
+    }
+    .padding(.vertical, 10)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+  }
+}
+
+private struct HomeDemoConnectContent: View {
+  @Environment(\.dashTrayDismiss) private var dismiss
+  let connect: () -> Void
+
+  var body: some View {
+    VStack(spacing: 12) {
+      Text(
+        "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.bottom, 4)
+
+      DashPillButton(
+        title: "Return to connect",
+        icon: SolarAsset.cloudflare,
+        action: connect
+      )
+
+      DashSecondaryPillButton(
+        title: "Keep exploring",
+        action: dismiss
+      )
+    }
+  }
+}
+
 // MARK: - Quick actions
 
 private struct HomeQuickActionsSection: View {
@@ -651,7 +824,7 @@ private struct HomeEditSelectionList<Item: Identifiable, Row: View>: View {
   @ViewBuilder let row: (Item) -> Row
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
+    LazyVStack(alignment: .leading, spacing: 0) {
       ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
         row(item)
         if index < items.count - 1 {
@@ -1209,6 +1382,16 @@ private struct HomeActionLoadingRow: View {
 /// Starts a real upload from Home instead of merely opening the R2 catalog.
 /// The last-used bucket/folder is preferred, but the destination stays explicit
 /// and editable so a one-tap shortcut never writes to a surprising bucket.
+private struct HomeR2UploadRequest: Sendable {
+  let context: AccountRequestContext
+  let bucket: String
+  let prefix: String
+  let fileURL: URL
+  let destination: R2ShareDestination
+
+  var key: String { prefix + fileURL.lastPathComponent }
+}
+
 private struct HomeR2UploadSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
@@ -1221,6 +1404,8 @@ private struct HomeR2UploadSheet: View {
   @State private var uploading = false
   @State private var error: String?
   @State private var uploadedMessage: String?
+  @State private var uploadTask: Task<Void, Never>?
+  @State private var uploadGeneration: UInt64 = 0
 
   private var remembered: R2ShareDestination? {
     guard let accountID = model.activeAccountID else { return nil }
@@ -1242,7 +1427,7 @@ private struct HomeR2UploadSheet: View {
     DashFormSheet(
       saveTitle: actionTitle,
       isSaving: uploading,
-      canSave: uploadedMessage != nil || (!loading && !selectedBucket.isEmpty),
+      canSave: !uploading && (uploadedMessage != nil || (!loading && !selectedBucket.isEmpty)),
       onSave: performPrimaryAction
     ) {
       VStack(alignment: .leading, spacing: 14) {
@@ -1307,8 +1492,10 @@ private struct HomeR2UploadSheet: View {
           }
         }
       }
+      .disabled(uploading)
     }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
+      guard !uploading else { return }
       switch result {
       case .success(let url):
         fileURL = url
@@ -1318,6 +1505,7 @@ private struct HomeR2UploadSheet: View {
       }
     }
     .task { await loadBuckets() }
+    .onDisappear { cancelUpload() }
   }
 
   private var destinationText: String {
@@ -1332,25 +1520,28 @@ private struct HomeR2UploadSheet: View {
     } else if fileURL == nil {
       importsFile = true
     } else {
-      Task { await upload() }
+      startUpload()
     }
   }
 
   private func loadBuckets() async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       loading = false
       return
     }
-    let key = FeatureCacheKey.r2Buckets(accountID)
+    let key = FeatureCacheKey.r2Buckets(context.accountID)
     if let cached: [R2Bucket] = model.featureCache.get(key) {
+      guard model.isCurrentAccount(context) else { return }
       applyBuckets(cached)
       return
     }
     do {
-      let loaded = try await model.client.listR2Buckets(accountID: accountID)
+      let loaded = try await model.client.listR2Buckets(accountID: context.accountID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.featureCache.set(key, loaded)
       applyBuckets(loaded)
     } catch {
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       loading = false
     }
@@ -1364,58 +1555,107 @@ private struct HomeR2UploadSheet: View {
     loading = false
   }
 
-  private func upload() async {
-    guard let accountID = model.activeAccountID,
+  private func startUpload() {
+    guard let context = model.accountRequestContext,
       let fileURL,
       !selectedBucket.isEmpty
     else { return }
+    let bucket = selectedBucket
+    let prefix = destinationPrefix
+    let rememberedDestination = R2ShareDestination.destination(accountID: context.accountID)
+    let destination = R2ShareDestination(
+      accountID: context.accountID,
+      bucket: bucket,
+      prefix: prefix,
+      publicHost: rememberedDestination?.bucket == bucket
+        ? rememberedDestination?.publicHost ?? ""
+        : ""
+    )
+    let request = HomeR2UploadRequest(
+      context: context,
+      bucket: bucket,
+      prefix: prefix,
+      fileURL: fileURL,
+      destination: destination)
+
+    uploadTask?.cancel()
+    uploadGeneration &+= 1
+    let generation = uploadGeneration
     uploading = true
     error = nil
-    defer { uploading = false }
+    uploadTask = Task { await upload(request, generation: generation) }
+  }
 
+  private func upload(_ request: HomeR2UploadRequest, generation: UInt64) async {
+    defer { finishUpload(generation: generation) }
     do {
-      let access = fileURL.startAccessingSecurityScopedResource()
-      defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
-      guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+      guard isCurrentUpload(generation, context: request.context) else { return }
+      let access = request.fileURL.startAccessingSecurityScopedResource()
+      defer {
+        if access {
+          request.fileURL.stopAccessingSecurityScopedResource()
+        }
+      }
+      guard
+        let size = try? request.fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+      else {
         throw HomeR2UploadError.unreadableFile
       }
       guard size <= R2Media.transferSizeLimit else {
-        throw HomeR2UploadError.fileTooLarge(fileURL.lastPathComponent, size)
+        throw HomeR2UploadError.fileTooLarge(request.fileURL.lastPathComponent, size)
       }
-      let readTask = Task.detached(priority: .userInitiated) {
-        try Task.checkCancellation()
-        return try Data(contentsOf: fileURL)
-      }
-      let data = try await readTask.value
-      let key = destinationPrefix + fileURL.lastPathComponent
+      try Task.checkCancellation()
       try await model.client.putR2Object(
-        accountID: accountID,
-        bucket: selectedBucket,
-        key: key,
-        data: data,
-        contentType: UTType(filenameExtension: fileURL.pathExtension)?.preferredMIMEType
+        accountID: request.context.accountID,
+        bucket: request.bucket,
+        key: request.key,
+        fileURL: request.fileURL,
+        contentType: UTType(filenameExtension: request.fileURL.pathExtension)?.preferredMIMEType
       )
+      guard isCurrentUpload(generation, context: request.context) else { return }
       model.featureCache.remove(
-        prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: selectedBucket))
+        prefix: FeatureCacheKey.r2ObjectsPrefix(
+          accountID: request.context.accountID,
+          bucket: request.bucket))
       let domains: R2DomainsSnapshot? = model.featureCache.get(
-        FeatureCacheKey.r2Domains(accountID: accountID, bucket: selectedBucket))
-      R2ShareDestination.record(
-        R2ShareDestination(
-          accountID: accountID,
-          bucket: selectedBucket,
-          prefix: destinationPrefix,
-          publicHost: domains?.publicHost
-            ?? (remembered?.bucket == selectedBucket ? remembered?.publicHost : nil) ?? ""
-        ))
-      onUploaded(selectedBucket)
+        FeatureCacheKey.r2Domains(
+          accountID: request.context.accountID,
+          bucket: request.bucket))
+      var destination = request.destination
+      destination.publicHost = domains?.publicHost ?? destination.publicHost
+      R2ShareDestination.record(destination)
+      onUploaded(request.bucket)
       let message = DashL10n.string(
-        "Uploaded \(fileURL.lastPathComponent) to \(selectedBucket).")
+        "Uploaded \(request.fileURL.lastPathComponent) to \(request.bucket).")
       uploadedMessage = message
       model.toasts.success(message)
     } catch {
+      guard isCurrentUpload(generation, context: request.context) else { return }
       self.error = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func isCurrentUpload(
+    _ generation: UInt64,
+    context: AccountRequestContext
+  ) -> Bool {
+    !Task.isCancelled
+      && uploadGeneration == generation
+      && model.isCurrentAccount(context)
+  }
+
+  private func finishUpload(generation: UInt64) {
+    guard uploadGeneration == generation else { return }
+    uploadTask = nil
+    uploading = false
+  }
+
+  private func cancelUpload() {
+    uploadGeneration &+= 1
+    uploadTask?.cancel()
+    uploadTask = nil
+    uploading = false
   }
 }
 

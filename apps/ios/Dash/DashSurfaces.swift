@@ -1,0 +1,1267 @@
+import CloudflareAPI
+import GradientAvatars
+import SwiftDitherKit
+import SwiftUI
+import UIKit
+
+extension View {
+  /// Gives a single item its own card. Catalog lists deliberately do NOT use
+  /// this — they stay bare rows on the canvas, with colour living on the icon
+  /// tile. Reserved for tiles and the rare vivid hero card.
+  func dashListItemCard(fill: Color = DashTheme.recessed) -> some View {
+    padding(.horizontal, DashTheme.Spacing.itemCardInset)
+      .background(
+        fill,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+  }
+
+  func dashCompactHitTarget() -> some View {
+    frame(
+      minWidth: DashTheme.Layout.minimumHitTarget,
+      minHeight: DashTheme.Layout.minimumHitTarget
+    )
+    .contentShape(Rectangle())
+  }
+
+  /// Widens the tappable area without forcing a 44pt height — section-header
+  /// actions must stay as tall as the title line (unlike `dashCompactHitTarget`,
+  /// which stretches Home Shortcuts above Recently used).
+  func dashHeaderActionHitTarget() -> some View {
+    frame(minWidth: DashTheme.Layout.minimumHitTarget, alignment: .trailing)
+      .contentShape(Rectangle())
+  }
+
+  /// Applies a shared shadow-as-border treatment. Prefer this over ad-hoc
+  /// `.shadow` stacks or `DashTheme.line` strokes on elevated surfaces.
+  func dashShadow(
+    _ style: DashTheme.Shadow = .border,
+    cornerRadius: CGFloat = DashTheme.Radius.card
+  ) -> some View {
+    modifier(
+      DashShadowModifier(
+        style: style,
+        shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+    )
+  }
+
+  func dashShadow<S: InsettableShape>(
+    _ style: DashTheme.Shadow,
+    in shape: S
+  ) -> some View {
+    modifier(DashShadowModifier(style: style, shape: shape))
+  }
+}
+
+/// A flat 1pt ring that defines an elevated surface's edge — `color-kumo-shadow-edge`
+/// (pure black/white at token opacity), never a tinted hairline. Drop shadows
+/// were removed project-wide, so `.border` and `.raised` render identically.
+private struct DashShadowModifier<S: InsettableShape>: ViewModifier {
+  let style: DashTheme.Shadow
+  let shape: S
+  @Environment(\.colorScheme) private var colorScheme
+
+  func body(content: Content) -> some View {
+    content.overlay {
+      shape.strokeBorder(
+        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.12),
+        lineWidth: 1)
+    }
+  }
+}
+
+extension View {
+  /// Tactile tile treatment — the sanctioned exception to the flat system,
+  /// used by Home quick-action tiles and Domain color cards. Light-from-above
+  /// modeling with neutral overlays only, so the surface's own color never
+  /// shifts hue: a bevel ring (lit top edge, weighted bottom), a whisper of
+  /// face sheen, and a soft two-layer drop shadow. Dark mode leans on the
+  /// rim light instead — shadows can't read against the near-black canvas.
+  ///
+  /// Pass `.pigmented` for saturated fills (Domain cards): the face needs a
+  /// soft top specular so the enamel reads on dark greens/indigos where a
+  /// black-only bevel would disappear.
+  ///
+  /// Press sink (`dashSurfacePressed`) offsets the **visual** stack 1pt down
+  /// while the layout/hit target stays fixed — translating the Button label
+  /// under the finger cancels quick taps. Implemented as a `View` (not a
+  /// `ViewModifier` that reuses `Content` twice) so press-driven invalidation
+  /// actually rebuilds the sinking face. The sink only engages under a
+  /// `DashSurfaceButtonStyle` host (Domain cards); Home quick-action tiles
+  /// press with the whole-tile `DashPressButtonStyle` shrink instead.
+  func dashEmbossed(
+    _ style: DashEmbossStyle = .tile,
+    cornerRadius: CGFloat = DashTheme.Radius.card
+  ) -> some View {
+    DashEmbossedContainer(
+      style: style,
+      shape: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    ) { self }
+  }
+
+  /// Capsule emboss for primary action pills — same enamel as Domain cards.
+  func dashEmbossedPill(_ style: DashEmbossStyle = .pigmented) -> some View {
+    DashEmbossedContainer(
+      style: style,
+      shape: Capsule(style: .continuous)
+    ) { self }
+  }
+
+  /// Bevel / sheen / drop shadow only — no press-sink duplicate. Use when the
+  /// view already owns its hit target (`DashPressButtonStyle`, hold gesture)
+  /// or carries a `matchedGeometryEffect` that must stay single-instance.
+  func dashEmbossChrome<S: InsettableShape>(
+    _ style: DashEmbossStyle = .tile,
+    shape: S
+  ) -> some View {
+    modifier(DashEmbossChromeModifier(style: style, shape: shape))
+  }
+}
+
+enum DashEmbossStyle: Hashable, Sendable {
+  /// Neutral Home tool tiles.
+  case tile
+  /// Saturated Domain color cards — stronger top light, softer bottom weight.
+  case pigmented
+}
+
+/// Shared enamel stops for `dashEmbossed` / `dashEmbossChrome`.
+private enum DashEmbossPalette {
+  static func sinkDimOpacity(dark: Bool, pigmented: Bool) -> Double {
+    if pigmented { return dark ? 0.12 : 0.06 }
+    return dark ? 0.18 : 0.08
+  }
+
+  static func faceSheenColors(dark: Bool, pigmented: Bool) -> [Color] {
+    if pigmented {
+      return dark
+        ? [Color.white.opacity(0.12), Color.white.opacity(0.02), Color.black.opacity(0.10)]
+        : [Color.white.opacity(0.18), Color.white.opacity(0.04), Color.black.opacity(0.08)]
+    }
+    return dark
+      ? [Color.white.opacity(0.06), Color.white.opacity(0)]
+      : [Color.white.opacity(0), Color.black.opacity(0.03)]
+  }
+
+  static func bevelColors(dark: Bool, pigmented: Bool) -> [Color] {
+    if pigmented {
+      // White rim on top so dark fills still catch a lit edge; bottom stays
+      // grounded with a deeper neutral stroke.
+      return dark
+        ? [Color.white.opacity(0.28), Color.white.opacity(0.06)]
+        : [Color.white.opacity(0.28), Color.black.opacity(0.18)]
+    }
+    return dark
+      ? [Color.white.opacity(0.22), Color.white.opacity(0.05)]
+      : [Color.black.opacity(0.05), Color.black.opacity(0.16)]
+  }
+}
+
+/// Emboss + press sink. Built as a `View` so the content closure is invoked
+/// fresh for the hit plate and the visual face — reusing a `ViewModifier`'s
+/// `Content` value twice left the sinking copy stale when
+/// `dashSurfacePressed` flipped (tray still opened; press looked dead).
+private struct DashEmbossedContainer<Content: View, S: InsettableShape>: View {
+  let style: DashEmbossStyle
+  let shape: S
+  @ViewBuilder var content: () -> Content
+
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.dashSurfacePressed) private var pressed
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    let dark = colorScheme == .dark
+    let pigmented = style == .pigmented
+    let sink = pressed && !reduceMotion ? CGFloat(1) : 0
+
+    // Unmoved layout + hit target; only the visual copy sinks on press.
+    ZStack {
+      content()
+        .opacity(0)
+
+      embossedFace(dark: dark, pigmented: pigmented)
+        .offset(y: sink)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    .contentShape(shape)
+    .animation(reduceMotion ? nil : DashTheme.Motion.press, value: pressed)
+    .onChange(of: pressed) { _, isPressed in
+      if isPressed { DashDelight.lightImpact() }
+    }
+  }
+
+  @ViewBuilder
+  private func embossedFace(dark: Bool, pigmented: Bool) -> some View {
+    content()
+      .overlay {
+        // Face sheen: light grazes the top. Pigmented cards add a soft
+        // enamel specular; neutral tiles keep the quieter bottom weight.
+        shape
+          .fill(
+            LinearGradient(
+              colors: DashEmbossPalette.faceSheenColors(dark: dark, pigmented: pigmented),
+              startPoint: .top, endPoint: .bottom)
+          )
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        // Sink dim: less light reaches a pressed face. Tiles need a stronger
+        // dim than pigmented cards — white Home chrome eats a 4% wash.
+        shape
+          .fill(
+            Color.black.opacity(
+              pressed ? DashEmbossPalette.sinkDimOpacity(dark: dark, pigmented: pigmented) : 0)
+          )
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        // Bevel ring: same neutral ink as `dashShadow`, redistributed so the
+        // top edge reads lit and the bottom edge grounded.
+        shape.strokeBorder(
+          LinearGradient(
+            colors: DashEmbossPalette.bevelColors(dark: dark, pigmented: pigmented),
+            startPoint: .top, endPoint: .bottom),
+          lineWidth: 1)
+      }
+      .shadow(color: .black.opacity(dark ? 0.4 : 0.05), radius: 1, y: 1)
+      // Pressing sinks optically: 1pt downward shift (visual layer only),
+      // tighter ambient shadow, and face dim — see `body` for hit testing.
+      .shadow(
+        color: .black.opacity(dark ? 0.3 : (pigmented ? 0.10 : 0.07)),
+        radius: pressed ? 3 : (pigmented ? 10 : 8),
+        y: pressed ? 1 : (pigmented ? 5 : 4)
+      )
+  }
+}
+
+/// Static enamel chrome (sheen + bevel + shadows) without duplicating content.
+private struct DashEmbossChromeModifier<S: InsettableShape>: ViewModifier {
+  let style: DashEmbossStyle
+  let shape: S
+  @Environment(\.colorScheme) private var colorScheme
+
+  func body(content: Content) -> some View {
+    let dark = colorScheme == .dark
+    let pigmented = style == .pigmented
+    content
+      .overlay {
+        shape
+          .fill(
+            LinearGradient(
+              colors: DashEmbossPalette.faceSheenColors(dark: dark, pigmented: pigmented),
+              startPoint: .top, endPoint: .bottom)
+          )
+          .allowsHitTesting(false)
+      }
+      .overlay {
+        shape.strokeBorder(
+          LinearGradient(
+            colors: DashEmbossPalette.bevelColors(dark: dark, pigmented: pigmented),
+            startPoint: .top, endPoint: .bottom),
+          lineWidth: 1)
+      }
+      .shadow(color: .black.opacity(dark ? 0.4 : 0.05), radius: 1, y: 1)
+      .shadow(
+        color: .black.opacity(dark ? 0.3 : (pigmented ? 0.10 : 0.07)),
+        radius: pigmented ? 10 : 8,
+        y: pigmented ? 5 : 4
+      )
+  }
+}
+
+struct DashCard<Content: View>: View {
+  private let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) { content }
+      .padding(DashTheme.Spacing.card)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        DashTheme.recessed,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+      )
+      .dashShadow(.border)
+  }
+}
+
+/// Stats / analytics surface — same embossed `homeCardSurface` enamel as Home
+/// quick-action tiles (not Liquid Glass).
+///
+/// Use for metric tiles and chart cards only. Keep ordinary content cards on
+/// `DashCard` so the rest of the app stays an opaque recessed system.
+struct DashGlassCard<Content: View>: View {
+  private let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) { content }
+      .padding(DashTheme.Spacing.card)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(DashTheme.homeCardSurface, in: shape)
+      .dashEmbossChrome(shape: shape)
+  }
+}
+
+/// A small, bounded stack of independent cards, controls, or notices.
+///
+/// `DashFeatureList` keeps its outer lazy stack at zero spacing so large
+/// `ForEach` row collections stay virtualized. Use this wrapper for page chrome
+/// that should read as separate surfaces instead of adding one-off padding to
+/// every child. Never wrap an unbounded resource list here.
+struct DashSurfaceStack<Content: View>: View {
+  private let content: Content
+
+  init(@ViewBuilder content: () -> Content) {
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+      content
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A colored surface with the app's static Metal grain. Keeping the shader on
+/// the background prevents it from changing text and icon rendering.
+struct DashGrainSurface: View {
+  enum ShapeStyle: Hashable, Sendable {
+    case rounded(CGFloat)
+    case capsule
+  }
+
+  let color: Color
+  var shape: ShapeStyle
+  var intensity: Float = 0.04
+
+  init(color: Color, cornerRadius: CGFloat, intensity: Float = 0.04) {
+    self.color = color
+    self.shape = .rounded(cornerRadius)
+    self.intensity = intensity
+  }
+
+  init(color: Color, shape: ShapeStyle, intensity: Float = 0.04) {
+    self.color = color
+    self.shape = shape
+    self.intensity = intensity
+  }
+
+  var body: some View {
+    switch shape {
+    case .rounded(let cornerRadius):
+      RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .fill(color)
+        .colorEffect(ShaderLibrary.surfaceGrain(.float(intensity)))
+    case .capsule:
+      Capsule(style: .continuous)
+        .fill(color)
+        .colorEffect(ShaderLibrary.surfaceGrain(.float(intensity)))
+    }
+  }
+}
+
+/// Home quick action card: a card-surface rounded rect with a faint fill icon
+/// and a quiet caption below — no badge circle around the glyph.
+struct DashToolTile: View {
+  let title: String
+  let icon: String
+
+  var body: some View {
+    VStack(spacing: DashTheme.Spacing.compact) {
+      SolarIcon(asset: icon, size: 24, color: DashTheme.homeCardGlyph)
+      Text(title)
+        .dashTextStyle(.supportingMedium)
+        .foregroundStyle(DashTheme.text)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+    }
+    .padding(DashTheme.Spacing.card)
+    .frame(maxWidth: .infinity, minHeight: 96)
+    .background(
+      DashTheme.homeCardSurface,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+    )
+    .dashEmbossed()
+  }
+}
+
+/// Tool-tile grid that reflows with available width — typically two-up on
+/// iPhone, kept usable down to 320pt Display Zoom windows.
+struct DashTileGrid<Content: View>: View {
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 12)], spacing: 12) {
+      content()
+    }
+  }
+}
+
+/// Opens a destination on the enclosing tab's navigation stack.
+struct DashListGroupLink<Label: View>: View {
+  let value: Destination
+  var onNavigate: (() -> Void)?
+  @ViewBuilder let label: () -> Label
+
+  var body: some View {
+    DestinationLink(destination: value, onNavigate: onNavigate, label: label)
+  }
+}
+
+/// Routes `Destination` values through the tab navigation stack.
+struct DashDestinationLink<Label: View>: View {
+  let destination: Destination
+  @ViewBuilder let label: () -> Label
+
+  var body: some View {
+    DestinationLink(destination: destination, label: label)
+      .listRowSeparator(.hidden)
+      .listSectionSeparator(.hidden)
+  }
+}
+
+struct DashListGroupDivider: View {
+  var body: some View {
+    Divider().overlay(DashTheme.panelLine)
+  }
+}
+
+/// Horizontal inset for a single feature-list row. Applied per row (or to a
+/// single `ForEach`) so an outer `LazyVStack` can still virtualize.
+/// `nonisolated` like SwiftUI's own modifiers so nonisolated `@ViewBuilder`
+/// helpers (`dashListCardRows`) can apply it inside their `ForEach` closure.
+extension View {
+  nonisolated func dashListCardInset() -> some View {
+    padding(.horizontal, DashTheme.Spacing.rowInset)
+      .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// Separates a new titled section from the card, control, or list above it.
+  /// `DashFeatureList` keeps its outer lazy stack at zero spacing so bare
+  /// `ForEach` rows remain virtualized; section boundaries opt into rhythm
+  /// explicitly instead of accidentally gapping every row.
+  nonisolated func dashSectionBoundary(_ isEnabled: Bool = true) -> some View {
+    padding(.top, isEnabled ? DashTheme.Spacing.section : 0)
+  }
+
+  /// Separates adjacent independent surfaces inside a section. Use the larger
+  /// `dashSectionBoundary` when the following view starts a titled section.
+  nonisolated func dashItemBoundary(_ isEnabled: Bool = true) -> some View {
+    padding(.top, isEnabled ? DashTheme.Spacing.itemGap : 0)
+  }
+}
+
+/// Home/Resources-style list group without a section title. Bare rows on the
+/// canvas — no fill, no separators; the row's own padding carries the rhythm.
+///
+/// A `@ViewBuilder` passthrough — not a `View` wrapping `VStack` — so `ForEach`
+/// children stay `LazyVStack`-virtualizable. The old eager stack mounted every
+/// DNS/KV/R2 row at once and stampeded row work (including R2 thumbnails).
+/// Row inset lives on each row (`dashListCardRows` / `dashListCardInset`), never
+/// on this wrapper: padding a `TupleView` would re-eagerize the list.
+@ViewBuilder
+func dashListCard<Content: View>(
+  @ViewBuilder content: () -> Content
+) -> some View {
+  content()
+}
+
+/// Emits a `ForEach` of rows directly (a function, not an opaque `View`
+/// wrapper) so feature lists inside `DashFeatureList`'s `LazyVStack` only build
+/// onscreen rows. Defaults to the card row inset; pass `inset: false` when the
+/// parent (`DashListGroup`) already supplies it.
+@ViewBuilder
+func dashListCardRows<Item: Identifiable, Row: View>(
+  items: [Item],
+  inset: Bool = true,
+  @ViewBuilder row: @escaping (Item) -> Row
+) -> some View {
+  ForEach(Array(items.enumerated()), id: \.element.id) { _, item in
+    if inset {
+      row(item)
+        .dashListCardInset()
+    } else {
+      row(item)
+    }
+  }
+}
+
+/// Feature drill-down shell: fixed chrome above scrollable content.
+struct DashFeatureScreen<Chrome: View, Content: View>: View {
+  @ViewBuilder var chrome: () -> Chrome
+  @ViewBuilder var content: () -> Content
+
+  init(
+    @ViewBuilder chrome: @escaping () -> Chrome,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.chrome = chrome
+    self.content = content
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      chrome()
+        .padding(.horizontal, DashTheme.Spacing.screen)
+      // Bound the scroll slot to the remaining height. Without this, ScrollView
+      // reports its full content height inside the VStack, the stack grows past
+      // the screen, and the list clips instead of scrolling.
+      content()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .background(DashTheme.canvas)
+  }
+}
+
+extension DashFeatureScreen where Chrome == EmptyView {
+  init(@ViewBuilder content: @escaping () -> Content) {
+    self.init(chrome: { EmptyView() }, content: content)
+  }
+}
+
+/// What a feature list should render for a given load/error/content state.
+///
+/// Loading contract (lists):
+/// - **Cold** (`loading`): no cached primary payload → `DashListSkeleton` only.
+///   Never paint an empty shell with “Updating…”.
+/// - **Warm** (`content` + `refreshing`): rows/shell already visible → keep
+///   content and show the inline “Updating…” strip (and optional error banner).
+/// - **Empty settled** (`content`, not refreshing, zero items): `DashEmptyState`
+///   inside `content`, not a separate phase.
+/// - **Section cold** (not this enum): secondary fetches inside an already-loaded
+///   detail (build log, traffic chart, preview) may use a local ring + short copy.
+///
+/// Cache-first: when `hasContent` is true, refresh never returns to Cold.
+enum DashListPhase: Equatable {
+  case loading
+  case fullScreenError(String)
+  case content(banner: String?, refreshing: Bool)
+
+  static func resolve(isLoading: Bool, error: String?, hasContent: Bool) -> DashListPhase {
+    if hasContent {
+      return .content(banner: error, refreshing: isLoading)
+    }
+    if isLoading { return .loading }
+    if let error { return .fullScreenError(error) }
+    return .content(banner: nil, refreshing: false)
+  }
+}
+
+/// Shared feature list: loading/error slots, grouped list chrome.
+struct DashFeatureList<Header: View, Content: View>: View {
+  var isLoading: Bool = false
+  var error: String?
+  var hasContent: Bool = false
+  var retry: () -> Void
+  @ViewBuilder var header: () -> Header
+  @ViewBuilder var content: () -> Content
+  @Environment(AppModel.self) private var model
+  @Environment(\.featureRequiredScopes) private var featureRequiredScopes
+
+  init(
+    isLoading: Bool = false,
+    error: String? = nil,
+    hasContent: Bool = false,
+    retry: @escaping () -> Void = {},
+    @ViewBuilder header: @escaping () -> Header,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.isLoading = isLoading
+    self.error = error
+    self.hasContent = hasContent
+    self.retry = retry
+    self.header = header
+    self.content = content
+  }
+
+  var body: some View {
+    DashFeatureScreen(chrome: header) {
+      ScrollView {
+        // Spacing must stay 0: `dashListCardRows` flattens its ForEach into this
+        // stack so rows stay lazy. Section spacing here would gap every row
+        // (Workers/Pages looked sparse vs Resources' DashListGroup VStack(0)).
+        // Pad chrome blocks (Updating… / error banner) explicitly instead.
+        LazyVStack(spacing: 0) {
+          switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
+          case .loading:
+            DashListSkeleton()
+          case .fullScreenError(let message):
+            ErrorStateView(message: message, retry: retry)
+          case .content(let banner, let refreshing):
+            if refreshing {
+              HStack(spacing: DashTheme.Spacing.compact) {
+                DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+                Text("Updating…")
+                  .dashTextStyle(.footnote)
+                  .foregroundStyle(DashTheme.subtle)
+                Spacer(minLength: 0)
+              }
+              .accessibilityElement(children: .combine)
+              .accessibilityLabel("Updating")
+              .padding(.bottom, DashTheme.Spacing.itemGap)
+            }
+            if let banner {
+              failureBanner(banner)
+                .padding(.bottom, DashTheme.Spacing.itemGap)
+            }
+            // No entrance reveal here: pushed feature screens arrive via the
+            // navigation transition; content should simply be there.
+            content()
+          }
+        }
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        // This gap belongs to the scroll content. Putting it on
+        // DashFeatureScreen turns it into fixed header chrome.
+        .padding(.top, DashTheme.Spacing.section)
+        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
+      }
+      .scrollDismissesKeyboard(.interactively)
+      .modifier(DashScrollEdgeEffectsHidden())
+    }
+  }
+
+  @ViewBuilder
+  private func failureBanner(_ message: String) -> some View {
+    let presentation = DashFailurePresentation.from(message: message)
+    VStack(alignment: .leading, spacing: DashTheme.Spacing.compact) {
+      DashNotice(kind: .error, message: presentation.message)
+      DashSecondaryPillButton(title: presentation.action.title) {
+        switch presentation.action {
+        case .signInAgain:
+          Task { await model.signOut() }
+        case .grantAccess:
+          model.requestAccess(
+            to: featureRequiredScopes.isEmpty
+              ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
+        case .tryAgain:
+          retry()
+        }
+      }
+    }
+  }
+}
+
+extension DashFeatureList where Header == EmptyView {
+  init(
+    isLoading: Bool = false,
+    error: String? = nil,
+    hasContent: Bool = false,
+    retry: @escaping () -> Void = {},
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      isLoading: isLoading,
+      error: error,
+      hasContent: hasContent,
+      retry: retry,
+      header: { EmptyView() },
+      content: content
+    )
+  }
+}
+
+struct DashListGroup<Content: View>: View {
+  let title: String
+  var actionTitle: String?
+  var actionIcon: String?
+  var action: (() -> Void)?
+  private let content: Content
+
+  init(
+    title: String, actionTitle: String? = nil, actionIcon: String? = nil,
+    action: (() -> Void)? = nil,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.title = title
+    self.actionTitle = actionTitle
+    self.actionIcon = actionIcon
+    self.action = action
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      DashListGroupHeader(
+        title: DashL10n.ui(title),
+        actionTitle: DashL10n.ui(actionTitle),
+        actionIcon: actionIcon,
+        action: action
+      )
+      .padding(.horizontal, 4)
+
+      // Bare rows on the canvas — no fill, no separators. Rows inset to match
+      // the title above them, so the group reads as one column.
+      VStack(alignment: .leading, spacing: 0) { content }
+        .padding(.horizontal, DashTheme.Spacing.rowInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+}
+
+/// The title row of a `DashListGroup`. Shared so cards that paint their own
+/// header band (Home Shortcuts) keep the exact title and action styling.
+struct DashListGroupHeader: View {
+  let title: String
+  var actionTitle: String?
+  var actionIcon: String?
+  var action: (() -> Void)?
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Text(title)
+        .dashTextStyle(.supportingMedium)
+        .foregroundStyle(DashTheme.listGroupTitle)
+      Spacer(minLength: 0)
+      if let action {
+        Group {
+          if let actionIcon {
+            Button(action: action) {
+              SolarIcon(asset: actionIcon, size: 16, color: DashTheme.brand)
+            }
+            .buttonStyle(DashPressButtonStyle())
+            .accessibilityLabel(actionTitle ?? DashL10n.ui("Edit"))
+            // Expand the tap target without `dashCompactHitTarget()`'s
+            // minHeight: 44 — that stretched this header past title-only
+            // groups (e.g. Home Shortcuts vs Recently used).
+            .dashHeaderActionHitTarget()
+          } else if let actionTitle {
+            Button(actionTitle, action: action)
+              .dashTextStyle(.supportingMedium)
+              .foregroundStyle(DashTheme.brand)
+              .buttonStyle(DashPressButtonStyle())
+              .dashHeaderActionHitTarget()
+          }
+        }
+      }
+    }
+  }
+}
+
+/// Two-tone bordered group (the short-lived `WatchtowerListGroup` framing):
+/// the title rides an elevated plate, and the rows sit in their own rounded,
+/// ring-edged card seated flush inside it — the inner card's top ring is the
+/// hairline under the header, so its rounded corners peek out of the band.
+/// The inner card overhangs the plate's clip by 1pt on the sides and bottom,
+/// trimming its ring there so the plate's own ring edges the group. Reserved
+/// for Home's Shortcuts and Recently used cards; plain `DashListGroup` stays
+/// bandless.
+struct DashBorderedListGroup<Content: View>: View {
+  let title: String
+  var actionTitle: String?
+  var actionIcon: String?
+  var action: (() -> Void)?
+  private let content: Content
+
+  init(
+    title: String, actionTitle: String? = nil, actionIcon: String? = nil,
+    action: (() -> Void)? = nil,
+    @ViewBuilder content: () -> Content
+  ) {
+    self.title = title
+    self.actionTitle = actionTitle
+    self.actionIcon = actionIcon
+    self.action = action
+    self.content = content()
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      DashListGroupHeader(
+        title: DashL10n.ui(title),
+        actionTitle: DashL10n.ui(actionTitle),
+        actionIcon: actionIcon,
+        action: action
+      )
+      .padding(.horizontal, 16)
+      .padding(.vertical, 12)
+
+      VStack(alignment: .leading, spacing: 0) { content }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DashTheme.homeCardSurface)
+        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+        .dashShadow(.border)
+        .padding(.horizontal, -1)
+        .padding(.bottom, -1)
+    }
+    .background(DashTheme.listGroupHeaderSurface)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    .dashShadow(.border)
+  }
+}
+
+struct CatalogFeatureIcon: View {
+  enum Style {
+    case fill
+    case outline
+  }
+
+  enum Size {
+    case list
+    case shortcut
+    case compact
+    case hero
+  }
+
+  let feature: FeatureID
+  var style: Style = .fill
+  var size: Size = .list
+  /// When true, uses vivid tone (pinned/hero). Catalog lists stay muted.
+  var emphasized: Bool = false
+  /// Sitting on a card already filled with the feature's tone: the glyph flips
+  /// to the on-card color and drops its background.
+  var onColor: Bool = false
+  @ScaledMetric(relativeTo: .body) private var listGlyphScale: CGFloat = 1
+  @ScaledMetric(relativeTo: .body) private var listTileScale: CGFloat = 1
+
+  private var tone: Color {
+    let identity = FeatureVisualIdentity.tone(for: feature)
+    if onColor {
+      return FeatureVisualIdentity.onCardColor(for: feature)
+    }
+    if emphasized || size == .hero {
+      return identity.vivid
+    }
+    return identity.muted
+  }
+
+  private var assetName: String {
+    switch style {
+    case .fill: feature.solarFillAssetName
+    case .outline: feature.solarOutlineAssetName
+    }
+  }
+
+  private var scaleClamp: CGFloat {
+    min(max(listGlyphScale, 1), 1.3)
+  }
+
+  private var glyphSize: CGFloat {
+    let base: CGFloat =
+      switch size {
+      case .list: 24
+      case .shortcut: 20
+      // Matches bare `SolarIcon` glyphs in `DetailIconView`.
+      case .compact: 20
+      case .hero: 36
+      }
+    return size == .list || size == .shortcut ? base * scaleClamp : base
+  }
+
+  private var tileSize: CGFloat {
+    let base: CGFloat =
+      switch size {
+      // Shared catalog tile: tighter circle, glyph size unchanged (24 for
+      // `.list`, 20 for `.shortcut`). Applies everywhere this size is used —
+      // Home Shortcuts, Resources, feature rows, workspace heroes.
+      case .list: 36
+      case .shortcut: 32
+      // Detail-header glyphs stay bare — no plate behind them.
+      case .compact: 20
+      case .hero: 56
+      }
+    return size == .list || size == .shortcut
+      ? base * min(max(listTileScale, 1), 1.3) : base
+  }
+
+  /// List/shortcut/hero tiles keep the soft tone circle; detail headers
+  /// (`.compact`) and on-card glyphs stay bare.
+  private var showsPlate: Bool {
+    !onColor && size != .compact
+  }
+
+  var body: some View {
+    Image(assetName)
+      .resizable()
+      .renderingMode(.template)
+      .scaledToFit()
+      .foregroundStyle(tone)
+      .frame(width: glyphSize, height: glyphSize)
+      .frame(
+        width: tileSize, height: tileSize,
+        alignment: showsPlate ? .center : .leading
+      )
+      .background(
+        showsPlate
+          ? tone.opacity(emphasized || size == .hero ? 0.16 : 0.1)
+          : Color.clear,
+        in: Circle()
+      )
+      .accessibilityHidden(true)
+  }
+}
+
+struct StatusBadge: View {
+  let text: String
+
+  enum Presentation: Equatable {
+    /// Quiet trailing label or check — never a colored capsule.
+    case quiet
+    /// Capsule reserved for warnings, critical states, and access limits.
+    case capsule
+  }
+
+  static func presentation(for text: String) -> Presentation {
+    let value = text.lowercased()
+    if ["active", "ok", "healthy", "success"].contains(value) {
+      return .quiet
+    }
+    return .capsule
+  }
+
+  private var colors: (foreground: Color, background: Color) {
+    let value = text.lowercased()
+    if ["active", "ok", "healthy", "success"].contains(value) {
+      return (DashTheme.success, DashTheme.successTint)
+    }
+    if ["warning", "pending", "degraded", "read-only", "locked"].contains(value) {
+      return (DashTheme.warning, DashTheme.warningTint)
+    }
+    if ["error", "failed", "critical", "inactive"].contains(value) {
+      return (DashTheme.danger, DashTheme.dangerTint)
+    }
+    return (DashTheme.brand, DashTheme.infoTint)
+  }
+
+  var body: some View {
+    Group {
+      switch Self.presentation(for: text) {
+      case .quiet:
+        HStack(spacing: 4) {
+          Image(systemName: "checkmark.circle.fill")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(colors.foreground)
+          Text(displayedText)
+            .dashTextStyle(.captionSemibold)
+            .foregroundStyle(colors.foreground)
+            .lineLimit(1)
+        }
+      case .capsule:
+        Text(displayedText)
+          .dashTextStyle(.captionSemibold)
+          .foregroundStyle(colors.foreground)
+          .lineLimit(1)
+          .padding(.horizontal, 8)
+          .padding(.vertical, 4)
+          .background(colors.background, in: Capsule())
+      }
+    }
+    .fixedSize(horizontal: true, vertical: false)
+    .layoutPriority(1)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(StatusBadge.accessibilityText(for: text))
+  }
+
+  /// Color logic stays on the English source token; only the label is localized.
+  private var displayedText: String { DashL10n.ui(text.capitalized) }
+
+  static func accessibilityText(for text: String) -> String {
+    DashL10n.string("Status, \(DashL10n.ui(text))")
+  }
+}
+
+/// Sparse delight for rare, high-value moments — not for list filters or typing.
+/// All generators no-op when Settings → Haptic feedback is off.
+@MainActor
+enum DashDelight {
+  /// A meaningful action completed (zone created, upload finished).
+  static func celebrateSuccess() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+  }
+
+  /// Recovered from a transient failure (Watchtower refresh after an error).
+  static func recoverFromIssue() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UINotificationFeedbackGenerator().notificationOccurred(.success)
+  }
+
+  /// Destructive or irreversible action is about to happen.
+  static func warnImpact() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+  }
+
+  /// Operation failed or was rejected.
+  static func failError() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UINotificationFeedbackGenerator().notificationOccurred(.error)
+  }
+
+  /// Lightweight tap on a secondary control (copy, chip toggle).
+  static func lightImpact() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+  }
+
+  /// Picker, tab, or segment selection changed.
+  static func selectionChanged() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UISelectionFeedbackGenerator().selectionChanged()
+  }
+
+  /// Soft generator for a hold-to-confirm ramp. Call `prepare` then
+  /// `holdRampImpact` with rising intensity; finish with `warnImpact`.
+  static func makeHoldRampGenerator() -> UIImpactFeedbackGenerator? {
+    guard DashInteractionPreferences.hapticsEnabled else { return nil }
+    let generator = UIImpactFeedbackGenerator(style: .soft)
+    generator.prepare()
+    return generator
+  }
+
+  /// One tick in a hold ramp. `intensity` is clamped to 0…1.
+  static func holdRampImpact(
+    _ generator: UIImpactFeedbackGenerator?,
+    intensity: CGFloat
+  ) {
+    guard DashInteractionPreferences.hapticsEnabled, let generator else { return }
+    let clamped = min(max(intensity, 0), 1)
+    generator.impactOccurred(intensity: clamped)
+    generator.prepare()
+  }
+}
+
+/// Placeholder rows that match `DashListRow` / recessed card geometry so first
+/// paint keeps catalog structure instead of a blank 420pt spinner. Cold list
+/// loads go through `DashFeatureList` → `DashListPhase.loading` → this view.
+struct DashListSkeleton: View {
+  var rows: Int = 4
+
+  var body: some View {
+    DashListGroup(title: " ") {
+      ForEach(0..<rows, id: \.self) { index in
+        HStack(spacing: 12) {
+          Circle()
+            .fill(DashTheme.fill.opacity(0.55))
+            .frame(width: 44, height: 44)
+          VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.55))
+              .frame(height: 14)
+              .frame(maxWidth: 160)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.4))
+              .frame(height: 11)
+              .frame(maxWidth: 220)
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+        .accessibilityHidden(true)
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
+struct ErrorStateView: View {
+  let message: String
+  let retry: () -> Void
+  @Environment(AppModel.self) private var model
+  @Environment(\.featureRequiredScopes) private var featureRequiredScopes
+
+  private var presentation: DashFailurePresentation {
+    DashFailurePresentation.from(message: message)
+  }
+
+  var body: some View {
+    DashEmptyState(
+      icon: SolarAsset.Content.danger,
+      title: "Couldn’t load",
+      message: presentation.message,
+      actionTitle: presentation.action.title,
+      action: {
+        switch presentation.action {
+        case .signInAgain:
+          Task { await model.signOut() }
+        case .grantAccess:
+          model.requestAccess(
+            to: featureRequiredScopes.isEmpty
+              ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
+        case .tryAgain:
+          retry()
+        }
+      })
+  }
+}
+
+/// Press feedback for genuine *button* controls: pills, circular icon buttons,
+/// toolbar/back/close actions, small text actions (Cancel, Back, Save, Show
+/// more…), and tab labels. The 0.97 shrink is the app's single "this is a
+/// button" cue; a light haptic fires on press-down so every button operation
+/// feels tactile.
+///
+/// Do NOT apply this to rows, list items, cards, or tiles — those are tappable
+/// *surfaces*, not buttons, and must not shrink. Use `DashSurfaceButtonStyle`
+/// for them (and `DestinationLink`, which already does). See "Press feedback"
+/// in AGENTS.md. Sanctioned exception: the Home Quick-actions tool tiles are
+/// launcher buttons and take this style — the shrink is their press cue.
+struct DashPressButtonStyle: ButtonStyle {
+  /// How long the pressed pose stays on screen before springing back — long
+  /// enough for `Motion.press` (0.15s ease-out) to reach the dip. Kept on the
+  /// non-generic style because Swift disallows static stored properties on
+  /// generic types (`DashPressFeedback`).
+  fileprivate static let minimumDwell: Duration = .milliseconds(120)
+
+  /// Total time for a quick tap's pulse to play out: `minimumDwell` plus the
+  /// 0.15s `Motion.press` spring-back. Heavyweight main-thread work triggered
+  /// by a tap (system sheet presentations like `ASWebAuthenticationSession.start()`)
+  /// should wait this long so the stall doesn't eat the pulse's frames.
+  static let pulseSettle: Duration = .milliseconds(270)
+
+  func makeBody(configuration: Configuration) -> some View {
+    DashPressFeedback(isPressed: configuration.isPressed) {
+      configuration.label
+    }
+  }
+}
+
+/// Renders the 0.97 shrink with a minimum visible dwell. On a quick tap —
+/// especially inside a ScrollView, which delivers press and release nearly
+/// simultaneously — animating `isPressed` directly starts the shrink and
+/// immediately retargets it back, so nothing reads on screen and the button
+/// looks dead even though the action fires. Holding the pressed pose for a
+/// short floor turns a quick tap into a full dip-and-spring pulse; real
+/// holds still release the moment the finger lifts.
+private struct DashPressFeedback<Label: View>: View {
+  let isPressed: Bool
+  @ViewBuilder var label: () -> Label
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var visuallyPressed = false
+  @State private var pressedAt: ContinuousClock.Instant?
+  @State private var release: Task<Void, Never>?
+
+  var body: some View {
+    label()
+      .scaleEffect(visuallyPressed && !reduceMotion ? 0.97 : 1)
+      .animation(reduceMotion ? nil : DashTheme.Motion.press, value: visuallyPressed)
+      .onChange(of: isPressed) { _, pressed in
+        if pressed {
+          DashDelight.lightImpact()
+          release?.cancel()
+          release = nil
+          pressedAt = .now
+          visuallyPressed = true
+        } else {
+          let held: Duration = pressedAt.map { .now - $0 } ?? .zero
+          pressedAt = nil
+          let dwell = DashPressButtonStyle.minimumDwell
+          if held >= dwell {
+            visuallyPressed = false
+          } else {
+            release = Task {
+              try? await Task.sleep(for: dwell - held)
+              guard !Task.isCancelled else { return }
+              visuallyPressed = false
+            }
+          }
+        }
+      }
+  }
+}
+
+/// Press state a `DashSurfaceButtonStyle` button exposes to its label. The
+/// surface hit target stays put by contract (no scale — shrink would read as a
+/// button, not a surface). Embossed tiles (`dashEmbossed()`) read this for
+/// optical sink: shadow, dim, and a 1pt visual-only offset on a non-interactive
+/// copy so the stable label geometry still receives the tap.
+private struct DashSurfacePressedKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
+extension EnvironmentValues {
+  var dashSurfacePressed: Bool {
+    get { self[DashSurfacePressedKey.self] }
+    set { self[DashSurfacePressedKey.self] = newValue }
+  }
+}
+
+/// Press style for tappable *surfaces* — full-width rows, list items, cards, and
+/// tiles. These are not buttons: they carry no shrink and no press animation, so
+/// the surface stays put while the tap routes (a push, a sheet, a toggle). Only
+/// discrete button controls scale (`DashPressButtonStyle`). See "Press feedback"
+/// in AGENTS.md. The style does publish `dashSurfacePressed` so opted-in
+/// descendants (the embossed Home tiles) can render their own in-place feedback.
+struct DashSurfaceButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    // Bridge through a real `View` ancestor — applying `.environment` directly
+    // onto `configuration.label` can leave `@Environment` readers inside the
+    // label stale for the whole press.
+    DashSurfacePressedHost(isPressed: configuration.isPressed) {
+      configuration.label
+    }
+  }
+}
+
+/// Publishes `dashSurfacePressed` for embossed tiles / domain cards.
+private struct DashSurfacePressedHost<Content: View>: View {
+  let isPressed: Bool
+  @ViewBuilder var content: () -> Content
+
+  var body: some View {
+    content()
+      .environment(\.dashSurfacePressed, isPressed)
+  }
+}
+
+struct DashEmptyState: View {
+  let icon: String
+  let title: String
+  let message: String
+  var actionTitle: String?
+  var action: (() -> Void)?
+
+  var body: some View {
+    VStack(spacing: DashTheme.Spacing.comfortable) {
+      SolarIcon(asset: icon, size: 34, color: DashTheme.strong)
+        .frame(width: 72, height: 72)
+        .background(DashTheme.recessed, in: Circle())
+      Text(DashL10n.ui(title))
+        .dashTextStyle(.emptyTitle)
+        .foregroundStyle(DashTheme.strong)
+        .multilineTextAlignment(.center)
+      Text(DashL10n.ui(message))
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+      if let actionTitle, let action {
+        DashSecondaryPillButton(title: DashL10n.ui(actionTitle), action: action)
+          .padding(.top, 6)
+      }
+    }
+    .frame(maxWidth: 440)
+    .padding(DashTheme.Spacing.panel)
+    .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.emptyStateMinHeight)
+    .listRowInsets(EdgeInsets())
+    .listRowSeparator(.hidden)
+    .listSectionSeparator(.hidden)
+    .listRowBackground(Color.clear)
+  }
+}
+
+extension View {
+  func dashScreen() -> some View {
+    scrollContentBackground(.hidden)
+      .background(DashTheme.canvas)
+      .foregroundStyle(DashTheme.text)
+  }
+}

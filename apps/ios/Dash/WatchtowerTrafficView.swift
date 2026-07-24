@@ -22,7 +22,7 @@ extension AnalyticsRange {
   }
 }
 
-enum WatchtowerAnalyticsMetric: String, CaseIterable, Identifiable, Hashable {
+enum WatchtowerAnalyticsMetric: String, CaseIterable, Identifiable, Hashable, Sendable {
   case workerInvocations
   case workerErrors
   case cpuTime
@@ -311,6 +311,23 @@ final class WatchtowerMetricDragVisualState {
 }
 
 enum WatchtowerAnalyticsChartModel {
+  struct MetricSnapshot: Hashable, Sendable {
+    static let empty = MetricSnapshot(
+      expandedData: [], collapsedData: [], collapsedValueCeiling: nil)
+
+    let expandedData: [DitherDatum]
+    let collapsedData: [DitherDatum]
+    let collapsedValueCeiling: Double?
+
+    var isEmpty: Bool { expandedData.isEmpty }
+  }
+
+  struct Snapshot: Hashable, Sendable {
+    let overview: AccountAnalyticsOverview
+    let charts: [WatchtowerAnalyticsMetric: MetricSnapshot]
+    let fetchedAt: Date
+  }
+
   static func updatedTitle(fetchedAt: Date?, loading: Bool, now: Date = .now) -> String {
     guard let fetchedAt else {
       return loading ? DashL10n.ui("Updating…") : DashL10n.ui("Overview")
@@ -325,6 +342,61 @@ enum WatchtowerAnalyticsChartModel {
   static func chartPoints(from points: [AccountAnalyticsPoint]) -> [(
     date: Date, point: AccountAnalyticsPoint
   )] {
+    let parsers = timestampParsers()
+    return chartPoints(from: points, parsers: parsers)
+  }
+
+  /// Builds every metric's render-ready series once when a network/cache
+  /// snapshot enters state. SwiftUI card updates then reuse stable IDs, labels,
+  /// ordering, and zero-floor data without reparsing the same timestamps.
+  static func snapshot(
+    from snapshot: AccountAnalyticsSnapshot,
+    range: AnalyticsRange,
+    locale: Locale
+  ) -> Snapshot {
+    let parsers = timestampParsers()
+    let http = labeledPoints(
+      chartPoints(from: snapshot.httpPoints, parsers: parsers),
+      range: range,
+      locale: locale)
+    let workers = labeledPoints(
+      chartPoints(from: snapshot.workerPoints, parsers: parsers),
+      range: range,
+      locale: locale)
+
+    var charts: [WatchtowerAnalyticsMetric: MetricSnapshot] = [:]
+    charts.reserveCapacity(WatchtowerAnalyticsMetric.allCases.count)
+    for metric in WatchtowerAnalyticsMetric.allCases {
+      let points = metric.usesHTTPSeries ? http : workers
+      let values = points.map { seriesValue($0.point, metric: metric) }
+      let collapsed = collapsedSeriesValues(values)
+      charts[metric] = MetricSnapshot(
+        expandedData: zip(points, values).map { point, value in
+          DitherDatum(
+            id: point.id,
+            label: point.label,
+            values: [metric.seriesKey: value])
+        },
+        collapsedData: zip(points, collapsed.values).map { point, value in
+          DitherDatum(
+            id: point.id,
+            label: point.label,
+            values: [metric.seriesKey: value])
+        },
+        collapsedValueCeiling: collapsed.valueCeiling)
+    }
+
+    return Snapshot(
+      overview: snapshot.overview,
+      charts: charts,
+      fetchedAt: snapshot.fetchedAt)
+  }
+
+  private static func timestampParsers() -> (
+    hour: ISO8601DateFormatter,
+    fractional: ISO8601DateFormatter,
+    day: DateFormatter
+  ) {
     let hour = ISO8601DateFormatter()
     hour.formatOptions = [.withInternetDateTime]
     let fractional = ISO8601DateFormatter()
@@ -336,15 +408,56 @@ enum WatchtowerAnalyticsChartModel {
       formatter.timeZone = TimeZone(identifier: "UTC")
       return formatter
     }()
-    return points.compactMap { point in
-      let date =
-        hour.date(from: point.datetime)
-        ?? fractional.date(from: point.datetime)
-        ?? day.date(from: point.datetime)
-      guard let date else { return nil }
-      return (date, point)
+    return (hour, fractional, day)
+  }
+
+  private static func chartPoints(
+    from points: [AccountAnalyticsPoint],
+    parsers: (
+      hour: ISO8601DateFormatter,
+      fractional: ISO8601DateFormatter,
+      day: DateFormatter
+    )
+  ) -> [(date: Date, point: AccountAnalyticsPoint)] {
+    let dated: [(date: Date, index: Int, point: AccountAnalyticsPoint)] =
+      points.enumerated().compactMap { index, point in
+        let date =
+          parsers.hour.date(from: point.datetime)
+          ?? parsers.fractional.date(from: point.datetime)
+          ?? parsers.day.date(from: point.datetime)
+        guard let date else { return nil }
+        return (date: date, index: index, point: point)
+      }
+    return dated.sorted {
+      if $0.date == $1.date { return $0.index < $1.index }
+      return $0.date < $1.date
     }
-    .sorted { $0.date < $1.date }
+    .map { ($0.date, $0.point) }
+  }
+
+  private static func labeledPoints(
+    _ points: [(date: Date, point: AccountAnalyticsPoint)],
+    range: AnalyticsRange,
+    locale: Locale
+  ) -> [(id: String, label: String, point: AccountAnalyticsPoint)] {
+    var occurrences: [String: Int] = [:]
+    return points.map { date, point in
+      let occurrence = occurrences[point.datetime, default: 0]
+      occurrences[point.datetime] = occurrence + 1
+      let id = occurrence == 0 ? point.datetime : "\(point.datetime)#\(occurrence)"
+      return (
+        id: id,
+        label: chartLabel(date, range: range, locale: locale),
+        point: point
+      )
+    }
+  }
+
+  private static func chartLabel(_ date: Date, range: AnalyticsRange, locale: Locale) -> String {
+    if range == .month {
+      return date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
+    }
+    return date.formatted(.dateTime.hour().locale(locale))
   }
 
   static func seriesValue(_ point: AccountAnalyticsPoint, metric: WatchtowerAnalyticsMetric)
@@ -427,15 +540,15 @@ enum WatchtowerAnalyticsChartModel {
 @Observable
 final class WatchtowerTrafficState {
   var range: AnalyticsRange = .day
-  var snapshots: [AnalyticsRange: AccountAnalyticsSnapshot] = [:]
+  var snapshots: [AnalyticsRange: WatchtowerAnalyticsChartModel.Snapshot] = [:]
   var errorByRange: [AnalyticsRange: String] = [:]
   var loadingRanges: Set<AnalyticsRange> = []
   var needsAnalyticsAccess = false
 
-  private var loadedAccountID: String?
+  private var loadedContext: AccountRequestContext?
   private var rangeLoadIDs: [AnalyticsRange: UUID] = [:]
 
-  var snapshot: AccountAnalyticsSnapshot? { snapshots[range] }
+  var snapshot: WatchtowerAnalyticsChartModel.Snapshot? { snapshots[range] }
   var overview: AccountAnalyticsOverview? { snapshot?.overview }
   var fetchedAt: Date? { snapshot?.fetchedAt }
   var isLoadingCurrent: Bool { loadingRanges.contains(range) }
@@ -444,22 +557,22 @@ final class WatchtowerTrafficState {
   var currentError: String? { errorByRange[range] }
 
   func load(model: AppModel, force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       reset()
       return
     }
 
-    if loadedAccountID != accountID {
-      reset(accountID: accountID)
+    if loadedContext != context {
+      reset(context: context)
     }
 
     // Session cache paints first so tab re-entry and range switches stay warm.
     if !force {
-      hydrateFromCache(model: model, accountID: accountID)
+      hydrateFromCache(model: model, context: context)
     }
 
     if !force,
-      loadedAccountID == accountID,
+      loadedContext == context,
       snapshots[.day] != nil,
       snapshots[.week] != nil,
       snapshots[.month] != nil
@@ -485,9 +598,9 @@ final class WatchtowerTrafficState {
     }
     guard !targets.isEmpty else { return }
 
-    async let day: Void = loadRange(.day, model: model, accountID: accountID, force: force)
-    async let week: Void = loadRange(.week, model: model, accountID: accountID, force: force)
-    async let month: Void = loadRange(.month, model: model, accountID: accountID, force: force)
+    async let day: Void = loadRange(.day, model: model, context: context, force: force)
+    async let week: Void = loadRange(.week, model: model, context: context, force: force)
+    async let month: Void = loadRange(.month, model: model, context: context, force: force)
     _ = await (day, week, month)
   }
 
@@ -495,12 +608,16 @@ final class WatchtowerTrafficState {
     await load(model: model, force: true)
   }
 
-  private func hydrateFromCache(model: AppModel, accountID: String) {
+  private func hydrateFromCache(model: AppModel, context: AccountRequestContext) {
     for target in AnalyticsRange.allCases {
-      let key = FeatureCacheKey.accountAnalytics(accountID, hours: target.accountAnalyticsHours)
+      let key = FeatureCacheKey.accountAnalytics(
+        context.accountID, hours: target.accountAnalyticsHours)
       // Session-scoped entries use `ttl: nil`, so this survives the whole sign-in.
       if let cached: AccountAnalyticsSnapshot = model.featureCache.get(key, maxAge: nil) {
-        snapshots[target] = cached
+        snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
+          from: cached,
+          range: target,
+          locale: DashL10n.activeLocale)
         errorByRange[target] = nil
       }
     }
@@ -509,7 +626,7 @@ final class WatchtowerTrafficState {
   private func loadRange(
     _ target: AnalyticsRange,
     model: AppModel,
-    accountID: String,
+    context: AccountRequestContext,
     force: Bool
   ) async {
     guard force || snapshots[target] == nil else {
@@ -517,9 +634,13 @@ final class WatchtowerTrafficState {
       return
     }
 
-    let key = FeatureCacheKey.accountAnalytics(accountID, hours: target.accountAnalyticsHours)
+    let key = FeatureCacheKey.accountAnalytics(
+      context.accountID, hours: target.accountAnalyticsHours)
     if !force, let cached: AccountAnalyticsSnapshot = model.featureCache.get(key, maxAge: nil) {
-      snapshots[target] = cached
+      snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
+        from: cached,
+        range: target,
+        locale: DashL10n.activeLocale)
       errorByRange[target] = nil
       loadingRanges.remove(target)
       return
@@ -528,17 +649,20 @@ final class WatchtowerTrafficState {
     let token = UUID()
     rangeLoadIDs[target] = token
     do {
-      let snapshot = try await model.client.accountAnalytics(
-        accountID: accountID,
+      let rawSnapshot = try await model.client.accountAnalytics(
+        accountID: context.accountID,
         hours: target.accountAnalyticsHours,
         granularity: target.accountAnalyticsGranularity)
-      guard rangeLoadIDs[target] == token, model.activeAccountID == accountID else { return }
+      guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
       // Keep until sign-out / account switch — Refresh is the explicit invalidation.
-      model.featureCache.set(key, snapshot, ttl: nil)
-      snapshots[target] = snapshot
+      model.featureCache.set(key, rawSnapshot, ttl: nil)
+      snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
+        from: rawSnapshot,
+        range: target,
+        locale: DashL10n.activeLocale)
       errorByRange[target] = nil
     } catch {
-      guard rangeLoadIDs[target] == token, model.activeAccountID == accountID else { return }
+      guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
       if snapshots[target] == nil {
         errorByRange[target] = error.dashActionableMessage
       }
@@ -549,12 +673,12 @@ final class WatchtowerTrafficState {
     loadingRanges.remove(target)
   }
 
-  private func reset(accountID: String? = nil) {
-    loadedAccountID = accountID
+  private func reset(context: AccountRequestContext? = nil) {
+    loadedContext = context
     rangeLoadIDs = [:]
     snapshots = [:]
     errorByRange = [:]
-    loadingRanges = accountID == nil ? [] : Set(AnalyticsRange.allCases)
+    loadingRanges = context == nil ? [] : Set(AnalyticsRange.allCases)
     needsAnalyticsAccess = false
     range = .day
   }
@@ -672,7 +796,7 @@ struct WatchtowerTrafficView: View {
   private func metricRow(
     _ row: [WatchtowerAnalyticsMetric],
     overview: AccountAnalyticsOverview,
-    snapshot: AccountAnalyticsSnapshot
+    snapshot: WatchtowerAnalyticsChartModel.Snapshot
   ) -> some View {
     if row.count == 1, let metric = row.first, isExpanded(metric) {
       reorderableMetricCard(metric, overview: overview, snapshot: snapshot, expanded: true)
@@ -693,7 +817,7 @@ struct WatchtowerTrafficView: View {
   private func reorderableMetricCard(
     _ metric: WatchtowerAnalyticsMetric,
     overview: AccountAnalyticsOverview,
-    snapshot: AccountAnalyticsSnapshot,
+    snapshot: WatchtowerAnalyticsChartModel.Snapshot,
     expanded: Bool
   ) -> some View {
     let card = metricCard(
@@ -746,7 +870,7 @@ struct WatchtowerTrafficView: View {
   private func metricCard(
     _ metric: WatchtowerAnalyticsMetric,
     overview: AccountAnalyticsOverview,
-    snapshot: AccountAnalyticsSnapshot,
+    snapshot: WatchtowerAnalyticsChartModel.Snapshot,
     expanded: Bool
   ) -> some View {
     WatchtowerMetricChartCard(
@@ -754,8 +878,7 @@ struct WatchtowerTrafficView: View {
       overview: overview,
       // Editing never constructs a dither chart, so keep its view value free
       // of the potentially large point arrays as cards reorder.
-      points: isEditing
-        ? [] : metric.usesHTTPSeries ? snapshot.httpPoints : snapshot.workerPoints,
+      chart: isEditing ? .empty : snapshot.charts[metric] ?? .empty,
       range: state.range,
       isExpanded: expanded,
       isEditing: isEditing,
@@ -1166,7 +1289,7 @@ private struct WatchtowerMetricDragOverlay: View {
         WatchtowerMetricChartCard(
           metric: presentation.metric,
           overview: overview,
-          points: [],
+          chart: .empty,
           range: range,
           isExpanded: presentation.isExpanded,
           isEditing: true,
@@ -1252,7 +1375,7 @@ private struct WatchtowerMetricChartCard: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let metric: WatchtowerAnalyticsMetric
   let overview: AccountAnalyticsOverview
-  let points: [AccountAnalyticsPoint]
+  let chart: WatchtowerAnalyticsChartModel.MetricSnapshot
   let range: AnalyticsRange
   let isExpanded: Bool
   let isEditing: Bool
@@ -1264,10 +1387,6 @@ private struct WatchtowerMetricChartCard: View {
 
   private var total: (text: String, numeric: Double) {
     WatchtowerAnalyticsChartModel.totalValue(overview, metric: metric)
-  }
-
-  private var chartPoints: [(date: Date, point: AccountAnalyticsPoint)] {
-    WatchtowerAnalyticsChartModel.chartPoints(from: points)
   }
 
   private var chartAccessibility: DitherAccessibility {
@@ -1398,14 +1517,14 @@ private struct WatchtowerMetricChartCard: View {
 
   @ViewBuilder
   private var expandedChart: some View {
-    if chartPoints.isEmpty {
+    if chart.isEmpty {
       Text(DashL10n.ui("No data in this range"))
         .dashTextStyle(.footnote)
         .foregroundStyle(DashTheme.placeholder)
         .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
     } else {
       DitherAreaChart(
-        data: expandedChartData,
+        data: chart.expandedData,
         series: chartSeries,
         options: DashTheme.DitherChart.options(
           showsLegend: false,
@@ -1477,35 +1596,15 @@ private struct WatchtowerMetricChartCard: View {
   /// Flush to the panel edges. Zeros (including all-zero) lift off the floor so
   /// the sparkline still paints a short dither band.
   private var collapsedSparkline: some View {
-    let raw = chartPoints.map {
-      WatchtowerAnalyticsChartModel.seriesValue($0.point, metric: metric)
-    }
-    let display = WatchtowerAnalyticsChartModel.collapsedSeriesValues(raw)
-    return DitherAreaChart(
-      data: zip(chartPoints, display.values).map { point, value in
-        DitherDatum(
-          id: point.point.datetime,
-          label: chartLabel(point.date),
-          values: [metric.seriesKey: value])
-      },
+    DitherAreaChart(
+      data: chart.collapsedData,
       series: chartSeries,
       options: DashTheme.DitherChart.sparklineOptions(
         accessibility: chartAccessibility,
-        valueCeiling: display.valueCeiling),
+        valueCeiling: chart.collapsedValueCeiling),
       highlighted: false,
       selection: nil
     )
-  }
-
-  private var expandedChartData: [DitherDatum] {
-    chartPoints.map { date, point in
-      DitherDatum(
-        id: point.datetime,
-        label: chartLabel(date),
-        values: [
-          metric.seriesKey: WatchtowerAnalyticsChartModel.seriesValue(point, metric: metric)
-        ])
-    }
   }
 
   private var chartSeries: [DitherSeries] {
@@ -1586,12 +1685,5 @@ private struct WatchtowerMetricChartCard: View {
       DashTheme.DitherChart.brand(
         colorScheme: colorScheme, contrast: colorSchemeContrast)
     }
-  }
-
-  private func chartLabel(_ date: Date) -> String {
-    if range == .month {
-      return date.formatted(.dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale))
-    }
-    return date.formatted(.dateTime.hour().locale(DashL10n.activeLocale))
   }
 }

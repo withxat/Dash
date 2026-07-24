@@ -7,6 +7,8 @@ struct DashApp: App {
   @State private var model: AppModel
 
   init() {
+    DashMetricSubscriber.shared.start()
+    R2TemporaryFile.removeStaleFiles(olderThan: 60 * 60)
     let model = AppModel()
     _model = State(initialValue: model)
     // In-app App Intents run in this process; hand them the app's own model
@@ -54,6 +56,7 @@ struct DashApp: App {
       if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
         KeyboardDismissalTestHost()
           .tint(DashTheme.brand)
+          .environment(model)
       } else {
         RootWithSplash(model: model)
           .tint(DashTheme.brand)
@@ -64,10 +67,10 @@ struct DashApp: App {
       await model.performBackgroundWatchtowerRefresh()
     }
     // Pages LA continuation — same SwiftUI registration path as Watchtower.
-    // Best-effort; foreground 10s poll in PagesBuildActivityController is source of truth.
+    // Best-effort; the controller single-flights it with any foreground refresh.
     .backgroundTask(.appRefresh(PagesBuildActivityController.backgroundRefreshID)) {
       await PagesBuildActivityController.shared.performBackgroundRefresh(
-        client: model.client, accountID: model.activeAccountID)
+        client: model.client, context: model.accountRequestContext)
     }
   }
 }

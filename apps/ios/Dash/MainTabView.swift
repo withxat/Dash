@@ -1,0 +1,815 @@
+import CloudflareAPI
+import SwiftUI
+import UIKit
+import UserNotifications
+
+private enum AppTab: Hashable { case home, features, watchtower }
+
+private struct AccountScopedRouteRequest {
+  let account: CloudflareAccount
+  let route: DashRoute
+}
+
+struct MainTabView: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var selection: AppTab = .home
+  @State private var homeNavigator = DestinationNavigator()
+  @State private var featuresNavigator = DestinationNavigator()
+  @State private var watchtowerNavigator = DestinationNavigator()
+  @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
+  @State private var showsProfile = false
+  @State private var showsIgnoreAllAlerts = false
+  @State private var nestedTray = DashTrayPresentation()
+  @State private var accountRouteConfirmation: AccountScopedRouteRequest?
+  @State private var routeAfterAccountSwitch: DashRoute?
+
+  init() {}
+
+  /// Every tray style currently over this canvas — the pages' trays plus the
+  /// profile tray (whose preference sits above our reader, so it's OR-ed in).
+  private var overlayTrays: DashTrayPresentation {
+    DashTrayPresentation(
+      content: showsProfile || showsIgnoreAllAlerts || nestedTray.content,
+      large: nestedTray.large)
+  }
+
+  private var hidesDock: Bool {
+    shouldHideTabBar(
+      overlays: overlayTrays,
+      navigationDepth: activeNavigationDepth
+    ) || watchtowerCustomization.isEditing
+  }
+
+  private var hidesHeaderAvatar: Bool {
+    shouldHideHeaderAvatar(
+      overlays: overlayTrays,
+      navigationDepth: activeNavigationDepth
+    ) || watchtowerCustomization.isEditing
+  }
+
+  /// Floated Watchtower inbox — same hide rules as the avatar, Watchtower root only.
+  private var showsWatchtowerInboxButton: Bool {
+    selection == .watchtower
+      && model.activeAccountID != nil
+      && !hidesHeaderAvatar
+  }
+
+  private var showsWatchtowerCustomizeButton: Bool {
+    showsWatchtowerInboxButton && !watchtowerCustomization.isEditing
+  }
+
+  private var showsWatchtowerEditHeader: Bool {
+    selection == .watchtower
+      && watchtowerCustomization.isEditing
+      && activeNavigationDepth == 0
+      && !overlayTrays.presented
+  }
+
+  /// Pages swipe only between the tab roots. A pushed feature/detail owns
+  /// horizontal gestures (the leading-edge back swipe must win), and an open
+  /// tray freezes the canvas underneath it. Enforced via `TabPagerScrollLock`
+  /// (pan recognizer only — never `scrollDisabled` / `isScrollEnabled`).
+  private var pagerLocked: Bool {
+    activeNavigationDepth > 0 || overlayTrays.presented || watchtowerCustomization.isEditing
+  }
+
+  private var activeNavigationDepth: Int {
+    switch selection {
+    case .home: homeNavigator.depth
+    case .features: featuresNavigator.depth
+    case .watchtower: watchtowerNavigator.depth
+    }
+  }
+
+  private var activeNavigator: DestinationNavigator {
+    switch selection {
+    case .home: homeNavigator
+    case .features: featuresNavigator
+    case .watchtower: watchtowerNavigator
+    }
+  }
+
+  private func openOnActiveTab(_ destination: Destination) {
+    activeNavigator.push(destination)
+  }
+
+  private func beginWatchtowerCustomization() {
+    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+      watchtowerCustomization.beginEditing()
+    }
+  }
+
+  private func cancelWatchtowerCustomization() {
+    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+      watchtowerCustomization.cancelEditing()
+    }
+  }
+
+  private func commitWatchtowerCustomization() {
+    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+      watchtowerCustomization.commitEditing()
+    }
+    DashDelight.selectionChanged()
+  }
+
+  /// Profile-tray Debug row. Nil in Release so the menu omits it.
+  private var openDebugFromProfileTray: (() -> Void)? {
+    #if DEBUG
+      {
+        showsProfile = false
+        openOnActiveTab(.debug)
+      }
+    #else
+      nil
+    #endif
+  }
+
+  /// Applies a route only after any account scope has been verified.
+  private func openVerifiedRoute(_ route: DashRoute) {
+    switch route {
+    case .watchtower:
+      selection = .watchtower
+      watchtowerNavigator.reset()
+    default:
+      guard let destination = route.destination else { break }
+      selection = .home
+      homeNavigator.reset(to: destination)
+    }
+  }
+
+  /// Account-scoped links never silently resolve under the active account.
+  /// A different known account requires confirmation; a missing account is
+  /// rejected with actionable feedback. Legacy unscoped links keep their
+  /// historical current-account behavior.
+  private func consume(_ route: DashRoute) {
+    model.pendingRoute = nil
+    let resolution = route.accountResolution(
+      activeAccountID: model.activeAccountID,
+      availableAccountIDs: Set(model.accounts.map(\.id)))
+    switch resolution {
+    case .open(let route):
+      openVerifiedRoute(route)
+    case .confirmSwitch(let accountID, let route):
+      guard let account = model.accounts.first(where: { $0.id == accountID }) else {
+        model.toasts.error(
+          "The Cloudflare account for this link isn't available in Dash. Check your access and try again."
+        )
+        return
+      }
+      accountRouteConfirmation = AccountScopedRouteRequest(account: account, route: route)
+    case .rejectUnavailable:
+      model.toasts.error(
+        "The Cloudflare account for this link isn't available in Dash. Check your access and try again."
+      )
+    }
+  }
+
+  private func confirmAccountSwitch(_ request: AccountScopedRouteRequest) {
+    accountRouteConfirmation = nil
+    guard let account = model.accounts.first(where: { $0.id == request.account.id }) else {
+      model.toasts.error(
+        "That Cloudflare account is no longer available in Dash. Refresh your accounts and try again."
+      )
+      return
+    }
+    guard model.activeAccountID != account.id else {
+      openVerifiedRoute(request.route)
+      return
+    }
+    routeAfterAccountSwitch = request.route
+    model.selectAccount(account)
+  }
+
+  private var showsAccountRouteConfirmation: Binding<Bool> {
+    Binding(
+      get: { accountRouteConfirmation != nil },
+      set: { presented in
+        if !presented { accountRouteConfirmation = nil }
+      })
+  }
+
+  var body: some View {
+    tabContainer
+      .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
+      .onChange(of: scenePhase) { _, phase in
+        switch phase {
+        case .active:
+          Task {
+            await model.retryIdentityIfNeeded()
+            await model.refreshWatchtowerIfStale()
+          }
+        case .background:
+          model.scheduleWatchtowerBackgroundRefresh()
+        default:
+          break
+        }
+      }
+      // Warms the Watchtower badge once per account, before the tab is
+      // ever visited.
+      .task(id: model.activeAccountID) {
+        // A cold-launch deep link is set before this view mounts, so onChange
+        // never fires for it — drain the inbox on first appearance too.
+        if let route = model.pendingRoute { consume(route) }
+        await model.refreshWatchtowerIfStale()
+      }
+      .onChange(of: model.pendingRoute) { _, route in
+        if let route { consume(route) }
+      }
+      .onChange(of: model.activeAccountID) { _, _ in
+        homeNavigator.reset()
+        featuresNavigator.reset()
+        watchtowerNavigator.reset()
+        watchtowerCustomization.cancelEditing()
+        showsProfile = false
+        showsIgnoreAllAlerts = false
+        if let route = routeAfterAccountSwitch {
+          routeAfterAccountSwitch = nil
+          openVerifiedRoute(route)
+        }
+      }
+      .dashTray(isPresented: $showsProfile, title: DashL10n.string("Profile")) {
+        ProfileTrayContent(
+          openProfile: {
+            showsProfile = false
+            openOnActiveTab(.profile)
+          },
+          openSettings: {
+            showsProfile = false
+            openOnActiveTab(.settings)
+          },
+          openDebug: openDebugFromProfileTray
+        )
+      }
+      .dashTray(
+        isPresented: $showsIgnoreAllAlerts,
+        title: DashL10n.string("Ignore all alerts")
+      ) {
+        WatchtowerIgnoreAllTray(count: model.watchtowerIssueCount ?? 0) {
+          model.ignoreAllWatchtowerAlerts()
+          DashDelight.recoverFromIssue()
+        }
+      }
+      .alert(
+        "Switch Cloudflare account?",
+        isPresented: showsAccountRouteConfirmation,
+        presenting: accountRouteConfirmation
+      ) { request in
+        Button("Cancel", role: .cancel) {
+          accountRouteConfirmation = nil
+        }
+        Button("Switch Account") {
+          confirmAccountSwitch(request)
+        }
+      } message: { request in
+        Text(
+          "This link belongs to \(request.account.name). Switch accounts before opening it?"
+        )
+      }
+  }
+
+  /// The three tab canvases ride in a paging `TabView`, so a horizontal drag
+  /// on any root slides between them with the finger. Every page stays mounted
+  /// (paging needs neighbors renderable mid-drag), which also keeps state and
+  /// in-flight loads alive across switches. A custom floating bar floats over
+  /// the content — sliding away when a pushed route or overlay wants the space.
+  private var tabContainer: some View {
+    // Chrome animations stay on avatar/dock subtrees only. A ZStack-wide
+    // `.animation(value:)` lands in the same transaction as `NavigationStack`
+    // path updates and retargets the UIKit push onto a SwiftUI fade.
+    ZStack(alignment: .bottom) {
+      TabView(selection: $selection) {
+        tabPage(.home) {
+          DestinationStackHost(
+            navigator: homeNavigator,
+            isTabActive: selection == .home
+          ) {
+            HomeView()
+          }
+        }
+        tabPage(.features) {
+          DestinationStackHost(
+            navigator: featuresNavigator,
+            isTabActive: selection == .features
+          ) {
+            FeatureCatalogView()
+          }
+        }
+        tabPage(.watchtower) {
+          DestinationStackHost(
+            navigator: watchtowerNavigator,
+            isTabActive: selection == .watchtower
+          ) {
+            WatchtowerView(customization: watchtowerCustomization)
+          }
+        }
+      }
+      .tabViewStyle(.page(indexDisplayMode: .never))
+      // Full-bleed pages: top so Home's in-page wash can cover the status bar
+      // (a behind-pager wash can't ride the push; a clipped page can't paint
+      // the status bar), bottom so the home-indicator band isn't a white
+      // scroll-edge pocket. Content still lays out in the safe area; only the
+      // page chrome extends. The floating dock sits on top.
+      .ignoresSafeArea(edges: [.top, .bottom])
+      // Lock ONLY the pager's pan recognizer. Do NOT use SwiftUI
+      // `scrollDisabled` here and do NOT flip `isScrollEnabled` on the
+      // UICollectionView — both freeze nested feature-list scrolling while a
+      // detail is pushed (environment leak / parent scroll-view hit testing).
+      .background { TabPagerScrollLock(locked: pagerLocked) }
+      // Depth flips with every push/pop; keep those updates off SwiftUI's
+      // animation system so UIKit owns the slide.
+      .animation(nil, value: homeNavigator.depth)
+      .animation(nil, value: featuresNavigator.depth)
+      .animation(nil, value: watchtowerNavigator.depth)
+
+      // ONE shared avatar above the pager (so it doesn't slide on tab swipes,
+      // and stays a true circle — toolbar items get height-clamped). It sits
+      // over the leading slot of the roots' titleless nav bars and fades on
+      // push exactly where the system back control fades in. Watchtower's
+      // inbox mirror sits on the trailing edge with the same metrics.
+      ZStack {
+        ZStack(alignment: .topLeading) {
+          if showsWatchtowerEditHeader {
+            DashToolbarTextButton(
+              title: DashL10n.string("Cancel"),
+              action: cancelWatchtowerCustomization
+            )
+            .accessibilityIdentifier("watchtower-customize-cancel")
+            .padding(.leading, 10)
+            .padding(.top, 10)
+            .transition(.opacity)
+          } else if !hidesHeaderAvatar {
+            HeaderProfileButton { showsProfile = true }
+              // Tuned against the system back control's measured slot so the
+              // push crossfade reads as the avatar becoming the back button.
+              .padding(.leading, 10)
+              .padding(.top, 10)
+              .transition(.opacity)
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+        ZStack(alignment: .topTrailing) {
+          if showsWatchtowerEditHeader {
+            DashToolbarTextButton(
+              title: DashL10n.string("Done"),
+              action: commitWatchtowerCustomization
+            )
+            .accessibilityIdentifier("watchtower-customize-done")
+            .padding(.trailing, 10)
+            .padding(.top, 10)
+            .transition(.opacity)
+          } else if showsWatchtowerInboxButton {
+            HStack(spacing: 8) {
+              if showsWatchtowerCustomizeButton {
+                HeaderWatchtowerCustomizeButton(action: beginWatchtowerCustomization)
+              }
+              HeaderInboxButton(
+                count: model.watchtowerIssueCount ?? 0,
+                action: { watchtowerNavigator.push(.watchtowerInbox) },
+                onLongPress: { showsIgnoreAllAlerts = true }
+              )
+            }
+            .padding(.trailing, 10)
+            .padding(.top, 10)
+            .transition(.opacity)
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+      }
+      .animation(tabBarVisibilityAnimation, value: hidesHeaderAvatar)
+      .animation(tabBarVisibilityAnimation, value: showsWatchtowerInboxButton)
+      .animation(tabBarVisibilityAnimation, value: showsWatchtowerEditHeader)
+      .allowsHitTesting(
+        !hidesHeaderAvatar || showsWatchtowerInboxButton || showsWatchtowerEditHeader)
+
+      // Trays and pushed routes displace the bar; tab roots keep it mounted.
+      ZStack(alignment: .bottom) {
+        if !hidesDock {
+          DashFloatingTabBar(
+            selection: $selection,
+            watchtowerIssueCount: model.watchtowerIssueCount ?? 0,
+            onReselect: popActiveTabToRoot,
+            onRequestIgnoreAllAlerts: { showsIgnoreAllAlerts = true }
+          )
+          .frame(maxWidth: .infinity)
+          // Do NOT ignoresSafeArea(bottom) here — on iOS 26 that registers as a
+          // bottom bar and paints a white scroll-edge pocket under the capsule.
+          // Offset sinks the bar into the home-indicator inset instead.
+          .offset(y: DashDockMetrics.bottomSink)
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+      }
+      .animation(tabBarVisibilityAnimation, value: hidesDock)
+      .allowsHitTesting(!hidesDock)
+    }
+    .background(DashTheme.canvas.ignoresSafeArea())
+    .dashToastHost()
+  }
+
+  /// One page of the tab pager. Off-screen pages stay mounted for the
+  /// mid-drag preview and hide from the accessibility tree — inactive tabs
+  /// stay off VoiceOver and, mostly, off XCTest queries (the tests still
+  /// guard against duplicate labels).
+  private func tabPage<Content: View>(
+    _ tab: AppTab,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    let isActive = selection == tab
+    return content()
+      .tag(tab)
+      .accessibilityHidden(!isActive)
+      .accessibilityElement(children: isActive ? .contain : .ignore)
+  }
+
+  /// The floating bar rides in on first appearance without animation and slides
+  /// on later navigation changes — SwiftUI only animates the value that flips.
+  private var tabBarVisibilityAnimation: Animation {
+    DashTheme.Motion.settle
+  }
+
+  /// Re-tapping the active tab clears its navigation path, matching `TabView`.
+  private func popActiveTabToRoot() {
+    activeNavigator.popToRoot()
+  }
+}
+
+/// Disables the page `TabView`'s horizontal paging pan while a pushed screen
+/// or tray owns the canvas. Recent iOS backs the pager with a
+/// `UICollectionView` (`isPagingEnabled` often false) — detect by geometry,
+/// then re-apply on hierarchy changes and a short retry window (SwiftUI can
+/// rebuild and re-enable the pan immediately after an update).
+///
+/// Only the pan recognizer is toggled. Flipping `isScrollEnabled` (or using
+/// SwiftUI `scrollDisabled` on the `TabView`) freezes nested feature lists
+/// inside the page cells.
+private struct TabPagerScrollLock: UIViewRepresentable {
+  var locked: Bool
+
+  func makeUIView(context: Context) -> TabPagerScrollLockView {
+    TabPagerScrollLockView()
+  }
+
+  func updateUIView(_ uiView: TabPagerScrollLockView, context: Context) {
+    uiView.setLocked(locked)
+  }
+
+  static func dismantleUIView(
+    _ uiView: TabPagerScrollLockView,
+    coordinator: ()
+  ) {
+    uiView.tearDown()
+  }
+}
+
+enum TabPagerLockRules {
+  @MainActor
+  static func apply(locked: Bool, to pager: UIScrollView) {
+    // Keep scrolling enabled so nested lists inside page cells still receive
+    // vertical pans; only the pager's own pan recognizer is gated.
+    if !pager.isScrollEnabled {
+      pager.isScrollEnabled = true
+    }
+    if let collection = pager as? UICollectionView, collection.alwaysBounceVertical {
+      collection.alwaysBounceVertical = false
+    }
+    let panEnabled = !locked
+    if pager.panGestureRecognizer.isEnabled != panEnabled {
+      pager.panGestureRecognizer.isEnabled = panEnabled
+    }
+  }
+}
+
+enum TabPagerLockRetrySchedule {
+  static let offsetsMS: [Int64] = [0, 16, 64, 160]
+}
+
+private final class TabPagerScrollLockView: UIView {
+  private var locked = false
+  private var isTearingDown = false
+  private var retryTask: Task<Void, Never>?
+  private weak var pager: UIScrollView?
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    isHidden = true
+    backgroundColor = .clear
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func willMove(toWindow newWindow: UIWindow?) {
+    if newWindow == nil {
+      tearDown()
+    }
+    super.willMove(toWindow: newWindow)
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else { return }
+    isTearingDown = false
+    resolveAndApply()
+    scheduleRetries()
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    resolveAndApply()
+  }
+
+  func setLocked(_ locked: Bool) {
+    self.locked = locked
+    resolveAndApply()
+    scheduleRetries()
+  }
+
+  fileprivate func tearDown() {
+    isTearingDown = true
+    retryTask?.cancel()
+    retryTask = nil
+    if let pager {
+      TabPagerLockRules.apply(locked: false, to: pager)
+    }
+    pager = nil
+  }
+
+  private func scheduleRetries() {
+    retryTask?.cancel()
+    guard window != nil, !isTearingDown else {
+      retryTask = nil
+      return
+    }
+    let expectedLocked = locked
+    retryTask = Task { @MainActor [weak self] in
+      var previousOffsetMS: Int64 = 0
+      for offsetMS in TabPagerLockRetrySchedule.offsetsMS {
+        let delayMS = offsetMS - previousOffsetMS
+        previousOffsetMS = offsetMS
+        if delayMS > 0 {
+          do {
+            try await Task.sleep(for: .milliseconds(delayMS))
+          } catch {
+            return
+          }
+        }
+
+        guard
+          !Task.isCancelled,
+          let self,
+          self.window != nil,
+          !self.isTearingDown,
+          self.locked == expectedLocked
+        else {
+          return
+        }
+        self.resolveAndApply()
+      }
+      self?.retryTask = nil
+    }
+  }
+
+  private func resolveAndApply() {
+    guard window != nil, !isTearingDown else { return }
+    if let pager, pager.window !== window {
+      TabPagerLockRules.apply(locked: false, to: pager)
+      self.pager = nil
+    }
+
+    let resolved = pager ?? Self.findTabPager(from: self)
+    guard let resolved else { return }
+    pager = resolved
+    TabPagerLockRules.apply(locked: locked, to: resolved)
+  }
+
+  /// Walk ancestors and shallow children for the three-tab pager. Do not deep-
+  /// search page content — feature screens can host their own horizontal
+  /// scrolls.
+  private static func findTabPager(from view: UIView) -> UIScrollView? {
+    var node: UIView? = view
+    while let current = node {
+      if let scroll = current as? UIScrollView, isTabPager(scroll) {
+        return scroll
+      }
+      for child in current.subviews {
+        if let scroll = child as? UIScrollView, isTabPager(scroll) {
+          return scroll
+        }
+        for grand in child.subviews {
+          if let scroll = grand as? UIScrollView, isTabPager(scroll) {
+            return scroll
+          }
+        }
+      }
+      node = current.superview
+    }
+    return nil
+  }
+
+  private static func isTabPager(_ scroll: UIScrollView) -> Bool {
+    DashScrollViewConfigurator.isTabPager(scroll)
+  }
+}
+
+extension AppTab {
+  /// Fixed left-to-right order of the primary tabs.
+  static let orderedCases: [AppTab] = [.home, .features, .watchtower]
+
+  /// Doubles as the VoiceOver label and the UI-test accessibility identifier.
+  var title: String {
+    switch self {
+    case .home: DashL10n.string("Home")
+    case .features: DashL10n.string("Resources")
+    case .watchtower: DashL10n.string("Watchtower")
+    }
+  }
+
+  /// Solar glyph asset name; the filled variant marks the active tab.
+  func asset(filled: Bool) -> String {
+    switch self {
+    case .home: filled ? "SolarTabHomeFill" : "SolarTabHomeLine"
+    case .features: filled ? "SolarTabFeaturesFill" : "SolarTabFeaturesLine"
+    case .watchtower: filled ? "SolarTabWatchtowerFill" : "SolarTabWatchtowerLine"
+    }
+  }
+}
+
+/// A floating tab bar. Selection is icon-only (fill + brand tint). Geometry
+/// lives in `DashDockMetrics`. Watchtower with an active inbox long-presses into
+/// the shared Ignore-all confirmation tray.
+private struct DashFloatingTabBar: View {
+  @Binding var selection: AppTab
+  let watchtowerIssueCount: Int
+  let onReselect: () -> Void
+  var onRequestIgnoreAllAlerts: () -> Void = {}
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var tabs: [AppTab] { AppTab.orderedCases }
+  private var barWidth: CGFloat { DashDockMetrics.cell * CGFloat(tabs.count) }
+
+  var body: some View {
+    ZStack {
+      trayBackground
+      row
+    }
+    .frame(width: barWidth, height: DashDockMetrics.height)
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel(DashL10n.string("Tabs"))
+  }
+
+  private var trayBackground: some View {
+    Capsule(style: .continuous)
+      .fill(DashTheme.tabBarSurface)
+      .frame(width: barWidth, height: DashDockMetrics.height)
+      .compositingGroup()
+      .dashShadow(.raised, in: Capsule(style: .continuous))
+      .allowsHitTesting(false)
+  }
+
+  private var row: some View {
+    HStack(spacing: 0) {
+      ForEach(tabs, id: \.self) { tab in
+        tabButton(tab)
+      }
+    }
+    .frame(width: barWidth, height: DashDockMetrics.height)
+  }
+
+  @ViewBuilder
+  private func tabButton(_ tab: AppTab) -> some View {
+    let isActive = selection == tab
+    let canIgnore = tab == .watchtower && watchtowerIssueCount > 0
+    let button = Button {
+      select(tab, isActive: isActive)
+    } label: {
+      DashTabIcon(
+        tab: tab,
+        isActive: isActive,
+        issueCount: tab == .watchtower ? watchtowerIssueCount : 0
+      )
+      .frame(width: DashDockMetrics.cell, height: DashDockMetrics.height)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(DashTabPressButtonStyle())
+    .accessibilityIdentifier(tab.title)
+    .accessibilityLabel(accessibilityLabel(for: tab))
+    .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : .isButton)
+
+    if canIgnore {
+      button
+        .simultaneousGesture(
+          LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+            DashDelight.lightImpact()
+            onRequestIgnoreAllAlerts()
+          }
+        )
+        .accessibilityHint(DashL10n.string("Long press to ignore all alerts"))
+        .accessibilityAction(named: DashL10n.string("Ignore all alerts")) {
+          onRequestIgnoreAllAlerts()
+        }
+    } else {
+      button
+    }
+  }
+
+  private func select(_ tab: AppTab, isActive: Bool) {
+    if isActive {
+      onReselect()
+    } else {
+      withAnimation(reduceMotion ? nil : DashTheme.Motion.settle) {
+        selection = tab
+      }
+    }
+  }
+
+  private func accessibilityLabel(for tab: AppTab) -> String {
+    guard tab == .watchtower, watchtowerIssueCount > 0 else { return tab.title }
+    let alertSummary =
+      watchtowerIssueCount == 1
+      ? DashL10n.string("1 alert")
+      : DashL10n.string("\(watchtowerIssueCount) alerts")
+    return "\(tab.title), \(alertSummary)"
+  }
+}
+
+/// Tab-bar press — same 0.97 shrink + light haptic as `DashPressButtonStyle`;
+/// active tint lives on `DashTabIcon` (Line↔Fill crossfade + subtle selected scale).
+private struct DashTabPressButtonStyle: ButtonStyle {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+      .animation(
+        reduceMotion ? nil : DashTheme.Motion.press,
+        value: configuration.isPressed
+      )
+      .onChange(of: configuration.isPressed) { _, pressed in
+        if pressed { DashDelight.lightImpact() }
+      }
+  }
+}
+
+/// One tab glyph: a Line↔Fill crossfade tinted brand when active, with a
+/// Watchtower presence dot (count lives on the floating inbox control).
+private struct DashTabIcon: View {
+  let tab: AppTab
+  let isActive: Bool
+  let issueCount: Int
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var iconAnimation: Animation {
+    DashTheme.Motion.pop
+  }
+
+  var body: some View {
+    ZStack {
+      glyph(filled: false).opacity(isActive ? 0 : 1)
+      glyph(filled: true).opacity(isActive ? 1 : 0)
+    }
+    .foregroundStyle(isActive ? DashTheme.brand : DashTheme.iconMuted)
+    .scaleEffect(isActive && !reduceMotion ? 1.02 : 1)
+    .animation(iconAnimation, value: isActive)
+    .overlay(alignment: .topTrailing) { badge }
+  }
+
+  private func glyph(filled: Bool) -> some View {
+    Image(tab.asset(filled: filled))
+      .renderingMode(.template)
+      .resizable()
+      .scaledToFit()
+      .frame(width: 26, height: 26)
+  }
+
+  @ViewBuilder
+  private var badge: some View {
+    if issueCount > 0 {
+      Circle()
+        .fill(DashTheme.danger)
+        .frame(width: 8, height: 8)
+        .offset(x: 3, y: -2)
+        .accessibilityHidden(true)
+    }
+  }
+}
+
+/// Workspace routes and any open tray hide the floating tab bar so the card
+/// can slide up from the bottom without fighting the dock.
+func shouldHideTabBar(
+  overlays: DashTrayPresentation,
+  navigationDepth: Int
+) -> Bool {
+  navigationDepth > 0 || overlays.presented
+}
+
+/// The floating header avatar clears out for any overlay or pushed route.
+func shouldHideHeaderAvatar(
+  overlays: DashTrayPresentation,
+  navigationDepth: Int
+) -> Bool {
+  navigationDepth > 0 || overlays.presented
+}

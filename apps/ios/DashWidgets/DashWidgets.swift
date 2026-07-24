@@ -101,10 +101,16 @@ private func pagesBuildStatusLine(_ state: PagesBuildAttributes.ContentState) ->
 }
 
 private func pagesBuildDeepLink(_ context: ActivityViewContext<PagesBuildAttributes>) -> URL? {
-  URL(
-    string:
-      "dash://pages/\(context.attributes.projectName)/deployments/\(context.attributes.deploymentID)"
-  )
+  // Older activities have no account binding. Leaving them untappable is
+  // safer than resolving a same-named project under the current account.
+  guard let accountID = context.attributes.accountID, !accountID.isEmpty else { return nil }
+  var components = URLComponents()
+  components.scheme = "dash"
+  components.host = "pages"
+  components.path =
+    "/\(context.attributes.projectName)/deployments/\(context.attributes.deploymentID)"
+  components.queryItems = [URLQueryItem(name: "account", value: accountID)]
+  return components.url
 }
 
 /// Status colors mirror DashTheme's ok/warning/critical tokens; DashTheme

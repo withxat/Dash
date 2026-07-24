@@ -145,7 +145,7 @@ struct R2ObjectPreview: View {
   let allowsWrites: Bool
   var onMutated: () async -> Void
 
-  @State private var localURL: URL?
+  @State private var localFile: R2TemporaryFile?
   @State private var status: Status = .loading
   @State private var showsActions = false
 
@@ -157,9 +157,9 @@ struct R2ObjectPreview: View {
 
   var body: some View {
     Group {
-      if status == .ready, let localURL {
+      if status == .ready, let localFile {
         QuickLookPreview(
-          url: localURL,
+          url: localFile.fileURL,
           onDismiss: { dismiss() },
           onMore: { showsActions = true }
         )
@@ -253,42 +253,32 @@ struct R2ObjectPreview: View {
 
   private func download() async {
     guard status == .loading, let accountID = model.activeAccountID else { return }
-    guard (object.size ?? 0) <= R2Media.transferSizeLimit else {
+    guard R2Media.isWithinTransferLimit(object.size) else {
       status = .tooLarge
       return
     }
+    let temporaryFile = R2TemporaryFile.make(purpose: "r2-preview", filename: filename)
     do {
-      let data = try await model.client.getR2Object(
-        accountID: accountID, bucket: bucket, key: object.key)
-      let url = try await Self.writeTempFile(data: data, filename: filename)
-      localURL = url
+      try await model.client.downloadR2Object(
+        accountID: accountID, bucket: bucket, key: object.key,
+        to: temporaryFile.fileURL, maximumBytes: R2Media.transferSizeLimitBytes)
+      try Task.checkCancellation()
+      localFile = temporaryFile
       status = .ready
+    } catch is CloudflareTransferError {
+      temporaryFile.remove()
+      status = .tooLarge
     } catch {
+      temporaryFile.remove()
       status = error.dashIsCancellation ? .loading : .failed
     }
-  }
-
-  /// QuickLook keys type detection off the file extension, so the temp copy
-  /// keeps the object's own filename inside a unique directory to avoid
-  /// collisions between two objects sharing a name.
-  private static func writeTempFile(data: Data, filename: String) async throws -> URL {
-    try await Task.detached(priority: .userInitiated) {
-      let directory = FileManager.default.temporaryDirectory
-        .appendingPathComponent("r2-preview", isDirectory: true)
-        .appendingPathComponent(UUID().uuidString, isDirectory: true)
-      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-      let safeName = filename.isEmpty ? "object" : filename
-      let url = directory.appendingPathComponent(safeName)
-      try data.write(to: url, options: .atomic)
-      return url
-    }.value
   }
 
   // Fires only on genuine dismissal: the transparent actions tray keeps this
   // view mounted, so covering it does not delete the file QuickLook is showing.
   private func cleanup() {
-    guard let localURL else { return }
-    try? FileManager.default.removeItem(at: localURL.deletingLastPathComponent())
+    localFile?.remove()
+    localFile = nil
   }
 }
 
@@ -341,10 +331,10 @@ private struct R2ObjectActionsSheet: View {
     object.key.split(separator: "/").last.map(String.init) ?? object.key
   }
 
-  /// Rename buffers the whole object on the phone, so oversized objects only
-  /// offer Download.
+  /// Rename uses a file-backed phone-side copy and keeps the same explicit
+  /// on-device transfer ceiling as preview and move.
   private var canRename: Bool {
-    allowsWrites && (object.size ?? 0) <= R2Media.transferSizeLimit
+    allowsWrites && R2Media.isWithinTransferLimit(object.size)
   }
 
   private var normalizedKey: String? {
@@ -377,7 +367,38 @@ private struct R2ObjectActionsSheet: View {
       deleteError: deleteError,
       onDelete: allowsWrites ? { Task { await performDelete() } } : nil
     ) {
+      // Secondary/reversible pills first; the primary action pill stays
+      // bottom-most so its position reads as the main verb.
       VStack(spacing: 10) {
+        if publicURL != nil, canRename {
+          DashTrayPillButton(title: "Rename") {
+            newKey = object.key
+            renameError = nil
+            withAnimation(DashTheme.Motion.morph) { renaming = true }
+          }
+        }
+        // Download is file-backed but shares the on-device transfer ceiling
+        // with preview, rename, and move.
+        if publicURL != nil || canRename,
+          let accountID = model.activeAccountID,
+          R2Media.isWithinTransferLimit(object.size)
+        {
+          ShareLink(
+            item: R2ObjectExport(
+              client: model.client, accountID: accountID, bucket: bucket, key: object.key,
+              maximumBytes: R2Media.transferSizeLimitBytes),
+            preview: SharePreview(object.key)
+          ) {
+            Text("Download")
+              .dashTextStyle(.buttonBold)
+              .foregroundStyle(DashTheme.strong)
+              .frame(maxWidth: .infinity, minHeight: 52)
+              .background(DashTheme.recessed, in: DashTheme.pillShape)
+              .dashShadow(.border, in: DashTheme.pillShape)
+          }
+          .buttonStyle(DashPressButtonStyle())
+        }
+
         if let publicURL {
           DashActionButton(title: "Copy public URL") {
             UIPasteboard.general.url = publicURL
@@ -391,12 +412,13 @@ private struct R2ObjectActionsSheet: View {
             withAnimation(DashTheme.Motion.morph) { renaming = true }
           }
         } else if let accountID = model.activeAccountID,
-          (object.size ?? 0) <= R2Media.transferSizeLimit
+          R2Media.isWithinTransferLimit(object.size)
         {
           // Download-only tray: ShareLink styled as the primary action.
           ShareLink(
             item: R2ObjectExport(
-              client: model.client, accountID: accountID, bucket: bucket, key: object.key),
+              client: model.client, accountID: accountID, bucket: bucket, key: object.key,
+              maximumBytes: R2Media.transferSizeLimitBytes),
             preview: SharePreview(object.key)
           ) {
             Text("Download")
@@ -404,34 +426,6 @@ private struct R2ObjectActionsSheet: View {
               .foregroundStyle(DashTheme.inverse)
               .frame(maxWidth: .infinity, minHeight: 52)
               .background(DashTheme.strong, in: DashTheme.pillShape)
-          }
-          .buttonStyle(DashPressButtonStyle())
-        }
-
-        if publicURL != nil, canRename {
-          DashTrayPillButton(title: "Rename") {
-            newKey = object.key
-            renameError = nil
-            withAnimation(DashTheme.Motion.morph) { renaming = true }
-          }
-        }
-        // Download buffers the whole body in memory, so it shares the
-        // on-device transfer ceiling with rename and move.
-        if publicURL != nil || canRename,
-          let accountID = model.activeAccountID,
-          (object.size ?? 0) <= R2Media.transferSizeLimit
-        {
-          ShareLink(
-            item: R2ObjectExport(
-              client: model.client, accountID: accountID, bucket: bucket, key: object.key),
-            preview: SharePreview(object.key)
-          ) {
-            Text("Download")
-              .dashTextStyle(.buttonBold)
-              .foregroundStyle(DashTheme.strong)
-              .frame(maxWidth: .infinity, minHeight: 52)
-              .background(DashTheme.recessed, in: DashTheme.pillShape)
-              .dashShadow(.border, in: DashTheme.pillShape)
           }
           .buttonStyle(DashPressButtonStyle())
         }
@@ -481,24 +475,26 @@ private struct R2ObjectActionsSheet: View {
     renameBusy = true
     renameError = nil
     do {
-      // A plain PUT replaces silently — refuse to rename onto a taken key.
       renamePhase = "Checking destination…"
-      let collision = try await model.client.listR2Objects(
-        accountID: accountID, bucket: bucket, prefix: target)
-      guard !collision.objects.contains(where: { $0.key == target }) else {
-        renameError = DashL10n.string("An object already exists at \(target).")
-        DashDelight.failError()
-        renameBusy = false
-        renamePhase = nil
-        return
-      }
+      try await R2ObjectConsistency.requireAbsent(
+        client: model.client, accountID: accountID, bucket: bucket, key: target)
       renamePhase = "Downloading…"
-      let data = try await model.client.getR2Object(
-        accountID: accountID, bucket: bucket, key: object.key)
+      let temporaryFile = R2TemporaryFile.make(purpose: "r2-rename", filename: filename)
+      defer { temporaryFile.remove() }
+      try await model.client.downloadR2Object(
+        accountID: accountID, bucket: bucket, key: object.key,
+        to: temporaryFile.fileURL, maximumBytes: R2Media.transferSizeLimitBytes)
+      try await R2ObjectConsistency.requireUnchanged(
+        object, client: model.client, accountID: accountID, bucket: bucket)
+      try await R2ObjectConsistency.requireAbsent(
+        client: model.client, accountID: accountID, bucket: bucket, key: target)
       renamePhase = DashL10n.string("Uploading as \(target)…")
       try await model.client.putR2Object(
-        accountID: accountID, bucket: bucket, key: target, data: data,
+        accountID: accountID, bucket: bucket, key: target, fileURL: temporaryFile.fileURL,
         contentType: object.contentType ?? R2Media.mimeType(forKey: target))
+      try Task.checkCancellation()
+      try await R2ObjectConsistency.requireUnchanged(
+        object, client: model.client, accountID: accountID, bucket: bucket)
       renamePhase = "Removing old key…"
       try await model.client.deleteR2Object(
         accountID: accountID, bucket: bucket, key: object.key)
@@ -534,15 +530,22 @@ private struct R2ObjectExport: Transferable {
   let accountID: String
   let bucket: String
   let key: String
+  let maximumBytes: Int64
 
   static var transferRepresentation: some TransferRepresentation {
     FileRepresentation(exportedContentType: .data) { export in
-      let data = try await export.client.getR2Object(
-        accountID: export.accountID, bucket: export.bucket, key: export.key)
       let filename = export.key.split(separator: "/").last.map(String.init) ?? export.key
-      let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-      try data.write(to: url)
-      return SentTransferredFile(url)
+      let temporaryFile = R2TemporaryFile.make(purpose: "r2-export", filename: filename)
+      do {
+        try await export.client.downloadR2Object(
+          accountID: export.accountID, bucket: export.bucket, key: export.key,
+          to: temporaryFile.fileURL, maximumBytes: export.maximumBytes)
+        temporaryFile.scheduleRemoval()
+        return SentTransferredFile(temporaryFile.fileURL)
+      } catch {
+        temporaryFile.remove()
+        throw error
+      }
     }
   }
 }

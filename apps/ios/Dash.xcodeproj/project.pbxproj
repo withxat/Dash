@@ -81,6 +81,25 @@
 		B00000000000000000000146 /* DashToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000145 /* DashToast.swift */; };
 		B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */; };
 		B00000000000000000000148 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000147 /* DebugView.swift */; };
+		B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000150 /* PerformanceDiagnostics.swift */; };
+		B00000000000000000000151 /* WorkerDetailModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000151 /* WorkerDetailModel.swift */; };
+		B00000000000000000000152 /* FeatureDataCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000152 /* FeatureDataCacheTests.swift */; };
+		B00000000000000000000153 /* NavigationRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000153 /* NavigationRuntimeTests.swift */; };
+		B00000000000000000000154 /* PagesBuildMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000154 /* PagesBuildMonitorTests.swift */; };
+		B00000000000000000000155 /* R2TransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000155 /* R2TransferTests.swift */; };
+		B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000156 /* WorkerWatchtowerTests.swift */; };
+		B00000000000000000000157 /* ChartDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000157 /* ChartDataTests.swift */; };
+		B00000000000000000000158 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000158 /* MainTabView.swift */; };
+		B00000000000000000000159 /* ProfileSettingsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000159 /* ProfileSettingsViews.swift */; };
+		B0000000000000000000015A /* ZoneViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015A /* ZoneViews.swift */; };
+		B0000000000000000000015B /* WorkerViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015B /* WorkerViews.swift */; };
+		B0000000000000000000015C /* ZoneOperationsViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015C /* ZoneOperationsViews.swift */; };
+		B0000000000000000000015D /* DashSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015D /* DashSurfaces.swift */; };
+		B0000000000000000000015E /* DashControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015E /* DashControls.swift */; };
+		B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015F /* DashHeaderScrollChrome.swift */; };
+		B00000000000000000000160 /* DashFormChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000160 /* DashFormChrome.swift */; };
+		B00000000000000000000161 /* DashActionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000161 /* DashActionChrome.swift */; };
+		B00000000000000000000162 /* R2TransferSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000162 /* R2TransferSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -178,6 +197,25 @@
 		F00000000000000000000145 /* DashToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashToast.swift; sourceTree = "<group>"; };
 		F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerIgnoreAllTray.swift; sourceTree = "<group>"; };
 		F00000000000000000000147 /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
+		F00000000000000000000150 /* PerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceDiagnostics.swift; sourceTree = "<group>"; };
+		F00000000000000000000151 /* WorkerDetailModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerDetailModel.swift; sourceTree = "<group>"; };
+		F00000000000000000000152 /* FeatureDataCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureDataCacheTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000153 /* NavigationRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationRuntimeTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000154 /* PagesBuildMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildMonitorTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000155 /* R2TransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000156 /* WorkerWatchtowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerWatchtowerTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000157 /* ChartDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDataTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000158 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		F00000000000000000000159 /* ProfileSettingsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSettingsViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000015A /* ZoneViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000015B /* WorkerViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000015C /* ZoneOperationsViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneOperationsViews.swift; sourceTree = "<group>"; };
+		F0000000000000000000015D /* DashSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSurfaces.swift; sourceTree = "<group>"; };
+		F0000000000000000000015E /* DashControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashControls.swift; sourceTree = "<group>"; };
+		F0000000000000000000015F /* DashHeaderScrollChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashHeaderScrollChrome.swift; sourceTree = "<group>"; };
+		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
+		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
+		F00000000000000000000162 /* R2TransferSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferSupport.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -272,9 +310,14 @@
 				F00000000000000000000004 /* AppModel.swift */,
 				F0000000000000000000012B /* DemoBackend.swift */,
 				F00000000000000000000036 /* FeatureDataCache.swift */,
+				F00000000000000000000150 /* PerformanceDiagnostics.swift */,
 				F00000000000000000000005 /* DashTheme.swift */,
+				F0000000000000000000015D /* DashSurfaces.swift */,
+				F0000000000000000000015E /* DashControls.swift */,
 				F00000000000000000000006 /* Catalog.swift */,
 				F00000000000000000000007 /* AppRootView.swift */,
+				F00000000000000000000158 /* MainTabView.swift */,
+				F00000000000000000000159 /* ProfileSettingsViews.swift */,
 				F00000000000000000000008 /* HomeView.swift */,
 				F00000000000000000000009 /* FeatureCatalogView.swift */,
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
@@ -283,16 +326,24 @@
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
+				F0000000000000000000015A /* ZoneViews.swift */,
+				F0000000000000000000015B /* WorkerViews.swift */,
+				F0000000000000000000015C /* ZoneOperationsViews.swift */,
+				F00000000000000000000151 /* WorkerDetailModel.swift */,
 				F0000000000000000000000C /* StorageViews.swift */,
 				F00000000000000000000142 /* KVJSONFormatting.swift */,
 				F00000000000000000000140 /* FileTypeIcons.swift */,
 				F00000000000000000000141 /* R2ObjectPreview.swift */,
+				F00000000000000000000162 /* R2TransferSupport.swift */,
 				F00000000000000000000116 /* R2ObjectViews.swift */,
 				F00000000000000000000117 /* R2ShareDestination.swift */,
 				F00000000000000000000031 /* UserAvatar.swift */,
 				F00000000000000000000033 /* WatchtowerModel.swift */,
 				F00000000000000000000034 /* SolarIcons.swift */,
 				F00000000000000000000035 /* DashChrome.swift */,
+				F0000000000000000000015F /* DashHeaderScrollChrome.swift */,
+				F00000000000000000000160 /* DashFormChrome.swift */,
+				F00000000000000000000161 /* DashActionChrome.swift */,
 				F00000000000000000000101 /* Pagination.swift */,
 				F00000000000000000000103 /* HomePersistence.swift */,
 				F00000000000000000000105 /* DashRoute.swift */,
@@ -326,6 +377,12 @@
 			isa = PBXGroup;
 			children = (
 				F00000000000000000000012 /* DashTests.swift */,
+				F00000000000000000000157 /* ChartDataTests.swift */,
+				F00000000000000000000152 /* FeatureDataCacheTests.swift */,
+				F00000000000000000000153 /* NavigationRuntimeTests.swift */,
+				F00000000000000000000154 /* PagesBuildMonitorTests.swift */,
+				F00000000000000000000155 /* R2TransferTests.swift */,
+				F00000000000000000000156 /* WorkerWatchtowerTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -616,9 +673,14 @@
 				B00000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				B00000000000000000000004 /* AppModel.swift in Sources */,
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
+				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
+				B0000000000000000000015D /* DashSurfaces.swift in Sources */,
+				B0000000000000000000015E /* DashControls.swift in Sources */,
 				B00000000000000000000006 /* Catalog.swift in Sources */,
 				B00000000000000000000007 /* AppRootView.swift in Sources */,
+				B00000000000000000000158 /* MainTabView.swift in Sources */,
+				B00000000000000000000159 /* ProfileSettingsViews.swift in Sources */,
 				B00000000000000000000008 /* HomeView.swift in Sources */,
 				B00000000000000000000009 /* FeatureCatalogView.swift in Sources */,
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
@@ -626,15 +688,23 @@
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
+				B0000000000000000000015A /* ZoneViews.swift in Sources */,
+				B0000000000000000000015B /* WorkerViews.swift in Sources */,
+				B0000000000000000000015C /* ZoneOperationsViews.swift in Sources */,
+				B00000000000000000000151 /* WorkerDetailModel.swift in Sources */,
 				B0000000000000000000000C /* StorageViews.swift in Sources */,
 				B00000000000000000000143 /* KVJSONFormatting.swift in Sources */,
 				B00000000000000000000140 /* FileTypeIcons.swift in Sources */,
 				B00000000000000000000141 /* R2ObjectPreview.swift in Sources */,
+				B00000000000000000000162 /* R2TransferSupport.swift in Sources */,
 				B00000000000000000000118 /* R2ObjectViews.swift in Sources */,
 				B00000000000000000000015 /* UserAvatar.swift in Sources */,
 				B00000000000000000000017 /* WatchtowerModel.swift in Sources */,
 				B00000000000000000000018 /* SolarIcons.swift in Sources */,
 				B00000000000000000000019 /* DashChrome.swift in Sources */,
+				B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */,
+				B00000000000000000000160 /* DashFormChrome.swift in Sources */,
+				B00000000000000000000161 /* DashActionChrome.swift in Sources */,
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
 				B00000000000000000000101 /* Pagination.swift in Sources */,
 				B00000000000000000000103 /* HomePersistence.swift in Sources */,
@@ -668,6 +738,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000012 /* DashTests.swift in Sources */,
+				B00000000000000000000157 /* ChartDataTests.swift in Sources */,
+				B00000000000000000000152 /* FeatureDataCacheTests.swift in Sources */,
+				B00000000000000000000153 /* NavigationRuntimeTests.swift in Sources */,
+				B00000000000000000000154 /* PagesBuildMonitorTests.swift in Sources */,
+				B00000000000000000000155 /* R2TransferTests.swift in Sources */,
+				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -12,6 +12,38 @@ struct DashIntentError: Error, CustomLocalizedStringResourceConvertible {
 
   static let signedOut = DashIntentError(
     message: "Open Dash and sign in to your Cloudflare account first.")
+
+  static let writeAccessRequired = DashIntentError(
+    message:
+      "Open Dash → Settings → Shortcuts & Share, grant write access, then run this shortcut again."
+  )
+}
+
+enum DashIntentAuthorization {
+  static func hasRequiredScopes(_ required: Set<String>, granted: Set<String>?) -> Bool {
+    guard let granted else { return false }
+    return required.isSubset(of: granted)
+  }
+
+  /// App Intents may start before `AppModel` has restored its observable auth
+  /// state. Fall back to the shared Keychain record rather than interpreting a
+  /// transient nil as full access and sending a mutation that will 403.
+  @MainActor
+  static func require(
+    _ required: Set<String>,
+    model: AppModel
+  ) async throws {
+    var granted = model.grantedScopes
+    if granted == nil {
+      granted = try? await KeychainTokenStore().getGrantedScopes()
+      if let granted {
+        model.grantedScopes = granted
+      }
+    }
+    guard hasRequiredScopes(required, granted: granted) else {
+      throw DashIntentError.writeAccessRequired
+    }
+  }
 }
 
 /// A Cloudflare zone, chosen in Shortcuts by name.
@@ -78,6 +110,7 @@ struct PurgeCacheIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
+    try await DashIntentAuthorization.require(["cache.purge"], model: model)
     // The non-deprecated requestConfirmation(conditions:actionName:dialog:) is
     // iOS 18+, and the old overload is deprecated unconditionally (no version),
     // so this warns until IPHONEOS_DEPLOYMENT_TARGET reaches 18.0.
@@ -106,6 +139,7 @@ struct SetUnderAttackIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
+    try await DashIntentAuthorization.require(["zone-settings.write"], model: model)
     let defaults = UserDefaults.standard
     if enabled {
       let settings = try await model.client.listZoneSettings(zoneID: zone.id)
@@ -140,6 +174,7 @@ struct ToggleDevelopmentModeIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
+    try await DashIntentAuthorization.require(["zone-settings.write"], model: model)
     _ = try await model.client.updateZoneSetting(
       zoneID: zone.id, settingID: "development_mode", value: .string(enabled ? "on" : "off"))
     return .result(
@@ -149,32 +184,97 @@ struct ToggleDevelopmentModeIntent: AppIntent {
   }
 }
 
-/// An R2 bucket, chosen in Shortcuts by name. Bucket names are their own ids.
+/// An R2 bucket selected in Shortcuts. The opaque entity id includes the
+/// Cloudflare account so two accounts with the same bucket name can never
+/// resolve to whichever account happens to be active when the shortcut runs.
 struct R2BucketEntity: AppEntity, Identifiable {
-  let id: String
+  let accountID: String
+  let accountName: String
+  let name: String
+
+  var id: String {
+    Self.identifier(accountID: accountID, bucketName: name)
+  }
 
   static let typeDisplayRepresentation: TypeDisplayRepresentation = "R2 Bucket"
-  var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(id)") }
+  var displayRepresentation: DisplayRepresentation {
+    DisplayRepresentation(title: "\(name)", subtitle: "\(accountName)")
+  }
   static let defaultQuery = R2BucketEntityQuery()
+
+  init(accountID: String, accountName: String, name: String) {
+    self.accountID = accountID
+    self.accountName = accountName
+    self.name = name
+  }
+
+  static func identifier(accountID: String, bucketName: String) -> String {
+    "dash-r2-v1.\(encodeIdentifierPart(accountID)).\(encodeIdentifierPart(bucketName))"
+  }
+
+  static func decodeIdentifier(_ identifier: String) -> (accountID: String, bucketName: String)? {
+    let parts = identifier.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 3, parts[0] == "dash-r2-v1",
+      let accountID = decodeIdentifierPart(String(parts[1])),
+      let bucketName = decodeIdentifierPart(String(parts[2])),
+      !accountID.isEmpty, !bucketName.isEmpty
+    else {
+      return nil
+    }
+    return (accountID, bucketName)
+  }
+
+  private static func encodeIdentifierPart(_ value: String) -> String {
+    Data(value.utf8).base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
+  }
+
+  private static func decodeIdentifierPart(_ value: String) -> String? {
+    var base64 =
+      value
+      .replacingOccurrences(of: "-", with: "+")
+      .replacingOccurrences(of: "_", with: "/")
+    let remainder = base64.count % 4
+    if remainder != 0 {
+      base64 += String(repeating: "=", count: 4 - remainder)
+    }
+    guard let data = Data(base64Encoded: base64) else { return nil }
+    return String(data: data, encoding: .utf8)
+  }
 }
 
 struct R2BucketEntityQuery: EntityStringQuery {
   @Dependency private var model: AppModel
 
   @MainActor
-  private func accountID() throws -> String {
-    guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
-    return accountID
+  private func activeAccount() throws -> CloudflareAccount {
+    guard let account = model.activeAccount else { throw DashIntentError.signedOut }
+    return account
   }
 
   @MainActor
   func entities(for identifiers: [String]) async throws -> [R2BucketEntity] {
-    identifiers.map(R2BucketEntity.init(id:))
+    try identifiers.map { identifier in
+      guard let decoded = R2BucketEntity.decodeIdentifier(identifier) else {
+        throw DashIntentError(
+          message:
+            "This shortcut uses an older unscoped bucket. Edit it and choose the R2 bucket again.")
+      }
+      let accountName =
+        model.accounts.first(where: { $0.id == decoded.accountID })?.name
+        ?? "Account \(decoded.accountID)"
+      return R2BucketEntity(
+        accountID: decoded.accountID,
+        accountName: accountName,
+        name: decoded.bucketName)
+    }
   }
 
   @MainActor
   func entities(matching string: String) async throws -> [R2BucketEntity] {
-    try await all().filter { $0.id.localizedCaseInsensitiveContains(string) }
+    try await all().filter { $0.name.localizedCaseInsensitiveContains(string) }
   }
 
   @MainActor
@@ -184,12 +284,15 @@ struct R2BucketEntityQuery: EntityStringQuery {
 
   @MainActor
   private func all() async throws -> [R2BucketEntity] {
-    let accountID = try accountID()
+    let account = try activeAccount()
+    let accountID = account.id
     if let cached: [R2Bucket] = model.featureCache.get(FeatureCacheKey.r2Buckets(accountID)) {
-      return cached.map { R2BucketEntity(id: $0.name) }
+      return cached.map {
+        R2BucketEntity(accountID: accountID, accountName: account.name, name: $0.name)
+      }
     }
     return try await model.client.listR2Buckets(accountID: accountID)
-      .map { R2BucketEntity(id: $0.name) }
+      .map { R2BucketEntity(accountID: accountID, accountName: account.name, name: $0.name) }
   }
 }
 
@@ -207,23 +310,81 @@ struct UploadToR2Intent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
-    guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
+    guard let context = model.accountRequestContext else { throw DashIntentError.signedOut }
+    try await DashIntentAuthorization.require(
+      R2ShareDestination.requiredWriteScopes,
+      model: model)
+    let accountID = context.accountID
     let remembered = R2ShareDestination.destination(accountID: accountID)
-    guard let bucketName = bucket?.id ?? remembered?.bucket else {
+    if let bucket, bucket.accountID != accountID {
+      throw DashIntentError(
+        message:
+          "This shortcut targets \(bucket.accountName). Switch to that account in Dash or choose a bucket from the active account."
+      )
+    }
+    guard let bucketName = bucket?.name ?? remembered?.bucket else {
       throw DashIntentError(
         message: "Pick a bucket — Dash has no remembered R2 destination for this account yet.")
     }
-    let data = file.data
-    guard data.count <= R2Media.transferSizeLimit else {
-      throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
-    }
+    let accountName = bucket?.accountName ?? model.activeAccount?.name ?? "Account \(accountID)"
     let rawFolder =
       folder ?? remembered.flatMap { $0.bucket == bucketName ? $0.prefix : nil } ?? ""
     let prefix = Self.normalizedPrefix(rawFolder)
     let key = prefix + file.filename
+
+    try await requestConfirmation(
+      result: .result(
+        dialog: "Upload \(file.filename) to \(bucketName) in \(accountName)?"))
+    guard model.isCurrentAccount(context) else {
+      throw DashIntentError(
+        message: "The active account changed before the upload started. Run the shortcut again.")
+    }
+
+    let inputFileURL = file.fileURL
+    let accessesSecurityScope = inputFileURL?.startAccessingSecurityScopedResource() ?? false
+    defer {
+      if accessesSecurityScope {
+        inputFileURL?.stopAccessingSecurityScopedResource()
+      }
+    }
+
+    let uploadURL: URL
+    let ownedTemporaryFile: R2TemporaryFile?
+    if let fileURL = inputFileURL {
+      guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+        throw DashIntentError(message: "Dash can't read \(file.filename).")
+      }
+      guard size <= R2Media.transferSizeLimit else {
+        throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
+      }
+      uploadURL = fileURL
+      ownedTemporaryFile = nil
+    } else {
+      // IntentFile can also be constructed from Data. Materialize that rare
+      // representation off the main actor, while the common file-backed path
+      // stays zero-copy.
+      let data = file.data
+      guard data.count <= R2Media.transferSizeLimit else {
+        throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
+      }
+      let temporaryFile = R2TemporaryFile.make(
+        purpose: "r2-intent-upload", filename: file.filename)
+      try await temporaryFile.write(data)
+      uploadURL = temporaryFile.fileURL
+      ownedTemporaryFile = temporaryFile
+    }
+    defer { ownedTemporaryFile?.remove() }
+
+    guard model.isCurrentAccount(context) else {
+      throw DashIntentError(
+        message: "The active account changed before the upload started. Run the shortcut again.")
+    }
     try await model.client.putR2Object(
-      accountID: accountID, bucket: bucketName, key: key, data: data,
+      accountID: accountID, bucket: bucketName, key: key, fileURL: uploadURL,
       contentType: file.type?.preferredMIMEType ?? R2Media.mimeType(forKey: key))
+    guard model.isCurrentAccount(context) else {
+      throw DashIntentError(message: "The active account changed before the upload finished.")
+    }
     model.featureCache.remove(
       prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucketName))
     let host: String? = {
@@ -240,9 +401,11 @@ struct UploadToR2Intent: AppIntent {
         accountID: accountID, bucket: bucketName, prefix: prefix, publicHost: host ?? ""))
     if let host, let url = R2DomainsSnapshot.url(host: host, key: key) {
       UIPasteboard.general.url = url
-      return .result(dialog: "Uploaded \(file.filename) to \(bucketName) — public URL copied.")
+      return .result(
+        dialog:
+          "Uploaded \(file.filename) to \(bucketName) in \(accountName) — public URL copied.")
     }
-    return .result(dialog: "Uploaded \(file.filename) to \(bucketName).")
+    return .result(dialog: "Uploaded \(file.filename) to \(bucketName) in \(accountName).")
   }
 
   /// Pure: "/a/b" and "a/b/" both become "a/b/"; empty stays empty.
@@ -263,7 +426,8 @@ struct OpenWatchtowerIntent: AppIntent {
 
   @MainActor
   func perform() async throws -> some IntentResult {
-    model.pendingRoute = .watchtower
+    guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
+    model.pendingRoute = DashRoute.watchtower.scoped(to: accountID)
     return .result()
   }
 }

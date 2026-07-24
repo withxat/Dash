@@ -1,0 +1,230 @@
+import CloudflareAPI
+import Foundation
+import Testing
+
+@testable import Dash
+
+@Test @MainActor func featureDataCacheJoinsConcurrentLoadsForOneKey() async throws {
+  let cache = FeatureDataCache()
+  let probe = FeatureLoadProbe()
+
+  let first = Task { @MainActor in
+    try await cache.coalescedLoad("shared") {
+      try await probe.suspendedValue()
+    }
+  }
+  while await probe.startCount == 0 {
+    await Task.yield()
+  }
+
+  let second = Task { @MainActor in
+    try await cache.coalescedLoad("shared") {
+      try await probe.suspendedValue()
+    }
+  }
+  for _ in 0..<20 {
+    await Task.yield()
+  }
+  await probe.releaseAll()
+
+  let firstValue = try await first.value
+  let secondValue = try await second.value
+  let startCount = await probe.startCount
+  #expect(firstValue == 42)
+  #expect(secondValue == 42)
+  #expect(startCount == 1)
+}
+
+@Test @MainActor func featureDataCacheCancelsTheOnlyWaiterAndUnderlyingLoadPromptly() async {
+  let cache = FeatureDataCache()
+  let probe = FeatureLoadProbe()
+  let completion = FeatureLoadCompletionProbe()
+  let load = Task { @MainActor in
+    do {
+      let _: Int = try await cache.coalescedLoad("only-waiter") {
+        try await probe.longRunningValue()
+      }
+      await completion.finish(cancelled: false)
+    } catch is CancellationError {
+      await completion.finish(cancelled: true)
+    } catch {
+      await completion.finish(cancelled: false)
+    }
+  }
+  while await probe.startCount == 0 {
+    await Task.yield()
+  }
+
+  load.cancel()
+  for _ in 0..<50 {
+    if await completion.isFinished { break }
+    try? await Task.sleep(for: .milliseconds(10))
+  }
+
+  #expect(await completion.isFinished)
+  #expect(await completion.wasCancelled)
+  #expect(await probe.cancellationCount == 1)
+  _ = await load.result
+}
+
+@Test @MainActor func featureDataCacheKeepsSharedLoadAliveWhenOneWaiterCancels() async throws {
+  let cache = FeatureDataCache()
+  let probe = FeatureLoadProbe()
+  let firstCompletion = FeatureLoadCompletionProbe()
+  let first = Task { @MainActor in
+    do {
+      let _: Int = try await cache.coalescedLoad("two-waiters") {
+        try await probe.suspendedValue()
+      }
+      await firstCompletion.finish(cancelled: false)
+    } catch is CancellationError {
+      await firstCompletion.finish(cancelled: true)
+    } catch {
+      await firstCompletion.finish(cancelled: false)
+    }
+  }
+  while await probe.startCount == 0 {
+    await Task.yield()
+  }
+  let second = Task { @MainActor in
+    try await cache.coalescedLoad("two-waiters") {
+      try await probe.suspendedValue()
+    }
+  }
+  for _ in 0..<10 { await Task.yield() }
+
+  first.cancel()
+  for _ in 0..<50 {
+    if await firstCompletion.isFinished { break }
+    try? await Task.sleep(for: .milliseconds(10))
+  }
+
+  #expect(await firstCompletion.wasCancelled)
+  #expect(await probe.cancellationCount == 0)
+  #expect(await probe.startCount == 1)
+
+  await probe.releaseAll()
+  #expect(try await second.value == 42)
+  _ = await first.result
+}
+
+@Test @MainActor func featureDataCacheRetriesAfterFailure() async throws {
+  let cache = FeatureDataCache()
+
+  do {
+    let _: Int = try await cache.coalescedLoad("retry") {
+      throw FeatureLoadTestError.expected
+    }
+    Issue.record("Expected the first load to fail")
+  } catch is FeatureLoadTestError {
+    // Expected.
+  }
+
+  let value: Int = try await cache.coalescedLoad("retry") { 7 }
+  #expect(value == 7)
+}
+
+@Test @MainActor func featureDataCacheClearCancelsInFlightWork() async {
+  let cache = FeatureDataCache()
+  let probe = FeatureLoadProbe()
+  let load = Task { @MainActor in
+    try await cache.coalescedLoad("cancelled") {
+      try await probe.longRunningValue()
+    }
+  }
+  while await probe.startCount == 0 {
+    await Task.yield()
+  }
+
+  cache.clear()
+  do {
+    _ = try await load.value
+    Issue.record("Expected clear() to cancel the in-flight load")
+  } catch is CancellationError {
+    // Expected.
+  } catch {
+    Issue.record("Expected CancellationError, got \(error)")
+  }
+}
+
+@Test @MainActor func accountGenerationRejectsAnOlderVisitToTheSameAccount() throws {
+  let defaultsKey = "dash.active_account_id"
+  let previousAccountID = UserDefaults.standard.string(forKey: defaultsKey)
+  defer {
+    if let previousAccountID {
+      UserDefaults.standard.set(previousAccountID, forKey: defaultsKey)
+    } else {
+      UserDefaults.standard.removeObject(forKey: defaultsKey)
+    }
+  }
+
+  let accounts = try JSONDecoder().decode(
+    [CloudflareAccount].self,
+    from: Data(
+      """
+      [
+        {"id":"generation-a","name":"Account A"},
+        {"id":"generation-b","name":"Account B"}
+      ]
+      """.utf8))
+  let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
+
+  model.selectAccount(accounts[0])
+  let firstA = try #require(model.accountRequestContext)
+  model.selectAccount(accounts[1])
+  model.selectAccount(accounts[0])
+  let secondA = try #require(model.accountRequestContext)
+
+  #expect(firstA.accountID == secondA.accountID)
+  #expect(firstA.generation != secondA.generation)
+  #expect(!model.isCurrentAccount(firstA))
+  #expect(model.isCurrentAccount(secondA))
+}
+
+private enum FeatureLoadTestError: Error {
+  case expected
+}
+
+private actor FeatureLoadProbe {
+  private(set) var startCount = 0
+  private(set) var cancellationCount = 0
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func suspendedValue() async throws -> Int {
+    startCount += 1
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+    try Task.checkCancellation()
+    return 42
+  }
+
+  func longRunningValue() async throws -> Int {
+    startCount += 1
+    do {
+      try await Task.sleep(for: .seconds(30))
+    } catch {
+      cancellationCount += 1
+      throw error
+    }
+    return 42
+  }
+
+  func releaseAll() {
+    let pending = continuations
+    continuations.removeAll()
+    for continuation in pending {
+      continuation.resume()
+    }
+  }
+}
+
+private actor FeatureLoadCompletionProbe {
+  private(set) var isFinished = false
+  private(set) var wasCancelled = false
+
+  func finish(cancelled: Bool) {
+    isFinished = true
+    wasCancelled = cancelled
+  }
+}

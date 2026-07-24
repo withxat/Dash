@@ -13,6 +13,11 @@ enum AuthenticationState: Sendable, Equatable {
   case unauthenticated
 }
 
+struct AccountRequestContext: Hashable, Sendable {
+  let accountID: String
+  let generation: UInt64
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -63,11 +68,11 @@ final class AppModel {
 
   private var authSession: ASWebAuthenticationSession?
   private var isRetryingIdentity = false
-  private var watchtowerRefresh: (accountID: String, task: Task<WatchtowerSnapshot, Never>)?
+  private var accountGeneration: UInt64 = 0
 
   init(configuration: AppConfiguration = .current) {
     self.configuration = configuration
-    selectedScopes = DashAuthorizationScopes.core
+    selectedScopes = DashAuthorizationScopes.initialReadOnly
     let store = KeychainTokenStore()
     tokenStore = store
     client = CloudflareClient(
@@ -80,6 +85,22 @@ final class AppModel {
   }
 
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
+
+  var accountRequestContext: AccountRequestContext? {
+    guard let activeAccountID else { return nil }
+    return AccountRequestContext(accountID: activeAccountID, generation: accountGeneration)
+  }
+
+  func isCurrentAccount(_ context: AccountRequestContext) -> Bool {
+    activeAccountID == context.accountID && accountGeneration == context.generation
+  }
+
+  private func resetAccountScopedWork() {
+    accountGeneration &+= 1
+    featureCache.clear()
+    PagesBuildActivityController.shared.invalidateSession()
+    watchtowerIssueCount = nil
+  }
 
   /// The headline for profile surfaces: the active account's label, else the
   /// email — never the email twice. Cloudflare's per-user first/last name has
@@ -193,23 +214,34 @@ final class AppModel {
         {
           featureCache.set(FeatureCacheKey.workers("ui-account"), workers)
         }
+        let previewWorkerDeployments = [
+          WorkerDeploymentSummary(
+            id: "preview-deployment",
+            createdOn: ISO8601DateFormatter().string(
+              from: Date().addingTimeInterval(-18 * 60)),
+            source: "api",
+            versions: [])
+        ]
+        let previewWorkerAnalytics = WorkerAnalyticsPayload(
+          requests: 12_480, errors: 7, cpuTimeP50Us: 840,
+          points: [])
         featureCache.set(
           FeatureCacheKey.workerSubdomain(accountID: "ui-account", name: "api-worker"), true)
         featureCache.set(
           FeatureCacheKey.workerDeployments(accountID: "ui-account", name: "api-worker"),
-          [
-            WorkerDeploymentSummary(
-              id: "preview-deployment",
-              createdOn: ISO8601DateFormatter().string(
-                from: Date().addingTimeInterval(-18 * 60)),
-              source: "api",
-              versions: [])
-          ])
+          previewWorkerDeployments)
         featureCache.set(
           FeatureCacheKey.workerAnalytics(accountID: "ui-account", name: "api-worker"),
-          WorkerAnalyticsPayload(
-            requests: 12_480, errors: 7, cpuTimeP50Us: 840,
-            points: []))
+          previewWorkerAnalytics)
+        featureCache.set(
+          WorkerDetailSnapshot.cacheKey(accountID: "ui-account", name: "api-worker"),
+          WorkerDetailSnapshot(
+            subdomainEnabled: true,
+            workersDevHostname: "api-worker.preview.workers.dev",
+            deployments: previewWorkerDeployments,
+            analytics: previewWorkerAnalytics,
+            domains: [],
+            routes: []))
         if let buckets = try? JSONDecoder().decode(
           [R2Bucket].self,
           from: Data(#"[{"name":"assets","creation_date":"2026-01-15T12:00:00Z"}]"#.utf8))
@@ -391,7 +423,7 @@ final class AppModel {
           try await tokenStore.setGrantedScopes(granted)
           grantedScopes = granted
           selectedScopes = granted
-          featureCache.clear()
+          resetAccountScopedWork()
           try await loadIdentity()
           // Let the browser sheet finish dismissing first, or the login →
           // catalog transition plays hidden behind it and sign-in reads as a
@@ -440,6 +472,7 @@ final class AppModel {
   /// demo exercises the same code as a real sign-in.
   func enterDemo() {
     guard authState == .unauthenticated, !isDemoSession else { return }
+    resetAccountScopedWork()
     isDemoSession = true
     errorMessage = nil
     client = CloudflareClient(
@@ -455,17 +488,17 @@ final class AppModel {
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
   private func exitDemo() {
+    resetAccountScopedWork()
     isDemoSession = false
     client = CloudflareClient(
       clientID: configuration.clientID, tokenStore: tokenStore, session: DashAPISession.shared)
-    featureCache.clear()
     avatars.clear()
     Task { await r2Thumbnails.clear() }
     accounts = []
     user = nil
     activeAccountID = nil
     grantedScopes = nil
-    selectedScopes = DashAuthorizationScopes.core
+    selectedScopes = DashAuthorizationScopes.initialReadOnly
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
@@ -478,9 +511,13 @@ final class AppModel {
   func signOut() async {
     if isDemoSession {
       exitDemo()
+      await Task.yield()
+      await R2TemporaryFile.removeAllFiles()
       return
     }
     isAuthenticating = false
+    resetAccountScopedWork()
+    activeAccountID = nil
 
     // Push webhooks live in the user's Cloudflare accounts — delete them
     // before revoking the token, or the client can no longer authenticate.
@@ -502,21 +539,18 @@ final class AppModel {
         clientID: configuration.clientID, token: token, session: DashAPISession.shared)
     }
     try? await tokenStore.clear()
-    featureCache.clear()
     avatars.clear()
     await r2Thumbnails.clear()
     accounts = []
     user = nil
-    activeAccountID = nil
     grantedScopes = nil
-    selectedScopes = DashAuthorizationScopes.core
+    selectedScopes = DashAuthorizationScopes.initialReadOnly
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
     pendingDeviceToken = nil
     toasts.dismiss()
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
-    PagesBuildActivityController.shared.cancelBackgroundRefresh()
 
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     if let url = WatchtowerWidgetSnapshot.containerFileURL {
@@ -526,11 +560,15 @@ final class AppModel {
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
     authState = .unauthenticated
+    // Let SwiftUI tear down account-scoped views and cancel their transfers
+    // before removing the session's temporary R2 files.
+    await Task.yield()
+    await R2TemporaryFile.removeAllFiles()
   }
 
   func selectAccount(_ account: CloudflareAccount) {
     guard activeAccountID != account.id else { return }
-    featureCache.clear()
+    resetAccountScopedWork()
     Task { await r2Thumbnails.clear() }
     watchtowerIssueCount = nil
     toasts.dismiss()
@@ -542,8 +580,6 @@ final class AppModel {
   /// rebuild Watchtower (and similar) strings without a process restart.
   func discardLocalizedCaches() {
     featureCache.remove(prefix: "watchtower:")
-    watchtowerRefresh?.task.cancel()
-    watchtowerRefresh = nil
     toasts.dismiss()
   }
 
@@ -551,36 +587,39 @@ final class AppModel {
   /// fresh, joins an in-flight refresh for the same account instead of
   /// doubling the fan-out, and keeps the tab-badge count in sync.
   func watchtowerSnapshot(force: Bool = false) async -> WatchtowerSnapshot? {
-    guard let accountID = activeAccountID else { return nil }
-    let key = FeatureCacheKey.watchtower(accountID)
+    guard let context = accountRequestContext else { return nil }
+    let key = FeatureCacheKey.watchtower(context.accountID)
     if !force, let cached: WatchtowerSnapshot = featureCache.get(key) {
-      syncWatchtowerInboxBadge(from: cached, accountID: accountID)
+      syncWatchtowerInboxBadge(from: cached, accountID: context.accountID)
       return cached
     }
-    if let inFlight = watchtowerRefresh, inFlight.accountID == accountID {
-      return await inFlight.task.value
-    }
     let client = client
-    let task = Task {
-      let result = await WatchtowerEngine.load(client: client, accountID: accountID)
-      return WatchtowerSnapshot(
-        signals: result.signals,
-        alerts: result.alerts,
-        alertsStatus: result.alertsStatus,
-        missingScopeChecks: result.missingScopeChecks,
-        failedChecks: result.failedChecks,
-        fetchedAt: .now)
+    let snapshot: WatchtowerSnapshot
+    do {
+      snapshot = try await featureCache.coalescedLoad(key) {
+        try Task.checkCancellation()
+        let result = try await WatchtowerEngine.loadCancellable(
+          client: client, accountID: context.accountID)
+        try Task.checkCancellation()
+        return WatchtowerSnapshot(
+          signals: result.signals,
+          alerts: result.alerts,
+          alertsStatus: result.alertsStatus,
+          missingScopeChecks: result.missingScopeChecks,
+          failedChecks: result.failedChecks,
+          fetchedAt: .now)
+      }
+    } catch {
+      return nil
     }
-    watchtowerRefresh = (accountID, task)
-    defer {
-      if watchtowerRefresh?.accountID == accountID { watchtowerRefresh = nil }
+    guard !Task.isCancelled, isCurrentAccount(context) else { return nil }
+    if let committed: WatchtowerSnapshot = featureCache.get(key),
+      committed.fetchedAt >= snapshot.fetchedAt
+    {
+      return committed
     }
-    let snapshot = await task.value
-    // The user may have switched accounts mid-flight; never let a stale
-    // account's result touch the cache or the badge.
-    guard activeAccountID == accountID else { return snapshot }
     featureCache.set(key, snapshot, ttl: nil)
-    syncWatchtowerInboxBadge(from: snapshot, accountID: accountID)
+    syncWatchtowerInboxBadge(from: snapshot, accountID: context.accountID)
     publishWidgetSnapshot(snapshot)
     return snapshot
   }

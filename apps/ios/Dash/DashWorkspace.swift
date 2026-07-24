@@ -115,10 +115,7 @@ struct DestinationStackHost<Root: View>: View {
     // Kill the system push/pop gray dimming plate (`_UIParallaxDimmingView`)
     // and the drop shadow it casts onto the previous screen.
     .background {
-      NavigationDimmingScrubber(
-        isTransitioning: !navigator.path.isEmpty,
-        pulse: navigator.path.count
-      )
+      NavigationDimmingScrubber(pulse: navigator.path.count)
     }
     .environment(\.destinationNavigator, navigator)
     .environment(\.dashTabActive, isTabActive)
@@ -132,11 +129,10 @@ struct DestinationStackHost<Root: View>: View {
 /// `_UIParallaxDimmingView` (plus a soft edge shadow) onto the previous
 /// screen — visible as a muddy cast over Home / catalog roots. There is no
 /// public API to opt out, so clear those views for the duration of a
-/// transition and while a detail stays mounted (interactive pop can re-add
-/// them mid-gesture).
+/// transition. Interactive pop can re-add them mid-gesture, so the scrubber
+/// also follows the navigation controller's pop recognizer and keeps a short
+/// tail after the gesture settles.
 private struct NavigationDimmingScrubber: UIViewRepresentable {
-  /// True while a detail is on the stack — keep scrubbing for interactive pop.
-  var isTransitioning: Bool
   /// Bumps on push/pop so a brief scrub covers the animated transition.
   var pulse: Int
 
@@ -145,7 +141,14 @@ private struct NavigationDimmingScrubber: UIViewRepresentable {
   }
 
   func updateUIView(_ uiView: NavigationDimmingScrubberView, context: Context) {
-    uiView.setActive(isTransitioning, pulse: pulse)
+    uiView.setPulse(pulse)
+  }
+
+  static func dismantleUIView(
+    _ uiView: NavigationDimmingScrubberView,
+    coordinator: ()
+  ) {
+    uiView.tearDown()
   }
 }
 
@@ -155,14 +158,29 @@ enum NavigationTransitionChromeRules {
   }
 }
 
+enum NavigationScrubSchedule {
+  static let pathTransitionDuration: CFTimeInterval = 0.55
+  static let interactiveSettleDuration: CFTimeInterval = 0.12
+
+  static func shouldRun(
+    now: CFTimeInterval,
+    holdUntil: CFTimeInterval,
+    interactivePopActive: Bool
+  ) -> Bool {
+    interactivePopActive || now < holdUntil
+  }
+}
+
 private final class NavigationDimmingScrubberView: UIView {
   /// `CADisplayLink` isn't Sendable; only touched on the main thread / from
-  /// `willMove(toWindow:)`, never from `deinit` (Swift 6 rejects that).
+  /// view lifecycle callbacks, never from `deinit` (Swift 6 rejects that).
   nonisolated(unsafe) private var displayLink: CADisplayLink?
   private let linkProxy = DisplayLinkProxy()
   private var holdUntil: CFTimeInterval = 0
-  private var wantsHold = false
+  private var interactivePopActive = false
   private var lastPulse: Int = .min
+  private weak var navigationController: UINavigationController?
+  private weak var interactivePopGesture: UIGestureRecognizer?
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -175,32 +193,78 @@ private final class NavigationDimmingScrubberView: UIView {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
 
-  override func willMove(toWindow newWindow: UIWindow?) {
-    super.willMove(toWindow: newWindow)
-    if newWindow == nil {
-      stopLink()
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else {
+      tearDown()
+      return
+    }
+    attachNavigationControllerIfNeeded()
+    if lastPulse != .min {
+      holdUntil = max(
+        holdUntil,
+        CACurrentMediaTime() + NavigationScrubSchedule.pathTransitionDuration)
+      startLink()
+      scrub()
     }
   }
 
-  func setActive(_ active: Bool, pulse: Int) {
-    wantsHold = active
-    if pulse != lastPulse {
-      lastPulse = pulse
-      // Cover the ~0.35s push/pop animation after the path flips.
-      holdUntil = CACurrentMediaTime() + 0.55
-    }
-    if active || CACurrentMediaTime() < holdUntil {
+  func setPulse(_ pulse: Int) {
+    attachNavigationControllerIfNeeded()
+    guard pulse != lastPulse else { return }
+    lastPulse = pulse
+
+    // Cover the ~0.35s push/pop animation after the path flips.
+    let now = CACurrentMediaTime()
+    holdUntil = max(
+      holdUntil,
+      now + NavigationScrubSchedule.pathTransitionDuration)
+    startLink()
+    scrub()
+  }
+
+  fileprivate func tearDown() {
+    stopLink()
+    unbindInteractivePopGesture()
+    navigationController = nil
+    interactivePopActive = false
+    holdUntil = 0
+  }
+
+  @objc private func handleInteractivePop(_ gesture: UIGestureRecognizer) {
+    switch gesture.state {
+    case .began:
+      interactivePopActive = true
       startLink()
       scrub()
-    } else {
-      stopLink()
+    case .changed:
+      guard !interactivePopActive else { return }
+      interactivePopActive = true
+      startLink()
+      scrub()
+    case .ended, .cancelled, .failed:
+      settleInteractivePop()
+    case .possible:
+      break
+    @unknown default:
+      settleInteractivePop()
     }
+  }
+
+  private func settleInteractivePop() {
+    interactivePopActive = false
+    let now = CACurrentMediaTime()
+    holdUntil = max(
+      holdUntil,
+      now + NavigationScrubSchedule.interactiveSettleDuration)
+    startLink()
+    scrub()
   }
 
   private func startLink() {
     guard displayLink == nil else { return }
-    // Proxy breaks the CADisplayLink → target retain so teardown via
-    // `willMove(toWindow:)` can release this view cleanly.
+    // Proxy breaks the CADisplayLink → target retain so lifecycle teardown can
+    // release this view cleanly.
     let link = CADisplayLink(target: linkProxy, selector: #selector(DisplayLinkProxy.tick))
     link.add(to: .main, forMode: .common)
     displayLink = link
@@ -212,10 +276,17 @@ private final class NavigationDimmingScrubberView: UIView {
   }
 
   fileprivate func handleTick() {
-    scrub()
-    if !wantsHold, CACurrentMediaTime() >= holdUntil {
+    let now = CACurrentMediaTime()
+    guard
+      NavigationScrubSchedule.shouldRun(
+        now: now,
+        holdUntil: holdUntil,
+        interactivePopActive: interactivePopActive)
+    else {
       stopLink()
+      return
     }
+    scrub()
   }
 
   // `@MainActor`: the link is added to the `.main` run loop, so `tick` always
@@ -227,8 +298,9 @@ private final class NavigationDimmingScrubberView: UIView {
   }
 
   private func scrub() {
-    if let navView = enclosingNavigationView() {
-      Self.clearTransitionChrome(in: navView)
+    attachNavigationControllerIfNeeded()
+    if let navigationController {
+      Self.clearTransitionChrome(in: navigationController.view)
       return
     }
     // Fallback: dimming views are uniquely named — safe to sweep the window.
@@ -237,22 +309,53 @@ private final class NavigationDimmingScrubberView: UIView {
     Self.clearTransitionChrome(in: root)
   }
 
-  private func enclosingNavigationView() -> UIView? {
+  private func attachNavigationControllerIfNeeded() {
+    if let navigationController, navigationController.view.window === window {
+      bindInteractivePopGestureIfNeeded(to: navigationController)
+      return
+    }
+
+    unbindInteractivePopGesture()
+    navigationController = nil
+    guard let resolved = enclosingNavigationController() else { return }
+    navigationController = resolved
+    bindInteractivePopGestureIfNeeded(to: resolved)
+  }
+
+  private func bindInteractivePopGestureIfNeeded(to navigationController: UINavigationController) {
+    guard
+      let gesture = navigationController.interactivePopGestureRecognizer,
+      interactivePopGesture !== gesture
+    else {
+      return
+    }
+    unbindInteractivePopGesture()
+    gesture.addTarget(self, action: #selector(handleInteractivePop(_:)))
+    interactivePopGesture = gesture
+  }
+
+  private func unbindInteractivePopGesture() {
+    interactivePopGesture?.removeTarget(self, action: #selector(handleInteractivePop(_:)))
+    interactivePopGesture = nil
+    interactivePopActive = false
+  }
+
+  private func enclosingNavigationController() -> UINavigationController? {
     var node: UIView? = self
     while let current = node {
       var responder: UIResponder? = current
       while let next = responder {
         if let nav = next as? UINavigationController {
-          return nav.view
+          return nav
         }
         if let viewController = next as? UIViewController {
           if let nav = viewController.navigationController {
-            return nav.view
+            return nav
           }
           if let nav = viewController.children.compactMap({ $0 as? UINavigationController })
             .first
           {
-            return nav.view
+            return nav
           }
         }
         responder = next.next
@@ -299,8 +402,8 @@ struct DestinationRoutedContent: View {
   let destination: Destination
 
   private var allowsWrites: Bool {
-    guard let feature = featureID(for: destination) else { return true }
-    return feature.capability.accessLevel(grantedScopes: model.grantedScopes) == .full
+    let scopes = writeScopes(for: destination)
+    return scopes.isEmpty || model.hasScopes(scopes)
   }
 
   var body: some View {
@@ -338,7 +441,7 @@ struct DestinationRoutedContent: View {
       }
     }
     .environment(\.featureAllowsWrites, allowsWrites)
-    .environment(\.featureRequiredScopes, requiredScopes(for: destination))
+    .environment(\.featureRequiredScopes, readScopes(for: destination))
     .environment(\.featureIdentity, featureID(for: destination))
   }
 }

@@ -16,7 +16,9 @@ final class WatchtowerScreenState {
   var mutedSignalIDs: Set<String> = []
 
   var summary: WatchtowerSummary {
-    let scored = signals.filter { $0.status == .ok || !mutedSignalIDs.contains($0.id) }
+    let scored = operationalSignals.filter {
+      $0.status == .ok || !mutedSignalIDs.contains($0.id)
+    }
     return WatchtowerSummary(
       critical: scored.filter { $0.status == .critical }.count,
       warning: scored.filter { $0.status == .warning }.count,
@@ -25,14 +27,19 @@ final class WatchtowerScreenState {
   }
 
   var issues: [WatchtowerSignal] {
-    signals.filter { $0.status != .ok && !mutedSignalIDs.contains($0.id) }
+    operationalSignals.filter { $0.status != .ok && !mutedSignalIDs.contains($0.id) }
   }
   var mutedIssues: [WatchtowerSignal] {
-    signals.filter { $0.status != .ok && mutedSignalIDs.contains($0.id) }
+    operationalSignals.filter { $0.status != .ok && mutedSignalIDs.contains($0.id) }
   }
-  var healthy: [WatchtowerSignal] { signals.filter { $0.status == .ok } }
+  var healthy: [WatchtowerSignal] { operationalSignals.filter { $0.status == .ok } }
+  var coverageLimits: [WatchtowerSignal] {
+    signals.filter { $0.id == WatchtowerEngine.coverageSignalID }
+  }
+  private var operationalSignals: [WatchtowerSignal] {
+    signals.filter { $0.id != WatchtowerEngine.coverageSignalID }
+  }
   var issueCount: Int { summary.critical + summary.warning }
-  var allClear: Bool { issueCount == 0 }
   var recheckBanner: String?
   var capabilityNotes: [String] = []
 
@@ -57,13 +64,19 @@ final class WatchtowerScreenState {
       loading = false
       return
     }
-    let previousIssueIDs = Set(signals.filter { $0.status != .ok }.map(\.id))
+    let previousIssueIDs = Set(
+      signals.filter {
+        $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
+      }.map(\.id))
     // Cold skeleton when empty; Warm Updating… when we already have rows.
     loading = true
     // Snapshot cache uses ttl:nil, so a stale hit must force the fan-out.
     if let snapshot = await model.watchtowerSnapshot(force: force || cached != nil) {
       apply(snapshot)
-      let currentIssueIDs = Set(snapshot.signals.filter { $0.status != .ok }.map(\.id))
+      let currentIssueIDs = Set(
+        snapshot.signals.filter {
+          $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
+        }.map(\.id))
       if force, !previousIssueIDs.isEmpty {
         let resolved = previousIssueIDs.subtracting(currentIssueIDs)
         if currentIssueIDs.isEmpty {
@@ -163,9 +176,9 @@ struct WatchtowerView: View {
           accountUnavailableCard
             .dashSectionReveal()
         } else {
-          chartsSection
-            .dashSectionReveal()
           diagnosticsSection
+            .dashSectionReveal()
+          chartsSection
             .dashSectionContentReveal()
         }
       }
@@ -223,6 +236,8 @@ struct WatchtowerView: View {
         updatingStrip
       }
 
+      freshnessCard
+
       if let recheckBanner = state.recheckBanner {
         DashNotice(
           kind: recheckBanner.hasPrefix("Resolved") ? .success : .warning,
@@ -243,6 +258,14 @@ struct WatchtowerView: View {
           kind: .warning,
           message: state.capabilityNotes.prefix(3).joined(separator: "\n")
         )
+      }
+
+      if !state.coverageLimits.isEmpty {
+        DashListGroup(title: "Coverage limits") {
+          ForEach(state.coverageLimits) { signal in
+            signalRow(signal)
+          }
+        }
       }
 
       if !state.issues.isEmpty {
@@ -291,6 +314,53 @@ struct WatchtowerView: View {
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel("Updating")
+  }
+
+  private var freshnessCard: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      let freshness = state.fetchedAt.map {
+        WatchtowerFreshness.classify(fetchedAt: $0, now: context.date)
+      }
+      DashCard {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(DashL10n.string("Account checks"))
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.strong)
+            Text(
+              WatchtowerFreshness.checkedText(
+                fetchedAt: state.fetchedAt,
+                now: context.date)
+            )
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .fixedSize(horizontal: false, vertical: true)
+          }
+          Spacer(minLength: 12)
+          Text(freshnessLabel(freshness))
+            .dashTextStyle(.captionSemibold)
+            .foregroundStyle(freshnessColor(freshness))
+        }
+      }
+    }
+  }
+
+  private func freshnessLabel(_ freshness: WatchtowerFreshness?) -> String {
+    switch freshness {
+    case .fresh: DashL10n.string("Current")
+    case .aging: DashL10n.string("Aging")
+    case .stale: DashL10n.string("Stale")
+    case nil: DashL10n.string("Not checked")
+    }
+  }
+
+  private func freshnessColor(_ freshness: WatchtowerFreshness?) -> Color {
+    switch freshness {
+    case .fresh: DashTheme.success
+    case .aging: DashTheme.warning
+    case .stale: DashTheme.danger
+    case nil: DashTheme.subtle
+    }
   }
 
   private var accountUnavailableCard: some View {
@@ -451,19 +521,25 @@ private struct WatchtowerSignalTray: View {
 
   var body: some View {
     DashDetailTray(fields: fields) {
+      // Primary action pill stays bottom-most; the reversible mute sub-action
+      // sits above it.
       VStack(spacing: 12) {
         if let openResource {
+          if signal.status != .ok, signal.id != WatchtowerEngine.coverageSignalID {
+            muteSubAction
+          }
           DashActionButton(title: openTitle, action: openResource)
-          if signal.status != .ok { muteSubAction }
         } else if let externalURL = signal.externalURL {
+          if signal.status != .ok, signal.id != WatchtowerEngine.coverageSignalID {
+            muteSubAction
+          }
           DashActionButton(
             title: DashL10n.string("Open in Cloudflare"),
             icon: SolarAsset.cloudflare
           ) {
             openURL(externalURL)
           }
-          if signal.status != .ok { muteSubAction }
-        } else if signal.status != .ok {
+        } else if signal.status != .ok, signal.id != WatchtowerEngine.coverageSignalID {
           DashActionButton(
             title: isMuted
               ? DashL10n.string("Unmute") : DashL10n.string("Mute for 24 hours"),

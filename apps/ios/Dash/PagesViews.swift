@@ -289,13 +289,29 @@ struct PagesDeploymentDetailView: View {
   @State private var working = false
   @State private var confirmingRollback = false
   @State private var hasPresentedContent = false
+  @State private var replacementDeploymentID: String?
+  @State private var hasRequestedLogs = false
+  @State private var observedKey: PagesBuildMonitorKey?
+
+  private var monitoredDeploymentID: String {
+    replacementDeploymentID ?? deploymentID
+  }
+
+  private var monitorKey: PagesBuildMonitorKey? {
+    guard let context = model.accountRequestContext else { return nil }
+    return PagesBuildMonitorKey(
+      accountID: context.accountID,
+      accountGeneration: context.generation,
+      projectName: projectName,
+      deploymentID: monitoredDeploymentID)
+  }
 
   var body: some View {
     DashFeatureList(
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await refreshManually() } }
     ) {
       if let deployment {
         deploymentCard(deployment)
@@ -313,19 +329,13 @@ struct PagesDeploymentDetailView: View {
       icon: .solar(SolarAsset.Content.codeCircle),
       title: deployment.map(pagesDeploymentTitle) ?? "Deployment"
     )
-    .refreshable { await load(force: true) }
-    .task {
-      await load()
-      await PagesBuildActivityController.shared.sync(
-        projectName: projectName, deployment: deployment, client: model.client,
-        accountID: model.activeAccountID)
-    }
-    .onChange(of: deployment?.latestStage?.status) { _, _ in
-      Task {
-        await PagesBuildActivityController.shared.sync(
-          projectName: projectName, deployment: deployment, client: model.client,
-          accountID: model.activeAccountID)
+    .refreshable { await refreshManually() }
+    .task(id: monitorKey) {
+      guard let key = monitorKey else {
+        loading = false
+        return
       }
+      await monitorDeployment(key)
     }
   }
 
@@ -437,83 +447,172 @@ struct PagesDeploymentDetailView: View {
     }
   }
 
-  private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
+  private func monitorDeployment(_ key: PagesBuildMonitorKey) async {
+    if let observedKey,
+      observedKey.accountID != key.accountID || observedKey.deploymentID != key.deploymentID
+    {
+      deployment = nil
+      logs = nil
+      logsError = nil
+      hasRequestedLogs = false
+      hasPresentedContent = false
+    }
+    observedKey = key
+    if !hasPresentedContent { loading = true }
+    error = nil
+
+    let client = model.client
+    let updates = PagesBuildActivityController.shared.updates(for: key, client: client)
+    let initialRefresh = Task {
+      await PagesBuildActivityController.shared.refresh(
+        key: key,
+        client: client,
+        source: .initial)
+    }
+    defer { initialRefresh.cancel() }
+
+    for await event in updates {
+      guard !Task.isCancelled, monitorKey == key else { return }
+      await apply(event, key: key)
+    }
+  }
+
+  private func refreshManually() async {
+    guard let key = monitorKey else {
       loading = false
       return
     }
-    if !hasPresentedContent || force { loading = true }
+    loading = true
     error = nil
-    do {
-      let fetched = try await model.client.getPagesDeployment(
-        accountID: accountID, projectName: projectName, deploymentID: deploymentID)
-      deployment = fetched
-      if fetched.isInProgress {
-        // Poll while the build is running so Live Activity and the card stay fresh.
-        Task {
-          try? await Task.sleep(for: .seconds(8))
-          guard !Task.isCancelled else { return }
-          await load(force: true)
-        }
-      }
-    } catch {
-      self.error = error.dashActionableMessage
-    }
-    loading = false
-    if deployment != nil || error == nil {
-      hasPresentedContent = true
-    }
-    await loadLogs(accountID: accountID, force: force)
+    await PagesBuildActivityController.shared.refresh(
+      key: key,
+      client: model.client,
+      source: .manual)
   }
 
-  private func loadLogs(accountID: String, force: Bool) async {
-    if !force, logs != nil { return }
+  private func apply(_ event: PagesBuildMonitorEvent, key: PagesBuildMonitorKey) async {
+    let context = AccountRequestContext(
+      accountID: key.accountID,
+      generation: key.accountGeneration)
+    guard model.isCurrentAccount(context), monitorKey == key else { return }
+
+    switch event {
+    case .deployment(let latest, let source):
+      let previous = deployment
+      deployment = latest
+      loading = false
+      error = nil
+      hasPresentedContent = true
+
+      let refreshesLogs = PagesBuildLogRefreshPolicy.shouldRefresh(
+        hasRequestedLogs: hasRequestedLogs,
+        previousWasInProgress: previous?.isInProgress == true,
+        latestIsInProgress: latest.isInProgress,
+        source: source)
+      if refreshesLogs {
+        await loadLogs(key: key, force: hasRequestedLogs)
+      }
+
+    case .failure(let message, _, _):
+      loading = false
+      error = message
+      if deployment != nil {
+        hasPresentedContent = true
+      }
+    }
+  }
+
+  private func loadLogs(key: PagesBuildMonitorKey, force: Bool) async {
+    if !force, hasRequestedLogs { return }
+    hasRequestedLogs = true
+    let context = AccountRequestContext(
+      accountID: key.accountID,
+      generation: key.accountGeneration)
+    let client = model.client
+    let loadKey =
+      "pagesDeploymentLogs:\(key.accountID):\(key.projectName):\(key.deploymentID)"
     do {
-      logs = try await model.client.getPagesDeploymentLogs(
-        accountID: accountID, projectName: projectName, deploymentID: deploymentID)
+      let fetched: PagesDeploymentLogs = try await model.featureCache.coalescedLoad(loadKey) {
+        try await client.getPagesDeploymentLogs(
+          accountID: key.accountID,
+          projectName: key.projectName,
+          deploymentID: key.deploymentID)
+      }
+      guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
+        return
+      }
+      logs = fetched
       logsError = nil
     } catch {
+      guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
+        return
+      }
       logsError = error.dashActionableMessage
     }
   }
 
   private func retry() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let key = monitorKey else { return }
+    let context = AccountRequestContext(
+      accountID: key.accountID,
+      generation: key.accountGeneration)
     working = true
     actionError = nil
     defer { working = false }
     do {
       let created = try await model.client.retryPagesDeployment(
-        accountID: accountID, projectName: projectName, deploymentID: deploymentID)
+        accountID: key.accountID,
+        projectName: key.projectName,
+        deploymentID: key.deploymentID)
+      guard model.isCurrentAccount(context), monitorKey == key else { return }
       model.featureCache.remove(
-        FeatureCacheKey.pagesDeployments(accountID: accountID, name: projectName))
+        FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
       model.toasts.success(DashL10n.string("Retry started."))
       // Jump to the new deployment when retry returns one.
-      if created.id != deploymentID {
+      if created.id != key.deploymentID {
+        let replacementKey = PagesBuildMonitorKey(
+          accountID: key.accountID,
+          accountGeneration: key.accountGeneration,
+          projectName: key.projectName,
+          deploymentID: created.id)
+        observedKey = replacementKey
         deployment = created
+        hasPresentedContent = true
+        logs = nil
+        logsError = nil
+        hasRequestedLogs = false
+        replacementDeploymentID = created.id
       } else {
-        await load(force: true)
+        await refreshManually()
       }
     } catch {
+      guard model.isCurrentAccount(context), monitorKey == key else { return }
       actionError = error.dashActionableMessage
       DashDelight.failError()
     }
   }
 
   private func rollback() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let key = monitorKey else { return }
+    let context = AccountRequestContext(
+      accountID: key.accountID,
+      generation: key.accountGeneration)
     working = true
     actionError = nil
     defer { working = false }
     do {
       _ = try await model.client.rollbackPagesDeployment(
-        accountID: accountID, projectName: projectName, deploymentID: deploymentID)
+        accountID: key.accountID,
+        projectName: key.projectName,
+        deploymentID: key.deploymentID)
+      guard model.isCurrentAccount(context), monitorKey == key else { return }
       model.featureCache.remove(
-        FeatureCacheKey.pagesDeployments(accountID: accountID, name: projectName))
+        FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
       confirmingRollback = false
       model.toasts.success(DashL10n.string("Rolled back successfully."))
-      await load(force: true)
+      await refreshManually()
     } catch {
+      guard model.isCurrentAccount(context), monitorKey == key else { return }
       actionError = error.dashActionableMessage
       DashDelight.failError()
     }

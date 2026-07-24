@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A single normalized point for the chart, independent of whether it came
 /// from the hourly or daily dataset.
-struct ZoneAnalyticsChartPoint: Identifiable, Hashable {
+struct ZoneAnalyticsChartPoint: Identifiable, Hashable, Sendable {
   let date: Date
   let requests: Int
   let threats: Int
@@ -16,16 +16,41 @@ struct ZoneAnalyticsChartPoint: Identifiable, Hashable {
   var id: Date { date }
 }
 
+struct ZoneAnalyticsSnapshot: Hashable, Sendable {
+  static let empty = ZoneAnalyticsSnapshot(
+    points: [],
+    requestsData: [],
+    visitorsData: [],
+    bandwidthData: [],
+    totalRequests: 0,
+    totalThreats: 0,
+    totalCachedRequests: 0,
+    totalBytes: 0,
+    peakUniques: 0)
+
+  let points: [ZoneAnalyticsChartPoint]
+  let requestsData: [DitherDatum]
+  let visitorsData: [DitherDatum]
+  let bandwidthData: [DitherDatum]
+  let totalRequests: Int
+  let totalThreats: Int
+  let totalCachedRequests: Int
+  let totalBytes: Int64
+  let peakUniques: Int
+
+  var isEmpty: Bool { points.isEmpty }
+}
+
 /// Pure conversion + parsing, so the date handling is unit-tested away from
 /// the view. Both builders return ascending, dropping unparseable stamps.
 enum ZoneAnalyticsChartModel {
-  private static let dayParser: DateFormatter = {
+  private static func makeDayParser() -> DateFormatter {
     let parser = DateFormatter()
     parser.dateFormat = "yyyy-MM-dd"
     parser.locale = Locale(identifier: "en_US_POSIX")
     parser.timeZone = TimeZone(identifier: "UTC")
     return parser
-  }()
+  }
 
   static func chartAccessibilitySummary(rangeLabel: String, requests: Int, threats: Int) -> String {
     if threats > 0 {
@@ -54,7 +79,8 @@ enum ZoneAnalyticsChartModel {
   }
 
   static func points(fromDaily days: [ZoneAnalyticsDay]) -> [ZoneAnalyticsChartPoint] {
-    days.compactMap { day in
+    let dayParser = makeDayParser()
+    return days.compactMap { day in
       guard let date = dayParser.date(from: day.date) else { return nil }
       return ZoneAnalyticsChartPoint(
         date: date, requests: day.requests, threats: day.threats, bytes: day.bytes,
@@ -77,9 +103,71 @@ enum ZoneAnalyticsChartModel {
     }
     .sorted { $0.date < $1.date }
   }
+
+  static func snapshot(
+    points: [ZoneAnalyticsChartPoint],
+    range: AnalyticsRange,
+    locale: Locale
+  ) -> ZoneAnalyticsSnapshot {
+    let labelStyle: Date.FormatStyle
+    if range == .day {
+      labelStyle = Date.FormatStyle.dateTime.hour().locale(locale)
+    } else {
+      labelStyle = Date.FormatStyle.dateTime.month(.abbreviated).day().locale(locale)
+    }
+
+    var totalRequests = 0
+    var totalThreats = 0
+    var totalCachedRequests = 0
+    var totalBytes: Int64 = 0
+    var peakUniques = 0
+    for point in points {
+      totalRequests += point.requests
+      totalThreats += point.threats
+      totalCachedRequests += point.cachedRequests
+      totalBytes += point.bytes
+      peakUniques = max(peakUniques, point.uniques)
+    }
+
+    let identities = points.map {
+      (
+        id: $0.date.ISO8601Format(),
+        label: $0.date.formatted(labelStyle),
+        point: $0
+      )
+    }
+    return ZoneAnalyticsSnapshot(
+      points: points,
+      requestsData: identities.map {
+        DitherDatum(
+          id: $0.id,
+          label: $0.label,
+          values: [
+            "requests": Double($0.point.requests),
+            "threats": Double($0.point.threats),
+          ])
+      },
+      visitorsData: identities.map {
+        DitherDatum(
+          id: $0.id,
+          label: $0.label,
+          values: ["uniques": Double($0.point.uniques)])
+      },
+      bandwidthData: identities.map {
+        DitherDatum(
+          id: $0.id,
+          label: $0.label,
+          values: ["bytes": Double($0.point.bytes)])
+      },
+      totalRequests: totalRequests,
+      totalThreats: totalThreats,
+      totalCachedRequests: totalCachedRequests,
+      totalBytes: totalBytes,
+      peakUniques: peakUniques)
+  }
 }
 
-enum AnalyticsRange: Hashable, CaseIterable {
+enum AnalyticsRange: Hashable, CaseIterable, Sendable {
   case day, week, month
 
   var title: String {
@@ -106,12 +194,12 @@ struct ZoneAnalyticsView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let zoneID: String
   @State private var range: AnalyticsRange = .day
-  @State private var pointsByRange: [AnalyticsRange: [ZoneAnalyticsChartPoint]] = [:]
+  @State private var snapshotsByRange: [AnalyticsRange: ZoneAnalyticsSnapshot] = [:]
   @State private var errorByRange: [AnalyticsRange: String] = [:]
   @State private var loadingRanges: Set<AnalyticsRange> = Set(AnalyticsRange.allCases)
   @State private var selectedSeriesID: String?
 
-  private var points: [ZoneAnalyticsChartPoint] { pointsByRange[range] ?? [] }
+  private var snapshot: ZoneAnalyticsSnapshot { snapshotsByRange[range] ?? .empty }
   private var isLoadingCurrent: Bool { loadingRanges.contains(range) }
   private var currentError: String? { errorByRange[range] }
 
@@ -126,7 +214,7 @@ struct ZoneAnalyticsView: View {
     DashFeatureList(
       isLoading: isLoadingCurrent,
       error: currentError,
-      hasContent: !points.isEmpty,
+      hasContent: !snapshot.isEmpty,
       retry: { Task { await loadAll(force: true) } },
       header: {
         DashTextTabs(
@@ -135,7 +223,7 @@ struct ZoneAnalyticsView: View {
         )
       }
     ) {
-      if points.isEmpty {
+      if snapshot.isEmpty {
         DashEmptyState(
           icon: SolarAsset.Content.chart,
           title: "No traffic yet",
@@ -215,7 +303,7 @@ struct ZoneAnalyticsView: View {
   private var requestsChartCard: some View {
     chartCard(title: "Requests") {
       DitherAreaChart(
-        data: ditherData { ["requests": Double($0.requests), "threats": Double($0.threats)] },
+        data: snapshot.requestsData,
         series: ditherSeries,
         options: DashTheme.DitherChart.options(
           showsLegend: totalThreats > 0,
@@ -242,7 +330,7 @@ struct ZoneAnalyticsView: View {
   private var visitorsChartCard: some View {
     chartCard(title: "Unique visitors") {
       DitherLineChart(
-        data: ditherData { ["uniques": Double($0.uniques)] },
+        data: snapshot.visitorsData,
         series: [
           DitherSeries(
             id: "uniques",
@@ -270,7 +358,7 @@ struct ZoneAnalyticsView: View {
   private var bandwidthChartCard: some View {
     chartCard(title: "Bandwidth") {
       DitherAreaChart(
-        data: ditherData { ["bytes": Double($0.bytes)] },
+        data: snapshot.bandwidthData,
         series: [
           DitherSeries(
             id: "bytes",
@@ -293,17 +381,6 @@ struct ZoneAnalyticsView: View {
           leadingMargin: 58)
       )
       .frame(height: DashTheme.DitherChart.height(dynamicTypeSize: dynamicTypeSize))
-    }
-  }
-
-  private func ditherData(
-    values: (ZoneAnalyticsChartPoint) -> [String: Double]
-  ) -> [DitherDatum] {
-    points.map { point in
-      DitherDatum(
-        id: point.date.ISO8601Format(),
-        label: point.date.formatted(xAxisFormat),
-        values: values(point))
     }
   }
 
@@ -330,27 +407,20 @@ struct ZoneAnalyticsView: View {
     return series
   }
 
-  private var xAxisFormat: Date.FormatStyle {
-    (range == .day
-      ? Date.FormatStyle.dateTime.hour()
-      : Date.FormatStyle.dateTime.month(.abbreviated).day())
-      .locale(DashL10n.activeLocale)
-  }
-
   /// Zones on plans that do not return `uniq { uniques }` come back as all
   /// zeroes; a flat line at zero is noise, so drop the card instead.
   private var showsVisitors: Bool { peakUniques > 0 }
-  private var peakUniques: Int { points.map(\.uniques).max() ?? 0 }
+  private var peakUniques: Int { snapshot.peakUniques }
 
-  private var totalRequests: Int { points.reduce(0) { $0 + $1.requests } }
-  private var totalThreats: Int { points.reduce(0) { $0 + $1.threats } }
-  private var totalCachedRequests: Int { points.reduce(0) { $0 + $1.cachedRequests } }
+  private var totalRequests: Int { snapshot.totalRequests }
+  private var totalThreats: Int { snapshot.totalThreats }
+  private var totalCachedRequests: Int { snapshot.totalCachedRequests }
   /// Share of requests the edge answered without touching the origin — the
   /// reason the zone is on Cloudflare at all.
   private var cacheHitRatio: Double {
     totalRequests > 0 ? Double(totalCachedRequests) / Double(totalRequests) : 0
   }
-  private var totalBytes: Int64 { points.reduce(0) { $0 + $1.bytes } }
+  private var totalBytes: Int64 { snapshot.totalBytes }
 
   private func bandwidth(_ bytes: Int64) -> String {
     bytes.formatted(.byteCount(style: .binary).locale(DashL10n.activeLocale))
@@ -360,7 +430,7 @@ struct ZoneAnalyticsView: View {
     if force {
       loadingRanges = Set(AnalyticsRange.allCases)
     } else {
-      loadingRanges = Set(AnalyticsRange.allCases.filter { pointsByRange[$0] == nil })
+      loadingRanges = Set(AnalyticsRange.allCases.filter { snapshotsByRange[$0] == nil })
     }
     // Fan out all three ranges up front so tab switches only swap already-warm
     // points instead of kicking a cold load. Client calls hop off MainActor.
@@ -372,38 +442,45 @@ struct ZoneAnalyticsView: View {
 
   private func loadRange(_ target: AnalyticsRange, force: Bool) async {
     do {
-      let points = try await fetchPoints(range: target, force: force)
-      pointsByRange[target] = points
+      let snapshot = try await fetchSnapshot(range: target, force: force)
+      snapshotsByRange[target] = snapshot
       errorByRange[target] = nil
     } catch {
-      if pointsByRange[target] == nil {
+      if snapshotsByRange[target] == nil {
         errorByRange[target] = error.dashActionableMessage
       }
     }
     loadingRanges.remove(target)
   }
 
-  private func fetchPoints(range: AnalyticsRange, force: Bool) async throws
-    -> [ZoneAnalyticsChartPoint]
+  private func fetchSnapshot(range: AnalyticsRange, force: Bool) async throws
+    -> ZoneAnalyticsSnapshot
   {
+    let points: [ZoneAnalyticsChartPoint]
     switch range {
     case .day:
       let key = FeatureCacheKey.zoneAnalyticsHourly(zoneID)
       if !force, let cached: [ZoneAnalyticsPoint] = model.featureCache.get(key) {
-        return ZoneAnalyticsChartModel.points(fromHourly: cached)
+        points = ZoneAnalyticsChartModel.points(fromHourly: cached)
+        break
       }
       let hourly = try await model.client.zoneAnalyticsHourly(zoneID: zoneID, hours: 24)
       model.featureCache.set(key, hourly)
-      return ZoneAnalyticsChartModel.points(fromHourly: hourly)
+      points = ZoneAnalyticsChartModel.points(fromHourly: hourly)
     case .week, .month:
       let days = range == .week ? 7 : 30
       let key = FeatureCacheKey.zoneAnalytics(zoneID, days: days)
       if !force, let cached: [ZoneAnalyticsDay] = model.featureCache.get(key) {
-        return ZoneAnalyticsChartModel.points(fromDaily: cached)
+        points = ZoneAnalyticsChartModel.points(fromDaily: cached)
+        break
       }
       let daily = try await model.client.zoneAnalytics(zoneID: zoneID, days: days)
       model.featureCache.set(key, daily)
-      return ZoneAnalyticsChartModel.points(fromDaily: daily)
+      points = ZoneAnalyticsChartModel.points(fromDaily: daily)
     }
+    return ZoneAnalyticsChartModel.snapshot(
+      points: points,
+      range: range,
+      locale: DashL10n.activeLocale)
   }
 }

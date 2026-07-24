@@ -16,16 +16,12 @@ import {
 	SolarLockIcon,
 } from './solar-icons'
 
-// No App Store listing exists until the app ships. Replace the placeholder ID
-// when the product page is live and flip APP_STORE_LIVE to true.
-const APP_STORE_LIVE = false
-const APP_STORE_URL = 'https://apps.apple.com/app/id0000000000'
-const PRIMARY_CTA_HREF = APP_STORE_LIVE
-	? APP_STORE_URL
-	: 'https://github.com/withxat/Dash'
-const PRIMARY_CTA_LABEL = APP_STORE_LIVE
-	? 'View on the App Store'
-	: 'Coming to the App Store'
+// GitHub is the only public release destination until the App Store listing is
+// actually live. Keep the label and destination aligned, and never publish a
+// placeholder App Store URL.
+const PRIMARY_CTA_HREF = 'https://github.com/withxat/Dash'
+const PRIMARY_CTA_LABEL = 'Follow development on GitHub'
+const RELEASE_STATUS = 'App Store release in progress'
 
 interface Feature {
 	description: string
@@ -37,7 +33,6 @@ interface Feature {
 interface ScreenshotSpec {
 	alt: string
 	description: string
-	fileName: string
 	label: string
 	src?: string
 }
@@ -78,21 +73,18 @@ const features: Feature[] = [
 const homeScreenshot: ScreenshotSpec = {
 	alt: 'Dash Home screen',
 	description: 'The compact launch point for daily Cloudflare work.',
-	fileName: 'home.png',
 	label: 'Home',
 }
 
 const resourcesScreenshot: ScreenshotSpec = {
 	alt: 'Dash Resources screen',
 	description: 'Zones, Workers, Pages, R2, and KV in one phone-first stack.',
-	fileName: 'resources.png',
 	label: 'Resources',
 }
 
 const watchtowerScreenshot: ScreenshotSpec = {
 	alt: 'Dash Watchtower screen',
 	description: 'Account health folded into signals that lead somewhere useful.',
-	fileName: 'watchtower.png',
 	label: 'Watchtower',
 }
 
@@ -168,7 +160,11 @@ function Hero() {
 								Preview the app
 							</Link>
 						</div>
-						<p className="mt-4 text-sm text-kumo-inactive">
+						<p className="mt-4 max-w-md text-sm/5 text-pretty text-kumo-subtle">
+							{RELEASE_STATUS}
+							. GitHub is the current source for code and updates.
+						</p>
+						<p className="mt-2 text-sm text-kumo-inactive">
 							OAuth + PKCE. Tokens stay in the Keychain.
 						</p>
 					</div>
@@ -192,11 +188,11 @@ function ProductField() {
 				<div className="lg:col-span-3">
 					<p className="text-sm font-medium text-kumo-inverse/60">App preview</p>
 					<h2 className="mt-4 max-w-[9ch] text-3xl/[1] font-semibold tracking-[-0.022em] text-balance">
-						The app is the evidence.
+						A real product preview is coming.
 					</h2>
 					<p className="mt-5 max-w-60 text-sm/6 text-pretty text-kumo-inverse/60">
-						No reconstructed dashboard and no fictional account data. The finished
-						page will show the app people actually use.
+						We will publish real device captures from the shipping app, never a
+						reconstructed dashboard or fictional product shot.
 					</p>
 				</div>
 
@@ -209,12 +205,13 @@ function ProductField() {
 				</div>
 
 				<div className="lg:col-span-3">
-					<p className="text-sm font-medium text-kumo-inverse/70">Replace with a real capture</p>
+					<p className="text-sm font-medium text-kumo-inverse/70">Release preview</p>
 					<p className="mt-3 max-w-60 text-sm/6 text-pretty text-kumo-inverse/55">
-						Use a full-height portrait image with the status bar and safe area intact.
+						Real Home, Resources, and Watchtower captures will appear here before
+						the App Store release.
 					</p>
-					<p className="mt-5 text-sm text-kumo-inverse/70 tabular-nums">
-						1179 × 2556 · PNG or WebP
+					<p className="mt-5 text-sm text-kumo-inverse/70">
+						Native iPhone app · iOS 17+
 					</p>
 				</div>
 			</div>
@@ -300,7 +297,7 @@ function AppGallery() {
 						<SectionMarker label="The app" number="02" />
 					</div>
 					<div className="lg:col-span-9">
-						<p className="text-sm font-medium text-kumo-brand">Replace with real captures</p>
+						<p className="text-sm font-medium text-kumo-brand">Product tour in progress</p>
 						<h2 className="
 							mt-4 max-w-[14ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
 							sm:text-5xl/[0.96]
@@ -309,8 +306,8 @@ function AppGallery() {
 							Three places. One compact stack.
 						</h2>
 						<p className="mt-6 max-w-xl text-base/6 text-pretty text-kumo-subtle">
-							The empty frames are deliberate. Add the real App Store captures and
-							this becomes a product tour without pretending React is SwiftUI.
+							Home, Resources, and Watchtower are real shipping surfaces. Their
+							labeled frames stay honest until final device captures are ready.
 						</p>
 					</div>
 				</div>
@@ -360,11 +357,13 @@ function AppScreenshot({ screenshot, size }: { screenshot: ScreenshotSpec, size:
 								role="img"
 							>
 								<img alt="" className="size-16" height="64" src={dashAppIconUrl} width="64" />
-								<p className="mt-5 text-sm font-medium">Screenshot placeholder</p>
-								<p className="mt-2 text-xs text-kumo-subtle tabular-nums">
-									{screenshot.fileName}
+								<p className="mt-5 text-sm font-medium">
+									{screenshot.label}
 									{' '}
-									· 1179 × 2556
+									capture coming
+								</p>
+								<p className="mt-2 max-w-44 text-xs/5 text-pretty text-kumo-subtle">
+									Real iPhone imagery has not been published yet.
 								</p>
 							</div>
 						)}
@@ -532,7 +531,12 @@ function FinalCallToAction() {
 					>
 						Cloudflare, within reach.
 					</h2>
-					<p className="mt-5 text-sm text-kumo-subtle">Built for iPhone. Available as open source.</p>
+					<p className="mt-5 text-sm text-kumo-subtle">
+						Built for iPhone. Available as open source.
+						{' '}
+						{RELEASE_STATUS}
+						.
+					</p>
 				</div>
 				<div className="lg:col-span-3 lg:justify-self-end">
 					<LinkButton

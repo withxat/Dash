@@ -87,6 +87,15 @@ struct R2BucketsView: View {
   }
 }
 
+/// Everything that makes one mounted R2 browser request account-specific.
+/// The generation changes even when an account is signed out and back into,
+/// so a surviving NavigationStack destination cannot commit an older result.
+struct R2BucketRequestIdentity: Hashable, Sendable {
+  let context: AccountRequestContext?
+  let bucket: String
+  let folderPrefix: String
+}
+
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -115,11 +124,15 @@ struct R2BucketView: View {
   @State private var movesSelection = false
   @State private var showsBucketActions = false
   @State private var batchLabel: String?
+  /// The account/bucket/prefix currently represented by the state above.
+  /// This survives view-value updates so stale async tasks can be rejected.
+  @State private var displayedRequestIdentity: R2BucketRequestIdentity?
   /// Public-exposure snapshot for Copy-URL actions; loaded lazily and shared
   /// with the settings screen through the feature cache.
   @State private var domains: R2DomainsSnapshot?
-  /// Global frames for object rows — drives two-finger paint-select.
-  @State private var objectFrames: [String: CGRect] = [:]
+  /// Reference storage keeps scroll-driven geometry outside SwiftUI's
+  /// observation graph. Only the two-finger recognizer reads it.
+  @State private var objectFrameStore = R2ObjectFrameStore()
   /// Once a two-finger pan starts, keep adding or removing based on the first
   /// row under the fingers (UITableView multiselect behavior).
   @State private var paintAdds: Bool?
@@ -127,6 +140,18 @@ struct R2BucketView: View {
   private var canLoadMore: Bool { cursor?.isEmpty == false }
   private var hasTransferStatus: Bool {
     uploadingFileName != nil || batchLabel != nil
+  }
+  private var tracksObjectFrames: Bool {
+    featureAllowsWrites && !objects.isEmpty && work.batch == nil
+  }
+  private var currentDestination: Destination {
+    .r2Bucket(bucket, prefix: folderPrefix)
+  }
+  private var requestIdentity: R2BucketRequestIdentity {
+    R2BucketRequestIdentity(
+      context: model.accountRequestContext,
+      bucket: bucket,
+      folderPrefix: folderPrefix)
   }
   private var currentFolderName: String {
     guard !folderPrefix.isEmpty else { return bucket }
@@ -138,7 +163,10 @@ struct R2BucketView: View {
       isLoading: loading,
       error: error,
       hasContent: !objects.isEmpty || !folders.isEmpty,
-      retry: { Task { await load() } }
+      retry: {
+        let request = requestIdentity
+        Task { await load(for: request) }
+      }
     ) {
       if hasTransferStatus {
         DashSurfaceStack {
@@ -183,11 +211,13 @@ struct R2BucketView: View {
               }
             }
             .background {
-              GeometryReader { geo in
-                Color.clear.preference(
-                  key: R2ObjectFrameKey.self,
-                  value: [object.key: geo.frame(in: .global)]
-                )
+              if tracksObjectFrames {
+                GeometryReader { geo in
+                  Color.clear.preference(
+                    key: R2ObjectFrameKey.self,
+                    value: [object.key: geo.frame(in: .global)]
+                  )
+                }
               }
             }
           }
@@ -267,12 +297,26 @@ struct R2BucketView: View {
         onEnded: { paintAdds = nil }
       )
     }
-    .onPreferenceChange(R2ObjectFrameKey.self) { objectFrames = $0 }
+    .onPreferenceChange(R2ObjectFrameKey.self) { objectFrameStore.replace(with: $0) }
+    .onChange(of: tracksObjectFrames) { _, enabled in
+      if !enabled { objectFrameStore.clear() }
+    }
     .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
       if case .success(let url) = result { beginUpload(url) }
     }
-    .refreshable { await load(force: true) }
-    .task(id: folderPrefix) { await load() }
+    .refreshable {
+      let request = requestIdentity
+      await load(force: true, for: request)
+    }
+    .task(id: requestIdentity) {
+      let request = requestIdentity
+      prepareForRequest(request)
+      guard request.context != nil else { return }
+      recordRecentBucket(for: request)
+      async let objectLoad: Void = load(for: request)
+      async let domainLoad: Void = loadDomains(for: request)
+      _ = await (objectLoad, domainLoad)
+    }
     .fullScreenCover(item: $selectedObject) { object in
       R2ObjectPreview(
         bucket: bucket,
@@ -300,18 +344,83 @@ struct R2BucketView: View {
         beginBatchMove(to: destination)
       }
     }
-    // Separate from the folder-keyed load task: recency records once per visit,
-    // not on every folder hop.
-    .task {
-      guard let accountID = model.activeAccountID else { return }
-      recentsRaw = RecentResources.recording(
-        RecentResource(accountID: accountID, kind: .r2Bucket, resourceID: bucket, title: bucket),
-        in: recentsRaw)
-    }
-    .task { await loadDomains() }
     // Settings may have changed the domains while this screen stayed mounted
     // below it — resync from the shared cache on return.
     .onAppear { refreshDomainsFromCache() }
+    .onChange(of: navigator?.path) { _, path in
+      if path?.contains(currentDestination) != true {
+        cancelOutstandingWork()
+      }
+    }
+    .onChange(of: model.accountRequestContext) { _, newContext in
+      prepareForRequest(
+        R2BucketRequestIdentity(
+          context: newContext,
+          bucket: bucket,
+          folderPrefix: folderPrefix))
+    }
+    .onDisappear {
+      // Folder/settings pushes keep this destination in the path. A pop does
+      // not, so release Task references immediately instead of waiting for
+      // SwiftUI to destroy a self-retaining view/task cycle.
+      if navigator?.path.contains(currentDestination) != true {
+        cancelOutstandingWork()
+      }
+    }
+  }
+
+  private func cancelOutstandingWork() {
+    work.cancelAndRelease()
+    uploadingFileName = nil
+    batchLabel = nil
+  }
+
+  /// Synchronously drops every account-scoped value before a new request can
+  /// paint. The request task then reloads the listing and domain snapshot.
+  private func prepareForRequest(_ request: R2BucketRequestIdentity) {
+    guard displayedRequestIdentity != request else { return }
+    cancelOutstandingWork()
+    objects = []
+    folders = []
+    cursor = nil
+    error = nil
+    loading = request.context != nil
+    loadingMore = false
+    importsFile = false
+    selectedObject = nil
+    selecting = false
+    selectedKeys = []
+    confirmsBatchDelete = false
+    movesSelection = false
+    showsBucketActions = false
+    domains = nil
+    objectFrameStore.clear()
+    paintAdds = nil
+    displayedRequestIdentity = request
+  }
+
+  private func matchesCurrentRequest(_ request: R2BucketRequestIdentity) -> Bool {
+    guard
+      displayedRequestIdentity == request,
+      requestIdentity == request,
+      let context = request.context
+    else { return false }
+    return model.isCurrentAccount(context)
+  }
+
+  private func canCommit(_ request: R2BucketRequestIdentity) -> Bool {
+    !Task.isCancelled && matchesCurrentRequest(request)
+  }
+
+  private func recordRecentBucket(for request: R2BucketRequestIdentity) {
+    guard let context = request.context, matchesCurrentRequest(request) else { return }
+    recentsRaw = RecentResources.recording(
+      RecentResource(
+        accountID: context.accountID,
+        kind: .r2Bucket,
+        resourceID: bucket,
+        title: bucket),
+      in: recentsRaw)
   }
 
   private var selectionBar: some View {
@@ -425,10 +534,7 @@ struct R2BucketView: View {
     if !selecting {
       withAnimation(DashTheme.Motion.morph) { selecting = true }
     }
-    let hit = objectFrames.first { keyFrame in
-      keyFrame.value.insetBy(dx: 0, dy: -2).contains(point)
-    }
-    guard let key = hit?.key else { return }
+    guard let key = objectFrameStore.key(at: point, verticalHitSlop: 2) else { return }
     if paintAdds == nil {
       paintAdds = !selectedKeys.contains(key)
     }
@@ -460,7 +566,11 @@ struct R2BucketView: View {
   /// confirm stays open with the message while succeeded rows leave the
   /// selection; Confirm again retries only what's left.
   private func batchDelete() async throws {
-    guard let accountID = model.activeAccountID else { return }
+    let request = requestIdentity
+    guard let context = request.context, canCommit(request) else {
+      throw CancellationError()
+    }
+    let accountID = context.accountID
     let client = model.client
     let bucket = bucket
     // From the selection itself, not `objects` — after a Load more, selected
@@ -470,7 +580,10 @@ struct R2BucketView: View {
     var failures: [String] = []
     var firstError: String?
     for chunkStart in stride(from: 0, to: keys.count, by: 4) {
+      try Task.checkCancellation()
+      guard matchesCurrentRequest(request) else { throw CancellationError() }
       let chunk = keys[chunkStart..<min(chunkStart + 4, keys.count)]
+      var chunkResults: [(String, String?)] = []
       await withTaskGroup(of: (String, String?).self) { group in
         for key in chunk {
           group.addTask {
@@ -482,19 +595,23 @@ struct R2BucketView: View {
             }
           }
         }
-        for await (key, failure) in group {
-          if let failure {
-            failures.append(key)
-            if firstError == nil { firstError = failure }
-          } else {
-            selectedKeys.remove(key)
-          }
+        for await result in group { chunkResults.append(result) }
+      }
+      guard canCommit(request) else { throw CancellationError() }
+      for (key, failure) in chunkResults {
+        if let failure {
+          failures.append(key)
+          if firstError == nil { firstError = failure }
+        } else {
+          selectedKeys.remove(key)
         }
       }
     }
+    guard canCommit(request) else { throw CancellationError() }
     model.featureCache.remove(
       prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
-    await load(force: true)
+    await load(force: true, for: request)
+    guard canCommit(request) else { throw CancellationError() }
     if failures.isEmpty {
       model.toasts.success(
         DashL10n.string(
@@ -514,25 +631,39 @@ struct R2BucketView: View {
   }
 
   private func beginBatchMove(to destination: String) {
-    guard work.batch == nil, let accountID = model.activeAccountID else { return }
+    let request = requestIdentity
+    guard work.batch == nil, request.context != nil, canCommit(request) else { return }
     let targets = objects.filter { selectedKeys.contains($0.key) }
     guard !targets.isEmpty else { return }
-    work.batch = Task { await batchMove(targets, to: destination, accountID: accountID) }
+    work.batch = Task { await batchMove(targets, to: destination, request: request) }
   }
 
-  /// Sequential per object on purpose: each move buffers the whole body, so
-  /// one object at a time keeps the peak at one transfer's worth of memory.
-  private func batchMove(_ targets: [R2Object], to destination: String, accountID: String) async {
+  /// Sequential per object on purpose: each move owns one scratch file and one
+  /// network transfer at a time.
+  private func batchMove(
+    _ targets: [R2Object],
+    to destination: String,
+    request: R2BucketRequestIdentity
+  ) async {
+    guard let context = request.context, canCommit(request) else { return }
+    let accountID = context.accountID
     defer {
-      work.batch = nil
-      batchLabel = nil
+      if matchesCurrentRequest(request) {
+        work.batch = nil
+        batchLabel = nil
+      }
     }
     var moved = 0
     var skippedLarge = 0
     var skippedExisting = 0
     var failedKeys: [String] = []
+    var remainingKeys = Set(targets.map(\.key))
+    var wasCancelled = false
     for (index, object) in targets.enumerated() {
-      if Task.isCancelled { break }
+      if !canCommit(request) {
+        wasCancelled = true
+        break
+      }
       batchLabel = DashL10n.string("Moving \(index + 1) of \(targets.count)…")
       let filename = object.key.split(separator: "/").last.map(String.init) ?? object.key
       // Dashboard-created folder markers end in "/" — keep them folders.
@@ -540,39 +671,92 @@ struct R2BucketView: View {
       let newKey = destination + filename + (isFolderMarker ? "/" : "")
       guard newKey != object.key else {
         selectedKeys.remove(object.key)
+        remainingKeys.remove(object.key)
         continue
       }
-      guard (object.size ?? 0) <= R2Media.transferSizeLimit else {
+      guard R2Media.isWithinTransferLimit(object.size) else {
         skippedLarge += 1
         continue
       }
       do {
-        // A plain PUT replaces silently — probe the destination first.
-        let collision = try await model.client.listR2Objects(
-          accountID: accountID, bucket: bucket, prefix: newKey)
-        guard !collision.objects.contains(where: { $0.key == newKey }) else {
+        do {
+          try await R2ObjectConsistency.requireAbsent(
+            client: model.client, accountID: accountID, bucket: bucket, key: newKey)
+          guard canCommit(request) else {
+            wasCancelled = true
+            break
+          }
+        } catch R2ObjectConsistencyError.destinationExists {
           skippedExisting += 1
           continue
         }
-        let data = try await model.client.getR2Object(
-          accountID: accountID, bucket: bucket, key: object.key)
+        let temporaryFile = R2TemporaryFile.make(purpose: "r2-batch-move", filename: filename)
+        defer { temporaryFile.remove() }
+        try await model.client.downloadR2Object(
+          accountID: accountID, bucket: bucket, key: object.key,
+          to: temporaryFile.fileURL, maximumBytes: R2Media.transferSizeLimitBytes)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        try await R2ObjectConsistency.requireUnchanged(
+          object, client: model.client, accountID: accountID, bucket: bucket)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        do {
+          try await R2ObjectConsistency.requireAbsent(
+            client: model.client, accountID: accountID, bucket: bucket, key: newKey)
+          guard canCommit(request) else {
+            wasCancelled = true
+            break
+          }
+        } catch R2ObjectConsistencyError.destinationExists {
+          skippedExisting += 1
+          continue
+        }
         try await model.client.putR2Object(
-          accountID: accountID, bucket: bucket, key: newKey, data: data,
+          accountID: accountID, bucket: bucket, key: newKey, fileURL: temporaryFile.fileURL,
           contentType: object.contentType ?? R2Media.mimeType(forKey: newKey))
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        try await R2ObjectConsistency.requireUnchanged(
+          object, client: model.client, accountID: accountID, bucket: bucket)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
         try await model.client.deleteR2Object(
           accountID: accountID, bucket: bucket, key: object.key)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
         moved += 1
         selectedKeys.remove(object.key)
+        remainingKeys.remove(object.key)
       } catch {
-        if error.dashIsCancellation { break }
+        if error.dashIsCancellation || !canCommit(request) {
+          wasCancelled = true
+          break
+        }
         failedKeys.append(object.key)
       }
     }
+    if !canCommit(request) { wasCancelled = true }
+    guard matchesCurrentRequest(request) else { return }
     model.featureCache.remove(
       prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
-    await load(force: true)
-    // Keep failed keys selected past the reload so a retry can target them.
-    selectedKeys.formUnion(failedKeys)
+    await load(force: true, for: request)
+    if !canCommit(request) { wasCancelled = true }
+    guard matchesCurrentRequest(request) else { return }
+    // A complete reload may prune selection. Restore skipped, failed, and
+    // never-started keys so cancellation can be retried without reselecting.
+    selectedKeys.formUnion(remainingKeys)
+    if wasCancelled { return }
     let failed = failedKeys.count
     var parts: [String] = []
     if moved > 0 { parts.append(DashL10n.string("Moved \(moved)")) }
@@ -601,16 +785,23 @@ struct R2BucketView: View {
   }
 
   private func invalidateAndReload() async {
-    guard let accountID = model.activeAccountID else { return }
+    let request = requestIdentity
+    guard let context = request.context, canCommit(request) else { return }
     model.featureCache.remove(
-      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
-    await load(force: true)
+      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: context.accountID, bucket: bucket))
+    await load(force: true, for: request)
   }
 
-  private func loadDomains() async {
-    guard domains == nil, let accountID = model.activeAccountID else { return }
+  private func loadDomains(for request: R2BucketRequestIdentity) async {
+    guard
+      domains == nil,
+      let context = request.context,
+      canCommit(request)
+    else { return }
+    let accountID = context.accountID
     let key = FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucket)
     if let cached: R2DomainsSnapshot = model.featureCache.get(key) {
+      guard canCommit(request) else { return }
       domains = cached
       return
     }
@@ -618,6 +809,7 @@ struct R2BucketView: View {
     async let customTask = model.client.listR2CustomDomains(accountID: accountID, bucket: bucket)
     let managed = try? await managedTask
     let custom = try? await customTask
+    guard canCommit(request) else { return }
     let snapshot = R2DomainsSnapshot(managed: managed, custom: custom ?? [])
     domains = snapshot
     // A failed fetch must not poison the shared per-bucket cache for its TTL.
@@ -627,9 +819,11 @@ struct R2BucketView: View {
   }
 
   private func refreshDomainsFromCache() {
-    guard let accountID = model.activeAccountID,
+    let request = requestIdentity
+    guard let context = request.context,
+      matchesCurrentRequest(request),
       let cached: R2DomainsSnapshot = model.featureCache.get(
-        FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucket))
+        FeatureCacheKey.r2Domains(accountID: context.accountID, bucket: bucket))
     else { return }
     domains = cached
   }
@@ -686,10 +880,15 @@ struct R2BucketView: View {
     .accessibilityElement(children: .contain)
   }
 
-  private func load(force: Bool = false) async {
-    guard let id = model.activeAccountID else { return }
+  private func load(
+    force: Bool = false,
+    for request: R2BucketRequestIdentity
+  ) async {
+    guard let context = request.context, canCommit(request) else { return }
+    let id = context.accountID
     let key = FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: folderPrefix)
     if !force, let cached: R2BrowserSnapshot = model.featureCache.get(key) {
+      guard canCommit(request) else { return }
       objects = cached.objects
       folders = cached.commonPrefixes
       cursor = cached.cursor
@@ -701,6 +900,7 @@ struct R2BucketView: View {
     do {
       let page = try await model.client.listR2Objects(
         accountID: id, bucket: bucket, prefix: folderPrefix.nilIfEmpty, delimiter: "/")
+      guard canCommit(request) else { return }
       objects = page.objects
       folders = page.commonPrefixes
       cursor = page.cursor
@@ -711,24 +911,36 @@ struct R2BucketView: View {
         key, R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
       error = nil
     } catch {
-      if error.dashIsCancellation { return }
+      guard canCommit(request), !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
     }
-    loading = false
+    if canCommit(request) { loading = false }
   }
 
   private func loadMore() async {
-    guard let id = model.activeAccountID, canLoadMore, !loadingMore else { return }
+    let request = requestIdentity
+    guard
+      let context = request.context,
+      canCommit(request),
+      canLoadMore,
+      !loadingMore
+    else { return }
+    let id = context.accountID
+    let requestedCursor = cursor
     loadingMore = true
-    defer { loadingMore = false }
+    defer {
+      if matchesCurrentRequest(request) {
+        loadingMore = false
+      }
+    }
     // The user can hop folders while this request flies; appending the old
     // listing's page into the new one would cache a chimera.
     let listedPrefix = folderPrefix
     do {
       let page = try await model.client.listR2Objects(
-        accountID: id, bucket: bucket, cursor: cursor, prefix: listedPrefix.nilIfEmpty,
+        accountID: id, bucket: bucket, cursor: requestedCursor, prefix: listedPrefix.nilIfEmpty,
         delimiter: "/")
-      guard listedPrefix == folderPrefix else { return }
+      guard canCommit(request), listedPrefix == folderPrefix else { return }
       objects += page.objects
       for folder in page.commonPrefixes where !folders.contains(folder) {
         folders.append(folder)
@@ -739,64 +951,56 @@ struct R2BucketView: View {
         R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
       error = nil
     } catch {
-      if error.dashIsCancellation { return }
+      guard canCommit(request), !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
     }
   }
   private func beginUpload(_ url: URL) {
-    guard work.upload == nil else { return }
+    let request = requestIdentity
+    guard work.upload == nil, request.context != nil, canCommit(request) else { return }
     uploadingFileName = url.lastPathComponent
-    work.upload = Task { await upload(url) }
+    work.upload = Task { await upload(url, request: request) }
   }
 
-  private func upload(_ url: URL) async {
-    guard let id = model.activeAccountID else {
-      work.upload = nil
-      uploadingFileName = nil
-      return
-    }
+  private func upload(_ url: URL, request: R2BucketRequestIdentity) async {
+    guard let context = request.context, canCommit(request) else { return }
+    let id = context.accountID
     defer {
-      work.upload = nil
-      uploadingFileName = nil
+      if matchesCurrentRequest(request) {
+        work.upload = nil
+        uploadingFileName = nil
+      }
     }
     do {
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+        guard canCommit(request) else { return }
         error = DashL10n.string("Can't read that file's size.")
         return
       }
       guard size <= R2Media.transferSizeLimit else {
+        guard canCommit(request) else { return }
         model.toasts.error(
           "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(R2Media.transferSizeLimit.formatted(.byteCount(style: .file))). Use wrangler or the dashboard for this one."
         )
         return
       }
-      let readTask = Task.detached(priority: .userInitiated) {
-        try Task.checkCancellation()
-        let data = try Data(contentsOf: url)
-        try Task.checkCancellation()
-        return data
-      }
-      let data = try await withTaskCancellationHandler {
-        try await readTask.value
-      } onCancel: {
-        readTask.cancel()
-      }
-      try Task.checkCancellation()
       try await model.client.putR2Object(
-        accountID: id, bucket: bucket, key: folderPrefix + url.lastPathComponent, data: data,
+        accountID: id, bucket: bucket, key: folderPrefix + url.lastPathComponent, fileURL: url,
         contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
-      try Task.checkCancellation()
+      guard canCommit(request) else { return }
       model.featureCache.remove(
         prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: id, bucket: bucket))
-      await load(force: true)
+      await load(force: true, for: request)
+      guard canCommit(request) else { return }
       R2ShareDestination.record(
         R2ShareDestination(
           accountID: id, bucket: bucket, prefix: folderPrefix,
           publicHost: domains?.publicHost ?? ""))
       model.toasts.success(DashL10n.string("Uploaded \(url.lastPathComponent)."))
     } catch {
+      guard matchesCurrentRequest(request) else { return }
       if error.dashIsCancellation || Task.isCancelled {
         model.toasts.warning(DashL10n.string("Upload cancelled."))
         return
@@ -840,6 +1044,25 @@ private struct R2ObjectFrameKey: PreferenceKey {
   static let defaultValue: [String: CGRect] = [:]
   static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
     value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+  }
+}
+
+@MainActor
+private final class R2ObjectFrameStore {
+  private var frames: [String: CGRect] = [:]
+
+  func replace(with frames: [String: CGRect]) {
+    self.frames = frames
+  }
+
+  func clear() {
+    frames.removeAll(keepingCapacity: true)
+  }
+
+  func key(at point: CGPoint, verticalHitSlop: CGFloat) -> String? {
+    frames.first { _, frame in
+      frame.insetBy(dx: 0, dy: -verticalHitSlop).contains(point)
+    }?.key
   }
 }
 
@@ -999,6 +1222,15 @@ private struct R2BrowserSnapshot: Sendable {
 private final class R2BucketWork {
   var upload: Task<Void, Never>?
   var batch: Task<Void, Never>?
+
+  func cancelAndRelease() {
+    let upload = upload
+    let batch = batch
+    self.upload = nil
+    self.batch = nil
+    upload?.cancel()
+    batch?.cancel()
+  }
 
   deinit {
     upload?.cancel()
@@ -1360,7 +1592,6 @@ struct KVKeyDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let namespaceID: String
   let key: String
 
@@ -1375,10 +1606,6 @@ struct KVKeyDetailView: View {
   @State private var copied = false
 
   private var canFormat: Bool { KVJSONFormatting.isValidJSON(value) }
-
-  private var morphAnimation: Animation {
-    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph
-  }
 
   var body: some View {
     GeometryReader { geo in
@@ -1440,7 +1667,7 @@ struct KVKeyDetailView: View {
             asset: SolarAsset.trash,
             accessibilityLabel: DashL10n.string("Delete")
           ) {
-            withAnimation(morphAnimation) { confirmingDelete = true }
+            withAnimation(DashTheme.Motion.morph) { confirmingDelete = true }
           }
         }
       }
@@ -1457,16 +1684,16 @@ struct KVKeyDetailView: View {
         title: copied ? DashL10n.string("Copied") : DashL10n.string("Copy")
       ) {
         UIPasteboard.general.string = value
-        withAnimation(morphAnimation) { copied = true }
+        withAnimation(DashTheme.Motion.morph) { copied = true }
         Task {
           try? await Task.sleep(for: .seconds(1.6))
-          withAnimation(morphAnimation) { copied = false }
+          withAnimation(DashTheme.Motion.morph) { copied = false }
         }
       }
     case .editing:
       HStack(spacing: 10) {
         Button {
-          withAnimation(morphAnimation) {
+          withAnimation(DashTheme.Motion.morph) {
             value = committedValue
             mode = .viewing
             error = nil
@@ -1518,7 +1745,7 @@ struct KVKeyDetailView: View {
     }
     switch mode {
     case .viewing:
-      withAnimation(morphAnimation) { mode = .editing }
+      withAnimation(DashTheme.Motion.morph) { mode = .editing }
     case .editing:
       Task { await save() }
     }
@@ -1554,7 +1781,7 @@ struct KVKeyDetailView: View {
       committedValue = value
       invalidateKeys()
       model.toasts.success(DashL10n.string("Saved successfully."))
-      withAnimation(morphAnimation) { mode = .viewing }
+      withAnimation(DashTheme.Motion.morph) { mode = .viewing }
     } catch { self.error = error.dashActionableMessage }
   }
 

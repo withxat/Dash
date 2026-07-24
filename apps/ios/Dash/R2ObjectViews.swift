@@ -1,47 +1,6 @@
 import CloudflareAPI
 import ImageIO
 import SwiftUI
-import UniformTypeIdentifiers
-
-// MARK: - Media detection
-
-/// What Dash is willing to fetch and decode from a bucket, and how large a
-/// body a phone-side object copy may buffer.
-enum R2Media {
-  /// `putR2Object` holds the body in memory and URLSession copies it again, so
-  /// the ceiling here is the phone's, not Cloudflare's — a single-part PUT is
-  /// good for ~5 GiB, but iOS jetsams the app long before that. Shared by
-  /// upload, rename, and move, which all buffer one object at a time.
-  static let transferSizeLimit = 100 * 1024 * 1024
-
-  /// Row thumbnails skip anything above this — a grid of multi-megabyte
-  /// downloads per scroll would swamp cell data for a 40pt square.
-  static let thumbnailByteLimit = 8 * 1024 * 1024
-
-  /// UIImage-decodable formats only — SVG stays a generic file row.
-  private static let imageExtensions: Set<String> = [
-    "png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "avif", "bmp", "tif", "tiff",
-  ]
-
-  static func isImage(_ object: R2Object) -> Bool {
-    if let type = object.contentType?.lowercased() {
-      return type.hasPrefix("image/") && !type.contains("svg")
-    }
-    return isImageKey(object.key)
-  }
-
-  static func isImageKey(_ key: String) -> Bool {
-    guard let name = key.split(separator: "/").last,
-      let ext = name.split(separator: ".").last, ext.count < name.count
-    else { return false }
-    return imageExtensions.contains(ext.lowercased())
-  }
-
-  static func mimeType(forKey key: String) -> String? {
-    let ext = key.split(separator: "/").last?.split(separator: ".").last.map(String.init)
-    return ext.flatMap { UTType(filenameExtension: $0)?.preferredMIMEType }
-  }
-}
 
 // MARK: - Thumbnail store
 
@@ -50,13 +9,26 @@ enum R2Media {
 /// downsampling so a bucket of camera originals never inflates to
 /// full-resolution bitmaps.
 actor R2ThumbnailStore {
+  private struct SlotWaiter {
+    let id: UUID
+    let continuation: CheckedContinuation<Bool, Never>
+  }
+
+  private struct InFlight {
+    let generation: UUID
+    let task: Task<Void, Never>
+    var continuations: [UUID: CheckedContinuation<UIImage?, Never>]
+    var cancelledWaiters: Set<UUID>
+  }
+
   private let cache = NSCache<NSString, UIImage>()
-  private var inFlight: [String: Task<UIImage?, Never>] = [:]
+  private var inFlight: [String: InFlight] = [:]
   private var availableSlots = 4
-  private var waiters: [CheckedContinuation<Void, Never>] = []
+  private var slotWaiters: [SlotWaiter] = []
 
   init() {
     cache.countLimit = 300
+    cache.totalCostLimit = 48 * 1024 * 1024
   }
 
   func rowThumbnail(
@@ -69,7 +41,12 @@ actor R2ThumbnailStore {
 
   func clear() {
     cache.removeAllObjects()
-    for task in inFlight.values { task.cancel() }
+    for entry in inFlight.values {
+      entry.task.cancel()
+      for continuation in entry.continuations.values {
+        continuation.resume(returning: nil)
+      }
+    }
     inFlight.removeAll()
   }
 
@@ -78,52 +55,125 @@ actor R2ThumbnailStore {
     client: CloudflareClient, accountID: String, bucket: String, object: R2Object
   ) async -> UIImage? {
     guard R2Media.isImage(object), let size = object.size, size <= maxBytes else { return nil }
-    let key = "\(kind)|\(accountID)|\(bucket)|\(object.key)|\(object.etag ?? "")"
+    let version = R2Media.versionToken(for: object)
+    let key = "\(kind)|\(accountID)|\(bucket)|\(object.key)|\(version)"
     if let hit = cache.object(forKey: key as NSString) { return hit }
+    let waiterID = UUID()
+    let generation: UUID
     if let existing = inFlight[key] {
-      // Join the in-flight download; leaving the row cancels only this wait.
-      return await existing.value
+      generation = existing.generation
+    } else {
+      let newGeneration = UUID()
+      generation = newGeneration
+      let task = Task { [weak self] in
+        guard let self else { return }
+        let result = await self.fetch(
+          cacheKey: key, maxPixel: maxPixel,
+          client: client, accountID: accountID, bucket: bucket, objectKey: object.key)
+        await self.complete(key: key, generation: newGeneration, result: result)
+      }
+      inFlight[key] = InFlight(
+        generation: newGeneration,
+        task: task,
+        continuations: [:],
+        cancelledWaiters: [])
     }
-    let task = Task<UIImage?, Never> {
-      await self.fetch(
-        cacheKey: key, maxPixel: maxPixel,
-        client: client, accountID: accountID, bucket: bucket, objectKey: object.key)
-    }
-    inFlight[key] = task
     return await withTaskCancellationHandler {
-      let result = await task.value
-      self.finishInFlight(key, task: task)
-      return result
+      await waitForResult(waiterID: waiterID, key: key, generation: generation)
     } onCancel: {
-      // Row disappeared: abort the download and free its concurrency slot
-      // so the next screen is not stuck behind four orphaned GETs.
-      task.cancel()
-      Task { await self.finishInFlight(key, task: task) }
+      Task {
+        await self.cancelWaiter(waiterID, key: key, generation: generation)
+      }
     }
   }
 
-  private func finishInFlight(_ key: String, task: Task<UIImage?, Never>) {
-    if inFlight[key] == task { inFlight[key] = nil }
+  private func waitForResult(
+    waiterID: UUID, key: String, generation: UUID
+  ) async -> UIImage? {
+    await withCheckedContinuation { continuation in
+      guard var entry = inFlight[key], entry.generation == generation else {
+        continuation.resume(
+          returning: Task.isCancelled ? nil : cache.object(forKey: key as NSString))
+        return
+      }
+      if Task.isCancelled || entry.cancelledWaiters.remove(waiterID) != nil {
+        continuation.resume(returning: nil)
+        if entry.continuations.isEmpty && entry.cancelledWaiters.isEmpty {
+          entry.task.cancel()
+          inFlight[key] = nil
+        } else {
+          inFlight[key] = entry
+        }
+      } else {
+        entry.continuations[waiterID] = continuation
+        inFlight[key] = entry
+      }
+    }
+  }
+
+  private func cancelWaiter(_ waiterID: UUID, key: String, generation: UUID) {
+    guard var entry = inFlight[key], entry.generation == generation else { return }
+    if let continuation = entry.continuations.removeValue(forKey: waiterID) {
+      continuation.resume(returning: nil)
+      if entry.continuations.isEmpty && entry.cancelledWaiters.isEmpty {
+        entry.task.cancel()
+        inFlight[key] = nil
+      } else {
+        inFlight[key] = entry
+      }
+    } else {
+      entry.cancelledWaiters.insert(waiterID)
+      inFlight[key] = entry
+    }
+  }
+
+  private func complete(
+    key: String, generation: UUID, result: UIImage?
+  ) {
+    guard let entry = inFlight[key], entry.generation == generation else { return }
+    inFlight[key] = nil
+    for continuation in entry.continuations.values {
+      continuation.resume(returning: result)
+    }
   }
 
   private func fetch(
     cacheKey: String, maxPixel: CGFloat,
     client: CloudflareClient, accountID: String, bucket: String, objectKey: String
   ) async -> UIImage? {
-    await acquireSlot()
+    guard await acquireSlot() else { return nil }
     defer { releaseSlot() }
     guard !Task.isCancelled else { return nil }
-    guard
-      let data = try? await client.getR2Object(accountID: accountID, bucket: bucket, key: objectKey)
-    else { return nil }
+    let temporaryFile = R2TemporaryFile.make(purpose: "r2-thumbnail", filename: objectKey)
+    defer { temporaryFile.remove() }
+    do {
+      try await client.downloadR2Object(
+        accountID: accountID,
+        bucket: bucket,
+        key: objectKey,
+        to: temporaryFile.fileURL,
+        maximumBytes: Int64(R2Media.thumbnailByteLimit))
+    } catch {
+      return nil
+    }
     guard !Task.isCancelled else { return nil }
-    guard let image = Self.downsample(data, maxPixel: maxPixel) else { return nil }
-    cache.setObject(image, forKey: cacheKey as NSString)
+    guard let image = Self.downsample(temporaryFile.fileURL, maxPixel: maxPixel) else { return nil }
+    let cost =
+      image.cgImage.map { $0.bytesPerRow * $0.height }
+      ?? Int(image.size.width * image.scale * image.size.height * image.scale * 4)
+    cache.setObject(image, forKey: cacheKey as NSString, cost: cost)
     return image
   }
 
-  private static func downsample(_ data: Data, maxPixel: CGFloat) -> UIImage? {
-    guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+  private static func downsample(_ fileURL: URL, maxPixel: CGFloat) -> UIImage? {
+    let sourceOptions: [CFString: Any] = [
+      kCGImageSourceShouldCache: false
+    ]
+    guard
+      let source = CGImageSourceCreateWithURL(
+        fileURL as CFURL,
+        sourceOptions as CFDictionary)
+    else { return nil }
     let options: [CFString: Any] = [
       kCGImageSourceCreateThumbnailFromImageAlways: true,
       kCGImageSourceCreateThumbnailWithTransform: true,
@@ -135,24 +185,47 @@ actor R2ThumbnailStore {
     return UIImage(cgImage: cgImage)
   }
 
-  private func acquireSlot() async {
+  private func acquireSlot() async -> Bool {
+    guard !Task.isCancelled else { return false }
     if availableSlots > 0 {
       availableSlots -= 1
-      return
+      return true
     }
-    await withCheckedContinuation { waiters.append($0) }
+    let waiterID = UUID()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        slotWaiters.append(SlotWaiter(id: waiterID, continuation: continuation))
+      }
+    } onCancel: {
+      Task { await self.cancelSlotWaiter(waiterID) }
+    }
   }
 
   private func releaseSlot() {
-    if waiters.isEmpty {
+    if slotWaiters.isEmpty {
       availableSlots += 1
     } else {
-      waiters.removeFirst().resume()
+      slotWaiters.removeFirst().continuation.resume(returning: true)
     }
+  }
+
+  private func cancelSlotWaiter(_ waiterID: UUID) {
+    guard let index = slotWaiters.firstIndex(where: { $0.id == waiterID }) else { return }
+    slotWaiters.remove(at: index).continuation.resume(returning: false)
   }
 }
 
 // MARK: - Browser row
+
+/// Full identity for one row thumbnail request. Keeping the account context in
+/// the SwiftUI task ID makes an account switch cancel the old waiter even when
+/// the other account has an identically named bucket, key, and object version.
+struct R2ThumbnailRequestIdentity: Hashable, Sendable {
+  let context: AccountRequestContext?
+  let bucket: String
+  let objectKey: String
+  let version: String
+}
 
 /// Object row with a lazily fetched thumbnail; in selection mode the tap
 /// toggles membership instead of opening the preview.
@@ -165,7 +238,16 @@ struct R2ObjectRow: View {
   var selected = false
   let action: () -> Void
   @State private var thumbnail: UIImage?
-  @State private var thumbnailEtag: String?
+  @State private var thumbnailIdentity: R2ThumbnailRequestIdentity?
+  @State private var activeThumbnailRequest: R2ThumbnailRequestIdentity?
+
+  private var thumbnailRequestIdentity: R2ThumbnailRequestIdentity {
+    R2ThumbnailRequestIdentity(
+      context: model.accountRequestContext,
+      bucket: bucket,
+      objectKey: object.key,
+      version: R2Media.versionToken(for: object))
+  }
 
   var body: some View {
     Button(action: action) {
@@ -195,15 +277,32 @@ struct R2ObjectRow: View {
         : "Double tap to preview"
     )
     .accessibilityAddTraits(selected ? .isSelected : [])
-    .task(id: object.etag) {
-      // Refetch when the object was overwritten (etag changed), not just on
-      // first appearance.
-      guard thumbnail == nil || thumbnailEtag != object.etag,
-        let accountID = model.activeAccountID
+    .task(id: thumbnailRequestIdentity) {
+      let request = thumbnailRequestIdentity
+      activeThumbnailRequest = request
+      guard let context = request.context else {
+        thumbnail = nil
+        thumbnailIdentity = nil
+        return
+      }
+      if thumbnailIdentity != request {
+        // Never paint another account's or another object version's image while
+        // the replacement request is in flight.
+        thumbnail = nil
+        thumbnailIdentity = nil
+      } else if thumbnail != nil {
+        return
+      }
+
+      let image = await model.r2Thumbnails.rowThumbnail(
+        client: model.client, accountID: context.accountID, bucket: bucket, object: object)
+      guard
+        !Task.isCancelled,
+        model.isCurrentAccount(context),
+        activeThumbnailRequest == request
       else { return }
-      thumbnail = await model.r2Thumbnails.rowThumbnail(
-        client: model.client, accountID: accountID, bucket: bucket, object: object)
-      thumbnailEtag = object.etag
+      thumbnail = image
+      thumbnailIdentity = request
     }
   }
 

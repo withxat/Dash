@@ -13,39 +13,69 @@ enum DashAuthorizationScopes {
     .kv,
   ]
 
-  /// Operational scopes used by nested screens, Watchtower, and App Intents
-  /// that are not represented by a standalone FeatureID.
+  /// Read scopes used by nested screens and Watchtower that are not represented
+  /// by a standalone FeatureID. These ship in the first OAuth grant so every
+  /// catalog surface can load without giving Dash permission to mutate the
+  /// account.
   ///
-  /// `core` is derived from `coreFeatures`, so a scope that lives only in a
-  /// feature's capability disappears from the OAuth request the moment that
-  /// feature leaves the catalog — silently, and only for accounts that sign in
-  /// afterwards. Anything a surviving screen calls belongs here instead.
-  /// `scopesOutlivingTheirFeature` in DashTests is the guard.
-  private static let coreOperations: Set<String> = [
+  /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
+  /// lives only in a feature's capability disappears from the OAuth request
+  /// when that feature leaves the catalog. Anything a surviving read surface
+  /// calls belongs here instead.
+  private static let coreReadOperations: Set<String> = [
     "zone-settings.read",
-    "zone-settings.write",
     "healthcheck.read",
     "load-balancing-monitors-and-pools.read",
     "registrar-domains.read",
     "dns.read",
-    "dns.write",
-    "cache.purge",
     "workers-routes.read",
     "argotunnel.read",
     "notifications.read",
-    "notifications.write",
     "ssl-and-certificates.read",
     "account-analytics.read",
     "analytics.read",
   ]
 
+  /// Mutating operations that are not represented by a FeatureID. They are
+  /// requested incrementally from the concrete action that needs them.
+  private static let coreWriteOperations: Set<String> = [
+    "zone-settings.write",
+    "dns.write",
+    "cache.purge",
+    "notifications.write",
+  ]
+
+  /// Mutations exposed outside Dash's normal feature screens. App Intents and
+  /// the share extension cannot safely present OAuth themselves, so Settings
+  /// offers one explicit incremental grant for this reviewed set.
+  static let shortcutsAndShareWrites: Set<String> = Set([
+    "zone-settings.write",
+    "cache.purge",
+  ]).union(R2ShareDestination.requiredWriteScopes)
+
+  /// The first OAuth grant: enough to identify the user and browse every
+  /// shipped resource, but never enough to change the account.
+  static let initialReadOnly: Set<String> = {
+    let reads = coreFeatures.reduce(into: Set<String>()) {
+      $0.formUnion($1.capability.read)
+    }
+    return
+      reads
+      .union(coreReadOperations)
+      .union(CloudflareScopes.required)
+  }()
+
+  /// Full app capability, retained as the explicit "grant everything Dash can
+  /// currently do" set and as a release-gate audit surface. It is not requested
+  /// during first sign-in.
   static let core: Set<String> = {
     let capabilities = coreFeatures.reduce(into: Set<String>()) {
       $0.formUnion($1.capability.all)
     }
     return
       capabilities
-      .union(coreOperations)
+      .union(coreReadOperations)
+      .union(coreWriteOperations)
       .union(CloudflareScopes.required)
   }()
 
@@ -59,10 +89,17 @@ enum DashAuthorizationScopes {
     "analytics.read",
   ]
 
-  /// Web Analytics (RUM) lives on the account: both the site list and the
-  /// `rum*` GraphQL datasets answer under `account-analytics.read`. Cloudflare
+  /// Web Analytics (RUM) spans two Cloudflare permissions, and the two calls the
+  /// screen makes answer under different ones: the REST site list
+  /// (`/accounts/{id}/rum/site_info/list`, which maps a zone to its `siteTag`)
+  /// is gated by **Account Settings Read** (`account-settings.read`), while the
+  /// `rum*` GraphQL datasets are gated by **Account Analytics Read**
+  /// (`account-analytics.read`). Requesting only the analytics scope 403s the
+  /// site list — the original cause of "no access to this resource". Cloudflare
   /// publishes no OAuth scope for Web Analytics writes, so Dash reads only.
-  static let webAnalytics: Set<String> = ["zone.read", "account-analytics.read"]
+  static let webAnalytics: Set<String> = [
+    "zone.read", "account-analytics.read", "account-settings.read",
+  ]
 
   static let watchtower: Set<String> = Set([
     "argotunnel.read",

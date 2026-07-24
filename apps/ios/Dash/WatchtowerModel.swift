@@ -1,5 +1,6 @@
 import CloudflareAPI
 import Foundation
+import OSLog
 
 enum WatchtowerStatus: Hashable, Sendable {
   case ok
@@ -59,62 +60,116 @@ enum WatchtowerDashboardLinks {
 }
 
 enum WatchtowerEngine {
-  static let zoneFanoutLimit = 10
-  static let coverageSignalID = "zone-coverage"
-  static var coverageSignalTitle: String { DashL10n.string("Domain coverage") }
-  private static let expiryWarningDays = 30
-  private static let expiryCriticalDays = 7
-
-  /// Warns when certificates and healthchecks only cover a prefix of zones.
-  /// Returns nil when every zone is in scope.
-  static func coverageSignal(totalZones: Int, checkedLimit: Int = zoneFanoutLimit)
-    -> WatchtowerSignal?
-  {
-    guard totalZones > checkedLimit else { return nil }
-    let uncovered = totalZones - checkedLimit
-    return WatchtowerSignal(
-      id: coverageSignalID,
-      title: coverageSignalTitle,
-      detail: DashL10n.string(
-        "\(uncovered) of \(totalZones) domains not checked for certificates & healthchecks"),
-      status: .warning,
-      destination: .feature(.zones)
-    )
-  }
-
-  static func load(client: CloudflareClient, accountID: String) async -> (
+  typealias LoadResult = (
     signals: [WatchtowerSignal],
     alerts: [NotificationHistoryEntry],
     alertsStatus: WatchtowerAlertsStatus,
     missingScopeChecks: [String],
     failedChecks: [String]
-  ) {
-    async let zonesTask = fetch { try await client.listZones(accountID: accountID).items }
+  )
+
+  static let zoneFanoutLimit = 10
+  static let zonePageSize = 50
+  static let coverageSignalID = "zone-coverage"
+  static var coverageSignalTitle: String { DashL10n.string("Domain coverage") }
+  private static let expiryWarningDays = 30
+  private static let expiryCriticalDays = 7
+
+  /// Makes any bounded or incomplete zone fan-out visible. This is a trust
+  /// signal, not an outage: it explains exactly what the latest refresh did not
+  /// establish before healthy rows can read as account-wide reassurance.
+  static func coverageSignal(
+    totalZones: Int,
+    checkedLimit: Int = zoneFanoutLimit,
+    certificateChecks: ZoneScopedResult<CertificatePack>? = nil,
+    healthcheckChecks: ZoneScopedResult<Healthcheck>? = nil
+  ) -> WatchtowerSignal? {
+    let attemptedZones = min(totalZones, checkedLimit)
+    var details: [String] = []
+
+    if totalZones > checkedLimit {
+      let uncovered = totalZones - checkedLimit
+      details.append(
+        DashL10n.string(
+          "Certificates & healthchecks checked the first \(checkedLimit) of \(totalZones) domains; \(uncovered) of \(totalZones) domains were outside this refresh"
+        ))
+    }
+    if let certificateChecks, certificateChecks.failedCount > 0 {
+      details.append(
+        DashL10n.string(
+          "Certificate checks completed for \(certificateChecks.checkedCount) of \(attemptedZones) domains"
+        ))
+    }
+    if let healthcheckChecks, healthcheckChecks.failedCount > 0 {
+      details.append(
+        DashL10n.string(
+          "Healthchecks completed for \(healthcheckChecks.checkedCount) of \(attemptedZones) domains"
+        ))
+    }
+
+    guard !details.isEmpty else { return nil }
+    return WatchtowerSignal(
+      id: coverageSignalID,
+      title: coverageSignalTitle,
+      detail: details.joined(separator: " · "),
+      status: .warning,
+      destination: .feature(.zones),
+      suggestedAction: DashL10n.string(
+        "Refresh to retry incomplete checks, or open Domains to review coverage")
+    )
+  }
+
+  static func zonesForFanout(_ zones: [CloudflareZone]) -> [CloudflareZone] {
+    Array(zones.prefix(zoneFanoutLimit))
+  }
+
+  static func loadCancellable(client: CloudflareClient, accountID: String) async throws
+    -> LoadResult
+  {
+    let signpostID = DashPerformance.signposter.makeSignpostID()
+    let interval = DashPerformance.signposter.beginInterval(
+      "WatchtowerRefresh", id: signpostID)
+    defer {
+      DashPerformance.signposter.endInterval("WatchtowerRefresh", interval)
+    }
+
+    async let zonesTask = fetch {
+      try await DashPageLoader.loadAll(pageSize: zonePageSize, id: \.id) { page, perPage in
+        try await client.listZones(accountID: accountID, page: page, perPage: perPage)
+      }
+    }
     async let tunnelsTask = fetch { try await client.listTunnels(accountID: accountID) }
     async let poolsTask = fetch { try await client.listLoadBalancerPools(accountID: accountID) }
     async let registrarTask = fetch { try await client.listRegistrarDomains(accountID: accountID) }
     async let pagesTask = fetch { try await client.listPagesProjects(accountID: accountID) }
     async let alertsTask = fetch { try await client.listNotificationHistory(accountID: accountID) }
 
-    let zonesResult = await zonesTask
-    let tunnelsResult = await tunnelsTask
-    let poolsResult = await poolsTask
-    let registrarResult = await registrarTask
-    let pagesResult = await pagesTask
-    let alertsResult = await alertsTask
+    let (
+      zonesResult,
+      tunnelsResult,
+      poolsResult,
+      registrarResult,
+      pagesResult,
+      alertsResult
+    ) = try await (
+      zonesTask,
+      tunnelsTask,
+      poolsTask,
+      registrarTask,
+      pagesTask,
+      alertsTask
+    )
 
     let zones = zonesResult.value ?? []
-    let scopedZones = Array(zones.prefix(zoneFanoutLimit))
+    let scopedZones = zonesForFanout(zones)
     let zonesTruncated = zones.count > zoneFanoutLimit
 
-    async let certTask = loadZoneScoped(client: client, zones: scopedZones) {
-      try await client.listCertificatePacks(zoneID: $0.id)
-    }
-    async let healthTask = loadZoneScoped(client: client, zones: scopedZones) {
-      try await client.listHealthchecks(zoneID: $0.id)
-    }
-    let certResults = await certTask
-    let healthResults = await healthTask
+    let zoneChecks = try await loadZoneChecks(
+      zones: scopedZones,
+      certificateLoader: { try await client.listCertificatePacks(zoneID: $0.id) },
+      healthcheckLoader: { try await client.listHealthchecks(zoneID: $0.id) })
+    let certResults = zoneChecks.certificates
+    let healthResults = zoneChecks.healthchecks
 
     var signals: [WatchtowerSignal] = []
     var missingScopeChecks: [String] = []
@@ -161,23 +216,21 @@ enum WatchtowerEngine {
     }
 
     if !scopedZones.isEmpty {
-      if certResults.allFailed {
-        if certResults.allPermissionDenied {
-          missingScopeChecks.append(DashL10n.string("SSL certificates"))
-        } else {
-          failedChecks.append(DashL10n.string("SSL certificates"))
-        }
-      } else {
+      recordZoneFailures(
+        DashL10n.string("SSL certificates"),
+        result: certResults,
+        missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
+      if !certResults.allFailed {
         append(&signals, certsSignal(certResults.entries, truncated: zonesTruncated))
       }
 
-      if healthResults.allFailed {
-        if healthResults.allPermissionDenied {
-          missingScopeChecks.append(DashL10n.string("Healthchecks"))
-        } else {
-          failedChecks.append(DashL10n.string("Healthchecks"))
-        }
-      } else {
+      recordZoneFailures(
+        DashL10n.string("Healthchecks"),
+        result: healthResults,
+        missingScopes: &missingScopeChecks,
+        failures: &failedChecks)
+      if !healthResults.allFailed {
         append(&signals, healthchecksSignal(healthResults.entries, truncated: zonesTruncated))
       }
     }
@@ -195,7 +248,15 @@ enum WatchtowerEngine {
         failures: &failedChecks)
     }
 
-    append(&signals, coverageSignal(totalZones: zones.count))
+    if !zonesResult.failed {
+      append(
+        &signals,
+        coverageSignal(
+          totalZones: zones.count,
+          certificateChecks: scopedZones.isEmpty ? nil : certResults,
+          healthcheckChecks: scopedZones.isEmpty ? nil : healthResults))
+    }
+    try Task.checkCancellation()
 
     return (
       signals: signals,
@@ -226,10 +287,22 @@ enum WatchtowerEngine {
     }
   }
 
-  private struct ZoneScopedResult<Value> {
+  struct ZoneScopedResult<Value: Sendable>: Sendable {
     let entries: [(zone: CloudflareZone, items: [Value])]
-    let allFailed: Bool
-    let allPermissionDenied: Bool
+    let attemptedCount: Int
+    let failedCount: Int
+    let permissionDeniedCount: Int
+
+    var checkedCount: Int { max(0, attemptedCount - failedCount) }
+    var allFailed: Bool { attemptedCount > 0 && failedCount == attemptedCount }
+    var allPermissionDenied: Bool {
+      attemptedCount > 0 && permissionDeniedCount == attemptedCount
+    }
+  }
+
+  struct ZoneChecksLoadResult: Sendable {
+    let certificates: ZoneScopedResult<CertificatePack>
+    let healthchecks: ZoneScopedResult<Healthcheck>
   }
 
   private static func recordFailure<Value: Sendable>(
@@ -245,65 +318,172 @@ enum WatchtowerEngine {
     }
   }
 
-  private static func fetch<Value: Sendable>(_ operation: () async throws -> Value) async
-    -> FetchResult<Value>
-  {
-    do { return .success(try await operation()) } catch { return .failure(error) }
+  private static func recordZoneFailures<Value: Sendable>(
+    _ name: String,
+    result: ZoneScopedResult<Value>,
+    missingScopes: inout [String],
+    failures: inout [String]
+  ) {
+    guard result.failedCount > 0 else { return }
+    if result.permissionDeniedCount > 0 {
+      missingScopes.append(
+        DashL10n.string(
+          "\(name) (\(result.permissionDeniedCount) of \(result.attemptedCount) domains)"
+        ))
+    }
+    let unavailableCount = result.failedCount - result.permissionDeniedCount
+    if unavailableCount > 0 {
+      failures.append(
+        DashL10n.string(
+          "\(name) (\(result.checkedCount) of \(result.attemptedCount) domains checked)"
+        ))
+    }
   }
 
-  /// At most this many zone-scoped requests in flight per check family, so a
-  /// refresh stays fast without bursting into Cloudflare's rate limit.
-  private static let zoneScopedConcurrency = 4
+  private static func fetch<Value: Sendable>(
+    _ operation: @escaping @Sendable () async throws -> Value
+  ) async throws -> FetchResult<Value> {
+    do {
+      return .success(try await operation())
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as URLError where error.code == .cancelled {
+      throw CancellationError()
+    } catch {
+      if Task.isCancelled { throw CancellationError() }
+      return .failure(error)
+    }
+  }
 
-  private static func loadZoneScoped<Value: Sendable>(
-    client: CloudflareClient,
+  /// One global window shared by certificate and healthcheck requests. Running
+  /// two independent four-wide groups would burst eight account requests.
+  static let zoneScopedConcurrency = 4
+
+  static func loadZoneChecks(
     zones: [CloudflareZone],
-    loader: @escaping @Sendable (CloudflareZone) async throws -> [Value]
-  ) async -> ZoneScopedResult<Value> {
+    certificateLoader: @escaping @Sendable (CloudflareZone) async throws -> [CertificatePack],
+    healthcheckLoader: @escaping @Sendable (CloudflareZone) async throws -> [Healthcheck]
+  ) async throws -> ZoneChecksLoadResult {
     guard !zones.isEmpty else {
-      return ZoneScopedResult(entries: [], allFailed: false, allPermissionDenied: false)
+      return ZoneChecksLoadResult(
+        certificates: ZoneScopedResult(
+          entries: [], attemptedCount: 0, failedCount: 0, permissionDeniedCount: 0),
+        healthchecks: ZoneScopedResult(
+          entries: [], attemptedCount: 0, failedCount: 0, permissionDeniedCount: 0))
     }
 
-    // Sliding window: seed the group, add one task as each completes, and
-    // slot results by index so zone order survives the concurrency.
-    var slots: [(zone: CloudflareZone, items: [Value])?] = Array(
+    var certificateSlots: [(zone: CloudflareZone, items: [CertificatePack])?] = Array(
       repeating: nil, count: zones.count)
-    var failures = 0
-    var permissionFailures = 0
+    var healthcheckSlots: [(zone: CloudflareZone, items: [Healthcheck])?] = Array(
+      repeating: nil, count: zones.count)
+    var certificateFailures = 0
+    var certificatePermissionFailures = 0
+    var healthcheckFailures = 0
+    var healthcheckPermissionFailures = 0
+    let work = zones.enumerated().flatMap { index, zone in
+      [
+        ZoneCheckWork.certificates(index, zone),
+        ZoneCheckWork.healthchecks(index, zone),
+      ]
+    }
 
-    await withTaskGroup(of: (Int, Result<[Value], Error>).self) { group in
+    try await withThrowingTaskGroup(of: ZoneCheckTaskResult.self) { group in
       var nextIndex = 0
       func addNext() {
-        guard nextIndex < zones.count else { return }
-        let index = nextIndex
-        let zone = zones[index]
+        guard nextIndex < work.count else { return }
+        let item = work[nextIndex]
         nextIndex += 1
-        group.addTask {
-          do { return (index, .success(try await loader(zone))) } catch {
-            return (index, .failure(error))
+        switch item {
+        case .certificates(let index, let zone):
+          group.addTask {
+            .certificates(
+              index,
+              try await captureZoneScoped {
+                try await certificateLoader(zone)
+              })
+          }
+        case .healthchecks(let index, let zone):
+          group.addTask {
+            .healthchecks(
+              index,
+              try await captureZoneScoped {
+                try await healthcheckLoader(zone)
+              })
           }
         }
       }
-      for _ in 0..<min(zoneScopedConcurrency, zones.count) { addNext() }
-      while let (index, result) = await group.next() {
+
+      for _ in 0..<min(zoneScopedConcurrency, work.count) { addNext() }
+      while let result = try await group.next() {
         switch result {
-        case .success(let items):
-          slots[index] = (zones[index], items)
-        case .failure(let error):
-          failures += 1
-          if (error as? CloudflareAPIError)?.isPermissionDenied == true {
-            permissionFailures += 1
+        case .certificates(let index, let result):
+          switch result {
+          case .success(let items):
+            certificateSlots[index] = (zones[index], items)
+          case .failure(let failure):
+            certificateFailures += 1
+            if failure.isPermissionDenied {
+              certificatePermissionFailures += 1
+            }
+          }
+        case .healthchecks(let index, let result):
+          switch result {
+          case .success(let items):
+            healthcheckSlots[index] = (zones[index], items)
+          case .failure(let failure):
+            healthcheckFailures += 1
+            if failure.isPermissionDenied {
+              healthcheckPermissionFailures += 1
+            }
           }
         }
         addNext()
       }
     }
 
-    return ZoneScopedResult(
-      entries: slots.compactMap { $0 },
-      allFailed: failures == zones.count,
-      allPermissionDenied: permissionFailures == zones.count
+    return ZoneChecksLoadResult(
+      certificates: ZoneScopedResult(
+        entries: certificateSlots.compactMap { $0 },
+        attemptedCount: zones.count,
+        failedCount: certificateFailures,
+        permissionDeniedCount: certificatePermissionFailures),
+      healthchecks: ZoneScopedResult(
+        entries: healthcheckSlots.compactMap { $0 },
+        attemptedCount: zones.count,
+        failedCount: healthcheckFailures,
+        permissionDeniedCount: healthcheckPermissionFailures)
     )
+  }
+
+  private static func captureZoneScoped<Value: Sendable>(
+    _ operation: @escaping @Sendable () async throws -> [Value]
+  ) async throws -> Result<[Value], ZoneScopedFailure> {
+    do {
+      return .success(try await operation())
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as URLError where error.code == .cancelled {
+      throw CancellationError()
+    } catch {
+      if Task.isCancelled { throw CancellationError() }
+      return .failure(
+        ZoneScopedFailure(
+          isPermissionDenied: (error as? CloudflareAPIError)?.isPermissionDenied == true))
+    }
+  }
+
+  private enum ZoneCheckWork: Sendable {
+    case certificates(Int, CloudflareZone)
+    case healthchecks(Int, CloudflareZone)
+  }
+
+  private enum ZoneCheckTaskResult: Sendable {
+    case certificates(Int, Result<[CertificatePack], ZoneScopedFailure>)
+    case healthchecks(Int, Result<[Healthcheck], ZoneScopedFailure>)
+  }
+
+  private struct ZoneScopedFailure: Error, Sendable {
+    let isPermissionDenied: Bool
   }
 
   private static func append(_ signals: inout [WatchtowerSignal], _ signal: WatchtowerSignal?) {

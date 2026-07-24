@@ -1,5 +1,181 @@
 import Foundation
 
+public enum CloudflareTransferError: Error, LocalizedError, Sendable {
+  case exceedsLimit(limit: Int64, actual: Int64?)
+
+  public var errorDescription: String? {
+    switch self {
+    case .exceedsLimit(let limit, let actual):
+      let limitText = ByteCountFormatter.string(fromByteCount: limit, countStyle: .file)
+      if let actual {
+        let actualText = ByteCountFormatter.string(fromByteCount: actual, countStyle: .file)
+        return "The transfer is \(actualText), over the \(limitText) limit."
+      }
+      return "The transfer is over the \(limitText) limit."
+    }
+  }
+}
+
+private struct FileDownloadResult: @unchecked Sendable {
+  let fileURL: URL?
+  let response: HTTPURLResponse
+}
+
+/// One file-backed URLSession download. Foundation writes response chunks to
+/// its own temporary file; the coordinator moves the finished file beside the
+/// caller's destination and observes task byte counts so unknown-length bodies
+/// can be cancelled as soon as a delivered chunk crosses the ceiling.
+///
+/// The caller uses its injected URLSession (and therefore its delegate, queue,
+/// connection pool, and test protocol stack). Completion and task cancellation can race with waiter
+/// registration. All completion state is lock-protected, and `completed` is
+/// flipped before the single continuation is removed and resumed.
+private final class FileDownloadCoordinator: @unchecked Sendable {
+  private typealias DownloadContinuation = CheckedContinuation<FileDownloadResult, any Error>
+  private typealias DownloadOutcome = Result<FileDownloadResult, any Error>
+
+  private let partialURL: URL
+  private let maximumBytes: Int64?
+  private let lock = NSLock()
+  private var storedFailure: (any Error)?
+  private var truncatedErrorResponse: HTTPURLResponse?
+  private var continuation: DownloadContinuation?
+  private var pendingOutcome: DownloadOutcome?
+  private var completionStarted = false
+  private var completed = false
+
+  init(partialURL: URL, maximumBytes: Int64?) {
+    self.partialURL = partialURL
+    self.maximumBytes = maximumBytes
+  }
+
+  func waitForCompletion() async throws -> FileDownloadResult {
+    try await withCheckedThrowingContinuation { continuation in
+      let pending = lock.withLock { () -> DownloadOutcome? in
+        if let pendingOutcome {
+          self.pendingOutcome = nil
+          return pendingOutcome
+        }
+        self.continuation = continuation
+        return nil
+      }
+      if let pending {
+        continuation.resume(with: pending)
+      }
+    }
+  }
+
+  func observeProgress(of task: URLSessionDownloadTask) -> NSKeyValueObservation {
+    task.observe(\.countOfBytesReceived, options: [.new]) { [weak self] task, _ in
+      self?.didReceiveBytes(task)
+    }
+  }
+
+  private func didReceiveBytes(_ task: URLSessionDownloadTask) {
+    guard let response = task.response as? HTTPURLResponse else { return }
+    let totalBytesWritten = task.countOfBytesReceived
+    let totalBytesExpectedToWrite = task.countOfBytesExpectedToReceive
+    guard (200..<300).contains(response.statusCode) else {
+      let errorBodyLimit: Int64 = 1_048_576
+      if totalBytesExpectedToWrite > errorBodyLimit || totalBytesWritten > errorBodyLimit {
+        let shouldCancel = lock.withLock {
+          guard !completionStarted, storedFailure == nil, truncatedErrorResponse == nil else {
+            return false
+          }
+          truncatedErrorResponse = response
+          return true
+        }
+        if shouldCancel {
+          task.cancel()
+        }
+      }
+      return
+    }
+    guard let maximumBytes else { return }
+
+    let actual: Int64?
+    if totalBytesExpectedToWrite > maximumBytes {
+      actual = totalBytesExpectedToWrite
+    } else if totalBytesWritten > maximumBytes {
+      actual = totalBytesWritten
+    } else {
+      return
+    }
+
+    let error = CloudflareTransferError.exceedsLimit(limit: maximumBytes, actual: actual)
+    if record(error) {
+      task.cancel()
+    }
+  }
+
+  func complete(
+    location: URL?,
+    response: URLResponse?,
+    error: (any Error)?
+  ) {
+    let state = lock.withLock {
+      () -> (truncated: HTTPURLResponse?, failure: (any Error)?)? in
+      guard !completionStarted else { return nil }
+      completionStarted = true
+      return (truncatedErrorResponse, storedFailure)
+    }
+    guard let state else { return }
+
+    if let response = state.truncated {
+      finish(.success(FileDownloadResult(fileURL: nil, response: response)))
+      return
+    }
+    if let storedFailure = state.failure {
+      finish(.failure(storedFailure))
+      return
+    }
+    if let error {
+      finish(.failure(error))
+      return
+    }
+    guard let response = response as? HTTPURLResponse else {
+      finish(.failure(CloudflareAPIError.invalidResponse))
+      return
+    }
+    guard let location else {
+      finish(
+        .failure(
+          CocoaError(.fileReadNoSuchFile, userInfo: [NSFilePathErrorKey: partialURL.path])))
+      return
+    }
+    do {
+      try FileManager.default.moveItem(at: location, to: partialURL)
+    } catch {
+      finish(.failure(error))
+      return
+    }
+    finish(.success(FileDownloadResult(fileURL: partialURL, response: response)))
+  }
+
+  @discardableResult
+  private func record(_ error: any Error) -> Bool {
+    lock.withLock {
+      guard !completionStarted, !completed, storedFailure == nil else { return false }
+      storedFailure = error
+      return true
+    }
+  }
+
+  private func finish(_ outcome: DownloadOutcome) {
+    let continuation = lock.withLock { () -> DownloadContinuation? in
+      guard !completed else { return nil }
+      completed = true
+      let continuation = self.continuation
+      self.continuation = nil
+      if continuation == nil {
+        pendingOutcome = outcome
+      }
+      return continuation
+    }
+    continuation?.resume(with: outcome)
+  }
+}
+
 public actor CloudflareClient {
   private let apiBase: URL
   private let clientID: String
@@ -353,6 +529,19 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)", method: "PUT", data: data,
       contentType: contentType)
   }
+
+  /// File-backed upload for object bodies that should not be copied into
+  /// `URLRequest.httpBody`. The response body remains bounded Cloudflare API
+  /// metadata and is discarded.
+  public func putR2Object(
+    accountID: String, bucket: String, key: String, fileURL: URL, contentType: String?
+  ) async throws {
+    let url = requestURL(
+      path: "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
+    _ = try await uploadResponse(
+      url: url, method: "PUT", fileURL: fileURL, contentType: contentType)
+  }
+
   public func deleteR2Object(accountID: String, bucket: String, key: String) async throws {
     let _: Data = try await raw(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)", method: "DELETE")
@@ -361,6 +550,21 @@ public actor CloudflareClient {
   /// Raw object body — binary endpoint, no JSON envelope.
   public func getR2Object(accountID: String, bucket: String, key: String) async throws -> Data {
     try await raw("/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
+  }
+
+  /// Downloads an object directly to disk and atomically hands the temporary
+  /// URL to the caller-owned destination. The destination must not already
+  /// exist. A byte ceiling is enforced from response metadata when available
+  /// and while streaming, before an oversized response can fill local storage.
+  @discardableResult
+  public func downloadR2Object(
+    accountID: String, bucket: String, key: String, to destination: URL,
+    maximumBytes: Int64? = nil
+  ) async throws -> URL {
+    let url = requestURL(
+      path: "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
+    return try await downloadResponse(
+      url: url, method: "GET", destination: destination, maximumBytes: maximumBytes)
   }
   public func getR2ManagedDomain(accountID: String, bucket: String) async throws -> R2ManagedDomain
   {
@@ -849,6 +1053,63 @@ public actor CloudflareClient {
     }
   }
 
+  /// Daily Web Analytics metrics for one RUM site — page views, visits, and the
+  /// median page-load time (ms) — the three figures the Web Analytics dashboard
+  /// shows. Page views and visits come from `rumPageloadEventsAdaptiveGroups`;
+  /// page-load time lives on the separate `rumPerformanceEventsAdaptiveGroups`
+  /// dataset (only it carries the timing quantiles), joined here by date.
+  ///
+  /// Both datasets are account-scoped, so the account is selected by `accountTag`
+  /// and the site by `siteTag`. The window is `days * 2` so callers can split it
+  /// into the current window and the immediately preceding one for a
+  /// period-over-period comparison. Ascending by date.
+  public func webAnalyticsMetrics(accountID: String, siteTag: String, days: Int = 7) async throws
+    -> [RUMDailyMetrics]
+  {
+    let window = max(days, 1)
+    let span = window * 2
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(span - 1) * 86400)
+    let filter =
+      "{siteTag: \"\(siteTag)\", "
+      + "datetime_geq: \"\(formatter.string(from: since))\", "
+      + "datetime_leq: \"\(formatter.string(from: until))\"}"
+    let query = """
+      { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
+      pageload: rumPageloadEventsAdaptiveGroups(limit: \(span), \
+      filter: \(filter), orderBy: [date_ASC]) { \
+      count sum { visits } dimensions { date } } \
+      performance: rumPerformanceEventsAdaptiveGroups(limit: \(span), \
+      filter: \(filter), orderBy: [date_ASC]) { \
+      quantiles { pageLoadTimeP50 } dimensions { date } } } } }
+      """
+    let response = try await graphQL(query: query)
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<RUMMetricsData>.self, from: response)
+    if let error = envelope.errors?.first {
+      throw CloudflareAPIError.request(
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
+    }
+    guard let account = envelope.data?.viewer.accounts.first else { return [] }
+    var p50ByDate: [String: Int] = [:]
+    for group in account.performance {
+      if let p50 = group.quantiles.pageLoadTimeP50 {
+        p50ByDate[group.dimensions.date] = Int(p50.rounded())
+      }
+    }
+    return account.pageload.map { group in
+      RUMDailyMetrics(
+        date: group.dimensions.date,
+        pageviews: group.count,
+        visits: group.sum.visits,
+        pageLoadTimeP50Ms: p50ByDate[group.dimensions.date])
+    }
+  }
+
   /// Hourly HTTP request totals via the GraphQL `httpRequests1hGroups`
   /// dataset. Returned ascending so charts can plot it directly.
   public func zoneAnalyticsHourly(zoneID: String, hours: Int = 24) async throws
@@ -1080,18 +1341,9 @@ public actor CloudflareClient {
     _ path: String, method: String = "GET", query: [String: String?] = [:], data: Data? = nil,
     contentType: String? = nil, attempt: Int = 0
   ) async throws -> Data {
-    var components = URLComponents(
-      url: apiBase.appending(path: path), resolvingAgainstBaseURL: false)!
-    components.queryItems = query.compactMap { key, value in
-      value.map { URLQueryItem(name: key, value: $0) }
-    }
-    // URLQueryItem leaves literal '+' unescaped and Cloudflare form-decodes it
-    // to a space — R2 cursors and object prefixes can carry '+'. Keys are
-    // fixed ASCII strings, so a blanket re-escape of the encoded query is safe.
-    components.percentEncodedQuery = components.percentEncodedQuery?
-      .replacingOccurrences(of: "+", with: "%2B")
     return try await raw(
-      url: components.url!, method: method, data: data, contentType: contentType, attempt: attempt)
+      url: requestURL(path: path, query: query), method: method, data: data,
+      contentType: contentType, attempt: attempt)
   }
 
   private func raw(url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0)
@@ -1114,31 +1366,64 @@ public actor CloudflareClient {
     return max(0, seconds)
   }
 
-  private func rawResponse(
-    url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0
-  ) async throws -> (Data, HTTPURLResponse) {
+  private func requestURL(path: String, query: [String: String?] = [:]) -> URL {
+    var components = URLComponents(
+      url: apiBase.appending(path: path), resolvingAgainstBaseURL: false)!
+    components.queryItems = query.compactMap { key, value in
+      value.map { URLQueryItem(name: key, value: $0) }
+    }
+    // URLQueryItem leaves literal '+' unescaped and Cloudflare form-decodes it
+    // to a space — R2 cursors and object prefixes can carry '+'. Keys are
+    // fixed ASCII strings, so a blanket re-escape of the encoded query is safe.
+    components.percentEncodedQuery = components.percentEncodedQuery?
+      .replacingOccurrences(of: "+", with: "%2B")
+    return components.url!
+  }
+
+  private func authorizedRequest(
+    url: URL, method: String, contentType: String?
+  ) async throws -> (request: URLRequest, token: String?) {
     var request = URLRequest(url: url)
     request.httpMethod = method
-    request.httpBody = data
     let requestToken = try await tokenStore.getAccessToken()
     if let requestToken {
       request.setValue("Bearer \(requestToken)", forHTTPHeaderField: "Authorization")
     }
-    if let contentType { request.setValue(contentType, forHTTPHeaderField: "Content-Type") }
+    if let contentType {
+      request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+    }
+    return (request, requestToken)
+  }
+
+  private func canRetryUnauthorized(requestToken: String?, attempt: Int) async throws -> Bool {
+    guard attempt == 0 else { return false }
+    let currentToken = try await tokenStore.getAccessToken()
+    if currentToken != nil, currentToken != requestToken {
+      return true
+    }
+    return try await refresh() != nil
+  }
+
+  private func validateResponse(_ response: HTTPURLResponse, body: Data) throws {
+    guard (200..<300).contains(response.statusCode) else {
+      let errors = (try? JSONDecoder().decode(ErrorEnvelope.self, from: body).errors) ?? []
+      throw CloudflareAPIError.request(status: response.statusCode, errors: errors)
+    }
+  }
+
+  private func rawResponse(
+    url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0
+  ) async throws -> (Data, HTTPURLResponse) {
+    var (request, requestToken) = try await authorizedRequest(
+      url: url, method: method, contentType: contentType)
+    request.httpBody = data
     do {
       let (body, response) = try await session.data(for: request)
       guard let response = response as? HTTPURLResponse else {
         throw CloudflareAPIError.invalidResponse
       }
-      if response.statusCode == 401, attempt == 0 {
-        let currentToken = try await tokenStore.getAccessToken()
-        let canRetry: Bool
-        if currentToken != nil, currentToken != requestToken {
-          canRetry = true
-        } else {
-          canRetry = try await refresh() != nil
-        }
-        if canRetry {
+      if response.statusCode == 401 {
+        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
           return try await rawResponse(
             url: url, method: method, data: data, contentType: contentType, attempt: 1)
         }
@@ -1150,10 +1435,7 @@ public actor CloudflareClient {
         return try await rawResponse(
           url: url, method: method, data: data, contentType: contentType, attempt: attempt + 1)
       }
-      guard (200..<300).contains(response.statusCode) else {
-        let errors = (try? JSONDecoder().decode(ErrorEnvelope.self, from: body).errors) ?? []
-        throw CloudflareAPIError.request(status: response.statusCode, errors: errors)
-      }
+      try validateResponse(response, body: body)
       return (body, response)
     } catch is CancellationError {
       throw CancellationError()
@@ -1162,6 +1444,145 @@ public actor CloudflareClient {
     } catch let error as CloudflareAPIError { throw error } catch {
       throw CloudflareAPIError.transport(error.localizedDescription)
     }
+  }
+
+  private func uploadResponse(
+    url: URL, method: String, fileURL: URL, contentType: String?, attempt: Int = 0
+  ) async throws -> (Data, HTTPURLResponse) {
+    let (request, requestToken) = try await authorizedRequest(
+      url: url, method: method, contentType: contentType)
+    do {
+      let (body, response) = try await session.upload(for: request, fromFile: fileURL)
+      guard let response = response as? HTTPURLResponse else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      if response.statusCode == 401 {
+        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
+          return try await uploadResponse(
+            url: url, method: method, fileURL: fileURL, contentType: contentType, attempt: 1)
+        }
+      }
+      if response.statusCode == 429, attempt < Self.maxAttempts,
+        let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
+      {
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+        return try await uploadResponse(
+          url: url, method: method, fileURL: fileURL, contentType: contentType,
+          attempt: attempt + 1)
+      }
+      try validateResponse(response, body: body)
+      return (body, response)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as URLError where error.code == .cancelled {
+      throw CancellationError()
+    } catch let error as CloudflareAPIError {
+      throw error
+    } catch {
+      throw CloudflareAPIError.transport(error.localizedDescription)
+    }
+  }
+
+  private func downloadResponse(
+    url: URL, method: String, destination: URL, maximumBytes: Int64?, attempt: Int = 0
+  ) async throws -> URL {
+    let (request, requestToken) = try await authorizedRequest(
+      url: url, method: method, contentType: nil)
+    do {
+      try Task.checkCancellation()
+      guard !FileManager.default.fileExists(atPath: destination.path) else {
+        throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: destination.path])
+      }
+      try FileManager.default.createDirectory(
+        at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+      let partialURL = destination.deletingLastPathComponent()
+        .appending(path: ".\(UUID().uuidString).download", directoryHint: .notDirectory)
+      defer { try? FileManager.default.removeItem(at: partialURL) }
+
+      let download = try await fileDownload(
+        request, to: partialURL, maximumBytes: maximumBytes)
+      let response = download.response
+      if response.statusCode == 401 {
+        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
+          return try await downloadResponse(
+            url: url, method: method, destination: destination, maximumBytes: maximumBytes,
+            attempt: 1)
+        }
+      }
+      if response.statusCode == 429, attempt < Self.maxAttempts,
+        let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
+      {
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+        return try await downloadResponse(
+          url: url, method: method, destination: destination, maximumBytes: maximumBytes,
+          attempt: attempt + 1)
+      }
+      if !(200..<300).contains(response.statusCode) {
+        let body = try download.fileURL.map(boundedBody(from:)) ?? Data()
+        try validateResponse(response, body: body)
+      }
+      guard let downloadedURL = download.fileURL else {
+        throw CloudflareAPIError.invalidResponse
+      }
+
+      let receivedBytes = try fileSize(at: downloadedURL)
+      if let maximumBytes, receivedBytes > maximumBytes {
+        throw CloudflareTransferError.exceedsLimit(
+          limit: maximumBytes, actual: receivedBytes)
+      }
+
+      try Task.checkCancellation()
+      guard !FileManager.default.fileExists(atPath: destination.path) else {
+        throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: destination.path])
+      }
+      try FileManager.default.moveItem(at: downloadedURL, to: destination)
+      return destination
+    } catch let error as CloudflareTransferError {
+      throw error
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch let error as URLError where error.code == .cancelled {
+      throw CancellationError()
+    } catch let error as CloudflareAPIError {
+      throw error
+    } catch let error as CocoaError {
+      throw error
+    } catch {
+      throw CloudflareAPIError.transport(error.localizedDescription)
+    }
+  }
+
+  private func fileDownload(
+    _ request: URLRequest, to partialURL: URL, maximumBytes: Int64?
+  ) async throws -> FileDownloadResult {
+    let coordinator = FileDownloadCoordinator(partialURL: partialURL, maximumBytes: maximumBytes)
+    let task = session.downloadTask(with: request) { location, response, error in
+      coordinator.complete(location: location, response: response, error: error)
+    }
+    let progressObservation = coordinator.observeProgress(of: task)
+    task.resume()
+    defer { progressObservation.invalidate() }
+    return try await withTaskCancellationHandler {
+      let result = try await coordinator.waitForCompletion()
+      try Task.checkCancellation()
+      return result
+    } onCancel: {
+      task.cancel()
+    }
+  }
+
+  private func boundedBody(from fileURL: URL) throws -> Data {
+    let handle = try FileHandle(forReadingFrom: fileURL)
+    defer { try? handle.close() }
+    return try handle.read(upToCount: 1_048_576) ?? Data()
+  }
+
+  private func fileSize(at fileURL: URL) throws -> Int64 {
+    let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+    guard let size = attributes[.size] as? NSNumber else {
+      throw CocoaError(.fileReadUnknown, userInfo: [NSFilePathErrorKey: fileURL.path])
+    }
+    return size.int64Value
   }
 
   private func refresh() async throws -> TokenSet? {
@@ -1261,6 +1682,29 @@ private struct RUMPageviewsData: Decodable, Sendable {
     let dimensions: Dimensions
 
     struct Dimensions: Decodable, Sendable { let date: String }
+  }
+}
+private struct RUMMetricsData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let accounts: [Account] }
+  struct Account: Decodable, Sendable {
+    let pageload: [PageloadGroup]
+    let performance: [PerformanceGroup]
+  }
+  struct DateDimension: Decodable, Sendable { let date: String }
+  struct PageloadGroup: Decodable, Sendable {
+    let count: Int
+    let sum: Sum
+    let dimensions: DateDimension
+
+    struct Sum: Decodable, Sendable { let visits: Int }
+  }
+  struct PerformanceGroup: Decodable, Sendable {
+    let quantiles: Quantiles
+    let dimensions: DateDimension
+
+    struct Quantiles: Decodable, Sendable { let pageLoadTimeP50: Double? }
   }
 }
 private struct ZoneAnalyticsHourlyData: Decodable, Sendable {

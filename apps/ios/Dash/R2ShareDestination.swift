@@ -10,6 +10,18 @@ import Foundation
 struct R2ShareDestination: Codable, Equatable, Sendable {
   static let appGroupID = "group.sh.xat.dash.app"
   static let destinationsKey = "dash.r2_share_destinations"
+  /// The share extension cannot present Cloudflare's OAuth flow. The containing
+  /// app grants these once from Settings, and every process-outside-the-app
+  /// upload checks the shared Keychain scope record before issuing a PUT.
+  static let requiredWriteScopes: Set<String> = [
+    "workers-r2.write",
+    "workers-r2-bucket-item.write",
+  ]
+
+  static func hasWriteAccess(grantedScopes: Set<String>?) -> Bool {
+    guard let grantedScopes else { return false }
+    return requiredWriteScopes.isSubset(of: grantedScopes)
+  }
   /// Mirror of the app's standard-defaults active account id — extensions
   /// can't read `UserDefaults.standard` across processes.
   static let activeAccountKey = "dash.active_account_id"
@@ -29,6 +41,13 @@ struct R2ShareDestination: Codable, Equatable, Sendable {
   static func activeAccountID(in defaults: UserDefaults? = sharedDefaults) -> String? {
     let value = defaults?.string(forKey: activeAccountKey)
     return value?.isEmpty == false ? value : nil
+  }
+
+  static func isActiveAccount(
+    _ accountID: String,
+    in defaults: UserDefaults? = sharedDefaults
+  ) -> Bool {
+    activeAccountID(in: defaults) == accountID
   }
 
   static func setActiveAccountID(_ accountID: String?, in defaults: UserDefaults? = sharedDefaults)

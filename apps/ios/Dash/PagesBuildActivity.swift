@@ -11,6 +11,10 @@ struct PagesBuildAttributes: ActivityAttributes {
     var shortID: String
   }
 
+  /// Source account for the deployment. Optional so activities created by an
+  /// older app build still decode; legacy activities are ended instead of being
+  /// refreshed against whichever account happens to be active now.
+  var accountID: String? = nil
   var projectName: String
   var deploymentID: String
 }

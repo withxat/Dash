@@ -5,7 +5,7 @@ import ImageIO
 import UniformTypeIdentifiers
 
 /// The visual pattern used to render an avatar.
-public enum AvatarPattern: String, CaseIterable, Sendable {
+public enum AvatarPattern: String, CaseIterable, Hashable, Sendable {
   case mesh
   case dither
 }

@@ -79,25 +79,63 @@ import UIKit
   }
 }
 
-/// The catalog is the default grant. Every feature the Resources tab shows must
-/// be fully usable without an incremental authorization, so nothing can resolve
-/// to `.locked` or `.readOnly` out of the box. A new FeatureID belongs in
-/// `coreFeatures` at the same time it gets a descriptor, or it does not ship.
-@Test func everyFeatureIsFullyUsableOnADefaultGrant() {
+/// The first grant must make every catalog feature browsable without allowing
+/// mutations. A new FeatureID belongs in `coreFeatures` at the same time it
+/// gets a descriptor, or it does not ship.
+@Test func everyFeatureIsReadOnlyOnTheInitialGrant() {
   #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
   for feature in FeatureID.allCases {
     #expect(
-      feature.capability.accessLevel(grantedScopes: DashAuthorizationScopes.core) == .full)
+      feature.capability.accessLevel(grantedScopes: DashAuthorizationScopes.initialReadOnly)
+        == .readOnly)
   }
 }
 
-@Test @MainActor func appModelDefaultsToCorePermissions() {
+@Test @MainActor func appModelDefaultsToReadOnlyPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
-  #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.core.count == 31)
+  #expect(model.selectedScopes == DashAuthorizationScopes.initialReadOnly)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 20)
+  #expect(DashAuthorizationScopes.core.count == 30)
+  #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
+  #expect(
+    DashAuthorizationScopes.initialReadOnly.allSatisfy {
+      !$0.hasSuffix(".write") && $0 != "cache.purge"
+    })
   #expect(DashAuthorizationScopes.core.isStrictSubset(of: Set(CloudflareScopes.published)))
-  #expect(DashAuthorizationScopes.watchtower.isSubset(of: DashAuthorizationScopes.core))
+  #expect(
+    DashAuthorizationScopes.watchtower.isSubset(of: DashAuthorizationScopes.initialReadOnly))
+  #expect(
+    DashAuthorizationScopes.shortcutsAndShareWrites.isSubset(
+      of: DashAuthorizationScopes.core))
+  #expect(
+    DashAuthorizationScopes.shortcutsAndShareWrites.isDisjoint(
+      with: DashAuthorizationScopes.initialReadOnly))
   #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
+}
+
+@Test func processExternalMutationsFailClosedWithoutTheirIncrementalGrant() {
+  let required = DashAuthorizationScopes.shortcutsAndShareWrites
+  #expect(
+    !DashIntentAuthorization.hasRequiredScopes(
+      required,
+      granted: nil))
+  #expect(
+    !DashIntentAuthorization.hasRequiredScopes(
+      required,
+      granted: DashAuthorizationScopes.initialReadOnly))
+  #expect(
+    DashIntentAuthorization.hasRequiredScopes(
+      required,
+      granted: DashAuthorizationScopes.initialReadOnly.union(required)))
+  #expect(
+    R2ShareDestination.requiredWriteScopes.isSubset(
+      of: DashAuthorizationScopes.shortcutsAndShareWrites))
+  #expect(
+    !R2ShareDestination.hasWriteAccess(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly))
+  #expect(
+    R2ShareDestination.hasWriteAccess(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly.union(required)))
 }
 
 /// Scopes that no surviving FeatureID declares, but that kept screens and App
@@ -118,6 +156,8 @@ import UIKit
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
   ]
+  let readOnlyOperational = operational.filter { !$0.hasSuffix(".write") && $0 != "cache.purge" }
+  #expect(readOnlyOperational.isSubset(of: DashAuthorizationScopes.initialReadOnly))
   #expect(operational.isSubset(of: DashAuthorizationScopes.core))
 }
 
@@ -350,10 +390,9 @@ import UIKit
   #expect(WatchtowerView.signalDetail(signal("1 down", resource: nil)) == "1 down")
 }
 
-/// The scopes with no FeatureID of their own. `requiredScopes` must name them
-/// literally: falling through to `.zones.capability.all` compiles clean and
-/// silently drops them, and the screen 403s on save.
-@Test func requiredScopesNameTheOperationalScopesLiterally() {
+/// Operational destinations split reads from mutations so the initial grant
+/// can render them without accidentally authorizing a save.
+@Test func destinationScopesSeparateReadsFromWrites() {
   #expect(requiredScopes(for: .dns("z1")).contains("dns.write"))
   #expect(requiredScopes(for: .cache("z1")).contains("cache.purge"))
   #expect(requiredScopes(for: .zoneSettings("z1")).contains("zone-settings.write"))
@@ -361,6 +400,11 @@ import UIKit
   #expect(requiredScopes(for: .zoneWAF("z1")).contains("analytics.read"))
   #expect(requiredScopes(for: .auditLogs).contains("account-settings.read"))
   #expect(requiredScopes(for: .pushAlerts).contains("notifications.write"))
+  #expect(readScopes(for: .dns("z1")) == ["zone.read", "dns.read"])
+  #expect(writeScopes(for: .dns("z1")) == ["dns.write"])
+  #expect(readScopes(for: .cache("z1")) == ["zone.read"])
+  #expect(writeScopes(for: .cache("z1")) == ["cache.purge"])
+  #expect(writeScopes(for: .zoneAnalytics("z1")).isEmpty)
   // Each is absent from the feature the destination maps to.
   #expect(!FeatureID.zones.capability.all.contains("dns.write"))
   #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
@@ -694,6 +738,17 @@ import UIKit
   #expect(ProfileTrayPhase.signOut.title == "Sign out")
 }
 
+@Test func accountRenameRequiresItsWriteScope() {
+  #expect(ProfileAccountRenameAccess.requiredScopes == ["account-settings.write"])
+  #expect(!ProfileAccountRenameAccess.isGranted(nil))
+  #expect(!ProfileAccountRenameAccess.isGranted(["account-settings.read"]))
+  #expect(
+    ProfileAccountRenameAccess.isGranted([
+      "account-settings.read",
+      "account-settings.write",
+    ]))
+}
+
 @Test func recentResourcesRecordDedupeAndTrim() {
   let zone = RecentResource(
     accountID: "acc1", kind: .zone, resourceID: "z1", title: "example.com")
@@ -729,18 +784,24 @@ import UIKit
   #expect(HomeShortcuts.decode("r2,zones,r2,unknown") == [.r2, .zones])
 
   let removed = HomeShortcuts.toggled(.workers, in: HomeShortcuts.defaultValue)
-  #expect(HomeShortcuts.decode(removed) == [.zones, .r2])
+  #expect(HomeShortcuts.decode(removed) == [.zones, .pages, .r2])
 
-  let appended = HomeShortcuts.toggled(.pages, in: removed)
-  #expect(HomeShortcuts.decode(appended) == [.zones, .r2, .pages])
+  let appended = HomeShortcuts.toggled(.kv, in: removed)
+  #expect(HomeShortcuts.decode(appended) == [.zones, .pages, .r2, .kv])
 }
 
 @Test func homeActionsKeepAtMostThreeOrderedOperations() {
   #expect(
-    HomeActions.decode(HomeActions.defaultValue) == [.addDomain, .uploadR2, .addDNSRecord])
+    HomeActions.decode(HomeActions.defaultValue)
+      == [.addDomain, .uploadR2, .addDNSRecord])
   #expect(HomeActions.decode("purgeCache,uploadR2,purgeCache,unknown") == [.purgeCache, .uploadR2])
 
-  let full = HomeActions.encode([.addDomain, .uploadR2, .addDNSRecord])
+  // Changing the fresh-install default never rewrites a previously stored choice.
+  let previousSelection = HomeActions.encode([.addDomain, .uploadR2, .addDNSRecord])
+  #expect(
+    HomeActions.decode(previousSelection) == [.addDomain, .uploadR2, .addDNSRecord])
+
+  let full = HomeActions.defaultValue
   #expect(HomeActions.toggled(.createKVKey, in: full) == full)
 
   let removed = HomeActions.toggled(.addDomain, in: full)
@@ -1002,13 +1063,6 @@ import UIKit
 
   #expect(WebAnalyticsChartModel.site(for: "zone-mine", in: sites)?.siteTag == "site-mine")
   #expect(WebAnalyticsChartModel.site(for: "zone-absent", in: sites) == nil)
-
-  let points = WebAnalyticsChartModel.points(from: [
-    RUMPageviewsDay(date: "2026-07-23", pageviews: 51),
-    RUMPageviewsDay(date: "not-a-date", pageviews: 99),
-    RUMPageviewsDay(date: "2026-07-22", pageviews: 46),
-  ])
-  #expect(points.map(\.pageviews) == [46, 51])  // bad date dropped, sorted ascending
 }
 
 @Test func dashRouteParsesEveryGrammarForm() {
@@ -1017,6 +1071,7 @@ import UIKit
     return DashRoute.parse(url)
   }
 
+  #expect(parse("dash://settings") == .settings)
   #expect(parse("dash://watchtower") == .watchtower)
   #expect(parse("dash://zone/abc") == .zone("abc"))
   #expect(parse("dash://zone/abc/dns") == .zoneDNS("abc"))
@@ -1035,6 +1090,12 @@ import UIKit
   #expect(parse("dash://r2/my-bucket") == .r2("my-bucket"))
   #expect(parse("dash://kv/ns1") == .kv("ns1"))
 
+  // Optional account scope is parsed without changing the destination.
+  let scoped = parse("dash://pages/docs?account=account-1")
+  #expect(scoped?.accountID == "account-1")
+  #expect(scoped?.unscoped == .pagesProject("docs"))
+  #expect(scoped?.destination == .pagesProject("docs"))
+
   // Rejections.
   #expect(parse("dash://oauth/callback?code=x") == nil)  // owned by the auth session
   #expect(parse("dash://feature/bogus") == nil)  // unknown FeatureID
@@ -1043,8 +1104,12 @@ import UIKit
   #expect(parse("dash://zone") == nil)  // missing id
   #expect(parse("https://watchtower") == nil)  // wrong scheme
   #expect(parse("dash://unknownhost") == nil)
+  #expect(parse("dash://watchtower?account=") == nil)
+  #expect(parse("dash://watchtower?account=a&account=b") == nil)
+  #expect(parse("dash://settings/extra") == nil)
 
   // destination mapping.
+  #expect(DashRoute.settings.destination == .settings)
   #expect(DashRoute.watchtower.destination == nil)
   #expect(DashRoute.zoneDNS("z").destination == .dns("z"))
   #expect(DashRoute.feature(.r2).destination == .feature(.r2))
@@ -1053,10 +1118,52 @@ import UIKit
   #expect(DashRoute.kv("n").destination == .kvNamespace("n"))
 }
 
+@Test func dashRouteRequiresConfirmationBeforeSwitchingAccounts() {
+  let route = DashRoute.r2("assets").scoped(to: "account-a")
+
+  #expect(
+    route.accountResolution(
+      activeAccountID: "account-a",
+      availableAccountIDs: ["account-a", "account-b"])
+      == .open(.r2("assets")))
+  #expect(
+    route.accountResolution(
+      activeAccountID: "account-b",
+      availableAccountIDs: ["account-a", "account-b"])
+      == .confirmSwitch(accountID: "account-a", route: .r2("assets")))
+  #expect(
+    route.accountResolution(
+      activeAccountID: "account-b",
+      availableAccountIDs: ["account-b"])
+      == .rejectUnavailable(accountID: "account-a"))
+
+  // Legacy links remain current-account routes for backwards compatibility.
+  #expect(
+    DashRoute.r2("assets").accountResolution(
+      activeAccountID: "account-b",
+      availableAccountIDs: ["account-a", "account-b"])
+      == .open(.r2("assets")))
+}
+
 @Test func underAttackRestoreLevelFallsBackToMedium() {
   #expect(SetUnderAttackIntent.restoreLevel(stashed: "high") == "high")
   #expect(SetUnderAttackIntent.restoreLevel(stashed: "essentially_off") == "essentially_off")
   #expect(SetUnderAttackIntent.restoreLevel(stashed: nil) == "medium")
+}
+
+@Test func r2BucketIntentEntityIdentifierIncludesAccount() throws {
+  let first = R2BucketEntity(
+    accountID: "account-a", accountName: "Personal", name: "assets")
+  let second = R2BucketEntity(
+    accountID: "account-b", accountName: "Work", name: "assets")
+
+  #expect(first.id != second.id)
+  #expect(first.displayRepresentation != second.displayRepresentation)
+
+  let decoded = try #require(R2BucketEntity.decodeIdentifier(first.id))
+  #expect(decoded.accountID == "account-a")
+  #expect(decoded.bucketName == "assets")
+  #expect(R2BucketEntity.decodeIdentifier("assets") == nil)
 }
 
 @Test func zoneEntityMapsFromCloudflareZone() throws {
@@ -1528,6 +1635,8 @@ import UIKit
 
   R2ShareDestination.setActiveAccountID("a2", in: defaults)
   #expect(R2ShareDestination.activeAccountID(in: defaults) == "a2")
+  #expect(R2ShareDestination.isActiveAccount("a2", in: defaults))
+  #expect(!R2ShareDestination.isActiveAccount("a1", in: defaults))
   R2ShareDestination.clear(in: defaults)
   #expect(R2ShareDestination.activeAccountID(in: defaults) == nil)
   #expect(R2ShareDestination.destination(accountID: "a1", in: defaults) == nil)

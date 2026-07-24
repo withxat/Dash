@@ -1,5 +1,6 @@
 import CloudflareAPI
 import Foundation
+import OSLog
 import UIKit
 
 enum FeatureCacheKey {
@@ -49,6 +50,9 @@ enum FeatureCacheKey {
   static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
   static func webAnalyticsPageviews(_ siteTag: String, days: Int) -> String {
     "rumPageviews:\(siteTag):\(days)"
+  }
+  static func webAnalyticsMetrics(_ siteTag: String, days: Int) -> String {
+    "rumMetrics:\(siteTag):\(days)"
   }
   static func zoneRdap(_ zoneID: String) -> String { "zoneRdap:\(zoneID)" }
   static func auditLogs(_ accountID: String) -> String { "auditLogs:\(accountID)" }
@@ -126,6 +130,27 @@ struct CursorPageSnapshot<Item: Sendable>: Sendable {
 @MainActor
 @Observable
 final class FeatureDataCache {
+  private protocol InFlightTaskBox: AnyObject {
+    var id: UUID { get }
+    func cancel()
+  }
+
+  private final class TypedInFlightTaskBox<Value: Sendable>: InFlightTaskBox {
+    let id = UUID()
+    var task: Task<Void, Never>?
+    var waiters: [UUID: CheckedContinuation<Value, any Error>] = [:]
+
+    func cancel() {
+      task?.cancel()
+      task = nil
+      let continuations = Array(waiters.values)
+      waiters.removeAll()
+      for continuation in continuations {
+        continuation.resume(throwing: CancellationError())
+      }
+    }
+  }
+
   private struct Entry {
     var value: Any
     var fetchedAt: Date
@@ -138,6 +163,7 @@ final class FeatureDataCache {
   static let maxEntries = 200
 
   private var storage: [String: Entry] = [:]
+  private var inFlight: [String: any InFlightTaskBox] = [:]
 
   func get<T>(_ key: String, maxAge: TimeInterval? = nil) -> T? {
     guard let entry = storage[key] else { return nil }
@@ -152,6 +178,73 @@ final class FeatureDataCache {
   func set<T>(_ key: String, _ value: T, ttl: TimeInterval? = defaultTTL) {
     storage[key] = Entry(value: value, fetchedAt: .now, ttl: ttl)
     trimIfNeeded()
+  }
+
+  /// Joins concurrent work for one logical cache key. The operation deliberately
+  /// does not write `storage`: callers decide whether a result is complete and
+  /// still belongs to the active account before committing it atomically.
+  func coalescedLoad<Value: Sendable>(
+    _ key: String,
+    operation: @escaping @Sendable () async throws -> Value
+  ) async throws -> Value {
+    let waiterID = UUID()
+    let cancellation = FeatureLoadWaiterCancellationState()
+    let value = try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Value, any Error>) in
+        let box: TypedInFlightTaskBox<Value>
+        let created: Bool
+        if let existing = inFlight[key] {
+          guard let typed = existing as? TypedInFlightTaskBox<Value> else {
+            continuation.resume(throwing: FeatureDataCacheLoadError.typeMismatch(key))
+            return
+          }
+          box = typed
+          created = false
+        } else {
+          box = TypedInFlightTaskBox<Value>()
+          inFlight[key] = box
+          created = true
+        }
+
+        guard cancellation.bind(loadID: box.id) else {
+          if created, box.waiters.isEmpty, inFlight[key]?.id == box.id {
+            inFlight.removeValue(forKey: key)
+          }
+          continuation.resume(throwing: CancellationError())
+          return
+        }
+
+        box.waiters[waiterID] = continuation
+        guard box.task == nil else { return }
+        let loadID = box.id
+        let priority = Task.currentPriority
+        box.task = Task.detached(priority: priority) { [weak self] in
+          let result: Result<Value, any Error>
+          do {
+            let interval = DashPerformance.signposter.beginInterval("FeatureDataCache.Load")
+            defer {
+              DashPerformance.signposter.endInterval("FeatureDataCache.Load", interval)
+            }
+            try Task.checkCancellation()
+            let value = try await operation()
+            try Task.checkCancellation()
+            result = .success(value)
+          } catch {
+            result = .failure(error)
+          }
+          await self?.completeLoad(key, loadID: loadID, result: result)
+        }
+      }
+    } onCancel: { [weak self] in
+      guard let loadID = cancellation.cancel() else { return }
+      Task { @MainActor [weak self] in
+        self?.cancelWaiter(
+          key, loadID: loadID, waiterID: waiterID, as: Value.self)
+      }
+    }
+    try Task.checkCancellation()
+    return value
   }
 
   /// Account zone list plus per-id entries so zone detail can paint the
@@ -173,21 +266,31 @@ final class FeatureDataCache {
 
   func remove(_ key: String) {
     storage.removeValue(forKey: key)
+    inFlight.removeValue(forKey: key)?.cancel()
   }
 
   /// Drops every entry under a key prefix (e.g. all cached listings of one
   /// bucket after a rename touched two folders).
   func remove(prefix: String) {
     storage = storage.filter { !$0.key.hasPrefix(prefix) }
+    let matchingLoads = inFlight.keys.filter { $0.hasPrefix(prefix) }
+    for key in matchingLoads {
+      inFlight.removeValue(forKey: key)?.cancel()
+    }
   }
 
   func clear() {
     storage.removeAll()
+    cancelAllLoads()
   }
 
   /// Drops everything except Watchtower snapshots when memory is tight.
   func purgeForMemoryPressure(keepingPrefix prefix: String = "watchtower:") {
     storage = storage.filter { $0.key.hasPrefix(prefix) }
+    let discardedLoads = inFlight.keys.filter { !$0.hasPrefix(prefix) }
+    for key in discardedLoads {
+      inFlight.removeValue(forKey: key)?.cancel()
+    }
   }
 
   private func trimIfNeeded() {
@@ -196,6 +299,76 @@ final class FeatureDataCache {
     let dropCount = storage.count - Self.maxEntries
     for entry in sorted.prefix(dropCount) {
       storage.removeValue(forKey: entry.key)
+    }
+  }
+
+  private func cancelAllLoads() {
+    let loads = Array(inFlight.values)
+    inFlight.removeAll()
+    for load in loads {
+      load.cancel()
+    }
+  }
+
+  private func cancelWaiter<Value: Sendable>(
+    _ key: String,
+    loadID: UUID,
+    waiterID: UUID,
+    as _: Value.Type = Value.self
+  ) {
+    guard let box = inFlight[key] as? TypedInFlightTaskBox<Value>, box.id == loadID,
+      let continuation = box.waiters.removeValue(forKey: waiterID)
+    else { return }
+    continuation.resume(throwing: CancellationError())
+    if box.waiters.isEmpty {
+      inFlight.removeValue(forKey: key)
+      box.task?.cancel()
+      box.task = nil
+    }
+  }
+
+  private func completeLoad<Value: Sendable>(
+    _ key: String,
+    loadID: UUID,
+    result: Result<Value, any Error>
+  ) {
+    guard let box = inFlight[key] as? TypedInFlightTaskBox<Value>, box.id == loadID else {
+      return
+    }
+    inFlight.removeValue(forKey: key)
+    box.task = nil
+    let continuations = Array(box.waiters.values)
+    box.waiters.removeAll()
+    for continuation in continuations {
+      continuation.resume(with: result)
+    }
+  }
+}
+
+private enum FeatureDataCacheLoadError: Error {
+  case typeMismatch(String)
+}
+
+/// `onCancel` may run before the continuation has registered on the main
+/// actor. This tiny lock-protected token binds that early cancellation to the
+/// exact load generation, so it can never cancel a later request for the key.
+private final class FeatureLoadWaiterCancellationState: @unchecked Sendable {
+  private let lock = NSLock()
+  private var loadID: UUID?
+  private var isCancelled = false
+
+  func bind(loadID: UUID) -> Bool {
+    lock.withLock {
+      self.loadID = loadID
+      return !isCancelled
+    }
+  }
+
+  func cancel() -> UUID? {
+    lock.withLock {
+      guard !isCancelled else { return nil }
+      isCancelled = true
+      return loadID
     }
   }
 }
