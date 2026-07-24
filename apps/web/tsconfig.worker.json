@@ -9,5 +9,6 @@
 		"types": ["@cloudflare/workers-types", "vite/client"],
 		"verbatimModuleSyntax": true
 	},
-	"include": ["src/worker"]
+	"include": ["src/worker"],
+	"exclude": ["src/worker/**/*.test.ts"]
 }
