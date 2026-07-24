@@ -1,0 +1,51 @@
+{
+  "originHash" : "750ab712dc9e45248f954a540e14b02d548018199acc4f6bbb31a9c9be9caea1",
+  "pins" : [
+    {
+      "identity" : "codeeditor",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ZeeZide/CodeEditor.git",
+      "state" : {
+        "revision" : "f5c076b94f4ceb05abff88ba91d75a8d57143f0c",
+        "version" : "1.2.6"
+      }
+    },
+    {
+      "identity" : "highlightr",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/helje5/Highlightr",
+      "state" : {
+        "revision" : "bd0358056ff1f12ea83833a9fc1b3b5a396a9da0",
+        "version" : "3.0.2"
+      }
+    },
+    {
+      "identity" : "networkimage",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gonzalezreal/NetworkImage",
+      "state" : {
+        "revision" : "2849f5323265386e200484b0d0f896e73c3411b9",
+        "version" : "6.0.1"
+      }
+    },
+    {
+      "identity" : "swift-cmark",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-cmark",
+      "state" : {
+        "revision" : "924936d0427cb25a61169739a7660230bffa6ea6",
+        "version" : "0.8.0"
+      }
+    },
+    {
+      "identity" : "swift-markdown-ui",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/gonzalezreal/swift-markdown-ui",
+      "state" : {
+        "revision" : "5f613358148239d0292c0cef674a3c2314737f9e",
+        "version" : "2.4.1"
+      }
+    }
+  ],
+  "version" : 3
+}

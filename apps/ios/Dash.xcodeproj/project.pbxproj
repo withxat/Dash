@@ -12,6 +12,7 @@
 		B00000000000000000000002 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppConfiguration.swift */; };
 		B00000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
 		B00000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* AppModel.swift */; };
+		B0000000000000000000012B /* DemoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000012B /* DemoBackend.swift */; };
 		B00000000000000000000005 /* DashTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* DashTheme.swift */; };
 		B00000000000000000000006 /* Catalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* Catalog.swift */; };
 		B00000000000000000000007 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* AppRootView.swift */; };
@@ -20,6 +21,8 @@
 		B0000000000000000000000A /* WatchtowerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000A /* WatchtowerView.swift */; };
 		B0000000000000000000000B /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* FeatureViews.swift */; };
 		B0000000000000000000000C /* StorageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* StorageViews.swift */; };
+		B00000000000000000000140 /* FileTypeIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000140 /* FileTypeIcons.swift */; };
+		B00000000000000000000141 /* R2ObjectPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000141 /* R2ObjectPreview.swift */; };
 		B0000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* Assets.xcassets */; };
 		B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* PrivacyInfo.xcprivacy */; };
 		B00000000000000000000012 /* DashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000012 /* DashTests.swift */; };
@@ -30,13 +33,12 @@
 		B00000000000000000000018 /* SolarIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000034 /* SolarIcons.swift */; };
 		B00000000000000000000019 /* DashChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000035 /* DashChrome.swift */; };
 		B0000000000000000000001A /* FeatureDataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000036 /* FeatureDataCache.swift */; };
-		B0000000000000000000001B /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000037 /* SearchView.swift */; };
 		B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* ZoneAnalyticsView.swift */; };
+		B00000000000000000000149 /* WebAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000148 /* WebAnalyticsView.swift */; };
 		B0000000000000000000001D /* DashDetailTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* DashDetailTray.swift */; };
 		B00000000000000000000024 /* LoginGrain.metal in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* LoginGrain.metal */; };
 		B00000000000000000000101 /* Pagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000101 /* Pagination.swift */; };
 		B00000000000000000000103 /* HomePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000103 /* HomePersistence.swift */; };
-		B00000000000000000000104 /* WorkerTailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000104 /* WorkerTailView.swift */; };
 		B00000000000000000000105 /* DashRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000105 /* DashRoute.swift */; };
 		B00000000000000000000106 /* DashAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000106 /* DashAppIntents.swift */; };
 		B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
@@ -46,11 +48,39 @@
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
 		B0000000000000000000010D /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010D /* LegalDocumentView.swift */; };
-		B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000111 /* WatchtowerMuteStore.swift */; };
-		B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000112 /* DashAuthorizationScopes.swift */; };
-		B00000000000000000000110 /* DashSpotlight.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000110 /* DashSpotlight.swift */; };
 		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
 		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
+		B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000111 /* WatchtowerMuteStore.swift */; };
+		B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000112 /* DashAuthorizationScopes.swift */; };
+		B00000000000000000000113 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000003 /* MarkdownUI */; };
+		B00000000000000000000142 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000E /* CodeEditor */; };
+		B00000000000000000000143 /* KVJSONFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000142 /* KVJSONFormatting.swift */; };
+		B00000000000000000000114 /* DashWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000114 /* DashWorkspace.swift */; };
+		B00000000000000000000115 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000006 /* SwiftDitherKit */; };
+		B00000000000000000000116 /* WatchtowerTrafficView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000115 /* WatchtowerTrafficView.swift */; };
+		B00000000000000000000117 /* GradientAvatars in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000008 /* GradientAvatars */; };
+		B00000000000000000000118 /* R2ObjectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000116 /* R2ObjectViews.swift */; };
+		B00000000000000000000119 /* R2ShareDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000117 /* R2ShareDestination.swift */; };
+		B0000000000000000000011A /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000118 /* ShareViewController.swift */; };
+		B0000000000000000000011B /* R2ShareDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000117 /* R2ShareDestination.swift */; };
+		B0000000000000000000012A /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000012A /* PrivacyInfo.xcprivacy */; };
+		B0000000000000000000011C /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
+		B0000000000000000000011D /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppConfiguration.swift */; };
+		B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000024 /* DashShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B0000000000000000000011F /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000009 /* CloudflareAPI */; };
+		B00000000000000000000120 /* NetworkAccessProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000120 /* NetworkAccessProbe.swift */; };
+		B00000000000000000000121 /* PagesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000121 /* PagesViews.swift */; };
+		B00000000000000000000122 /* PagesBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000122 /* PagesBuildActivity.swift */; };
+		B00000000000000000000123 /* PagesBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000122 /* PagesBuildActivity.swift */; };
+		B00000000000000000000124 /* PagesBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000124 /* PagesBuildActivityController.swift */; };
+		B00000000000000000000125 /* PushAlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000125 /* PushAlertsView.swift */; };
+		B00000000000000000000126 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
+		B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000A /* BlossomColorPickerCore */; };
+		B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000143 /* WatchtowerInboxStore.swift */; };
+		B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000144 /* WatchtowerInboxView.swift */; };
+		B00000000000000000000146 /* DashToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000145 /* DashToast.swift */; };
+		B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */; };
+		B00000000000000000000148 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000147 /* DebugView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -68,7 +98,29 @@
 			remoteGlobalIDString = A00000000000000000000005;
 			remoteInfo = DashWidgets;
 		};
+		C00000000000000000000015 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000006;
+			remoteInfo = DashShare;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		D00000000000000000000017 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
+				B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		5BD28D9B30006EA10012912F /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
@@ -76,6 +128,7 @@
 		F00000000000000000000002 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
 		F00000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		F0000000000000000000012B /* DemoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBackend.swift; sourceTree = "<group>"; };
 		F00000000000000000000005 /* DashTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
 		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
@@ -84,6 +137,9 @@
 		F0000000000000000000000A /* WatchtowerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerView.swift; sourceTree = "<group>"; };
 		F0000000000000000000000B /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000000C /* StorageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000142 /* KVJSONFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KVJSONFormatting.swift; sourceTree = "<group>"; };
+		F00000000000000000000140 /* FileTypeIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTypeIcons.swift; sourceTree = "<group>"; };
+		F00000000000000000000141 /* R2ObjectPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ObjectPreview.swift; sourceTree = "<group>"; };
 		F0000000000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F0000000000000000000000F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F00000000000000000000012 /* DashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTests.swift; sourceTree = "<group>"; };
@@ -91,19 +147,20 @@
 		F00000000000000000000020 /* Dash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000021 /* DashTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000022 /* DashUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000024 /* DashShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000030 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = Config/Base.xcconfig; sourceTree = SOURCE_ROOT; };
 		F00000000000000000000031 /* UserAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAvatar.swift; sourceTree = "<group>"; };
 		F00000000000000000000033 /* WatchtowerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerModel.swift; sourceTree = "<group>"; };
 		F00000000000000000000034 /* SolarIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SolarIcons.swift; sourceTree = "<group>"; };
 		F00000000000000000000035 /* DashChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000036 /* FeatureDataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureDataCache.swift; sourceTree = "<group>"; };
-		F00000000000000000000037 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		F00000000000000000000038 /* ZoneAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAnalyticsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000148 /* WebAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebAnalyticsView.swift; sourceTree = "<group>"; };
 		F00000000000000000000039 /* DashDetailTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDetailTray.swift; sourceTree = "<group>"; };
 		F00000000000000000000040 /* LoginGrain.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LoginGrain.metal; sourceTree = "<group>"; };
 		F00000000000000000000101 /* Pagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pagination.swift; sourceTree = "<group>"; };
 		F00000000000000000000103 /* HomePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomePersistence.swift; sourceTree = "<group>"; };
-		F00000000000000000000104 /* WorkerTailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerTailView.swift; sourceTree = "<group>"; };
 		F00000000000000000000105 /* DashRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashRoute.swift; sourceTree = "<group>"; };
 		F00000000000000000000106 /* DashAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppIntents.swift; sourceTree = "<group>"; };
 		F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerWidgetSnapshot.swift; sourceTree = "<group>"; };
@@ -113,12 +170,29 @@
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		F0000000000000000000010D /* LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentView.swift; sourceTree = "<group>"; };
-		F00000000000000000000111 /* WatchtowerMuteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMuteStore.swift; sourceTree = "<group>"; };
-		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
-		F00000000000000000000110 /* DashSpotlight.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSpotlight.swift; sourceTree = "<group>"; };
 		F0000000000000000000010E /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
 		F0000000000000000000010F /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
-		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000111 /* WatchtowerMuteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMuteStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000143 /* WatchtowerInboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxStore.swift; sourceTree = "<group>"; };
+		F00000000000000000000144 /* WatchtowerInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxView.swift; sourceTree = "<group>"; };
+		F00000000000000000000145 /* DashToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashToast.swift; sourceTree = "<group>"; };
+		F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerIgnoreAllTray.swift; sourceTree = "<group>"; };
+		F00000000000000000000147 /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
+		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
+		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
+		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
+		F00000000000000000000116 /* R2ObjectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ObjectViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000117 /* R2ShareDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ShareDestination.swift; sourceTree = "<group>"; };
+		F00000000000000000000118 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		F00000000000000000000119 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F0000000000000000000011A /* DashShare.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashShare.entitlements; sourceTree = "<group>"; };
+		F0000000000000000000012A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F00000000000000000000120 /* NetworkAccessProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkAccessProbe.swift; sourceTree = "<group>"; };
+		F00000000000000000000121 /* PagesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesViews.swift; sourceTree = "<group>"; };
+		F00000000000000000000122 /* PagesBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildActivity.swift; sourceTree = "<group>"; };
+		F00000000000000000000124 /* PagesBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildActivityController.swift; sourceTree = "<group>"; };
+		F00000000000000000000125 /* PushAlertsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushAlertsView.swift; sourceTree = "<group>"; };
+		F00000000000000000000126 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -127,6 +201,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000014 /* CloudflareAPI in Frameworks */,
+				B00000000000000000000117 /* GradientAvatars in Frameworks */,
+				B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */,
+				B00000000000000000000113 /* MarkdownUI in Frameworks */,
+				B00000000000000000000115 /* SwiftDitherKit in Frameworks */,
+				B00000000000000000000142 /* CodeEditor in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -151,21 +230,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXFrameworksBuildPhase section */
-
-/* Begin PBXCopyFilesBuildPhase section */
-		D00000000000000000000017 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
+		D00000000000000000000019 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
 			files = (
-				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
+				B0000000000000000000011F /* CloudflareAPI in Frameworks */,
 			);
-			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-/* End PBXCopyFilesBuildPhase section */
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		5B23A8D52FFB6F8700D18CF0 /* Recovered References */ = {
@@ -183,20 +256,11 @@
 				A00000000000000000000012 /* DashTests */,
 				A00000000000000000000013 /* DashUITests */,
 				A00000000000000000000017 /* DashWidgets */,
+				A00000000000000000000019 /* DashShare */,
 				A00000000000000000000014 /* Products */,
 				A00000000000000000000015 /* Frameworks */,
 				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
 			);
-			sourceTree = "<group>";
-		};
-		A00000000000000000000017 /* DashWidgets */ = {
-			isa = PBXGroup;
-			children = (
-				F00000000000000000000109 /* DashWidgets.swift */,
-				F0000000000000000000010A /* Info.plist */,
-				F0000000000000000000010B /* DashWidgets.entitlements */,
-			);
-			path = DashWidgets;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000011 /* Dash */ = {
@@ -206,34 +270,51 @@
 				F00000000000000000000002 /* AppConfiguration.swift */,
 				F00000000000000000000003 /* KeychainTokenStore.swift */,
 				F00000000000000000000004 /* AppModel.swift */,
+				F0000000000000000000012B /* DemoBackend.swift */,
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000005 /* DashTheme.swift */,
 				F00000000000000000000006 /* Catalog.swift */,
 				F00000000000000000000007 /* AppRootView.swift */,
 				F00000000000000000000008 /* HomeView.swift */,
 				F00000000000000000000009 /* FeatureCatalogView.swift */,
-				F00000000000000000000037 /* SearchView.swift */,
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
+				F00000000000000000000148 /* WebAnalyticsView.swift */,
 				F00000000000000000000039 /* DashDetailTray.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
+				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000000C /* StorageViews.swift */,
+				F00000000000000000000142 /* KVJSONFormatting.swift */,
+				F00000000000000000000140 /* FileTypeIcons.swift */,
+				F00000000000000000000141 /* R2ObjectPreview.swift */,
+				F00000000000000000000116 /* R2ObjectViews.swift */,
+				F00000000000000000000117 /* R2ShareDestination.swift */,
 				F00000000000000000000031 /* UserAvatar.swift */,
 				F00000000000000000000033 /* WatchtowerModel.swift */,
 				F00000000000000000000034 /* SolarIcons.swift */,
 				F00000000000000000000035 /* DashChrome.swift */,
 				F00000000000000000000101 /* Pagination.swift */,
 				F00000000000000000000103 /* HomePersistence.swift */,
-				F00000000000000000000104 /* WorkerTailView.swift */,
 				F00000000000000000000105 /* DashRoute.swift */,
 				F00000000000000000000106 /* DashAppIntents.swift */,
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F00000000000000000000108 /* WatchtowerNotifications.swift */,
 				F0000000000000000000010C /* PushRegistration.swift */,
+				F00000000000000000000125 /* PushAlertsView.swift */,
+				F00000000000000000000126 /* Localizable.xcstrings */,
 				F0000000000000000000010D /* LegalDocumentView.swift */,
 				F00000000000000000000111 /* WatchtowerMuteStore.swift */,
+				F00000000000000000000143 /* WatchtowerInboxStore.swift */,
+				F00000000000000000000144 /* WatchtowerInboxView.swift */,
+				F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */,
+				F00000000000000000000147 /* DebugView.swift */,
+				F00000000000000000000145 /* DashToast.swift */,
 				F00000000000000000000112 /* DashAuthorizationScopes.swift */,
-				F00000000000000000000110 /* DashSpotlight.swift */,
+				F00000000000000000000114 /* DashWorkspace.swift */,
+				F00000000000000000000120 /* NetworkAccessProbe.swift */,
+				F00000000000000000000121 /* PagesViews.swift */,
+				F00000000000000000000122 /* PagesBuildActivity.swift */,
+				F00000000000000000000124 /* PagesBuildActivityController.swift */,
 				F00000000000000000000040 /* LoginGrain.metal */,
 				A00000000000000000000016 /* Resources */,
 				F0000000000000000000000F /* PrivacyInfo.xcprivacy */,
@@ -264,6 +345,7 @@
 				F00000000000000000000021 /* DashTests.xctest */,
 				F00000000000000000000022 /* DashUITests.xctest */,
 				F00000000000000000000023 /* DashWidgets.appex */,
+				F00000000000000000000024 /* DashShare.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -285,6 +367,16 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		A00000000000000000000017 /* DashWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000109 /* DashWidgets.swift */,
+				F0000000000000000000010A /* Info.plist */,
+				F0000000000000000000010B /* DashWidgets.entitlements */,
+			);
+			path = DashWidgets;
+			sourceTree = "<group>";
+		};
 		A00000000000000000000018 /* Legal */ = {
 			isa = PBXGroup;
 			children = (
@@ -292,6 +384,17 @@
 				F0000000000000000000010F /* PrivacyPolicy.md */,
 			);
 			path = Legal;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000019 /* DashShare */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000118 /* ShareViewController.swift */,
+				F00000000000000000000119 /* Info.plist */,
+				F0000000000000000000011A /* DashShare.entitlements */,
+				F0000000000000000000012A /* PrivacyInfo.xcprivacy */,
+			);
+			path = DashShare;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -310,31 +413,20 @@
 			);
 			dependencies = (
 				C00000000000000000000014 /* PBXTargetDependency */,
+				C00000000000000000000016 /* PBXTargetDependency */,
 			);
 			name = Dash;
 			packageProductDependencies = (
 				P00000000000000000000001 /* CloudflareAPI */,
+				P00000000000000000000008 /* GradientAvatars */,
+				P0000000000000000000000A /* BlossomColorPickerCore */,
+				P00000000000000000000003 /* MarkdownUI */,
+				P00000000000000000000006 /* SwiftDitherKit */,
+				P0000000000000000000000E /* CodeEditor */,
 			);
 			productName = Dash;
 			productReference = F00000000000000000000020 /* Dash.app */;
 			productType = "com.apple.product-type.application";
-		};
-		A00000000000000000000005 /* DashWidgets */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = E00000000000000000000005 /* Build configuration list for PBXNativeTarget "DashWidgets" */;
-			buildPhases = (
-				D00000000000000000000014 /* Sources */,
-				D00000000000000000000015 /* Frameworks */,
-				D00000000000000000000016 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = DashWidgets;
-			productName = DashWidgets;
-			productReference = F00000000000000000000023 /* DashWidgets.appex */;
-			productType = "com.apple.product-type.app-extension";
 		};
 		A00000000000000000000003 /* DashTests */ = {
 			isa = PBXNativeTarget;
@@ -372,6 +464,43 @@
 			productReference = F00000000000000000000022 /* DashUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A00000000000000000000005 /* DashWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000005 /* Build configuration list for PBXNativeTarget "DashWidgets" */;
+			buildPhases = (
+				D00000000000000000000014 /* Sources */,
+				D00000000000000000000015 /* Frameworks */,
+				D00000000000000000000016 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashWidgets;
+			productName = DashWidgets;
+			productReference = F00000000000000000000023 /* DashWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		A00000000000000000000006 /* DashShare */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000006 /* Build configuration list for PBXNativeTarget "DashShare" */;
+			buildPhases = (
+				D00000000000000000000018 /* Sources */,
+				D00000000000000000000019 /* Frameworks */,
+				D0000000000000000000001A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashShare;
+			packageProductDependencies = (
+				P00000000000000000000009 /* CloudflareAPI */,
+			);
+			productName = DashShare;
+			productReference = F00000000000000000000024 /* DashShare.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -396,6 +525,9 @@
 					A00000000000000000000005 = {
 						CreatedOnToolsVersion = 26.4;
 					};
+					A00000000000000000000006 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */;
@@ -405,10 +537,16 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = A00000000000000000000010;
 			packageReferences = (
 				P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */,
+				P00000000000000000000007 /* XCLocalSwiftPackageReference "../../packages/gradient-avatars" */,
+				P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */,
+				P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */,
+				P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */,
 			);
 			productRefGroup = A00000000000000000000014 /* Products */;
 			projectDirPath = "";
@@ -416,6 +554,7 @@
 			targets = (
 				A00000000000000000000002 /* Dash */,
 				A00000000000000000000005 /* DashWidgets */,
+				A00000000000000000000006 /* DashShare */,
 				A00000000000000000000003 /* DashTests */,
 				A00000000000000000000004 /* DashUITests */,
 			);
@@ -423,6 +562,21 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		D00000000000000000000016 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D0000000000000000000001A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0000000000000000000012A /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		D00000000000000000000021 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -430,15 +584,9 @@
 				B0000000000000000000000E /* Assets.xcassets in Resources */,
 				5BD28D9C30006EA10012912F /* AppIcon.icon in Resources */,
 				B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */,
+				B00000000000000000000126 /* Localizable.xcstrings in Resources */,
 				B0000000000000000000010E /* TermsOfUse.md in Resources */,
 				B0000000000000000000010F /* PrivacyPolicy.md in Resources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D00000000000000000000016 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -467,17 +615,22 @@
 				B00000000000000000000002 /* AppConfiguration.swift in Sources */,
 				B00000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				B00000000000000000000004 /* AppModel.swift in Sources */,
+				B0000000000000000000012B /* DemoBackend.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
 				B00000000000000000000006 /* Catalog.swift in Sources */,
 				B00000000000000000000007 /* AppRootView.swift in Sources */,
 				B00000000000000000000008 /* HomeView.swift in Sources */,
 				B00000000000000000000009 /* FeatureCatalogView.swift in Sources */,
-				B0000000000000000000001B /* SearchView.swift in Sources */,
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
+				B00000000000000000000149 /* WebAnalyticsView.swift in Sources */,
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000000C /* StorageViews.swift in Sources */,
+				B00000000000000000000143 /* KVJSONFormatting.swift in Sources */,
+				B00000000000000000000140 /* FileTypeIcons.swift in Sources */,
+				B00000000000000000000141 /* R2ObjectPreview.swift in Sources */,
+				B00000000000000000000118 /* R2ObjectViews.swift in Sources */,
 				B00000000000000000000015 /* UserAvatar.swift in Sources */,
 				B00000000000000000000017 /* WatchtowerModel.swift in Sources */,
 				B00000000000000000000018 /* SolarIcons.swift in Sources */,
@@ -485,26 +638,28 @@
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
 				B00000000000000000000101 /* Pagination.swift in Sources */,
 				B00000000000000000000103 /* HomePersistence.swift in Sources */,
-				B00000000000000000000104 /* WorkerTailView.swift in Sources */,
 				B00000000000000000000105 /* DashRoute.swift in Sources */,
 				B00000000000000000000106 /* DashAppIntents.swift in Sources */,
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
 				B0000000000000000000010C /* PushRegistration.swift in Sources */,
+				B00000000000000000000125 /* PushAlertsView.swift in Sources */,
 				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,
 				B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */,
+				B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */,
+				B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */,
+				B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */,
+				B00000000000000000000148 /* DebugView.swift in Sources */,
+				B00000000000000000000146 /* DashToast.swift in Sources */,
 				B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */,
-				B00000000000000000000110 /* DashSpotlight.swift in Sources */,
+				B00000000000000000000114 /* DashWorkspace.swift in Sources */,
+				B00000000000000000000120 /* NetworkAccessProbe.swift in Sources */,
+				B00000000000000000000121 /* PagesViews.swift in Sources */,
+				B00000000000000000000122 /* PagesBuildActivity.swift in Sources */,
+				B00000000000000000000124 /* PagesBuildActivityController.swift in Sources */,
+				B00000000000000000000116 /* WatchtowerTrafficView.swift in Sources */,
+				B00000000000000000000119 /* R2ShareDestination.swift in Sources */,
 				B00000000000000000000024 /* LoginGrain.metal in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		D00000000000000000000014 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				B00000000000000000000109 /* DashWidgets.swift in Sources */,
-				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -521,6 +676,27 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000013 /* DashUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000014 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000109 /* DashWidgets.swift in Sources */,
+				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
+				B00000000000000000000123 /* PagesBuildActivity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000018 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B0000000000000000000011A /* ShareViewController.swift in Sources */,
+				B0000000000000000000011B /* R2ShareDestination.swift in Sources */,
+				B0000000000000000000011C /* KeychainTokenStore.swift in Sources */,
+				B0000000000000000000011D /* AppConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,6 +717,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000005 /* DashWidgets */;
 			targetProxy = C00000000000000000000013 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000016 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000006 /* DashShare */;
+			targetProxy = C00000000000000000000015 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -575,7 +756,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Dash/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Dash;
@@ -598,7 +779,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
 				CODE_SIGN_ENTITLEMENTS = Dash/Dash.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Dash/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Dash;
@@ -618,10 +799,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -636,10 +817,10 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -653,10 +834,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -670,10 +851,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.uitests;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -689,12 +870,16 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = DashWidgets/DashWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DashWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.widgets;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.widgets;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -710,12 +895,68 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = DashWidgets/DashWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = J4CCPX9K6H;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DashWidgets/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.widgets;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		E00000000000000000000061 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashShare/DashShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DASH_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)sh.xat.dash.app";
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.share;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E00000000000000000000062 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashShare/DashShare.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DASH_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)sh.xat.dash.app";
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashShare/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.share;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
@@ -773,6 +1014,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		E00000000000000000000006 /* Build configuration list for PBXNativeTarget "DashShare" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000061 /* Debug */,
+				E00000000000000000000062 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -780,13 +1030,74 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../../packages/cloudflare-api";
 		};
+		P00000000000000000000007 /* XCLocalSwiftPackageReference "../../packages/gradient-avatars" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = "../../packages/gradient-avatars";
+		};
+		P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../packages/BlossomColorPicker;
+		};
+		P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../packages/SwiftDitherKit;
+		};
 /* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.4.1;
+			};
+		};
+		P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ZeeZide/CodeEditor.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.6;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		P00000000000000000000001 /* CloudflareAPI */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
 			productName = CloudflareAPI;
+		};
+		P00000000000000000000003 /* MarkdownUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
+			productName = MarkdownUI;
+		};
+		P00000000000000000000006 /* SwiftDitherKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */;
+			productName = SwiftDitherKit;
+		};
+		P00000000000000000000008 /* GradientAvatars */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000007 /* XCLocalSwiftPackageReference "../../packages/gradient-avatars" */;
+			productName = GradientAvatars;
+		};
+		P00000000000000000000009 /* CloudflareAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
+			productName = CloudflareAPI;
+		};
+		P0000000000000000000000A /* BlossomColorPickerCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */;
+			productName = BlossomColorPickerCore;
+		};
+		P0000000000000000000000E /* CodeEditor */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */;
+			productName = CodeEditor;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

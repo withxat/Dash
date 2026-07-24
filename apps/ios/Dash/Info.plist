@@ -4,6 +4,11 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Dash</string>
 	<key>CFBundleExecutable</key>
@@ -24,7 +29,7 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>sh.xat.dash.oauth</string>
+			<string>sh.xat.dash.app.oauth</string>
 			<key>CFBundleURLSchemes</key>
 			<array><string>dash</string></array>
 		</dict>
@@ -37,11 +42,15 @@
 	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>sh.xat.dash.watchtower.refresh</string>
+		<string>sh.xat.dash.app.watchtower.refresh</string>
+		<string>sh.xat.dash.app.pages-build-refresh</string>
 	</array>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>
