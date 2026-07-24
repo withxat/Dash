@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
  * Generates Solar SVG assets for Dash iOS.
- * - Bold Duotone catalog icons (Items tab)
- * - Linear outline icons (sub-pages + chrome)
+ * - Bold fill icons (content surfaces, selected and emphasized states)
+ * - Linear outline icons (navigation, controls, and chrome)
  *
  * Run: pnpm ios:icons
  */
@@ -18,27 +18,48 @@ const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/packag
 
 /** @typedef {{ tag: 'path' | 'circle' | 'ellipse' | 'rect' | 'g', d?: string, cx?: string, cy?: string, r?: string, rx?: string, ry?: string, x?: string, y?: string, width?: string, height?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, children?: Element[] }} Element */
 
-/** Catalog Bold Duotone icons (Items layer). */
-const DUOTONE_CATALOG = {
-	SolarGlobal: 'map/BoldDuotone/Global',
-	SolarGlobus: 'map/BoldDuotone/Globus',
-	SolarCodeSquare: 'it/BoldDuotone/CodeSquare',
-	SolarCloudStorage: 'devices/BoldDuotone/CloudStorage',
-	SolarKeyMinimalistic: 'security/BoldDuotone/KeyMinimalistic',
-	SolarDatabase: 'ui/BoldDuotone/Database',
-	SolarInbox: 'messages/BoldDuotone/Inbox',
-	SolarShieldUser: 'security/BoldDuotone/ShieldUser',
-	SolarUsersGroupRounded: 'users/BoldDuotone/UsersGroupRounded',
-	SolarShieldStar: 'security/BoldDuotone/ShieldStar',
-	SolarKey: 'security/BoldDuotone/Key',
-	SolarRouting: 'map/BoldDuotone/Routing',
-	SolarLockPassword: 'security/BoldDuotone/LockPassword',
-	SolarBoltCircle: 'ui/BoldDuotone/BoltCircle',
-	SolarChart2: 'business/BoldDuotone/Chart2',
-	SolarUserCircle: 'users/BoldDuotone/UserCircle',
+/** Solid Solar icons used throughout content surfaces. */
+const FILL_ICONS = {
+	SolarBoltFill: 'ui/Bold/Bolt',
+	SolarBoxMinimalisticFill: 'ui/Bold/BoxMinimalistic',
+	SolarClockCircleFill: 'time/BoldDuotone/ClockCircle',
+	SolarCloudFill: 'weather/Bold/Cloud',
+	SolarDangerTriangleFill: 'ui/Bold/DangerTriangle',
+	SolarFileFill: 'files/Bold/File',
+	SolarLockKeyholeFill: 'security/Bold/LockKeyhole',
+	SolarMagnifierFill: 'search/Bold/MinimalisticMagnifier',
+	SolarPinListFill: 'ui/Bold/PinList',
+	SolarShieldCheckFill: 'security/Bold/ShieldCheck',
+	SolarSliderHorizontalFill: 'ui/Bold/SliderMinimalisticHorizontal',
+	SolarSettingsMinimalisticFill: 'settings/Bold/SettingsMinimalistic',
+	SolarGlobalFill: 'map/Bold/Global',
+	SolarGlobusFill: 'map/Bold/Globus',
+	SolarCodeSquareFill: 'it/Bold/CodeSquare',
+	SolarCloudStorageFill: 'devices/Bold/CloudStorage',
+	SolarKeyMinimalisticFill: 'security/Bold/KeyMinimalistic',
+	SolarDatabaseFill: 'ui/Bold/Database',
+	SolarInboxFill: 'messages/Bold/Inbox',
+	SolarShieldUserFill: 'security/Bold/ShieldUser',
+	SolarUsersGroupRoundedFill: 'users/Bold/UsersGroupRounded',
+	SolarShieldStarFill: 'security/Bold/ShieldStar',
+	SolarKeyFill: 'security/Bold/Key',
+	SolarRoutingFill: 'map/Bold/Routing',
+	SolarLockPasswordFill: 'security/Bold/LockPassword',
+	SolarBoltCircleFill: 'ui/Bold/BoltCircle',
+	SolarChart2Fill: 'business/Bold/Chart2',
+	SolarGraphNewFill: 'business/Bold/GraphNew',
+	SolarUserCircleFill: 'users/Bold/UserCircle',
+	SolarUserFill: 'users/Bold/User',
+	SolarPinFill: 'ui/Bold/Pin',
+	SolarCheckCircleFill: 'ui/Bold/CheckCircle',
+	SolarCodeCircleFill: 'it/Bold/CodeCircle',
+	SolarBoxFill: 'ui/Bold/Box',
+	SolarFolderFill: 'folders/Bold/Folder',
+	SolarAddCircleFill: 'ui/Bold/AddCircle',
+	SolarUploadFill: 'arrows-action/Bold/Upload',
 }
 
-/** Catalog + UI Linear outline icons (sub-pages). */
+/** Linear outline icons reserved for controls and interface chrome. */
 const OUTLINE_ICONS = {
 	SolarGlobalOutline: 'map/Linear/Global',
 	SolarGlobusOutline: 'map/Linear/Globus',
@@ -64,12 +85,15 @@ const OUTLINE_ICONS = {
 	SolarVideoLibraryOutline: 'video/Linear/VideoLibrary',
 	SolarChart2Outline: 'business/Linear/Chart2',
 	SolarUserCircleOutline: 'users/Linear/UserCircle',
+	SolarUserOutline: 'users/Linear/User',
 	SolarBoxMinimalisticOutline: 'ui/Linear/BoxMinimalistic',
 	SolarSettingsMinimalisticOutline: 'settings/Linear/SettingsMinimalistic',
 	SolarAltArrowRightOutline: 'arrows/Linear/AltArrowRight',
 	SolarAltArrowLeftOutline: 'arrows/Linear/AltArrowLeft',
 	SolarDangerTriangleOutline: 'ui/Linear/DangerTriangle',
 	SolarCodeCircleOutline: 'it/Linear/CodeCircle',
+	/// Bare `</>` brackets — no square frame (Home Workers quick action).
+	SolarCodeOutline: 'it/Linear/Code',
 	SolarPenNewSquareOutline: 'messages/Linear/PenNewSquare',
 	SolarTrashBinOutline: 'ui/Linear/TrashBinMinimalistic',
 	SolarCloudOutline: 'weather/Linear/Cloud',
@@ -81,19 +105,18 @@ const OUTLINE_ICONS = {
 	SolarSliderHorizontalOutline: 'ui/Linear/SliderMinimalisticHorizontal',
 	SolarPinListOutline: 'ui/Linear/PinList',
 	SolarPinOutline: 'ui/Linear/Pin',
-	SolarPinBold: 'ui/Bold/Pin',
-	SolarCheckCircleBold: 'ui/Bold/CheckCircle',
 	SolarUsersGroupOutline: 'users/Linear/UsersGroupRounded',
 }
 
 const OUTLINE_STROKE_WIDTHS = {
 	SolarAltArrowRightOutline: '2.5',
 	SolarAltArrowLeftOutline: '2.5',
+	/// Match the thin plus used on Home quick actions.
+	SolarCodeOutline: '1.5',
 }
 
 /** Simple stroke icons Solar doesn't ship as standalone assets. */
 const STROKE_ICONS = {
-	SolarPlusOutline: ['M5 12h14', 'M12 5v14'],
 	SolarCircleOutline: ['M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'],
 }
 
@@ -102,6 +125,9 @@ const HAND_TUNED_ICONS = {
 	// Solar draws menu dots as stroked rings; solid dots read better at 22pt.
 	SolarMenuDotsOutline:
 		'<circle cx="5" cy="12" r="2" fill="#000"/><circle cx="12" cy="12" r="2" fill="#000"/><circle cx="19" cy="12" r="2" fill="#000"/>',
+	// Close X (`SolarCloseOutline`) rotated 45° → plus, thinned from 3.5 → 1.5.
+	SolarPlusOutline:
+		'<g transform="rotate(45 12 12)"><path d="M7 7L17 17" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/><path d="M17 7L7 17" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></g>',
 }
 
 const FLAT_DRAWABLE_TAGS = new Set(['Path', 'Circle', 'Ellipse', 'Rect'])
@@ -362,10 +388,10 @@ function writeImageset(name, svg, template) {
 }
 
 function generateAllIcons() {
-	for (const [name, iconPath] of Object.entries(DUOTONE_CATALOG)) {
+	for (const [name, iconPath] of Object.entries(FILL_ICONS)) {
 		const svg = svgFor(extractElements(iconPath), { template: true })
 		writeImageset(name, svg, true)
-		console.log(`duotone ${name}`)
+		console.log(`fill ${name}`)
 	}
 
 	// Outline assets render at stroke-width 2 (Solar ships 1.5) — see SolarIcons.swift.
