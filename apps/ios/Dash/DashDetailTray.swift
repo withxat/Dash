@@ -13,7 +13,8 @@ struct DashDetailField {
 /// the readable home for information that a single `DashListRow` truncates. A
 /// read-only tray shows no action button; when a delete is supplied, a header
 /// trash button morphs the fields into a single-Confirm confirmation. The
-/// `accessory` slot renders below the fields (e.g. a Download share link).
+/// `accessory` slot renders below the fields — if it has buttons, the primary
+/// verb is a `DashActionButton` and the rest are `DashTrayPillButton`s.
 struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
   var deleteMessage: String?
@@ -49,7 +50,7 @@ struct DashDetailTray<Accessory: View>: View {
       message: deleteMessage,
       isBusy: isDeleting,
       actionTitle: nil,
-      confirmingActionTitle: "Confirm",
+      confirmingActionTitle: "Delete",
       confirmingActionRole: .destructive,
       actionEnabled: true,
       errorMessage: deleteError,
@@ -115,9 +116,24 @@ extension R2Object {
           label: "Size",
           value: ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))
       },
-      uploaded.map { DashDetailField(label: "Uploaded", value: $0) },
+      uploaded.map {
+        DashDetailField(label: "Uploaded", value: Self.formattedUploadDate($0))
+      },
       etag.map { DashDetailField(label: "ETag", value: $0, mono: true) },
     ].compactMap { $0 }
+  }
+
+  /// Cloudflare returns `last_modified` as ISO 8601 (with or without fractional
+  /// seconds). Show a local date + short time instead of the raw stamp.
+  private static func formattedUploadDate(_ iso: String) -> String {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let plain = ISO8601DateFormatter()
+    plain.formatOptions = [.withInternetDateTime]
+    guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else {
+      return iso
+    }
+    return date.formatted(date: .abbreviated, time: .shortened)
   }
 }
 

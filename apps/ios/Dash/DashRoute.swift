@@ -6,9 +6,10 @@ import Foundation
 ///
 /// Grammar:
 ///   dash://watchtower
-///   dash://zone/<id>[/dns|cache|settings|analytics]
+///   dash://zone/<id>[/dns|cache|settings|analytics|waf]
 ///   dash://feature/<FeatureID.rawValue>
 ///   dash://worker/<name>
+///   dash://pages/<name>[/domains|/deployments/<id>]
 ///   dash://r2/<name>
 ///   dash://kv/<id>
 enum DashRoute: Hashable, Sendable {
@@ -18,8 +19,12 @@ enum DashRoute: Hashable, Sendable {
   case zoneCache(String)
   case zoneSettings(String)
   case zoneAnalytics(String)
+  case zoneWAF(String)
   case feature(FeatureID)
   case worker(String)
+  case pagesProject(String)
+  case pagesDeployment(project: String, deploymentID: String)
+  case pagesDomains(String)
   case r2(String)
   case kv(String)
 
@@ -43,6 +48,7 @@ enum DashRoute: Hashable, Sendable {
       case "cache": return .zoneCache(id)
       case "settings": return .zoneSettings(id)
       case "analytics": return .zoneAnalytics(id)
+      case "waf": return .zoneWAF(id)
       default: return .zone(id)
       }
     case "feature":
@@ -51,6 +57,15 @@ enum DashRoute: Hashable, Sendable {
     case "worker":
       guard let name = segments.first else { return nil }
       return .worker(name)
+    case "pages":
+      guard let name = segments.first else { return nil }
+      if segments.count >= 3, segments[1] == "deployments" {
+        return .pagesDeployment(project: name, deploymentID: segments[2])
+      }
+      if segments.count >= 2, segments[1] == "domains" {
+        return .pagesDomains(name)
+      }
+      return .pagesProject(name)
     case "r2":
       guard let name = segments.first else { return nil }
       return .r2(name)
@@ -71,9 +86,13 @@ enum DashRoute: Hashable, Sendable {
     case .zoneCache(let id): .cache(id)
     case .zoneSettings(let id): .zoneSettings(id)
     case .zoneAnalytics(let id): .zoneAnalytics(id)
+    case .zoneWAF(let id): .zoneWAF(id)
     case .feature(let feature): .feature(feature)
     case .worker(let name): .worker(name)
-    case .r2(let name): .r2Bucket(name)
+    case .pagesProject(let name): .pagesProject(name)
+    case .pagesDeployment(let project, let id): .pagesDeployment(project: project, deploymentID: id)
+    case .pagesDomains(let name): .pagesDomains(name)
+    case .r2(let name): .r2Bucket(name, prefix: "")
     case .kv(let id): .kvNamespace(id)
     }
   }
