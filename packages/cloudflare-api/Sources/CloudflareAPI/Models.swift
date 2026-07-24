@@ -41,6 +41,11 @@ public enum JSONValue: Codable, Hashable, Sendable {
 public struct APIErrorItem: Codable, Error, Hashable, Sendable {
   public let code: Int
   public let message: String
+
+  public init(code: Int, message: String) {
+    self.code = code
+    self.message = message
+  }
 }
 
 public enum CloudflareAPIError: Error, LocalizedError, Sendable {
@@ -79,6 +84,11 @@ public enum CloudflareAPIError: Error, LocalizedError, Sendable {
 
   public var isTransport: Bool {
     if case .transport = self { return true }
+    return false
+  }
+
+  public var isInvalidGrant: Bool {
+    if case .oauth(let message) = self { return message == "invalid_grant" }
     return false
   }
 }
@@ -140,6 +150,17 @@ struct APIEnvelope<Value: Decodable & Sendable>: Decodable, Sendable {
   enum CodingKeys: String, CodingKey {
     case success, result, errors
     case resultInfo = "result_info"
+  }
+}
+
+/// One bad array element becomes `nil` instead of failing the whole decode.
+/// Used by `CloudflareClient.list` so a single malformed row cannot blank a screen.
+struct LossyElement<Value: Decodable & Sendable>: Decodable, Sendable {
+  let value: Value?
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    value = try? container.decode(Value.self)
   }
 }
 
@@ -302,13 +323,24 @@ public struct ZoneAnalyticsPoint: Codable, Hashable, Sendable {
   public let pageViews: Int
   public let threats: Int
   public let bytes: Int64
+  /// Unique visitors in this bucket. Deduplicated per bucket only — summing
+  /// across buckets double counts anyone who came back.
+  public let uniques: Int
+  public let cachedRequests: Int
+  public let cachedBytes: Int64
 
-  public init(datetime: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64) {
+  public init(
+    datetime: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64, uniques: Int = 0,
+    cachedRequests: Int = 0, cachedBytes: Int64 = 0
+  ) {
     self.datetime = datetime
     self.requests = requests
     self.pageViews = pageViews
     self.threats = threats
     self.bytes = bytes
+    self.uniques = uniques
+    self.cachedRequests = cachedRequests
+    self.cachedBytes = cachedBytes
   }
 }
 
@@ -318,13 +350,149 @@ public struct ZoneAnalyticsDay: Codable, Hashable, Sendable {
   public let pageViews: Int
   public let threats: Int
   public let bytes: Int64
+  /// Unique visitors that day. Deduplicated per day only — see
+  /// ``ZoneAnalyticsPoint/uniques``.
+  public let uniques: Int
+  public let cachedRequests: Int
+  public let cachedBytes: Int64
 
-  public init(date: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64) {
+  public init(
+    date: String, requests: Int, pageViews: Int, threats: Int, bytes: Int64, uniques: Int = 0,
+    cachedRequests: Int = 0, cachedBytes: Int64 = 0
+  ) {
     self.date = date
     self.requests = requests
     self.pageViews = pageViews
     self.threats = threats
     self.bytes = bytes
+    self.uniques = uniques
+    self.cachedRequests = cachedRequests
+    self.cachedBytes = cachedBytes
+  }
+}
+
+/// One Web Analytics (RUM) site. `ruleset.zoneTag` is what ties a site back to
+/// a zone — the site itself is identified only by its own tag.
+public struct RUMSite: Codable, Hashable, Sendable {
+  public let siteTag: String
+  public let siteToken: String?
+  public let snippet: String?
+  /// True when Cloudflare injects the beacon at the edge for a proxied zone,
+  /// so the site needs no snippet in its HTML.
+  public let autoInstall: Bool
+  public let ruleset: RUMRuleset?
+
+  public var zoneTag: String? { ruleset?.zoneTag }
+  /// Auto-install only counts when the injecting ruleset is switched on.
+  public var isCollecting: Bool { !autoInstall || (ruleset?.enabled ?? false) }
+
+  public init(
+    siteTag: String, siteToken: String? = nil, snippet: String? = nil, autoInstall: Bool = false,
+    ruleset: RUMRuleset? = nil
+  ) {
+    self.siteTag = siteTag
+    self.siteToken = siteToken
+    self.snippet = snippet
+    self.autoInstall = autoInstall
+    self.ruleset = ruleset
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case siteTag = "site_tag"
+    case siteToken = "site_token"
+    case snippet
+    case autoInstall = "auto_install"
+    case ruleset
+  }
+}
+
+public struct RUMRuleset: Codable, Hashable, Sendable {
+  public let id: String?
+  public let zoneTag: String?
+  public let zoneName: String?
+  public let enabled: Bool
+
+  public init(id: String? = nil, zoneTag: String? = nil, zoneName: String? = nil, enabled: Bool) {
+    self.id = id
+    self.zoneTag = zoneTag
+    self.zoneName = zoneName
+    self.enabled = enabled
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case zoneTag = "zone_tag"
+    case zoneName = "zone_name"
+    case enabled
+  }
+}
+
+/// One bucket of RUM page loads. `count` is beacon-reported page loads — a
+/// different measurement from the edge's HTML-response `pageViews`.
+public struct RUMPageviewsDay: Codable, Hashable, Sendable {
+  public let date: String
+  public let pageviews: Int
+
+  public init(date: String, pageviews: Int) {
+    self.date = date
+    self.pageviews = pageviews
+  }
+}
+
+/// Aggregated firewall / WAF activity for a zone over a short window.
+public struct FirewallEventsSummary: Codable, Hashable, Sendable {
+  public let hours: Int
+  public let blocked: Int
+  public let countries: [FirewallEventsBucket]
+  public let rules: [FirewallEventsBucket]
+
+  public init(
+    hours: Int, blocked: Int, countries: [FirewallEventsBucket] = [],
+    rules: [FirewallEventsBucket] = []
+  ) {
+    self.hours = hours
+    self.blocked = blocked
+    self.countries = countries
+    self.rules = rules
+  }
+}
+
+public struct FirewallEventsBucket: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { label }
+  public let label: String
+  public let count: Int
+
+  public init(label: String, count: Int) {
+    self.label = label
+    self.count = count
+  }
+}
+
+/// Structured payload used by SRV and CAA records. Cloudflare still echoes a
+/// derived `content` string on read, but create/update for these types must
+/// send the type-specific fields under `data` rather than free-text content.
+public struct DNSRecordData: Codable, Hashable, Sendable {
+  // SRV
+  public var priority: Int?
+  public var weight: Int?
+  public var port: Int?
+  public var target: String?
+  // CAA
+  public var flags: Int?
+  public var tag: String?
+  public var value: String?
+
+  public init(
+    priority: Int? = nil, weight: Int? = nil, port: Int? = nil, target: String? = nil,
+    flags: Int? = nil, tag: String? = nil, value: String? = nil
+  ) {
+    self.priority = priority
+    self.weight = weight
+    self.port = port
+    self.target = target
+    self.flags = flags
+    self.tag = tag
+    self.value = value
   }
 }
 
@@ -337,10 +505,11 @@ public struct DNSRecord: CloudflareResource, Hashable {
   public let proxied: Bool?
   public let ttl: Int
   public let priority: Int?
+  public let data: DNSRecordData?
   public let comment: String?
 
   enum CodingKeys: String, CodingKey {
-    case id, type, name, content, proxied, ttl, priority, comment
+    case id, type, name, content, proxied, ttl, priority, data, comment
     case zoneID = "zone_id"
   }
 }
@@ -348,15 +517,17 @@ public struct DNSRecord: CloudflareResource, Hashable {
 public struct DNSRecordInput: Codable, Hashable, Sendable {
   public var type: String
   public var name: String
-  public var content: String
+  /// Free-text value for A/AAAA/CNAME/TXT/MX/…. Omit for SRV — send `data` instead.
+  public var content: String?
   public var proxied: Bool?
   public var ttl: Int
   public var priority: Int?
+  public var data: DNSRecordData?
   public var comment: String?
 
   public init(
-    type: String, name: String, content: String, proxied: Bool? = nil, ttl: Int = 1,
-    priority: Int? = nil, comment: String? = nil
+    type: String, name: String, content: String? = nil, proxied: Bool? = nil, ttl: Int = 1,
+    priority: Int? = nil, data: DNSRecordData? = nil, comment: String? = nil
   ) {
     self.type = type
     self.name = name
@@ -364,7 +535,58 @@ public struct DNSRecordInput: Codable, Hashable, Sendable {
     self.proxied = proxied
     self.ttl = ttl
     self.priority = priority
+    self.data = data
     self.comment = comment
+  }
+}
+
+/// Custom hostname routed to a Worker via `/accounts/.../workers/domains`.
+/// OpenAPI `x-api-token-group` is Workers Scripts Read/Write — same scopes as
+/// script management, not `workers-routes.*`.
+public struct WorkerDomain: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let hostname: String
+  public let service: String
+  public let zoneID: String
+  public let zoneName: String
+  public let certID: String?
+  public let environment: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, hostname, service, environment
+    case zoneID = "zone_id"
+    case zoneName = "zone_name"
+    case certID = "cert_id"
+  }
+
+  public init(
+    id: String, hostname: String, service: String, zoneID: String, zoneName: String,
+    certID: String? = nil, environment: String? = nil
+  ) {
+    self.id = id
+    self.hostname = hostname
+    self.service = service
+    self.zoneID = zoneID
+    self.zoneName = zoneName
+    self.certID = certID
+    self.environment = environment
+  }
+}
+
+/// Zone-scoped route pattern mapped to a Worker via `/zones/.../workers/routes`.
+/// The second way a hostname reaches a Worker besides `WorkerDomain`; wrangler
+/// `routes` entries without `custom_domain = true` land here. OpenAPI
+/// `x-api-token-group` is Workers Routes — `workers-routes.*`, not the
+/// script-management scopes. `script` is nil when the route is disabled.
+public struct WorkerRoute: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let pattern: String
+  public let script: String?
+
+  public init(id: String, pattern: String, script: String? = nil) {
+    self.id = id
+    self.pattern = pattern
+    self.script = script
   }
 }
 
@@ -393,16 +615,19 @@ public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
   }
 }
 
-/// A live tail session. `url` is a `wss://` endpoint carrying its own auth
-/// token; sessions expire after a few minutes unless the socket stays open.
-public struct WorkerTail: Codable, Hashable, Sendable {
-  public let id: String
-  public let url: String
-  public let expiresAt: String?
+/// Account-wide `workers.dev` label from
+/// `GET /accounts/{account_id}/workers/subdomain`. Script URLs are composed as
+/// `{scriptName}.{subdomain}.workers.dev` — Cloudflare never returns the full
+/// hostname for a Worker.
+public struct WorkersAccountSubdomain: Codable, Hashable, Sendable {
+  public let subdomain: String
 
-  enum CodingKeys: String, CodingKey {
-    case id, url
-    case expiresAt = "expires_at"
+  public init(subdomain: String) {
+    self.subdomain = subdomain
+  }
+
+  public func hostname(forScript name: String) -> String {
+    "\(name).\(subdomain).workers.dev"
   }
 }
 
@@ -438,12 +663,15 @@ public struct WorkerDeploymentSummary: Codable, Hashable, Identifiable, Sendable
   public let createdOn: String
   public let source: String
   public let strategy: String?
-  public let versions: [WorkerDeploymentVersion]
+  private let storedVersions: [WorkerDeploymentVersion]?
   public let annotations: WorkerDeploymentAnnotations?
   public let authorEmail: String?
 
+  public var versions: [WorkerDeploymentVersion] { storedVersions ?? [] }
+
   enum CodingKeys: String, CodingKey {
-    case id, source, strategy, versions, annotations
+    case id, source, strategy, annotations
+    case storedVersions = "versions"
     case createdOn = "created_on"
     case authorEmail = "author_email"
   }
@@ -457,27 +685,25 @@ public struct WorkerDeploymentSummary: Codable, Hashable, Identifiable, Sendable
     self.createdOn = createdOn
     self.source = source
     self.strategy = strategy
-    self.versions = versions
+    self.storedVersions = versions.isEmpty ? nil : versions
     self.annotations = annotations
     self.authorEmail = authorEmail
+  }
+}
+
+public struct WorkerDeploymentListResult: Decodable, Sendable {
+  public let deployments: [WorkerDeploymentSummary]
+
+  enum CodingKeys: String, CodingKey {
+    case deployments
   }
 
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = try container.decode(String.self, forKey: .id)
-    createdOn = try container.decode(String.self, forKey: .createdOn)
-    source = try container.decode(String.self, forKey: .source)
-    strategy = try container.decodeIfPresent(String.self, forKey: .strategy)
-    versions =
-      try container.decodeIfPresent([WorkerDeploymentVersion].self, forKey: .versions) ?? []
-    annotations = try container.decodeIfPresent(
-      WorkerDeploymentAnnotations.self, forKey: .annotations)
-    authorEmail = try container.decodeIfPresent(String.self, forKey: .authorEmail)
+    let lossy = try container.decode(
+      [LossyElement<WorkerDeploymentSummary>].self, forKey: .deployments)
+    deployments = lossy.compactMap(\.value)
   }
-}
-
-public struct WorkerDeploymentListResult: Codable, Sendable {
-  public let deployments: [WorkerDeploymentSummary]
 }
 
 public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
@@ -489,6 +715,20 @@ public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id, value, editable
     case modifiedOn = "modified_on"
+  }
+
+  public init(
+    id: String, value: JSONValue, editable: Bool? = nil, modifiedOn: String? = nil
+  ) {
+    self.id = id
+    self.value = value
+    self.editable = editable
+    self.modifiedOn = modifiedOn
+  }
+
+  /// Copy with a new value — used for optimistic zone-setting toggles/menus.
+  public func withValue(_ value: JSONValue) -> ZoneSetting {
+    ZoneSetting(id: id, value: value, editable: editable, modifiedOn: modifiedOn)
   }
 }
 
@@ -506,16 +746,147 @@ public struct PagesProject: CloudflareResource, Hashable {
   }
 }
 
+/// Compact deployment embedded on a project list row. Full history uses
+/// `PagesDeployment`.
 public struct PagesDeploymentSummary: Codable, Hashable, Sendable {
+  public let id: String?
+  public let url: String?
+  public let environment: String?
+  public let createdOn: String?
   public let latestStage: PagesDeploymentStage?
 
   enum CodingKeys: String, CodingKey {
+    case id, url, environment
+    case createdOn = "created_on"
     case latestStage = "latest_stage"
   }
 }
 
 public struct PagesDeploymentStage: Codable, Hashable, Sendable {
+  public let name: String?
   public let status: String?
+  public let startedOn: String?
+  public let endedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case name, status
+    case startedOn = "started_on"
+    case endedOn = "ended_on"
+  }
+
+  public init(
+    name: String? = nil, status: String? = nil, startedOn: String? = nil, endedOn: String? = nil
+  ) {
+    self.name = name
+    self.status = status
+    self.startedOn = startedOn
+    self.endedOn = endedOn
+  }
+
+  /// True while Cloudflare is still working this deployment.
+  public var isInProgress: Bool {
+    switch status?.lowercased() {
+    case "active", "idle": true
+    default: false
+    }
+  }
+}
+
+public struct PagesDeployment: Decodable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let shortID: String?
+  public let url: String?
+  public let environment: String?
+  public let createdOn: String?
+  public let modifiedOn: String?
+  public let projectName: String?
+  public let isSkipped: Bool?
+  public let latestStage: PagesDeploymentStage?
+  public let stages: [PagesDeploymentStage]?
+  public let deploymentTrigger: PagesDeploymentTrigger?
+  public let aliases: [String]?
+
+  enum CodingKeys: String, CodingKey {
+    case id, url, environment, stages, aliases
+    case shortID = "short_id"
+    case createdOn = "created_on"
+    case modifiedOn = "modified_on"
+    case projectName = "project_name"
+    case isSkipped = "is_skipped"
+    case latestStage = "latest_stage"
+    case deploymentTrigger = "deployment_trigger"
+  }
+
+  public var statusLabel: String {
+    latestStage?.status?.capitalized ?? (isSkipped == true ? "Skipped" : "Unknown")
+  }
+
+  public var branch: String? { deploymentTrigger?.metadata?.branch }
+  public var commitMessage: String? { deploymentTrigger?.metadata?.commitMessage }
+
+  public var isInProgress: Bool { latestStage?.isInProgress == true }
+}
+
+public struct PagesDeploymentTrigger: Codable, Hashable, Sendable {
+  public let type: String?
+  public let metadata: PagesDeploymentTriggerMetadata?
+}
+
+public struct PagesDeploymentTriggerMetadata: Codable, Hashable, Sendable {
+  public let branch: String?
+  public let commitHash: String?
+  public let commitMessage: String?
+
+  enum CodingKeys: String, CodingKey {
+    case branch
+    case commitHash = "commit_hash"
+    case commitMessage = "commit_message"
+  }
+}
+
+public struct PagesDeploymentLogs: Decodable, Hashable, Sendable {
+  public let total: Int
+  public let includesContainerLogs: Bool?
+  public let data: [PagesDeploymentLogLine]
+
+  enum CodingKeys: String, CodingKey {
+    case total, data
+    case includesContainerLogs = "includes_container_logs"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    total = try container.decodeIfPresent(Int.self, forKey: .total) ?? 0
+    includesContainerLogs = try container.decodeIfPresent(Bool.self, forKey: .includesContainerLogs)
+    data = try container.decodeIfPresent([PagesDeploymentLogLine].self, forKey: .data) ?? []
+  }
+}
+
+public struct PagesDeploymentLogLine: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { "\(ts ?? "")|\(line)" }
+  public let line: String
+  public let ts: String?
+
+  public init(line: String, ts: String? = nil) {
+    self.line = line
+    self.ts = ts
+  }
+}
+
+/// Custom hostname attached to a Pages project. OpenAPI token group is
+/// Pages Read / Pages Write (`page.read` / `page.write`).
+public struct PagesDomain: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let name: String
+  public let status: String?
+  public let createdOn: String?
+  public let zoneTag: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, status
+    case createdOn = "created_on"
+    case zoneTag = "zone_tag"
+  }
 }
 
 public struct R2Bucket: CloudflareResource, Hashable {
@@ -535,10 +906,18 @@ public struct R2Object: Codable, Hashable, Identifiable, Sendable {
   public let size: Int?
   public let etag: String?
   public let uploaded: String?
+  public let httpMetadata: HTTPMetadata?
+
+  public var contentType: String? { httpMetadata?.contentType }
+
+  public struct HTTPMetadata: Codable, Hashable, Sendable {
+    public let contentType: String?
+  }
 
   enum CodingKeys: String, CodingKey {
     case key, size, etag
     case uploaded = "last_modified"
+    case httpMetadata = "http_metadata"
   }
 }
 
@@ -555,6 +934,38 @@ public struct R2ObjectPage: Sendable {
     self.commonPrefixes = commonPrefixes
     self.cursor = cursor
     self.isTruncated = isTruncated
+  }
+}
+
+/// The bucket's r2.dev managed domain. Unlike the objects list, the domain
+/// endpoints speak camelCase, so these models need no key mapping.
+public struct R2ManagedDomain: Codable, Hashable, Sendable {
+  public let bucketId: String
+  public let domain: String
+  public let enabled: Bool
+
+  // Memberwise inits are internal; test fixtures need this one.
+  public init(bucketId: String, domain: String, enabled: Bool) {
+    self.bucketId = bucketId
+    self.domain = domain
+    self.enabled = enabled
+  }
+}
+
+/// One custom domain attached to an R2 bucket. `status` is present on list and
+/// get responses but absent from the create response, so it stays optional.
+public struct R2CustomDomain: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { domain }
+  public let domain: String
+  public let enabled: Bool
+  public let status: Status?
+  public let minTLS: String?
+  public let zoneId: String?
+  public let zoneName: String?
+
+  public struct Status: Codable, Hashable, Sendable {
+    public let ownership: String?
+    public let ssl: String?
   }
 }
 
@@ -805,6 +1216,8 @@ public struct AvailableAlert: Codable, Hashable, Sendable, Identifiable {
 }
 
 public struct NotificationHistoryEntry: Codable, Hashable, Identifiable, Sendable {
+  /// Cloudflare history UUID when the API returns one.
+  public let historyID: String?
   public let policyID: String?
   public let name: String?
   public let alertType: String?
@@ -813,9 +1226,30 @@ public struct NotificationHistoryEntry: Codable, Hashable, Identifiable, Sendabl
   public let description: String?
   public let sent: String?
 
+  public init(
+    historyID: String? = nil,
+    policyID: String? = nil,
+    name: String? = nil,
+    alertType: String? = nil,
+    mechanism: String? = nil,
+    alertBody: String? = nil,
+    description: String? = nil,
+    sent: String? = nil
+  ) {
+    self.historyID = historyID
+    self.policyID = policyID
+    self.name = name
+    self.alertType = alertType
+    self.mechanism = mechanism
+    self.alertBody = alertBody
+    self.description = description
+    self.sent = sent
+  }
+
   public var id: String {
-    [policyID, sent, name, alertType].compactMap { $0 }.joined(separator: "|").nilIfEmpty
-      ?? UUID().uuidString
+    historyID
+      ?? [policyID, sent, name, alertType].compactMap { $0 }.joined(separator: "|").nilIfEmpty
+      ?? "notification-history"
   }
   public var title: String {
     name ?? alertType?.replacingOccurrences(of: "_", with: " ") ?? "Notification"
@@ -824,6 +1258,7 @@ public struct NotificationHistoryEntry: Codable, Hashable, Identifiable, Sendabl
 
   enum CodingKeys: String, CodingKey {
     case name, mechanism, description, sent
+    case historyID = "id"
     case policyID = "policy_id"
     case alertType = "alert_type"
     case alertBody = "alert_body"
@@ -960,16 +1395,118 @@ public struct WorkerAnalyticsPayload: Hashable, Sendable {
   }
 }
 
+/// Account-scoped overview tiles for a rolling window (Watchtower).
+/// HTTP fields come from `httpRequestsOverviewAdaptiveGroups`; Workers fields
+/// from a single-bucket `workersInvocationsAdaptive` (P90 over the whole window).
+public struct AccountAnalyticsOverview: Hashable, Sendable {
+  public var webRequests: Int
+  public var bytes: Int64
+  public var cacheRate: Double
+  public var clientErrorRate: Double
+  public var encryptedRequestRate: Double
+  public var encryptedBytes: Int64
+  public var workerInvocations: Int
+  public var workerErrors: Int
+  public var cpuTimeP90Us: Double
+  public var hours: Int
+
+  public init(
+    webRequests: Int,
+    bytes: Int64,
+    cacheRate: Double,
+    clientErrorRate: Double,
+    encryptedRequestRate: Double,
+    encryptedBytes: Int64,
+    workerInvocations: Int,
+    workerErrors: Int,
+    cpuTimeP90Us: Double,
+    hours: Int
+  ) {
+    self.webRequests = webRequests
+    self.bytes = bytes
+    self.cacheRate = cacheRate
+    self.clientErrorRate = clientErrorRate
+    self.encryptedRequestRate = encryptedRequestRate
+    self.encryptedBytes = encryptedBytes
+    self.workerInvocations = workerInvocations
+    self.workerErrors = workerErrors
+    self.cpuTimeP90Us = cpuTimeP90Us
+    self.hours = hours
+  }
+}
+
+/// One bucket in an account HTTP or Workers series.
+///
+/// HTTP rows fill traffic / bandwidth / ratio fields; Workers rows fill
+/// invocations / errors / CPU. Unused fields stay zero.
+public struct AccountAnalyticsPoint: Hashable, Sendable, Identifiable {
+  public var id: String { datetime }
+  public var datetime: String
+  public var requests: Int
+  public var bytes: Int64
+  public var errors: Int
+  public var cacheRate: Double
+  public var clientErrorRate: Double
+  public var encryptedRequestRate: Double
+  public var encryptedBytes: Int64
+  public var cpuTimeP90Us: Double
+
+  public init(
+    datetime: String,
+    requests: Int,
+    bytes: Int64 = 0,
+    errors: Int = 0,
+    cacheRate: Double = 0,
+    clientErrorRate: Double = 0,
+    encryptedRequestRate: Double = 0,
+    encryptedBytes: Int64 = 0,
+    cpuTimeP90Us: Double = 0
+  ) {
+    self.datetime = datetime
+    self.requests = requests
+    self.bytes = bytes
+    self.errors = errors
+    self.cacheRate = cacheRate
+    self.clientErrorRate = clientErrorRate
+    self.encryptedRequestRate = encryptedRequestRate
+    self.encryptedBytes = encryptedBytes
+    self.cpuTimeP90Us = cpuTimeP90Us
+  }
+}
+
+/// Totals plus HTTP / Workers time series for one Watchtower range.
+public struct AccountAnalyticsSnapshot: Hashable, Sendable {
+  public var overview: AccountAnalyticsOverview
+  public var httpPoints: [AccountAnalyticsPoint]
+  public var workerPoints: [AccountAnalyticsPoint]
+  /// Wall-clock time the snapshot was fetched; used for “Updated …” chrome.
+  public var fetchedAt: Date
+
+  public init(
+    overview: AccountAnalyticsOverview,
+    httpPoints: [AccountAnalyticsPoint],
+    workerPoints: [AccountAnalyticsPoint],
+    fetchedAt: Date = .now
+  ) {
+    self.overview = overview
+    self.httpPoints = httpPoints
+    self.workerPoints = workerPoints
+    self.fetchedAt = fetchedAt
+  }
+}
+
 public struct WorkerAnalyticsBucket: Hashable, Sendable, Identifiable {
   public var id: String { datetime }
   public var datetime: String
   public var requests: Int
   public var errors: Int
+  public var cpuTimeP50Us: Double
 
-  public init(datetime: String, requests: Int, errors: Int) {
+  public init(datetime: String, requests: Int, errors: Int, cpuTimeP50Us: Double = 0) {
     self.datetime = datetime
     self.requests = requests
     self.errors = errors
+    self.cpuTimeP50Us = cpuTimeP50Us
   }
 }
 
@@ -986,29 +1523,20 @@ public struct LoadBalancerPool: CloudflareResource, Hashable {
 }
 
 public struct RegistrarDomain: CloudflareResource, Hashable {
-  public let id: String
-  public let name: String
+  private let storedID: String?
+  private let storedName: String?
   public let expiresAt: String?
 
-  enum CodingKeys: String, CodingKey {
-    case id, name
-    case expiresAt = "expires_at"
+  public var id: String { storedID?.nilIfEmpty ?? storedName?.nilIfEmpty ?? "" }
+  public var name: String { storedName?.nilIfEmpty ?? storedID?.nilIfEmpty ?? "" }
+  public var hasIdentity: Bool {
+    storedID?.nilIfEmpty != nil || storedName?.nilIfEmpty != nil
   }
 
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    let decodedID = try container.decodeIfPresent(String.self, forKey: .id)?.nilIfEmpty
-    let decodedName = try container.decodeIfPresent(String.self, forKey: .name)?.nilIfEmpty
-    guard let identity = decodedName ?? decodedID else {
-      throw DecodingError.dataCorruptedError(
-        forKey: .name,
-        in: container,
-        debugDescription: "Registrar domain requires either name or id."
-      )
-    }
-    id = decodedID ?? identity
-    name = decodedName ?? identity
-    expiresAt = try container.decodeIfPresent(String.self, forKey: .expiresAt)
+  enum CodingKeys: String, CodingKey {
+    case storedID = "id"
+    case storedName = "name"
+    case expiresAt = "expires_at"
   }
 }
 
@@ -1037,18 +1565,6 @@ public struct CertificatePack: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let status: String
   public let certificates: [CertificatePackCertificate]?
-
-  enum CodingKeys: String, CodingKey {
-    case id, status, certificates
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
-    status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
-    certificates = try container.decodeIfPresent(
-      [CertificatePackCertificate].self, forKey: .certificates)
-  }
 }
 
 public struct CertificatePackCertificate: Codable, Hashable, Sendable {
@@ -1063,17 +1579,6 @@ public struct Healthcheck: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let name: String?
   public let status: String?
-
-  enum CodingKeys: String, CodingKey {
-    case id, name, status
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
-    name = try container.decodeIfPresent(String.self, forKey: .name)
-    status = try container.decodeIfPresent(String.self, forKey: .status)
-  }
 }
 
 public struct GenericResource: CloudflareResource, Hashable {

@@ -98,37 +98,6 @@ import Testing
   #expect(CloudflareClient.retryDelay(retryAfter: "-2") == 0)
 }
 
-@Test func parsesTailRequestEventWithLogsAndExceptions() throws {
-  let blob = #"""
-    {"outcome":"exception","eventTimestamp":1752470000000,
-     "event":{"request":{"method":"GET","url":"https://example.com/api"}},
-     "logs":[{"level":"info","message":["hit",{"user":"x"},42]}],
-     "exceptions":[{"name":"TypeError","message":"undefined is not a function"}]}
-    """#
-  let event = try #require(WorkerTailMessage.parse(Data(blob.utf8)))
-  #expect(event.outcome == "exception")
-  #expect(event.summary == "GET https://example.com/api — exception")
-  #expect(event.timestamp == Date(timeIntervalSince1970: 1_752_470_000))
-  #expect(event.lines.count == 2)
-  #expect(event.lines[0] == #"[info] hit {"user":"x"} 42"#)
-  #expect(event.lines[1] == "[exception] TypeError: undefined is not a function")
-}
-
-@Test func parsesTailCronAndMinimalEvents() throws {
-  let cron = try #require(
-    WorkerTailMessage.parse(
-      Data(#"{"outcome":"ok","event":{"cron":"*/5 * * * *"}}"#.utf8)))
-  #expect(cron.summary == "cron */5 * * * * — ok")
-  #expect(cron.timestamp == nil)
-  #expect(cron.lines.isEmpty)
-
-  let minimal = try #require(WorkerTailMessage.parse(Data("{}".utf8)))
-  #expect(minimal.summary == "event")
-  #expect(minimal.outcome == nil)
-
-  #expect(WorkerTailMessage.parse(Data("not json".utf8)) == nil)
-}
-
 @Test func decodesPaginatedZoneEnvelope() throws {
   let data = Data(
     #"{"success":true,"result":[{"id":"zone","name":"example.com","status":"active"}],"result_info":{"page":1,"per_page":50,"total_count":1}}"#
@@ -176,6 +145,11 @@ import Testing
   #expect(roundTrip.description == "Ping me")
 }
 
+@Test func workerAnalyticsBucketInitDefaultsCPUToZero() {
+  let bucket = WorkerAnalyticsBucket(datetime: "2026-07-22T10:00:00Z", requests: 12, errors: 1)
+  #expect(bucket.cpuTimeP50Us == 0)
+}
+
 @Suite(.serialized)
 struct NetworkTests {
   @Test func flattensAvailableAlertsFromCategoryMap() async throws {
@@ -216,6 +190,31 @@ struct NetworkTests {
     #expect(history.isEmpty)
   }
 
+  @Test func notificationHistoryPrefersAPIIdentifier() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":true,"result":[{
+          "id":"f174e90afafe4643bbbc4a0ed4fc8415",
+          "policy_id":"pol-1",
+          "name":"SSL",
+          "alert_type":"universal_ssl_event_type",
+          "alert_body":"expired",
+          "sent":"2021-10-08T17:52:17.571336Z"
+        }]}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let history = try await client.listNotificationHistory(accountID: "acct")
+    #expect(history.count == 1)
+    #expect(history.first?.historyID == "f174e90afafe4643bbbc4a0ed4fc8415")
+    #expect(history.first?.id == "f174e90afafe4643bbbc4a0ed4fc8415")
+  }
+
   @Test func registrarDomainsAcceptNameOrIDAsIdentity() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
@@ -236,6 +235,114 @@ struct NetworkTests {
 
     #expect(domains.map(\.id) == ["live.example", "documented.example"])
     #expect(domains.map(\.name) == ["live.example", "documented.example"])
+  }
+
+  @Test func createZonePostsNameAndAccountAndDecodesNameServers() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path == "/zones")
+      let stream = request.httpBodyStream.map { stream -> Data in
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let size = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+          let read = stream.read(buffer, maxLength: size)
+          if read <= 0 { break }
+          data.append(buffer, count: read)
+        }
+        return data
+      }
+      if let stream,
+        let decoded = try? JSONDecoder().decode([String: JSONValue].self, from: stream)
+      {
+        #expect(decoded["name"] == .string("new.example"))
+        #expect(decoded["account"] == .object(["id": .string("acct")]))
+      }
+      let body = #"""
+        {"success":true,"result":{"id":"z-new","name":"new.example","status":"pending",
+        "name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let zone = try await client.createZone(name: "new.example", accountID: "acct")
+
+    #expect(zone.id == "z-new")
+    #expect(zone.status == "pending")
+    #expect(zone.nameServers == ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"])
+  }
+
+  @Test func activationCheckPutsToActivationCheckPath() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "PUT")
+      #expect(request.url?.path == "/zones/z1/activation_check")
+      return (200, Data(#"{"success":true,"result":{"id":"z1"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.triggerZoneActivationCheck(zoneID: "z1")
+  }
+
+  @Test func activationCheckSurfacesRateLimitMessage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":false,"result":null,
+        "errors":[{"code":1224,"message":"You may only perform this action once per hour"}]}
+        """#
+      return (400, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    do {
+      try await client.triggerZoneActivationCheck(zoneID: "z1")
+      Issue.record("activation check should throw on a failed envelope")
+    } catch let error as CloudflareAPIError {
+      guard case .request(let status, let errors) = error else {
+        Issue.record("expected .request, got \(error)")
+        return
+      }
+      #expect(status == 400)
+      #expect(errors.first?.code == 1224)
+    }
+  }
+
+  @Test func createZoneSurfacesEnvelopeFailureAsRequestError() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":false,"result":null,
+        "errors":[{"code":1061,"message":"taken.example already exists."}]}
+        """#
+      return (400, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    do {
+      _ = try await client.createZone(name: "taken.example", accountID: "acct")
+      Issue.record("createZone should throw on a failed envelope")
+    } catch let error as CloudflareAPIError {
+      guard case .request(let status, let errors) = error else {
+        Issue.record("expected .request, got \(error)")
+        return
+      }
+      #expect(status == 400)
+      #expect(errors.first?.code == 1061)
+    }
   }
 
   @Test func decodesCanonicalRegistrarRegistration() async throws {
@@ -276,7 +383,7 @@ struct NetworkTests {
     let session = mockSession { _ in
       let body = #"""
         {"data":{"viewer":{"zones":[{"httpRequests1dGroups":[
-        {"dimensions":{"date":"2026-07-06"},"sum":{"requests":120,"pageViews":40,"threats":2,"bytes":98304}}
+        {"dimensions":{"date":"2026-07-06"},"sum":{"requests":120,"pageViews":40,"threats":2,"bytes":98304,"cachedRequests":90,"cachedBytes":65536},"uniq":{"uniques":33}}
         ]}]}},"errors":null}
         """#
       return (200, Data(body.utf8))
@@ -288,6 +395,80 @@ struct NetworkTests {
     #expect(days.count == 1)
     #expect(days.first?.requests == 120)
     #expect(days.first?.bytes == 98304)
+    #expect(days.first?.uniques == 33)
+    #expect(days.first?.cachedRequests == 90)
+    #expect(days.first?.cachedBytes == 65536)
+  }
+
+  @Test func webAnalyticsSitesMapToZonesThroughTheirRuleset() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"result":[
+        {"site_tag":"site-1","site_token":"token-1","auto_install":true,
+         "ruleset":{"id":"rule-1","zone_tag":"zone-1","zone_name":"example.com","enabled":true}},
+        {"site_tag":"site-2","auto_install":false,
+         "ruleset":{"id":"rule-2","zone_tag":"zone-2","zone_name":"paused.example","enabled":false}}
+        ],"success":true,"errors":[],"messages":[]}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let sites = try await client.webAnalyticsSites(accountID: "acct")
+
+    #expect(sites.map(\.zoneTag) == ["zone-1", "zone-2"])
+    #expect(sites.first?.isCollecting == true)
+    // auto_install with a disabled ruleset means the beacon is not injected;
+    // a manual-snippet site is assumed live because we cannot see its HTML.
+    #expect(sites.last?.isCollecting == true)
+  }
+
+  @Test func webAnalyticsPageviewsDecodeDailyCounts() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record(request.url?.absoluteString ?? "")
+      let body = #"""
+        {"data":{"viewer":{"accounts":[{"rumPageloadEventsAdaptiveGroups":[
+        {"count":46,"dimensions":{"date":"2026-07-22"}},
+        {"count":51,"dimensions":{"date":"2026-07-23"}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let days = try await client.webAnalyticsPageviews(siteTag: "site-1", days: 7)
+
+    #expect(days.map(\.pageviews) == [46, 51])
+    #expect(days.first?.date == "2026-07-22")
+    #expect(recorder.paths.first?.contains("/graphql") == true)
+  }
+
+  @Test func zoneAnalyticsToleratesMissingUniquesAndCacheFields() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      // A response without the uniq / cached blocks must still decode — the
+      // chart hides itself rather than the whole screen erroring.
+      let body = #"""
+        {"data":{"viewer":{"zones":[{"httpRequests1dGroups":[
+        {"dimensions":{"date":"2026-07-06"},"sum":{"requests":120,"pageViews":40,"threats":2,"bytes":98304}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let days = try await client.zoneAnalytics(zoneID: "zone")
+    #expect(days.first?.uniques == 0)
+    #expect(days.first?.cachedRequests == 0)
+    #expect(days.first?.cachedBytes == 0)
   }
   @Test func decodesHourlyZoneAnalyticsAscending() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
@@ -296,8 +477,8 @@ struct NetworkTests {
       recorder.record(request.url?.absoluteString ?? "")
       let body = #"""
         {"data":{"viewer":{"zones":[{"httpRequests1hGroups":[
-        {"dimensions":{"datetime":"2026-07-14T08:00:00Z"},"sum":{"requests":10,"pageViews":4,"threats":1,"bytes":2048}},
-        {"dimensions":{"datetime":"2026-07-14T09:00:00Z"},"sum":{"requests":20,"pageViews":8,"threats":0,"bytes":4096}}
+        {"dimensions":{"datetime":"2026-07-14T08:00:00Z"},"sum":{"requests":10,"pageViews":4,"threats":1,"bytes":2048},"uniq":{"uniques":3}},
+        {"dimensions":{"datetime":"2026-07-14T09:00:00Z"},"sum":{"requests":20,"pageViews":8,"threats":0,"bytes":4096},"uniq":{"uniques":7}}
         ]}]}},"errors":null}
         """#
       return (200, Data(body.utf8))
@@ -309,20 +490,200 @@ struct NetworkTests {
     #expect(points.map(\.datetime) == ["2026-07-14T08:00:00Z", "2026-07-14T09:00:00Z"])
     #expect(points.first?.requests == 10)
     #expect(points.last?.bytes == 4096)
+    #expect(points.map(\.uniques) == [3, 7])
     #expect(recorder.paths.first?.contains("/graphql") == true)
+  }
+
+  @Test func decodesFreePlanHourlyZoneRequests() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"data":{"viewer":{"zones":[{"httpRequestsAdaptiveGroups":[
+        {"count":10,"dimensions":{"datetimeHour":"2026-07-14T08:00:00Z"}},
+        {"count":20,"dimensions":{"datetimeHour":"2026-07-14T09:00:00Z"}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let points = try await client.zoneRequestsHourly(zoneID: "zone", hours: 24)
+
+    #expect(points.map(\.requests) == [10, 20])
+    #expect(points.allSatisfy { $0.pageViews == 0 })
   }
 
   @Test func surfacesHourlyAnalyticsGraphQLErrors() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
-      (200, Data(#"{"data":null,"errors":[{"message":"unauthorized zone"}]}"#.utf8))
+      (200, Data(#"{"data":null,"errors":[{"message":"zones [zone] are not authorized"}]}"#.utf8))
     }
     let client = CloudflareClient(
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
-    await #expect(throws: CloudflareAPIError.self) {
+
+    do {
       _ = try await client.zoneAnalyticsHourly(zoneID: "zone")
+      Issue.record("Expected a GraphQL authorization error")
+    } catch let error as CloudflareAPIError {
+      #expect(error.isForbidden)
     }
+  }
+
+  @Test func accountAnalyticsMapsOverviewSeriesAndWorkerP90() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"data":{"viewer":{"accounts":[{
+        "overview":[{
+          "sum":{"requests":3431,"bytes":10276045},
+          "ratio":{"cachedRequests":0.412,"encryptedRequests":0.981,"encryptedBytes":0.973,"status4xx":0.5511}
+        }],
+        "httpSeries":[
+          {"sum":{"requests":100,"bytes":1000},"ratio":{"cachedRequests":0.4,"encryptedRequests":0.9,"encryptedBytes":0.8,"status4xx":0.1},"dimensions":{"datetimeHour":"2026-07-22T10:00:00Z"}},
+          {"sum":{"requests":200,"bytes":2000},"ratio":{"cachedRequests":0.5,"encryptedRequests":0.95,"encryptedBytes":0.9,"status4xx":0.05},"dimensions":{"datetimeHour":"2026-07-22T11:00:00Z"}}
+        ],
+        "workers":[{
+          "sum":{"requests":1280,"errors":17},
+          "quantiles":{"cpuTimeP90":1840.0}
+        }],
+        "workerSeries":[
+          {"sum":{"requests":40,"errors":1},"quantiles":{"cpuTimeP90":1200.0},"dimensions":{"datetimeHour":"2026-07-22T10:00:00Z"}},
+          {"sum":{"requests":60,"errors":2},"quantiles":{"cpuTimeP90":1600.0},"dimensions":{"datetimeHour":"2026-07-22T11:00:00Z"}}
+        ]
+        }]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let snapshot = try await client.accountAnalytics(accountID: "acct", hours: 24)
+    let overview = snapshot.overview
+
+    #expect(overview.webRequests == 3431)
+    #expect(overview.bytes == 10_276_045)
+    #expect(abs(overview.cacheRate - 0.412) < 0.0001)
+    #expect(abs(overview.clientErrorRate - 0.5511) < 0.0001)
+    #expect(abs(overview.encryptedRequestRate - 0.981) < 0.0001)
+    #expect(overview.encryptedBytes == Int64((10_276_045.0 * 0.973).rounded()))
+    #expect(overview.workerInvocations == 1280)
+    #expect(overview.workerErrors == 17)
+    #expect(abs(overview.cpuTimeP90Us - 1840) < 0.0001)
+    #expect(overview.hours == 24)
+    #expect(snapshot.httpPoints.map(\.requests) == [100, 200])
+    #expect(snapshot.httpPoints.map(\.cacheRate) == [0.4, 0.5])
+    #expect(snapshot.httpPoints.first?.encryptedBytes == 800)
+    #expect(snapshot.workerPoints.map(\.errors) == [1, 2])
+    #expect(snapshot.workerPoints.map(\.cpuTimeP90Us) == [1200, 1600])
+  }
+
+  @Test func accountAnalyticsSurfacesGraphQLAuthorizationErrors() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      (200, Data(#"{"data":null,"errors":[{"message":"authz error: not authorized"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    do {
+      _ = try await client.accountAnalytics(accountID: "acct")
+      Issue.record("Expected a GraphQL authorization error")
+    } catch let error as CloudflareAPIError {
+      #expect(error.isForbidden)
+    }
+  }
+
+  @Test func workerAnalyticsWeightsBucketCPUByRowRequests() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"data":{"viewer":{"accounts":[{"workersInvocationsAdaptive":[
+        {"sum":{"requests":90,"errors":0},"quantiles":{"cpuTimeP50":800.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"success"}},
+        {"sum":{"requests":10,"errors":10},"quantiles":{"cpuTimeP50":2000.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"error"}},
+        {"sum":{"requests":50,"errors":0},"quantiles":{"cpuTimeP50":600.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:05:00Z","status":"success"}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let payload = try await client.workerAnalytics(accountID: "acct", scriptName: "worker")
+
+    #expect(payload.points.map(\.datetime) == ["2026-07-22T10:00:00Z", "2026-07-22T10:05:00Z"])
+    let first = try #require(payload.points.first)
+    #expect(first.requests == 100)
+    #expect(first.errors == 10)
+    // Request-weighted: (800*90 + 2000*10) / 100 = 920.
+    #expect(abs(first.cpuTimeP50Us - 920) < 0.0001)
+    let last = try #require(payload.points.last)
+    #expect(abs(last.cpuTimeP50Us - 600) < 0.0001)
+    // Payload-level CPU keeps the plain mean of all samples.
+    #expect(abs(payload.cpuTimeP50Us - (800.0 + 2000.0 + 600.0) / 3) < 0.0001)
+    #expect(payload.requests == 150)
+    #expect(payload.errors == 10)
+  }
+
+  @Test func workerAnalyticsBucketCPUSurvivesMissingQuantilesAndZeroWeight() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"data":{"viewer":{"accounts":[{"workersInvocationsAdaptive":[
+        {"sum":{"requests":0,"errors":0},"quantiles":{"cpuTimeP50":750.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"success"}},
+        {"sum":{"requests":40,"errors":0},"quantiles":null,"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"success"}},
+        {"sum":{"requests":25,"errors":0},"quantiles":null,"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:05:00Z","status":"success"}}
+        ]}]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let payload = try await client.workerAnalytics(accountID: "acct", scriptName: "worker")
+
+    let first = try #require(payload.points.first)
+    // All sampled weight is 0, so the bucket falls back to the plain mean of
+    // present samples; the nil-quantiles row contributes nothing.
+    #expect(abs(first.cpuTimeP50Us - 750) < 0.0001)
+    #expect(first.requests == 40)
+    let last = try #require(payload.points.last)
+    // No CPU samples at all in this bucket.
+    #expect(last.cpuTimeP50Us == 0)
+  }
+
+  @Test func refreshesExpiredTokenFromGraphQLUnauthorizedEnvelope() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "old", refresh: "refresh")
+    let session = mockSession { request in
+      if request.url?.path == "/token" {
+        recorder.recordRefresh()
+        return (200, Data(#"{"access_token":"new","refresh_token":"refresh"}"#.utf8))
+      }
+      if request.value(forHTTPHeaderField: "Authorization") == "Bearer new" {
+        let body = #"""
+          {"data":{"viewer":{"zones":[{"httpRequests1hGroups":[
+          {"dimensions":{"datetime":"2026-07-14T08:00:00Z"},"sum":{"requests":10,"pageViews":4,"threats":1,"bytes":2048}}
+          ]}]}},"errors":null}
+          """#
+        return (200, Data(body.utf8))
+      }
+      return (200, Data(#"{"data":null,"errors":[{"message":"Unauthorized"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
+
+    let points = try await client.zoneAnalyticsHourly(zoneID: "zone")
+
+    #expect(points.first?.pageViews == 4)
+    #expect(recorder.refreshCount == 1)
   }
 
   @Test func genericResourceExtractsQueueAndRouteIdentity() throws {
@@ -463,6 +824,140 @@ struct NetworkTests {
     let data = try await client.getR2Object(
       accountID: "account", bucket: "assets", key: "archive.zip")
     #expect(data == payload)
+  }
+
+  @Test func decodesR2ObjectHTTPMetadataContentType() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      let body = #"""
+        {"success":true,"result":[
+          {"key":"cover.jpg","size":9,"etag":"e","last_modified":"2026-07-15T08:00:00Z",
+           "http_metadata":{"contentType":"image/jpeg","cacheControl":"max-age=3600"}},
+          {"key":"notes.txt","size":3,"etag":"f","last_modified":"2026-07-15T08:00:00Z"}
+        ],"result_info":{"is_truncated":false,"per_page":100}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let page = try await client.listR2Objects(accountID: "account", bucket: "assets")
+
+    #expect(page.objects.first?.contentType == "image/jpeg")
+    #expect(page.objects.last?.contentType == nil)
+  }
+
+  @Test func managedR2DomainRoundTripsEnabledFlag() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/r2/buckets/assets/domains/managed") == true)
+      if request.httpMethod == "PUT" {
+        let body =
+          #"{"success":true,"result":{"bucketId":"b1","domain":"pub-b1.r2.dev","enabled":true}}"#
+        return (200, Data(body.utf8))
+      }
+      let body =
+        #"{"success":true,"result":{"bucketId":"b1","domain":"pub-b1.r2.dev","enabled":false}}"#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let current = try await client.getR2ManagedDomain(accountID: "account", bucket: "assets")
+    let updated = try await client.setR2ManagedDomain(
+      accountID: "account", bucket: "assets", enabled: true)
+
+    #expect(current.domain == "pub-b1.r2.dev")
+    #expect(!current.enabled)
+    #expect(updated.enabled)
+  }
+
+  @Test func listsR2CustomDomainsWithOptionalStatusFields() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/r2/buckets/assets/domains/custom") == true)
+      let body = #"""
+        {"success":true,"result":{"domains":[
+          {"domain":"img.example.com","enabled":true,
+           "status":{"ownership":"active","ssl":"active"},
+           "minTLS":"1.2","zoneId":"z1","zoneName":"example.com"},
+          {"domain":"cdn.example.net","enabled":false,
+           "status":{"ownership":"pending","ssl":"initializing"}}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let domains = try await client.listR2CustomDomains(accountID: "account", bucket: "assets")
+
+    #expect(domains.map(\.domain) == ["img.example.com", "cdn.example.net"])
+    #expect(domains.first?.status?.ssl == "active")
+    #expect(domains.first?.zoneName == "example.com")
+    #expect(domains.last?.zoneName == nil)
+    #expect(domains.last?.minTLS == nil)
+  }
+
+  @Test func addR2CustomDomainPostsZoneAndDecodesStatuslessResponse() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path.hasSuffix("/r2/buckets/assets/domains/custom") == true)
+      let stream = request.httpBodyStream.map { stream -> Data in
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        let size = 1024
+        let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+        defer { buffer.deallocate() }
+        while stream.hasBytesAvailable {
+          let read = stream.read(buffer, maxLength: size)
+          if read <= 0 { break }
+          data.append(buffer, count: read)
+        }
+        return data
+      }
+      if let stream,
+        let decoded = try? JSONDecoder().decode([String: JSONValue].self, from: stream)
+      {
+        #expect(decoded["domain"] == .string("img.example.com"))
+        #expect(decoded["zoneId"] == .string("z1"))
+        #expect(decoded["enabled"] == .bool(true))
+      }
+      // The create response carries no `status` — provisioning starts async.
+      let body =
+        #"{"success":true,"result":{"domain":"img.example.com","enabled":true,"zoneId":"z1"}}"#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let added = try await client.addR2CustomDomain(
+      accountID: "account", bucket: "assets", domain: "img.example.com", zoneID: "z1")
+
+    #expect(added.domain == "img.example.com")
+    #expect(added.status == nil)
+  }
+
+  @Test func deleteR2CustomDomainTargetsDomainPath() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "DELETE")
+      #expect(
+        request.url?.path.hasSuffix("/r2/buckets/assets/domains/custom/img.example.com") == true)
+      return (200, Data(#"{"success":true,"result":{"domain":"img.example.com"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.deleteR2CustomDomain(
+      accountID: "account", bucket: "assets", domain: "img.example.com")
   }
 
   @Test func decodesRulesetListAndDetail() async throws {
@@ -820,6 +1315,381 @@ struct NetworkTests {
     #expect(deployments[0].authorEmail == "dev@example.com")
   }
 
+  @Test func listSkipsMalformedElementsInsteadOfFailingThePage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/zones/zone-1/healthchecks")
+      let body = #"""
+        {"success":true,"result":[
+          {"id":"hc-1","name":"Primary","status":"healthy"},
+          {"name":"missing id"},
+          {"id":"hc-2","status":"unhealthy"}
+        ]}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let checks = try await client.listHealthchecks(zoneID: "zone-1")
+
+    #expect(checks.map(\.id) == ["hc-1", "hc-2"])
+  }
+
+  @Test func listWorkerDeploymentsSkipsMalformedEntries() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(
+        request.url?.path == "/accounts/account/workers/scripts/api/deployments")
+      let body = #"""
+        {"success":true,"result":{"deployments":[
+          {"created_on":"2026-07-16T03:04:05.678Z","source":"api"},
+          {"id":"dep-2","created_on":"2026-07-16T04:00:00.000Z","source":"api"}
+        ]}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let deployments = try await client.listWorkerDeployments(
+      accountID: "account", scriptName: "api")
+
+    #expect(deployments.count == 1)
+    #expect(deployments[0].id == "dep-2")
+    #expect(deployments[0].versions.isEmpty)
+  }
+
+  @Test func createWorkerDeploymentPostsWholeTrafficSwitch() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "POST")
+      #expect(
+        request.url?.path == "/accounts/account/workers/scripts/api/deployments")
+      if let body = requestBodyData(request),
+        let payload = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+      {
+        #expect(payload["strategy"] as? String == "percentage")
+        let versions = payload["versions"] as? [[String: Any]]
+        #expect(versions?.count == 1)
+        #expect(versions?.first?["version_id"] as? String == "version-old")
+        #expect((versions?.first?["percentage"] as? NSNumber)?.doubleValue == 100)
+        let annotations = payload["annotations"] as? [String: Any]
+        #expect(annotations?["workers/message"] as? String == "Rollback")
+      }
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{
+            "id":"dep-new",
+            "created_on":"2026-07-17T00:00:00Z",
+            "source":"api",
+            "strategy":"percentage",
+            "versions":[{"version_id":"version-old","percentage":100}],
+            "annotations":{"workers/message":"Rollback"}
+          }}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let deployment = try await client.createWorkerDeployment(
+      accountID: "account", scriptName: "api", versionID: "version-old", message: "Rollback")
+    #expect(deployment.id == "dep-new")
+    #expect(deployment.versions.first?.versionID == "version-old")
+  }
+
+  @Test func listDNSRecordsForwardsSearchAndType() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems!
+      let values = Dictionary(uniqueKeysWithValues: items.map { ($0.name, $0.value ?? "") })
+      #expect(values["search"] == "mail")
+      #expect(values["type"] == "MX")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[{
+            "id":"rec-1","type":"MX","name":"example.com","content":"mail.example.com",
+            "ttl":1,"priority":10
+          }],"result_info":{"page":1,"per_page":100,"count":1,"total_count":1}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let page = try await client.listDNSRecords(
+      zoneID: "zone", search: "mail", type: "MX")
+    #expect(page.items.count == 1)
+    #expect(page.items[0].priority == 10)
+  }
+
+  @Test func dnsRecordInputEncodesSRVDataWithoutContent() throws {
+    let input = DNSRecordInput(
+      type: "SRV", name: "_xmpp._tcp.example.com",
+      data: DNSRecordData(priority: 10, weight: 5, port: 5223, target: "server.example.com"))
+    let data = try JSONEncoder().encode(input)
+    let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    #expect(object["content"] == nil)
+    let payload = object["data"] as! [String: Any]
+    #expect(payload["priority"] as? Int == 10)
+    #expect(payload["weight"] as? Int == 5)
+    #expect(payload["port"] as? Int == 5223)
+    #expect(payload["target"] as? String == "server.example.com")
+  }
+
+  @Test func dnsRecordInputEncodesCAADataWithoutContent() throws {
+    let input = DNSRecordInput(
+      type: "CAA", name: "example.com",
+      data: DNSRecordData(flags: 0, tag: "issue", value: "letsencrypt.org"))
+    let data = try JSONEncoder().encode(input)
+    let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    #expect(object["content"] == nil)
+    #expect(object["priority"] == nil)
+    let payload = object["data"] as! [String: Any]
+    #expect(payload["flags"] as? Int == 0)
+    #expect(payload["tag"] as? String == "issue")
+    #expect(payload["value"] as? String == "letsencrypt.org")
+    #expect(payload["priority"] == nil)
+    #expect(payload["target"] == nil)
+  }
+
+  @Test func getWorkersAccountSubdomainComposesScriptHostname() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/workers/subdomain") == true)
+      #expect(request.url?.path.contains("/scripts/") != true)
+      return (
+        200,
+        Data(#"{"success":true,"result":{"subdomain":"my-team"},"errors":[],"messages":[]}"#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let account = try await client.getWorkersAccountSubdomain(accountID: "account")
+
+    #expect(account.subdomain == "my-team")
+    #expect(account.hostname(forScript: "api-worker") == "api-worker.my-team.workers.dev")
+  }
+
+  @Test func listPagesDeploymentsDecodesOperationalFields() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/pages/projects/docs/deployments") == true)
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[{
+            "id":"dep-1","short_id":"dep1abcd","url":"https://dep1.docs.pages.dev",
+            "environment":"production","created_on":"2026-07-17T00:00:00Z",
+            "is_skipped":false,
+            "latest_stage":{"name":"deploy","status":"success"},
+            "stages":[{"name":"build","status":"success"}],
+            "deployment_trigger":{"type":"github:push",
+              "metadata":{"branch":"main","commit_message":"Ship it"}}
+          }],"result_info":{"page":1,"per_page":25,"count":1,"total_count":1}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let page = try await client.listPagesDeployments(accountID: "account", projectName: "docs")
+    #expect(page.items.count == 1)
+    #expect(page.items[0].branch == "main")
+    #expect(page.items[0].commitMessage == "Ship it")
+    #expect(page.items[0].latestStage?.status == "success")
+  }
+
+  @Test func pagesDeploymentLogsDecodeLines() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { _ in
+      (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{"total":2,"includes_container_logs":false,
+            "data":[{"line":"Cloning…","ts":"2026-07-17T00:00:00Z"},{"line":"Done","ts":"2026-07-17T00:00:01Z"}]}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let logs = try await client.getPagesDeploymentLogs(
+      accountID: "account", projectName: "docs", deploymentID: "dep-1")
+    #expect(logs.total == 2)
+    #expect(logs.data.map(\.line) == ["Cloning…", "Done"])
+  }
+
+  @Test func rdapParsesRegistrarAndExpiry() throws {
+    let body = #"""
+      {
+        "ldhName": "example.com",
+        "status": ["client transfer prohibited"],
+        "events": [
+          {"eventAction": "registration", "eventDate": "1995-08-14T04:00:00Z"},
+          {"eventAction": "expiration", "eventDate": "2027-08-13T04:00:00Z"}
+        ],
+        "nameservers": [{"ldhName": "a.iana-servers.net"}],
+        "entities": [{
+          "roles": ["registrar"],
+          "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "RESERVED"]]]
+        }]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "example.com"))
+    #expect(registration.registrar == "RESERVED")
+    #expect(registration.expiresOn == "2027-08-13T04:00:00Z")
+    #expect(registration.nameservers == ["a.iana-servers.net"])
+  }
+
+  @Test func rdapLookupDecodesRelaySnapshot() async throws {
+    let session = mockSession { request in
+      #expect(request.url?.path == "/api/registration/xat.sh")
+      return (
+        200,
+        Data(
+          #"""
+          {"domain":"xat.sh","status":["clientTransferProhibited"],
+           "registrar":"Cloudflare, Inc",
+           "registeredOn":"2024-10-23T06:49:51Z",
+           "expiresOn":"2027-10-23T06:49:51Z",
+           "updatedOn":"2026-05-05T02:33:29Z",
+           "nameservers":["jason.ns.cloudflare.com","nola.ns.cloudflare.com"]}
+          """#.utf8)
+      )
+    }
+    let registration = try #require(
+      try await RdapClient.lookup(
+        domain: "xat.sh",
+        relayBaseURL: URL(string: "https://dash.example.test")!,
+        session: session))
+    #expect(registration.registrar == "Cloudflare, Inc")
+    #expect(registration.expiresOn == "2027-10-23T06:49:51Z")
+    #expect(registration.nameservers.count == 2)
+  }
+
+  @Test func firewallEventsSummaryDecodesAliasedGroups() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/graphql") == true)
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"zones":[{
+            "blocked":[{"count":42}],
+            "byCountry":[{"count":30,"dimensions":{"clientCountryName":"US"}},
+                         {"count":12,"dimensions":{"clientCountryName":"CN"}}],
+            "byRule":[{"count":40,"dimensions":{"ruleId":"rule-1"}}]
+          }]}}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let summary = try await client.firewallEventsSummary(zoneID: "zone", hours: 24)
+    #expect(summary.blocked == 42)
+    #expect(summary.countries.map(\.label) == ["US", "CN"])
+    #expect(summary.rules.first?.label == "rule-1")
+  }
+
+  @Test func listAndAttachWorkerDomains() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record("\(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+      if request.httpMethod == "GET" {
+        let service = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+          .queryItems?.first { $0.name == "service" }?.value
+        #expect(service == "api")
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[{
+              "id":"dom-1","hostname":"api.example.com","service":"api",
+              "zone_id":"zone-1","zone_name":"example.com","cert_id":"cert-1",
+              "environment":"production"
+            }]}
+            """#.utf8)
+        )
+      }
+      if let body = requestBodyData(request),
+        let payload = try? JSONSerialization.jsonObject(with: body) as? [String: Any]
+      {
+        #expect(payload["hostname"] as? String == "app.example.com")
+        #expect(payload["service"] as? String == "api")
+        #expect(payload["zone_id"] as? String == "zone-1")
+      }
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{
+            "id":"dom-2","hostname":"app.example.com","service":"api",
+            "zone_id":"zone-1","zone_name":"example.com"
+          }}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let listed = try await client.listWorkerDomains(accountID: "account", service: "api")
+    #expect(listed.map(\.hostname) == ["api.example.com"])
+    let attached = try await client.attachWorkerDomain(
+      accountID: "account", hostname: "app.example.com", service: "api",
+      zoneID: "zone-1", zoneName: "example.com")
+    #expect(attached.id == "dom-2")
+    #expect(
+      recorder.paths == [
+        "GET /accounts/account/workers/domains",
+        "PUT /accounts/account/workers/domains",
+      ])
+  }
+
+  @Test func workerRoutesListDecodesDisabledRoutes() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      recorder.record("\(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[
+            {"id":"route-1","pattern":"example.com/*","script":"api"},
+            {"id":"route-2","pattern":"disabled.example.com/*"}
+          ]}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let routes = try await client.listWorkerRoutes(zoneID: "zone-1")
+    #expect(routes.map(\.pattern) == ["example.com/*", "disabled.example.com/*"])
+    #expect(routes.map(\.script) == ["api", nil])
+    #expect(recorder.paths == ["GET /zones/zone-1/workers/routes"])
+  }
+
   @Test func concurrent401ResponsesShareOneRefresh() async throws {
     let recorder = RequestRecorder()
     let store = MemoryTokenStore(access: "old", refresh: "refresh")
@@ -845,50 +1715,29 @@ struct NetworkTests {
     #expect(recorder.refreshCount == 1)
   }
 
-  @Test func workerTailLifecycleTargetsDocumentedPaths() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let recorder = RequestRecorder()
+  @Test func revokedRefreshTokenSurfacesUnauthorizedAndClearsCredentials() async throws {
+    let store = MemoryTokenStore(access: "old", refresh: "revoked")
     let session = mockSession { request in
-      recorder.record("\(request.httpMethod ?? "?") \(request.url?.path ?? "")")
-      switch request.httpMethod {
-      case "POST":
-        return (
-          200,
-          Data(
-            #"{"success":true,"result":{"id":"tail-1","url":"wss://tail.developers.workers.dev/tail-1","expires_at":"2026-07-14T13:00:00Z"}}"#
-              .utf8)
-        )
-      case "GET":
-        return (
-          200,
-          Data(
-            #"{"success":true,"result":[{"id":"tail-1","url":"wss://tail.developers.workers.dev/tail-1"}]}"#
-              .utf8)
-        )
-      default:
-        return (200, Data(#"{"success":true,"result":{"id":"tail-1"}}"#.utf8))
+      if request.url?.path == "/token" {
+        return (400, Data(#"{"error":"invalid_grant"}"#.utf8))
       }
+      return (401, Data(#"{"success":false,"errors":[{"code":1000,"message":"expired"}]}"#.utf8))
     }
     let client = CloudflareClient(
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
 
-    let tail = try await client.startWorkerTail(accountID: "acc", scriptName: "api")
-    #expect(tail.id == "tail-1")
-    #expect(tail.url.hasPrefix("wss://"))
-    #expect(tail.expiresAt == "2026-07-14T13:00:00Z")
+    do {
+      _ = try await client.listAccounts()
+      Issue.record("a revoked refresh token should surface as unauthorized")
+    } catch let error as CloudflareAPIError {
+      // invalid_grant must convert into a real 401 so AppModel's isUnauthorized
+      // sign-out path fires — not an opaque .oauth error that strands the app.
+      #expect(error.isUnauthorized)
+    }
 
-    let tails = try await client.listWorkerTails(accountID: "acc", scriptName: "api")
-    #expect(tails.map(\.id) == ["tail-1"])
-    #expect(tails.first?.expiresAt == nil)
-
-    try await client.deleteWorkerTail(accountID: "acc", scriptName: "api", tailID: "tail-1")
-    #expect(
-      recorder.paths == [
-        "POST /accounts/acc/workers/scripts/api/tails",
-        "GET /accounts/acc/workers/scripts/api/tails",
-        "DELETE /accounts/acc/workers/scripts/api/tails/tail-1",
-      ])
+    let remainingRefresh = await store.getRefreshToken()
+    #expect(remainingRefresh == nil)
   }
 
   @Test func rateLimitedRequestRetriesAfterShortWait() async throws {
@@ -972,6 +1821,23 @@ private actor MemoryTokenStore: TokenStore {
     access = tokens.accessToken
     refresh = tokens.refreshToken
   }
+}
+
+private func requestBodyData(_ request: URLRequest) -> Data? {
+  if let body = request.httpBody { return body }
+  guard let stream = request.httpBodyStream else { return nil }
+  stream.open()
+  defer { stream.close() }
+  var data = Data()
+  let size = 1024
+  let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
+  defer { buffer.deallocate() }
+  while stream.hasBytesAvailable {
+    let read = stream.read(buffer, maxLength: size)
+    if read <= 0 { break }
+    data.append(buffer, count: read)
+  }
+  return data
 }
 
 private final class RequestRecorder: @unchecked Sendable {

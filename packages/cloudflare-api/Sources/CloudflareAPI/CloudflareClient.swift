@@ -35,11 +35,33 @@ public actor CloudflareClient {
   public func getZone(_ id: String) async throws -> CloudflareZone {
     try await request("/zones/\(id)")
   }
-  public func listDNSRecords(zoneID: String, page: Int = 1, perPage: Int = 100) async throws
-    -> Page<DNSRecord>
-  {
+  /// Adds a domain to the account. The created zone carries the assigned
+  /// `nameServers`, which the caller must surface — the domain stays pending
+  /// until the registrar points at them.
+  public func createZone(name: String, accountID: String) async throws -> CloudflareZone {
+    let body: [String: JSONValue] = [
+      "name": .string(name),
+      "account": .object(["id": .string(accountID)]),
+    ]
+    return try await request("/zones", method: "POST", body: body)
+  }
+  /// Asks Cloudflare to re-check the zone's name servers now instead of on the
+  /// hourly sweep. Cloudflare rate-limits the trigger per zone; the 400 carries
+  /// the wait message, so it surfaces unchanged.
+  public func triggerZoneActivationCheck(zoneID: String) async throws {
+    let _: JSONValue = try await request("/zones/\(zoneID)/activation_check", method: "PUT")
+  }
+  public func listDNSRecords(
+    zoneID: String, page: Int = 1, perPage: Int = 100, search: String? = nil, type: String? = nil
+  ) async throws -> Page<DNSRecord> {
     try await list(
-      "/zones/\(zoneID)/dns_records", query: ["page": String(page), "per_page": String(perPage)])
+      "/zones/\(zoneID)/dns_records",
+      query: [
+        "page": String(page),
+        "per_page": String(perPage),
+        "search": search.flatMap { $0.isEmpty ? nil : $0 },
+        "type": type.flatMap { $0.isEmpty ? nil : $0 },
+      ])
   }
   public func createDNSRecord(zoneID: String, input: DNSRecordInput) async throws -> DNSRecord {
     try await request("/zones/\(zoneID)/dns_records", method: "POST", body: input)
@@ -76,6 +98,70 @@ public actor CloudflareClient {
     let result: WorkerDeploymentListResult = try await request(
       "/accounts/\(accountID)/workers/scripts/\(scriptName)/deployments")
     return result.deployments
+  }
+
+  /// Creates a whole-traffic deployment for one version (100%). Use this to
+  /// roll back or promote — Dash does not expose gradual/canary splits.
+  @discardableResult
+  public func createWorkerDeployment(
+    accountID: String, scriptName: String, versionID: String, message: String? = nil
+  ) async throws -> WorkerDeploymentSummary {
+    var body: [String: JSONValue] = [
+      "strategy": .string("percentage"),
+      "versions": .array([
+        .object([
+          "percentage": .number(100),
+          "version_id": .string(versionID),
+        ])
+      ]),
+    ]
+    if let message {
+      let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !trimmed.isEmpty {
+        body["annotations"] = .object(["workers/message": .string(trimmed)])
+      }
+    }
+    return try await request(
+      "/accounts/\(accountID)/workers/scripts/\(scriptName)/deployments",
+      method: "POST",
+      body: body)
+  }
+
+  public func listWorkerDomains(accountID: String, service: String? = nil) async throws
+    -> [WorkerDomain]
+  {
+    try await list(
+      "/accounts/\(accountID)/workers/domains",
+      query: ["service": service.flatMap { $0.isEmpty ? nil : $0 }]
+    ).items
+  }
+
+  /// Attaches a hostname from an existing zone so requests route to `service`.
+  @discardableResult
+  public func attachWorkerDomain(
+    accountID: String, hostname: String, service: String, zoneID: String, zoneName: String
+  ) async throws -> WorkerDomain {
+    try await request(
+      "/accounts/\(accountID)/workers/domains",
+      method: "PUT",
+      body: [
+        "hostname": JSONValue.string(hostname),
+        "service": .string(service),
+        "zone_id": .string(zoneID),
+        "zone_name": .string(zoneName),
+      ])
+  }
+
+  public func detachWorkerDomain(accountID: String, domainID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/workers/domains/\(domainID)", method: "DELETE")
+  }
+
+  /// Zone-scoped route patterns. Routes are the dashboard's other half of
+  /// "Domains & Routes" — a worker bound only through routes has no
+  /// `WorkerDomain` records at all.
+  public func listWorkerRoutes(zoneID: String) async throws -> [WorkerRoute] {
+    try await list("/zones/\(zoneID)/workers/routes").items
   }
   /// Downloads script content. Classic scripts come back as raw JS; module
   /// workers come back as multipart/form-data with one part per module, the
@@ -134,6 +220,12 @@ public actor CloudflareClient {
     }
     return envelope.result
   }
+  public func getWorkersAccountSubdomain(accountID: String) async throws
+    -> WorkersAccountSubdomain
+  {
+    try await request("/accounts/\(accountID)/workers/subdomain")
+  }
+
   public func getWorkerSubdomain(accountID: String, name: String) async throws
     -> WorkerSubdomainStatus
   {
@@ -151,20 +243,76 @@ public actor CloudflareClient {
   public func workerTag(accountID: String, name: String) async throws -> String? {
     try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
   }
-  public func startWorkerTail(accountID: String, scriptName: String) async throws -> WorkerTail {
-    try await request(
-      "/accounts/\(accountID)/workers/scripts/\(scriptName)/tails",
-      method: "POST", body: [String: JSONValue]())
-  }
-  public func listWorkerTails(accountID: String, scriptName: String) async throws -> [WorkerTail] {
-    try await list("/accounts/\(accountID)/workers/scripts/\(scriptName)/tails").items
-  }
-  public func deleteWorkerTail(accountID: String, scriptName: String, tailID: String) async throws {
-    let _: JSONValue = try await request(
-      "/accounts/\(accountID)/workers/scripts/\(scriptName)/tails/\(tailID)", method: "DELETE")
-  }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
     try await list("/accounts/\(accountID)/pages/projects").items
+  }
+
+  public func getPagesProject(accountID: String, projectName: String) async throws -> PagesProject {
+    try await request("/accounts/\(accountID)/pages/projects/\(projectName)")
+  }
+
+  public func listPagesDeployments(
+    accountID: String, projectName: String, page: Int = 1, perPage: Int = 25
+  ) async throws -> Page<PagesDeployment> {
+    try await list(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/deployments",
+      query: ["page": String(page), "per_page": String(perPage)])
+  }
+
+  public func getPagesDeployment(
+    accountID: String, projectName: String, deploymentID: String
+  ) async throws -> PagesDeployment {
+    try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/deployments/\(deploymentID)")
+  }
+
+  public func getPagesDeploymentLogs(
+    accountID: String, projectName: String, deploymentID: String
+  ) async throws -> PagesDeploymentLogs {
+    try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/deployments/\(deploymentID)/history/logs"
+    )
+  }
+
+  @discardableResult
+  public func retryPagesDeployment(
+    accountID: String, projectName: String, deploymentID: String
+  ) async throws -> PagesDeployment {
+    try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/deployments/\(deploymentID)/retry",
+      method: "POST")
+  }
+
+  @discardableResult
+  public func rollbackPagesDeployment(
+    accountID: String, projectName: String, deploymentID: String
+  ) async throws -> PagesDeployment {
+    try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/deployments/\(deploymentID)/rollback",
+      method: "POST")
+  }
+
+  public func listPagesDomains(accountID: String, projectName: String) async throws -> [PagesDomain]
+  {
+    try await list("/accounts/\(accountID)/pages/projects/\(projectName)/domains").items
+  }
+
+  @discardableResult
+  public func addPagesDomain(accountID: String, projectName: String, name: String) async throws
+    -> PagesDomain
+  {
+    try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/domains",
+      method: "POST",
+      body: ["name": name])
+  }
+
+  public func deletePagesDomain(accountID: String, projectName: String, domainName: String)
+    async throws
+  {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/pages/projects/\(projectName)/domains/\(domainName)",
+      method: "DELETE")
   }
   public func listR2Buckets(accountID: String) async throws -> [R2Bucket] {
     let result: R2BucketResult = try await request("/accounts/\(accountID)/r2/buckets")
@@ -186,14 +334,14 @@ public actor CloudflareClient {
       query: [
         "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "per_page": "100",
       ])
-    let envelope = try JSONDecoder().decode(APIEnvelope<[R2Object]>.self, from: data)
+    let envelope = try JSONDecoder().decode(APIEnvelope<[LossyElement<R2Object>]>.self, from: data)
     guard envelope.success else {
       throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
     }
     let isTruncated =
       envelope.resultInfo?.isTruncated ?? (envelope.resultInfo?.cursor?.isEmpty == false)
     return R2ObjectPage(
-      objects: envelope.result,
+      objects: envelope.result.compactMap(\.value),
       commonPrefixes: envelope.resultInfo?.delimited ?? [],
       cursor: isTruncated ? envelope.resultInfo?.cursor : nil,
       isTruncated: isTruncated)
@@ -213,6 +361,43 @@ public actor CloudflareClient {
   /// Raw object body — binary endpoint, no JSON envelope.
   public func getR2Object(accountID: String, bucket: String, key: String) async throws -> Data {
     try await raw("/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
+  }
+  public func getR2ManagedDomain(accountID: String, bucket: String) async throws -> R2ManagedDomain
+  {
+    try await request("/accounts/\(accountID)/r2/buckets/\(bucket)/domains/managed")
+  }
+  public func setR2ManagedDomain(accountID: String, bucket: String, enabled: Bool) async throws
+    -> R2ManagedDomain
+  {
+    try await request(
+      "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/managed",
+      method: "PUT", body: ["enabled": enabled])
+  }
+  public func listR2CustomDomains(accountID: String, bucket: String) async throws
+    -> [R2CustomDomain]
+  {
+    let result: R2CustomDomainList = try await request(
+      "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/custom")
+    return result.domains
+  }
+  /// Attaches a hostname from an existing zone in the same account. Cloudflare
+  /// provisions DNS and the edge certificate; poll the list for `status`.
+  @discardableResult
+  public func addR2CustomDomain(accountID: String, bucket: String, domain: String, zoneID: String)
+    async throws -> R2CustomDomain
+  {
+    try await request(
+      "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/custom",
+      method: "POST",
+      body: [
+        "domain": JSONValue.string(domain),
+        "zoneId": .string(zoneID),
+        "enabled": .bool(true),
+      ])
+  }
+  public func deleteR2CustomDomain(accountID: String, bucket: String, domain: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/custom/\(domain)", method: "DELETE")
   }
   public func listKVNamespaces(accountID: String, page: Int = 1) async throws -> Page<KVNamespace> {
     try await list(
@@ -421,7 +606,7 @@ public actor CloudflareClient {
     let escaped = scriptName.replacingOccurrences(of: "\"", with: "\\\"")
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
-      workersInvocationsAdaptive(limit: 100, filter: { \
+      workersInvocationsAdaptive(limit: 2500, orderBy: [datetimeFiveMinutes_ASC], filter: { \
       scriptName: "\(escaped)", \
       datetime_geq: "\(formatter.string(from: since))", \
       datetime_leq: "\(formatter.string(from: until))" \
@@ -429,20 +614,23 @@ public actor CloudflareClient {
       dimensions { datetimeFiveMinutes status } } } } }
       """
     let payload = try JSONEncoder().encode(["query": query])
-    let response = try await raw(
-      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
-      contentType: "application/json")
+    let response = try await graphQLRaw(payload)
     let envelope = try JSONDecoder().decode(
       GraphQLEnvelope<WorkerAnalyticsData>.self, from: response)
-    if let message = envelope.errors?.first?.message {
+    if let error = envelope.errors?.first {
       throw CloudflareAPIError.request(
-        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
     }
     let rows = envelope.data?.viewer.accounts.first?.workersInvocationsAdaptive ?? []
     var requests = 0
     var errors = 0
     var cpuSamples: [Double] = []
-    var byBucket: [String: (requests: Int, errors: Int)] = [:]
+    var byBucket:
+      [String: (
+        requests: Int, errors: Int, cpuWeighted: Double, cpuWeight: Double, cpuSum: Double,
+        cpuCount: Int
+      )] = [:]
     for row in rows {
       let req = row.sum.requests
       let err = row.sum.errors
@@ -450,15 +638,29 @@ public actor CloudflareClient {
       errors += err
       if let cpu = row.quantiles?.cpuTimeP50 { cpuSamples.append(cpu) }
       let key = row.dimensions.datetimeFiveMinutes ?? row.dimensions.datetime ?? "unknown"
-      var bucket = byBucket[key] ?? (0, 0)
+      var bucket = byBucket[key] ?? (0, 0, 0, 0, 0, 0)
       bucket.requests += req
       bucket.errors += err
+      if let cpu = row.quantiles?.cpuTimeP50 {
+        bucket.cpuWeighted += cpu * Double(req)
+        bucket.cpuWeight += Double(req)
+        bucket.cpuSum += cpu
+        bucket.cpuCount += 1
+      }
       byBucket[key] = bucket
     }
     let points = byBucket.keys.sorted().map { key in
       let bucket = byBucket[key]!
+      let cpu: Double
+      if bucket.cpuWeight > 0 {
+        cpu = bucket.cpuWeighted / bucket.cpuWeight
+      } else if bucket.cpuCount > 0 {
+        cpu = bucket.cpuSum / Double(bucket.cpuCount)
+      } else {
+        cpu = 0
+      }
       return WorkerAnalyticsBucket(
-        datetime: key, requests: bucket.requests, errors: bucket.errors)
+        datetime: key, requests: bucket.requests, errors: bucket.errors, cpuTimeP50Us: cpu)
     }
     return WorkerAnalyticsPayload(
       requests: requests,
@@ -481,7 +683,7 @@ public actor CloudflareClient {
     try await list("/accounts/\(accountID)/load_balancers/pools").items
   }
   public func listRegistrarDomains(accountID: String) async throws -> [RegistrarDomain] {
-    try await list("/accounts/\(accountID)/registrar/domains").items
+    try await list("/accounts/\(accountID)/registrar/domains").items.filter(\.hasIdentity)
   }
   public func getRegistrarRegistration(accountID: String, domainName: String) async throws
     -> RegistrarRegistration
@@ -590,22 +792,60 @@ public actor CloudflareClient {
       httpRequests1dGroups(limit: \(days), \
       filter: {date_geq: "\(formatter.string(from: since))", \
       date_leq: "\(formatter.string(from: until))"}, orderBy: [date_DESC]) { \
-      dimensions { date } sum { requests pageViews threats bytes } } } } }
+      dimensions { date } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
+      uniq { uniques } } } } }
       """
     let payload = try JSONEncoder().encode(["query": query])
-    let response = try await raw(
-      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
-      contentType: "application/json")
+    let response = try await graphQLRaw(payload)
     let envelope = try JSONDecoder().decode(
       GraphQLEnvelope<ZoneAnalyticsData>.self, from: response)
-    if let message = envelope.errors?.first?.message {
+    if let error = envelope.errors?.first {
       throw CloudflareAPIError.request(
-        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
     }
     return (envelope.data?.viewer.zones.first?.httpRequests1dGroups ?? []).map {
       ZoneAnalyticsDay(
         date: $0.dimensions.date, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
-        threats: $0.sum.threats, bytes: $0.sum.bytes)
+        threats: $0.sum.threats, bytes: $0.sum.bytes, uniques: $0.uniq?.uniques ?? 0,
+        cachedRequests: $0.sum.cachedRequests ?? 0, cachedBytes: $0.sum.cachedBytes ?? 0)
+    }
+  }
+
+  /// Every Web Analytics site on the account. The list is the only way to map
+  /// a zone to its `siteTag`, so callers cache it per account.
+  public func webAnalyticsSites(accountID: String) async throws -> [RUMSite] {
+    try await request("/accounts/\(accountID)/rum/site_info/list")
+  }
+
+  /// Daily beacon-reported page loads for one RUM site, ascending. This is the
+  /// Web Analytics number, not the edge's HTML-response count.
+  public func webAnalyticsPageviews(siteTag: String, days: Int = 7) async throws
+    -> [RUMPageviewsDay]
+  {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(days - 1, 0)) * 86400)
+    let query = """
+      { viewer { accounts { \
+      rumPageloadEventsAdaptiveGroups(limit: \(max(days, 1)), \
+      filter: {siteTag: "\(siteTag)", \
+      datetime_geq: "\(formatter.string(from: since))", \
+      datetime_leq: "\(formatter.string(from: until))"}, orderBy: [date_ASC]) { \
+      count dimensions { date } } } } }
+      """
+    let response = try await graphQL(query: query)
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<RUMPageviewsData>.self, from: response)
+    if let error = envelope.errors?.first {
+      throw CloudflareAPIError.request(
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
+    }
+    return (envelope.data?.viewer.accounts.first?.rumPageloadEventsAdaptiveGroups ?? []).map {
+      RUMPageviewsDay(date: $0.dimensions.date, pageviews: $0.count)
     }
   }
 
@@ -624,22 +864,107 @@ public actor CloudflareClient {
       httpRequests1hGroups(limit: \(hours + 1), \
       filter: {datetime_geq: "\(formatter.string(from: since))", \
       datetime_leq: "\(formatter.string(from: until))"}, orderBy: [datetime_ASC]) { \
-      dimensions { datetime } sum { requests pageViews threats bytes } } } } }
+      dimensions { datetime } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
+      uniq { uniques } } } } }
       """
     let payload = try JSONEncoder().encode(["query": query])
-    let response = try await raw(
-      url: CloudflareEndpoints.graphql, method: "POST", data: payload,
-      contentType: "application/json")
+    let response = try await graphQLRaw(payload)
     let envelope = try JSONDecoder().decode(
       GraphQLEnvelope<ZoneAnalyticsHourlyData>.self, from: response)
-    if let message = envelope.errors?.first?.message {
+    if let error = envelope.errors?.first {
       throw CloudflareAPIError.request(
-        status: 200, errors: [APIErrorItem(code: 0, message: message)])
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
     }
     return (envelope.data?.viewer.zones.first?.httpRequests1hGroups ?? []).map {
       ZoneAnalyticsPoint(
         datetime: $0.dimensions.datetime, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
-        threats: $0.sum.threats, bytes: $0.sum.bytes)
+        threats: $0.sum.threats, bytes: $0.sum.bytes, uniques: $0.uniq?.uniques ?? 0,
+        cachedRequests: $0.sum.cachedRequests ?? 0, cachedBytes: $0.sum.cachedBytes ?? 0)
+    }
+  }
+
+  /// Blocked firewall events for the last `hours`, grouped by country and rule.
+  /// Uses `firewallEventsAdaptiveGroups` — requires `analytics.read`.
+  public func firewallEventsSummary(zoneID: String, hours: Int = 24) async throws
+    -> FirewallEventsSummary
+  {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let sinceText = formatter.string(from: since)
+    let untilText = formatter.string(from: until)
+    let query = """
+      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
+      blocked: firewallEventsAdaptiveGroups(limit: 1, \
+      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}) { count } \
+      byCountry: firewallEventsAdaptiveGroups(limit: 8, \
+      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}, \
+      orderBy: [count_DESC]) { count dimensions { clientCountryName } } \
+      byRule: firewallEventsAdaptiveGroups(limit: 8, \
+      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}, \
+      orderBy: [count_DESC]) { count dimensions { ruleId } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response = try await graphQLRaw(payload)
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<FirewallEventsData>.self, from: response)
+    if let error = envelope.errors?.first {
+      throw CloudflareAPIError.request(
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
+    }
+    let zone = envelope.data?.viewer.zones.first
+    let blocked = zone?.blocked.first?.count ?? 0
+    let countries =
+      (zone?.byCountry ?? []).compactMap { row -> FirewallEventsBucket? in
+        guard let label = row.dimensions.clientCountryName, !label.isEmpty else { return nil }
+        return FirewallEventsBucket(label: label, count: row.count)
+      }
+    let rules =
+      (zone?.byRule ?? []).compactMap { row -> FirewallEventsBucket? in
+        guard let label = row.dimensions.ruleId, !label.isEmpty else { return nil }
+        return FirewallEventsBucket(label: label, count: row.count)
+      }
+    return FirewallEventsSummary(
+      hours: hours, blocked: blocked, countries: countries, rules: rules)
+  }
+
+  /// Hourly request counts from the adaptive HTTP Traffic dataset available to
+  /// every plan. Paid-only metrics such as page views are intentionally omitted.
+  public func zoneRequestsHourly(zoneID: String, hours: Int = 24) async throws
+    -> [ZoneAnalyticsPoint]
+  {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = Date()
+    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let query = """
+      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
+      httpRequestsAdaptiveGroups(limit: \(hours + 1), \
+      filter: {datetime_geq: "\(formatter.string(from: since))", \
+      datetime_leq: "\(formatter.string(from: until))", requestSource: "eyeball"}, \
+      orderBy: [datetimeHour_ASC]) { count dimensions { datetimeHour } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response = try await graphQLRaw(payload)
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<ZoneRequestsHourlyData>.self, from: response)
+    if let error = envelope.errors?.first {
+      throw CloudflareAPIError.request(
+        status: error.semanticStatusCode,
+        errors: [APIErrorItem(code: 0, message: error.message)])
+    }
+    return (envelope.data?.viewer.zones.first?.httpRequestsAdaptiveGroups ?? []).map {
+      ZoneAnalyticsPoint(
+        datetime: $0.dimensions.datetimeHour,
+        requests: $0.count,
+        pageViews: 0,
+        threats: 0,
+        bytes: 0)
     }
   }
 
@@ -647,9 +972,44 @@ public actor CloudflareClient {
     let data = try JSONEncoder().encode([
       "query": JSONValue.string(query), "variables": .object(variables),
     ])
-    let response = try await raw(
-      url: CloudflareEndpoints.graphql, method: "POST", data: data, contentType: "application/json")
+    let response = try await graphQLRaw(data)
     return try JSONDecoder().decode(JSONValue.self, from: response)
+  }
+
+  /// GraphQL authentication failures can arrive inside a successful HTTP 200
+  /// response. Refresh and replay that case once, matching REST request behavior.
+  func graphQLRaw(_ data: Data, attempt: Int = 0) async throws -> Data {
+    let requestToken = try await tokenStore.getAccessToken()
+    let response = try await raw(
+      url: CloudflareEndpoints.graphql,
+      method: "POST",
+      data: data,
+      contentType: "application/json")
+
+    guard
+      attempt == 0,
+      let error = try? JSONDecoder().decode(GraphQLErrorEnvelope.self, from: response).errors.first,
+      error.semanticStatusCode == 401
+    else {
+      return response
+    }
+
+    let currentToken = try await tokenStore.getAccessToken()
+    let canRetry: Bool
+    if currentToken != nil, currentToken != requestToken {
+      canRetry = true
+    } else {
+      canRetry = try await refresh() != nil
+    }
+    guard canRetry else { return response }
+    return try await graphQLRaw(data, attempt: 1)
+  }
+
+  /// Runs a raw GraphQL document and returns the undecoded body. Every typed
+  /// analytics call funnels through the same path, so probes and one-off
+  /// queries inherit Bearer auth and the single 401 retry.
+  public func graphQL(query: String) async throws -> Data {
+    try await graphQLRaw(try JSONEncoder().encode(["query": query]))
   }
 
   public func execute(
@@ -709,11 +1069,11 @@ public actor CloudflareClient {
     async throws -> Page<Value>
   {
     let data = try await raw(path, query: query)
-    let envelope = try JSONDecoder().decode(APIEnvelope<[Value]>.self, from: data)
+    let envelope = try JSONDecoder().decode(APIEnvelope<[LossyElement<Value>]>.self, from: data)
     guard envelope.success else {
       throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
     }
-    return Page(items: envelope.result, resultInfo: envelope.resultInfo)
+    return Page(items: envelope.result.compactMap(\.value), resultInfo: envelope.resultInfo)
   }
 
   private func raw(
@@ -725,6 +1085,11 @@ public actor CloudflareClient {
     components.queryItems = query.compactMap { key, value in
       value.map { URLQueryItem(name: key, value: $0) }
     }
+    // URLQueryItem leaves literal '+' unescaped and Cloudflare form-decodes it
+    // to a space — R2 cursors and object prefixes can carry '+'. Keys are
+    // fixed ASCII strings, so a blanket re-escape of the encoded query is safe.
+    components.percentEncodedQuery = components.percentEncodedQuery?
+      .replacingOccurrences(of: "+", with: "%2B")
     return try await raw(
       url: components.url!, method: method, data: data, contentType: contentType, attempt: attempt)
   }
@@ -801,15 +1166,28 @@ public actor CloudflareClient {
 
   private func refresh() async throws -> TokenSet? {
     if let refreshTask { return try await refreshTask.value }
-    guard let refreshToken = try await tokenStore.getRefreshToken() else { return nil }
     let clientID = clientID
     let session = session
     let store = tokenStore
+    let tokenURL = tokenURL
+    // Assign `refreshTask` with no `await` between the nil-check above and the
+    // assignment below, so concurrent 401s (e.g. Watchtower's fan-out) all join
+    // one refresh instead of each POSTing the rotating refresh token in
+    // parallel. The keychain read moves inside the task for the same reason.
     let task = Task<TokenSet?, Error> {
-      let tokens = try await OAuth.refresh(
-        clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
-      try await store.setTokens(tokens)
-      return tokens
+      guard let refreshToken = try await store.getRefreshToken() else { return nil }
+      do {
+        let tokens = try await OAuth.refresh(
+          clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
+        try await store.setTokens(tokens)
+        return tokens
+      } catch let error as CloudflareAPIError where error.isInvalidGrant {
+        // The refresh token is expired or revoked and can never be renewed.
+        // Drop the dead credentials and report failure so the caller's 401
+        // surfaces to the existing sign-out path instead of retrying forever.
+        try? await store.clear()
+        return nil
+      }
     }
     refreshTask = task
     defer { refreshTask = nil }
@@ -818,11 +1196,38 @@ public actor CloudflareClient {
 }
 
 private struct ErrorEnvelope: Decodable { let errors: [APIErrorItem] }
-private struct GraphQLEnvelope<Value: Decodable & Sendable>: Decodable, Sendable {
+struct GraphQLErrorEnvelope: Decodable, Sendable {
+  let errors: [GraphQLErrorItem]
+}
+struct GraphQLEnvelope<Value: Decodable & Sendable>: Decodable, Sendable {
   let data: Value?
   let errors: [GraphQLErrorItem]?
 }
-private struct GraphQLErrorItem: Decodable, Sendable { let message: String }
+struct GraphQLErrorItem: Decodable, Sendable {
+  let message: String
+
+  var semanticStatusCode: Int {
+    let normalized = message.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized == "unauthorized" {
+      return 401
+    }
+    if normalized.contains("not authorized") || normalized.contains("does not have access") {
+      return 403
+    }
+    if normalized.contains("rate limiter") || normalized.contains("too many queries") {
+      return 429
+    }
+    if normalized.contains("unable to execute query") {
+      return 503
+    }
+    if normalized.contains("cannot request data older")
+      || normalized.contains("query time range is too large")
+    {
+      return 400
+    }
+    return 200
+  }
+}
 private struct ZoneAnalyticsData: Decodable, Sendable {
   let viewer: Viewer
 
@@ -831,6 +1236,8 @@ private struct ZoneAnalyticsData: Decodable, Sendable {
   struct Group: Decodable, Sendable {
     let dimensions: Dimensions
     let sum: Sum
+    // Optional so a response without the uniq block still decodes.
+    let uniq: Uniq?
 
     struct Dimensions: Decodable, Sendable { let date: String }
     struct Sum: Decodable, Sendable {
@@ -838,7 +1245,22 @@ private struct ZoneAnalyticsData: Decodable, Sendable {
       let pageViews: Int
       let threats: Int
       let bytes: Int64
+      let cachedRequests: Int?
+      let cachedBytes: Int64?
     }
+    struct Uniq: Decodable, Sendable { let uniques: Int }
+  }
+}
+private struct RUMPageviewsData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let accounts: [Account] }
+  struct Account: Decodable, Sendable { let rumPageloadEventsAdaptiveGroups: [Group] }
+  struct Group: Decodable, Sendable {
+    let count: Int
+    let dimensions: Dimensions
+
+    struct Dimensions: Decodable, Sendable { let date: String }
   }
 }
 private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
@@ -849,6 +1271,7 @@ private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
   struct Group: Decodable, Sendable {
     let dimensions: Dimensions
     let sum: Sum
+    let uniq: Uniq?
 
     struct Dimensions: Decodable, Sendable { let datetime: String }
     struct Sum: Decodable, Sendable {
@@ -856,6 +1279,41 @@ private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
       let pageViews: Int
       let threats: Int
       let bytes: Int64
+      let cachedRequests: Int?
+      let cachedBytes: Int64?
+    }
+    struct Uniq: Decodable, Sendable { let uniques: Int }
+  }
+}
+private struct ZoneRequestsHourlyData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let zones: [Zone] }
+  struct Zone: Decodable, Sendable { let httpRequestsAdaptiveGroups: [Group] }
+  struct Group: Decodable, Sendable {
+    let count: Int
+    let dimensions: Dimensions
+
+    struct Dimensions: Decodable, Sendable { let datetimeHour: String }
+  }
+}
+
+private struct FirewallEventsData: Decodable, Sendable {
+  let viewer: Viewer
+
+  struct Viewer: Decodable, Sendable { let zones: [Zone] }
+  struct Zone: Decodable, Sendable {
+    let blocked: [CountRow]
+    let byCountry: [DimensionRow]
+    let byRule: [DimensionRow]
+  }
+  struct CountRow: Decodable, Sendable { let count: Int }
+  struct DimensionRow: Decodable, Sendable {
+    let count: Int
+    let dimensions: Dimensions
+    struct Dimensions: Decodable, Sendable {
+      let clientCountryName: String?
+      let ruleId: String?
     }
   }
 }
@@ -889,3 +1347,4 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
 
 private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
 private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
+private struct R2CustomDomainList: Decodable, Sendable { let domains: [R2CustomDomain] }

@@ -130,6 +130,12 @@ public enum OAuth {
     }
     guard (200..<300).contains(response.statusCode) else {
       let payload = try? JSONDecoder().decode(OAuthFailure.self, from: data)
+      // Preserve the OAuth error code so callers can distinguish a revoked /
+      // expired refresh token (`invalid_grant`) from a transient token-endpoint
+      // failure. Prefer the code over `error_description` for that case.
+      if payload?.error == "invalid_grant" {
+        throw CloudflareAPIError.oauth("invalid_grant")
+      }
       throw CloudflareAPIError.oauth(
         payload?.errorDescription ?? payload?.error ?? "OAuth HTTP \(response.statusCode)")
     }
