@@ -10,7 +10,7 @@ actor KeychainTokenStore: TokenStore {
     static let scopes = "dash.granted_scopes"
   }
 
-  private let service = "sh.xat.dash"
+  private let service = "sh.xat.dash.app"
 
   private var accessGroup: String? {
     guard
