@@ -13,27 +13,30 @@ enum WatchtowerFreshness: Equatable, Sendable {
   }
 
   static func checkedText(fetchedAt: Date?, now: Date = .now) -> String {
-    guard let fetchedAt else { return "Open Watchtower to check this account" }
+    guard let fetchedAt else {
+      return String(localized: "Open Watchtower to check this account")
+    }
     let age = max(0, now.timeIntervalSince(fetchedAt))
     let relative: String
     if age < 60 {
-      relative = "just now"
+      relative = String(localized: "just now")
     } else if age < 3_600 {
-      relative = "\(Int(age / 60)) min ago"
+      relative = String(localized: "\(Int(age / 60)) min ago")
     } else if age < 86_400 {
-      relative = "\(Int(age / 3_600)) hr ago"
+      relative = String(localized: "\(Int(age / 3_600)) hr ago")
     } else {
       let days = Int(age / 86_400)
-      relative = "\(days) day\(days == 1 ? "" : "s") ago"
+      relative =
+        days == 1 ? String(localized: "1 day ago") : String(localized: "\(days) days ago")
     }
 
     switch classify(fetchedAt: fetchedAt, now: now) {
     case .fresh:
-      return "Checked \(relative)"
+      return String(localized: "Checked \(relative)")
     case .aging:
-      return "Checked \(relative) · Refresh recommended"
+      return String(localized: "Checked \(relative) · Refresh recommended")
     case .stale:
-      return "Checked \(relative) · Refresh now"
+      return String(localized: "Checked \(relative) · Refresh now")
     }
   }
 }
@@ -76,7 +79,7 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
     return parts.joined(separator: ", ")
   }
 
-  static let appGroupID = "group.sh.xat.dash"
+  static let appGroupID = "group.sh.xat.dash.app"
   static let fileName = "watchtower-widget-snapshot.json"
 
   static var containerFileURL: URL? {

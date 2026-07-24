@@ -13,6 +13,8 @@ struct WatchtowerSignal: Identifiable, Hashable, Sendable {
   let detail: String
   let status: WatchtowerStatus
   let destination: Destination?
+  /// Cloudflare dashboard URL when the app has no in-app screen for this check.
+  var externalURL: URL? = nil
   /// When the check last observed this state.
   var observedAt: Date = .now
   /// Short remediation hint for the issues list.
@@ -34,10 +36,32 @@ enum WatchtowerAlertsStatus: Sendable {
   case error
 }
 
+/// Account-scoped Cloudflare dashboard deep links for Watchtower checks with no in-app screen.
+enum WatchtowerDashboardLinks {
+  /// Zero Trust / networks tunnels list in the Cloudflare One dashboard.
+  static func tunnels(accountID: String) -> URL? {
+    guard !accountID.isEmpty else { return nil }
+    return URL(string: "https://one.dash.cloudflare.com/\(accountID)/networks/tunnels")
+  }
+
+  /// Account load-balancing pools in the classic Cloudflare dashboard.
+  static func pools(accountID: String) -> URL? {
+    guard !accountID.isEmpty else { return nil }
+    return URL(
+      string: "https://dash.cloudflare.com/\(accountID)/traffic/load-balancing/pools")
+  }
+
+  /// Account registrar / domains list in the classic Cloudflare dashboard.
+  static func registrar(accountID: String) -> URL? {
+    guard !accountID.isEmpty else { return nil }
+    return URL(string: "https://dash.cloudflare.com/\(accountID)/domains")
+  }
+}
+
 enum WatchtowerEngine {
   static let zoneFanoutLimit = 10
   static let coverageSignalID = "zone-coverage"
-  static let coverageSignalTitle = "Zone coverage"
+  static var coverageSignalTitle: String { DashL10n.string("Domain coverage") }
   private static let expiryWarningDays = 30
   private static let expiryCriticalDays = 7
 
@@ -51,8 +75,8 @@ enum WatchtowerEngine {
     return WatchtowerSignal(
       id: coverageSignalID,
       title: coverageSignalTitle,
-      detail:
-        "\(uncovered) of \(totalZones) zones not checked for certificates & healthchecks",
+      detail: DashL10n.string(
+        "\(uncovered) of \(totalZones) domains not checked for certificates & healthchecks"),
       status: .warning,
       destination: .feature(.zones)
     )
@@ -98,38 +122,39 @@ enum WatchtowerEngine {
 
     if zonesResult.failed {
       recordFailure(
-        "Zones", result: zonesResult, missingScopes: &missingScopeChecks, failures: &failedChecks)
+        DashL10n.string("Domains"), result: zonesResult,
+        missingScopes: &missingScopeChecks, failures: &failedChecks)
     } else if let zones = zonesResult.value {
       append(&signals, zonesSignal(zones))
     }
 
     if tunnelsResult.failed {
       recordFailure(
-        "Tunnels", result: tunnelsResult, missingScopes: &missingScopeChecks,
+        DashL10n.string("Tunnels"), result: tunnelsResult, missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     } else if let tunnels = tunnelsResult.value {
-      append(&signals, tunnelsSignal(tunnels))
+      append(&signals, tunnelsSignal(tunnels, accountID: accountID))
     }
 
     if poolsResult.failed {
       recordFailure(
-        "LB Pools", result: poolsResult, missingScopes: &missingScopeChecks,
+        DashL10n.string("LB Pools"), result: poolsResult, missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     } else if let pools = poolsResult.value {
-      append(&signals, poolsSignal(pools))
+      append(&signals, poolsSignal(pools, accountID: accountID))
     }
 
     if registrarResult.failed {
       recordFailure(
-        "Registrar", result: registrarResult, missingScopes: &missingScopeChecks,
+        DashL10n.string("Registrar"), result: registrarResult, missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     } else if let domains = registrarResult.value {
-      append(&signals, registrarSignal(domains))
+      append(&signals, registrarSignal(domains, accountID: accountID))
     }
 
     if pagesResult.failed {
       recordFailure(
-        "Pages", result: pagesResult, missingScopes: &missingScopeChecks,
+        DashL10n.string("Pages"), result: pagesResult, missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     } else if let pages = pagesResult.value {
       append(&signals, pagesSignal(pages))
@@ -138,9 +163,9 @@ enum WatchtowerEngine {
     if !scopedZones.isEmpty {
       if certResults.allFailed {
         if certResults.allPermissionDenied {
-          missingScopeChecks.append("SSL certificates")
+          missingScopeChecks.append(DashL10n.string("SSL certificates"))
         } else {
-          failedChecks.append("SSL certificates")
+          failedChecks.append(DashL10n.string("SSL certificates"))
         }
       } else {
         append(&signals, certsSignal(certResults.entries, truncated: zonesTruncated))
@@ -148,9 +173,9 @@ enum WatchtowerEngine {
 
       if healthResults.allFailed {
         if healthResults.allPermissionDenied {
-          missingScopeChecks.append("Healthchecks")
+          missingScopeChecks.append(DashL10n.string("Healthchecks"))
         } else {
-          failedChecks.append("Healthchecks")
+          failedChecks.append(DashL10n.string("Healthchecks"))
         }
       } else {
         append(&signals, healthchecksSignal(healthResults.entries, truncated: zonesTruncated))
@@ -165,7 +190,8 @@ enum WatchtowerEngine {
       }
     if alertsResult.failed {
       recordFailure(
-        "Recent alerts", result: alertsResult, missingScopes: &missingScopeChecks,
+        DashL10n.string("Recent alerts"), result: alertsResult,
+        missingScopes: &missingScopeChecks,
         failures: &failedChecks)
     }
 
@@ -284,8 +310,41 @@ enum WatchtowerEngine {
     if let signal { signals.append(signal) }
   }
 
-  private static func plural(_ count: Int, _ noun: String) -> String {
-    "\(count) \(noun)\(count == 1 ? "" : "s")"
+  private static func domainCount(_ count: Int) -> String {
+    count == 1 ? DashL10n.string("1 domain") : DashL10n.string("\(count) domains")
+  }
+
+  private static func tunnelCount(_ count: Int) -> String {
+    count == 1 ? DashL10n.string("1 tunnel") : DashL10n.string("\(count) tunnels")
+  }
+
+  private static func poolCount(_ count: Int) -> String {
+    count == 1 ? DashL10n.string("1 pool") : DashL10n.string("\(count) pools")
+  }
+
+  private static func registeredDomainCount(_ count: Int) -> String {
+    count == 1
+      ? DashL10n.string("1 registered domain")
+      : DashL10n.string("\(count) registered domains")
+  }
+
+  private static func dayCount(_ count: Int) -> String {
+    count == 1 ? DashL10n.string("1 day") : DashL10n.string("\(count) days")
+  }
+
+  private static func projectCount(_ count: Int) -> String {
+    count == 1 ? DashL10n.string("1 project") : DashL10n.string("\(count) projects")
+  }
+
+  private static func certificatePackCount(_ count: Int) -> String {
+    count == 1
+      ? DashL10n.string("1 certificate pack")
+      : DashL10n.string("\(count) certificate packs")
+  }
+
+  private static func healthcheckCount(_ count: Int) -> String {
+    count == 1
+      ? DashL10n.string("1 healthcheck") : DashL10n.string("\(count) healthchecks")
   }
 
   private static func daysUntil(_ iso: String?) -> Int? {
@@ -314,18 +373,22 @@ enum WatchtowerEngine {
     let first = inactive.first
     return WatchtowerSignal(
       id: "zones",
-      title: "Zones",
+      title: DashL10n.string("Domains"),
       detail: inactive.isEmpty
-        ? "All \(plural(zones.count, "zone")) active"
-        : "\(plural(inactive.count, "zone")) not active",
+        ? DashL10n.string("All \(domainCount(zones.count)) active")
+        : DashL10n.string("\(domainCount(inactive.count)) not active"),
       status: inactive.isEmpty ? .ok : .warning,
       destination: first.map { .zone($0.id) } ?? .feature(.zones),
-      suggestedAction: inactive.isEmpty ? nil : "Open zone settings and confirm DNS / plan status",
+      suggestedAction: inactive.isEmpty
+        ? nil : DashL10n.string("Open domain settings and confirm DNS / plan status"),
       resourceName: first?.name
     )
   }
 
-  private static func tunnelsSignal(_ tunnels: [CloudflareTunnel]) -> WatchtowerSignal? {
+  /// Builds the tunnels health signal. Package-visible for focused unit tests.
+  static func tunnelsSignal(_ tunnels: [CloudflareTunnel], accountID: String)
+    -> WatchtowerSignal?
+  {
     guard !tunnels.isEmpty else { return nil }
     let problem = tunnels.first { $0.status == "down" || $0.status == "degraded" }
     let down = tunnels.filter { $0.status == "down" }.count
@@ -334,74 +397,82 @@ enum WatchtowerEngine {
     let detail: String
     let status: WatchtowerStatus
     if down > 0 {
-      detail = "\(plural(down, "tunnel")) down"
+      detail = DashL10n.string("\(tunnelCount(down)) down")
       status = .critical
     } else if degraded > 0 {
-      detail = "\(plural(degraded, "tunnel")) degraded"
+      detail = DashL10n.string("\(tunnelCount(degraded)) degraded")
       status = .warning
     } else if inactive > 0 {
-      detail = "\(tunnels.count - inactive) healthy · \(inactive) inactive"
+      detail = DashL10n.string("\(tunnels.count - inactive) healthy · \(inactive) inactive")
       status = .ok
     } else {
-      detail = "All \(plural(tunnels.count, "tunnel")) healthy"
+      detail = DashL10n.string("All \(tunnelCount(tunnels.count)) healthy")
       status = .ok
     }
     return WatchtowerSignal(
-      id: "tunnels", title: "Tunnels", detail: detail, status: status,
-      // The card already names the broken tunnel; the next step is cloudflared
-      // on the box, not a screen here.
+      id: "tunnels", title: DashL10n.string("Tunnels"), detail: detail, status: status,
+      // No in-app tunnel screen; open Cloudflare One for the next step.
       destination: nil,
-      suggestedAction: status == .ok ? nil : "Check cloudflared and reconnect the tunnel",
+      externalURL: WatchtowerDashboardLinks.tunnels(accountID: accountID),
+      suggestedAction: status == .ok
+        ? nil : DashL10n.string("Check cloudflared and reconnect the tunnel"),
       resourceName: problem?.name
     )
   }
 
-  private static func poolsSignal(_ pools: [LoadBalancerPool]) -> WatchtowerSignal? {
+  private static func poolsSignal(_ pools: [LoadBalancerPool], accountID: String)
+    -> WatchtowerSignal?
+  {
     guard !pools.isEmpty else { return nil }
     let disabledPools = pools.filter { $0.enabled == false }
     let disabled = disabledPools.count
     return WatchtowerSignal(
       id: "lb-pools",
-      title: "LB Pools",
+      title: DashL10n.string("LB Pools"),
       detail: disabled > 0
-        ? "\(plural(disabled, "pool")) disabled"
-        : "All \(plural(pools.count, "pool")) enabled",
+        ? DashL10n.string("\(poolCount(disabled)) disabled")
+        : DashL10n.string("All \(poolCount(pools.count)) enabled"),
       status: disabled > 0 ? .warning : .ok,
       destination: nil,
+      externalURL: WatchtowerDashboardLinks.pools(accountID: accountID),
       suggestedAction: disabled > 0
-        ? "Re-enable the pool or remove it from the load balancer" : nil,
+        ? DashL10n.string("Re-enable the pool or remove it from the load balancer") : nil,
       resourceName: disabledPools.first?.name
     )
   }
 
-  private static func registrarSignal(_ domains: [RegistrarDomain]) -> WatchtowerSignal? {
+  private static func registrarSignal(_ domains: [RegistrarDomain], accountID: String)
+    -> WatchtowerSignal?
+  {
     guard !domains.isEmpty else { return nil }
     let expiring = domains.compactMap { domain -> (RegistrarDomain, Int)? in
       guard let days = daysUntil(domain.expiresAt) else { return nil }
       return (domain, days)
     }.sorted { $0.1 < $1.1 }
     let worst = expiring.first
-    let name = worst?.0.name ?? worst?.0.id ?? "A domain"
+    let name = worst?.0.name ?? worst?.0.id ?? DashL10n.string("A domain")
     var status: WatchtowerStatus = .ok
-    var detail = plural(domains.count, "registered domain")
+    var detail = registeredDomainCount(domains.count)
     if let worst {
       if worst.1 < 0 {
         status = .critical
-        detail = "\(name) has expired"
+        detail = DashL10n.string("\(name) has expired")
       } else if worst.1 <= expiryCriticalDays {
         status = .critical
-        detail = "\(name) expires in \(plural(worst.1, "day"))"
+        detail = DashL10n.string("\(name) expires in \(dayCount(worst.1))")
       } else if worst.1 <= expiryWarningDays {
         status = .warning
-        detail = "\(name) expires in \(plural(worst.1, "day"))"
+        detail = DashL10n.string("\(name) expires in \(dayCount(worst.1))")
       } else {
-        detail = "Next renewal in \(plural(worst.1, "day"))"
+        detail = DashL10n.string("Next renewal in \(dayCount(worst.1))")
       }
     }
     return WatchtowerSignal(
-      id: "registrar", title: "Registrar", detail: detail, status: status,
+      id: "registrar", title: DashL10n.string("Registrar"), detail: detail, status: status,
       destination: nil,
-      suggestedAction: status == .ok ? nil : "Renew the domain before it expires",
+      externalURL: WatchtowerDashboardLinks.registrar(accountID: accountID),
+      suggestedAction: status == .ok
+        ? nil : DashL10n.string("Renew the domain before it expires"),
       resourceName: worst?.0.name
     )
   }
@@ -412,13 +483,13 @@ enum WatchtowerEngine {
     let first = failed.first
     return WatchtowerSignal(
       id: "pages",
-      title: "Pages deployments",
-      detail: first.map { "\($0.name): latest deployment failed" }
-        ?? "All \(plural(projects.count, "project")) deployed",
+      title: DashL10n.string("Pages deployments"),
+      detail: first.map { DashL10n.string("\($0.name): latest deployment failed") }
+        ?? DashL10n.string("All \(projectCount(projects.count)) deployed"),
       status: failed.isEmpty ? .ok : .warning,
-      // Pages has no screen of its own here; redeploying is a laptop job.
-      destination: nil,
-      suggestedAction: nil,
+      destination: first.map { .pagesProject($0.name) } ?? .feature(.pages),
+      suggestedAction: failed.isEmpty
+        ? nil : DashL10n.string("Open the project to retry or inspect the log"),
       resourceName: first?.name
     )
   }
@@ -440,16 +511,16 @@ enum WatchtowerEngine {
         }
       }
     }
-    let suffix = truncated ? " · first \(zoneFanoutLimit) zones" : ""
+    let suffix = truncated ? DashL10n.string(" · first \(zoneFanoutLimit) domains") : ""
     return WatchtowerSignal(
       id: "certificates",
-      title: "SSL certificates",
+      title: DashL10n.string("SSL certificates"),
       detail: firstProblem.map { "\($0.zone.name): \($0.desc)\(suffix)" }
-        ?? "\(plural(total, "certificate pack")) healthy\(suffix)",
+        ?? DashL10n.string("\(certificatePackCount(total)) healthy\(suffix)"),
       status: statuses.isEmpty ? .ok : worstStatus(statuses),
       destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones),
       suggestedAction: firstProblem == nil
-        ? nil : "Open the zone SSL settings and renew or reissue the pack",
+        ? nil : DashL10n.string("Open the domain SSL settings and renew or reissue the pack"),
       resourceName: firstProblem?.zone.name
     )
   }
@@ -459,18 +530,18 @@ enum WatchtowerEngine {
   )? {
     let status = pack.status.lowercased()
     if status.contains("failed") || status.contains("deleted") || status.contains("timed_out") {
-      return ("certificate pack failed", .critical)
+      return (DashL10n.string("Certificate pack failed"), .critical)
     }
     if status.hasPrefix("pending") || status == "initializing" {
-      return ("certificate pack pending", .warning)
+      return (DashL10n.string("Certificate pack pending"), .warning)
     }
     if let days = daysUntil(pack.certificates?.first?.expiresOn) {
-      if days < 0 { return ("certificate expired", .critical) }
+      if days < 0 { return (DashL10n.string("Certificate expired"), .critical) }
       if days <= expiryCriticalDays {
-        return ("certificate expires in \(plural(days, "day"))", .critical)
+        return (DashL10n.string("Certificate expires in \(dayCount(days))"), .critical)
       }
       if days <= expiryWarningDays {
-        return ("certificate expires in \(plural(days, "day"))", .warning)
+        return (DashL10n.string("Certificate expires in \(dayCount(days))"), .warning)
       }
     }
     return nil
@@ -494,17 +565,19 @@ enum WatchtowerEngine {
         }
       }
     }
-    let suffix = truncated ? " · first \(zoneFanoutLimit) zones" : ""
+    let suffix = truncated ? DashL10n.string(" · first \(zoneFanoutLimit) domains") : ""
     return WatchtowerSignal(
       id: "healthchecks",
-      title: "Healthchecks",
+      title: DashL10n.string("Healthchecks"),
       detail: firstProblem.map {
-        "\($0.check.name ?? "A healthcheck") \($0.check.status ?? "unknown") (\($0.zone.name))"
-      } ?? "All \(plural(total, "healthcheck")) healthy\(suffix)",
+        DashL10n.string(
+          "\($0.check.name ?? DashL10n.string("A healthcheck")) \($0.check.status ?? DashL10n.string("unknown")) (\($0.zone.name))"
+        )
+      } ?? DashL10n.string("All \(healthcheckCount(total)) healthy\(suffix)"),
       status: statuses.isEmpty ? .ok : worstStatus(statuses),
       destination: firstProblem.map { .zone($0.zone.id) } ?? .feature(.zones),
       suggestedAction: firstProblem == nil
-        ? nil : "Inspect the origin and resume or fix the failing healthcheck",
+        ? nil : DashL10n.string("Inspect the origin and resume or fix the failing healthcheck"),
       resourceName: firstProblem?.check.name ?? firstProblem?.zone.name
     )
   }

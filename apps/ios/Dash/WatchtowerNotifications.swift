@@ -17,8 +17,12 @@ enum WatchtowerNotificationPlanner {
     signal.title != WatchtowerEngine.coverageSignalTitle
   }
 
-  private static func notifiableIssueCount(_ snapshot: WatchtowerWidgetSnapshot) -> Int {
-    snapshot.signals.filter { $0.status != "ok" && isNotifiable($0) }.count
+  private static func severity(_ status: String) -> Int {
+    switch status {
+    case "critical": 2
+    case "warning": 1
+    default: 0
+    }
   }
 
   static func plans(
@@ -28,38 +32,33 @@ enum WatchtowerNotificationPlanner {
     // Nothing to compare against on a first run.
     guard let previous else { return [] }
 
-    // Signals that are critical now but weren't before → one alert each, with
-    // a stable identifier so a still-critical signal never re-notifies.
-    let previousCritical = Set(
-      previous.signals.filter { $0.status == "critical" && isNotifiable($0) }.map(\.title))
-    let newCritical = current.signals.filter {
-      $0.status == "critical" && isNotifiable($0) && !previousCritical.contains($0.title)
-        && !mutedTitles.contains($0.title)
+    let previousStatuses = previous.signals.reduce(into: [String: String]()) {
+      $0[$1.title] = $1.status
     }
-    if !newCritical.isEmpty {
-      return newCritical.map { signal in
-        Plan(
-          identifier: "watchtower.critical.\(signal.title)",
-          title: signal.title,
-          body: signal.detail)
-      }
+    let newIssues = current.signals.filter { signal in
+      guard isNotifiable(signal), !mutedTitles.contains(signal.title) else { return false }
+      return severity(signal.status) > severity(previousStatuses[signal.title] ?? "ok")
     }
 
-    // Otherwise, a rise in the overall issue count → one summary alert.
-    let previousCount = notifiableIssueCount(previous)
-    let currentCount = notifiableIssueCount(current)
-    if currentCount > previousCount {
+    guard let first = newIssues.first else { return [] }
+    guard newIssues.count > 1 else {
       return [
         Plan(
-          identifier: "watchtower.issues",
-          title: "Watchtower",
-          body:
-            "\(currentCount) \(currentCount == 1 ? "issue needs" : "issues need") attention."
-        )
+          identifier: "watchtower.\(first.status).\(first.title)",
+          title: first.title,
+          body: first.detail)
       ]
     }
 
-    return []
+    let remaining = newIssues.count - 1
+    return [
+      Plan(
+        identifier: "watchtower.issues",
+        title: first.title,
+        body:
+          "\(first.detail) · \(remaining) more \(remaining == 1 ? "issue needs" : "issues need") attention."
+      )
+    ]
   }
 }
 
@@ -97,5 +96,18 @@ enum WatchtowerNotifier {
   static func requestAuthorization() async -> Bool {
     let center = UNUserNotificationCenter.current()
     return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+  }
+
+  /// Current system authorization (does not prompt).
+  static func isAuthorized() async -> Bool {
+    let settings = await UNUserNotificationCenter.current().notificationSettings()
+    switch settings.authorizationStatus {
+    case .authorized, .provisional, .ephemeral:
+      return true
+    case .notDetermined, .denied:
+      return false
+    @unknown default:
+      return false
+    }
   }
 }
