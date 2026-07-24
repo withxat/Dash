@@ -1,9 +1,110 @@
+import ActivityKit
 import SwiftUI
 import WidgetKit
 
 @main
 struct DashWidgetsBundle: WidgetBundle {
-  var body: some Widget { WatchtowerWidget() }
+  var body: some Widget {
+    WatchtowerWidget()
+    PagesBuildLiveActivity()
+  }
+}
+
+struct PagesBuildLiveActivity: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: PagesBuildAttributes.self) { context in
+      PagesBuildLockScreenView(context: context)
+        .widgetURL(pagesBuildDeepLink(context))
+    } dynamicIsland: { context in
+      DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+          HStack(spacing: 6) {
+            Circle()
+              .fill(WidgetColor.pagesStatus(context.state.status))
+              .frame(width: 8, height: 8)
+            Text(context.attributes.projectName)
+              .font(.caption.weight(.semibold))
+              .lineLimit(1)
+          }
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+          Text(context.state.shortID)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+          Text(pagesBuildStatusLine(context.state))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      } compactLeading: {
+        Image(systemName: PagesBuildGlyph.symbol)
+          .foregroundStyle(WidgetColor.pagesStatus(context.state.status))
+      } compactTrailing: {
+        Text(context.state.shortID.prefix(4))
+          .font(.caption2.monospaced().weight(.semibold))
+          .foregroundStyle(WidgetColor.pagesStatus(context.state.status))
+      } minimal: {
+        Image(systemName: PagesBuildGlyph.symbol)
+          .foregroundStyle(WidgetColor.pagesStatus(context.state.status))
+      }
+      .widgetURL(pagesBuildDeepLink(context))
+    }
+  }
+}
+
+private enum PagesBuildGlyph {
+  /// Solar `SolarCodeCircleFill` isn't in the widget target; this SF Symbol
+  /// reads closer to a Pages deployment than the catalog's generic `doc.text`.
+  static let symbol = "arrow.triangle.branch"
+}
+
+private struct PagesBuildLockScreenView: View {
+  let context: ActivityViewContext<PagesBuildAttributes>
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Image(systemName: PagesBuildGlyph.symbol)
+        .font(.title3.weight(.semibold))
+        .foregroundStyle(WidgetColor.pagesStatus(context.state.status))
+        .frame(width: 28)
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
+          Circle()
+            .fill(WidgetColor.pagesStatus(context.state.status))
+            .frame(width: 8, height: 8)
+          Text(context.attributes.projectName)
+            .font(.headline)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        Text(pagesBuildStatusLine(context.state))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+        Text(context.state.shortID)
+          .font(.caption2.monospaced())
+          .foregroundStyle(.tertiary)
+          .lineLimit(1)
+      }
+    }
+    .padding()
+  }
+}
+
+private func pagesBuildStatusLine(_ state: PagesBuildAttributes.ContentState) -> String {
+  let stage = state.stage.capitalized
+  let status = state.status.capitalized
+  return "\(stage) · \(status)"
+}
+
+private func pagesBuildDeepLink(_ context: ActivityViewContext<PagesBuildAttributes>) -> URL? {
+  URL(
+    string:
+      "dash://pages/\(context.attributes.projectName)/deployments/\(context.attributes.deploymentID)"
+  )
 }
 
 /// Status colors mirror DashTheme's ok/warning/critical tokens; DashTheme
@@ -12,12 +113,22 @@ struct DashWidgetsBundle: WidgetBundle {
 private enum WidgetColor {
   static let ok = Color(light: 0x10B981, dark: 0x34D399)
   static let warning = Color(light: 0xEAB308, dark: 0xFACC15)
-  static let critical = Color(light: 0xEF4444, dark: 0xDC2626)
+  static let critical = Color(light: 0xEF4444, dark: 0xF87171)
 
   static func status(_ raw: String) -> Color {
     switch raw {
     case "critical": critical
     case "warning": warning
+    default: ok
+    }
+  }
+
+  /// Pages deployment stages — keep in sync with `pagesStatusColor` in PagesViews.
+  static func pagesStatus(_ raw: String) -> Color {
+    switch raw.lowercased() {
+    case "success": ok
+    case "failure", "canceled", "cancelled": critical
+    case "active", "idle": warning
     default: ok
     }
   }
