@@ -2,6 +2,7 @@ import CloudflareAPI
 import Observation
 import SwiftDitherKit
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 extension AnalyticsRange {
@@ -89,8 +90,8 @@ final class WatchtowerChartCustomizationState {
   private(set) var order: [WatchtowerAnalyticsMetric]
   private(set) var collapsed: Set<WatchtowerAnalyticsMetric>
   private(set) var hidden: Set<WatchtowerAnalyticsMetric>
-  var draggedMetric: WatchtowerAnalyticsMetric?
-  var dropTargetMetric: WatchtowerAnalyticsMetric?
+  private(set) var draggedMetric: WatchtowerAnalyticsMetric?
+  private(set) var dropTargetMetric: WatchtowerAnalyticsMetric?
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private var savedDraft: Draft?
@@ -189,11 +190,123 @@ final class WatchtowerChartCustomizationState {
     move(metric, across: visibleMetrics[targetIndex])
   }
 
+  @discardableResult
+  func beginDragging(_ metric: WatchtowerAnalyticsMetric) -> Bool {
+    guard isEditing, !hidden.contains(metric) else { return false }
+    draggedMetric = metric
+    dropTargetMetric = nil
+    return true
+  }
+
+  func targetDrop(on metric: WatchtowerAnalyticsMetric) {
+    guard draggedMetric != nil else { return }
+    dropTargetMetric = metric
+  }
+
+  func clearDropTarget() {
+    dropTargetMetric = nil
+  }
+
+  func finishDragging() {
+    draggedMetric = nil
+    dropTargetMetric = nil
+  }
+
   private func finishEditing() {
     isEditing = false
     savedDraft = nil
-    draggedMetric = nil
-    dropTargetMetric = nil
+    finishDragging()
+  }
+}
+
+struct WatchtowerMetricDragPresentation: Equatable {
+  let metric: WatchtowerAnalyticsMetric
+  let size: CGSize
+  let grabOffset: CGPoint
+  let isExpanded: Bool
+  var location: CGPoint
+
+  var center: CGPoint {
+    CGPoint(
+      x: location.x - grabOffset.x,
+      y: location.y - grabOffset.y)
+  }
+}
+
+@MainActor
+@Observable
+final class WatchtowerMetricDragVisualState {
+  private(set) var presentation: WatchtowerMetricDragPresentation?
+  private(set) var isSettling = false
+  @ObservationIgnored weak var coordinateView: UIView?
+  @ObservationIgnored private var retainedDelegate: AnyObject?
+  @ObservationIgnored private var sourceViews: [WatchtowerAnalyticsMetric: WeakView] = [:]
+
+  private final class WeakView {
+    weak var value: UIView?
+
+    init(_ value: UIView) {
+      self.value = value
+    }
+  }
+
+  func begin(
+    metric: WatchtowerAnalyticsMetric,
+    size: CGSize,
+    location: CGPoint,
+    grabOffset: CGPoint,
+    isExpanded: Bool,
+    retaining delegate: AnyObject
+  ) {
+    retainedDelegate = delegate
+    isSettling = false
+    presentation = WatchtowerMetricDragPresentation(
+      metric: metric,
+      size: size,
+      grabOffset: grabOffset,
+      isExpanded: isExpanded,
+      location: location)
+  }
+
+  func move(to location: CGPoint) {
+    guard var presentation else { return }
+    presentation.location = location
+    self.presentation = presentation
+  }
+
+  func moveCenter(to center: CGPoint) {
+    guard var presentation else { return }
+    presentation.location = CGPoint(
+      x: center.x + presentation.grabOffset.x,
+      y: center.y + presentation.grabOffset.y)
+    self.presentation = presentation
+  }
+
+  func registerSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
+    sourceViews[metric] = WeakView(view)
+  }
+
+  func unregisterSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
+    guard sourceViews[metric]?.value === view else { return }
+    sourceViews[metric] = nil
+  }
+
+  func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
+    guard let coordinateView, let view = sourceViews[metric]?.value else { return nil }
+    let frame = view.convert(view.bounds, to: coordinateView)
+    guard frame.width > 0, frame.height > 0 else { return nil }
+    return CGPoint(x: frame.midX, y: frame.midY)
+  }
+
+  func beginSettling() {
+    guard presentation != nil else { return }
+    isSettling = true
+  }
+
+  func finish() {
+    presentation = nil
+    isSettling = false
+    retainedDelegate = nil
   }
 }
 
@@ -455,6 +568,7 @@ struct WatchtowerTrafficView: View {
   let customization: WatchtowerChartCustomizationState
   let isEditing: Bool
   let morphNamespace: Namespace.ID
+  @State private var dragVisual = WatchtowerMetricDragVisualState()
 
   private var collapsedRaw: String {
     WatchtowerAnalyticsCardLayout.encode(Set(customization.collapsed.map(\.rawValue)))
@@ -468,67 +582,83 @@ struct WatchtowerTrafficView: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
-      if isEditing {
-        customizationHeader
-      } else {
-        VStack(alignment: .leading, spacing: 8) {
-          refreshHeader
-            .padding(.horizontal, 4)
-          DashTextTabs(
-            items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
-            selection: $state.range
-          )
+    ZStack(alignment: .topLeading) {
+      VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
+        if isEditing {
+          customizationHeader
+        } else {
+          VStack(alignment: .leading, spacing: 8) {
+            refreshHeader
+              .padding(.horizontal, 4)
+            DashTextTabs(
+              items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+              selection: $state.range
+            )
+          }
+        }
+
+        if state.needsAnalyticsAccess, state.overview == nil {
+          statusCard {
+            emptyContent(
+              title: "Analytics access needed",
+              message: "Allow Account Analytics: Read to load account traffic.",
+              buttonTitle: "Grant access"
+            ) {
+              model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)
+            }
+          }
+        } else if state.isLoadingCurrent, state.overview == nil {
+          statusCard { loadingContent }
+        } else if let error = state.currentError, state.overview == nil {
+          statusCard {
+            emptyContent(
+              title: "Traffic unavailable",
+              message: error,
+              buttonTitle: "Try again"
+            ) {
+              Task { await state.retry(model: model) }
+            }
+          }
+        } else if let overview = state.overview, let snapshot = state.snapshot {
+          if customization.visibleMetrics.isEmpty {
+            statusCard {
+              emptyContent(
+                title: DashL10n.string("No charts"),
+                message: DashL10n.string("Add a chart to rebuild this view.")
+              )
+            }
+          } else {
+            VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+              ForEach(metricRows, id: \.rowID) { row in
+                metricRow(row, overview: overview, snapshot: snapshot)
+              }
+              if let error = state.currentError {
+                DashNotice(kind: .warning, message: error)
+              }
+            }
+          }
         }
       }
 
-      if state.needsAnalyticsAccess, state.overview == nil {
-        statusCard {
-          emptyContent(
-            title: "Analytics access needed",
-            message: "Allow Account Analytics: Read to load account traffic.",
-            buttonTitle: "Grant access"
-          ) {
-            model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)
-          }
-        }
-      } else if state.isLoadingCurrent, state.overview == nil {
-        statusCard { loadingContent }
-      } else if let error = state.currentError, state.overview == nil {
-        statusCard {
-          emptyContent(
-            title: "Traffic unavailable",
-            message: error,
-            buttonTitle: "Try again"
-          ) {
-            Task { await state.retry(model: model) }
-          }
-        }
-      } else if let overview = state.overview, let snapshot = state.snapshot {
-        if customization.visibleMetrics.isEmpty {
-          statusCard {
-            emptyContent(
-              title: DashL10n.string("No charts"),
-              message: DashL10n.string("Add a chart to rebuild this view.")
-            )
-          }
-        } else {
-          VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-            ForEach(metricRows, id: \.rowID) { row in
-              metricRow(row, overview: overview, snapshot: snapshot)
-            }
-            if let error = state.currentError {
-              DashNotice(kind: .warning, message: error)
-            }
-          }
-        }
+      if isEditing, let overview = state.overview {
+        WatchtowerMetricDragOverlay(
+          state: dragVisual,
+          overview: overview,
+          range: state.range
+        )
+      }
+    }
+    .background {
+      if isEditing {
+        WatchtowerMetricDragCoordinateView(state: dragVisual)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .allowsHitTesting(false)
       }
     }
     .accessibilityIdentifier(isEditing ? "watchtower-chart-editor" : "watchtower-charts")
     .onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
       guard isEditing, customization.draggedMetric != nil else { return false }
-      customization.draggedMetric = nil
-      customization.dropTargetMetric = nil
+      customization.clearDropTarget()
       return true
     }
   }
@@ -570,14 +700,25 @@ struct WatchtowerTrafficView: View {
       metric, overview: overview, snapshot: snapshot, expanded: expanded)
     if isEditing {
       card
-        .opacity(customization.draggedMetric == metric ? 0.42 : 1)
+        .opacity(customization.draggedMetric == metric ? 0 : 1)
+        .overlay {
+          if customization.draggedMetric == metric {
+            WatchtowerMetricDropPlaceholder()
+          }
+        }
         .scaleEffect(customization.dropTargetMetric == metric ? 1.015 : 1)
         .contentShape(
           RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
         )
-        .onDrag {
-          customization.draggedMetric = metric
-          return NSItemProvider(object: metric.rawValue as NSString)
+        .overlay {
+          WatchtowerNativeMetricDragSource(
+            metric: metric,
+            isExpanded: expanded,
+            customization: customization,
+            visualState: dragVisual
+          )
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityHidden(true)
         }
         .onDrop(
           of: [UTType.plainText],
@@ -764,6 +905,294 @@ enum WatchtowerMetricChartRenderingMode: Equatable {
   var usesDitherChart: Bool { self == .live }
 }
 
+private enum WatchtowerMetricDragLayout {
+  static let controlsPassthroughSize = CGSize(width: 96, height: 60)
+}
+
+private struct WatchtowerMetricDropPlaceholder: View {
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  var body: some View {
+    shape
+      .fill(DashTheme.recessed.opacity(0.34))
+      .overlay {
+        shape.strokeBorder(
+          DashTheme.brand.opacity(0.52),
+          style: StrokeStyle(
+            lineWidth: 1.5,
+            lineCap: .round,
+            lineJoin: .round,
+            dash: [7, 5])
+        )
+      }
+      .accessibilityHidden(true)
+  }
+}
+
+private final class WatchtowerDragCoordinateUIView: UIView {
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    false
+  }
+}
+
+private struct WatchtowerMetricDragCoordinateView: UIViewRepresentable {
+  let state: WatchtowerMetricDragVisualState
+
+  func makeUIView(context: Context) -> WatchtowerDragCoordinateUIView {
+    let view = WatchtowerDragCoordinateUIView()
+    view.backgroundColor = .clear
+    view.isOpaque = false
+    state.coordinateView = view
+    return view
+  }
+
+  func updateUIView(_ uiView: WatchtowerDragCoordinateUIView, context: Context) {
+    if state.coordinateView !== uiView {
+      state.coordinateView = uiView
+    }
+  }
+
+  static func dismantleUIView(
+    _ uiView: WatchtowerDragCoordinateUIView,
+    coordinator: Void
+  ) {
+    // An active drag can outlive a SwiftUI row reconstruction. The weak
+    // coordinate reference is replaced by the next mounted host if needed.
+  }
+}
+
+private final class WatchtowerMetricDragSourceUIView: UIView {
+  var passthroughSize = WatchtowerMetricDragLayout.controlsPassthroughSize
+
+  override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+    guard super.point(inside: point, with: event) else { return false }
+    let width = min(bounds.width, passthroughSize.width)
+    let height = min(bounds.height, passthroughSize.height)
+    let x =
+      effectiveUserInterfaceLayoutDirection == .rightToLeft
+      ? bounds.minX
+      : bounds.maxX - width
+    let controlsFrame = CGRect(x: x, y: bounds.minY, width: width, height: height)
+    return !controlsFrame.contains(point)
+  }
+}
+
+private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
+  let metric: WatchtowerAnalyticsMetric
+  let isExpanded: Bool
+  let customization: WatchtowerChartCustomizationState
+  let visualState: WatchtowerMetricDragVisualState
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(
+      metric: metric,
+      isExpanded: isExpanded,
+      customization: customization,
+      visualState: visualState)
+  }
+
+  func makeUIView(context: Context) -> WatchtowerMetricDragSourceUIView {
+    let view = WatchtowerMetricDragSourceUIView()
+    view.backgroundColor = .clear
+    view.isOpaque = false
+    view.accessibilityElementsHidden = true
+
+    let interaction = UIDragInteraction(delegate: context.coordinator)
+    interaction.isEnabled = true
+    view.addInteraction(interaction)
+    visualState.registerSourceView(view, for: metric)
+    return view
+  }
+
+  func updateUIView(_ uiView: WatchtowerMetricDragSourceUIView, context: Context) {
+    let previousMetric = context.coordinator.metric
+    if previousMetric != metric {
+      visualState.unregisterSourceView(uiView, for: previousMetric)
+      visualState.registerSourceView(uiView, for: metric)
+    }
+    context.coordinator.metric = metric
+    context.coordinator.isExpanded = isExpanded
+  }
+
+  static func dismantleUIView(
+    _ uiView: WatchtowerMetricDragSourceUIView,
+    coordinator: Coordinator
+  ) {
+    coordinator.visualState.unregisterSourceView(uiView, for: coordinator.metric)
+  }
+
+  @MainActor
+  final class Coordinator: NSObject, UIDragInteractionDelegate {
+    var metric: WatchtowerAnalyticsMetric
+    var isExpanded: Bool
+    private let customization: WatchtowerChartCustomizationState
+    fileprivate let visualState: WatchtowerMetricDragVisualState
+    private var active = false
+    private var settling = false
+    private var activeInteraction: UIDragInteraction?
+    private var settleTask: Task<Void, Never>?
+
+    init(
+      metric: WatchtowerAnalyticsMetric,
+      isExpanded: Bool,
+      customization: WatchtowerChartCustomizationState,
+      visualState: WatchtowerMetricDragVisualState
+    ) {
+      self.metric = metric
+      self.isExpanded = isExpanded
+      self.customization = customization
+      self.visualState = visualState
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      itemsForBeginning session: any UIDragSession
+    ) -> [UIDragItem] {
+      guard let sourceView = interaction.view,
+        let coordinateView = visualState.coordinateView,
+        customization.beginDragging(metric)
+      else { return [] }
+
+      let location = session.location(in: coordinateView)
+      let sourceLocation = session.location(in: sourceView)
+      let grabOffset = CGPoint(
+        x: sourceLocation.x - sourceView.bounds.midX,
+        y: sourceLocation.y - sourceView.bounds.midY)
+
+      active = true
+      activeInteraction = interaction
+      visualState.begin(
+        metric: metric,
+        size: sourceView.bounds.size,
+        location: location,
+        grabOffset: grabOffset,
+        isExpanded: isExpanded,
+        retaining: self)
+
+      let provider = NSItemProvider(object: metric.rawValue as NSString)
+      let item = UIDragItem(itemProvider: provider)
+      item.localObject = metric.rawValue
+      return [item]
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      previewForLifting item: UIDragItem,
+      session: any UIDragSession
+    ) -> UITargetedDragPreview? {
+      // UIKit documents nil as an invisible item with no system lift preview.
+      nil
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      sessionDidMove session: any UIDragSession
+    ) {
+      guard active, let coordinateView = visualState.coordinateView else { return }
+      visualState.move(to: session.location(in: coordinateView))
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      sessionIsRestrictedToDraggingApplication session: any UIDragSession
+    ) -> Bool {
+      true
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      session: any UIDragSession,
+      willEndWith operation: UIDropOperation
+    ) {
+      settleDrag()
+    }
+
+    func dragInteraction(
+      _ interaction: UIDragInteraction,
+      session: any UIDragSession,
+      didEndWith operation: UIDropOperation
+    ) {
+      guard active, !settling else { return }
+      completeDrag()
+    }
+
+    private func settleDrag() {
+      guard active, !settling else { return }
+      active = false
+      settling = true
+
+      guard let targetCenter = visualState.sourceCenter(for: metric) else {
+        completeDrag()
+        return
+      }
+
+      let reduceMotion = UIAccessibility.isReduceMotionEnabled
+      visualState.beginSettling()
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
+        visualState.moveCenter(to: targetCenter)
+      }
+
+      let delay = reduceMotion ? 120 : 280
+      settleTask = Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .milliseconds(delay))
+        guard !Task.isCancelled else { return }
+        self?.completeDrag()
+      }
+    }
+
+    private func completeDrag() {
+      settleTask?.cancel()
+      settleTask = nil
+      active = false
+      settling = false
+      activeInteraction = nil
+      customization.finishDragging()
+      visualState.finish()
+    }
+  }
+}
+
+private struct WatchtowerMetricDragOverlay: View {
+  let state: WatchtowerMetricDragVisualState
+  let overview: AccountAnalyticsOverview
+  let range: AnalyticsRange
+  @Namespace private var previewNamespace
+
+  var body: some View {
+    ZStack(alignment: .topLeading) {
+      if let presentation = state.presentation {
+        WatchtowerMetricChartCard(
+          metric: presentation.metric,
+          overview: overview,
+          points: [],
+          range: range,
+          isExpanded: presentation.isExpanded,
+          isEditing: true,
+          renderingMode: .placeholder,
+          morphNamespace: previewNamespace,
+          onToggleExpanded: {},
+          onRemove: {}
+        )
+        .frame(width: presentation.size.width, height: presentation.size.height)
+        .position(presentation.center)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .zIndex(1)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .allowsHitTesting(false)
+    // Finger tracking must not inherit the row-reorder morph animation.
+    .transaction { transaction in
+      if !state.isSettling {
+        transaction.animation = nil
+      }
+    }
+  }
+}
+
 private struct WatchtowerMetricDropDelegate: DropDelegate {
   let target: WatchtowerAnalyticsMetric
   let customization: WatchtowerChartCustomizationState
@@ -771,7 +1200,7 @@ private struct WatchtowerMetricDropDelegate: DropDelegate {
 
   func dropEntered(info: DropInfo) {
     guard let dragged = customization.draggedMetric, dragged != target else { return }
-    customization.dropTargetMetric = target
+    customization.targetDrop(on: target)
     withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
       customization.move(dragged, across: target)
     }
@@ -780,7 +1209,7 @@ private struct WatchtowerMetricDropDelegate: DropDelegate {
 
   func dropExited(info: DropInfo) {
     if customization.dropTargetMetric == target {
-      customization.dropTargetMetric = nil
+      customization.clearDropTarget()
     }
   }
 
@@ -789,8 +1218,9 @@ private struct WatchtowerMetricDropDelegate: DropDelegate {
   }
 
   func performDrop(info: DropInfo) -> Bool {
-    customization.draggedMetric = nil
-    customization.dropTargetMetric = nil
+    // The source UIDragInteraction owns the visual session lifetime. Keep the
+    // slot in place until its delegate receives the matching native end event.
+    customization.clearDropTarget()
     return true
   }
 }
@@ -1115,6 +1545,10 @@ private struct WatchtowerMetricChartCard: View {
         id: WatchtowerAnalyticsMorphID.toggle(metric), in: morphNamespace)
     }
     .padding(8)
+    .frame(
+      width: WatchtowerMetricDragLayout.controlsPassthroughSize.width,
+      height: WatchtowerMetricDragLayout.controlsPassthroughSize.height,
+      alignment: .topTrailing)
   }
 
   private func chartControl<Label: View>(

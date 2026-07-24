@@ -426,6 +426,32 @@ import UIKit
   #expect(normal.usesDitherChart)
 }
 
+@Test @MainActor func watchtowerDragOverlayPreservesGrabOffsetAndEndsCleanly() {
+  let visualState = WatchtowerMetricDragVisualState()
+  visualState.begin(
+    metric: .webTraffic,
+    size: CGSize(width: 160, height: 220),
+    location: CGPoint(x: 220, y: 360),
+    grabOffset: CGPoint(x: 30, y: -20),
+    isExpanded: true,
+    retaining: NSObject())
+
+  #expect(visualState.presentation?.center == CGPoint(x: 190, y: 380))
+
+  visualState.move(to: CGPoint(x: 260, y: 410))
+  #expect(visualState.presentation?.center == CGPoint(x: 230, y: 430))
+
+  visualState.moveCenter(to: CGPoint(x: 120, y: 240))
+  #expect(visualState.presentation?.center == CGPoint(x: 120, y: 240))
+
+  visualState.beginSettling()
+  #expect(visualState.isSettling)
+
+  visualState.finish()
+  #expect(visualState.presentation == nil)
+  #expect(!visualState.isSettling)
+}
+
 @Test func watchtowerAnalyticsCardLayoutDefaultsExpandedAndPersistsCollapse() {
   #expect(WatchtowerAnalyticsCardLayout.isExpanded("webTraffic", raw: ""))
   #expect(WatchtowerAnalyticsCardLayout.collapsedIDs(in: "").isEmpty)
