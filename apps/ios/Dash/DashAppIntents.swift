@@ -1,6 +1,7 @@
 import AppIntents
 import CloudflareAPI
 import Foundation
+import UIKit
 
 /// Surfaced to Siri, Spotlight, and the Shortcuts app. In-app intents run in
 /// the app process, so they reuse the app's single `CloudflareClient` (via
@@ -18,7 +19,7 @@ struct ZoneEntity: AppEntity, Identifiable {
   let id: String
   let name: String
 
-  static let typeDisplayRepresentation: TypeDisplayRepresentation = "Zone"
+  static let typeDisplayRepresentation: TypeDisplayRepresentation = "Domain"
   var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
   static let defaultQuery = ZoneEntityQuery()
 
@@ -70,9 +71,9 @@ struct ZoneEntityQuery: EntityStringQuery {
 
 struct PurgeCacheIntent: AppIntent {
   static let title: LocalizedStringResource = "Purge Cache"
-  static let description = IntentDescription("Purge everything from a Cloudflare zone's cache.")
+  static let description = IntentDescription("Purge everything from a Cloudflare domain's cache.")
 
-  @Parameter(title: "Zone") var zone: ZoneEntity
+  @Parameter(title: "Domain") var zone: ZoneEntity
   @Dependency private var model: AppModel
 
   @MainActor
@@ -92,7 +93,7 @@ struct SetUnderAttackIntent: AppIntent {
   static let description = IntentDescription(
     "Turn Under Attack mode on, or restore the previous security level.")
 
-  @Parameter(title: "Zone") var zone: ZoneEntity
+  @Parameter(title: "Domain") var zone: ZoneEntity
   @Parameter(title: "Enabled") var enabled: Bool
   @Dependency private var model: AppModel
 
@@ -131,9 +132,9 @@ struct SetUnderAttackIntent: AppIntent {
 struct ToggleDevelopmentModeIntent: AppIntent {
   static let title: LocalizedStringResource = "Set Development Mode"
   static let description = IntentDescription(
-    "Turn a zone's development mode on or off. Cloudflare auto-disables it after three hours.")
+    "Turn a domain's development mode on or off. Cloudflare auto-disables it after three hours.")
 
-  @Parameter(title: "Zone") var zone: ZoneEntity
+  @Parameter(title: "Domain") var zone: ZoneEntity
   @Parameter(title: "Enabled") var enabled: Bool
   @Dependency private var model: AppModel
 
@@ -145,6 +146,111 @@ struct ToggleDevelopmentModeIntent: AppIntent {
       dialog: enabled
         ? "Development mode is on for \(zone.name). Cloudflare turns it off automatically after three hours."
         : "Development mode is off for \(zone.name).")
+  }
+}
+
+/// An R2 bucket, chosen in Shortcuts by name. Bucket names are their own ids.
+struct R2BucketEntity: AppEntity, Identifiable {
+  let id: String
+
+  static let typeDisplayRepresentation: TypeDisplayRepresentation = "R2 Bucket"
+  var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(id)") }
+  static let defaultQuery = R2BucketEntityQuery()
+}
+
+struct R2BucketEntityQuery: EntityStringQuery {
+  @Dependency private var model: AppModel
+
+  @MainActor
+  private func accountID() throws -> String {
+    guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
+    return accountID
+  }
+
+  @MainActor
+  func entities(for identifiers: [String]) async throws -> [R2BucketEntity] {
+    identifiers.map(R2BucketEntity.init(id:))
+  }
+
+  @MainActor
+  func entities(matching string: String) async throws -> [R2BucketEntity] {
+    try await all().filter { $0.id.localizedCaseInsensitiveContains(string) }
+  }
+
+  @MainActor
+  func suggestedEntities() async throws -> [R2BucketEntity] {
+    try await all()
+  }
+
+  @MainActor
+  private func all() async throws -> [R2BucketEntity] {
+    let accountID = try accountID()
+    if let cached: [R2Bucket] = model.featureCache.get(FeatureCacheKey.r2Buckets(accountID)) {
+      return cached.map { R2BucketEntity(id: $0.name) }
+    }
+    return try await model.client.listR2Buckets(accountID: accountID)
+      .map { R2BucketEntity(id: $0.name) }
+  }
+}
+
+struct UploadToR2Intent: AppIntent {
+  static let title: LocalizedStringResource = "Upload to R2"
+  static let description = IntentDescription(
+    "Upload a file to an R2 bucket. Copies the public URL when the bucket has one.")
+
+  @Parameter(title: "File") var file: IntentFile
+  /// Optional on purpose: without it the intent reuses the last destination
+  /// the user uploaded to (in-app or via the share sheet).
+  @Parameter(title: "Bucket") var bucket: R2BucketEntity?
+  @Parameter(title: "Folder") var folder: String?
+  @Dependency private var model: AppModel
+
+  @MainActor
+  func perform() async throws -> some IntentResult & ProvidesDialog {
+    guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
+    let remembered = R2ShareDestination.destination(accountID: accountID)
+    guard let bucketName = bucket?.id ?? remembered?.bucket else {
+      throw DashIntentError(
+        message: "Pick a bucket — Dash has no remembered R2 destination for this account yet.")
+    }
+    let data = file.data
+    guard data.count <= R2Media.transferSizeLimit else {
+      throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
+    }
+    let rawFolder =
+      folder ?? remembered.flatMap { $0.bucket == bucketName ? $0.prefix : nil } ?? ""
+    let prefix = Self.normalizedPrefix(rawFolder)
+    let key = prefix + file.filename
+    try await model.client.putR2Object(
+      accountID: accountID, bucket: bucketName, key: key, data: data,
+      contentType: file.type?.preferredMIMEType ?? R2Media.mimeType(forKey: key))
+    model.featureCache.remove(
+      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucketName))
+    let host: String? = {
+      let snapshot: R2DomainsSnapshot? = model.featureCache.get(
+        FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucketName))
+      if let host = snapshot?.publicHost { return host }
+      if let remembered, remembered.bucket == bucketName, !remembered.publicHost.isEmpty {
+        return remembered.publicHost
+      }
+      return nil
+    }()
+    R2ShareDestination.record(
+      R2ShareDestination(
+        accountID: accountID, bucket: bucketName, prefix: prefix, publicHost: host ?? ""))
+    if let host, let url = R2DomainsSnapshot.url(host: host, key: key) {
+      UIPasteboard.general.url = url
+      return .result(dialog: "Uploaded \(file.filename) to \(bucketName) — public URL copied.")
+    }
+    return .result(dialog: "Uploaded \(file.filename) to \(bucketName).")
+  }
+
+  /// Pure: "/a/b" and "a/b/" both become "a/b/"; empty stays empty.
+  static func normalizedPrefix(_ raw: String) -> String {
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    while value.hasPrefix("/") { value.removeFirst() }
+    if !value.isEmpty && !value.hasSuffix("/") { value += "/" }
+    return value
   }
 }
 
@@ -184,5 +290,10 @@ struct DashShortcuts: AppShortcutsProvider {
       phrases: ["Open Watchtower in \(.applicationName)"],
       shortTitle: "Open Watchtower",
       systemImageName: "binoculars")
+    AppShortcut(
+      intent: UploadToR2Intent(),
+      phrases: ["Upload to R2 with \(.applicationName)"],
+      shortTitle: "Upload to R2",
+      systemImageName: "arrow.up.circle")
   }
 }
