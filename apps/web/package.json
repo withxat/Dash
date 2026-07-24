@@ -7,16 +7,20 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc -b && vite build",
-		"deploy": "pnpm run build && wrangler deploy",
+		"deploy": "pnpm run build && wrangler versions upload && wrangler versions deploy --yes",
 		"preview": "pnpm run build && vite preview",
-		"typecheck": "tsc -b --noEmit",
+		"typecheck": "tsc -b --noEmit && pnpm test",
+		"test": "node --experimental-strip-types --test src/worker/relay/*.test.ts",
 		"lint": "eslint .",
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@cloudflare/kumo": "2.8.0",
+		"@phosphor-icons/react": "^2.1.10",
 		"hono": "catalog:web",
 		"react": "catalog:react",
-		"react-dom": "catalog:react"
+		"react-dom": "catalog:react",
+		"react-markdown": "^10.1.0"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:web",
