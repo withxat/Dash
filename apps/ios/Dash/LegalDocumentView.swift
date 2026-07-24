@@ -1,3 +1,4 @@
+import MarkdownUI
 import SwiftUI
 
 enum LegalDocument: String, Identifiable {
@@ -8,8 +9,8 @@ enum LegalDocument: String, Identifiable {
 
   var title: String {
     switch self {
-    case .termsOfUse: "Terms of Use"
-    case .privacyPolicy: "Privacy Policy"
+    case .termsOfUse: DashL10n.ui("Terms of Use")
+    case .privacyPolicy: DashL10n.ui("Privacy Policy")
     }
   }
 
@@ -26,7 +27,7 @@ enum LegalDocument: String, Identifiable {
         forResource: document.resourceName, withExtension: "md", subdirectory: "Legal")
       ?? Bundle.main.url(forResource: document.resourceName, withExtension: "md")
     guard let url, let text = try? String(contentsOf: url, encoding: .utf8) else {
-      return "This document is unavailable on this build."
+      return DashL10n.string("This document is unavailable on this build.")
     }
     return text
   }
@@ -35,19 +36,11 @@ enum LegalDocument: String, Identifiable {
 struct LegalDocumentView: View {
   let document: LegalDocument
 
-  private var markdown: AttributedString {
-    (try? AttributedString(
-      markdown: LegalDocument.markdown(for: document),
-      options: AttributedString.MarkdownParsingOptions(
-        interpretedSyntax: .inlineOnlyPreservingWhitespace)
-    )) ?? AttributedString(LegalDocument.markdown(for: document))
-  }
-
   var body: some View {
     ScrollView {
-      Text(markdown)
+      Markdown(LegalDocument.markdown(for: document))
+        .markdownTheme(.dashLegal)
         .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.text)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, DashTheme.Spacing.screen)
         .padding(.vertical, DashTheme.Spacing.section)
@@ -57,4 +50,54 @@ struct LegalDocumentView: View {
     .navigationTitle(document.title)
     .navigationBarTitleDisplayMode(.inline)
   }
+}
+
+extension Theme {
+  @MainActor
+  fileprivate static let dashLegal = Theme.basic
+    .text {
+      ForegroundColor(DashTheme.text)
+    }
+    .strong {
+      FontWeight(.semibold)
+      ForegroundColor(DashTheme.strong)
+    }
+    .link {
+      ForegroundColor(DashTheme.brand)
+    }
+    .code {
+      FontFamilyVariant(.monospaced)
+      FontSize(.em(0.9))
+      BackgroundColor(DashTheme.recessed)
+    }
+    .heading1 { configuration in
+      configuration.label
+        .fixedSize(horizontal: false, vertical: true)
+        .markdownMargin(top: .zero, bottom: .em(0.8))
+        .markdownTextStyle {
+          FontWeight(.bold)
+          FontSize(.em(1.55))
+          ForegroundColor(DashTheme.strong)
+        }
+    }
+    .heading2 { configuration in
+      configuration.label
+        .fixedSize(horizontal: false, vertical: true)
+        .markdownMargin(top: .em(1.25), bottom: .em(0.55))
+        .markdownTextStyle {
+          FontWeight(.semibold)
+          FontSize(.em(1.15))
+          ForegroundColor(DashTheme.strong)
+        }
+    }
+    .paragraph { configuration in
+      configuration.label
+        .fixedSize(horizontal: false, vertical: true)
+        .relativeLineSpacing(.em(0.22))
+        .markdownMargin(top: .zero, bottom: .em(0.9))
+    }
+    .listItem { configuration in
+      configuration.label
+        .markdownMargin(top: .em(0.2))
+    }
 }

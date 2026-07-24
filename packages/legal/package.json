@@ -1,0 +1,14 @@
+{
+	"name": "@dash/legal",
+	"type": "module",
+	"version": "0.1.0",
+	"private": true,
+	"exports": {
+		"./PrivacyPolicy.md": "./PrivacyPolicy.md",
+		"./TermsOfUse.md": "./TermsOfUse.md"
+	},
+	"files": [
+		"PrivacyPolicy.md",
+		"TermsOfUse.md"
+	]
+}
