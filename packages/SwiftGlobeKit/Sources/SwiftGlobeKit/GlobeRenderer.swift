@@ -21,10 +21,7 @@ import simd
 enum GlobeRendererError: Error, LocalizedError {
   case metalUnavailable
   case commandQueueUnavailable
-  case shaderSourceUnavailable
-  case shaderSourceLoadingFailed(Error)
-  case shaderLibraryUnavailable
-  case shaderLibraryCompilationFailed(Error)
+  case shaderLibraryLoadingFailed(Error)
   case shaderFunctionUnavailable(String)
   case pipelineCreationFailed(String)
   case landMaskUnavailable
@@ -37,14 +34,8 @@ enum GlobeRendererError: Error, LocalizedError {
       "Metal is unavailable on this device."
     case .commandQueueUnavailable:
       "Metal could not create a command queue."
-    case .shaderSourceUnavailable:
-      "SwiftGlobeKit's bundled Metal shader source is unavailable."
-    case .shaderSourceLoadingFailed(let error):
-      "SwiftGlobeKit could not read its Metal shader source: \(error.localizedDescription)"
-    case .shaderLibraryUnavailable:
-      "SwiftGlobeKit could not compile its Metal shader library."
-    case .shaderLibraryCompilationFailed(let error):
-      "SwiftGlobeKit could not compile its Metal shader library: \(error.localizedDescription)"
+    case .shaderLibraryLoadingFailed(let error):
+      "SwiftGlobeKit could not load its bundled Metal library: \(error.localizedDescription)"
     case .shaderFunctionUnavailable(let name):
       "SwiftGlobeKit's Metal shader function \(name) is unavailable."
     case .pipelineCreationFailed(let name):
@@ -892,40 +883,11 @@ final class GlobeRenderer: NSObject, MTKViewDelegate {
       return cachedShaderLibrary.library
     }
 
-    guard
-      let shaderURL = Bundle.module.url(
-        forResource: "GlobeShaders",
-        withExtension: "metal"
-      )
-    else {
-      throw GlobeRendererError.shaderSourceUnavailable
-    }
-
-    let shaderSource: String
+    let library: any MTLLibrary
     do {
-      shaderSource = try String(contentsOf: shaderURL, encoding: .utf8)
+      library = try device.makeDefaultLibrary(bundle: Bundle.module)
     } catch {
-      throw GlobeRendererError.shaderSourceLoadingFailed(error)
-    }
-
-    let library: any MTLLibrary = try await withCheckedThrowingContinuation {
-      continuation in
-      device.makeLibrary(
-        source: shaderSource,
-        options: nil
-      ) { library, error in
-        if let library {
-          continuation.resume(returning: library)
-        } else if let error {
-          continuation.resume(
-            throwing: GlobeRendererError.shaderLibraryCompilationFailed(error)
-          )
-        } else {
-          continuation.resume(
-            throwing: GlobeRendererError.shaderLibraryUnavailable
-          )
-        }
-      }
+      throw GlobeRendererError.shaderLibraryLoadingFailed(error)
     }
 
     cachedShaderLibrary = (device.registryID, library)
