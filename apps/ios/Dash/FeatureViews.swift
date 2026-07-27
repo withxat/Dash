@@ -129,7 +129,7 @@ func readScopes(for destination: Destination) -> Set<String> {
   }
 }
 
-/// Mutation scopes stay separate so the initial OAuth grant can render a
+/// Mutation scopes stay separate so Demo and per-control UI gating can render a
 /// destination without enabling write controls owned by a sibling screen.
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {

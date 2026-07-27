@@ -333,7 +333,7 @@ private struct OnboardingView: View {
             .onboardingStagger(visible: permissionsAreVisible, index: 0)
           Text(
             DashL10n.string(
-              "Dash starts with read-only access. Write permissions and notifications are requested only when you use them."
+              "Dash requests all permissions used by its current features in one authorization."
             )
           )
           .dashTextStyle(.supporting)
@@ -360,9 +360,9 @@ private struct OnboardingView: View {
         OnboardingPermissionInfoRow(
           id: "cloudflare",
           title: DashL10n.string("Cloudflare access"),
-          status: DashL10n.string("Read only first"),
+          status: DashL10n.string("Read & write"),
           subtitle: DashL10n.string(
-            "Dash asks for write access only when you choose an action that changes your account."
+            "Review every requested permission in Cloudflare before you authorize."
           ),
           icon: SolarAsset.cloudflare
         )

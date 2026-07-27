@@ -405,7 +405,7 @@ struct SettingsView: View {
                 DashListRow(
                   title: DashL10n.string("Shortcuts & Share write access"),
                   subtitle: DashL10n.string(
-                    "Grant only the mutation scopes used by these actions."
+                    "Dash will request all permissions used by its current features."
                   ),
                   icon: SolarAsset.Content.shieldCheck,
                   trailing: model.isAuthenticating

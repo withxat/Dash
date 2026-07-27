@@ -3192,6 +3192,17 @@
         }
       }
     },
+    "Dash requests all permissions used by its current features in one authorization." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 会在一次授权中请求当前功能所需的全部权限。"
+          }
+        }
+      }
+    },
     "Dash starts with read-only access. Write permissions and notifications are requested only when you use them." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3199,6 +3210,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dash 会先以只读权限连接；只有在使用相应功能时，才会请求写入权限和通知权限。"
+          }
+        }
+      }
+    },
+    "Dash will request all permissions used by its current features." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 将请求当前功能所需的全部权限。"
           }
         }
       }
@@ -7875,6 +7897,17 @@
         }
       }
     },
+    "Read & write" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取和写入"
+          }
+        }
+      }
+    },
     "Read Only" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8496,6 +8529,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回并连接"
+          }
+        }
+      }
+    },
+    "Review every requested permission in Cloudflare before you authorize." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授权前可在 Cloudflare 中查看全部请求权限。"
           }
         }
       }

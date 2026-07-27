@@ -82,7 +82,7 @@ final class AppModel {
 
   init(configuration: AppConfiguration = .current) {
     self.configuration = configuration
-    selectedScopes = DashAuthorizationScopes.initialReadOnly
+    selectedScopes = DashAuthorizationScopes.core
     let store = KeychainTokenStore()
     tokenStore = store
     client = CloudflareClient(
@@ -374,14 +374,11 @@ final class AppModel {
       authState = .unauthenticated
       return
     }
-    // Older installs can have a valid token without the scope mirror added by
-    // progressive authorization. Treat that unknown token conservatively as
-    // the reviewed read-only grant: browsing remains available, while no
-    // mutation is enabled until Cloudflare returns an explicit scope set.
-    grantedScopes =
-      (try? await tokenStore.getGrantedScopes())
-      ?? DashAuthorizationScopes.initialReadOnly
-    selectedScopes = grantedScopes ?? DashAuthorizationScopes.initialReadOnly
+    // Older installs can have a valid token without a scope mirror. Unknown is
+    // not equivalent to the latest read-only profile: claiming otherwise can
+    // suppress OAuth even when the server rejects a newly added read endpoint.
+    grantedScopes = try? await tokenStore.getGrantedScopes()
+    selectedScopes = DashAuthorizationScopes.core
     do {
       try await loadIdentity()
       authState = .authenticated
@@ -420,7 +417,7 @@ final class AppModel {
   }
 
   func signIn() {
-    authorize(scopes: selectedScopes, preservesExistingSession: false)
+    authorize(scopes: DashAuthorizationScopes.core, preservesExistingSession: false)
   }
 
   func requestAccess(to scopes: Set<String>) {
@@ -437,8 +434,11 @@ final class AppModel {
       return
     }
     guard !isAuthenticating else { return }
-    if let grantedScopes, scopes.isSubset(of: grantedScopes) { return }
-    let requested = Self.incrementalScopes(granted: grantedScopes, requested: scopes)
+    guard
+      let requested = Self.accountAuthorizationRequest(
+        granted: grantedScopes,
+        requested: scopes)
+    else { return }
     authorize(scopes: requested, preservesExistingSession: true)
   }
 
@@ -446,11 +446,26 @@ final class AppModel {
     !scopes.isSubset(of: demoGrantedScopes)
   }
 
-  static func incrementalScopes(
+  /// Real-account authorization is intentionally one-shot for now. Existing
+  /// grants still contribute any out-of-profile scopes, while every upgrade
+  /// asks for the complete set used by Dash's current features.
+  static func accountAccessScopes(
     granted: Set<String>?,
     requested: Set<String>
   ) -> Set<String> {
-    (granted ?? []).union(requested).union(CloudflareScopes.required)
+    (granted ?? [])
+      .union(requested)
+      .union(DashAuthorizationScopes.core)
+      .union(CloudflareScopes.required)
+  }
+
+  static func accountAuthorizationRequest(
+    granted: Set<String>?,
+    requested: Set<String>
+  ) -> Set<String>? {
+    let desired = accountAccessScopes(granted: granted, requested: requested)
+    if let granted, desired.isSubset(of: granted) { return nil }
+    return desired
   }
 
   func hasScopes(_ scopes: Set<String>) -> Bool {
@@ -531,8 +546,8 @@ final class AppModel {
           resetAccountScopedWork()
           try await loadIdentity()
           if preservesExistingSession {
-            // Incremental authorization stays on the current screen. Clear the
-            // busy state so a later action can request a different write scope.
+            // A legacy grant upgrade stays on the current screen so the user
+            // can retry the action that led them to the consent sheet.
             isAuthenticating = false
           } else {
             // Let the browser sheet finish dismissing first, or the login →
@@ -610,7 +625,7 @@ final class AppModel {
     user = nil
     activeAccountID = nil
     grantedScopes = nil
-    selectedScopes = DashAuthorizationScopes.initialReadOnly
+    selectedScopes = DashAuthorizationScopes.core
     identityStale = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
@@ -656,7 +671,7 @@ final class AppModel {
     accounts = []
     user = nil
     grantedScopes = nil
-    selectedScopes = DashAuthorizationScopes.initialReadOnly
+    selectedScopes = DashAuthorizationScopes.core
     identityStale = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil

@@ -14,8 +14,8 @@ enum DashAuthorizationScopes {
   ]
 
   /// Read scopes used by nested screens that are not represented by a
-  /// standalone FeatureID. These ship in the first OAuth grant so every catalog
-  /// surface can load without giving Dash permission to mutate the account.
+  /// standalone FeatureID. These keep the Demo's read-only profile able to load
+  /// every catalog surface without mutation permission.
   ///
   /// Watchtower's client-side health checks are gone, and with them the reasons
   /// to ask for `argotunnel.read`, `load-balancing-monitors-and-pools.read`,
@@ -37,8 +37,8 @@ enum DashAuthorizationScopes {
     "analytics.read",
   ]
 
-  /// Mutating operations that are not represented by a FeatureID. They are
-  /// requested incrementally from the concrete action that needs them.
+  /// Mutating operations that are not represented by a FeatureID. They remain
+  /// explicit so `core` audits the complete real-account authorization.
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
@@ -55,8 +55,8 @@ enum DashAuthorizationScopes {
     "cache.purge",
   ]).union(R2ShareDestination.requiredWriteScopes)
 
-  /// The first OAuth grant: enough to identify the user and browse every
-  /// shipped resource, but never enough to change the account.
+  /// Read-only profile retained for Demo and capability-gating tests.
+  /// Real-account authorization uses `core`.
   static let initialReadOnly: Set<String> = {
     let reads = coreFeatures.reduce(into: Set<String>()) {
       $0.formUnion($1.capability.read)
@@ -67,9 +67,8 @@ enum DashAuthorizationScopes {
       .union(CloudflareScopes.required)
   }()
 
-  /// Full app capability, retained as the explicit "grant everything Dash can
-  /// currently do" set and as a release-gate audit surface. It is not requested
-  /// during first sign-in.
+  /// Full app capability and the default real-account OAuth grant. This remains
+  /// the release-gate audit surface for everything Dash can currently do.
   static let core: Set<String> = {
     let capabilities = coreFeatures.reduce(into: Set<String>()) {
       $0.formUnion($1.capability.all)

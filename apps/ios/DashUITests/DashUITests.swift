@@ -25,7 +25,7 @@ final class DashUITests: XCTestCase {
         || app.buttons["Resources"].waitForExistence(timeout: 10))
   }
 
-  func testOnboardingStartsReadOnlyAndDefersNotifications() {
+  func testOnboardingRequestsFullAccessAndDefersNotifications() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview-onboarding"])
 
@@ -55,12 +55,12 @@ final class DashUITests: XCTestCase {
     let network = app.buttons["onboarding-permission-network"]
     XCTAssertTrue(cloudflare.waitForExistence(timeout: 5))
     XCTAssertTrue(network.waitForExistence(timeout: 5))
-    let readOnlyLabel = NSPredicate(format: "label CONTAINS[c] %@", "Read only first")
-    let readOnlyExpectation = XCTNSPredicateExpectation(
-      predicate: readOnlyLabel,
+    let fullAccessLabel = NSPredicate(format: "label CONTAINS[c] %@", "Read & write")
+    let fullAccessExpectation = XCTNSPredicateExpectation(
+      predicate: fullAccessLabel,
       object: cloudflare)
     XCTAssertEqual(
-      XCTWaiter.wait(for: [readOnlyExpectation], timeout: 2),
+      XCTWaiter.wait(for: [fullAccessExpectation], timeout: 2),
       .completed,
       "Unexpected Cloudflare row label: \(cloudflare.label)")
     XCTAssertFalse(app.buttons["onboarding-permission-notifications"].exists)

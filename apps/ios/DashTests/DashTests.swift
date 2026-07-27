@@ -181,10 +181,10 @@ struct LocalizationTests {
   }
 }
 
-/// The first grant must make every catalog feature browsable without allowing
-/// mutations. A new FeatureID belongs in `coreFeatures` at the same time it
-/// gets a descriptor, or it does not ship.
-@Test func everyFeatureIsReadOnlyOnTheInitialGrant() {
+/// The Demo's read-only profile must keep every catalog feature browsable
+/// without allowing mutations. A new FeatureID belongs in `coreFeatures` at
+/// the same time it gets a descriptor, or it does not ship.
+@Test func everyFeatureIsBrowsableWithTheReadOnlyProfile() {
   #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
   for feature in FeatureID.allCases {
     #expect(
@@ -193,9 +193,9 @@ struct LocalizationTests {
   }
 }
 
-@Test @MainActor func appModelDefaultsToReadOnlyPermissions() {
+@Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
-  #expect(model.selectedScopes == DashAuthorizationScopes.initialReadOnly)
+  #expect(model.selectedScopes == DashAuthorizationScopes.core)
   #expect(DashAuthorizationScopes.initialReadOnly.count == 15)
   #expect(DashAuthorizationScopes.core.count == 26)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
@@ -484,8 +484,8 @@ struct LocalizationTests {
   #expect(featureID(for: .profile) == nil)
 }
 
-/// Operational destinations split reads from mutations so the initial grant
-/// can render them without accidentally authorizing a save.
+/// Operational destinations keep reads and mutations explicit so Demo and
+/// per-control UI gating stay read-only even though real sign-in requests both.
 @Test func destinationScopesSeparateReadsFromWrites() {
   #expect(requiredScopes(for: .dns("z1")).contains("dns.write"))
   #expect(requiredScopes(for: .cache("z1")).contains("cache.purge"))
@@ -1800,14 +1800,30 @@ struct LocalizationTests {
   #expect(state.ownsLoad(loadB, context: accountB))
 }
 
-@Test @MainActor func incrementalAuthorizationKeepsExistingAndRequiredScopes() {
-  let scopes = AppModel.incrementalScopes(
-    granted: ["zone.read"],
-    requested: ["workers-scripts.read"]
+@Test @MainActor func legacyAuthorizationUpgradeRequestsFullAccountAccess() {
+  let legacyGrant = DashAuthorizationScopes.initialReadOnly
+  #expect(Set(["analytics.read"]).isSubset(of: legacyGrant))
+
+  let request = AppModel.accountAuthorizationRequest(
+    granted: legacyGrant,
+    requested: ["analytics.read"]
   )
-  #expect(scopes.contains("zone.read"))
-  #expect(scopes.contains("workers-scripts.read"))
+  #expect(request != nil)
+  let scopes = request ?? []
+  #expect(legacyGrant.isSubset(of: scopes))
+  #expect(DashAuthorizationScopes.core.isSubset(of: scopes))
+  #expect(!scopes.isSubset(of: legacyGrant))
   #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
+  #expect(
+    AppModel.accountAuthorizationRequest(
+      granted: DashAuthorizationScopes.core,
+      requested: ["analytics.read"]) == nil)
+  #expect(
+    DashAuthorizationScopes.core.isSubset(
+      of:
+        AppModel.accountAuthorizationRequest(
+          granted: nil,
+          requested: ["analytics.read"]) ?? []))
 }
 
 @Test func featureAccessDistinguishesLockedReadOnlyAndFull() {

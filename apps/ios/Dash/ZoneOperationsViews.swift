@@ -906,7 +906,7 @@ struct WAFEventsView: View {
     }
     .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .task(id: model.grantedScopes) { await load() }
   }
 
   /// The GraphQL country dimension is an ISO 3166 alpha-2 code — show the
