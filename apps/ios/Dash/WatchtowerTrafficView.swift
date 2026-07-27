@@ -280,6 +280,10 @@ final class WatchtowerMetricDragVisualState {
   private(set) var presentation: WatchtowerMetricDragPresentation?
   private(set) var isSettling = false
   @ObservationIgnored weak var coordinateView: UIView?
+  /// The space the live `presentation` coordinates are expressed in. Held for
+  /// the length of one session so move / settle keep measuring against the same
+  /// view the lift resolved.
+  @ObservationIgnored private(set) weak var activeReference: UIView?
   @ObservationIgnored private var retainedDelegate: AnyObject?
   @ObservationIgnored private var sourceViews: [WatchtowerAnalyticsMetric: WeakView] = [:]
 
@@ -291,15 +295,26 @@ final class WatchtowerMetricDragVisualState {
     }
   }
 
+  /// The ghost card is positioned in the charts stack's own space, so the
+  /// registered coordinate view is the reference we want. The window is a
+  /// last-resort fallback: a lift must never be cancelled just because that
+  /// registration is missing — a mispositioned ghost is recoverable, a drag
+  /// that silently refuses to start is not.
+  func reference(for sourceView: UIView) -> UIView? {
+    coordinateView ?? sourceView.window
+  }
+
   func begin(
     metric: WatchtowerAnalyticsMetric,
     size: CGSize,
     location: CGPoint,
     grabOffset: CGPoint,
     isExpanded: Bool,
+    reference: UIView,
     retaining delegate: AnyObject
   ) {
     retainedDelegate = delegate
+    activeReference = reference
     isSettling = false
     presentation = WatchtowerMetricDragPresentation(
       metric: metric,
@@ -333,8 +348,11 @@ final class WatchtowerMetricDragVisualState {
   }
 
   func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
-    guard let coordinateView, let view = sourceViews[metric]?.value else { return nil }
-    let frame = view.convert(view.bounds, to: coordinateView)
+    guard
+      let reference = activeReference ?? coordinateView,
+      let view = sourceViews[metric]?.value
+    else { return nil }
+    let frame = view.convert(view.bounds, to: reference)
     guard frame.width > 0, frame.height > 0 else { return nil }
     return CGPoint(x: frame.midX, y: frame.midY)
   }
@@ -347,6 +365,7 @@ final class WatchtowerMetricDragVisualState {
   func finish() {
     presentation = nil
     isSettling = false
+    activeReference = nil
     retainedDelegate = nil
   }
 }
@@ -733,7 +752,6 @@ struct WatchtowerTrafficView: View {
   let customization: WatchtowerChartCustomizationState
   let dragVisual: WatchtowerMetricDragVisualState
   let isEditing: Bool
-  let editorInteractionsReady: Bool
   let editorControlsVisible: Bool
   let usesPlaceholderCharts: Bool
   @State private var removalSequence = WatchtowerMetricRemovalSequence()
@@ -826,7 +844,7 @@ struct WatchtowerTrafficView: View {
         }
       }
 
-      if editorInteractionsReady, let overview = state.overview {
+      if isEditing, let overview = state.overview {
         WatchtowerMetricDragOverlay(
           state: dragVisual,
           overview: overview,
@@ -834,8 +852,14 @@ struct WatchtowerTrafficView: View {
         )
       }
     }
+    // Every lift resolves its coordinates against this view, so it mounts with
+    // the editor itself. Gating it — or the drag sources below — on the
+    // controls' readiness left a window where a long press reached a bridge
+    // whose reference was missing, and `itemsForBeginning` cancels that
+    // silently. Kept as a background so it matches the stack's frame exactly
+    // and never contributes to layout.
     .background {
-      if editorInteractionsReady {
+      if isEditing {
         WatchtowerMetricDragCoordinateView(state: dragVisual)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .allowsHitTesting(false)
@@ -844,7 +868,7 @@ struct WatchtowerTrafficView: View {
     .accessibilityIdentifier(isEditing ? "watchtower-chart-editor" : "watchtower-charts")
     .modifier(
       WatchtowerMetricRootDropModifier(
-        isEnabled: editorInteractionsReady,
+        isEnabled: isEditing,
         customization: customization)
     )
     .onChange(of: isEditing) {
@@ -891,7 +915,7 @@ struct WatchtowerTrafficView: View {
         RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
       )
       .overlay {
-        if editorInteractionsReady {
+        if isEditing {
           WatchtowerNativeMetricDragSource(
             metric: metric,
             isExpanded: expanded,
@@ -904,7 +928,7 @@ struct WatchtowerTrafficView: View {
       }
       .modifier(
         WatchtowerMetricDropModifier(
-          isEnabled: editorInteractionsReady,
+          isEnabled: isEditing,
           target: metric,
           customization: customization,
           reduceMotion: reduceMotion)
@@ -913,7 +937,11 @@ struct WatchtowerTrafficView: View {
         isEditing ? DashL10n.string("Touch and hold, then drag to reorder") : ""
       )
       .accessibilityHidden(isDeparting)
-      .allowsHitTesting(removalSequence.isIdle)
+      // Only the card that is leaving stops taking touches. `removalSequence`
+      // is one shared value, so gating every card on it meant a removal whose
+      // two-stage completion never landed took the whole editor's gestures
+      // with it. Re-entrancy is already guarded inside the handlers.
+      .allowsHitTesting(!isDeparting)
       .zIndex(
         isDeparting
           ? 2
@@ -1439,12 +1467,15 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       _ interaction: UIDragInteraction,
       itemsForBeginning session: any UIDragSession
     ) -> [UIDragItem] {
+      // Returning an empty array cancels the lift with no feedback at all, so
+      // nothing here may depend on state that can go missing between mounting
+      // the bridge and the touch — `reference(for:)` always resolves.
       guard let sourceView = interaction.view,
-        let coordinateView = visualState.coordinateView,
+        let reference = visualState.reference(for: sourceView),
         customization.beginDragging(metric)
       else { return [] }
 
-      let location = session.location(in: coordinateView)
+      let location = session.location(in: reference)
       let sourceLocation = session.location(in: sourceView)
       let grabOffset = CGPoint(
         x: sourceLocation.x - sourceView.bounds.midX,
@@ -1458,6 +1489,7 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
         location: location,
         grabOffset: grabOffset,
         isExpanded: isExpanded,
+        reference: reference,
         retaining: self)
 
       let provider = NSItemProvider(object: metric.rawValue as NSString)
@@ -1479,8 +1511,8 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       _ interaction: UIDragInteraction,
       sessionDidMove session: any UIDragSession
     ) {
-      guard active, let coordinateView = visualState.coordinateView else { return }
-      visualState.move(to: session.location(in: coordinateView))
+      guard active, let reference = visualState.activeReference else { return }
+      visualState.move(to: session.location(in: reference))
     }
 
     func dragInteraction(

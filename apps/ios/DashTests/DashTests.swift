@@ -636,14 +636,17 @@ struct LocalizationTests {
 
 @Test @MainActor func watchtowerDragOverlayPreservesGrabOffsetAndEndsCleanly() {
   let visualState = WatchtowerMetricDragVisualState()
+  let reference = UIView()
   visualState.begin(
     metric: .webTraffic,
     size: CGSize(width: 160, height: 220),
     location: CGPoint(x: 220, y: 360),
     grabOffset: CGPoint(x: 30, y: -20),
     isExpanded: true,
+    reference: reference,
     retaining: NSObject())
 
+  #expect(visualState.activeReference === reference)
   #expect(visualState.presentation?.center == CGPoint(x: 190, y: 380))
 
   visualState.move(to: CGPoint(x: 260, y: 410))
@@ -658,6 +661,23 @@ struct LocalizationTests {
   visualState.finish()
   #expect(visualState.presentation == nil)
   #expect(!visualState.isSettling)
+  #expect(visualState.activeReference == nil)
+}
+
+/// A lift must never be cancelled because the charts stack's coordinate view is
+/// missing — `itemsForBeginning` returning an empty array is silent, so the
+/// window has to stand in.
+@Test @MainActor func watchtowerDragReferenceFallsBackToTheSourceWindow() {
+  let visualState = WatchtowerMetricDragVisualState()
+  let window = UIWindow()
+  let source = UIView()
+  window.addSubview(source)
+
+  #expect(visualState.reference(for: source) === window)
+
+  let coordinateView = UIView()
+  visualState.coordinateView = coordinateView
+  #expect(visualState.reference(for: source) === coordinateView)
 }
 
 @Test func watchtowerAnalyticsCardLayoutDefaultsExpandedAndPersistsCollapse() {

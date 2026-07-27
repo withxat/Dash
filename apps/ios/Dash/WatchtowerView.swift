@@ -116,7 +116,6 @@ struct WatchtowerView: View {
         customization: customization,
         dragVisual: dragVisual,
         isEditing: customization.isEditing,
-        editorInteractionsReady: editorInteractionsReady,
         editorControlsVisible: editorControlsVisible,
         usesPlaceholderCharts: customization.isEditing
       )
