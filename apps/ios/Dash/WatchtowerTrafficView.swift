@@ -859,17 +859,19 @@ struct WatchtowerTrafficView: View {
           // the arriving data lands in place instead of reflowing the screen.
           chartsSkeleton
         } else if let error = state.currentError, state.overview == nil {
-          statusCard {
-            emptyContent(
-              // `error` is already an actionable, localized message — only the
-              // surrounding chrome needs the catalog.
+          // Same contract as a cold list failure: the saved card layout stays
+          // painted and the failure lands on a wash over it, so the screen the
+          // user was waiting for never blinks out for one status card.
+          // `error` is already an actionable, localized message — only the
+          // surrounding chrome needs the catalog.
+          chartsSkeleton
+            .dashColdFailure(
               title: DashL10n.string("Traffic unavailable"),
               message: error,
-              buttonTitle: DashL10n.string("Try again")
+              actionTitle: DashL10n.string("Try again")
             ) {
               Task { await state.retry(model: model) }
             }
-          }
         } else if let overview = state.overview, let snapshot = state.snapshot {
           if customization.visibleMetrics.isEmpty {
             statusCard {

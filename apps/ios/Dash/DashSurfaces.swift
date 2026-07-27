@@ -1219,6 +1219,189 @@ struct DashListSkeleton: View {
   }
 }
 
+/// How tall a cold-failure layer grows over the skeleton it covers.
+enum DashColdFailureExtent {
+  /// Grow to the enclosing scroll viewport. A list skeleton is four rows tall,
+  /// so without this the copy lands in the top third with dead canvas below it.
+  case scrollViewport
+  /// Take the skeleton's own height — for placeholders that already paint a
+  /// screenful (Watchtower's saved chart layout).
+  case skeleton
+}
+
+extension View {
+  /// Fails *over* this skeleton instead of replacing it.
+  ///
+  /// A cold failure used to swap the placeholder for a centered empty state: the
+  /// structure the user was already reading vanished and one icon owned the
+  /// screen. Here the skeleton holds its ground, a canvas wash climbs out of the
+  /// bottom edge — solid under the copy, gone by the top, so the fade band *is*
+  /// the placeholder dissolving — and the copy reveals bottom-first so it rises
+  /// with the wash instead of against it.
+  ///
+  /// The skeleton is frozen chrome from here on: hit testing and VoiceOver both
+  /// belong to the copy, so nothing announces “Loading” after a failure.
+  func dashColdFailure(
+    title: String = "Couldn’t load",
+    message: String,
+    actionTitle: String,
+    extent: DashColdFailureExtent = .skeleton,
+    action: @escaping () -> Void
+  ) -> some View {
+    modifier(
+      DashColdFailureModifier(
+        title: title,
+        message: message,
+        actionTitle: actionTitle,
+        extent: extent,
+        action: action))
+  }
+}
+
+private struct DashColdFailureModifier: ViewModifier {
+  let title: String
+  let message: String
+  let actionTitle: String
+  let extent: DashColdFailureExtent
+  let action: () -> Void
+
+  func body(content: Content) -> some View {
+    ZStack(alignment: .bottom) {
+      DashColdFailureExtentFloor(extent: extent)
+
+      // Top-pinned: the skeleton must stay exactly where the loading phase left
+      // it, whatever height the layer grows to — the point of the treatment is
+      // that nothing moves when the failure arrives.
+      VStack(spacing: 0) {
+        content
+        Spacer(minLength: 0)
+      }
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+
+      DashColdFailureCopy(
+        title: title,
+        message: message,
+        actionTitle: actionTitle,
+        action: action)
+    }
+  }
+}
+
+/// Height *floor* for the layer, never a cap: a `ZStack` takes its tallest
+/// child, so the copy can still grow the layer past the viewport at
+/// accessibility type sizes instead of being clipped out of reach.
+private struct DashColdFailureExtentFloor: View {
+  let extent: DashColdFailureExtent
+
+  var body: some View {
+    switch extent {
+    case .skeleton:
+      EmptyView()
+    case .scrollViewport:
+      // `DashFeatureList` pads its scroll content; subtracting that lands the
+      // layer on the visible height exactly, so a failure never turns the
+      // screen into a scroll (pull-to-refresh still overscrolls).
+      Color.clear
+        .containerRelativeFrame(.vertical) { height, _ in
+          max(
+            DashTheme.Layout.emptyStateMinHeight,
+            height - DashTheme.Spacing.section - DashTheme.Spacing.scrollBottomInset)
+        }
+    }
+  }
+}
+
+/// The canvas wash a cold failure lands on: solid behind the copy, then a
+/// fill → clear ramp climbing `fadeDepth` above it, so the placeholder dissolves
+/// upward instead of ending on a line.
+///
+/// The ramp is measured in points from the copy's top edge, not as a fraction of
+/// the layer: the copy grows with Dynamic Type and the skeleton under it can be
+/// four list rows or a screenful of chart cards, so a fractional band would
+/// either starve the copy of contrast or wipe out the whole placeholder.
+enum DashColdFailureWashRamp {
+  /// How far above the copy the wash keeps dissolving the placeholder.
+  static let fadeDepth: CGFloat = 240
+
+  /// Fill (at the copy's edge) → clear (`fadeDepth` above it). Eased, not
+  /// linear — a straight ramp reads as a visible diagonal seam over rows.
+  static let stops: [(location: CGFloat, opacity: Double)] = [
+    (0, 1),
+    (0.15, 0.94),
+    (0.32, 0.78),
+    (0.5, 0.52),
+    (0.68, 0.26),
+    (0.85, 0.08),
+    (1, 0),
+  ]
+
+  static var fade: LinearGradient {
+    LinearGradient(
+      stops: stops.map {
+        Gradient.Stop(color: DashTheme.canvas.opacity($0.opacity), location: $0.location)
+      },
+      startPoint: .bottom,
+      endPoint: .top)
+  }
+}
+
+private struct DashColdFailureWash: View {
+  var body: some View {
+    VStack(spacing: 0) {
+      DashColdFailureWashRamp.fade
+        .frame(height: DashColdFailureWashRamp.fadeDepth)
+      DashTheme.canvas
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+    .dashSectionContentReveal()
+  }
+}
+
+private struct DashColdFailureCopy: View {
+  let title: String
+  let message: String
+  let actionTitle: String
+  let action: () -> Void
+
+  var body: some View {
+    // Reveal indices run bottom-first: the action leads and the mark lands last,
+    // so the copy climbs in the wash's direction.
+    VStack(spacing: DashTheme.Spacing.comfortable) {
+      SolarIcon(asset: SolarAsset.Content.danger, size: 34, color: DashTheme.strong)
+        .frame(width: 72, height: 72)
+        .background(DashTheme.recessed, in: Circle())
+        .dashSectionContentReveal(3)
+      Text(DashL10n.ui(title))
+        .dashTextStyle(.emptyTitle)
+        .foregroundStyle(DashTheme.strong)
+        .multilineTextAlignment(.center)
+        .dashSectionContentReveal(2)
+      Text(DashL10n.ui(message))
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .dashSectionContentReveal(1)
+      DashSecondaryPillButton(title: actionTitle, action: action)
+        .padding(.top, 6)
+        .dashSectionContentReveal()
+    }
+    .frame(maxWidth: 440)
+    .padding(DashTheme.Spacing.panel)
+    .frame(maxWidth: .infinity)
+    // Hoisted above its host so the ramp overhangs the copy's top edge; the
+    // solid half stays exactly behind the copy at any type size.
+    .background(alignment: .bottom) {
+      DashColdFailureWash()
+        .padding(.top, -DashColdFailureWashRamp.fadeDepth)
+    }
+  }
+}
+
+/// Cold-load failure for a feature list: `DashListSkeleton` stays on screen and
+/// the failure lands on a wash over it (`dashColdFailure`).
 struct ErrorStateView: View {
   let message: String
   let retry: () -> Void
@@ -1230,23 +1413,25 @@ struct ErrorStateView: View {
   }
 
   var body: some View {
-    DashEmptyState(
-      icon: SolarAsset.Content.danger,
-      title: "Couldn’t load",
-      message: presentation.message,
-      actionTitle: presentation.action.title,
-      action: {
-        switch presentation.action {
-        case .signInAgain:
-          Task { await model.signOut() }
-        case .grantAccess:
-          model.requestAccess(
-            to: featureRequiredScopes.isEmpty
-              ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
-        case .tryAgain:
-          retry()
-        }
-      })
+    DashListSkeleton()
+      .dashColdFailure(
+        message: presentation.message,
+        actionTitle: presentation.action.title,
+        extent: .scrollViewport,
+        action: recover)
+  }
+
+  private func recover() {
+    switch presentation.action {
+    case .signInAgain:
+      Task { await model.signOut() }
+    case .grantAccess:
+      model.requestAccess(
+        to: featureRequiredScopes.isEmpty
+          ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
+    case .tryAgain:
+      retry()
+    }
   }
 }
 
