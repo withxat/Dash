@@ -28,6 +28,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | --- | --- |
 | `apps/ios` | iOS 17+ SwiftUI App、Xcode 工程、单元测试和 UI 测试 |
 | `packages/cloudflare-api` | 无第三方依赖的 Swift OAuth 与 Cloudflare REST/GraphQL 客户端 |
+| `packages/SwiftGlobeKit` | 原生 SwiftUI + Metal 点阵地球组件库 |
 | `apps/web` | 落地页 + Hono 边缘应用（`dash-relay`），域名 `https://dash.xat.sh` |
 | `packages/ui` | 从原 workspace 保留、未被 App 使用的 Web 组件库 |
 
@@ -46,6 +47,7 @@ open apps/ios/Dash.xcodeproj
 pnpm ios:build
 pnpm ios:test
 pnpm api:test
+pnpm globe:test
 pnpm lint
 pnpm lint:fix
 pnpm typecheck

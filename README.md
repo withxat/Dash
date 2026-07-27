@@ -28,6 +28,7 @@ Out of MVP scope: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, 
 | --- | --- |
 | `apps/ios` | iOS 17+ SwiftUI app, Xcode project, unit tests, and UI tests |
 | `packages/cloudflare-api` | Dependency-free Swift Package for OAuth and Cloudflare REST/GraphQL APIs |
+| `packages/SwiftGlobeKit` | Native SwiftUI + Metal dotted-globe package |
 | `apps/web` | Landing page + Hono edge app (`dash-relay`) at `https://dash.xat.sh` |
 | `packages/ui` | Unused web component library retained from the original workspace |
 
@@ -56,6 +57,7 @@ open apps/ios/Dash.xcodeproj
 pnpm ios:build
 pnpm ios:test
 pnpm api:test
+pnpm globe:test
 pnpm lint
 pnpm lint:fix
 pnpm typecheck
