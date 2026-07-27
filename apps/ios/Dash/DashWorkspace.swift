@@ -108,10 +108,10 @@ struct DestinationStackHost<Root: View>: View {
               \.navigationSurfaceActive, isTabActive && destination == navigator.path.last)
         }
     }
-    // Opaque host plate under the stack: a clear host lets the previous
-    // screen (and the tab shell) show through mid-push. Each root still
-    // paints its own canvas/wash on top.
-    .background(DashTheme.canvas.ignoresSafeArea())
+    // No host plate: the stack is transparent so its tab root shows the
+    // workspace canvas + shared top wash painted behind the pager
+    // (`DashWorkspaceTopWash`). Mid-push nothing leaks through — the incoming
+    // destination carries its own full-bleed opaque canvas (above).
     // Kill the system push/pop gray dimming plate (`_UIParallaxDimmingView`)
     // and the drop shadow it casts onto the previous screen.
     .background {

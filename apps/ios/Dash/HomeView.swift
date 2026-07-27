@@ -28,10 +28,6 @@ struct HomeView: View {
   @State private var showsEditActions = false
   @State private var showsEditShortcuts = false
   @State private var showsDemoConnect = false
-  /// Scroll probes for `HomeTopWash`. Held in an `@Observable` store this
-  /// body never reads — per-frame writes must not re-render the whole Home
-  /// (or cancel an in-flight push). Only `HomeTopWash` observes the values.
-  @State private var washProbes = HomeWashProbes()
 
   private var recents: [RecentResource] {
     guard let accountID = model.activeAccountID else { return [] }
@@ -122,56 +118,15 @@ struct HomeView: View {
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
-      // Probe, not paint: publishes the content's live top edge. The wash
-      // itself cannot ride here — the scroll clips at its top bound, so a
-      // content background can never reach the band or the status bar.
-      .background {
-        GeometryReader { probe in
-          Color.clear.preference(
-            key: HomeContentTopPreferenceKey.self,
-            value: probe.frame(in: .global).minY
-          )
-        }
-      }
     }
     .modifier(DashScrollEdgeEffectsHidden())
     .refreshable { await loadZones(force: true) }
     .dashSectionEntrance()
-    // Canvas + wash live on this NavigationStack root so they slide away with
-    // a system push. Scroll chrome stays clear so the glow shows through the
-    // greeting; opaque cards (`homeCardSurface`) keep a true fill on top.
-    .dashCatalogScreen(
-      background: {
-        ZStack {
-          DashTheme.canvas.ignoresSafeArea()
-          HomeTopWash(probes: washProbes)
-        }
-        // Expand the plate under the status bar so the wash is in-bounds
-        // (page cells clip drawing outside their frame).
-        .ignoresSafeArea(edges: .top)
-      },
-      scrollFill: .clear,
-      topBand: {
-        // Rest-position probe: the zero-height hook sits exactly where the
-        // content's top edge rests below the nav bar when the scroll settles.
-        GeometryReader { probe in
-          Color.clear.preference(
-            key: HomeBandBottomPreferenceKey.self,
-            value: probe.frame(in: .global).maxY
-          )
-        }
-      }
-    )
-    // SwiftUI's internal hosting wrappers can shear the wash at the status bar.
-    // Lift only inside Home's content VC; leave navigation-transition
-    // containers outside Home untouched.
-    .background { HomeWashClipLift() }
-    .onPreferenceChange(HomeContentTopPreferenceKey.self) { [washProbes] value in
-      MainActor.assumeIsolated { washProbes.contentTopY = value }
-    }
-    .onPreferenceChange(HomeBandBottomPreferenceKey.self) { [washProbes] value in
-      MainActor.assumeIsolated { washProbes.bandBottomY = value }
-    }
+    // Transparent page: the canvas and the top light field are workspace
+    // chrome now (`DashWorkspaceTopWash`, painted behind the pager in
+    // `MainTabView`), shared with Resources and Watchtower. The greeting sits
+    // in that glow; opaque cards (`homeCardSurface`) keep a true fill on top.
+    .dashCatalogScreen()
     .task(id: model.accountRequestContext) { await loadZones() }
     .onChange(of: model.accountRequestContext) { _, context in
       resetZones(for: context)
@@ -425,160 +380,6 @@ struct HomeView: View {
       && zonesRequestID == requestID
       && zonesContext == context
       && model.isCurrentAccount(context)
-  }
-}
-
-/// Per-frame wash probe values for `HomeTopWash`. Owned by `HomeView` as an
-/// `@Observable` store the Home body never reads — only the wash observes —
-/// so scroll updates re-render just the glow, not the whole launcher.
-@MainActor
-@Observable
-final class HomeWashProbes {
-  var contentTopY: CGFloat?
-  var bandBottomY: CGFloat?
-}
-
-/// Clears `clipsToBounds` only on SwiftUI wrappers inside Home's content view
-/// controller so the top wash can paint into the status-bar band. The content
-/// VC itself and every navigation/page transition ancestor stay clipped.
-private struct HomeWashClipLift: UIViewRepresentable {
-  func makeUIView(context: Context) -> HomeWashClipLiftView {
-    HomeWashClipLiftView()
-  }
-
-  func updateUIView(_ uiView: HomeWashClipLiftView, context: Context) {
-    uiView.scheduleLift()
-  }
-}
-
-private final class HomeWashClipLiftView: UIView {
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    isUserInteractionEnabled = false
-    backgroundColor = .clear
-    isHidden = true
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError() }
-
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    if window != nil { scheduleLift() }
-  }
-
-  func scheduleLift() {
-    DispatchQueue.main.async { [weak self] in
-      self?.applyLift()
-      // SwiftUI rebuilds often re-enable clipping; one follow-up pass catches that.
-      DispatchQueue.main.async { [weak self] in
-        self?.applyLift()
-      }
-    }
-  }
-
-  private func applyLift() {
-    HomeWashClipScope.lift(from: self)
-  }
-}
-
-/// Testable boundary for the UIKit mutation above. The previous implementation
-/// climbed to the tab pager and also unclipped the `UINavigationController`'s
-/// transition views, so Home's old content layer covered an incoming feature.
-@MainActor
-enum HomeWashClipScope {
-  static func lift(from view: UIView) {
-    guard let contentRoot = enclosingContentView(from: view) else { return }
-
-    var node = view.superview
-    while let current = node, current !== contentRoot {
-      current.clipsToBounds = false
-      node = current.superview
-    }
-  }
-
-  private static func enclosingContentView(from view: UIView) -> UIView? {
-    var responder: UIResponder? = view
-    while let next = responder?.next {
-      if let viewController = next as? UIViewController,
-        !(viewController is UINavigationController),
-        !(viewController is UITabBarController),
-        !(viewController is UIPageViewController),
-        let root = viewController.viewIfLoaded,
-        view === root || view.isDescendant(of: root)
-      {
-        return root
-      }
-      responder = next
-    }
-    return nil
-  }
-}
-
-/// Live global Y of the Home scroll content's top edge.
-struct HomeContentTopPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat? = nil
-  static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
-    value = nextValue() ?? value
-  }
-}
-
-/// Global Y of the content's rest position: the zero-height `topBand` hook in
-/// `dashCatalogScreen`, seated right below the root's nav bar.
-struct HomeBandBottomPreferenceKey: PreferenceKey {
-  static let defaultValue: CGFloat? = nil
-  static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
-    value = nextValue() ?? value
-  }
-}
-
-/// Home's top light field: one continuous wash from the physical top edge —
-/// status bar included — falling off sideways and down into the canvas.
-/// Painted on the Home root background (under scroll content) so opaque cards
-/// keep a true fill and a system push slides the glow away with Home.
-/// Translates by the live scroll displacement; rubber-band pull is clamped so
-/// the field stays pinned while content stretches down.
-struct HomeTopWash: View {
-  let probes: HomeWashProbes
-
-  /// Current scroll displacement of the content's top edge from rest (≤ 0).
-  /// Clamped at rest: a rubber-band pull stretches the content down while the
-  /// pinned field stays put, so the glow keeps filling the gap.
-  private var shift: CGFloat {
-    guard let top = probes.contentTopY, let band = probes.bandBottomY else { return 0 }
-    return min(0, top - band)
-  }
-
-  var body: some View {
-    GeometryReader { proxy in
-      let topInset = max(0, proxy.frame(in: .global).minY)
-      ZStack {
-        LinearGradient(
-          stops: [
-            .init(color: DashTheme.homeWash.opacity(0.34), location: 0),
-            .init(color: DashTheme.homeWash.opacity(0.2), location: 0.42),
-            .init(color: DashTheme.homeWash.opacity(0), location: 1),
-          ],
-          startPoint: .top,
-          endPoint: .bottom
-        )
-        RadialGradient(
-          colors: [DashTheme.homeWash.opacity(0.32), DashTheme.homeWash.opacity(0)],
-          center: .top,
-          startRadius: 0,
-          endRadius: 290
-        )
-      }
-      // Tall enough to cover status bar + greeting after any residual top inset.
-      .frame(height: 300 + topInset)
-      // Scroll `shift` plus a nudge to the physical top when the plate still
-      // lays out below the status bar (zero when the page is already full-bleed).
-      .offset(y: shift - topInset)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .ignoresSafeArea(edges: .top)
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
   }
 }
 

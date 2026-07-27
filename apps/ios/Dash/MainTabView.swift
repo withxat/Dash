@@ -350,7 +350,17 @@ struct MainTabView: View {
       .animation(tabBarVisibilityAnimation, value: hidesDock)
       .allowsHitTesting(!hidesDock)
     }
-    .background(DashTheme.canvas.ignoresSafeArea())
+    // The workspace canvas and its ONE top light field, painted behind the
+    // pager. Every tab root is transparent (`dashCatalogScreen`), so all three
+    // share this single wash instead of carrying a copy each: the glow never
+    // rides a tab swipe, and it stays put while pages slide across it.
+    .background {
+      ZStack(alignment: .top) {
+        DashTheme.canvas
+        DashWorkspaceTopWash()
+      }
+      .ignoresSafeArea()
+    }
     .dashToastHost()
   }
 
@@ -378,6 +388,47 @@ struct MainTabView: View {
   /// Re-tapping the active tab clears its navigation path, matching `TabView`.
   private func popActiveTabToRoot() {
     activeNavigator.popToRoot()
+  }
+}
+
+/// The workspace's top light field: one continuous wash from the physical top
+/// edge — status bar included — falling off sideways and down into the canvas.
+///
+/// ONE instance, painted by `MainTabView` *behind* the tab pager. It belongs to
+/// the workspace canvas, not to any page: Home, Resources and Watchtower all
+/// show the same glow because they are transparent (`dashCatalogScreen`), not
+/// because each renders its own. Do not move a copy into a tab root — three
+/// washes would ride their pages on a swipe and read as a seam.
+///
+/// Behind the pages, never over them, so opaque cards keep a true fill and
+/// scrolled content passes across the light instead of being tinted by it. A
+/// pushed screen covers it with its own opaque canvas plate.
+struct DashWorkspaceTopWash: View {
+  /// Fall-off distance from the physical top edge.
+  private let depth: CGFloat = 300
+
+  var body: some View {
+    ZStack {
+      LinearGradient(
+        stops: [
+          .init(color: DashTheme.wash.opacity(0.34), location: 0),
+          .init(color: DashTheme.wash.opacity(0.2), location: 0.42),
+          .init(color: DashTheme.wash.opacity(0), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+      RadialGradient(
+        colors: [DashTheme.wash.opacity(0.32), DashTheme.wash.opacity(0)],
+        center: .top,
+        startRadius: 0,
+        endRadius: 290
+      )
+    }
+    .frame(height: depth)
+    .frame(maxWidth: .infinity)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 }
 

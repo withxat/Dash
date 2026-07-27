@@ -589,7 +589,7 @@ struct AboutView: View {
             // The warm halo that used to lift the icon's spot off the canvas.
             .background {
               RadialGradient(
-                colors: [DashTheme.homeWash.opacity(0.55), DashTheme.homeWash.opacity(0)],
+                colors: [DashTheme.wash.opacity(0.55), DashTheme.wash.opacity(0)],
                 center: .center,
                 startRadius: 8,
                 endRadius: 300

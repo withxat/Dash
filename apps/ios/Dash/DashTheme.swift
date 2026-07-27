@@ -423,9 +423,11 @@ enum DashTheme {
   /// recognizable. Not the catalog blue (`brand`).
   static let accent = adaptive(
     light: 0xF6821F, dark: 0xFF9838, highLight: 0xC45A00, highDark: 0xFFB366)
-  /// Soft brand-orange glow for Home's top light field and the About halo —
-  /// same adaptive stop as `accent`; call sites apply opacity so it washes into `canvas`.
-  static let homeWash = accent
+  /// Soft brand-orange glow for the workspace's top light field
+  /// (`DashWorkspaceTopWash`, shared by all three tab roots) and the About
+  /// halo — same adaptive stop as `accent`; call sites apply opacity so it
+  /// washes into `canvas`.
+  static let wash = accent
   /// `color-kumo-brand` / `color-kumo-brand-hover` (high light) /
   /// `text-kumo-link` (high dark). Reserved for focus rings, primary CTAs,
   /// and rare accents — not catalog decoration.

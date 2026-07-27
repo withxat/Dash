@@ -129,9 +129,9 @@ struct HeaderInboxButton: View {
 }
 
 extension View {
-  /// Canvas chrome for a tab-root screen: canvas background and every fix
-  /// needed to keep the system's white slabs from painting over it (UIKit
-  /// scroll fill, iOS 26 edge pockets, nav-bar background).
+  /// Chrome for a tab-root screen: a transparent page plus every fix needed to
+  /// keep the system's white slabs from painting over the workspace canvas
+  /// (UIKit scroll fill, iOS 26 edge pockets, nav-bar background).
   ///
   /// The root shows a REAL navigation bar — no title, no items. Keeping the
   /// bar mounted is what makes a push seamless: the bar's height never
@@ -139,17 +139,13 @@ extension View {
   /// slot where the shared floating avatar sits (`MainTabView` renders that
   /// avatar once, above the pager, so it doesn't ride along on tab swipes;
   /// seating it as a toolbar item would also squash it against the bar's
-  /// item-height clamp). `topBand` is a zero-height hook at the content's
-  /// rest line — Home hangs its scroll probe there.
+  /// item-height clamp).
   ///
-  /// `scrollFill: .clear` is for Home: its in-page canvas + top wash must
-  /// show through the content scroll. Other roots keep `.canvas` so the
-  /// system white slab stays dead.
-  func dashCatalogScreen(
-    @ViewBuilder background: () -> some View = { DashTheme.canvas.ignoresSafeArea() },
-    scrollFill: DashScrollViewConfigurator.Fill = .canvas,
-    @ViewBuilder topBand: () -> some View = { Color.clear }
-  ) -> some View {
+  /// Roots paint NO background of their own. The canvas and the single
+  /// `DashWorkspaceTopWash` live behind the pager in `MainTabView`, so all
+  /// three tabs share one light field: the glow holds still while pages slide
+  /// across it. Give a root an opaque plate again and it goes dark on that tab.
+  func dashCatalogScreen() -> some View {
     navigationTitle("")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
@@ -161,21 +157,15 @@ extension View {
           Color.clear.frame(width: 1, height: 1)
         }
       }
-      // The bar itself stays fully transparent so the canvas (and Home's
-      // wash) shows through; scrolled content frosts under the status bar
-      // only via the shared appearance, never a slab.
+      // The bar itself stays fully transparent so the canvas and the shared
+      // wash show through; scrolled content frosts under the status bar only
+      // via the shared appearance, never a slab.
       .toolbarBackground(.hidden, for: .navigationBar)
-      .safeAreaInset(edge: .top, spacing: 0) {
-        Color.clear
-          .frame(height: 0)
-          .background { topBand() }
-      }
       .scrollContentBackground(.hidden)
       .modifier(DashScrollEdgeEffectsHidden())
-      // UIKit scroll/hosting chrome → canvas grey (kills the system white slab),
-      // or clear on Home so the page's own canvas + wash show through.
-      .background { DashScrollViewConfigurator(fill: scrollFill) }
-      .background { background() }
+      // Punches the UIKit scroll/hosting/navigation plates clear so the
+      // workspace canvas + wash behind the pager are what the root shows.
+      .background { DashScrollViewConfigurator(fill: .clear) }
   }
 
   /// Canvas scroll chrome for pushed feature/detail screens. Tab roots use
@@ -407,6 +397,22 @@ private struct DashScrollDismissesKeyboard: ViewModifier {
   }
 }
 
+/// Which container plates a transparent (tab-root) screen may punch through so
+/// the workspace canvas and its shared top wash show. UIKit's own chrome is
+/// flat white or flat black in the two appearances — and `DashTheme.canvas` is
+/// itself near-white / near-black — so those two bands cover both the system
+/// default and a plate an earlier pass already painted. Anything in between is
+/// somebody's real surface and stays.
+enum DashCanvasPlateRules {
+  static func isSystemPlate(_ color: UIColor?) -> Bool {
+    guard let color else { return false }
+    var white: CGFloat = 0
+    var alpha: CGFloat = 0
+    guard color.getWhite(&white, alpha: &alpha), alpha > 0.9 else { return false }
+    return white > 0.96 || white < 0.06
+  }
+}
+
 /// Clears UIScrollView's opaque fill and hides iOS 26 edge pockets. SwiftUI's
 /// `scrollEdgeEffectHidden` alone was still leaving a fixed white slab that
 /// content scrolled underneath.
@@ -442,13 +448,22 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
   }
 
   private static func configureNearbyScrollViews(from view: UIView, fill: Fill) {
-    // Keep the three-tab pager clear so Home's wash / per-tab plates show
-    // through without applying one screen's fill to neighboring content.
+    // Keep the three-tab pager clear so the shared wash / per-screen plates
+    // show through without applying one screen's fill to neighboring content.
     var node: UIView? = view.superview
     while let current = node {
       if let pager = tabPager(in: current) {
         paint(pager, fill: .clear)
         break
+      }
+      // A `.clear` screen is a tab root: the workspace canvas + top wash live
+      // behind the pager, so every default UIKit plate *above* the content
+      // view controller (hosting wrappers, the navigation controller's view,
+      // the page cell) has to be punched through too — `apply(in:)` only walks
+      // downward from the content VC and never reaches them. Only system
+      // chrome is cleared; real content plates are left alone.
+      if fill == .clear, DashCanvasPlateRules.isSystemPlate(current.backgroundColor) {
+        current.backgroundColor = .clear
       }
       node = current.superview
     }
@@ -552,7 +567,11 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
       let unset =
         view.backgroundColor == nil
         || view.backgroundColor == .systemBackground
-        || isNearWhite(view.backgroundColor)
+        // A transparent root must also punch through dark-mode system chrome
+        // (near-black), which `isNearWhite` cannot see.
+        || (fill == .clear
+          ? DashCanvasPlateRules.isSystemPlate(view.backgroundColor)
+          : isNearWhite(view.backgroundColor))
       if unset {
         view.backgroundColor = fill == .clear ? .clear : canvasFill
       }

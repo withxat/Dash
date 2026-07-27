@@ -1226,37 +1226,27 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(resource(.kvNamespace).featureID == .kv)
 }
 
-@Test @MainActor func homeWashClipLiftStopsAtContentControllerBoundary() {
-  let outsideTransitionContainer = UIView()
-  outsideTransitionContainer.clipsToBounds = true
-
-  let contentController = UIViewController()
-  contentController.loadViewIfNeeded()
-  contentController.view.clipsToBounds = true
-  outsideTransitionContainer.addSubview(contentController.view)
-
-  let hostingWrapper = UIView()
-  hostingWrapper.clipsToBounds = true
-  let washProbe = UIView()
-  contentController.view.addSubview(hostingWrapper)
-  hostingWrapper.addSubview(washProbe)
-
-  HomeWashClipScope.lift(from: washProbe)
-
-  #expect(!hostingWrapper.clipsToBounds)
-  #expect(contentController.view.clipsToBounds)
-  #expect(outsideTransitionContainer.clipsToBounds)
+/// Tab roots are transparent so all three share one `DashWorkspaceTopWash`,
+/// which only works if the UIKit plates above them are punched through in both
+/// appearances — light chrome is white, dark chrome is black.
+@Test @MainActor func systemPlatesAreClearedInBothAppearances() {
+  #expect(DashCanvasPlateRules.isSystemPlate(.white))
+  #expect(DashCanvasPlateRules.isSystemPlate(.black))
+  #expect(
+    DashCanvasPlateRules.isSystemPlate(
+      UIColor(red: 0xFB / 255, green: 0xFB / 255, blue: 0xFB / 255, alpha: 1)))
+  #expect(
+    DashCanvasPlateRules.isSystemPlate(
+      UIColor(red: 0x03 / 255, green: 0x03 / 255, blue: 0x03 / 255, alpha: 1)))
 }
 
-@Test @MainActor func homeWashClipLiftDoesNothingWithoutContentController() {
-  let unknownContainer = UIView()
-  unknownContainer.clipsToBounds = true
-  let washProbe = UIView()
-  unknownContainer.addSubview(washProbe)
-
-  HomeWashClipScope.lift(from: washProbe)
-
-  #expect(unknownContainer.clipsToBounds)
+/// A real surface — a card fill, a tinted plate, anything already translucent —
+/// is somebody's content, not system chrome, and must survive untouched.
+@Test @MainActor func contentPlatesSurviveTheClearPass() {
+  #expect(!DashCanvasPlateRules.isSystemPlate(nil))
+  #expect(!DashCanvasPlateRules.isSystemPlate(.systemOrange))
+  #expect(!DashCanvasPlateRules.isSystemPlate(UIColor(white: 0.5, alpha: 1)))
+  #expect(!DashCanvasPlateRules.isSystemPlate(UIColor(white: 1, alpha: 0.5)))
 }
 
 @Test func navigationDimmingScrubberPreservesContentBearingContainer() {
