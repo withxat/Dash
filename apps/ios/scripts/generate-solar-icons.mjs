@@ -47,6 +47,7 @@ const FILL_ICONS = {
 	SolarLockPasswordFill: 'security/Bold/LockPassword',
 	SolarBoltCircleFill: 'ui/Bold/BoltCircle',
 	SolarChart2Fill: 'business/Bold/Chart2',
+	SolarChartSquareFill: 'business/Bold/ChartSquare',
 	SolarGraphNewFill: 'business/Bold/GraphNew',
 	SolarUserCircleFill: 'users/Bold/UserCircle',
 	SolarUserFill: 'users/Bold/User',
@@ -101,6 +102,7 @@ const OUTLINE_ICONS = {
 	SolarUploadOutline: 'arrows-action/Linear/Upload',
 	SolarMagnifierOutline: 'search/Linear/MinimalisticMagnifier',
 	SolarCheckCircleOutline: 'ui/Linear/CheckCircle',
+	SolarUnreadOutline: 'messages/Linear/Unread',
 	SolarClockCircleOutline: 'time/Linear/ClockCircle',
 	SolarSliderHorizontalOutline: 'ui/Linear/SliderMinimalisticHorizontal',
 	SolarPinListOutline: 'ui/Linear/PinList',
@@ -110,10 +112,20 @@ const OUTLINE_ICONS = {
 
 const OUTLINE_STROKE_WIDTHS = {
 	SolarAltArrowRightOutline: '2.5',
-	SolarAltArrowLeftOutline: '2.5',
-	/// Match the thin plus used on Home quick actions.
-	SolarCodeOutline: '1.5',
 }
+
+/**
+ * Some Solar Linear glyphs encode their 1.5pt outline as filled geometry, so
+ * replacing `strokeWidth` alone cannot bold them. Expanding those paths by
+ * 0.5pt brings their effective visual weight to the shared 2pt chrome weight.
+ */
+const EXPANDED_FILL_OUTLINE_ICONS = new Set([
+	'SolarFileOutline',
+	'SolarHeartPulseOutline',
+	'SolarKeyMinimalisticOutline',
+	'SolarPinOutline',
+	'SolarRoutingOutline',
+])
 
 /** Simple stroke icons Solar doesn't ship as standalone assets. */
 const STROKE_ICONS = {
@@ -125,9 +137,15 @@ const HAND_TUNED_ICONS = {
 	// Solar draws menu dots as stroked rings; solid dots read better at 22pt.
 	SolarMenuDotsOutline:
 		'<circle cx="5" cy="12" r="2" fill="#000"/><circle cx="12" cy="12" r="2" fill="#000"/><circle cx="19" cy="12" r="2" fill="#000"/>',
-	// Close X (`SolarCloseOutline`) rotated 45° → plus, thinned from 3.5 → 1.5.
+	// Tray dismissal keeps the intentionally heavy close used across sheets.
+	SolarCloseOutline:
+		'<path d="M7 7L17 17M17 7L7 17" fill="none" stroke="#000" stroke-width="3.5" stroke-linecap="round"/>',
+	// Editing Cancel pairs with the 2pt Solar Unread check mark.
+	SolarEditCloseOutline:
+		'<path d="M7 7L17 17M17 7L7 17" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"/>',
+	// The close mark rotated 45° becomes plus at the shared chrome weight.
 	SolarPlusOutline:
-		'<g transform="rotate(45 12 12)"><path d="M7 7L17 17" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/><path d="M17 7L7 17" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/></g>',
+		'<g transform="rotate(45 12 12)"><path d="M7 7L17 17" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"/><path d="M17 7L7 17" fill="none" stroke="#000" stroke-width="2" stroke-linecap="round"/></g>',
 }
 
 const FLAT_DRAWABLE_TAGS = new Set(['Path', 'Circle', 'Ellipse', 'Rect'])
@@ -323,16 +341,20 @@ function extractElements(iconPath) {
 }
 
 /** @param {Element[]} elements */
-function svgFor(elements, { template, strokeWidth }) {
-	const body = elements.map((el) => renderElement(el, template, strokeWidth)).join('')
+function svgFor(elements, { template, strokeWidth, fillExpansionWidth }) {
+	const body = elements
+		.map((el) => renderElement(el, template, strokeWidth, fillExpansionWidth))
+		.join('')
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`
 }
 
 /** @param {Element} el */
-function renderElement(el, template, strokeWidth) {
+function renderElement(el, template, strokeWidth, fillExpansionWidth) {
 	if (el.tag === 'g') {
 		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
-		const children = (el.children ?? []).map(child => renderElement(child, template, strokeWidth)).join('')
+		const children = (el.children ?? [])
+			.map(child => renderElement(child, template, strokeWidth, fillExpansionWidth))
+			.join('')
 		return `<g${opacity}>${children}</g>`
 	}
 
@@ -347,7 +369,9 @@ function renderElement(el, template, strokeWidth) {
 					}${el.ry ? ` ry="${el.ry}"` : ''}`
 		const paint = el.stroke
 			? `fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"`
-			: `fill="#000"`
+			: `fill="#000"${fillExpansionWidth
+				? ` stroke="#000" stroke-width="${fillExpansionWidth}"`
+				: ''}`
 		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
 		return `<${el.tag} ${geometry} ${paint}${opacity}/>`
 	}
@@ -360,8 +384,11 @@ function renderElement(el, template, strokeWidth) {
 		return `<path d="${el.d}" fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"${cap}${join}/>`
 	}
 
+	const expansion = fillExpansionWidth
+		? ` stroke="#000" stroke-width="${fillExpansionWidth}" stroke-linecap="round" stroke-linejoin="round"`
+		: ''
 	const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
-	return `<path d="${el.d}" fill="#000"${fillRule}${clipRule}${opacity}/>`
+	return `<path d="${el.d}" fill="#000"${expansion}${fillRule}${clipRule}${opacity}/>`
 }
 
 /** @param {string[]} paths */
@@ -399,6 +426,7 @@ function generateAllIcons() {
 		const svg = svgFor(extractElements(iconPath), {
 			template: true,
 			strokeWidth: OUTLINE_STROKE_WIDTHS[name] ?? '2',
+			fillExpansionWidth: EXPANDED_FILL_OUTLINE_ICONS.has(name) ? '0.5' : undefined,
 		})
 		writeImageset(name, svg, true)
 		console.log(`outline ${name}`)

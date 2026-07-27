@@ -38,14 +38,16 @@ struct DashApp: App {
     standardAppearance.titleTextAttributes = inlineTitleAttributes
     standardAppearance.shadowColor = .clear
 
+    // Keep the Solar back mark inside the appearance objects themselves.
+    // UIKit sources an explicitly installed appearance as a whole, so setting
+    // only the bar proxy can otherwise leave the system chevron in place.
+    let backImage = UIImage(named: SolarAsset.chevronLeft)?.withRenderingMode(.alwaysTemplate)
+    scrollEdgeAppearance.setBackIndicatorImage(backImage, transitionMaskImage: backImage)
+    standardAppearance.setBackIndicatorImage(backImage, transitionMaskImage: backImage)
+
     UINavigationBar.appearance().scrollEdgeAppearance = scrollEdgeAppearance
     UINavigationBar.appearance().standardAppearance = standardAppearance
     UINavigationBar.appearance().compactAppearance = standardAppearance
-
-    // Minimal back chevron — same leading slot as the tab-root profile avatar.
-    let backImage = UIImage(named: SolarAsset.chevronLeft)?.withRenderingMode(.alwaysTemplate)
-    UINavigationBar.appearance().backIndicatorImage = backImage
-    UINavigationBar.appearance().backIndicatorTransitionMaskImage = backImage
 
     // No UITabBar appearance proxy: the pager is `.tabViewStyle(.page)` with
     // no system tab bar, and `DashFloatingTabBar` owns all tab styling.

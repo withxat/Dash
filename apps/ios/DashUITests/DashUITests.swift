@@ -307,7 +307,9 @@ final class DashUITests: XCTestCase {
     worker.tap()
 
     XCTAssertTrue(app.staticTexts["Deployments"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Active"].exists)
+    // "Current", not "Active" — the badge names which deployment is live, and
+    // Dash spends "Active" on zone / R2-domain health.
+    XCTAssertTrue(app.staticTexts["Current"].exists)
   }
 
   /// Push alerts live in Settings — Watchtower stays local-only.

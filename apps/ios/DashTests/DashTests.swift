@@ -21,20 +21,122 @@ import UIKit
   #expect(DashAppLanguage.system.localeIdentifier == nil)
 }
 
-/// `DashL10n` must honor an explicit locale immediately (no relaunch), so
-/// Settings → Language can remount copy via `LocalizedStringResource.locale`.
-@Test func dashL10nFollowsActiveLocale() {
-  let previous = DashL10n.localeOverrideForTesting
-  defer { DashL10n.localeOverrideForTesting = previous }
+/// Everything that pins `DashL10n.localeOverrideForTesting`. The pin is
+/// process-global and Swift Testing runs cases in parallel by default, so these
+/// have to be serialized or they read each other's locale.
+@Suite(.serialized)
+struct LocalizationTests {
+  /// `DashL10n` must honor an explicit locale immediately (no relaunch), so
+  /// Settings → Language can remount copy via `LocalizedStringResource.locale`.
+  @Test func dashL10nFollowsActiveLocale() {
+    let previous = DashL10n.localeOverrideForTesting
+    defer { DashL10n.localeOverrideForTesting = previous }
 
-  DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
-  #expect(DashL10n.string("Settings") == "设置")
-  #expect(DashL10n.ui("Domains") == "域名")
-  #expect(DashL10n.string("System") == "跟随系统")
+    DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+    #expect(DashL10n.string("Settings") == "设置")
+    #expect(DashL10n.ui("Domains") == "域名")
+    #expect(DashL10n.string("System") == "跟随系统")
 
-  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
-  #expect(DashL10n.string("Settings") == "Settings")
-  #expect(DashL10n.ui("Domains") == "Domains")
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    #expect(DashL10n.string("Settings") == "Settings")
+    #expect(DashL10n.ui("Domains") == "Domains")
+  }
+
+  /// `ui(_:)` returns an unknown key unchanged. That is right for data — it is
+  /// called on zone names and object keys too — and it is also why a translation
+  /// that was never spliced reached the screen in English without a sound.
+  /// `lookup` is the same call with the miss made visible.
+  @Test func dashL10nLookupReportsCatalogMisses() {
+    let previous = DashL10n.localeOverrideForTesting
+    defer { DashL10n.localeOverrideForTesting = previous }
+    DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+
+    let hit = DashL10n.lookup("Domains")
+    #expect(hit.value == "域名")
+    #expect(hit.matchedCatalog)
+
+    let miss = DashL10n.lookup("my-zone.example")
+    #expect(miss.value == "my-zone.example")
+    #expect(!miss.matchedCatalog)
+  }
+
+  #if DEBUG
+    /// The strict flag is what a zh-Hans preview or an exploratory debug session
+    /// turns on to make a silent miss trip instead of reaching the screen in
+    /// English. Real catalog keys must not set it off — the failing direction
+    /// traps by design, so it is the passing direction that needs a test.
+    @Test func strictLookupAcceptsKnownCatalogKeys() {
+      let previousLocale = DashL10n.localeOverrideForTesting
+      let previousStrict = DashL10n.strictLookup
+      defer {
+        DashL10n.localeOverrideForTesting = previousLocale
+        DashL10n.strictLookup = previousStrict
+      }
+      DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+      DashL10n.strictLookup = true
+
+      #expect(DashL10n.ui("Domains") == "域名")
+      #expect(DashL10n.ui("Bucket settings") == "存储桶设置")
+      // Empty input is a runtime guard, not copy — it must stay exempt.
+      #expect(DashL10n.ui("") == "")
+    }
+  #endif
+
+  /// Every badge a screen can render has to be translated in every language
+  /// Dash ships. The string-typed badge failed this silently: it localized
+  /// `text.capitalized`, and `"Read-only".capitalized` is `"Read-Only"`, which
+  /// is not a catalog key — so the badge stayed English on a Chinese row while
+  /// its `Locked` sibling two lines away translated fine.
+  @Test func everyStatusTokenIsTranslatedInSimplifiedChinese() {
+    let previous = DashL10n.localeOverrideForTesting
+    defer { DashL10n.localeOverrideForTesting = previous }
+
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    let english = StatusToken.allCases.map(\.label)
+    DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+    let chinese = StatusToken.allCases.map(\.label)
+
+    for (index, token) in StatusToken.allCases.enumerated() {
+      #expect(
+        chinese[index] != english[index],
+        "StatusToken.\(token.rawValue) has no zh-Hans entry for \(english[index].debugDescription)")
+    }
+  }
+
+  // `View` is a @MainActor protocol, so StatusBadge/DashNotice statics are
+  // isolated too — the test has to hop on as well.
+  @MainActor
+  @Test func statusBadgeAndNoticeExposeAccessibleCopy() {
+    let previousLocale = DashL10n.localeOverrideForTesting
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    defer { DashL10n.localeOverrideForTesting = previousLocale }
+
+    #expect(StatusBadge.accessibilityText(for: .readOnly) == "Status, Read-only")
+    #expect(StatusToken.current.presentation == .quiet)
+    #expect(StatusToken.failed.presentation == .capsule)
+    #expect(StatusToken.locked.presentation == .capsule)
+    #expect(
+      DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
+        == "Warning: Coverage limited")
+    #expect(DashTheme.Spacing.scrollBottomInset == 80)
+    #expect(DashTheme.Layout.minimumHitTarget == 44)
+  }
+}
+
+/// Cloudflare spells a failed Pages build `failure` and a running one `active`.
+/// The word-list badge matched neither: `failure` missed `["error", "failed",
+/// "critical", "inactive"]` and drew the informational capsule beside a red row
+/// icon, while `active` matched the zone-health list and drew a green check on a
+/// build still in flight. The mapping is now explicit and exhaustively toned.
+@Test func pagesStatusTokensMatchCloudflareVocabulary() {
+  #expect(StatusToken(pagesStatus: "success") == .success)
+  #expect(StatusToken(pagesStatus: "failure") == .failed)
+  #expect(StatusToken(pagesStatus: "failure").tone == .danger)
+  #expect(StatusToken(pagesStatus: "active") == .inProgress)
+  #expect(StatusToken(pagesStatus: "active").presentation == .capsule)
+  #expect(StatusToken(pagesStatus: "canceled") == .canceled)
+  #expect(StatusToken(pagesStatus: nil, isSkipped: true) == .skipped)
+  #expect(StatusToken(pagesStatus: "teleporting") == .unknown)
 }
 
 @Test func pushBaseURLStripsPathFromRedirectURI() {
@@ -94,8 +196,8 @@ import UIKit
 @Test @MainActor func appModelDefaultsToReadOnlyPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.initialReadOnly)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 20)
-  #expect(DashAuthorizationScopes.core.count == 31)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 15)
+  #expect(DashAuthorizationScopes.core.count == 26)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -165,10 +267,8 @@ import UIKit
     "dns.read", "dns.write",  // DNSRecordsView, including create and delete
     "cache.purge",  // CachePurgeView and PurgeCacheIntent
     "workers-routes.read",  // WorkerDetail routes rows (zone-scoped, no carrier FeatureID)
-    "argotunnel.read",  // Watchtower tunnelsSignal
-    "notifications.read",  // Watchtower alerts
+    "notifications.read",  // Watchtower inbox (Cloudflare delivery history)
     "notifications.write",  // Push alerts webhook + policies
-    "ssl-and-certificates.read",  // Watchtower certsSignal
     "account-analytics.read",  // Worker metrics card (account-scoped GraphQL)
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
@@ -322,20 +422,9 @@ import UIKit
   #expect(!state.canLoadMore)
 }
 
-@Test func watchtowerSnapshotDerivesIssueCountAndStaleness() {
-  let signal = { (status: WatchtowerStatus) in
-    WatchtowerSignal(
-      id: UUID().uuidString, title: "t", detail: "d", status: status, destination: nil)
-  }
+@Test func watchtowerSnapshotTracksStaleness() {
   let now = Date(timeIntervalSince1970: 1_000_000)
-  let snapshot = WatchtowerSnapshot(
-    signals: [signal(.ok), signal(.warning), signal(.critical), signal(.ok)],
-    alerts: [],
-    alertsStatus: .ok,
-    missingScopeChecks: [],
-    failedChecks: [],
-    fetchedAt: now)
-  #expect(snapshot.issueCount == 2)
+  let snapshot = WatchtowerSnapshot(alerts: [], alertsStatus: .ok, fetchedAt: now)
   #expect(!snapshot.isStale(now: now.addingTimeInterval(299), ttl: 300))
   #expect(!snapshot.isStale(now: now.addingTimeInterval(300), ttl: 300))
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
@@ -395,32 +484,6 @@ import UIKit
   #expect(featureID(for: .profile) == nil)
 }
 
-/// Tunnels report problems the app has no screen for (tray opens Cloudflare).
-/// The row still has to name the broken resource or it is a dead end:
-/// "1 tunnel down", which one? Pages opens the project in-app.
-@MainActor
-@Test func watchtowerRowsNameTheResourceTheyCannotPushTo() {
-  func signal(
-    _ detail: String, resource: String?, status: WatchtowerStatus = .critical
-  ) -> WatchtowerSignal {
-    WatchtowerSignal(
-      id: "t", title: "Tunnels", detail: detail, status: status,
-      destination: nil, resourceName: resource)
-  }
-  #expect(
-    WatchtowerView.signalDetail(signal("1 tunnel down", resource: "homelab-01"))
-      == "1 tunnel down · homelab-01")
-  // Healthy signals have no offender to name.
-  #expect(
-    WatchtowerView.signalDetail(signal("All 3 healthy", resource: "x", status: .ok))
-      == "All 3 healthy")
-  // Pages already interpolates the project name — don't say it twice.
-  #expect(
-    WatchtowerView.signalDetail(signal("site: latest deployment failed", resource: "site"))
-      == "site: latest deployment failed")
-  #expect(WatchtowerView.signalDetail(signal("1 down", resource: nil)) == "1 down")
-}
-
 /// Operational destinations split reads from mutations so the initial grant
 /// can render them without accidentally authorizing a save.
 @Test func destinationScopesSeparateReadsFromWrites() {
@@ -447,39 +510,15 @@ import UIKit
   #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
 }
 
-// `View` is a @MainActor protocol, so StatusBadge/DashNotice statics are
-// isolated too — the test has to hop on as well.
-@MainActor
-@Test func statusBadgeAndNoticeExposeAccessibleCopy() {
-  let previousLocale = DashL10n.localeOverrideForTesting
-  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
-  defer { DashL10n.localeOverrideForTesting = previousLocale }
-
-  #expect(StatusBadge.accessibilityText(for: "Read-only") == "Status, Read-only")
-  #expect(StatusBadge.presentation(for: "OK") == .quiet)
-  #expect(StatusBadge.presentation(for: "Critical") == .capsule)
-  #expect(StatusBadge.presentation(for: "Locked") == .capsule)
+/// The widget counts Cloudflare's deliveries. It never characterises the
+/// account: Dash no longer decides that anything is wrong.
+@Test func widgetHeadlineCountsUnreadDeliveries() {
+  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 0) == "No unread alerts")
+  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 1) == "1 unread alert")
+  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 4) == "4 unread alerts")
   #expect(
-    DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
-      == "Warning: Coverage limited")
-  #expect(DashTheme.Spacing.scrollBottomInset == 80)
-  #expect(DashTheme.Layout.minimumHitTarget == 44)
-}
-
-@Test func widgetSeverityHeadlineNamesCriticalAndWarning() {
-  #expect(
-    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 0, warningCount: 0) == "All clear")
-  #expect(
-    WatchtowerWidgetSnapshot.severityHeadline(
-      criticalCount: 0, warningCount: 0, checksIncomplete: true
-    ) == "Checks incomplete")
-  #expect(
-    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 2, warningCount: 0) == "2 critical")
-  #expect(
-    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 0, warningCount: 1) == "1 warning")
-  #expect(
-    WatchtowerWidgetSnapshot.severityHeadline(criticalCount: 2, warningCount: 1)
-      == "2 critical, 1 warning")
+    WatchtowerWidgetSnapshot.headline(unreadCount: 0, alertsUnavailable: true)
+      == "Alerts unavailable")
 }
 
 @Test func analyticsChartAccessibilitySummaryIncludesTotals() {
@@ -509,6 +548,55 @@ import UIKit
   #expect(!editing.usesDitherChart)
   #expect(normal == .live)
   #expect(normal.usesDitherChart)
+}
+
+@Test func watchtowerChartSwapFinishesOutgoingBeforeIncoming() {
+  var sequence = WatchtowerChartVisualSwapSequence(mode: .live)
+
+  let exit = sequence.request(.placeholder)
+  #expect(exit == .exit(.live))
+  #expect(sequence.visibleMode == .live)
+
+  sequence.begin(exit)
+  #expect(sequence.visibleMode == nil)
+
+  let enter = sequence.finishExit(.live)
+  #expect(enter == .enter(.placeholder))
+  #expect(sequence.visibleMode == nil)
+
+  sequence.begin(enter)
+  #expect(sequence.visibleMode == .placeholder)
+  #expect(sequence.finishEnter(.placeholder) == .none)
+}
+
+@Test func watchtowerChartSwapRetargetsWithoutShowingTheObsoleteReplacement() {
+  var sequence = WatchtowerChartVisualSwapSequence(mode: .live)
+
+  let exit = sequence.request(.placeholder)
+  sequence.begin(exit)
+  #expect(sequence.visibleMode == nil)
+
+  let reverse = sequence.request(.live)
+  #expect(reverse == .enter(.live))
+  sequence.begin(reverse)
+
+  #expect(sequence.visibleMode == .live)
+  #expect(sequence.finishEnter(.live) == .none)
+}
+
+@Test func watchtowerChartSwapCanReverseAnIncomingLayerImmediately() {
+  var sequence = WatchtowerChartVisualSwapSequence(mode: .live)
+
+  let exit = sequence.request(.placeholder)
+  sequence.begin(exit)
+  let enter = sequence.finishExit(.live)
+  sequence.begin(enter)
+  #expect(sequence.visibleMode == .placeholder)
+
+  let reverse = sequence.request(.live)
+  #expect(reverse == .exit(.placeholder))
+  sequence.begin(reverse)
+  #expect(sequence.visibleMode == nil)
 }
 
 @Test @MainActor func watchtowerDragOverlayPreservesGrabOffsetAndEndsCleanly() {
@@ -613,10 +701,64 @@ import UIKit
   #expect(upward == [.workerInvocations, .cacheRate, .workerErrors, .webTraffic])
 }
 
+@Test func watchtowerAnalyticsFreshInstallLayoutLeadsWithExpandedWebTraffic() {
+  let fresh = WatchtowerAnalyticsCardLayout.layout(
+    orderRaw: nil, collapsedRaw: nil, hiddenRaw: nil)
+
+  #expect(
+    fresh.order.filter { !fresh.hidden.contains($0) } == [
+      .webTraffic, .cpuTime, .workerInvocations, .cacheRate, .clientRequestErrors,
+    ])
+  #expect(fresh.collapsed == [.cpuTime, .workerInvocations, .cacheRate, .clientRequestErrors])
+  #expect(
+    fresh.hidden == [.workerErrors, .totalBandwidth, .encryptedRequestsRate, .encryptedBandwidth])
+
+  // One expanded headline card, then the four collapsed companions two-up.
+  let rows = WatchtowerAnalyticsCardLayout.rows(
+    fresh.order.filter { !fresh.hidden.contains($0) },
+    collapsedRaw: WatchtowerAnalyticsCardLayout.encode(Set(fresh.collapsed.map(\.rawValue))),
+    forceExpanded: false)
+  #expect(
+    rows.map { $0.map(\.rawValue) } == [
+      ["webTraffic"],
+      ["cpuTime", "workerInvocations"],
+      ["cacheRate", "clientRequestErrors"],
+    ])
+}
+
+/// A saved layout wins over the fresh-install defaults — including one that
+/// deliberately hides nothing, which stores an empty string, not a missing key.
+@Test func watchtowerAnalyticsSavedLayoutSurvivesTheFreshInstallDefaults() {
+  let saved = WatchtowerAnalyticsCardLayout.layout(
+    orderRaw: "cacheRate,webTraffic",
+    collapsedRaw: "",
+    hiddenRaw: "")
+
+  #expect(Array(saved.order.prefix(2)) == [.cacheRate, .webTraffic])
+  #expect(saved.collapsed.isEmpty)
+  #expect(saved.hidden.isEmpty)
+  #expect(saved.order.count == WatchtowerAnalyticsMetric.allCases.count)
+
+  // Pre-editor installs only ever stored collapsed metrics; that is still a
+  // used layout, so it must not be replaced by the fresh-install defaults.
+  let legacy = WatchtowerAnalyticsCardLayout.layout(
+    orderRaw: nil, collapsedRaw: "cacheRate", hiddenRaw: nil)
+  #expect(legacy.order == Array(WatchtowerAnalyticsMetric.allCases))
+  #expect(legacy.collapsed == [.cacheRate])
+  #expect(legacy.hidden.isEmpty)
+}
+
 @Test @MainActor func watchtowerChartCustomizationCommitsAndCancelsDrafts() throws {
   let suite = "dash-tests-watchtower-layout-\(UUID().uuidString)"
   let defaults = try #require(UserDefaults(suiteName: suite))
   defer { defaults.removePersistentDomain(forName: suite) }
+  // Seed a saved layout so the draft assertions below describe editing, not the
+  // fresh-install defaults.
+  defaults.set(
+    WatchtowerAnalyticsCardLayout.encodeOrder(Array(WatchtowerAnalyticsMetric.allCases)),
+    forKey: WatchtowerAnalyticsCardLayout.orderKey)
+  defaults.set("", forKey: WatchtowerAnalyticsCardLayout.key)
+  defaults.set("", forKey: WatchtowerAnalyticsCardLayout.hiddenKey)
   let customization = WatchtowerChartCustomizationState(defaults: defaults)
 
   customization.beginEditing()
@@ -1374,36 +1516,41 @@ import UIKit
 }
 
 @Test func watchtowerWidgetSnapshotMapsAndRoundTrips() throws {
-  let signal = { (status: WatchtowerStatus, title: String) in
-    WatchtowerSignal(
-      id: UUID().uuidString, title: title, detail: "d", status: status, destination: nil)
-  }
-  let snapshot = WatchtowerSnapshot(
-    signals: [
-      signal(.ok, "healthy"), signal(.warning, "cert soon"), signal(.critical, "tunnel down"),
-      WatchtowerSignal(
-        id: WatchtowerEngine.coverageSignalID,
-        title: WatchtowerEngine.coverageSignalTitle,
-        detail: "5 domains not checked",
-        status: .warning,
-        destination: nil
-      ),
-    ],
-    alerts: [], alertsStatus: .ok, missingScopeChecks: [], failedChecks: [],
-    fetchedAt: Date(timeIntervalSince1970: 1_000_000))
-  let widget = snapshot.widgetSnapshot(accountID: "account-1", accountName: "Acme")
+  let suite = "dash.tests.widget-snapshot.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let formatter = ISO8601DateFormatter()
+  let old = NotificationHistoryEntry(
+    historyID: "old", name: "Older delivery", alertType: "test",
+    sent: formatter.string(from: Date(timeIntervalSince1970: 100)))
 
-  #expect(snapshot.issueCount == 2)
-  #expect(widget.issueCount == 2)
-  #expect(widget.criticalCount == 1)
-  #expect(widget.warningCount == 1)
-  #expect(widget.checksIncomplete)
+  // The first page is the local read baseline, so it lands in history.
+  let baseline = WatchtowerSnapshot(
+    alerts: [old], alertsStatus: .ok, fetchedAt: Date(timeIntervalSince1970: 1_000_000)
+  ).widgetSnapshot(accountID: "account-1", accountName: "Acme", defaults: defaults)
+  #expect(baseline.unreadCount == 0)
+  #expect(baseline.alerts.isEmpty)
+
+  let fresh = NotificationHistoryEntry(
+    historyID: "fresh", name: "Tunnel health", alertType: "tunnel_health_event",
+    alertBody: "homelab-01 disconnected",
+    sent: formatter.string(from: Date(timeIntervalSinceNow: 60)))
+  let widget = WatchtowerSnapshot(
+    alerts: [fresh, old], alertsStatus: .ok, fetchedAt: Date(timeIntervalSince1970: 1_000_000)
+  ).widgetSnapshot(accountID: "account-1", accountName: "Acme", defaults: defaults)
+
+  #expect(widget.unreadCount == 1)
+  #expect(widget.alerts.map(\.title) == ["Tunnel health"])
+  #expect(!widget.alertsUnavailable)
   #expect(widget.accountID == "account-1")
   #expect(widget.accountName == "Acme")
   #expect(widget.deepLinkURL?.absoluteString == "dash://watchtower?account=account-1")
-  // Non-ok only, critical first.
-  #expect(widget.signals.map(\.status) == ["critical", "warning"])
-  #expect(widget.signals.first?.title == "tunnel down")
+
+  // A failed history fetch says so instead of claiming an empty inbox.
+  let unavailable = WatchtowerSnapshot(
+    alerts: [], alertsStatus: .error, fetchedAt: Date(timeIntervalSince1970: 1_000_000)
+  ).widgetSnapshot(accountID: "account-1", accountName: nil, defaults: defaults)
+  #expect(unavailable.alertsUnavailable)
 
   // Codable round-trips through the App Group file format.
   let url = FileManager.default.temporaryDirectory
@@ -1413,70 +1560,34 @@ import UIKit
   #expect(loaded == widget)
   WatchtowerWidgetSnapshot.clear(at: url)
 
+  // A snapshot written before Watchtower dropped its health verdict decodes as
+  // "nothing unread" rather than resurrecting deleted issue counts.
   let legacy = try JSONDecoder().decode(
     WatchtowerWidgetSnapshot.self,
     from: Data(
       """
       {
-        "issueCount": 0,
-        "criticalCount": 0,
-        "warningCount": 0,
-        "signals": [],
+        "issueCount": 3,
+        "criticalCount": 1,
+        "warningCount": 2,
+        "signals": [{"title": "Tunnels", "detail": "1 down", "status": "critical"}],
         "accountName": "Legacy",
         "fetchedAt": 0
       }
       """.utf8)
   )
+  #expect(legacy.unreadCount == 0)
+  #expect(legacy.alerts.isEmpty)
   #expect(legacy.accountID == nil)
-  #expect(!legacy.checksIncomplete)
   #expect(legacy.deepLinkURL == nil)
   var whitespaceAccount = legacy
   whitespaceAccount.accountID = "  "
   #expect(whitespaceAccount.deepLinkURL == nil)
 }
 
-@Test func watchtowerWidgetReportsIncompleteChecksWithoutInflatingIssues() throws {
-  let coverage = try #require(WatchtowerEngine.coverageSignal(totalZones: 15))
-  let largeAccount = WatchtowerSnapshot(
-    signals: [coverage],
-    alerts: [],
-    alertsStatus: .ok,
-    missingScopeChecks: [],
-    failedChecks: [],
-    fetchedAt: Date(timeIntervalSince1970: 0)
-  ).widgetSnapshot(accountID: "large-account", accountName: nil)
-  #expect(largeAccount.issueCount == 0)
-  #expect(largeAccount.signals.isEmpty)
-  #expect(largeAccount.checksIncomplete)
-  #expect(largeAccount.severityHeadline == "Checks incomplete")
-
-  let failedCheck = WatchtowerSnapshot(
-    signals: [],
-    alerts: [],
-    alertsStatus: .error,
-    missingScopeChecks: [],
-    failedChecks: ["Registrar"],
-    fetchedAt: Date(timeIntervalSince1970: 0)
-  ).widgetSnapshot(accountID: "failed-account", accountName: nil)
-  #expect(failedCheck.issueCount == 0)
-  #expect(failedCheck.checksIncomplete)
-  #expect(failedCheck.severityHeadline == "Checks incomplete")
-
-  let complete = WatchtowerSnapshot(
-    signals: [],
-    alerts: [],
-    alertsStatus: .ok,
-    missingScopeChecks: [],
-    failedChecks: [],
-    fetchedAt: Date(timeIntervalSince1970: 0)
-  ).widgetSnapshot(accountID: "healthy-account", accountName: nil)
-  #expect(!complete.checksIncomplete)
-  #expect(complete.severityHeadline == "All clear")
-}
-
 @Test func watchtowerWidgetStalenessTiers() {
   let base = WatchtowerWidgetSnapshot(
-    issueCount: 0, criticalCount: 0, warningCount: 0, signals: [], accountName: nil,
+    unreadCount: 0, alerts: [], accountName: nil,
     fetchedAt: Date(timeIntervalSince1970: 0))
   #expect(base.staleness(now: Date(timeIntervalSince1970: 3600)) == .fresh)
   #expect(base.staleness(now: Date(timeIntervalSince1970: 3 * 3600)) == .aging)
@@ -1497,199 +1608,74 @@ import UIKit
       == String(localized: "Checked \(staleRelative) · Refresh now"))
 }
 
-@Test func watchtowerCoverageSignalWarnsWhenZonesExceedFanout() {
-  #expect(WatchtowerEngine.coverageSignal(totalZones: 10) == nil)
-  #expect(WatchtowerEngine.coverageSignal(totalZones: 9) == nil)
-
-  let signal = WatchtowerEngine.coverageSignal(totalZones: 15)
-  #expect(signal?.id == WatchtowerEngine.coverageSignalID)
-  #expect(signal?.title == WatchtowerEngine.coverageSignalTitle)
-  #expect(signal?.status == .warning)
-  #expect(signal?.destination == .feature(.zones))
-  #expect(signal?.detail.contains("5 of 15") == true)
-
-  let snapshot = WatchtowerSnapshot(
-    signals: [signal!],
-    alerts: [],
-    alertsStatus: .ok,
-    missingScopeChecks: [],
-    failedChecks: [],
-    fetchedAt: Date(timeIntervalSince1970: 0))
-  #expect(snapshot.issueCount == 1)
-}
-
-@Test func watchtowerDashboardLinksBuildAccountScopedURLs() {
-  let accountID = "abc123"
-  #expect(
-    WatchtowerDashboardLinks.tunnels(accountID: accountID)?.absoluteString
-      == "https://one.dash.cloudflare.com/abc123/networks/tunnels")
-  #expect(
-    WatchtowerDashboardLinks.pools(accountID: accountID)?.absoluteString
-      == "https://dash.cloudflare.com/abc123/traffic/load-balancing/pools")
-  #expect(
-    WatchtowerDashboardLinks.registrar(accountID: accountID)?.absoluteString
-      == "https://dash.cloudflare.com/abc123/domains")
-}
-
-@Test func watchtowerDashboardLinksReturnNilForEmptyAccountID() {
-  #expect(WatchtowerDashboardLinks.tunnels(accountID: "") == nil)
-  #expect(WatchtowerDashboardLinks.pools(accountID: "") == nil)
-  #expect(WatchtowerDashboardLinks.registrar(accountID: "") == nil)
-}
-
-@Test func watchtowerTunnelsSignalAttachesDashboardExternalURL() throws {
-  let tunnel = try JSONDecoder().decode(
-    CloudflareTunnel.self,
-    from: Data(#"{"id":"tun-1","name":"homelab","status":"healthy"}"#.utf8))
-  let signal = WatchtowerEngine.tunnelsSignal([tunnel], accountID: "acc-9")
-  #expect(signal?.id == "tunnels")
-  #expect(signal?.destination == nil)
-  #expect(
-    signal?.externalURL?.absoluteString
-      == "https://one.dash.cloudflare.com/acc-9/networks/tunnels")
-}
-
-@Test func watchtowerNotificationPlannerIgnoresCoverageSignal() {
-  func snapshot(issues: Int, signals: [WatchtowerWidgetSnapshot.Signal])
-    -> WatchtowerWidgetSnapshot
-  {
+@Test func watchtowerNotificationPlannerDiffsDeliveries() {
+  func snapshot(_ ids: [String], detail: String? = "d") -> WatchtowerWidgetSnapshot {
     WatchtowerWidgetSnapshot(
-      issueCount: issues,
-      criticalCount: signals.filter { $0.status == "critical" }.count,
-      warningCount: signals.filter { $0.status == "warning" }.count,
-      signals: signals,
-      accountID: "account-1",
-      accountName: nil,
-      fetchedAt: Date(timeIntervalSince1970: 0))
-  }
-  let coverage = WatchtowerWidgetSnapshot.Signal(
-    title: WatchtowerEngine.coverageSignalTitle,
-    detail: "5 of 15 domains not checked",
-    status: "warning")
-  typealias Planner = WatchtowerNotificationPlanner
-
-  // Coverage appearing alone must not fire a local notification.
-  #expect(
-    Planner.plans(
-      previous: snapshot(issues: 0, signals: []),
-      current: snapshot(issues: 1, signals: [coverage])
-    ).isEmpty)
-
-  // A real warning includes its actionable detail.
-  let plans = Planner.plans(
-    previous: snapshot(issues: 1, signals: [coverage]),
-    current: snapshot(
-      issues: 2,
-      signals: [
-        coverage,
-        WatchtowerWidgetSnapshot.Signal(title: "tunnel", detail: "down", status: "warning"),
-      ]))
-  #expect(plans.map(\.identifier) == ["watchtower.warning.tunnel"])
-  #expect(plans.first?.title == "tunnel")
-  #expect(plans.first?.body == "down")
-}
-
-@Test func watchtowerNotificationPlannerDiffsSnapshots() {
-  func snapshot(issues: Int, critical: [String], warning: [String] = [])
-    -> WatchtowerWidgetSnapshot
-  {
-    let signals =
-      critical.map { WatchtowerWidgetSnapshot.Signal(title: $0, detail: "d", status: "critical") }
-      + warning.map { WatchtowerWidgetSnapshot.Signal(title: $0, detail: "d", status: "warning") }
-    return WatchtowerWidgetSnapshot(
-      issueCount: issues, criticalCount: critical.count, warningCount: warning.count,
-      signals: signals, accountID: "account-1", accountName: nil,
+      unreadCount: ids.count,
+      alerts: ids.map { .init(id: $0, title: $0, detail: detail) },
+      accountID: "account-1", accountName: nil,
       fetchedAt: Date(timeIntervalSince1970: 0))
   }
   typealias Planner = WatchtowerNotificationPlanner
 
   // First run: nothing to diff against.
-  #expect(Planner.plans(previous: nil, current: snapshot(issues: 2, critical: ["a"])).isEmpty)
+  #expect(Planner.plans(previous: nil, current: snapshot(["a"])).isEmpty)
 
-  // A newly-critical signal fires with a stable identifier and its detail.
-  let newCritical = Planner.plans(
-    previous: snapshot(issues: 1, critical: [], warning: ["w"]),
-    current: snapshot(issues: 2, critical: ["tunnel"], warning: ["w"]))
-  #expect(newCritical.map(\.identifier) == ["watchtower.critical.tunnel"])
-  #expect(newCritical.first?.body == "d")
+  // A delivery that was not in the baseline fires with a stable identifier.
+  let arrived = Planner.plans(previous: snapshot(["a"]), current: snapshot(["tunnel", "a"]))
+  #expect(arrived.map(\.identifier) == ["watchtower.alert.tunnel"])
+  #expect(arrived.first?.title == "tunnel")
+  #expect(arrived.first?.body == "d")
 
-  // Still-critical does not re-notify.
-  #expect(
-    Planner.plans(
-      previous: snapshot(issues: 1, critical: ["tunnel"]),
-      current: snapshot(issues: 1, critical: ["tunnel"])
-    ).isEmpty)
+  // An unchanged page does not re-notify.
+  #expect(Planner.plans(previous: snapshot(["a"]), current: snapshot(["a"])).isEmpty)
 
-  // A new warning gets its own actionable notification.
-  let warning = Planner.plans(
-    previous: snapshot(issues: 1, critical: [], warning: ["w1"]),
-    current: snapshot(issues: 2, critical: [], warning: ["w1", "w2"]))
-  #expect(warning.map(\.identifier) == ["watchtower.warning.w2"])
-  #expect(warning.first?.title == "w2")
-
-  // Multiple new issues are combined, keeping the first issue's detail.
-  let summary = Planner.plans(
-    previous: snapshot(issues: 0, critical: []),
-    current: snapshot(issues: 2, critical: ["tunnel"], warning: ["pages"]))
-  #expect(summary.map(\.identifier) == ["watchtower.issues"])
+  // Several new deliveries collapse into one summary keeping the first body.
+  let summary = Planner.plans(previous: snapshot([]), current: snapshot(["tunnel", "pages"]))
+  #expect(summary.map(\.identifier) == ["watchtower.alerts"])
   #expect(summary.first?.title == "tunnel")
-  #expect(summary.first?.body == "d · 1 more issue needs attention.")
+  #expect(summary.first?.body == "d · 1 more unread alert.")
 
-  // Escalating from warning to critical re-notifies with the critical detail.
-  let escalation = Planner.plans(
-    previous: snapshot(issues: 1, critical: [], warning: ["tunnel"]),
-    current: snapshot(issues: 1, critical: ["tunnel"]))
-  #expect(escalation.map(\.identifier) == ["watchtower.critical.tunnel"])
+  // A delivery with no body still says something useful.
+  let bodyless = Planner.plans(
+    previous: snapshot([]), current: snapshot(["tunnel"], detail: nil))
+  #expect(bodyless.first?.body == "New alert from Cloudflare.")
 
-  // Muted issues never leak into a generic summary.
-  #expect(
-    Planner.plans(
-      previous: snapshot(issues: 0, critical: []),
-      current: snapshot(issues: 1, critical: ["tunnel"]),
-      mutedTitles: ["tunnel"]
-    ).isEmpty)
-
-  // Recovery → nothing.
-  #expect(
-    Planner.plans(
-      previous: snapshot(issues: 2, critical: ["a"]),
-      current: snapshot(issues: 0, critical: [])
-    ).isEmpty)
+  // Read/ignored away → nothing.
+  #expect(Planner.plans(previous: snapshot(["a"]), current: snapshot([])).isEmpty)
 }
 
 @Test func watchtowerNotificationPlannerResetsBaselineAcrossAccounts() {
-  func snapshot(accountID: String?, signals: [WatchtowerWidgetSnapshot.Signal])
+  func snapshot(accountID: String?, alerts: [WatchtowerWidgetSnapshot.Alert])
     -> WatchtowerWidgetSnapshot
   {
     WatchtowerWidgetSnapshot(
-      issueCount: signals.count,
-      criticalCount: signals.filter { $0.status == "critical" }.count,
-      warningCount: signals.filter { $0.status == "warning" }.count,
-      signals: signals,
+      unreadCount: alerts.count,
+      alerts: alerts,
       accountID: accountID,
       accountName: nil,
       fetchedAt: Date(timeIntervalSince1970: 0))
   }
 
-  let warning = WatchtowerWidgetSnapshot.Signal(
-    title: "Pages deployment", detail: "Latest deployment failed", status: "warning")
-  let current = snapshot(accountID: "account-b", signals: [warning])
+  let alert = WatchtowerWidgetSnapshot.Alert(
+    id: "cf:1", title: "Pages deployment", detail: "Latest deployment failed")
+  let current = snapshot(accountID: "account-b", alerts: [alert])
 
   #expect(
     WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: "account-a", signals: []),
+      previous: snapshot(accountID: "account-a", alerts: []),
       current: current
     ).isEmpty)
   #expect(
     WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: nil, signals: []),
+      previous: snapshot(accountID: nil, alerts: []),
       current: current
     ).isEmpty)
   #expect(
     WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: "account-b", signals: []),
+      previous: snapshot(accountID: "account-b", alerts: []),
       current: current
-    ).map(\.identifier) == ["watchtower.warning.Pages deployment"])
+    ).map(\.identifier) == ["watchtower.alert.cf:1"])
 }
 
 @Test func watchtowerNotificationBaselinesStayAccountScoped() {
@@ -1699,15 +1685,8 @@ import UIKit
 
   func snapshot(accountID: String, title: String) -> WatchtowerWidgetSnapshot {
     WatchtowerWidgetSnapshot(
-      issueCount: 1,
-      criticalCount: 0,
-      warningCount: 1,
-      signals: [
-        WatchtowerWidgetSnapshot.Signal(
-          title: title,
-          detail: "Needs attention",
-          status: "warning")
-      ],
+      unreadCount: 1,
+      alerts: [.init(id: "cf:\(title)", title: title, detail: "Delivered")],
       accountID: accountID,
       accountName: accountID,
       fetchedAt: Date(timeIntervalSince1970: 0))
@@ -1733,61 +1712,19 @@ import UIKit
       accountID: "account-a", defaults: defaults) == nil)
 }
 
-@Test @MainActor func watchtowerScreenStateClearsDataAcrossAccountContexts() {
-  let accountA = AccountRequestContext(accountID: "account-a", generation: 1)
-  let accountB = AccountRequestContext(accountID: "account-b", generation: 2)
-  let state = WatchtowerScreenState()
-  let loadA = state.beginLoad(for: accountA)
-  state.signals = [
-    WatchtowerSignal(
-      id: "tunnels",
-      title: "Tunnels",
-      detail: "1 tunnel down",
-      status: .critical,
-      destination: nil)
-  ]
-  state.missingScopeChecks = ["Registrar"]
-  state.failedChecks = ["Pages"]
-  state.fetchedAt = Date(timeIntervalSince1970: 100)
-  state.mutedSignalIDs = ["tunnels"]
-  state.recheckBanner = "Still failing"
-  state.capabilityNotes = ["Needs permission: Registrar"]
-  state.loading = false
-
-  state.reset(for: accountB)
-
-  #expect(state.loadedContext == accountB)
-  #expect(state.signals.isEmpty)
-  #expect(state.missingScopeChecks.isEmpty)
-  #expect(state.failedChecks.isEmpty)
-  #expect(state.fetchedAt == nil)
-  #expect(state.mutedSignalIDs.isEmpty)
-  #expect(state.recheckBanner == nil)
-  #expect(state.capabilityNotes.isEmpty)
-  #expect(state.loading)
-  #expect(!state.ownsLoad(loadA, context: accountA))
-}
-
 @Test @MainActor func watchtowerInboxStateRejectsStaleAccountLoads() {
   let accountA = AccountRequestContext(accountID: "account-a", generation: 1)
   let accountB = AccountRequestContext(accountID: "account-b", generation: 2)
   let state = WatchtowerInboxScreenState()
   let loadA = state.beginLoad(for: accountA)
   let entry = WatchtowerInboxEntry(
-    id: WatchtowerInboxStore.liveDashID(signalID: "tunnels"),
-    title: "Tunnels",
-    detail: "1 tunnel down",
+    id: "cf:hist-1",
+    title: "Tunnel health",
+    detail: "homelab-01 disconnected",
     sentAt: Date(timeIntervalSince1970: 100),
-    sources: [.dash],
-    destination: nil,
-    externalURL: nil,
-    status: .critical,
-    signalID: "tunnels",
-    notificationIDs: [],
-    category: .currentIssue)
+    category: .unread)
   state.contents = WatchtowerInboxContents(
-    currentIssues: [entry],
-    unreadNotifications: [],
+    unreadNotifications: [entry],
     history: [],
     ignored: [])
   state.ignoredIDs = [entry.id]
@@ -1853,121 +1790,13 @@ import UIKit
   #expect(cache.get("watchtower:acc") as Int? == 2)
 }
 
-@Test func watchtowerMuteStoreSnoozesAndExpires() {
-  let suite = "dash.tests.mute.\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: suite)!
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let accountID = "account-a"
-
-  WatchtowerMuteStore.mute(
-    "sig-1", title: "Tunnel down", accountID: accountID, for: 60, defaults: defaults)
-  #expect(WatchtowerMuteStore.isMuted("sig-1", accountID: accountID, defaults: defaults))
-  #expect(
-    WatchtowerMuteStore.mutedTitles(accountID: accountID, defaults: defaults)
-      .contains("Tunnel down"))
-
-  WatchtowerMuteStore.unmute("sig-1", accountID: accountID, defaults: defaults)
-  #expect(!WatchtowerMuteStore.isMuted("sig-1", accountID: accountID, defaults: defaults))
-
-  // Already-expired entries are filtered out on read.
-  WatchtowerMuteStore.mute(
-    "sig-2", title: "Cert", accountID: accountID, for: -1, defaults: defaults)
-  #expect(!WatchtowerMuteStore.isMuted("sig-2", accountID: accountID, defaults: defaults))
-}
-
-@Test func watchtowerMuteStoreIsolatesAccountsAndConsumers() {
-  let suite = "dash.tests.mute-accounts.\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: suite)!
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let accountA = "account-a"
-  let accountB = "account-b"
-  let signal = WatchtowerSignal(
-    id: "tunnels",
-    title: "Tunnels",
-    detail: "1 tunnel down",
-    status: .critical,
-    destination: nil)
-
-  WatchtowerMuteStore.mute(
-    signal.id, title: signal.title, accountID: accountA, defaults: defaults)
-
-  #expect(WatchtowerMuteStore.isMuted(signal.id, accountID: accountA, defaults: defaults))
-  #expect(!WatchtowerMuteStore.isMuted(signal.id, accountID: accountB, defaults: defaults))
-  #expect(
-    WatchtowerInboxStore.activeCount(
-      accountID: accountA, alerts: [], signals: [signal], defaults: defaults) == 0)
-  #expect(
-    WatchtowerInboxStore.activeCount(
-      accountID: accountB, alerts: [], signals: [signal], defaults: defaults) == 1)
-
-  func snapshot(accountID: String, signals: [WatchtowerWidgetSnapshot.Signal])
-    -> WatchtowerWidgetSnapshot
-  {
-    WatchtowerWidgetSnapshot(
-      issueCount: signals.count,
-      criticalCount: signals.filter { $0.status == "critical" }.count,
-      warningCount: signals.filter { $0.status == "warning" }.count,
-      signals: signals,
-      accountID: accountID,
-      accountName: nil,
-      fetchedAt: Date(timeIntervalSince1970: 0))
-  }
-  let widgetSignal = WatchtowerWidgetSnapshot.Signal(
-    title: signal.title, detail: signal.detail, status: "critical")
-  let previousA = snapshot(accountID: accountA, signals: [])
-  let currentA = snapshot(accountID: accountA, signals: [widgetSignal])
-  let previousB = snapshot(accountID: accountB, signals: [])
-  let currentB = snapshot(accountID: accountB, signals: [widgetSignal])
-  #expect(
-    WatchtowerNotificationPlanner.plans(
-      previous: previousA,
-      current: currentA,
-      mutedTitles: WatchtowerMuteStore.mutedTitles(
-        accountID: accountA, defaults: defaults)
-    ).isEmpty)
-  #expect(
-    WatchtowerNotificationPlanner.plans(
-      previous: previousB,
-      current: currentB,
-      mutedTitles: WatchtowerMuteStore.mutedTitles(
-        accountID: accountB, defaults: defaults)
-    ).map(\.identifier) == ["watchtower.critical.Tunnels"])
-}
-
-@Test func watchtowerMuteStoreDoesNotAttributeLegacyGlobalMutes() throws {
-  let suite = "dash.tests.mute-legacy.\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: suite)!
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let legacy = [
-    WatchtowerMuteStore.Entry(
-      id: "tunnels",
-      title: "Tunnels",
-      until: Date.now.addingTimeInterval(60))
-  ]
-  defaults.set(
-    try JSONEncoder().encode(legacy),
-    forKey: WatchtowerMuteStore.legacyKey)
-
-  #expect(
-    !WatchtowerMuteStore.isMuted(
-      "tunnels", accountID: "account-a", defaults: defaults))
-  #expect(
-    !WatchtowerMuteStore.isMuted(
-      "tunnels", accountID: "account-b", defaults: defaults))
-  #expect(defaults.data(forKey: WatchtowerMuteStore.legacyKey) != nil)
-}
-
-@Test func watchtowerInboxMergesLiveSignalsWithCloudflareHistory() {
+/// Nothing Dash detects reaches the inbox — only Cloudflare's deliveries do,
+/// and ignoring one is local to this iPhone.
+@Test func watchtowerInboxCarriesCloudflareDeliveriesOnly() {
   let suite = "dash.tests.inbox.\(UUID().uuidString)"
   let defaults = UserDefaults(suiteName: suite)!
   defer { defaults.removePersistentDomain(forName: suite) }
   let account = "acct-1"
-
-  let downTunnels = WatchtowerSignal(
-    id: "tunnels", title: "Tunnels", detail: "1 tunnel down", status: .critical,
-    destination: nil, resourceName: "homelab-01")
-  let healthyPages = WatchtowerSignal(
-    id: "pages", title: "Pages", detail: "All clear", status: .ok, destination: nil)
 
   let alerts = [
     NotificationHistoryEntry(
@@ -1980,40 +1809,32 @@ import UIKit
       description: nil,
       sent: ISO8601DateFormatter().string(from: Date.now.addingTimeInterval(60)))
   ]
-  // The first Cloudflare page is history, not ten synthetic unread rows.
-  _ = WatchtowerInboxStore.activeCount(
-    accountID: account, alerts: [], signals: [], defaults: defaults)
-  let feed = WatchtowerInboxStore.build(
-    accountID: account, alerts: alerts, signals: [downTunnels, healthyPages],
-    defaults: defaults)
-  // Live Dash warning + matching CF delivery collapse to one row.
-  #expect(feed.count == 1)
-  #expect(feed.first?.sources == [.cloudflare, .dash])
-  #expect(feed.first?.signalID == "tunnels")
-  #expect(feed.first?.primarySource == .dash)
+  // The first Cloudflare page is history, not a synthetic unread row.
+  _ = WatchtowerInboxStore.unreadCount(
+    accountID: account, alerts: [], defaults: defaults)
+  let contents = WatchtowerInboxStore.contents(
+    accountID: account, alerts: alerts, defaults: defaults)
+  #expect(contents.unreadNotifications.map(\.id) == ["cf:hist-1"])
+  #expect(contents.history.isEmpty)
 
-  let entryID = feed[0].id
+  let entryID = "cf:hist-1"
   WatchtowerInboxStore.ignore([entryID], accountID: account, defaults: defaults)
   #expect(WatchtowerInboxStore.isIgnored(entryID, accountID: account, defaults: defaults))
   #expect(
-    WatchtowerInboxStore.activeCount(
-      accountID: account, alerts: alerts, signals: [downTunnels], defaults: defaults) == 0)
+    WatchtowerInboxStore.unreadCount(
+      accountID: account, alerts: alerts, defaults: defaults) == 0)
+  #expect(
+    WatchtowerInboxStore.contents(
+      accountID: account, alerts: alerts, defaults: defaults
+    ).ignored.map(\.id) == [entryID])
 
   WatchtowerInboxStore.unignore(entryID, accountID: account, defaults: defaults)
   #expect(
-    WatchtowerInboxStore.activeCount(
-      accountID: account, alerts: alerts, signals: [downTunnels], defaults: defaults) == 1)
-
-  // Ignore-all expands a merged row to both local identities, so the
-  // Cloudflare delivery cannot return after the live Dash issue resolves.
-  WatchtowerInboxStore.ignoreAll([entryID], accountID: account, defaults: defaults)
-  let resolved = WatchtowerInboxStore.contents(
-    accountID: account, alerts: alerts, signals: [], defaults: defaults)
-  #expect(resolved.unreadNotifications.isEmpty)
-  #expect(resolved.ignored.map(\.id) == ["cf:hist-1"])
+    WatchtowerInboxStore.unreadCount(
+      accountID: account, alerts: alerts, defaults: defaults) == 1)
 }
 
-@Test func watchtowerInboxSeparatesCurrentUnreadAndHistory() {
+@Test func watchtowerInboxSeparatesUnreadFromHistory() {
   let suite = "dash.tests.inbox-semantics.\(UUID().uuidString)"
   let defaults = UserDefaults(suiteName: suite)!
   defer { defaults.removePersistentDomain(forName: suite) }
@@ -2027,7 +1848,7 @@ import UIKit
 
   // Existing Cloudflare rows establish a local read baseline on upgrade.
   #expect(
-    WatchtowerInboxStore.activeCount(
+    WatchtowerInboxStore.unreadCount(
       accountID: account, alerts: [history], defaults: defaults) == 0)
   var contents = WatchtowerInboxStore.contents(
     accountID: account, alerts: [history], defaults: defaults)
@@ -2044,7 +1865,7 @@ import UIKit
   #expect(contents.unreadNotifications.map(\.id) == ["cf:new"])
   #expect(contents.history.map(\.id) == ["cf:history"])
   #expect(
-    WatchtowerInboxStore.activeCount(
+    WatchtowerInboxStore.unreadCount(
       accountID: account, alerts: [newer, history], defaults: defaults) == 1)
 
   WatchtowerInboxStore.markRead(["cf:new"], accountID: account, defaults: defaults)
@@ -2053,43 +1874,8 @@ import UIKit
   #expect(contents.unreadNotifications.isEmpty)
   #expect(Set(contents.history.map(\.id)) == ["cf:new", "cf:history"])
   #expect(
-    WatchtowerInboxStore.activeCount(
+    WatchtowerInboxStore.unreadCount(
       accountID: account, alerts: [newer, history], defaults: defaults) == 0)
-}
-
-@Test func watchtowerInboxBadgeCountsOperationalIssuesButNotCoverageLimits() {
-  let suite = "dash.tests.inbox-coverage.\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: suite)!
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let account = "acct-coverage"
-  let coverage = WatchtowerEngine.coverageSignal(totalZones: 15)!
-  let outage = WatchtowerSignal(
-    id: "tunnels",
-    title: "Tunnels",
-    detail: "1 tunnel down",
-    status: .critical,
-    destination: nil)
-
-  #expect(
-    WatchtowerInboxStore.activeCount(
-      accountID: account,
-      alerts: [],
-      signals: [coverage, outage],
-      defaults: defaults) == 1)
-  let contents = WatchtowerInboxStore.contents(
-    accountID: account,
-    alerts: [],
-    signals: [coverage, outage],
-    defaults: defaults)
-  #expect(contents.currentIssues.map(\.signalID) == ["tunnels"])
-}
-
-@Test func dashCapabilityStatusMapsAPIErrors() {
-  #expect(DashCapabilityStatus.from(apiError: nil) == .unknown)
-  let forbidden = CloudflareAPIError.request(status: 403, errors: [])
-  #expect(DashCapabilityStatus.from(apiError: forbidden) == .needsPermission)
-  let plan = CloudflareAPIError.transport("Account not entitled")
-  #expect(DashCapabilityStatus.from(apiError: plan) == .needsPlan)
 }
 
 @Test func tabBarHideRulesRespectDepthAndOverlays() {

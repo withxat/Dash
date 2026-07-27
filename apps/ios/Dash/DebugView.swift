@@ -28,7 +28,7 @@
         .padding(.vertical, DashTheme.Spacing.section)
       }
       .background(DashTheme.canvas)
-      .detailHeader(icon: .solar(SolarAsset.code), title: "Debug")
+      .detailHeader(icon: .solar(SolarAsset.Content.code), title: "Debug")
     }
 
     // MARK: - Session

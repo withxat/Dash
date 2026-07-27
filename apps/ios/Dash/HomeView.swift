@@ -616,7 +616,7 @@ private struct HomeDemoExperienceSection: View {
               .foregroundStyle(DashTheme.subtle)
           }
           Spacer(minLength: 8)
-          StatusBadge(text: "Read-only")
+          StatusBadge(.readOnly)
         }
 
         Text(
@@ -1858,7 +1858,10 @@ struct AddDomainSheet: View {
 
   private func successContent(_ zone: CloudflareZone) -> some View {
     VStack(alignment: .leading, spacing: 14) {
-      DashNotice(kind: .success, message: "\(zone.name) is on Cloudflare.")
+      // Localize WITH the argument, not after it: DashNotice runs `message`
+      // through DashL10n.ui, and by then the zone name is already spliced in, so
+      // the catalog's "%@ is on Cloudflare." could never match.
+      DashNotice(kind: .success, message: DashL10n.string("\(zone.name) is on Cloudflare."))
       if let servers = zone.nameServers, !servers.isEmpty {
         VStack(alignment: .leading, spacing: 8) {
           Text("Point the domain's name servers at")
@@ -2193,7 +2196,9 @@ private struct HomeDomainRow: View {
           .dashTextStyle(.bodyMedium)
           .foregroundStyle(DashTheme.text)
           .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
-        Text((zone.status ?? "unknown").capitalized)
+        // Matches ZoneViews' zone-detail rendering — Home used to show the raw
+        // API token, so the same zone read "Active" here and 正常 one push in.
+        Text(DashL10n.ui((zone.status ?? "unknown").capitalized))
           .dashTextStyle(.footnote)
           .foregroundStyle(DashTheme.rowSubtitle)
       }
@@ -2203,7 +2208,8 @@ private struct HomeDomainRow: View {
     .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(zone.name), \(zone.status ?? "unknown")")
+    .accessibilityLabel(
+      "\(zone.name), \(DashL10n.ui((zone.status ?? "unknown").capitalized))")
   }
 }
 
@@ -2416,9 +2422,9 @@ struct FeatureRow: View {
     case .full:
       EmptyView()
     case .readOnly:
-      StatusBadge(text: "Read-only")
+      StatusBadge(.readOnly)
     case .locked:
-      StatusBadge(text: "Locked")
+      StatusBadge(.locked)
     }
   }
 

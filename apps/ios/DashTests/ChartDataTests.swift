@@ -116,6 +116,28 @@ import Testing
   #expect(empty.pageViews.delta == nil)
 }
 
+@Test func webAnalyticsDomainDestinationUsesDomainReadScopesOnly() {
+  let destination = Destination.zoneWebAnalytics("zone")
+  #expect(featureID(for: destination) == .zones)
+  #expect(readScopes(for: destination) == DashAuthorizationScopes.webAnalytics)
+  #expect(writeScopes(for: destination).isEmpty)
+}
+
+@Test func demoServesDomainWebAnalyticsDetail() async throws {
+  let client = CloudflareClient(
+    clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
+
+  let resolvedSites = try await client.webAnalyticsSites(accountID: DemoBackend.accountID)
+  #expect(resolvedSites.count >= 5)
+  #expect(
+    WebAnalyticsChartModel.site(for: "zone-example", in: resolvedSites)?.siteTag == "demo-site")
+
+  let detail = try await client.webAnalyticsMetrics(
+    accountID: DemoBackend.accountID, siteTag: "demo-site", days: 7)
+  #expect(detail.count == 14)
+  #expect(detail.allSatisfy { $0.pageviews > 0 && $0.visits > 0 })
+}
+
 @Test func chartSnapshotsAreSendable() {
   requireSendable(WatchtowerAnalyticsChartModel.Snapshot.self)
   requireSendable(WatchtowerAnalyticsChartModel.MetricSnapshot.self)

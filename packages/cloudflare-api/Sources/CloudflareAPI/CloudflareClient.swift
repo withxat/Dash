@@ -1019,7 +1019,30 @@ public actor CloudflareClient {
   /// Every Web Analytics site on the account. The list is the only way to map
   /// a zone to its `siteTag`, so callers cache it per account.
   public func webAnalyticsSites(accountID: String) async throws -> [RUMSite] {
-    try await request("/accounts/\(accountID)/rum/site_info/list")
+    let perPage = 50
+    var pageNumber = 1
+    var sites: [RUMSite] = []
+    var seenSiteTags: Set<String> = []
+
+    while pageNumber <= 100 {
+      let page: Page<RUMSite> = try await list(
+        "/accounts/\(accountID)/rum/site_info/list",
+        query: ["page": String(pageNumber), "per_page": String(perPage)])
+      let newSites = page.items.filter { seenSiteTags.insert($0.siteTag).inserted }
+      sites.append(contentsOf: newSites)
+
+      if let totalCount = page.resultInfo?.totalCount, sites.count >= totalCount {
+        break
+      }
+      guard !page.items.isEmpty, !newSites.isEmpty else { break }
+      if page.resultInfo?.totalCount == nil {
+        let reportedPageSize = page.resultInfo?.perPage ?? perPage
+        guard page.items.count >= reportedPageSize else { break }
+      }
+      pageNumber += 1
+    }
+
+    return sites
   }
 
   /// Daily beacon-reported page loads for one RUM site, ascending. This is the
@@ -1071,12 +1094,11 @@ public actor CloudflareClient {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     formatter.timeZone = TimeZone(identifier: "UTC")
-    let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(span - 1) * 86400)
+    let bounds = webAnalyticsComparisonWindow(days: window)
     let filter =
       "{siteTag: \"\(siteTag)\", "
-      + "datetime_geq: \"\(formatter.string(from: since))\", "
-      + "datetime_leq: \"\(formatter.string(from: until))\"}"
+      + "datetime_geq: \"\(formatter.string(from: bounds.previousStart))\", "
+      + "datetime_lt: \"\(formatter.string(from: bounds.end))\"}"
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
       pageload: rumPageloadEventsAdaptiveGroups(limit: \(span), \
@@ -1108,6 +1130,24 @@ public actor CloudflareClient {
         visits: group.sum.visits,
         pageLoadTimeP50Ms: p50ByDate[group.dimensions.date])
     }
+  }
+
+  /// The single-site detail splits daily buckets at UTC midnight so its current
+  /// and immediately preceding comparison windows stay aligned. The current
+  /// period includes today, so its final day is naturally partial.
+  private func webAnalyticsComparisonWindow(days: Int, now: Date = Date()) -> (
+    previousStart: Date, currentStart: Date, end: Date
+  ) {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+    let window = max(days, 1)
+    let currentStart = calendar.startOfDay(for: now)
+      .addingTimeInterval(-TimeInterval(window - 1) * 86400)
+    return (
+      previousStart: currentStart.addingTimeInterval(-TimeInterval(window) * 86400),
+      currentStart: currentStart,
+      end: now
+    )
   }
 
   /// Hourly HTTP request totals via the GraphQL `httpRequests1hGroups`

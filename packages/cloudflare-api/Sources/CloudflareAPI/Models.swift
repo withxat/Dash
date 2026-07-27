@@ -380,20 +380,37 @@ public struct RUMSite: Codable, Hashable, Sendable {
   /// True when Cloudflare injects the beacon at the edge for a proxied zone,
   /// so the site needs no snippet in its HTML.
   public let autoInstall: Bool
+  public let rules: [RUMRule]?
   public let ruleset: RUMRuleset?
 
   public var zoneTag: String? { ruleset?.zoneTag }
   /// Auto-install only counts when the injecting ruleset is switched on.
   public var isCollecting: Bool { !autoInstall || (ruleset?.enabled ?? false) }
+  /// Human-readable site identity for account-wide analytics. Zone-backed sites
+  /// name themselves through the ruleset; manually installed sites fall back to
+  /// the first included host rule instead of exposing an opaque `siteTag`.
+  public var analyticsName: String {
+    if let name = ruleset?.zoneName, !name.isEmpty { return name }
+    if let host = rules?.first(where: {
+      $0.inclusive != false && $0.isPaused != true && !($0.host?.isEmpty ?? true)
+    })?.host {
+      return host
+    }
+    if let host = rules?.first(where: { !($0.host?.isEmpty ?? true) })?.host {
+      return host
+    }
+    return siteTag
+  }
 
   public init(
     siteTag: String, siteToken: String? = nil, snippet: String? = nil, autoInstall: Bool = false,
-    ruleset: RUMRuleset? = nil
+    rules: [RUMRule]? = nil, ruleset: RUMRuleset? = nil
   ) {
     self.siteTag = siteTag
     self.siteToken = siteToken
     self.snippet = snippet
     self.autoInstall = autoInstall
+    self.rules = rules
     self.ruleset = ruleset
   }
 
@@ -402,7 +419,25 @@ public struct RUMSite: Codable, Hashable, Sendable {
     case siteToken = "site_token"
     case snippet
     case autoInstall = "auto_install"
+    case rules
     case ruleset
+  }
+}
+
+public struct RUMRule: Codable, Hashable, Sendable {
+  public let host: String?
+  public let inclusive: Bool?
+  public let isPaused: Bool?
+
+  public init(host: String? = nil, inclusive: Bool? = nil, isPaused: Bool? = nil) {
+    self.host = host
+    self.inclusive = inclusive
+    self.isPaused = isPaused
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case host, inclusive
+    case isPaused = "is_paused"
   }
 }
 

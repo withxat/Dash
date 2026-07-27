@@ -482,7 +482,7 @@ struct SettingsView: View {
       .padding(.vertical, DashTheme.Spacing.section)
     }
     .background(DashTheme.canvas)
-    .detailHeader(icon: .solar(SolarAsset.settings), title: "Settings")
+    .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
     .dashTray(
       isPresented: $showsLanguagePicker,
       title: DashL10n.string("Language")
@@ -870,7 +870,7 @@ struct ProfileView: View {
       .padding(.vertical, DashTheme.Spacing.section)
     }
     .background(DashTheme.canvas)
-    .detailHeader(icon: .solar(SolarAsset.userFill), title: "Profile")
+    .detailHeader(icon: .solar(SolarAsset.Content.user), title: "Profile")
     .dashTray(isPresented: $showsRename, title: DashL10n.string("Rename account")) {
       DashFormSheet(
         isSaving: renaming,

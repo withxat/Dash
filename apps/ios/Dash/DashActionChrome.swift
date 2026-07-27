@@ -96,8 +96,14 @@ struct DashSecondaryPillButton: View {
 
 // MARK: - Danger confirmation morph
 
-private struct DashBlurModifier: ViewModifier {
-  let radius: CGFloat
+private struct DashBlurModifier: ViewModifier, Animatable {
+  var radius: CGFloat
+
+  nonisolated var animatableData: CGFloat {
+    get { radius }
+    set { radius = newValue }
+  }
+
   func body(content: Content) -> some View {
     content.blur(radius: radius)
   }

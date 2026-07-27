@@ -241,12 +241,15 @@ struct R2ObjectPreview: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
+  /// Rendered through `Text(String)`, which never localizes on its own — the
+  /// two translated keys here were reachable only once the lookup moved in.
   private var fallbackMessage: String {
     switch status {
-    case .loading: "Loading preview…"
+    case .loading: DashL10n.string("Loading preview…")
     case .tooLarge:
-      "Too large to preview on device. Use the ⋯ menu to copy its public URL."
-    case .failed: "Couldn't load a preview. Try the ⋯ menu for other actions."
+      DashL10n.string("Too large to preview on device. Use the ⋯ menu to copy its public URL.")
+    case .failed:
+      DashL10n.string("Couldn't load a preview. Try the ⋯ menu for other actions.")
     case .ready: ""
     }
   }

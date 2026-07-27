@@ -5,24 +5,15 @@ import UserNotifications
 /// diffing the previous account baseline against the new one. Pure so the
 /// rules are unit-tested; display state remains a single current-account
 /// widget file, while notification baselines stay isolated per account.
+///
+/// The diff is over Cloudflare's own deliveries: a delivery the account has not
+/// seen before is worth a notification, and Dash never decides on its own that
+/// something is wrong.
 enum WatchtowerNotificationPlanner {
   struct Plan: Equatable {
     var identifier: String
     var title: String
     var body: String
-  }
-
-  /// Coverage is a permanent sampling limit, not a new operational issue.
-  private static func isNotifiable(_ signal: WatchtowerWidgetSnapshot.Signal) -> Bool {
-    signal.title != WatchtowerEngine.coverageSignalTitle
-  }
-
-  private static func severity(_ status: String) -> Int {
-    switch status {
-    case "critical": 2
-    case "warning": 1
-    default: 0
-    }
   }
 
   private static func normalizedAccountID(
@@ -38,8 +29,7 @@ enum WatchtowerNotificationPlanner {
   }
 
   static func plans(
-    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot,
-    mutedTitles: Set<String> = []
+    previous: WatchtowerWidgetSnapshot?, current: WatchtowerWidgetSnapshot
   ) -> [Plan] {
     // Nothing to compare against on a first run. A snapshot from another
     // account — or a legacy snapshot without an account — is also a first run
@@ -52,31 +42,26 @@ enum WatchtowerNotificationPlanner {
       return []
     }
 
-    let previousStatuses = previous.signals.reduce(into: [String: String]()) {
-      $0[$1.title] = $1.status
-    }
-    let newIssues = current.signals.filter { signal in
-      guard isNotifiable(signal), !mutedTitles.contains(signal.title) else { return false }
-      return severity(signal.status) > severity(previousStatuses[signal.title] ?? "ok")
-    }
+    let seen = Set(previous.alerts.map(\.id))
+    let arrived = current.alerts.filter { !seen.contains($0.id) }
 
-    guard let first = newIssues.first else { return [] }
-    guard newIssues.count > 1 else {
+    guard let first = arrived.first else { return [] }
+    guard arrived.count > 1 else {
       return [
         Plan(
-          identifier: "watchtower.\(first.status).\(first.title)",
+          identifier: "watchtower.alert.\(first.id)",
           title: first.title,
-          body: first.detail)
+          body: first.detail ?? "New alert from Cloudflare.")
       ]
     }
 
-    let remaining = newIssues.count - 1
+    let remaining = arrived.count - 1
     return [
       Plan(
-        identifier: "watchtower.issues",
+        identifier: "watchtower.alerts",
         title: first.title,
         body:
-          "\(first.detail) · \(remaining) more \(remaining == 1 ? "issue needs" : "issues need") attention."
+          "\(first.detail ?? "New alert from Cloudflare.") · \(remaining) more unread \(remaining == 1 ? "alert" : "alerts")."
       )
     ]
   }
@@ -153,11 +138,7 @@ enum WatchtowerNotifier {
     let settings = await center.notificationSettings()
     guard settings.authorizationStatus == .authorized else { return }
 
-    let mutedTitles = WatchtowerMuteStore.mutedTitles(accountID: accountID)
-
-    for plan in WatchtowerNotificationPlanner.plans(
-      previous: previous, current: current, mutedTitles: mutedTitles
-    ) {
+    for plan in WatchtowerNotificationPlanner.plans(previous: previous, current: current) {
       let content = UNMutableNotificationContent()
       content.title = plan.title
       content.body = plan.body

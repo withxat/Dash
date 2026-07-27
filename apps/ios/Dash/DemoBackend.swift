@@ -172,12 +172,6 @@ final class DemoBackend: URLProtocol {
           zone.id == "zone-example"
           ? #"[{"id":"route-1","pattern":"example.com/api/*","script":"api-worker"}]"# : "[]"
         return ok(routes)
-      case "ssl"? where rest.count >= 2 && rest[1] == "certificate_packs":
-        return ok(
-          #"[{"id":"cp-\#(zone.id)","status":"active","certificates":[{"expires_on":"2026-10-05T12:00:00Z"}]}]"#
-        )
-      case "healthchecks"?:
-        return ok("[]")
       default:
         return ok("[]")
       }
@@ -198,19 +192,11 @@ final class DemoBackend: URLProtocol {
       return r2(
         rest: Array(rest.dropFirst()), prefix: query("prefix"), delimiter: query("delimiter"))
     case "rum"?:
-      // Only zone-example carries a Web Analytics site, so the demo shows both
-      // the populated screen and the beacon-missing empty state.
+      // Configured sites let Domain detail resolve its RUM site tag while the
+      // remaining demo zones still exercise the beacon-missing empty state.
       return ok(DemoWorld.rumSites)
     case "storage"?:
       return kv(rest: Array(rest.dropFirst()), prefix: query("prefix"))
-    case "cfd_tunnel"?:
-      return ok(
-        #"[{"id":"tunnel-1","name":"homelab-01","status":"down"},{"id":"tunnel-2","name":"office-gateway","status":"healthy"}]"#
-      )
-    case "load_balancers"?:
-      return ok("[]")
-    case "registrar"?:
-      return ok(#"[{"id":"example.com","name":"example.com","expires_at":"2027-05-12T00:00:00Z"}]"#)
     case "alerting"?:
       if rest.contains("available_alerts") { return ok("{}") }
       if rest.contains("history") { return ok(DemoWorld.alertHistory) }
@@ -407,6 +393,9 @@ final class DemoBackend: URLProtocol {
     }
     if query.contains("httpRequestsAdaptiveGroups") {
       return Reply(json: DemoWorld.zoneRequestsHourly())
+    }
+    if query.contains("pageload: rumPageloadEventsAdaptiveGroups") {
+      return Reply(json: DemoWorld.rumMetrics(days: limit(in: query) ?? 14))
     }
     if query.contains("rumPageloadEventsAdaptiveGroups") {
       return Reply(json: DemoWorld.rumPageviews(days: limit(in: query) ?? 7))
@@ -808,9 +797,18 @@ private enum DemoWorld {
 
   static let rumSites =
     #"""
-    [{"site_tag":"demo-site","site_token":"demo-token","auto_install":true,\#
-    "ruleset":{"id":"demo-ruleset","zone_tag":"zone-example","zone_name":"example.com",\#
-    "enabled":true}}]
+    [
+      {"site_tag":"demo-site","site_token":"demo-token","auto_install":true,\#
+       "ruleset":{"id":"demo-ruleset","zone_tag":"zone-example","zone_name":"example.com","enabled":true}},
+      {"site_tag":"docs-site","site_token":"docs-token","auto_install":true,\#
+       "ruleset":{"id":"docs-ruleset","zone_tag":"zone-docs","zone_name":"docs.example.com","enabled":true}},
+      {"site_tag":"api-site","site_token":"api-token","auto_install":true,\#
+       "ruleset":{"id":"api-ruleset","zone_tag":"zone-api","zone_name":"api.example.net","enabled":false}},
+      {"site_tag":"shop-site","site_token":"shop-token","auto_install":true,\#
+       "ruleset":{"id":"shop-ruleset","zone_tag":"zone-shop","zone_name":"shop.example.org","enabled":true}},
+      {"site_tag":"northwind-site","site_token":"northwind-token","auto_install":true,\#
+       "ruleset":{"id":"northwind-ruleset","zone_tag":"zone-bulk-1","zone_name":"northwind.io","enabled":true}}
+    ]
     """#
 
   static func rumPageviews(days: Int) -> String {
@@ -821,6 +819,26 @@ private enum DemoWorld {
     }
     return
       #"{"data":{"viewer":{"accounts":[{"rumPageloadEventsAdaptiveGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+  }
+
+  static func rumMetrics(days: Int) -> String {
+    let count = max(days, 1)
+    let pageload = (0..<count).map { day -> String in
+      let views = 640 + wave(day, base: 0, swing: 420)
+      return
+        #"{"count":\#(views),"sum":{"visits":\#(views * 47 / 100)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+    }
+    let performance = (0..<count).map { day -> String in
+      let p50 = 680 + wave(day, base: 0, swing: 260)
+      return
+        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+    }
+    return #"""
+      {"data":{"viewer":{"accounts":[{
+        "pageload":[\#(pageload.joined(separator: ","))],
+        "performance":[\#(performance.joined(separator: ","))]
+      }]}},"errors":null}
+      """#
   }
 
   static func workerAnalytics() -> String {

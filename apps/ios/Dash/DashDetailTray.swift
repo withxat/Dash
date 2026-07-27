@@ -76,7 +76,9 @@ struct DashDetailTray<Accessory: View>: View {
 
   private func fieldRow(_ field: DashDetailField) -> some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text(field.label)
+      // Labels are Dash's own copy and localize here, matching DashControlSurface.
+      // Values are Cloudflare's data — hostnames, sizes, ETags — and stay verbatim.
+      Text(DashL10n.ui(field.label))
         .dashTextStyle(.footnoteSemibold)
         .foregroundStyle(DashTheme.subtle)
       Text(field.value)

@@ -95,9 +95,11 @@ private struct PagesBuildLockScreenView: View {
 }
 
 private func pagesBuildStatusLine(_ state: PagesBuildAttributes.ContentState) -> String {
-  let stage = state.stage.capitalized
+  // Cloudflare's stage ids are snake_case ("clone_repo"), and `.capitalized`
+  // alone shipped them that way — "Clone_Repo · Active".
+  let stage = state.stage.replacingOccurrences(of: "_", with: " ").capitalized
   let status = state.status.capitalized
-  return "\(stage) · \(status)"
+  return "\(String(localized: .init(stage))) · \(String(localized: .init(status)))"
 }
 
 private func pagesBuildDeepLink(_ context: ActivityViewContext<PagesBuildAttributes>) -> URL? {
@@ -120,14 +122,6 @@ private enum WidgetColor {
   static let ok = Color(light: 0x10B981, dark: 0x34D399)
   static let warning = Color(light: 0xEAB308, dark: 0xFACC15)
   static let critical = Color(light: 0xEF4444, dark: 0xF87171)
-
-  static func status(_ raw: String) -> Color {
-    switch raw {
-    case "critical": critical
-    case "warning": warning
-    default: ok
-    }
-  }
 
   /// Pages deployment stages — keep in sync with `pagesStatusColor` in PagesViews.
   static func pagesStatus(_ raw: String) -> Color {
@@ -164,8 +158,8 @@ struct WatchtowerProvider: TimelineProvider {
     WatchtowerEntry(
       date: Date(),
       snapshot: WatchtowerWidgetSnapshot(
-        issueCount: 1, criticalCount: 0, warningCount: 1,
-        signals: [.init(title: "Certificate expiring", detail: "example.com", status: "warning")],
+        unreadCount: 1,
+        alerts: [.init(id: "cf:preview", title: "Certificate expiring", detail: "example.com")],
         accountName: "Your account", fetchedAt: Date()))
   }
 
@@ -192,7 +186,7 @@ struct WatchtowerWidget: Widget {
         .widgetURL(entry.snapshot?.deepLinkURL)
     }
     .configurationDisplayName("Watchtower")
-    .description("Account health at a glance — issues, cert and domain expiry.")
+    .description("Unread Cloudflare alerts for your account.")
     .supportedFamilies([.systemSmall, .systemMedium])
   }
 }
@@ -224,7 +218,7 @@ struct WatchtowerWidgetView: View {
         Spacer(minLength: 0)
       }
       .accessibilityElement(children: .combine)
-      .accessibilityLabel(snapshot.severityHeadline)
+      .accessibilityLabel(snapshot.headline)
       if let account = snapshot.accountName {
         Text(account)
           .font(.caption2)
@@ -233,22 +227,23 @@ struct WatchtowerWidgetView: View {
       }
       if family == .systemMedium {
         Divider()
-        if snapshot.signals.isEmpty {
+        if snapshot.alerts.isEmpty {
           Text(
-            snapshot.checksIncomplete
-              ? "Open Dash to review incomplete checks." : "Everything looks healthy."
+            snapshot.alertsUnavailable
+              ? "Open Dash to reconnect notification access."
+              : "Cloudflare hasn't sent anything new."
           )
           .font(.caption)
           .foregroundStyle(.secondary)
         } else {
-          ForEach(Array(snapshot.signals.prefix(4).enumerated()), id: \.offset) { _, signal in
+          ForEach(Array(snapshot.alerts.prefix(4).enumerated()), id: \.offset) { _, alert in
             HStack(spacing: 6) {
-              Circle().fill(WidgetColor.status(signal.status)).frame(width: 6, height: 6)
-              Text(signal.title).font(.caption).lineLimit(1)
+              Circle().fill(WidgetColor.warning).frame(width: 6, height: 6)
+              Text(alert.title).font(.caption).lineLimit(1)
               Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(signal.status), \(signal.title)")
+            .accessibilityLabel(alert.title)
           }
         }
       }
@@ -274,7 +269,7 @@ struct WatchtowerWidgetView: View {
   private var emptyView: some View {
     VStack(alignment: .leading, spacing: 6) {
       Text("Watchtower").font(.headline)
-      Text("Open Dash to sync your account health.")
+      Text("Open Dash to sync your Cloudflare alerts.")
         .font(.caption)
         .foregroundStyle(.secondary)
       Spacer(minLength: 0)
@@ -282,13 +277,11 @@ struct WatchtowerWidgetView: View {
   }
 
   private func headline(_ snapshot: WatchtowerWidgetSnapshot) -> String {
-    snapshot.severityHeadline
+    snapshot.headline
   }
 
   private func statusColor(_ snapshot: WatchtowerWidgetSnapshot) -> Color {
-    if snapshot.criticalCount > 0 { return WidgetColor.critical }
-    if snapshot.warningCount > 0 { return WidgetColor.warning }
-    if snapshot.checksIncomplete { return WidgetColor.warning }
-    return WidgetColor.ok
+    if snapshot.alertsUnavailable { return WidgetColor.warning }
+    return snapshot.unreadCount > 0 ? WidgetColor.warning : WidgetColor.ok
   }
 }

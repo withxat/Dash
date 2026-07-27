@@ -77,57 +77,36 @@ enum FeatureCacheKey {
 }
 
 struct WatchtowerSnapshot: Sendable {
-  var signals: [WatchtowerSignal]
   var alerts: [NotificationHistoryEntry]
   var alertsStatus: WatchtowerAlertsStatus
-  var missingScopeChecks: [String]
-  var failedChecks: [String]
   var fetchedAt: Date
-
-  var issueCount: Int {
-    signals.count {
-      $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
-    }
-  }
 
   func isStale(now: Date = .now, ttl: TimeInterval) -> Bool {
     now.timeIntervalSince(fetchedAt) > ttl
   }
 
-  /// Projects the full snapshot into the slim Codable form the widget reads.
-  /// Non-ok signals only, critical before warning.
-  func widgetSnapshot(accountID: String, accountName: String?) -> WatchtowerWidgetSnapshot {
-    let issues = signals.filter {
-      $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
-    }
-    let ordered = issues.sorted { lhs, rhs in
-      (lhs.status == .critical ? 0 : 1) < (rhs.status == .critical ? 0 : 1)
-    }
+  /// Projects the snapshot into the slim Codable form the widget reads. Only
+  /// deliveries this iPhone has not read yet — the widget answers "did
+  /// Cloudflare tell me anything I haven't seen", not "is my account healthy".
+  func widgetSnapshot(
+    accountID: String,
+    accountName: String?,
+    defaults: UserDefaults = .standard
+  ) -> WatchtowerWidgetSnapshot {
+    let unread = WatchtowerInboxStore.contents(
+      accountID: accountID,
+      alerts: alertsStatus == .ok ? alerts : [],
+      defaults: defaults
+    ).unreadNotifications
     return WatchtowerWidgetSnapshot(
-      issueCount: issues.count,
-      criticalCount: issues.count { $0.status == .critical },
-      warningCount: issues.count { $0.status == .warning },
-      signals: ordered.map {
-        WatchtowerWidgetSnapshot.Signal(
-          title: $0.title, detail: $0.detail, status: $0.status.widgetRawValue)
+      unreadCount: unread.count,
+      alerts: unread.map {
+        WatchtowerWidgetSnapshot.Alert(id: $0.id, title: $0.title, detail: $0.detail)
       },
-      checksIncomplete:
-        signals.contains { $0.id == WatchtowerEngine.coverageSignalID }
-        || !missingScopeChecks.isEmpty
-        || !failedChecks.isEmpty,
+      alertsUnavailable: alertsStatus != .ok,
       accountID: accountID,
       accountName: accountName,
       fetchedAt: fetchedAt)
-  }
-}
-
-extension WatchtowerStatus {
-  var widgetRawValue: String {
-    switch self {
-    case .ok: "ok"
-    case .warning: "warning"
-    case .critical: "critical"
-    }
   }
 }
 

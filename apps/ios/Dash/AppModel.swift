@@ -56,11 +56,10 @@ final class AppModel {
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
   var identityStale = false
-  /// Current Dash issues plus unread Cloudflare deliveries, minus ignored
-  /// rows. History and coverage diagnostics never increment this shared
-  /// Watchtower tab / floating inbox badge.
-  /// nil until the first check completes for the active account.
-  var watchtowerIssueCount: Int?
+  /// Unread Cloudflare deliveries, minus locally ignored rows. History never
+  /// increments this shared Watchtower tab / floating inbox badge; nil until
+  /// the first fetch completes for the active account.
+  var watchtowerUnreadAlertCount: Int?
 
   static let watchtowerTTL: TimeInterval = 5 * 60
 
@@ -136,7 +135,7 @@ final class AppModel {
     accountGeneration &+= 1
     featureCache.clear()
     PagesBuildActivityController.shared.invalidateSession()
-    watchtowerIssueCount = nil
+    watchtowerUnreadAlertCount = nil
   }
 
   private func clearWatchtowerWidgetSnapshot() {
@@ -297,31 +296,26 @@ final class AppModel {
         {
           featureCache.set(FeatureCacheKey.kvNamespaces("ui-account"), namespaces)
         }
-        // One signal of each routing shape: in-app destination, Open in
-        // Cloudflare (externalURL), and Pages project push.
+        // Two Cloudflare deliveries so the inbox has both an unread row and a
+        // history row to render.
         let watchtowerPreview = WatchtowerSnapshot(
-          signals: [
-            WatchtowerSignal(
-              id: "zones", title: "Domains", detail: "1 domain pending",
-              status: .warning, destination: .feature(.zones),
-              suggestedAction: "Finish the nameserver move",
-              resourceName: "api.example.net"),
-            WatchtowerSignal(
-              id: "tunnels", title: "Tunnels", detail: "1 tunnel down",
-              status: .critical, destination: nil,
-              externalURL: URL(
-                string: "https://one.dash.cloudflare.com/ui-account/networks/tunnels"),
-              suggestedAction: "Check cloudflared and reconnect the tunnel",
-              resourceName: "homelab-01"),
-            WatchtowerSignal(
-              id: "pages", title: "Pages deployments",
-              detail: "site: latest deployment failed",
-              status: .warning, destination: .pagesProject("site"),
-              suggestedAction: "Open the project to retry or inspect the log",
-              resourceName: "site"),
+          alerts: [
+            NotificationHistoryEntry(
+              historyID: "ui-alert-1",
+              name: "Tunnel health",
+              alertType: "tunnel_health_event",
+              alertBody: "homelab-01 disconnected from Cloudflare",
+              sent: ISO8601DateFormatter().string(from: .now)),
+            NotificationHistoryEntry(
+              historyID: "ui-alert-2",
+              name: "Certificate expiring",
+              alertType: "universal_ssl_event_type",
+              alertBody: "api.example.net",
+              sent: ISO8601DateFormatter().string(
+                from: Date(timeIntervalSinceNow: -86_400))),
           ],
-          alerts: [], alertsStatus: .ok, missingScopeChecks: [],
-          failedChecks: [], fetchedAt: .now)
+          alertsStatus: .ok,
+          fetchedAt: .now)
         featureCache.set(FeatureCacheKey.watchtower("ui-account"), watchtowerPreview)
         syncWatchtowerInboxBadge(from: watchtowerPreview, accountID: "ui-account")
         authState = .authenticated
@@ -576,7 +570,7 @@ final class AppModel {
     grantedScopes = nil
     selectedScopes = DashAuthorizationScopes.initialReadOnly
     identityStale = false
-    watchtowerIssueCount = nil
+    watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingLegacyNotificationRoute = nil
     WatchtowerNotificationBaselineStore.clearAll()
@@ -622,7 +616,7 @@ final class AppModel {
     grantedScopes = nil
     selectedScopes = DashAuthorizationScopes.initialReadOnly
     identityStale = false
-    watchtowerIssueCount = nil
+    watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingLegacyNotificationRoute = nil
     pendingDeviceToken = nil
@@ -645,7 +639,7 @@ final class AppModel {
     guard activeAccountID != account.id else { return }
     resetAccountScopedWork()
     Task { await r2Thumbnails.clear() }
-    watchtowerIssueCount = nil
+    watchtowerUnreadAlertCount = nil
     toasts.dismiss()
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
@@ -673,15 +667,12 @@ final class AppModel {
     do {
       snapshot = try await featureCache.coalescedLoad(key) {
         try Task.checkCancellation()
-        let result = try await WatchtowerEngine.loadCancellable(
+        let result = try await WatchtowerAlertsLoader.loadCancellable(
           client: client, accountID: context.accountID)
         try Task.checkCancellation()
         return WatchtowerSnapshot(
-          signals: result.signals,
           alerts: result.alerts,
           alertsStatus: result.alertsStatus,
-          missingScopeChecks: result.missingScopeChecks,
-          failedChecks: result.failedChecks,
           fetchedAt: .now)
       }
     } catch {
@@ -702,7 +693,7 @@ final class AppModel {
   /// Recomputes the shared tab/inbox badge from the cached snapshot + local ignores.
   func refreshWatchtowerInboxBadge() {
     guard let accountID = activeAccountID else {
-      watchtowerIssueCount = nil
+      watchtowerUnreadAlertCount = nil
       return
     }
     let cached: WatchtowerSnapshot? = featureCache.get(FeatureCacheKey.watchtower(accountID))
@@ -710,29 +701,31 @@ final class AppModel {
     syncWatchtowerInboxBadge(from: cached, accountID: accountID)
   }
 
-  /// Ignores every current or unread inbox row for the active account (local only).
+  /// Refreshes Cloudflare's deliveries for the Watchtower tab's inbox badge.
+  func refreshWatchtowerAlerts(force: Bool = false) async {
+    _ = await watchtowerSnapshot(force: force)
+  }
+
+  /// Ignores every unread delivery for the active account (local only).
   func ignoreAllWatchtowerAlerts() {
     guard let accountID = activeAccountID else { return }
     let cached: WatchtowerSnapshot? = featureCache.get(FeatureCacheKey.watchtower(accountID))
     guard let cached else { return }
-    let ignored = WatchtowerInboxStore.ignoredIDs(accountID: accountID)
-    let activeIDs = WatchtowerInboxStore.build(
+    let unreadIDs = WatchtowerInboxStore.contents(
       accountID: accountID,
-      alerts: cached.alertsStatus == .ok ? cached.alerts : [],
-      signals: cached.signals
+      alerts: cached.alertsStatus == .ok ? cached.alerts : []
     )
-    .filter { !ignored.contains($0.id) }
+    .unreadNotifications
     .map(\.id)
-    guard !activeIDs.isEmpty else { return }
-    WatchtowerInboxStore.ignoreAll(activeIDs, accountID: accountID)
+    guard !unreadIDs.isEmpty else { return }
+    WatchtowerInboxStore.ignore(unreadIDs, accountID: accountID)
     refreshWatchtowerInboxBadge()
   }
 
   private func syncWatchtowerInboxBadge(from snapshot: WatchtowerSnapshot, accountID: String) {
-    watchtowerIssueCount = WatchtowerInboxStore.activeCount(
+    watchtowerUnreadAlertCount = WatchtowerInboxStore.unreadCount(
       accountID: accountID,
-      alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : [],
-      signals: snapshot.signals
+      alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : []
     )
   }
 

@@ -38,12 +38,11 @@ final class WatchtowerInboxScreenState {
   }
 }
 
-/// Watchtower's three distinct alert semantics: current Dash detections,
-/// unread Cloudflare deliveries, and Cloudflare delivery history.
+/// Cloudflare's notification deliveries, split by what this iPhone has read.
+/// Nothing Dash detected on its own appears here — the account's notification
+/// policies are the only thing that decides an alert exists.
 struct WatchtowerInboxView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.destinationNavigator) private var navigator
-  @Environment(\.openURL) private var openURL
 
   private enum Filter: String, CaseIterable, Identifiable {
     case inbox
@@ -83,7 +82,7 @@ struct WatchtowerInboxView: View {
 
   private var visible: [WatchtowerInboxEntry] {
     switch filter {
-    case .inbox: state.contents.actionable
+    case .inbox: state.contents.unreadNotifications
     case .history: state.contents.history
     case .ignored: state.contents.ignored
     }
@@ -120,10 +119,10 @@ struct WatchtowerInboxView: View {
             state.alertsStatus == .unavailable || state.alertsStatus == .error)
       }
     )
-    .detailHeader(icon: .solar(SolarAsset.inbox), title: "Alerts")
+    .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alerts")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        if filter == .inbox, !state.contents.actionable.isEmpty {
+        if filter == .inbox, !state.contents.unreadNotifications.isEmpty {
           DashToolbarTextButton(title: "Ignore all") {
             showsIgnoreAll = true
           }
@@ -143,24 +142,13 @@ struct WatchtowerInboxView: View {
       item: $selected,
       title: { $0.entry.title },
       content: { selection in
-        let entry = selection.entry
         WatchtowerInboxEntryTray(
-          entry: entry,
+          entry: selection.entry,
           isIgnored:
             state.loadedContext == selection.context
-            && !entry.localStateIDs.isDisjoint(with: state.ignoredIDs),
+            && state.ignoredIDs.contains(selection.entry.id),
           ignore: { ignore(selection) },
-          unignore: { unignore(selection) },
-          openResource: entry.destination.map { destination in
-            {
-              openResource(destination, selection: selection)
-            }
-          },
-          openExternal: entry.externalURL.map { url in
-            {
-              openExternal(url, selection: selection)
-            }
-          }
+          unignore: { unignore(selection) }
         )
       }
     )
@@ -168,7 +156,7 @@ struct WatchtowerInboxView: View {
       isPresented: $showsIgnoreAll,
       title: DashL10n.string("Ignore all alerts")
     ) {
-      WatchtowerIgnoreAllTray(count: state.contents.actionable.count) {
+      WatchtowerIgnoreAllTray(count: state.contents.unreadNotifications.count) {
         ignoreAllVisible()
         DashDelight.recoverFromIssue()
       }
@@ -177,7 +165,7 @@ struct WatchtowerInboxView: View {
 
   private var emptyTitle: String {
     switch filter {
-    case .inbox: DashL10n.string("No current or unread alerts")
+    case .inbox: DashL10n.string("No unread alerts")
     case .history: DashL10n.string("No Cloudflare history")
     case .ignored: DashL10n.string("No ignored alerts")
     }
@@ -187,7 +175,7 @@ struct WatchtowerInboxView: View {
     switch filter {
     case .inbox:
       DashL10n.string(
-        "The badge counts current Dash issues and unread Cloudflare notifications only.")
+        "Cloudflare delivers an alert here when one of your notification policies fires.")
     case .history:
       DashL10n.string("Cloudflare deliveries you have already seen stay here.")
     case .ignored:
@@ -206,20 +194,12 @@ struct WatchtowerInboxView: View {
     } else {
       switch filter {
       case .inbox:
-        if !state.contents.currentIssues.isEmpty {
-          entryGroup(
-            title: DashL10n.string("Current Dash issues"),
-            entries: state.contents.currentIssues)
-        }
-        if !state.contents.unreadNotifications.isEmpty {
-          entryGroup(
-            title: DashL10n.string("Unread from Cloudflare"),
-            entries: state.contents.unreadNotifications,
-            actionTitle: DashL10n.string("Mark all read"),
-            action: markAllUnreadRead
-          )
-          .dashSectionBoundary(!state.contents.currentIssues.isEmpty)
-        }
+        entryGroup(
+          title: DashL10n.string("Unread"),
+          entries: state.contents.unreadNotifications,
+          actionTitle: DashL10n.string("Mark all read"),
+          action: markAllUnreadRead
+        )
       case .history:
         entryGroup(
           title: DashL10n.string("Cloudflare history"),
@@ -258,45 +238,21 @@ struct WatchtowerInboxView: View {
   private func row(_ entry: WatchtowerInboxEntry) -> some View {
     DashListRow(
       title: entry.title,
-      subtitle: rowSubtitle(entry),
-      icon: entry.primarySource.listIcon,
-      iconColor: entry.primarySource == .dash ? DashTheme.warning : DashTheme.brand,
+      subtitle: entry.detail ?? "",
+      icon: SolarAsset.cloudflare,
+      iconColor: DashTheme.brand,
       trailing: entry.sentAt.map(relativeTime),
       showsChevron: false,
       accessory: {
-        if let status = entry.status, status != .ok {
-          signalBadge(status)
-        } else if entry.category == .unreadNotification {
-          StatusBadge(text: DashL10n.string("Unread"))
+        if entry.category == .unread {
+          StatusBadge(.unread)
         }
       }
     )
   }
 
-  private func rowSubtitle(_ entry: WatchtowerInboxEntry) -> String {
-    var parts: [String] = []
-    let sourceLabel = entry.sources.sorted { $0.rawValue < $1.rawValue }
-      .map(\.label)
-      .joined(separator: " · ")
-    if !sourceLabel.isEmpty { parts.append(sourceLabel) }
-    if let detail = entry.detail, !detail.isEmpty { parts.append(detail) }
-    return parts.joined(separator: " — ")
-  }
-
-  @ViewBuilder
-  private func signalBadge(_ status: WatchtowerStatus) -> some View {
-    switch status {
-    case .ok:
-      StatusBadge(text: DashL10n.string("OK"))
-    case .warning:
-      StatusBadge(text: DashL10n.string("Warning"))
-    case .critical:
-      StatusBadge(text: DashL10n.string("Critical"))
-    }
-  }
-
   private func relativeTime(_ date: Date) -> String {
-    RelativeDateTimeFormatter().localizedString(for: date, relativeTo: .now)
+    watchtowerRelativeTime(date)
   }
 
   private func load(force: Bool = false) async {
@@ -316,8 +272,7 @@ struct WatchtowerInboxView: View {
       state.alertsStatus = snapshot.alertsStatus
       state.contents = WatchtowerInboxStore.contents(
         accountID: context.accountID,
-        alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : [],
-        signals: snapshot.signals
+        alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : []
       )
     }
     guard
@@ -341,8 +296,7 @@ struct WatchtowerInboxView: View {
     state.alertsStatus = cached.alertsStatus
     state.contents = WatchtowerInboxStore.contents(
       accountID: context.accountID,
-      alerts: cached.alertsStatus == .ok ? cached.alerts : [],
-      signals: cached.signals
+      alerts: cached.alertsStatus == .ok ? cached.alerts : []
     )
   }
 
@@ -351,11 +305,8 @@ struct WatchtowerInboxView: View {
       return
     }
     selected = InboxSelection(context: context, entry: entry)
-    guard !entry.notificationIDs.isEmpty,
-      entry.category != .history
-    else { return }
-    WatchtowerInboxStore.markRead(
-      Array(entry.notificationIDs), accountID: context.accountID)
+    guard entry.category != .history else { return }
+    WatchtowerInboxStore.markRead([entry.id], accountID: context.accountID)
     model.refreshWatchtowerInboxBadge()
     revision += 1
   }
@@ -363,8 +314,7 @@ struct WatchtowerInboxView: View {
   private func ignore(_ selection: InboxSelection) {
     guard owns(selection) else { return }
     WatchtowerInboxStore.ignore(
-      Array(selection.entry.localStateIDs),
-      accountID: selection.context.accountID)
+      [selection.entry.id], accountID: selection.context.accountID)
     model.refreshWatchtowerInboxBadge()
     selected = nil
     revision += 1
@@ -373,8 +323,7 @@ struct WatchtowerInboxView: View {
   private func unignore(_ selection: InboxSelection) {
     guard owns(selection) else { return }
     WatchtowerInboxStore.unignore(
-      Array(selection.entry.localStateIDs),
-      accountID: selection.context.accountID)
+      [selection.entry.id], accountID: selection.context.accountID)
     model.refreshWatchtowerInboxBadge()
     selected = nil
     revision += 1
@@ -384,8 +333,8 @@ struct WatchtowerInboxView: View {
     guard let context = model.accountRequestContext, state.loadedContext == context else {
       return
     }
-    let stateIDs = state.contents.actionable.flatMap { Array($0.localStateIDs) }
-    WatchtowerInboxStore.ignoreAll(stateIDs, accountID: context.accountID)
+    WatchtowerInboxStore.ignore(
+      state.contents.unreadNotifications.map(\.id), accountID: context.accountID)
     model.refreshWatchtowerInboxBadge()
     revision += 1
   }
@@ -394,10 +343,8 @@ struct WatchtowerInboxView: View {
     guard let context = model.accountRequestContext, state.loadedContext == context else {
       return
     }
-    let notificationIDs = state.contents.unreadNotifications.flatMap {
-      Array($0.notificationIDs)
-    }
-    WatchtowerInboxStore.markRead(notificationIDs, accountID: context.accountID)
+    WatchtowerInboxStore.markRead(
+      state.contents.unreadNotifications.map(\.id), accountID: context.accountID)
     model.refreshWatchtowerInboxBadge()
     revision += 1
   }
@@ -406,23 +353,6 @@ struct WatchtowerInboxView: View {
     state.loadedContext == selection.context
       && model.isCurrentAccount(selection.context)
   }
-
-  private func openResource(_ destination: Destination, selection: InboxSelection) {
-    guard owns(selection) else {
-      selected = nil
-      return
-    }
-    selected = nil
-    navigator?.push(destination)
-  }
-
-  private func openExternal(_ url: URL, selection: InboxSelection) {
-    guard owns(selection) else {
-      selected = nil
-      return
-    }
-    openURL(url)
-  }
 }
 
 private struct WatchtowerInboxEntryTray: View {
@@ -430,8 +360,6 @@ private struct WatchtowerInboxEntryTray: View {
   let isIgnored: Bool
   let ignore: () -> Void
   let unignore: () -> Void
-  var openResource: (() -> Void)?
-  var openExternal: (() -> Void)?
 
   var body: some View {
     VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
@@ -444,67 +372,40 @@ private struct WatchtowerInboxEntryTray: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if let sentAt = entry.sentAt {
-          Text(RelativeDateTimeFormatter().localizedString(for: sentAt, relativeTo: .now))
+          Text(watchtowerRelativeTime(sentAt))
             .dashTextStyle(.caption)
             .foregroundStyle(DashTheme.subtle)
         }
       }
 
-      // Same footer cascade as the Watchtower signal tray: the open action is
-      // the primary verb and stays bottom-most, with the reversible ignore
-      // toggle as a sub-action above it; without an open target, the ignore
-      // toggle is the only button left and takes the primary slot.
-      VStack(spacing: 12) {
-        if let openResource {
-          ignoreSubAction
-          DashActionButton(title: DashL10n.string("Open resource"), action: openResource)
-        } else if let openExternal {
-          ignoreSubAction
-          DashActionButton(
-            title: DashL10n.string("Open in Cloudflare"),
-            icon: SolarAsset.cloudflare,
-            action: openExternal
-          )
-        } else {
-          DashActionButton(
-            title: isIgnored
-              ? DashL10n.string("Stop ignoring") : DashL10n.string("Ignore"),
-            action: isIgnored ? unignore : ignore
-          )
-        }
-      }
+      // Cloudflare's history carries no link back to the resource, so the
+      // reversible ignore toggle is the only action and takes the primary slot.
+      DashActionButton(
+        title: isIgnored
+          ? DashL10n.string("Stop ignoring") : DashL10n.string("Ignore"),
+        action: isIgnored ? unignore : ignore
+      )
     }
-  }
-
-  private var ignoreSubAction: some View {
-    DashTrayPillButton(
-      title: isIgnored
-        ? DashL10n.string("Stop ignoring") : DashL10n.string("Ignore"),
-      action: isIgnored ? unignore : ignore
-    )
   }
 
   private var sourceLine: some View {
-    HStack(spacing: 6) {
-      ForEach(entry.sources.sorted { $0.rawValue < $1.rawValue }, id: \.self) { source in
-        HStack(spacing: 4) {
-          SolarIcon(
-            asset: source.listIcon,
-            size: 12,
-            color: source == .dash ? DashTheme.warning : DashTheme.brand
-          )
-          Text(source.label)
-            .dashTextStyle(.captionSemibold)
-            .foregroundStyle(source == .dash ? DashTheme.warning : DashTheme.subtle)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(
-          source == .dash ? DashTheme.warningTint : DashTheme.recessed,
-          in: Capsule(style: .continuous)
-        )
-      }
-      Spacer(minLength: 0)
+    HStack(spacing: 4) {
+      SolarIcon(asset: SolarAsset.cloudflare, size: 12, color: DashTheme.brand)
+      Text(DashL10n.string("Cloudflare"))
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.subtle)
     }
+    .padding(.horizontal, 8)
+    .padding(.vertical, 4)
+    .background(DashTheme.recessed, in: Capsule(style: .continuous))
   }
+}
+
+/// Delivery ages on the inbox list and in the detail tray. `RelativeDateTimeFormatter`
+/// defaults to the SYSTEM locale, so without the pin an inbox translated by
+/// Settings → Language still counted the hours in English.
+func watchtowerRelativeTime(_ date: Date, relativeTo now: Date = .now) -> String {
+  let formatter = RelativeDateTimeFormatter()
+  formatter.locale = DashL10n.activeLocale
+  return formatter.localizedString(for: date, relativeTo: now)
 }

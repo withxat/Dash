@@ -268,7 +268,7 @@ struct PushAlertsView: View {
         .dashSectionBoundary(showsRecommended || !allowsWrites)
       }
     }
-    .detailHeader(icon: .solar(SolarAsset.inbox), title: "Push alerts")
+    .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Push alerts")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         if allowsWrites, storedWebhookID != nil {
@@ -300,7 +300,7 @@ struct PushAlertsView: View {
       content: { policy in
         DashDetailTray(
           fields: [
-            DashDetailField(label: DashL10n.string("Type"), value: policy.alertType ?? "—"),
+            DashDetailField(label: "Type", value: policy.alertType ?? "—"),
             DashDetailField(
               label: DashL10n.string("Enabled"),
               value: DashL10n.string(policy.enabled == false ? "No" : "Yes")),

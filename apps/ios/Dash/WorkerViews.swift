@@ -305,7 +305,7 @@ struct WorkerDetailView: View {
                   ? FeatureVisualIdentity.catalogColor(for: .workers) : DashTheme.iconMuted,
                 showsChevron: false
               ) {
-                if isActive { StatusBadge(text: "Active") }
+                if isActive { StatusBadge(.current) }
               }
             }
             .buttonStyle(DashSurfaceButtonStyle())
@@ -380,7 +380,7 @@ struct WorkerDetailView: View {
                 iconColor: DashTheme.iconMuted,
                 showsChevron: false
               ) {
-                StatusBadge(text: "Route")
+                StatusBadge(.route)
               }
             }
             .buttonStyle(DashSurfaceButtonStyle())
@@ -434,7 +434,7 @@ struct WorkerDetailView: View {
               .foregroundStyle(DashTheme.placeholder)
           }
           if isActive {
-            StatusBadge(text: "Active")
+            StatusBadge(.current)
           } else if !featureAllowsWrites {
             DashNotice(kind: .warning, message: "Grant Workers write access to switch deployments.")
           }
@@ -895,7 +895,9 @@ private func workerDeploymentRowSubtitle(
 ) -> String {
   let age = workerDeploymentAgeText(deployment.createdOn)
   if let version = workerPrimaryVersionID(deployment) {
-    let mark = isActive ? "Active · " : ""
+    // Reads the badge's own token rather than a second copy of the word, so the
+    // row and the badge beside it cannot end up in different languages.
+    let mark = isActive ? "\(StatusToken.current.label) · " : ""
     return "\(mark)\(age) · \(version.prefix(8))"
   }
   return age
@@ -1004,19 +1006,27 @@ private func workerDeploymentAgeText(_ value: String, now: Date = .now) -> Strin
   let plain = ISO8601DateFormatter()
   plain.formatOptions = [.withInternetDateTime]
   guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
-    return "Deployed \(value)"
+    return DashL10n.string("Deployed \(value)")
   }
   let formatter = RelativeDateTimeFormatter()
   formatter.unitsStyle = .abbreviated
-  return "Deployed \(formatter.localizedString(for: date, relativeTo: now))"
+  // Without this the phrase localizes but the duration does not: Settings →
+  // Language is an in-app preference, and the formatter otherwise follows the
+  // system locale — "3天前" and "3d ago" on the same row.
+  formatter.locale = DashL10n.activeLocale
+  return DashL10n.string("Deployed \(formatter.localizedString(for: date, relativeTo: now))")
 }
 
 private func workerDeploymentTrafficText(_ deployment: WorkerDeploymentSummary) -> String {
-  guard !deployment.versions.isEmpty else { return deployment.source.capitalized }
-  if deployment.versions.count == 1, let version = deployment.versions.first {
-    return "Version \(version.versionID.prefix(8)) · \(version.percentage.formatted())% traffic"
+  guard !deployment.versions.isEmpty else {
+    // Cloudflare's own upload-source vocabulary; no fixed set to translate.
+    return DashL10n.ui(deployment.source.capitalized)
   }
-  return "Traffic split across \(deployment.versions.count) versions"
+  if deployment.versions.count == 1, let version = deployment.versions.first {
+    let id = String(version.versionID.prefix(8))
+    return DashL10n.string("Version \(id) · \(version.percentage.formatted())% traffic")
+  }
+  return DashL10n.string("Traffic split across \(deployment.versions.count) versions")
 }
 
 private enum FeatureExternalURL {

@@ -187,10 +187,10 @@ struct R2BucketView: View {
         DashListGroupLink(value: .r2Bucket(bucket, prefix: folder)) {
           DashListRow(
             title: folderName(folder),
-            subtitle: "Virtual folder",
+            subtitle: DashL10n.string("Virtual folder"),
             icon: SolarAsset.Content.folder
           )
-          .accessibilityLabel("\(folderName(folder)), Virtual folder")
+          .accessibilityLabel("\(folderName(folder)), \(DashL10n.string("Virtual folder"))")
         }
         .dashListCardInset()
       }
@@ -474,10 +474,10 @@ struct R2BucketView: View {
           }
         } label: {
           DashListRow(
-            title: "Select objects",
+            title: DashL10n.string("Select objects"),
             subtitle: objects.isEmpty
-              ? "Nothing to select in this folder"
-              : "Or drag with two fingers on the list",
+              ? DashL10n.string("Nothing to select in this folder")
+              : DashL10n.string("Or drag with two fingers on the list"),
             icon: SolarAsset.checkCircle,
             showsChevron: false
           )
@@ -485,8 +485,8 @@ struct R2BucketView: View {
         .buttonStyle(DashSurfaceButtonStyle())
         .accessibilityLabel(
           objects.isEmpty
-            ? "Select objects, Nothing to select in this folder"
-            : "Select objects, Or drag with two fingers on the list"
+            ? DashL10n.string("Select objects, Nothing to select in this folder")
+            : DashL10n.string("Select objects, Or drag with two fingers on the list")
         )
         .disabled(objects.isEmpty || work.batch != nil)
         .opacity(objects.isEmpty || work.batch != nil ? 0.45 : 1)
@@ -500,13 +500,13 @@ struct R2BucketView: View {
         navigator?.push(.r2BucketSettings(bucket))
       } label: {
         DashListRow(
-          title: "Bucket settings",
-          subtitle: "Public access and custom domains",
+          title: DashL10n.string("Bucket settings"),
+          subtitle: DashL10n.string("Public access and custom domains"),
           icon: SolarAsset.settings
         )
       }
       .buttonStyle(DashSurfaceButtonStyle())
-      .accessibilityLabel("Bucket settings, Public access and custom domains")
+      .accessibilityLabel(DashL10n.string("Bucket settings, Public access and custom domains"))
       .dashListCardInset()
     }
   }

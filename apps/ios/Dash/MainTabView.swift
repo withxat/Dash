@@ -13,7 +13,6 @@ private struct AccountScopedRouteRequest {
 struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var selection: AppTab = .home
   @State private var homeNavigator = DestinationNavigator()
   @State private var featuresNavigator = DestinationNavigator()
@@ -56,17 +55,6 @@ struct MainTabView: View {
       && !hidesHeaderAvatar
   }
 
-  private var showsWatchtowerCustomizeButton: Bool {
-    showsWatchtowerInboxButton && !watchtowerCustomization.isEditing
-  }
-
-  private var showsWatchtowerEditHeader: Bool {
-    selection == .watchtower
-      && watchtowerCustomization.isEditing
-      && activeNavigationDepth == 0
-      && !overlayTrays.presented
-  }
-
   /// Pages swipe only between the tab roots. A pushed feature/detail owns
   /// horizontal gestures (the leading-edge back swipe must win), and an open
   /// tray freezes the canvas underneath it. Enforced via `TabPagerScrollLock`
@@ -93,25 +81,6 @@ struct MainTabView: View {
 
   private func openOnActiveTab(_ destination: Destination) {
     activeNavigator.push(destination)
-  }
-
-  private func beginWatchtowerCustomization() {
-    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-      watchtowerCustomization.beginEditing()
-    }
-  }
-
-  private func cancelWatchtowerCustomization() {
-    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-      watchtowerCustomization.cancelEditing()
-    }
-  }
-
-  private func commitWatchtowerCustomization() {
-    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-      watchtowerCustomization.commitEditing()
-    }
-    DashDelight.selectionChanged()
   }
 
   /// Profile-tray Debug row. Nil in Release so the menu omits it.
@@ -246,7 +215,7 @@ struct MainTabView: View {
         isPresented: $showsIgnoreAllAlerts,
         title: DashL10n.string("Ignore all alerts")
       ) {
-        WatchtowerIgnoreAllTray(count: model.watchtowerIssueCount ?? 0) {
+        WatchtowerIgnoreAllTray(count: model.watchtowerUnreadAlertCount ?? 0) {
           model.ignoreAllWatchtowerAlerts()
           DashDelight.recoverFromIssue()
         }
@@ -330,16 +299,7 @@ struct MainTabView: View {
       // inbox mirror sits on the trailing edge with the same metrics.
       ZStack {
         ZStack(alignment: .topLeading) {
-          if showsWatchtowerEditHeader {
-            DashToolbarTextButton(
-              title: DashL10n.string("Cancel"),
-              action: cancelWatchtowerCustomization
-            )
-            .accessibilityIdentifier("watchtower-customize-cancel")
-            .padding(.leading, 10)
-            .padding(.top, 10)
-            .transition(.opacity)
-          } else if !hidesHeaderAvatar {
+          if !hidesHeaderAvatar {
             HeaderProfileButton { showsProfile = true }
               // Tuned against the system back control's measured slot so the
               // push crossfade reads as the avatar becoming the back button.
@@ -351,26 +311,14 @@ struct MainTabView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
         ZStack(alignment: .topTrailing) {
-          if showsWatchtowerEditHeader {
-            DashToolbarTextButton(
-              title: DashL10n.string("Done"),
-              action: commitWatchtowerCustomization
+          if showsWatchtowerInboxButton {
+            // Chart editing moved onto the Charts section header; the inbox is
+            // the only floated trailing control left.
+            HeaderInboxButton(
+              count: model.watchtowerUnreadAlertCount ?? 0,
+              action: { watchtowerNavigator.push(.watchtowerInbox) },
+              onLongPress: { showsIgnoreAllAlerts = true }
             )
-            .accessibilityIdentifier("watchtower-customize-done")
-            .padding(.trailing, 10)
-            .padding(.top, 10)
-            .transition(.opacity)
-          } else if showsWatchtowerInboxButton {
-            HStack(spacing: 8) {
-              if showsWatchtowerCustomizeButton {
-                HeaderWatchtowerCustomizeButton(action: beginWatchtowerCustomization)
-              }
-              HeaderInboxButton(
-                count: model.watchtowerIssueCount ?? 0,
-                action: { watchtowerNavigator.push(.watchtowerInbox) },
-                onLongPress: { showsIgnoreAllAlerts = true }
-              )
-            }
             .padding(.trailing, 10)
             .padding(.top, 10)
             .transition(.opacity)
@@ -380,16 +328,14 @@ struct MainTabView: View {
       }
       .animation(tabBarVisibilityAnimation, value: hidesHeaderAvatar)
       .animation(tabBarVisibilityAnimation, value: showsWatchtowerInboxButton)
-      .animation(tabBarVisibilityAnimation, value: showsWatchtowerEditHeader)
-      .allowsHitTesting(
-        !hidesHeaderAvatar || showsWatchtowerInboxButton || showsWatchtowerEditHeader)
+      .allowsHitTesting(!hidesHeaderAvatar || showsWatchtowerInboxButton)
 
       // Trays and pushed routes displace the bar; tab roots keep it mounted.
       ZStack(alignment: .bottom) {
         if !hidesDock {
           DashFloatingTabBar(
             selection: $selection,
-            watchtowerIssueCount: model.watchtowerIssueCount ?? 0,
+            watchtowerUnreadCount: model.watchtowerUnreadAlertCount ?? 0,
             onReselect: popActiveTabToRoot,
             onRequestIgnoreAllAlerts: { showsIgnoreAllAlerts = true }
           )
@@ -642,7 +588,7 @@ extension AppTab {
 /// the shared Ignore-all confirmation tray.
 private struct DashFloatingTabBar: View {
   @Binding var selection: AppTab
-  let watchtowerIssueCount: Int
+  let watchtowerUnreadCount: Int
   let onReselect: () -> Void
   var onRequestIgnoreAllAlerts: () -> Void = {}
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -681,14 +627,14 @@ private struct DashFloatingTabBar: View {
   @ViewBuilder
   private func tabButton(_ tab: AppTab) -> some View {
     let isActive = selection == tab
-    let canIgnore = tab == .watchtower && watchtowerIssueCount > 0
+    let canIgnore = tab == .watchtower && watchtowerUnreadCount > 0
     let button = Button {
       select(tab, isActive: isActive)
     } label: {
       DashTabIcon(
         tab: tab,
         isActive: isActive,
-        issueCount: tab == .watchtower ? watchtowerIssueCount : 0
+        issueCount: tab == .watchtower ? watchtowerUnreadCount : 0
       )
       .frame(width: DashDockMetrics.cell, height: DashDockMetrics.height)
       .contentShape(Rectangle())
@@ -726,11 +672,11 @@ private struct DashFloatingTabBar: View {
   }
 
   private func accessibilityLabel(for tab: AppTab) -> String {
-    guard tab == .watchtower, watchtowerIssueCount > 0 else { return tab.title }
+    guard tab == .watchtower, watchtowerUnreadCount > 0 else { return tab.title }
     let alertSummary =
-      watchtowerIssueCount == 1
+      watchtowerUnreadCount == 1
       ? DashL10n.string("1 alert")
-      : DashL10n.string("\(watchtowerIssueCount) alerts")
+      : DashL10n.string("\(watchtowerUnreadCount) alerts")
     return "\(tab.title), \(alertSummary)"
   }
 }

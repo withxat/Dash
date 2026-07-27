@@ -81,14 +81,51 @@ enum DashL10n {
     return String(localized: resource)
   }
 
+  /// `ui(_:)` with the catalog's answer attached.
+  ///
+  /// A miss returns the key unchanged, and for `ui(_:)`'s main job that is the
+  /// *correct* outcome — it is deliberately called on data (zone names, object
+  /// keys, RDAP tokens) that has no translation. That is also why a missing key
+  /// never announced itself: English simply reached the screen. `matchedCatalog`
+  /// makes the miss observable, so a caller that knows it passed a catalog key
+  /// can fail on it instead.
+  ///
+  /// The flag compares against the source string, so a key whose translation is
+  /// intentionally identical to English reads as a miss. None of Dash's are;
+  /// allowlist at the call site if one ever is.
+  static func lookup(_ value: String) -> (value: String, matchedCatalog: Bool) {
+    guard !value.isEmpty else { return (value, false) }
+    let localized = string(String.LocalizationValue(value))
+    return (localized, localized != value)
+  }
+
   static func ui(_ string: String) -> String {
-    guard !string.isEmpty else { return string }
-    return self.string(String.LocalizationValue(string))
+    let result = lookup(string)
+    #if DEBUG
+      if strictLookup, !result.matchedCatalog, !string.isEmpty,
+        activeLocale.language.languageCode?.identifier != "en"
+      {
+        assertionFailure(
+          "DashL10n: no \(activeLocale.identifier) catalog entry for \(string.debugDescription)")
+      }
+    #endif
+    return result.value
   }
 
   static func ui(_ string: String?) -> String? {
     string.map(ui)
   }
+
+  #if DEBUG
+    /// Opt-in strictness for a scope that only passes catalog keys — a test
+    /// enumerating `StatusToken`, a preview pinned to zh-Hans. Off by default
+    /// because the silent pass-through is intended behaviour for data; on, a key
+    /// that was never spliced trips here instead of shipping English.
+    ///
+    /// Never asserts under `en`, where every lookup returns its own source
+    /// string and so cannot be told apart from a miss.
+    nonisolated(unsafe) static var strictLookup = false
+  #endif
 }
 
 /// Interaction toggles (Settings → General). Defaults are on; absent keys read

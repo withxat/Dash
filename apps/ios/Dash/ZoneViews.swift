@@ -60,12 +60,35 @@ struct ZonesView: View {
     }
     .refreshable { await load(force: true) }.task { await load() }
     .onAppear { reloadIfInvalidated() }
+    .toolbar {
+      if !model.isDemoSession {
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarIconButton(
+            asset: SolarAsset.plus,
+            accessibilityLabel: "Add domain"
+          ) {
+            beginAddDomain()
+          }
+          .disabled(model.isAuthenticating)
+          .accessibilityIdentifier("domains-add-domain")
+        }
+        .dashSeparateToolbarBackground()
+      }
+    }
     .dashTray(isPresented: $showsAddDomain, title: "Add domain") {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
         model.featureCache.remove(FeatureCacheKey.zones(accountID))
         Task { await load(force: true) }
       }
+    }
+  }
+
+  private func beginAddDomain() {
+    if featureAllowsWrites {
+      showsAddDomain = true
+    } else {
+      model.requestAccess(to: FeatureID.zones.capability.write)
     }
   }
 
@@ -159,7 +182,7 @@ struct ZoneDetailView: View {
   @State private var isCustomizingCard = false
   /// Keeps the overlay mounted through the return morph after `isCustomizingCard` flips.
   @State private var showsCustomizeOverlay = false
-  /// Draft fill while customizing; committed only by the checkmark.
+  /// Draft fill while customizing; committed only by Done.
   @State private var draftCardHex: UInt32?
   /// Non-nil while the overlay runs its settle-back exit.
   @State private var cardCustomizeExit: DomainCardCustomizeExit?
@@ -271,18 +294,21 @@ struct ZoneDetailView: View {
       if showsCustomizeOverlay && isCustomizingCard {
         ToolbarItem(placement: .topBarLeading) {
           DashToolbarIconButton(
-            asset: SolarAsset.close,
-            accessibilityLabel: "Close"
-          ) { cancelCardCustomize() }
+            asset: SolarAsset.editClose,
+            accessibilityLabel: "Cancel",
+            action: cancelCardCustomize
+          )
           .disabled(isExitingCardCustomize)
           .accessibilityIdentifier("domain-card-customize-close")
         }
         .dashSeparateToolbarBackground()
         ToolbarItem(placement: .topBarTrailing) {
           DashToolbarIconButton(
-            asset: SolarAsset.checkCircle,
-            accessibilityLabel: "Save"
-          ) { saveCardCustomize() }
+            asset: SolarAsset.unread,
+            accessibilityLabel: "Done",
+            variant: .confirmation,
+            action: saveCardCustomize
+          )
           .disabled(isExitingCardCustomize)
           .accessibilityIdentifier("domain-card-customize-save")
         }

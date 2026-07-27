@@ -906,8 +906,51 @@ struct CatalogFeatureIcon: View {
   }
 }
 
-struct StatusBadge: View {
-  let text: String
+/// What a status badge *means*, decided at the call site — never sniffed back
+/// out of its wording.
+///
+/// `StatusBadge` used to take a `String` and derive both its shape and its
+/// colour by lowercasing it and matching an English word list, then render a
+/// separately-localized label. One string served two masters: the style path
+/// needed an English source token, the label path needed a catalog key, and
+/// the two drifted apart whenever a transform landed between them
+/// (`"Read-only".capitalized == "Read-Only"`, which is not a key — the badge
+/// stayed English in every non-en locale) or whenever a caller localized
+/// early. It also meant a status Cloudflare spells differently than the word
+/// list ("failure" vs "failed") silently fell through to the informational
+/// tone, so a failed Pages build wore an info capsule next to a red row icon.
+///
+/// A token fixes both ends: `presentation` and `tone` come from an exhaustive
+/// switch, so a new status cannot compile without naming its shape and colour,
+/// and `label` carries its own catalog key with nothing in between.
+enum StatusToken: String, CaseIterable, Sendable {
+  /// The Worker deployment currently taking 100% of traffic. Deliberately not
+  /// "Active": Dash already spends that word on zone and R2-domain health, and
+  /// one English word can only carry one translation (the catalog key *is* the
+  /// source string) — reusing it left the Chinese badge reading 正常, "healthy",
+  /// on a list where the question is *which one is live*.
+  case current
+  /// A Workers route binding.
+  case route
+  /// Present, but Dash lacks the write scopes to change it.
+  case readOnly
+  /// Not reachable in this session at all (demo workspace).
+  case locked
+  /// A Cloudflare delivery this iPhone has not shown yet.
+  case unread
+  /// Pages: build finished cleanly.
+  case success
+  /// Pages: build finished with an error.
+  case failed
+  /// Pages: build is still running (Cloudflare spells the running stage
+  /// "active", which is why the raw token could never be trusted for style).
+  case inProgress
+  /// Pages: build was stopped before it finished.
+  case canceled
+  /// Pages: Cloudflare skipped the build.
+  case skipped
+  /// Pages: Cloudflare reported a stage Dash does not model.
+  case unknown
 
   enum Presentation: Equatable {
     /// Quiet trailing label or check — never a colored capsule.
@@ -916,43 +959,106 @@ struct StatusBadge: View {
     case capsule
   }
 
-  static func presentation(for text: String) -> Presentation {
-    let value = text.lowercased()
-    if ["active", "ok", "healthy", "success"].contains(value) {
-      return .quiet
+  enum Tone: Equatable {
+    case success
+    case warning
+    case danger
+    case info
+  }
+
+  var presentation: Presentation {
+    switch self {
+    case .current, .success: .quiet
+    case .route, .readOnly, .locked, .unread, .failed, .inProgress, .canceled, .skipped,
+      .unknown:
+      .capsule
     }
-    return .capsule
+  }
+
+  var tone: Tone {
+    switch self {
+    case .current, .success: .success
+    case .readOnly, .locked: .warning
+    case .failed, .canceled: .danger
+    case .route, .unread, .inProgress, .skipped, .unknown: .info
+    }
+  }
+
+  /// The badge's own catalog key. Pages outcomes deliberately reuse the words
+  /// the build-outcomes legend already ships (`PagesDeploymentChartModel.label`)
+  /// so the badge and the chart on the same screen never disagree.
+  var label: String {
+    switch self {
+    case .current: DashL10n.string("Current")
+    case .route: DashL10n.string("Route")
+    case .readOnly: DashL10n.string("Read-only")
+    case .locked: DashL10n.string("Locked")
+    case .unread: DashL10n.string("Unread")
+    case .success: DashL10n.string("Success")
+    case .failed: DashL10n.string("Failed")
+    case .inProgress: DashL10n.string("In progress")
+    case .canceled: DashL10n.string("Canceled")
+    case .skipped: DashL10n.string("Skipped")
+    case .unknown: DashL10n.string("Unknown")
+    }
+  }
+
+  /// Maps a Cloudflare Pages stage status onto a token. Kept beside the tone
+  /// table so a status Cloudflare adds shows up here rather than defaulting to
+  /// an informational capsule.
+  init(pagesStatus: String?, isSkipped: Bool = false) {
+    guard !isSkipped else {
+      self = .skipped
+      return
+    }
+    switch pagesStatus?.lowercased() {
+    case "success":
+      self = .success
+    case "failure", "failed":
+      self = .failed
+    case "canceled", "cancelled":
+      self = .canceled
+    case "skipped":
+      self = .skipped
+    case "active", "idle", "building", "deploying", "queued", "initializing":
+      self = .inProgress
+    default:
+      self = .unknown
+    }
+  }
+}
+
+struct StatusBadge: View {
+  let token: StatusToken
+
+  init(_ token: StatusToken) {
+    self.token = token
   }
 
   private var colors: (foreground: Color, background: Color) {
-    let value = text.lowercased()
-    if ["active", "ok", "healthy", "success"].contains(value) {
-      return (DashTheme.success, DashTheme.successTint)
+    switch token.tone {
+    case .success: (DashTheme.success, DashTheme.successTint)
+    case .warning: (DashTheme.warning, DashTheme.warningTint)
+    case .danger: (DashTheme.danger, DashTheme.dangerTint)
+    case .info: (DashTheme.brand, DashTheme.infoTint)
     }
-    if ["warning", "pending", "degraded", "read-only", "locked"].contains(value) {
-      return (DashTheme.warning, DashTheme.warningTint)
-    }
-    if ["error", "failed", "critical", "inactive"].contains(value) {
-      return (DashTheme.danger, DashTheme.dangerTint)
-    }
-    return (DashTheme.brand, DashTheme.infoTint)
   }
 
   var body: some View {
     Group {
-      switch Self.presentation(for: text) {
+      switch token.presentation {
       case .quiet:
         HStack(spacing: 4) {
           Image(systemName: "checkmark.circle.fill")
             .font(.system(size: 12, weight: .semibold))
             .foregroundStyle(colors.foreground)
-          Text(displayedText)
+          Text(token.label)
             .dashTextStyle(.captionSemibold)
             .foregroundStyle(colors.foreground)
             .lineLimit(1)
         }
       case .capsule:
-        Text(displayedText)
+        Text(token.label)
           .dashTextStyle(.captionSemibold)
           .foregroundStyle(colors.foreground)
           .lineLimit(1)
@@ -964,14 +1070,11 @@ struct StatusBadge: View {
     .fixedSize(horizontal: true, vertical: false)
     .layoutPriority(1)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(StatusBadge.accessibilityText(for: text))
+    .accessibilityLabel(StatusBadge.accessibilityText(for: token))
   }
 
-  /// Color logic stays on the English source token; only the label is localized.
-  private var displayedText: String { DashL10n.ui(text.capitalized) }
-
-  static func accessibilityText(for text: String) -> String {
-    DashL10n.string("Status, \(DashL10n.ui(text))")
+  static func accessibilityText(for token: StatusToken) -> String {
+    DashL10n.string("Status, \(token.label)")
   }
 }
 

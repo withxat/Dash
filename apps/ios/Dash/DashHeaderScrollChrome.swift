@@ -46,44 +46,6 @@ struct HeaderProfileButton: View {
   }
 }
 
-/// Watchtower root action that enters chart customization. It uses the same
-/// floated 44pt circle as the profile and inbox controls so adding a second
-/// trailing action does not let the navigation bar clamp either button.
-struct HeaderWatchtowerCustomizeButton: View {
-  let action: @MainActor () -> Void
-
-  var body: some View {
-    Group {
-      if #available(iOS 26.0, *) {
-        Button {
-          DashDelight.lightImpact()
-          action()
-        } label: {
-          SolarIcon(asset: SolarAsset.slider, size: 24, color: DashTheme.strong)
-            .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-            .padding(-7)
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-      } else {
-        Button {
-          DashDelight.lightImpact()
-          action()
-        } label: {
-          SolarIcon(asset: SolarAsset.slider, size: 24, color: DashTheme.strong)
-            .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-            .background(DashTheme.elevated, in: Circle())
-            .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
-        }
-        .buttonStyle(DashPressButtonStyle())
-      }
-    }
-    .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-    .accessibilityLabel(DashL10n.string("Adjust view"))
-    .accessibilityIdentifier("watchtower-customize-button")
-  }
-}
-
 /// Trailing Watchtower inbox control — same 44pt glass circle as the leading
 /// profile avatar. Floated by `MainTabView` (not a toolbar item) so the nav
 /// bar's item-height clamp cannot squash it into a capsule. The count badge

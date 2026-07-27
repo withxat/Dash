@@ -594,30 +594,64 @@ struct DashListButtonStyle: ButtonStyle {
 
 struct DashSectionHeader: View {
   let title: String
+  /// Optional content glyph seated before the title.
+  var icon: String?
+  /// Optional trailing control — `DashListGroupHeader`'s icon action at the
+  /// section ramp, so an editable section reads the same at both scales.
+  var actionIcon: String?
+  var actionLabel: String?
+  var action: (() -> Void)?
 
-  init(_ title: String) {
+  init(
+    _ title: String,
+    icon: String? = nil,
+    actionIcon: String? = nil,
+    actionLabel: String? = nil,
+    action: (() -> Void)? = nil
+  ) {
     self.title = title
+    self.icon = icon
+    self.actionIcon = actionIcon
+    self.actionLabel = actionLabel
+    self.action = action
   }
 
   var body: some View {
-    Text(title)
-      .dashTextStyle(.sectionTitle)
-      .foregroundStyle(DashTheme.strong)
-      .textCase(nil)
-      .padding(.top, 12)
-      .padding(.bottom, 6)
-      .frame(maxWidth: .infinity, alignment: .leading)
+    HStack(spacing: 8) {
+      if let icon {
+        SolarIcon(asset: icon, size: 20, color: DashTheme.strong)
+      }
+      Text(title)
+        .dashTextStyle(.sectionTitle)
+        .foregroundStyle(DashTheme.strong)
+        .textCase(nil)
+      Spacer(minLength: 0)
+      if let action, let actionIcon {
+        Button(action: action) {
+          SolarIcon(asset: actionIcon, size: 16, color: DashTheme.brand)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(actionLabel ?? DashL10n.ui("Edit"))
+        .dashHeaderActionHitTarget()
+      }
+    }
+    // Padding rides the row, not the title, so a decorated header keeps the
+    // plain header's vertical rhythm.
+    .padding(.top, 12)
+    .padding(.bottom, 6)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 
 struct DashToolbarActionIcon: View {
   let asset: String
+  var color: Color = DashTheme.strong
 
   var body: some View {
     // Keep the glyph square so Liquid Glass morphs to a circle, not a capsule.
     // 24pt matches the system back chevron, which renders its 24×24 Solar
     // asset at natural size.
-    SolarIcon(asset: asset, size: 24, color: DashTheme.strong)
+    SolarIcon(asset: asset, size: 24, color: color)
       .frame(width: 24, height: 24)
       .accessibilityHidden(true)
   }
@@ -637,41 +671,57 @@ struct DashToolbarActionGroup<Content: View>: View {
   }
 }
 
-/// Trailing nav-bar icon action. Forces a circle on iOS 26 Liquid Glass
+/// Navigation-bar icon action. Forces a circle on iOS 26 Liquid Glass
 /// (system default is a capsule whenever the label isn't treated as square).
 struct DashToolbarIconButton: View {
+  enum Variant {
+    case standard
+    case confirmation
+  }
+
   let asset: String
   var accessibilityLabel: String
+  var variant: Variant = .standard
   let action: () -> Void
 
-  var body: some View {
-    Group {
+  @ViewBuilder
+  private var label: some View {
+    switch variant {
+    case .confirmation:
+      DashToolbarActionIcon(asset: asset, color: .white)
+        .frame(
+          width: AvatarHeaderMetrics.barSize,
+          height: AvatarHeaderMetrics.barSize
+        )
+        .background(DashTheme.brand, in: Circle())
+        .contentShape(Circle())
+    case .standard:
       if #available(iOS 26.0, *) {
         // Do NOT use `.buttonStyle(.glass)` here. After
         // `sharedBackgroundVisibility(.hidden)`, that style paints a circle a
         // few points smaller than the system back control, and the nav-bar
         // item-height clamp shrinks it further. An explicit 44pt `glassEffect`
         // matches the leading back button / floated profile avatar.
-        Button(action: action) {
-          DashToolbarActionIcon(asset: asset)
-            .frame(
-              width: AvatarHeaderMetrics.barSize,
-              height: AvatarHeaderMetrics.barSize
-            )
-            .contentShape(Circle())
-            .glassEffect(.regular.interactive(), in: .circle)
-        }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel(DashL10n.ui(accessibilityLabel))
+        DashToolbarActionIcon(asset: asset)
+          .frame(
+            width: AvatarHeaderMetrics.barSize,
+            height: AvatarHeaderMetrics.barSize
+          )
+          .contentShape(Circle())
+          .glassEffect(.regular.interactive(), in: .circle)
       } else {
-        Button(action: action) {
-          DashToolbarActionIcon(asset: asset)
-            .dashCompactHitTarget()
-        }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel(DashL10n.ui(accessibilityLabel))
+        DashToolbarActionIcon(asset: asset)
+          .dashCompactHitTarget()
       }
     }
+  }
+
+  var body: some View {
+    Button(action: action) {
+      label
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(DashL10n.ui(accessibilityLabel))
   }
 }
 

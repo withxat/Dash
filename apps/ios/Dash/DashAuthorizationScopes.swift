@@ -13,10 +13,16 @@ enum DashAuthorizationScopes {
     .kv,
   ]
 
-  /// Read scopes used by nested screens and Watchtower that are not represented
-  /// by a standalone FeatureID. These ship in the first OAuth grant so every
-  /// catalog surface can load without giving Dash permission to mutate the
-  /// account.
+  /// Read scopes used by nested screens that are not represented by a
+  /// standalone FeatureID. These ship in the first OAuth grant so every catalog
+  /// surface can load without giving Dash permission to mutate the account.
+  ///
+  /// Watchtower's client-side health checks are gone, and with them the reasons
+  /// to ask for `argotunnel.read`, `load-balancing-monitors-and-pools.read`,
+  /// `registrar-domains.read`, `healthcheck.read` and
+  /// `ssl-and-certificates.read`. Do not add a scope back without a screen that
+  /// calls the endpoint — the sign-in sheet is the user's only view of what Dash
+  /// can reach.
   ///
   /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
   /// lives only in a feature's capability disappears from the OAuth request
@@ -24,14 +30,9 @@ enum DashAuthorizationScopes {
   /// calls belongs here instead.
   private static let coreReadOperations: Set<String> = [
     "zone-settings.read",
-    "healthcheck.read",
-    "load-balancing-monitors-and-pools.read",
-    "registrar-domains.read",
     "dns.read",
     "workers-routes.read",
-    "argotunnel.read",
     "notifications.read",
-    "ssl-and-certificates.read",
     "account-analytics.read",
     "analytics.read",
   ]
@@ -102,13 +103,9 @@ enum DashAuthorizationScopes {
     "zone.read", "account-analytics.read", "account-settings.read",
   ]
 
+  /// The Watchtower tab: Cloudflare's notification deliveries plus the account
+  /// traffic charts. No health-check scopes — Dash no longer computes health.
   static let watchtower: Set<String> = Set([
-    "argotunnel.read",
-    "load-balancing-monitors-and-pools.read",
-    "registrar-domains.read",
-    "page.read",
-    "notifications.read",
-    "ssl-and-certificates.read",
-    "healthcheck.read",
+    "notifications.read"
   ]).union(zoneAnalytics).union(accountAnalytics)
 }

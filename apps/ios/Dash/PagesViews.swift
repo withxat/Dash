@@ -105,7 +105,7 @@ struct PagesProjectDetailView: View {
                   .textSelection(.enabled)
               }
               if let latest = project.latestDeployment?.latestStage?.status {
-                StatusBadge(text: latest.capitalized)
+                StatusBadge(StatusToken(pagesStatus: latest))
               }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -115,11 +115,11 @@ struct PagesProjectDetailView: View {
         dashListCard {
           DashListGroupLink(value: .pagesDomains(projectName)) {
             DashListRow(
-              title: "Domains",
+              title: DashL10n.string("Domains"),
               icon: SolarAsset.Content.globe,
               iconColor: FeatureVisualIdentity.heroColor(for: .pages)
             )
-            .accessibilityLabel("Domains, Custom domains for this project")
+            .accessibilityLabel(DashL10n.string("Domains, Custom domains for this project"))
           }
           .dashListCardInset()
         }
@@ -347,7 +347,10 @@ struct PagesDeploymentDetailView: View {
             .dashTextStyle(.bodySemibold)
             .foregroundStyle(DashTheme.text)
           Spacer(minLength: 0)
-          StatusBadge(text: deployment.statusLabel)
+          StatusBadge(
+            StatusToken(
+              pagesStatus: deployment.latestStage?.status,
+              isSkipped: deployment.isSkipped == true))
         }
         Text(pagesDeploymentSubtitle(deployment))
           .dashTextStyle(.caption)
@@ -651,13 +654,17 @@ struct PagesDomainsView: View {
       } else {
         dashListCard {
           dashListCardRows(items: domains) { domain in
+            // Hoisted out of the row: inlining the lookup inside the builder
+            // pushed this body past the type checker's budget and surfaced as an
+            // "ambiguous use of toolbar" error 20 lines down.
+            let status = DashL10n.ui((domain.status ?? "unknown").capitalized)
             Button {
               deleteError = nil
               selected = domain
             } label: {
               DashListRow(
                 title: domain.name,
-                subtitle: (domain.status ?? "unknown").capitalized,
+                subtitle: status,
                 icon: SolarAsset.Content.globe,
                 iconColor: domain.status == "active"
                   ? FeatureVisualIdentity.catalogColor(for: .pages) : DashTheme.iconMuted,
@@ -665,8 +672,7 @@ struct PagesDomainsView: View {
               )
             }
             .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel(
-              "\(domain.name), \((domain.status ?? "unknown").capitalized)")
+            .accessibilityLabel("\(domain.name), \(status)")
           }
         }
       }
@@ -819,7 +825,11 @@ private func pagesProjectAccessibilityLabel(_ project: PagesProject) -> String {
 
 private func pagesProjectSubtitle(_ project: PagesProject) -> String? {
   let status = project.latestDeployment?.latestStage?.status
-  if let status { return "Latest · \(status)" }
+  if let status {
+    // The raw lowercase API token used to surface here ("Latest · success")
+    // while the badge one screen in localized the same value.
+    return DashL10n.string("Latest · \(StatusToken(pagesStatus: status).label)")
+  }
   // API returns the full hostname (e.g. helloworld.pages.dev).
   return project.subdomain
 }
@@ -838,8 +848,16 @@ private func pagesDeploymentTitle(_ deployment: PagesDeployment) -> String {
 
 private func pagesDeploymentSubtitle(_ deployment: PagesDeployment) -> String {
   var parts: [String] = []
-  if let environment = deployment.environment { parts.append(environment.capitalized) }
-  parts.append(deployment.statusLabel)
+  if let environment = deployment.environment {
+    parts.append(DashL10n.ui(environment.capitalized))
+  }
+  // Same token the badge above this line renders, so the two never disagree —
+  // `statusLabel` is Cloudflare's raw wording and has no catalog entry.
+  parts.append(
+    StatusToken(
+      pagesStatus: deployment.latestStage?.status,
+      isSkipped: deployment.isSkipped == true
+    ).label)
   if let created = deployment.createdOn {
     parts.append(pagesRelativeDate(created))
   }
@@ -866,6 +884,9 @@ private func pagesRelativeDate(_ value: String) -> String {
   }
   let formatter = RelativeDateTimeFormatter()
   formatter.unitsStyle = .abbreviated
+  // Settings → Language is in-app; without this the formatter follows the system
+  // locale and prints "3d ago" beside Chinese copy.
+  formatter.locale = DashL10n.activeLocale
   return formatter.localizedString(for: date, relativeTo: .now)
 }
 

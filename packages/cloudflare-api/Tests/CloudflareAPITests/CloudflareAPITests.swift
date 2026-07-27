@@ -408,7 +408,9 @@ struct NetworkTests {
         {"site_tag":"site-1","site_token":"token-1","auto_install":true,
          "ruleset":{"id":"rule-1","zone_tag":"zone-1","zone_name":"example.com","enabled":true}},
         {"site_tag":"site-2","auto_install":false,
-         "ruleset":{"id":"rule-2","zone_tag":"zone-2","zone_name":"paused.example","enabled":false}}
+         "ruleset":{"id":"rule-2","zone_tag":"zone-2","zone_name":"paused.example","enabled":false}},
+        {"site_tag":"site-hostonly","auto_install":false,
+         "rules":[{"host":"manual.example.net","inclusive":true,"is_paused":false}]}
         ],"success":true,"errors":[],"messages":[]}
         """#
       return (200, Data(body.utf8))
@@ -419,11 +421,43 @@ struct NetworkTests {
 
     let sites = try await client.webAnalyticsSites(accountID: "acct")
 
-    #expect(sites.map(\.zoneTag) == ["zone-1", "zone-2"])
+    #expect(sites.map(\.zoneTag) == ["zone-1", "zone-2", nil])
     #expect(sites.first?.isCollecting == true)
     // auto_install with a disabled ruleset means the beacon is not injected;
     // a manual-snippet site is assumed live because we cannot see its HTML.
-    #expect(sites.last?.isCollecting == true)
+    #expect(sites[1].isCollecting == true)
+    #expect(sites.last?.analyticsName == "manual.example.net")
+  }
+
+  @Test func webAnalyticsSitesFollowServerPagination() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)
+      let page =
+        components?.queryItems?.first(where: { $0.name == "page" })?.value.flatMap(Int.init) ?? 1
+      recorder.record(request.url?.absoluteString ?? "")
+      let range = page == 1 ? 1...10 : 11...12
+      let sites = range.map {
+        #"{"site_tag":"site-\#($0)","auto_install":false}"#
+      }.joined(separator: ",")
+      let body = #"""
+        {"result":[\#(sites)],"success":true,"errors":[],"messages":[],
+         "result_info":{"page":\#(page),"per_page":10,"total_count":12}}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let sites = try await client.webAnalyticsSites(accountID: "acct")
+
+    #expect(sites.count == 12)
+    #expect(sites.first?.siteTag == "site-1")
+    #expect(sites.last?.siteTag == "site-12")
+    #expect(recorder.paths.count == 2)
+    #expect(recorder.paths.last?.contains("page=2") == true)
   }
 
   @Test func webAnalyticsPageviewsDecodeDailyCounts() async throws {

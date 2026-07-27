@@ -8,6 +8,52 @@ enum WatchtowerAnalyticsCardLayout {
   static let orderKey = "dash.watchtower_analytics_order"
   static let hiddenKey = "dash.watchtower_analytics_hidden"
 
+  /// A resolved layout: the full metric order plus the collapsed and hidden
+  /// subsets. Kept as one value so a fresh install and a saved layout come from
+  /// the same place instead of three `?? ""` reads.
+  struct Layout: Equatable, Sendable {
+    var order: [WatchtowerAnalyticsMetric]
+    var collapsed: Set<WatchtowerAnalyticsMetric>
+    var hidden: Set<WatchtowerAnalyticsMetric>
+  }
+
+  /// Fresh-install charts: one expanded headline metric over four collapsed
+  /// companions. Everything else starts hidden and is one tap away in the
+  /// editor's Add chart menu.
+  static let defaultVisibleMetrics: [WatchtowerAnalyticsMetric] = [
+    .webTraffic, .cpuTime, .workerInvocations, .cacheRate, .clientRequestErrors,
+  ]
+  /// The one metric that opens expanded on a fresh install.
+  static let defaultExpandedMetric: WatchtowerAnalyticsMetric = .webTraffic
+
+  static var defaultLayout: Layout {
+    // Hidden metrics keep their `allCases` order behind the visible five, so
+    // adding one back lands it in a stable place instead of at a random index.
+    let order = orderedMetrics(in: encodeOrder(defaultVisibleMetrics))
+    let visible = Set(defaultVisibleMetrics)
+    return Layout(
+      order: order,
+      collapsed: visible.subtracting([defaultExpandedMetric]),
+      hidden: Set(order).subtracting(visible))
+  }
+
+  /// Resolves the stored layout. The fresh-install defaults apply only when no
+  /// preference has ever been written — a saved layout that hides nothing (an
+  /// empty string, not a missing key) stays an explicit choice across app
+  /// updates, and so does a pre-editor install that only ever stored collapsed
+  /// metrics.
+  static func layout(orderRaw: String?, collapsedRaw: String?, hiddenRaw: String?) -> Layout {
+    guard orderRaw != nil || collapsedRaw != nil || hiddenRaw != nil else {
+      return defaultLayout
+    }
+    return Layout(
+      order: orderedMetrics(in: orderRaw ?? ""),
+      collapsed: Set(
+        collapsedIDs(in: collapsedRaw ?? "").compactMap(WatchtowerAnalyticsMetric.init(rawValue:))),
+      hidden: Set(
+        hiddenIDs(in: hiddenRaw ?? "").compactMap(WatchtowerAnalyticsMetric.init(rawValue:))))
+  }
+
   static func collapsedIDs(in raw: String) -> Set<String> {
     Set(raw.split(separator: ",").map(String.init).filter { !$0.isEmpty })
   }

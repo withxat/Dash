@@ -47,22 +47,21 @@ enum WatchtowerFreshness: Equatable, Sendable {
 /// compile this one file and read the JSON without touching the network,
 /// the keychain, or the engine.
 struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
-  struct Signal: Codable, Hashable, Sendable {
+  /// One Cloudflare notification delivery this iPhone has not read yet.
+  struct Alert: Codable, Hashable, Sendable {
+    var id: String
     var title: String
-    var detail: String
-    var status: String  // "ok" | "warning" | "critical"
+    var detail: String?
   }
 
-  var issueCount: Int
-  var criticalCount: Int
-  var warningCount: Int
-  /// Every non-ok signal, critical before warning. The widget renders a few;
-  /// the notification planner diffs the whole set.
-  var signals: [Signal]
-  /// True when the latest refresh could not establish full account health,
-  /// without inflating the operational issue badge. Defaults to false when
-  /// decoding snapshots written by older app versions.
-  var checksIncomplete: Bool
+  var unreadCount: Int
+  /// Every unread delivery, newest first. The widget renders a few; the
+  /// notification planner diffs the whole set by id.
+  var alerts: [Alert]
+  /// True when the latest refresh could not read notification history at all
+  /// (permission missing or the request failed), so an empty widget does not
+  /// claim there is nothing to report.
+  var alertsUnavailable: Bool
   /// Account binding for widget taps. Optional so snapshots written by an
   /// older app version remain decodable; an unbound snapshot is display-only.
   var accountID: String?
@@ -70,31 +69,25 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   var fetchedAt: Date
 
   init(
-    issueCount: Int,
-    criticalCount: Int,
-    warningCount: Int,
-    signals: [Signal],
-    checksIncomplete: Bool = false,
+    unreadCount: Int,
+    alerts: [Alert],
+    alertsUnavailable: Bool = false,
     accountID: String? = nil,
     accountName: String?,
     fetchedAt: Date
   ) {
-    self.issueCount = issueCount
-    self.criticalCount = criticalCount
-    self.warningCount = warningCount
-    self.signals = signals
-    self.checksIncomplete = checksIncomplete
+    self.unreadCount = unreadCount
+    self.alerts = alerts
+    self.alertsUnavailable = alertsUnavailable
     self.accountID = accountID
     self.accountName = accountName
     self.fetchedAt = fetchedAt
   }
 
   private enum CodingKeys: String, CodingKey {
-    case issueCount
-    case criticalCount
-    case warningCount
-    case signals
-    case checksIncomplete
+    case unreadCount
+    case alerts
+    case alertsUnavailable
     case accountID
     case accountName
     case fetchedAt
@@ -102,12 +95,14 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
 
   init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    issueCount = try container.decode(Int.self, forKey: .issueCount)
-    criticalCount = try container.decode(Int.self, forKey: .criticalCount)
-    warningCount = try container.decode(Int.self, forKey: .warningCount)
-    signals = try container.decode([Signal].self, forKey: .signals)
-    checksIncomplete =
-      try container.decodeIfPresent(Bool.self, forKey: .checksIncomplete) ?? false
+    // A snapshot written before Watchtower dropped its client-side health
+    // verdict carries none of these keys. Decoding it as "nothing unread" is
+    // right: the next refresh overwrites it, and the widget shows its empty
+    // state rather than resurrecting deleted issue counts.
+    unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
+    alerts = try container.decodeIfPresent([Alert].self, forKey: .alerts) ?? []
+    alertsUnavailable =
+      try container.decodeIfPresent(Bool.self, forKey: .alertsUnavailable) ?? false
     accountID = try container.decodeIfPresent(String.self, forKey: .accountID)
     accountName = try container.decodeIfPresent(String.self, forKey: .accountName)
     fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
@@ -115,40 +110,24 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
 
   func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(issueCount, forKey: .issueCount)
-    try container.encode(criticalCount, forKey: .criticalCount)
-    try container.encode(warningCount, forKey: .warningCount)
-    try container.encode(signals, forKey: .signals)
-    try container.encode(checksIncomplete, forKey: .checksIncomplete)
+    try container.encode(unreadCount, forKey: .unreadCount)
+    try container.encode(alerts, forKey: .alerts)
+    try container.encode(alertsUnavailable, forKey: .alertsUnavailable)
     try container.encodeIfPresent(accountID, forKey: .accountID)
     try container.encodeIfPresent(accountName, forKey: .accountName)
     try container.encode(fetchedAt, forKey: .fetchedAt)
   }
 
-  /// VoiceOver / widget headline that names severity instead of relying on color alone.
-  var severityHeadline: String {
-    Self.severityHeadline(
-      criticalCount: criticalCount,
-      warningCount: warningCount,
-      checksIncomplete: checksIncomplete)
+  /// VoiceOver / widget headline. Counts deliveries — it never characterises
+  /// the account, because Cloudflare is the only thing that decides that here.
+  var headline: String {
+    Self.headline(unreadCount: unreadCount, alertsUnavailable: alertsUnavailable)
   }
 
-  static func severityHeadline(
-    criticalCount: Int,
-    warningCount: Int,
-    checksIncomplete: Bool = false
-  ) -> String {
-    if criticalCount == 0, warningCount == 0 {
-      return checksIncomplete ? "Checks incomplete" : "All clear"
-    }
-    var parts: [String] = []
-    if criticalCount > 0 {
-      parts.append("\(criticalCount) critical")
-    }
-    if warningCount > 0 {
-      parts.append("\(warningCount) warning\(warningCount == 1 ? "" : "s")")
-    }
-    return parts.joined(separator: ", ")
+  static func headline(unreadCount: Int, alertsUnavailable: Bool = false) -> String {
+    if alertsUnavailable { return "Alerts unavailable" }
+    if unreadCount == 0 { return "No unread alerts" }
+    return unreadCount == 1 ? "1 unread alert" : "\(unreadCount) unread alerts"
   }
 
   static let appGroupID = "group.sh.xat.dash.app"

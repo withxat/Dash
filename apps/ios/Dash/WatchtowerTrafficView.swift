@@ -104,16 +104,13 @@ final class WatchtowerChartCustomizationState {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
-    order = WatchtowerAnalyticsCardLayout.orderedMetrics(
-      in: defaults.string(forKey: WatchtowerAnalyticsCardLayout.orderKey) ?? "")
-    collapsed = Set(
-      WatchtowerAnalyticsCardLayout.collapsedIDs(
-        in: defaults.string(forKey: WatchtowerAnalyticsCardLayout.key) ?? ""
-      ).compactMap(WatchtowerAnalyticsMetric.init(rawValue:)))
-    hidden = Set(
-      WatchtowerAnalyticsCardLayout.hiddenIDs(
-        in: defaults.string(forKey: WatchtowerAnalyticsCardLayout.hiddenKey) ?? ""
-      ).compactMap(WatchtowerAnalyticsMetric.init(rawValue:)))
+    let layout = WatchtowerAnalyticsCardLayout.layout(
+      orderRaw: defaults.string(forKey: WatchtowerAnalyticsCardLayout.orderKey),
+      collapsedRaw: defaults.string(forKey: WatchtowerAnalyticsCardLayout.key),
+      hiddenRaw: defaults.string(forKey: WatchtowerAnalyticsCardLayout.hiddenKey))
+    order = layout.order
+    collapsed = layout.collapsed
+    hidden = layout.hidden
   }
 
   var visibleMetrics: [WatchtowerAnalyticsMetric] {
@@ -691,7 +688,8 @@ struct WatchtowerTrafficView: View {
   @Bindable var state: WatchtowerTrafficState
   let customization: WatchtowerChartCustomizationState
   let isEditing: Bool
-  let morphNamespace: Namespace.ID
+  let editorInteractionsReady: Bool
+  let usesPlaceholderCharts: Bool
   @State private var dragVisual = WatchtowerMetricDragVisualState()
 
   private var collapsedRaw: String {
@@ -708,9 +706,7 @@ struct WatchtowerTrafficView: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
-        if isEditing {
-          customizationHeader
-        } else {
+        if !isEditing {
           VStack(alignment: .leading, spacing: 8) {
             refreshHeader
               .padding(.horizontal, 4)
@@ -719,26 +715,33 @@ struct WatchtowerTrafficView: View {
               selection: $state.range
             )
           }
+          .transition(.opacity)
         }
 
         if state.needsAnalyticsAccess, state.overview == nil {
           statusCard {
             emptyContent(
-              title: "Analytics access needed",
-              message: "Allow Account Analytics: Read to load account traffic.",
-              buttonTitle: "Grant access"
+              title: DashL10n.string("Analytics access needed"),
+              message: DashL10n.string(
+                "Allow Account Analytics: Read to load account traffic."),
+              buttonTitle: DashL10n.string("Grant access")
             ) {
               model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)
             }
           }
         } else if state.isLoadingCurrent, state.overview == nil {
-          statusCard { loadingContent }
+          // Cold load paints the saved layout, not one generic panel: the card
+          // count, order, and expanded/collapsed shape are already on disk, so
+          // the arriving data lands in place instead of reflowing the screen.
+          chartsSkeleton
         } else if let error = state.currentError, state.overview == nil {
           statusCard {
             emptyContent(
-              title: "Traffic unavailable",
+              // `error` is already an actionable, localized message — only the
+              // surrounding chrome needs the catalog.
+              title: DashL10n.string("Traffic unavailable"),
               message: error,
-              buttonTitle: "Try again"
+              buttonTitle: DashL10n.string("Try again")
             ) {
               Task { await state.retry(model: model) }
             }
@@ -764,7 +767,7 @@ struct WatchtowerTrafficView: View {
         }
       }
 
-      if isEditing, let overview = state.overview {
+      if editorInteractionsReady, let overview = state.overview {
         WatchtowerMetricDragOverlay(
           state: dragVisual,
           overview: overview,
@@ -773,18 +776,18 @@ struct WatchtowerTrafficView: View {
       }
     }
     .background {
-      if isEditing {
+      if editorInteractionsReady {
         WatchtowerMetricDragCoordinateView(state: dragVisual)
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .allowsHitTesting(false)
       }
     }
     .accessibilityIdentifier(isEditing ? "watchtower-chart-editor" : "watchtower-charts")
-    .onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
-      guard isEditing, customization.draggedMetric != nil else { return false }
-      customization.clearDropTarget()
-      return true
-    }
+    .modifier(
+      WatchtowerMetricRootDropModifier(
+        isEnabled: editorInteractionsReady,
+        customization: customization)
+    )
   }
 
   private func isExpanded(_ metric: WatchtowerAnalyticsMetric) -> Bool {
@@ -822,19 +825,21 @@ struct WatchtowerTrafficView: View {
   ) -> some View {
     let card = metricCard(
       metric, overview: overview, snapshot: snapshot, expanded: expanded)
-    if isEditing {
-      card
-        .opacity(customization.draggedMetric == metric ? 0 : 1)
-        .overlay {
-          if customization.draggedMetric == metric {
-            WatchtowerMetricDropPlaceholder()
-          }
+    card
+      .opacity(isEditing && customization.draggedMetric == metric ? 0 : 1)
+      .overlay {
+        if isEditing, customization.draggedMetric == metric {
+          WatchtowerMetricDropPlaceholder()
         }
-        .scaleEffect(customization.dropTargetMetric == metric ? 1.015 : 1)
-        .contentShape(
-          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        )
-        .overlay {
+      }
+      .scaleEffect(
+        isEditing && customization.dropTargetMetric == metric ? 1.015 : 1
+      )
+      .contentShape(
+        RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+      )
+      .overlay {
+        if editorInteractionsReady {
           WatchtowerNativeMetricDragSource(
             metric: metric,
             isExpanded: expanded,
@@ -844,27 +849,31 @@ struct WatchtowerTrafficView: View {
           .frame(maxWidth: .infinity, maxHeight: .infinity)
           .accessibilityHidden(true)
         }
-        .onDrop(
-          of: [UTType.plainText],
-          delegate: WatchtowerMetricDropDelegate(
-            target: metric,
-            customization: customization,
-            reduceMotion: reduceMotion)
-        )
-        .accessibilityHint(DashL10n.string("Touch and hold, then drag to reorder"))
-        .accessibilityAction(named: DashL10n.string("Move up")) {
-          withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-            customization.moveVisible(metric, offset: -1)
+      }
+      .modifier(
+        WatchtowerMetricDropModifier(
+          isEnabled: editorInteractionsReady,
+          target: metric,
+          customization: customization,
+          reduceMotion: reduceMotion)
+      )
+      .accessibilityHint(
+        isEditing ? DashL10n.string("Touch and hold, then drag to reorder") : ""
+      )
+      .accessibilityActions {
+        if isEditing {
+          Button(DashL10n.string("Move up")) {
+            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+              customization.moveVisible(metric, offset: -1)
+            }
+          }
+          Button(DashL10n.string("Move down")) {
+            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+              customization.moveVisible(metric, offset: 1)
+            }
           }
         }
-        .accessibilityAction(named: DashL10n.string("Move down")) {
-          withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-            customization.moveVisible(metric, offset: 1)
-          }
-        }
-    } else {
-      card
-    }
+      }
   }
 
   private func metricCard(
@@ -876,14 +885,14 @@ struct WatchtowerTrafficView: View {
     WatchtowerMetricChartCard(
       metric: metric,
       overview: overview,
-      // Editing never constructs a dither chart, so keep its view value free
-      // of the potentially large point arrays as cards reorder.
-      chart: isEditing ? .empty : snapshot.charts[metric] ?? .empty,
+      // The card retains this value through its two-stage visual handoff, then
+      // unmounts the Dither view while editing. Arrays remain copy-on-write.
+      chart: snapshot.charts[metric] ?? .empty,
       range: state.range,
       isExpanded: expanded,
-      isEditing: isEditing,
-      renderingMode: WatchtowerMetricChartRenderingMode.resolved(isEditing: isEditing),
-      morphNamespace: morphNamespace,
+      showsEditingControls: editorInteractionsReady,
+      renderingMode: WatchtowerMetricChartRenderingMode.resolved(
+        isEditing: usesPlaceholderCharts),
       onToggleExpanded: {
         withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
           customization.toggleExpanded(metric)
@@ -898,42 +907,9 @@ struct WatchtowerTrafficView: View {
     )
   }
 
-  private var customizationHeader: some View {
-    HStack(spacing: 12) {
-      DashSectionHeader(DashL10n.string("Charts"))
-      Spacer(minLength: 0)
-      addChartMenu
-    }
-  }
-
-  private var addChartMenu: some View {
-    Menu {
-      if customization.addableMetrics.isEmpty {
-        Button(DashL10n.string("All charts are shown")) {}
-          .disabled(true)
-      } else {
-        ForEach(customization.addableMetrics) { metric in
-          Button(DashL10n.ui(metric.title)) {
-            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-              customization.add(metric)
-            }
-            DashDelight.selectionChanged()
-          }
-        }
-      }
-    } label: {
-      SolarIcon(asset: SolarAsset.plus, size: 17, color: DashTheme.brand)
-        .frame(width: 32, height: 32)
-        .background(DashTheme.homeCardSurface, in: Circle())
-        .dashEmbossChrome(shape: Circle())
-    }
-    .buttonStyle(DashPressButtonStyle())
-    .accessibilityLabel(DashL10n.string("Add chart"))
-    .accessibilityIdentifier("watchtower-add-chart")
-  }
-
-  /// Resources-style group title: relative “Updated …” on the leading edge,
-  /// Refresh (or a spinner while warm-reloading) on the trailing edge.
+  /// Resources-style group title: relative “Updated …” on the leading edge. No
+  /// Refresh control — pull-to-refresh owns reloading this screen, and a failed
+  /// range still offers Try again inside its own card.
   private var refreshHeader: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
       HStack(spacing: 12) {
@@ -946,20 +922,9 @@ struct WatchtowerTrafficView: View {
         if state.isRefreshing {
           DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
             .accessibilityLabel(DashL10n.ui("Refreshing"))
-            .dashHeaderActionHitTarget()
-        } else {
-          Button {
-            Task { await state.retry(model: model) }
-          } label: {
-            Text(DashL10n.ui("Refresh"))
-              .dashTextStyle(.supportingMedium)
-              .foregroundStyle(DashTheme.brand)
-          }
-          .buttonStyle(DashPressButtonStyle())
-          .disabled(state.isLoadingCurrent && state.overview == nil)
-          .dashHeaderActionHitTarget()
         }
       }
+      .frame(minHeight: 20)
       .accessibilityElement(children: .combine)
     }
   }
@@ -980,15 +945,36 @@ struct WatchtowerTrafficView: View {
       .dashEmbossChrome(shape: shape)
   }
 
-  private var loadingContent: some View {
-    VStack(spacing: 10) {
-      DashLoadingRing(color: DashTheme.brand)
-      Text("Loading account traffic…")
-        .dashTextStyle(.caption)
-        .foregroundStyle(DashTheme.placeholder)
+  @ViewBuilder
+  private var chartsSkeleton: some View {
+    if customization.visibleMetrics.isEmpty {
+      statusCard {
+        emptyContent(
+          title: DashL10n.string("No charts"),
+          message: DashL10n.string("Add a chart to rebuild this view.")
+        )
+      }
+    } else {
+      VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(metricRows, id: \.rowID) { row in
+          if row.count == 1, let metric = row.first, isExpanded(metric) {
+            WatchtowerMetricSkeletonCard(metric: metric, isExpanded: true)
+          } else {
+            HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
+              ForEach(row) { metric in
+                WatchtowerMetricSkeletonCard(metric: metric, isExpanded: false)
+                  .frame(maxWidth: .infinity)
+              }
+              if row.count == 1 {
+                Color.clear.frame(maxWidth: .infinity)
+              }
+            }
+          }
+        }
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(DashL10n.ui("Loading"))
     }
-    .frame(maxWidth: .infinity, minHeight: 190)
-    .accessibilityElement(children: .combine)
   }
 
   private func emptyContent(
@@ -1028,8 +1014,75 @@ enum WatchtowerMetricChartRenderingMode: Equatable {
   var usesDitherChart: Bool { self == .live }
 }
 
+struct WatchtowerChartVisualSwapSequence: Equatable {
+  enum Phase: Equatable {
+    case settled(WatchtowerMetricChartRenderingMode)
+    case exiting(WatchtowerMetricChartRenderingMode)
+    case entering(WatchtowerMetricChartRenderingMode)
+  }
+
+  enum Step: Equatable {
+    case none
+    case exit(WatchtowerMetricChartRenderingMode)
+    case enter(WatchtowerMetricChartRenderingMode)
+  }
+
+  private(set) var requestedMode: WatchtowerMetricChartRenderingMode
+  private(set) var phase: Phase
+
+  var visibleMode: WatchtowerMetricChartRenderingMode? {
+    switch phase {
+    case .settled(let mode), .entering(let mode):
+      mode
+    case .exiting:
+      nil
+    }
+  }
+
+  init(mode: WatchtowerMetricChartRenderingMode) {
+    requestedMode = mode
+    phase = .settled(mode)
+  }
+
+  mutating func request(_ target: WatchtowerMetricChartRenderingMode) -> Step {
+    requestedMode = target
+    switch phase {
+    case .settled(let current):
+      return target == current ? .none : .exit(current)
+    case .exiting(let current):
+      return target == current ? .enter(current) : .none
+    case .entering(let current):
+      return target == current ? .none : .exit(current)
+    }
+  }
+
+  mutating func begin(_ step: Step) {
+    switch step {
+    case .none:
+      break
+    case .exit(let mode):
+      phase = .exiting(mode)
+    case .enter(let mode):
+      phase = .entering(mode)
+    }
+  }
+
+  func finishExit(_ mode: WatchtowerMetricChartRenderingMode) -> Step {
+    guard phase == .exiting(mode) else { return .none }
+    return .enter(requestedMode)
+  }
+
+  mutating func finishEnter(_ mode: WatchtowerMetricChartRenderingMode) -> Step {
+    guard phase == .entering(mode) else { return .none }
+    phase = .settled(mode)
+    return requestedMode == mode ? .none : .exit(mode)
+  }
+}
+
 private enum WatchtowerMetricDragLayout {
   static let controlsPassthroughSize = CGSize(width: 96, height: 60)
+  static let titleTrailingClearance =
+    controlsPassthroughSize.width - DashTheme.Spacing.card
 }
 
 private struct WatchtowerMetricDropPlaceholder: View {
@@ -1281,7 +1334,6 @@ private struct WatchtowerMetricDragOverlay: View {
   let state: WatchtowerMetricDragVisualState
   let overview: AccountAnalyticsOverview
   let range: AnalyticsRange
-  @Namespace private var previewNamespace
 
   var body: some View {
     ZStack(alignment: .topLeading) {
@@ -1292,9 +1344,8 @@ private struct WatchtowerMetricDragOverlay: View {
           chart: .empty,
           range: range,
           isExpanded: presentation.isExpanded,
-          isEditing: true,
+          showsEditingControls: true,
           renderingMode: .placeholder,
-          morphNamespace: previewNamespace,
           onToggleExpanded: {},
           onRemove: {}
         )
@@ -1348,21 +1399,242 @@ private struct WatchtowerMetricDropDelegate: DropDelegate {
   }
 }
 
-private enum WatchtowerAnalyticsMorphID {
-  static func card(_ metric: WatchtowerAnalyticsMetric) -> String {
-    "wt.analytics.\(metric.rawValue).card"
+private struct WatchtowerMetricDropModifier: ViewModifier {
+  let isEnabled: Bool
+  let target: WatchtowerAnalyticsMetric
+  let customization: WatchtowerChartCustomizationState
+  let reduceMotion: Bool
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isEnabled {
+      content.onDrop(
+        of: [UTType.plainText],
+        delegate: WatchtowerMetricDropDelegate(
+          target: target,
+          customization: customization,
+          reduceMotion: reduceMotion)
+      )
+    } else {
+      content
+    }
   }
-  static func title(_ metric: WatchtowerAnalyticsMetric) -> String {
-    "wt.analytics.\(metric.rawValue).title"
+}
+
+private struct WatchtowerMetricRootDropModifier: ViewModifier {
+  let isEnabled: Bool
+  let customization: WatchtowerChartCustomizationState
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if isEnabled {
+      content.onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
+        guard customization.draggedMetric != nil else { return false }
+        customization.clearDropTarget()
+        return true
+      }
+    } else {
+      content
+    }
   }
-  static func value(_ metric: WatchtowerAnalyticsMetric) -> String {
-    "wt.analytics.\(metric.rawValue).value"
+}
+
+/// Cold-load stand-in for `WatchtowerMetricChartCard`: same panel, same header
+/// rhythm, same chart heights. The metric title is known before the network is,
+/// so only the total and the series are skeleton blocks.
+private struct WatchtowerMetricSkeletonCard: View {
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  let metric: WatchtowerAnalyticsMetric
+  let isExpanded: Bool
+
+  private var panelShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
   }
-  static func toggle(_ metric: WatchtowerAnalyticsMetric) -> String {
-    "wt.analytics.\(metric.rawValue).toggle"
+
+  private var chartHeight: CGFloat {
+    isExpanded
+      ? DashTheme.DitherChart.height(dynamicTypeSize: dynamicTypeSize)
+      : DashTheme.DitherChart.collapsedHeight(dynamicTypeSize: dynamicTypeSize)
   }
-  static func chart(_ metric: WatchtowerAnalyticsMetric) -> String {
-    "wt.analytics.\(metric.rawValue).chart"
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(DashL10n.ui(metric.title))
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(2, reservesSpace: true)
+          .minimumScaleFactor(0.85)
+        // Redacted text, not a fixed-height bar: the block then tracks the
+        // real total's type ramp at every Dynamic Type size.
+        Text(verbatim: "888,888")
+          .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
+          .monospacedDigit()
+          .lineLimit(1)
+          .redacted(reason: .placeholder)
+        if isExpanded {
+          Text(verbatim: " ")
+            .dashTextStyle(.caption)
+            .lineLimit(1, reservesSpace: true)
+        }
+      }
+      .padding(.horizontal, DashTheme.Spacing.card)
+      .padding(.top, DashTheme.Spacing.card)
+      .padding(.bottom, isExpanded ? 12 : 8)
+
+      chartBlock
+        .padding(.horizontal, isExpanded ? DashTheme.Spacing.card : 0)
+        .padding(.bottom, isExpanded ? DashTheme.Spacing.card : 0)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      DashTheme.homeCardSurface.clipShape(panelShape)
+    }
+    .dashEmbossChrome(shape: panelShape)
+    .accessibilityHidden(true)
+  }
+
+  private var chartBlock: some View {
+    DashTheme.fill.opacity(0.4)
+      .frame(maxWidth: .infinity)
+      .frame(height: chartHeight)
+      .clipShape(
+        isExpanded
+          ? AnyShape(RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+          : AnyShape(
+            UnevenRoundedRectangle(
+              topLeadingRadius: 0,
+              bottomLeadingRadius: DashTheme.Radius.card,
+              bottomTrailingRadius: DashTheme.Radius.card,
+              topTrailingRadius: 0,
+              style: .continuous))
+      )
+  }
+}
+
+/// Two-stage content replacement for chart pixels. The current layer finishes
+/// its opacity / blur / scale exit before the replacement begins its entrance.
+/// Explicit phases and operation IDs discard stale animation completions when
+/// a rapid target change reverses the active phase.
+private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let renderingMode: WatchtowerMetricChartRenderingMode
+  private let placeholder: () -> Placeholder
+  private let live: () -> Live
+  @State private var sequence: WatchtowerChartVisualSwapSequence
+  @State private var keepsLiveMounted: Bool
+  @State private var operationID = 0
+
+  init(
+    renderingMode: WatchtowerMetricChartRenderingMode,
+    @ViewBuilder placeholder: @escaping () -> Placeholder,
+    @ViewBuilder live: @escaping () -> Live
+  ) {
+    self.renderingMode = renderingMode
+    self.placeholder = placeholder
+    self.live = live
+    _sequence = State(initialValue: WatchtowerChartVisualSwapSequence(mode: renderingMode))
+    _keepsLiveMounted = State(initialValue: renderingMode == .live)
+  }
+
+  var body: some View {
+    ZStack {
+      placeholder()
+        .modifier(
+          WatchtowerChartSwapLayer(
+            isVisible: sequence.visibleMode == .placeholder,
+            reduceMotion: reduceMotion)
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+
+      if keepsLiveMounted {
+        live()
+          .modifier(
+            WatchtowerChartSwapLayer(
+              isVisible: sequence.visibleMode == .live,
+              reduceMotion: reduceMotion)
+          )
+          .allowsHitTesting(sequence.phase == .settled(.live))
+      }
+    }
+    .onChange(of: renderingMode) { _, target in
+      request(target)
+    }
+  }
+
+  private func request(_ target: WatchtowerMetricChartRenderingMode) {
+    if target == .live, !keepsLiveMounted {
+      setLiveMounted(true)
+    }
+    perform(sequence.request(target))
+  }
+
+  private func perform(_ step: WatchtowerChartVisualSwapSequence.Step) {
+    switch step {
+    case .none:
+      break
+    case .exit(let mode):
+      animate(step, expectedPhase: .exiting(mode), mode: mode)
+    case .enter(let mode):
+      animate(step, expectedPhase: .entering(mode), mode: mode)
+    }
+  }
+
+  private func animate(
+    _ step: WatchtowerChartVisualSwapSequence.Step,
+    expectedPhase: WatchtowerChartVisualSwapSequence.Phase,
+    mode: WatchtowerMetricChartRenderingMode
+  ) {
+    operationID += 1
+    let currentOperation = operationID
+    withAnimation(
+      DashTheme.Motion.morph,
+      completionCriteria: .removed
+    ) {
+      sequence.begin(step)
+    } completion: {
+      guard currentOperation == operationID, sequence.phase == expectedPhase else {
+        return
+      }
+
+      switch expectedPhase {
+      case .exiting:
+        if mode == .live, sequence.requestedMode != .live {
+          setLiveMounted(false)
+        }
+        perform(sequence.finishExit(mode))
+      case .entering:
+        let next = sequence.finishEnter(mode)
+        if mode == .placeholder, next == .none {
+          setLiveMounted(false)
+        }
+        perform(next)
+      case .settled:
+        break
+      }
+    }
+  }
+
+  private func setLiveMounted(_ isMounted: Bool) {
+    var transaction = Transaction(animation: nil)
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      keepsLiveMounted = isMounted
+    }
+  }
+}
+
+private struct WatchtowerChartSwapLayer: ViewModifier {
+  let isVisible: Bool
+  let reduceMotion: Bool
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(isVisible ? 1 : 0)
+      .blur(radius: reduceMotion || isVisible ? 0 : 8)
+      .scaleEffect(reduceMotion || isVisible ? 1 : 0.75)
+      .accessibilityHidden(!isVisible)
   }
 }
 
@@ -1378,9 +1650,8 @@ private struct WatchtowerMetricChartCard: View {
   let chart: WatchtowerAnalyticsChartModel.MetricSnapshot
   let range: AnalyticsRange
   let isExpanded: Bool
-  let isEditing: Bool
+  let showsEditingControls: Bool
   let renderingMode: WatchtowerMetricChartRenderingMode
-  let morphNamespace: Namespace.ID
   let onToggleExpanded: () -> Void
   let onRemove: () -> Void
   @State private var selectedSeriesID: String?
@@ -1416,9 +1687,6 @@ private struct WatchtowerMetricChartCard: View {
     VStack(alignment: .leading, spacing: 0) {
       header
       chartBody
-        .matchedGeometryEffect(
-          id: WatchtowerAnalyticsMorphID.chart(metric), in: morphNamespace
-        )
         .padding(.horizontal, isExpanded ? DashTheme.Spacing.card : 0)
         .padding(.bottom, isExpanded ? DashTheme.Spacing.card : 0)
     }
@@ -1428,19 +1696,12 @@ private struct WatchtowerMetricChartCard: View {
     .background {
       DashTheme.homeCardSurface
         .clipShape(panelShape)
-        .matchedGeometryEffect(
-          id: WatchtowerAnalyticsMorphID.card(metric), in: morphNamespace)
     }
     .dashEmbossChrome(shape: panelShape)
-    .shadow(
-      color: isEditing
-        ? Color.black.opacity(colorScheme == .dark ? 0.28 : 0.12) : .clear,
-      radius: isEditing ? 12 : 0,
-      y: isEditing ? 6 : 0
-    )
     .overlay(alignment: .topTrailing) {
-      if isEditing {
+      if showsEditingControls {
         cardControls
+          .transition(.opacity)
       }
     }
     .onChange(of: range) { selectedSeriesID = nil }
@@ -1460,9 +1721,9 @@ private struct WatchtowerMetricChartCard: View {
         // cards and every row then share one card height.
         .lineLimit(2, reservesSpace: true)
         .minimumScaleFactor(0.85)
-        .padding(.trailing, isEditing ? 78 : 0)
-        .matchedGeometryEffect(
-          id: WatchtowerAnalyticsMorphID.title(metric), in: morphNamespace)
+        .padding(
+          .trailing,
+          showsEditingControls ? WatchtowerMetricDragLayout.titleTrailingClearance : 0)
       Text(total.text)
         .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
         .monospacedDigit()
@@ -1472,8 +1733,6 @@ private struct WatchtowerMetricChartCard: View {
         .contentTransition(
           reduceMotion ? .opacity : .numericText(value: total.numeric)
         )
-        .matchedGeometryEffect(
-          id: WatchtowerAnalyticsMorphID.value(metric), in: morphNamespace)
       if isExpanded {
         // Reserve the footnote line on every expanded card so CPU Time (the one
         // metric with a "p90" footnote) doesn't sit a row taller than the rest.
@@ -1490,11 +1749,17 @@ private struct WatchtowerMetricChartCard: View {
     .accessibilityElement(children: .combine)
   }
 
-  @ViewBuilder
   private var chartBody: some View {
-    if renderingMode == .placeholder {
-      editingPlaceholder
-    } else if isExpanded {
+    WatchtowerChartVisualSwap(
+      renderingMode: renderingMode,
+      placeholder: { editingPlaceholder },
+      live: { liveChartBody }
+    )
+  }
+
+  @ViewBuilder
+  private var liveChartBody: some View {
+    if isExpanded {
       expandedChart
     } else {
       // Flush to the card’s bottom edge; only the bottom corners need the panel
@@ -1521,7 +1786,8 @@ private struct WatchtowerMetricChartCard: View {
       Text(DashL10n.ui("No data in this range"))
         .dashTextStyle(.footnote)
         .foregroundStyle(DashTheme.placeholder)
-        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: expandedHeight, alignment: .leading)
     } else {
       DitherAreaChart(
         data: chart.expandedData,
@@ -1640,8 +1906,6 @@ private struct WatchtowerMetricChartCard: View {
       }
       .disabled(dynamicTypeSize.isAccessibilitySize)
       .opacity(dynamicTypeSize.isAccessibilitySize ? 0.42 : 1)
-      .matchedGeometryEffect(
-        id: WatchtowerAnalyticsMorphID.toggle(metric), in: morphNamespace)
     }
     .padding(8)
     .frame(

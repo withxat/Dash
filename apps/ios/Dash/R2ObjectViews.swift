@@ -389,7 +389,7 @@ struct R2BucketSettingsView: View {
       }
     }
     .detailHeader(
-      icon: .solar(SolarAsset.settings),
+      icon: .solar(SolarAsset.Content.settings),
       title: "Bucket settings",
       tint: FeatureVisualIdentity.heroColor(for: .r2)
     )
@@ -643,15 +643,18 @@ extension R2CustomDomain {
     enabled && status?.ownership == "active" && status?.ssl == "active"
   }
 
+  /// Localized at the last render step, per the API-token convention: the raw
+  /// Cloudflare words stay in `isServing`'s comparison, only the display copy
+  /// goes through the catalog.
   fileprivate var statusLabel: String {
-    guard enabled else { return "Disabled" }
-    guard let status else { return "Provisioning" }
-    if isServing { return "Active" }
+    guard enabled else { return DashL10n.string("Disabled") }
+    guard let status else { return DashL10n.string("Provisioning") }
+    if isServing { return DashL10n.string("Active") }
     let pending = [
-      status.ownership.map { "ownership \($0)" },
-      status.ssl.map { "certificate \($0)" },
+      status.ownership.map { DashL10n.string("Ownership \(DashL10n.ui($0.capitalized))") },
+      status.ssl.map { DashL10n.string("Certificate \(DashL10n.ui($0.capitalized))") },
     ].compactMap { $0 }
-    return pending.isEmpty ? "Pending" : pending.joined(separator: " · ")
+    return pending.isEmpty ? DashL10n.string("Pending") : pending.joined(separator: " · ")
   }
 
   fileprivate var detailFields: [DashDetailField] {

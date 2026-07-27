@@ -1,8 +1,10 @@
 import SwiftUI
 
-// UI chrome uses outline Solar assets. Content surfaces use the filled assets
-// grouped under `SolarAsset.Content`.
-// Chevrons use a 2.5 outline so they stay legible when scaled below 24pt.
+// Page and section identities use filled assets grouped under
+// `SolarAsset.Content`. Navigation controls and action chrome use outline
+// assets, generated at a visually bold 2pt weight.
+// Small trailing row chevrons use 2.5pt; the navigation back mark stays at the
+// shared 2pt chrome weight.
 
 enum SolarAsset {
   enum Content {
@@ -11,6 +13,8 @@ enum SolarAsset {
     static let box = "SolarBoxFill"
     static let boxMinimalistic = "SolarBoxMinimalisticFill"
     static let chart = "SolarChart2Fill"
+    /// Bars inside a rounded square — the Watchtower Charts section mark.
+    static let chartSquare = "SolarChartSquareFill"
     static let checkCircle = "SolarCheckCircleFill"
     static let clock = "SolarClockCircleFill"
     static let cloud = "SolarCloudFill"
@@ -22,6 +26,7 @@ enum SolarAsset {
     static let globe = "SolarGlobalFill"
     static let globus = "SolarGlobusFill"
     static let graph = "SolarGraphNewFill"
+    static let inbox = "SolarInboxFill"
     static let key = "SolarKeyFill"
     static let lock = "SolarLockKeyholeFill"
     static let pinList = "SolarPinListFill"
@@ -30,11 +35,13 @@ enum SolarAsset {
     static let settings = "SolarSettingsMinimalisticFill"
     static let slider = "SolarSliderHorizontalFill"
     static let upload = "SolarUploadFill"
+    static let user = "SolarUserFill"
 
     static let all: Set<String> = [
-      addCircle, bolt, box, boxMinimalistic, chart, checkCircle, clock, cloud,
-      code, codeCircle, danger, file, folder, globe, globus, graph, key, lock,
-      pinList, search, settings, shieldCheck, slider, upload,
+      addCircle, bolt, box, boxMinimalistic, chart, chartSquare, checkCircle,
+      clock, cloud, code, codeCircle, danger, file, folder, globe, globus,
+      graph, inbox, key, lock, pinList, search, settings, shieldCheck, slider,
+      upload, user,
     ]
   }
 
@@ -46,6 +53,8 @@ enum SolarAsset {
   static let addCircleFill = "SolarAddCircleFill"
   static let circle = "SolarCircleOutline"
   static let checkCircle = "SolarCheckCircleOutline"
+  /// Bare Solar check mark used for Done actions.
+  static let unread = "SolarUnreadOutline"
   /// Selected state of a check control — solid, so "on" reads at a glance
   /// against the hollow `circle` of "off".
   static let checkCircleFill = "SolarCheckCircleFill"
@@ -73,8 +82,6 @@ enum SolarAsset {
   static let users = "SolarUsersGroupOutline"
   static let userCircle = "SolarUserCircleOutline"
   static let user = "SolarUserOutline"
-  /// Solid user mark for Profile surfaces.
-  static let userFill = "SolarUserFill"
   static let settings = "SolarSettingsMinimalisticOutline"
   static let code = "SolarCodeSquareOutline"
   /// Bare `</>` brackets (no square) — Home Workers quick action.
@@ -88,7 +95,10 @@ enum SolarAsset {
   static let clock = "SolarClockCircleOutline"
   static let slider = "SolarSliderHorizontalOutline"
   static let search = "SolarMagnifierOutline"
+  /// Heavy close mark used by trays and modal dismissal controls.
   static let close = "SolarCloseOutline"
+  /// 2pt close mark paired with `unread` in editing toolbars.
+  static let editClose = "SolarEditCloseOutline"
   static let menuDots = "SolarMenuDotsOutline"
   static let pen = "SolarPenNewSquareOutline"
   /// Not a Solar glyph: the Cloudflare brand mark (Simple Icons, filled).

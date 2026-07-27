@@ -50,7 +50,6 @@
 		B0000000000000000000010D /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010D /* LegalDocumentView.swift */; };
 		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
 		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
-		B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000111 /* WatchtowerMuteStore.swift */; };
 		B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000112 /* DashAuthorizationScopes.swift */; };
 		B00000000000000000000113 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000003 /* MarkdownUI */; };
 		B00000000000000000000142 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000E /* CodeEditor */; };
@@ -75,6 +74,8 @@
 		B00000000000000000000124 /* PagesBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000124 /* PagesBuildActivityController.swift */; };
 		B00000000000000000000125 /* PushAlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000125 /* PushAlertsView.swift */; };
 		B00000000000000000000126 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
+		B00000000000000000000191 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
+		B00000000000000000000192 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
 		B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000A /* BlossomColorPickerCore */; };
 		B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000143 /* WatchtowerInboxStore.swift */; };
 		B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000144 /* WatchtowerInboxView.swift */; };
@@ -191,7 +192,6 @@
 		F0000000000000000000010D /* LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentView.swift; sourceTree = "<group>"; };
 		F0000000000000000000010E /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
 		F0000000000000000000010F /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
-		F00000000000000000000111 /* WatchtowerMuteStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMuteStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000143 /* WatchtowerInboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000144 /* WatchtowerInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxView.swift; sourceTree = "<group>"; };
 		F00000000000000000000145 /* DashToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashToast.swift; sourceTree = "<group>"; };
@@ -354,7 +354,6 @@
 				F00000000000000000000125 /* PushAlertsView.swift */,
 				F00000000000000000000126 /* Localizable.xcstrings */,
 				F0000000000000000000010D /* LegalDocumentView.swift */,
-				F00000000000000000000111 /* WatchtowerMuteStore.swift */,
 				F00000000000000000000143 /* WatchtowerInboxStore.swift */,
 				F00000000000000000000144 /* WatchtowerInboxView.swift */,
 				F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */,
@@ -623,6 +622,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00000000000000000000191 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -630,6 +630,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B00000000000000000000192 /* Localizable.xcstrings in Resources */,
 				B0000000000000000000012A /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -715,7 +716,6 @@
 				B0000000000000000000010C /* PushRegistration.swift in Sources */,
 				B00000000000000000000125 /* PushAlertsView.swift in Sources */,
 				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,
-				B00000000000000000000111 /* WatchtowerMuteStore.swift in Sources */,
 				B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */,
 				B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */,
 				B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */,

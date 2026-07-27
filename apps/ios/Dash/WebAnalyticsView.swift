@@ -139,7 +139,7 @@ struct WebAnalyticsView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.openURL) private var openURL
-  let zoneID: String
+  private let zoneID: String
 
   @State private var range: AnalyticsRange = .week
   @State private var site: RUMSite?
@@ -147,6 +147,11 @@ struct WebAnalyticsView: View {
   @State private var snapshotsByRange: [AnalyticsRange: WebAnalyticsMetricsSnapshot] = [:]
   @State private var errorByRange: [AnalyticsRange: String] = [:]
   @State private var loadingRanges: Set<AnalyticsRange> = [.week, .month]
+  @State private var loadedContext: AccountRequestContext?
+
+  init(zoneID: String) {
+    self.zoneID = zoneID
+  }
 
   private var snapshot: WebAnalyticsMetricsSnapshot { snapshotsByRange[range] ?? .empty }
   private var isLoadingCurrent: Bool { !siteResolved || loadingRanges.contains(range) }
@@ -167,7 +172,7 @@ struct WebAnalyticsView: View {
         }
       }
     ) {
-      if site == nil {
+      if site == nil || (site?.isCollecting == false && snapshot.isEmpty) {
         beaconMissingState
       } else if snapshot.isEmpty {
         DashEmptyState(
@@ -203,7 +208,7 @@ struct WebAnalyticsView: View {
     }
     .detailHeader(icon: .solar(SolarAsset.Content.graph), title: "Web analytics")
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .task(id: model.accountRequestContext) { await load() }
   }
 
   /// Dash cannot turn the beacon on: Cloudflare publishes no OAuth scope for
@@ -286,17 +291,35 @@ struct WebAnalyticsView: View {
   }
 
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
+      reset()
       siteResolved = true
       loadingRanges.removeAll()
       return
     }
-    do {
-      let sites = try await resolveSites(accountID: accountID, force: force)
-      site = WebAnalyticsChartModel.site(for: zoneID, in: sites)
-    } catch {
-      if !error.dashIsCancellation { errorByRange[range] = error.dashActionableMessage }
+    if loadedContext != context {
+      reset()
+      loadedContext = context
     }
+    if force {
+      loadingRanges = [.week, .month]
+    }
+
+    let resolvedSite: RUMSite?
+    do {
+      let sites = try await resolveSites(accountID: context.accountID, force: force)
+      resolvedSite = WebAnalyticsChartModel.site(for: zoneID, in: sites)
+    } catch {
+      guard model.isCurrentAccount(context), !error.dashIsCancellation else { return }
+      let message = error.dashActionableMessage
+      errorByRange[.week] = message
+      errorByRange[.month] = message
+      siteResolved = true
+      loadingRanges.removeAll()
+      return
+    }
+    guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+    site = resolvedSite
     siteResolved = true
     guard let siteTag = site?.siteTag else {
       loadingRanges.removeAll()
@@ -304,8 +327,8 @@ struct WebAnalyticsView: View {
     }
     loadingRanges =
       force ? [.week, .month] : Set([.week, .month].filter { snapshotsByRange[$0] == nil })
-    async let week: Void = loadRange(.week, accountID: accountID, siteTag: siteTag, force: force)
-    async let month: Void = loadRange(.month, accountID: accountID, siteTag: siteTag, force: force)
+    async let week: Void = loadRange(.week, context: context, siteTag: siteTag, force: force)
+    async let month: Void = loadRange(.month, context: context, siteTag: siteTag, force: force)
     _ = await (week, month)
   }
 
@@ -318,7 +341,10 @@ struct WebAnalyticsView: View {
   }
 
   private func loadRange(
-    _ target: AnalyticsRange, accountID: String, siteTag: String, force: Bool
+    _ target: AnalyticsRange,
+    context: AccountRequestContext,
+    siteTag: String,
+    force: Bool
   ) async {
     let days = target == .month ? 30 : 7
     let key = FeatureCacheKey.webAnalyticsMetrics(siteTag, days: days)
@@ -328,17 +354,29 @@ struct WebAnalyticsView: View {
         raw = cached
       } else {
         raw = try await model.client.webAnalyticsMetrics(
-          accountID: accountID, siteTag: siteTag, days: days)
+          accountID: context.accountID, siteTag: siteTag, days: days)
+        guard model.isCurrentAccount(context), !Task.isCancelled else { return }
         model.featureCache.set(key, raw)
       }
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
       snapshotsByRange[target] = WebAnalyticsChartModel.metrics(
         from: raw, window: days, now: Date())
       errorByRange[target] = nil
     } catch {
-      if snapshotsByRange[target] == nil, !error.dashIsCancellation {
+      guard model.isCurrentAccount(context), !error.dashIsCancellation else { return }
+      if snapshotsByRange[target] == nil {
         errorByRange[target] = error.dashActionableMessage
       }
     }
     loadingRanges.remove(target)
+  }
+
+  private func reset() {
+    loadedContext = nil
+    site = nil
+    siteResolved = false
+    snapshotsByRange = [:]
+    errorByRange = [:]
+    loadingRanges = [.week, .month]
   }
 }
