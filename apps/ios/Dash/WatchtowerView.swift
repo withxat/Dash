@@ -42,24 +42,59 @@ final class WatchtowerScreenState {
   var issueCount: Int { summary.critical + summary.warning }
   var recheckBanner: String?
   var capabilityNotes: [String] = []
+  private(set) var loadedContext: AccountRequestContext?
+  private var activeLoadID: UUID?
 
-  func refreshMutedSignals() {
-    mutedSignalIDs = WatchtowerMuteStore.mutedIDs()
+  func reset(for context: AccountRequestContext?) {
+    guard loadedContext != context else { return }
+    loadedContext = context
+    activeLoadID = nil
+    signals = []
+    alerts = []
+    alertsStatus = .loading
+    missingScopeChecks = []
+    failedChecks = []
+    fetchedAt = nil
+    loading = context != nil
+    mutedSignalIDs = []
+    recheckBanner = nil
+    capabilityNotes = []
+  }
+
+  @discardableResult
+  func beginLoad(for context: AccountRequestContext) -> UUID {
+    reset(for: context)
+    let loadID = UUID()
+    activeLoadID = loadID
+    return loadID
+  }
+
+  func ownsLoad(_ loadID: UUID, context: AccountRequestContext) -> Bool {
+    activeLoadID == loadID && loadedContext == context
+  }
+
+  func refreshMutedSignals(accountID: String) {
+    mutedSignalIDs = WatchtowerMuteStore.mutedIDs(accountID: accountID)
   }
 
   func load(model: AppModel, force: Bool = false) async {
-    refreshMutedSignals()
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
+      reset(for: nil)
       loading = false
-      signals = []
-      alerts = []
       return
     }
+    let loadID = beginLoad(for: context)
+    refreshMutedSignals(accountID: context.accountID)
     let cached: WatchtowerSnapshot? = model.featureCache.get(
-      FeatureCacheKey.watchtower(accountID))
+      FeatureCacheKey.watchtower(context.accountID))
     // Warm tab re-entry: paint from the session snapshot without an
     // Updating… strip or network fan-out. Pull-to-refresh still forces.
     if !force, let cached, !cached.isStale(ttl: AppModel.watchtowerTTL) {
+      guard
+        !Task.isCancelled,
+        ownsLoad(loadID, context: context),
+        model.isCurrentAccount(context)
+      else { return }
       apply(cached)
       loading = false
       return
@@ -72,6 +107,11 @@ final class WatchtowerScreenState {
     loading = true
     // Snapshot cache uses ttl:nil, so a stale hit must force the fan-out.
     if let snapshot = await model.watchtowerSnapshot(force: force || cached != nil) {
+      guard
+        !Task.isCancelled,
+        ownsLoad(loadID, context: context),
+        model.isCurrentAccount(context)
+      else { return }
       apply(snapshot)
       let currentIssueIDs = Set(
         snapshot.signals.filter {
@@ -89,6 +129,11 @@ final class WatchtowerScreenState {
         }
       }
     }
+    guard
+      !Task.isCancelled,
+      ownsLoad(loadID, context: context),
+      model.isCurrentAccount(context)
+    else { return }
     loading = false
   }
 
@@ -119,13 +164,27 @@ struct WatchtowerView: View {
   let customization: WatchtowerChartCustomizationState
   @State private var state = WatchtowerScreenState()
   @State private var trafficState = WatchtowerTrafficState()
-  @State private var selectedSignal: WatchtowerSignal?
+  @State private var selectedSignal: SignalSelection?
   @Namespace private var analyticsMorph
+
+  private struct SignalSelection: Identifiable, Equatable {
+    struct ID: Hashable {
+      let context: AccountRequestContext
+      let signalID: String
+    }
+
+    let context: AccountRequestContext
+    let signal: WatchtowerSignal
+
+    var id: ID {
+      ID(context: context, signalID: signal.id)
+    }
+  }
 
   /// Re-keys the load task on both account and activation so the deferred load
   /// fires the moment the tab is first swiped or tapped into view.
   private struct LoadKey: Equatable {
-    let accountID: String?
+    let context: AccountRequestContext?
     let active: Bool
   }
 
@@ -142,9 +201,13 @@ struct WatchtowerView: View {
     }
     .dashSectionEntrance()
     .dashCatalogScreen()
-    .task(id: LoadKey(accountID: model.activeAccountID, active: tabActive)) {
+    .task(id: LoadKey(context: model.accountRequestContext, active: tabActive)) {
       guard tabActive else { return }
       await load()
+    }
+    .onChange(of: model.accountRequestContext) { _, context in
+      state.reset(for: context)
+      selectedSignal = nil
     }
     .onChange(of: model.grantedScopes) {
       guard tabActive else { return }
@@ -152,13 +215,15 @@ struct WatchtowerView: View {
         await trafficState.load(model: model, force: true)
       }
     }
-    .dashTray(item: $selectedSignal, title: { $0.title }) { signal in
+    .dashTray(item: $selectedSignal, title: { $0.signal.title }) { selection in
       WatchtowerSignalTray(
-        signal: signal,
-        isMuted: state.mutedSignalIDs.contains(signal.id),
-        toggleMute: { toggleMute(signal) },
-        openResource: signal.destination.map { destination in
-          { openResource(destination) }
+        signal: selection.signal,
+        isMuted:
+          state.loadedContext == selection.context
+          && state.mutedSignalIDs.contains(selection.signal.id),
+        toggleMute: { toggleMute(selection) },
+        openResource: selection.signal.destination.map { destination in
+          { openResource(destination, selection: selection) }
         }
       )
     }
@@ -376,7 +441,10 @@ struct WatchtowerView: View {
     // The full row opens one detail tray. Muting and resource navigation live
     // there, so a duplicate dots target does not compete with the row tap.
     Button {
-      selectedSignal = signal
+      guard let context = model.accountRequestContext, state.loadedContext == context else {
+        return
+      }
+      selectedSignal = SignalSelection(context: context, signal: signal)
     } label: {
       signalListRow(signal)
     }
@@ -403,18 +471,34 @@ struct WatchtowerView: View {
   }
 
   /// Dismisses the tray and pushes the signal's resource onto the tab stack.
-  private func openResource(_ destination: Destination) {
+  private func openResource(_ destination: Destination, selection: SignalSelection) {
+    guard
+      state.loadedContext == selection.context,
+      model.isCurrentAccount(selection.context)
+    else {
+      selectedSignal = nil
+      return
+    }
     selectedSignal = nil
     navigator?.push(destination)
   }
 
-  private func toggleMute(_ signal: WatchtowerSignal) {
-    if state.mutedSignalIDs.contains(signal.id) {
-      WatchtowerMuteStore.unmute(signal.id)
-    } else {
-      WatchtowerMuteStore.mute(signal.id, title: signal.title)
+  private func toggleMute(_ selection: SignalSelection) {
+    guard
+      state.loadedContext == selection.context,
+      model.isCurrentAccount(selection.context)
+    else {
+      selectedSignal = nil
+      return
     }
-    state.refreshMutedSignals()
+    let signal = selection.signal
+    let accountID = selection.context.accountID
+    if state.mutedSignalIDs.contains(signal.id) {
+      WatchtowerMuteStore.unmute(signal.id, accountID: accountID)
+    } else {
+      WatchtowerMuteStore.mute(signal.id, title: signal.title, accountID: accountID)
+    }
+    state.refreshMutedSignals(accountID: accountID)
     DashDelight.selectionChanged()
   }
 

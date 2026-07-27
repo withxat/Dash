@@ -26,7 +26,7 @@ struct FeatureCapability: Hashable, Sendable {
   var all: Set<String> { read.union(write) }
 
   func accessLevel(grantedScopes: Set<String>?) -> FeatureAccessLevel {
-    guard let grantedScopes else { return .full }
+    guard let grantedScopes else { return .locked }
     guard read.isSubset(of: grantedScopes) else { return .locked }
     guard write.isEmpty || write.isSubset(of: grantedScopes) else { return .readOnly }
     return .full

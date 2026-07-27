@@ -18,7 +18,7 @@ enum FeatureAccessFilter: String, CaseIterable, Hashable {
   func matches(_ level: FeatureAccessLevel) -> Bool {
     switch self {
     case .all: true
-    case .available: level == .full
+    case .available: level != .locked
     case .readOnly: level == .readOnly
     case .locked: level == .locked
     }
@@ -38,12 +38,12 @@ enum FeatureCatalogFiltering {
 }
 
 struct FeatureCatalogView: View {
-  /// The catalog lists what this account can actually use, and nothing else —
-  /// a row that opens a permission wall is a broken promise. Scopes unknown
-  /// (`grantedScopes == nil`) resolves to `.full`, so a cold launch lists
-  /// everything rather than flashing an empty catalog.
+  /// The catalog lists what this account can browse, including read-only
+  /// features, and omits permission walls. Scopes unknown
+  /// (`grantedScopes == nil`) fail closed; bootstrap restores the conservative
+  /// read-only profile for older tokens before the authenticated catalog mounts.
   ///
-  /// Not user-adjustable: with four features and no locked ones, a filter tray
+  /// Not user-adjustable: with five features and no locked ones, a filter tray
   /// would be a control with nothing to control.
   static let defaultFilter: FeatureAccessFilter = .available
 

@@ -1,10 +1,10 @@
 /**
  * Stateless HMAC helpers for signed push URLs and cf-webhook-auth secrets.
  *
- * The device token is never stored; the notify URL embeds env + token + an
- * HMAC over that pair so anyone who presents a valid URL can push only to
- * that device. The Cloudflare webhook secret is derived the same way so the
- * worker can recompute it from the URL with zero storage.
+ * The device token is never stored; new notify URLs embed env + token +
+ * account id and an HMAC over that tuple so the resulting deep link remains
+ * bound to the Cloudflare account that registered the webhook. The webhook
+ * secret is derived the same way so the worker stays zero-storage.
  */
 
 function toHex(bytes: ArrayBuffer): string {
@@ -37,13 +37,20 @@ async function sign(secret: string, message: string): Promise<string> {
 	return toHex(mac)
 }
 
-/** Mint the hex HMAC that seals `environment.token` into a notify URL. */
+function notifyBinding(environment: string, token: string, accountID?: string): string {
+	return accountID
+		? `${environment}.${token}.${accountID}`
+		: `${environment}.${token}`
+}
+
+/** Mint the hex HMAC that seals the notify URL's device/account binding. */
 export async function mintNotifyMAC(
 	secret: string,
 	environment: string,
 	token: string,
+	accountID?: string,
 ): Promise<string> {
-	return sign(secret, `${environment}.${token}`)
+	return sign(secret, notifyBinding(environment, token, accountID))
 }
 
 /** Constant-time verify of a notify-URL MAC via WebCrypto. */
@@ -52,6 +59,7 @@ export async function verifyNotifyMAC(
 	environment: string,
 	token: string,
 	macHex: string,
+	accountID?: string,
 ): Promise<boolean> {
 	const mac = fromHex(macHex)
 	if (!mac)
@@ -61,7 +69,7 @@ export async function verifyNotifyMAC(
 		'HMAC',
 		key,
 		mac,
-		new TextEncoder().encode(`${environment}.${token}`),
+		new TextEncoder().encode(notifyBinding(environment, token, accountID)),
 	)
 }
 
@@ -74,6 +82,7 @@ export async function webhookSecret(
 	secret: string,
 	environment: string,
 	token: string,
+	accountID?: string,
 ): Promise<string> {
-	return sign(secret, `cf-webhook-auth:${environment}.${token}`)
+	return sign(secret, `cf-webhook-auth:${notifyBinding(environment, token, accountID)}`)
 }

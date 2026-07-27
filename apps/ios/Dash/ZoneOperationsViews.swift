@@ -4,6 +4,7 @@ import SwiftUI
 
 struct CachePurgeView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
   @State private var url = ""
@@ -12,12 +13,26 @@ struct CachePurgeView: View {
   @State private var working = false
   @State private var showsMore = false
 
+  private var requiredWriteScopes: Set<String> {
+    writeScopes(for: .cache(zoneID))
+  }
+
+  private var allowsWrites: Bool {
+    featureAllowsWrites && model.hasScopes(requiredWriteScopes)
+  }
+
   var body: some View {
     DashFeatureScreen {
       ScrollView {
         VStack(spacing: DashTheme.Spacing.section) {
           DashCard {
             VStack(alignment: .leading, spacing: 16) {
+              if !allowsWrites {
+                FeatureWriteAccessNotice(
+                  message: "Read-only — grant cache purge access before removing cached assets.",
+                  scopes: requiredWriteScopes,
+                  buttonTitle: "Grant purge access")
+              }
               VStack(alignment: .leading, spacing: 4) {
                 Text("Purge by URL")
                   .dashTextStyle(.sectionTitle)
@@ -30,8 +45,14 @@ struct CachePurgeView: View {
                 label: "Asset URL",
                 text: $url,
                 keyboard: .URL,
-                contentType: .URL)
-              DashPillButton(title: "Purge URL", isLoading: working, isEnabled: !url.isEmpty) {
+                contentType: .URL
+              )
+              .disabled(!allowsWrites)
+              DashPillButton(
+                title: "Purge URL",
+                isLoading: working,
+                isEnabled: allowsWrites && !url.isEmpty
+              ) {
                 Task { await purge(files: [url]) }
               }
             }
@@ -53,7 +74,9 @@ struct CachePurgeView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.bolt), title: "Cache")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        DashMoreButton(isPresented: $showsMore)
+        if allowsWrites {
+          DashMoreButton(isPresented: $showsMore)
+        }
       }
       .dashSeparateToolbarBackground()
     }
@@ -74,6 +97,10 @@ struct CachePurgeView: View {
   }
 
   private func purge(files: [String]?) async {
+    guard model.hasScopes(requiredWriteScopes) else {
+      model.requestAccess(to: requiredWriteScopes)
+      return
+    }
     working = true
     do {
       try await model.client.purgeCache(zoneID: zoneID, files: files)
@@ -118,17 +145,31 @@ private let zoneSettingOptions: [String: [String]] = [
 
 struct ZoneSettingsView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let zoneID: String
   @State private var settings: [ZoneSetting] = []
   @State private var error: String?
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
 
+  private var requiredWriteScopes: Set<String> {
+    writeScopes(for: .zoneSettings(zoneID))
+  }
+
+  private var allowsWrites: Bool {
+    featureAllowsWrites && model.hasScopes(requiredWriteScopes)
+  }
+
   var body: some View {
     DashFeatureList(
       isLoading: loading, error: error, hasContent: !curated.isEmpty,
       retry: { Task { await load() } }
     ) {
+      if !allowsWrites {
+        FeatureWriteAccessNotice(
+          message: "Read-only — grant zone settings write access to make changes.",
+          scopes: requiredWriteScopes)
+      }
       DashCard {
         Text(
           DashL10n.string(
@@ -140,6 +181,7 @@ struct ZoneSettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
+      .dashSectionBoundary(!allowsWrites)
       DashSurfaceStack {
         ForEach(curated) { setting in
           settingRow(setting)
@@ -174,7 +216,7 @@ struct ZoneSettingsView: View {
             title: setting.displayTitle,
             value: value,
             options: options,
-            isEnabled: !updatingSettingIDs.contains(setting.id),
+            isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
             isLoading: updatingSettingIDs.contains(setting.id)
           ) { chosen in
             scheduleUpdate(setting, value: .string(chosen))
@@ -189,7 +231,7 @@ struct ZoneSettingsView: View {
               set: { enabled in
                 scheduleUpdate(setting, value: .string(enabled ? "on" : "off"))
               }),
-            isEnabled: !updatingSettingIDs.contains(setting.id),
+            isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
             isLoading: updatingSettingIDs.contains(setting.id)
           )
         } else {
@@ -201,7 +243,7 @@ struct ZoneSettingsView: View {
           isOn: Binding(
             get: { enabled },
             set: { value in scheduleUpdate(setting, value: .bool(value)) }),
-          isEnabled: !updatingSettingIDs.contains(setting.id),
+          isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
           isLoading: updatingSettingIDs.contains(setting.id)
         )
       default:
@@ -228,6 +270,10 @@ struct ZoneSettingsView: View {
 
   /// Flips local state immediately, then commits over the network.
   private func scheduleUpdate(_ setting: ZoneSetting, value: JSONValue) {
+    guard model.hasScopes(requiredWriteScopes) else {
+      model.requestAccess(to: requiredWriteScopes)
+      return
+    }
     guard !updatingSettingIDs.contains(setting.id) else { return }
     guard let index = settings.firstIndex(where: { $0.id == setting.id }) else { return }
     let previous = settings[index]
@@ -412,6 +458,7 @@ enum WAFChartModel {
 
 struct WAFEventsView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -424,8 +471,12 @@ struct WAFEventsView: View {
   @State private var securityLoaded = false
   @State private var securityUpdating = false
 
+  private var requiredWriteScopes: Set<String> {
+    writeScopes(for: .zoneWAF(zoneID))
+  }
+
   private var canToggleSecurity: Bool {
-    model.hasScopes(["zone-settings.write"])
+    featureAllowsWrites && model.hasScopes(requiredWriteScopes)
   }
 
   private var underAttackBinding: Binding<Bool> {
@@ -472,6 +523,13 @@ struct WAFEventsView: View {
         isLoading: securityUpdating
       )
       .dashSectionBoundary(summary != nil)
+      if !canToggleSecurity {
+        FeatureWriteAccessNotice(
+          message: "Read-only — grant zone settings write access to change Under Attack mode.",
+          scopes: requiredWriteScopes
+        )
+        .dashItemBoundary()
+      }
       if let summary {
         if summary.countries.isEmpty {
           wafBucketGroup(
@@ -611,6 +669,10 @@ struct WAFEventsView: View {
   }
 
   private func setUnderAttack(_ enabled: Bool) async {
+    guard model.hasScopes(requiredWriteScopes) else {
+      model.requestAccess(to: requiredWriteScopes)
+      return
+    }
     securityUpdating = true
     defer { securityUpdating = false }
     let defaults = UserDefaults.standard

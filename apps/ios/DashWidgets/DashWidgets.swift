@@ -189,7 +189,7 @@ struct WatchtowerWidget: Widget {
     StaticConfiguration(kind: "WatchtowerWidget", provider: WatchtowerProvider()) { entry in
       WatchtowerWidgetView(entry: entry)
         .containerBackground(.background, for: .widget)
-        .widgetURL(URL(string: "dash://watchtower"))
+        .widgetURL(entry.snapshot?.deepLinkURL)
     }
     .configurationDisplayName("Watchtower")
     .description("Account health at a glance — issues, cert and domain expiry.")
@@ -234,9 +234,12 @@ struct WatchtowerWidgetView: View {
       if family == .systemMedium {
         Divider()
         if snapshot.signals.isEmpty {
-          Text("Everything looks healthy.")
-            .font(.caption)
-            .foregroundStyle(.secondary)
+          Text(
+            snapshot.checksIncomplete
+              ? "Open Dash to review incomplete checks." : "Everything looks healthy."
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
         } else {
           ForEach(Array(snapshot.signals.prefix(4).enumerated()), id: \.offset) { _, signal in
             HStack(spacing: 6) {
@@ -285,6 +288,7 @@ struct WatchtowerWidgetView: View {
   private func statusColor(_ snapshot: WatchtowerWidgetSnapshot) -> Color {
     if snapshot.criticalCount > 0 { return WidgetColor.critical }
     if snapshot.warningCount > 0 { return WidgetColor.warning }
+    if snapshot.checksIncomplete { return WidgetColor.warning }
     return WidgetColor.ok
   }
 }

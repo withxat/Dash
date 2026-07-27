@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Shared confirmation for clearing every Pending inbox row (local ignore only).
+/// Shared confirmation for clearing current issues and unread notifications
+/// from the inbox (local ignore only).
 struct WatchtowerIgnoreAllTray: View {
   let count: Int
   let onConfirm: () -> Void
@@ -29,10 +30,10 @@ struct WatchtowerIgnoreAllTray: View {
   private var confirmationMessage: String {
     count == 1
       ? DashL10n.string(
-        "Ignore 1 pending alert? It moves to Ignored on this iPhone. Cloudflare isn’t changed."
+        "Ignore 1 current or unread alert? It moves to Ignored on this iPhone. Cloudflare isn’t changed."
       )
       : DashL10n.string(
-        "Ignore \(count) pending alerts? They move to Ignored on this iPhone. Cloudflare isn’t changed."
+        "Ignore \(count) current or unread alerts? They move to Ignored on this iPhone. Cloudflare isn’t changed."
       )
   }
 }

@@ -39,6 +39,7 @@ enum DashAuthorizationScopes {
   /// Mutating operations that are not represented by a FeatureID. They are
   /// requested incrementally from the concrete action that needs them.
   private static let coreWriteOperations: Set<String> = [
+    "account-settings.write",
     "zone-settings.write",
     "dns.write",
     "cache.purge",

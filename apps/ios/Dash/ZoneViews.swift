@@ -1419,6 +1419,14 @@ struct DNSRecordEditor: View {
   @State private var saving = false
   @State private var deleting = false
 
+  private var requiredWriteScopes: Set<String> {
+    writeScopes(for: .dns(zoneID))
+  }
+
+  private var allowsWrites: Bool {
+    model.hasScopes(requiredWriteScopes)
+  }
+
   private var isSRV: Bool { type == "SRV" }
   private var isMX: Bool { type == "MX" }
   private var isCAA: Bool { type == "CAA" }
@@ -1465,52 +1473,70 @@ struct DNSRecordEditor: View {
 
   var body: some View {
     DashFormSheet(
+      saveTitle: allowsWrites
+        ? "Save" : (model.isDemoSession ? "Connect your account" : "Grant write access"),
       isSaving: saving,
-      canSave: canSave,
-      deleteMessage: record.map {
-        DashL10n.string("Permanently delete the \($0.type) record for \($0.name).")
-      },
+      canSave: allowsWrites ? canSave : true,
+      deleteMessage: allowsWrites
+        ? record.map {
+          DashL10n.string("Permanently delete the \($0.type) record for \($0.name).")
+        } : nil,
       isDeleting: deleting,
       deleteError: error,
-      onDelete: record.map { rec in { Task { await delete(rec) } } },
-      onSave: { Task { await save() } },
+      onDelete: allowsWrites ? record.map { rec in { Task { await delete(rec) } } } : nil,
+      onSave: {
+        if allowsWrites {
+          Task { await save() }
+        } else {
+          model.requestAccess(to: requiredWriteScopes)
+        }
+      },
       content: {
         VStack(spacing: 14) {
-          DashFormMenuField(
-            label: "Type", selection: $type,
-            options: ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"])
+          if !allowsWrites {
+            DashNotice(
+              kind: .warning,
+              message: "Read-only — grant DNS write access to edit or delete this record.")
+          }
 
-          DashFormField(label: "Name", text: $name)
+          Group {
+            DashFormMenuField(
+              label: "Type", selection: $type,
+              options: ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"])
 
-          if isSRV {
-            DashFormField(label: "Priority", text: $priorityText, keyboard: .numberPad)
-            DashFormField(label: "Weight", text: $weightText, keyboard: .numberPad)
-            DashFormField(label: "Port", text: $portText, keyboard: .numberPad)
-            DashFormField(label: "Target", text: $target)
-          } else if isCAA {
-            DashFormField(label: "Flags", text: $caaFlagsText, keyboard: .numberPad)
-            DashFormMenuField(label: "Tag", selection: $caaTag, options: caaTagOptions)
-            DashFormField(label: "Value", text: $caaValue)
-          } else {
-            if isMX {
+            DashFormField(label: "Name", text: $name)
+
+            if isSRV {
               DashFormField(label: "Priority", text: $priorityText, keyboard: .numberPad)
+              DashFormField(label: "Weight", text: $weightText, keyboard: .numberPad)
+              DashFormField(label: "Port", text: $portText, keyboard: .numberPad)
+              DashFormField(label: "Target", text: $target)
+            } else if isCAA {
+              DashFormField(label: "Flags", text: $caaFlagsText, keyboard: .numberPad)
+              DashFormMenuField(label: "Tag", selection: $caaTag, options: caaTagOptions)
+              DashFormField(label: "Value", text: $caaValue)
+            } else {
+              if isMX {
+                DashFormField(label: "Priority", text: $priorityText, keyboard: .numberPad)
+              }
+              DashFormField(
+                label: isMX ? "Mail server" : "Content",
+                text: $content)
             }
-            DashFormField(
-              label: isMX ? "Mail server" : "Content",
-              text: $content)
-          }
 
-          if supportsProxy {
-            // Unproxying publishes the origin IP, and putting the record back
-            // behind the proxy does not unpublish it — scanners keep the answer.
-            DashToggleRow(
-              title: "Proxied",
-              subtitle: proxied ? nil : "Exposes the origin IP, permanently",
-              isOn: $proxied)
-          }
+            if supportsProxy {
+              // Unproxying publishes the origin IP, and putting the record back
+              // behind the proxy does not unpublish it — scanners keep the answer.
+              DashToggleRow(
+                title: "Proxied",
+                subtitle: proxied ? nil : "Exposes the origin IP, permanently",
+                isOn: $proxied)
+            }
 
-          DashFormMenuField(
-            label: "TTL", selection: ttlSelection, options: ttlOptions.map(\.label))
+            DashFormMenuField(
+              label: "TTL", selection: ttlSelection, options: ttlOptions.map(\.label))
+          }
+          .disabled(!allowsWrites)
 
           if let error {
             DashNotice(kind: .error, message: error)
@@ -1555,6 +1581,10 @@ struct DNSRecordEditor: View {
   }
 
   private func save() async {
+    guard allowsWrites else {
+      model.requestAccess(to: requiredWriteScopes)
+      return
+    }
     saving = true
     error = nil
     let input: DNSRecordInput
@@ -1611,6 +1641,10 @@ struct DNSRecordEditor: View {
   }
 
   private func delete(_ record: DNSRecord) async {
+    guard allowsWrites else {
+      model.requestAccess(to: requiredWriteScopes)
+      return
+    }
     deleting = true
     error = nil
     do {

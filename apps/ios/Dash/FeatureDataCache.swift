@@ -84,7 +84,11 @@ struct WatchtowerSnapshot: Sendable {
   var failedChecks: [String]
   var fetchedAt: Date
 
-  var issueCount: Int { signals.count { $0.status != .ok } }
+  var issueCount: Int {
+    signals.count {
+      $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
+    }
+  }
 
   func isStale(now: Date = .now, ttl: TimeInterval) -> Bool {
     now.timeIntervalSince(fetchedAt) > ttl
@@ -92,19 +96,26 @@ struct WatchtowerSnapshot: Sendable {
 
   /// Projects the full snapshot into the slim Codable form the widget reads.
   /// Non-ok signals only, critical before warning.
-  func widgetSnapshot(accountName: String?) -> WatchtowerWidgetSnapshot {
-    let issues = signals.filter { $0.status != .ok }
+  func widgetSnapshot(accountID: String, accountName: String?) -> WatchtowerWidgetSnapshot {
+    let issues = signals.filter {
+      $0.status != .ok && $0.id != WatchtowerEngine.coverageSignalID
+    }
     let ordered = issues.sorted { lhs, rhs in
       (lhs.status == .critical ? 0 : 1) < (rhs.status == .critical ? 0 : 1)
     }
     return WatchtowerWidgetSnapshot(
       issueCount: issues.count,
-      criticalCount: signals.count { $0.status == .critical },
-      warningCount: signals.count { $0.status == .warning },
+      criticalCount: issues.count { $0.status == .critical },
+      warningCount: issues.count { $0.status == .warning },
       signals: ordered.map {
         WatchtowerWidgetSnapshot.Signal(
           title: $0.title, detail: $0.detail, status: $0.status.widgetRawValue)
       },
+      checksIncomplete:
+        signals.contains { $0.id == WatchtowerEngine.coverageSignalID }
+        || !missingScopeChecks.isEmpty
+        || !failedChecks.isEmpty,
+      accountID: accountID,
       accountName: accountName,
       fetchedAt: fetchedAt)
   }

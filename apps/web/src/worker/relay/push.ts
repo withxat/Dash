@@ -1,8 +1,12 @@
 /**
  * Push routes: register a device, and forward Cloudflare alert webhooks to APNs.
  *
- * POST /push/register  { token, environment } → { url, secret }
- * POST /push/notify/<env>.<token>.<hmac>      Cloudflare webhook → APNs
+ * POST /push/register  { token, environment, accountID? } → { url, secret }
+ * POST /push/notify/<env>.<token>.<account>.<hmac>  Cloudflare webhook → APNs
+ *
+ * Accountless registration/notify URLs remain accepted for older app
+ * versions, but their notifications carry no resource deep link: the relay
+ * cannot safely infer which account owns a legacy capability.
  *
  * Always returns 200 to Cloudflare on the notify path so a dead device token
  * cannot disable the whole webhook destination.
@@ -21,8 +25,11 @@ import {
 } from './apns'
 import { mintNotifyMAC, verifyNotifyMAC, webhookSecret } from './hmac'
 import {
+	accountBoundDashRoute,
+	isAccountID,
 	isDeviceToken,
 	isPushEnvironment,
+	notifyPath,
 	parseNotifyPath,
 } from './push-validate'
 
@@ -35,7 +42,14 @@ export async function handlePush(request: Request, url: URL, env: Env): Promise<
 
 	const notify = parseNotifyPath(url.pathname)
 	if (notify) {
-		return notifyDevice(request, env, notify.environment, notify.token, notify.mac)
+		return notifyDevice(
+			request,
+			env,
+			notify.environment,
+			notify.token,
+			notify.mac,
+			notify.accountID,
+		)
 	}
 
 	return new Response('Not Found', { status: 404 })
@@ -67,17 +81,21 @@ async function register(request: Request, url: URL, env: Env): Promise<Response>
 		return new Response('Bad Request', { status: 400 })
 	}
 
-	const { environment, token } = body as Record<string, unknown>
+	const { accountID, environment, token } = body as Record<string, unknown>
 	if (typeof token !== 'string' || !isDeviceToken(token)) {
 		return new Response('Bad Request', { status: 400 })
 	}
 	if (typeof environment !== 'string' || !isPushEnvironment(environment)) {
 		return new Response('Bad Request', { status: 400 })
 	}
+	if (accountID !== undefined && (typeof accountID !== 'string' || !isAccountID(accountID))) {
+		return new Response('Bad Request', { status: 400 })
+	}
+	const scopedAccountID = typeof accountID === 'string' ? accountID : undefined
 
-	const mac = await mintNotifyMAC(env.PUSH_HMAC_SECRET, environment, token)
-	const secret = await webhookSecret(env.PUSH_HMAC_SECRET, environment, token)
-	const notifyURL = `${url.origin}/push/notify/${environment}.${token}.${mac}`
+	const mac = await mintNotifyMAC(env.PUSH_HMAC_SECRET, environment, token, scopedAccountID)
+	const secret = await webhookSecret(env.PUSH_HMAC_SECRET, environment, token, scopedAccountID)
+	const notifyURL = `${url.origin}${notifyPath(environment, token, mac, scopedAccountID)}`
 
 	return Response.json({ secret, url: notifyURL })
 }
@@ -88,6 +106,7 @@ async function notifyDevice(
 	environment: string,
 	token: string,
 	mac: string,
+	accountID?: string,
 ): Promise<Response> {
 	// Always 200 to Cloudflare after auth — a single dead token must not
 	// disable the webhook destination.
@@ -101,13 +120,13 @@ async function notifyDevice(
 		return new Response('Push not configured', { status: 503 })
 	}
 
-	if (!(await verifyNotifyMAC(env.PUSH_HMAC_SECRET, environment, token, mac))) {
+	if (!(await verifyNotifyMAC(env.PUSH_HMAC_SECRET, environment, token, mac, accountID))) {
 		return new Response('Unauthorized', { status: 401 })
 	}
 
 	// Optional: set REQUIRE_CF_WEBHOOK_AUTH=0 via a one-line change if CF's
 	// destination probe omits the header. Default on — see README.
-	const expected = await webhookSecret(env.PUSH_HMAC_SECRET, environment, token)
+	const expected = await webhookSecret(env.PUSH_HMAC_SECRET, environment, token, accountID)
 	const provided = request.headers.get('cf-webhook-auth')
 	if (provided !== expected) {
 		return new Response('Unauthorized', { status: 401 })
@@ -129,6 +148,13 @@ async function notifyDevice(
 	}
 
 	const alert = mapAlert(body)
+	if (alert.dashRoute) {
+		const route = accountBoundDashRoute(alert.dashRoute, accountID)
+		if (route)
+			alert.dashRoute = route
+		else
+			delete alert.dashRoute
+	}
 	let host: APNsHost = hostForEnvironment(environment)
 	let result = await sendAlert(env, host, token, alert)
 

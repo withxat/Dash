@@ -21,7 +21,7 @@ Before a release that changes authorization:
    `pnpm ios:test`.
 3. Test a real OAuth client with the 20-scope read-only initial grant, cancellation, incremental
    authorization for each retained mutation family, an account without entitlement, and an
-   expired token. Confirm the audited full-capability set remains pinned at 30 scopes.
+   expired token. Confirm the audited full-capability set remains pinned at 31 scopes.
 4. Confirm a previously authenticated broad-scope session remains valid and is not silently
    rewritten.
 5. Revoke the temporary catalog token and confirm no credential appears in the worktree or logs.

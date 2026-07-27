@@ -9,9 +9,12 @@ struct HomeView: View {
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
+  @AppStorage(HomeEducation.dismissalsKey) private var educationDismissalsRaw = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoading = true
   @State private var zonesError: String?
+  @State private var zonesContext: AccountRequestContext?
+  @State private var zonesRequestID: UUID?
   @State private var showsAddDomain = false
   @State private var showsR2Upload = false
   @State private var showsPurgeCache = false
@@ -41,6 +44,15 @@ struct HomeView: View {
 
   private var quickActions: [HomeActionID] {
     HomeActions.decode(actionsRaw)
+  }
+
+  private var educationTip: HomeEducationTip? {
+    HomeEducation.recommendation(
+      recentsRaw: recentsRaw,
+      accountID: model.activeAccountID,
+      dismissalsRaw: educationDismissalsRaw,
+      isDemoSession: model.isDemoSession
+    )
   }
 
   private var revealOffset: Int {
@@ -93,11 +105,18 @@ struct HomeView: View {
         }
         .dashSectionReveal(3 + revealOffset)
 
+        if let educationTip, let educationAccountID = model.activeAccountID {
+          HomeEducationTipCard(tip: educationTip) {
+            dismissEducationTip(educationTip, accountID: educationAccountID)
+          }
+          .dashSectionReveal(4 + revealOffset)
+        }
+
         if !recents.isEmpty {
           HomeRecentsSection(recents: recents) { resource in
             recentsRaw = RecentResources.recording(resource, in: recentsRaw)
           }
-          .dashSectionReveal(4 + revealOffset)
+          .dashSectionReveal(4 + revealOffset + (educationTip == nil ? 0 : 1))
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
@@ -153,7 +172,10 @@ struct HomeView: View {
     .onPreferenceChange(HomeBandBottomPreferenceKey.self) { [washProbes] value in
       MainActor.assumeIsolated { washProbes.bandBottomY = value }
     }
-    .task(id: model.activeAccountID) { await loadZones() }
+    .task(id: model.accountRequestContext) { await loadZones() }
+    .onChange(of: model.accountRequestContext) { _, context in
+      resetZones(for: context)
+    }
     .dashTray(isPresented: $showsAddDomain, title: DashL10n.string("Add domain")) {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
@@ -172,6 +194,10 @@ struct HomeView: View {
     }
     .dashTray(isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache")) {
       HomePurgeCachePicker(zones: zones) { zone in
+        guard zonesContext == model.accountRequestContext else {
+          showsPurgeCache = false
+          return
+        }
         navigator?.push(.cache(zone.id))
       }
     }
@@ -230,6 +256,7 @@ struct HomeView: View {
     case .uploadR2:
       beginR2Upload()
     case .addDNSRecord:
+      guard let context = model.accountRequestContext, zonesContext == context else { return }
       let scopes: Set<String> = ["zone.read", "dns.read", "dns.write"]
       guard model.hasScopes(scopes) else {
         model.requestAccess(to: scopes)
@@ -281,7 +308,17 @@ struct HomeView: View {
     Task { await model.signOut() }
   }
 
+  private func dismissEducationTip(_ tip: HomeEducationTip, accountID: String) {
+    guard model.activeAccountID == accountID else { return }
+    educationDismissalsRaw = HomeEducation.recordingDismissal(
+      tip,
+      accountID: accountID,
+      in: educationDismissalsRaw
+    )
+  }
+
   private func beginZoneMode(scopes: Set<String>, present: () -> Void) {
+    guard let context = model.accountRequestContext, zonesContext == context else { return }
     guard model.hasScopes(scopes) else {
       model.requestAccess(to: scopes)
       return
@@ -299,6 +336,7 @@ struct HomeView: View {
   }
 
   private func beginPurgeCache() {
+    guard let context = model.accountRequestContext, zonesContext == context else { return }
     let scopes: Set<String> = ["zone.read", "cache.purge"]
     guard model.hasScopes(scopes) else {
       model.requestAccess(to: scopes)
@@ -316,12 +354,14 @@ struct HomeView: View {
   }
 
   private func loadZones(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
-      zones = []
+    guard let context = model.accountRequestContext else {
+      resetZones(for: nil)
       zonesLoading = false
-      zonesError = nil
       return
     }
+    resetZones(for: context)
+    let requestID = UUID()
+    zonesRequestID = requestID
     guard !isLocked(.zones) else {
       zones = []
       zonesLoading = false
@@ -329,8 +369,9 @@ struct HomeView: View {
       return
     }
 
-    let key = FeatureCacheKey.zones(accountID)
+    let key = FeatureCacheKey.zones(context.accountID)
     if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
+      guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = cached
       zonesLoading = false
       zonesError = nil
@@ -341,13 +382,49 @@ struct HomeView: View {
     zonesError = nil
     do {
       let page = try await model.client.listZones(
-        accountID: accountID, page: 1, perPage: ZonesView.pageSize)
+        accountID: context.accountID, page: 1, perPage: ZonesView.pageSize)
+      guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = page.items
-      model.featureCache.storeZones(page.items, accountID: accountID)
+      model.featureCache.storeZones(page.items, accountID: context.accountID)
     } catch {
+      guard
+        !error.dashIsCancellation,
+        isCurrentZonesRequest(requestID, context: context)
+      else { return }
       zonesError = error.dashActionableMessage
     }
+    guard isCurrentZonesRequest(requestID, context: context) else { return }
     zonesLoading = false
+  }
+
+  private func resetZones(for context: AccountRequestContext?) {
+    guard zonesContext != context else { return }
+    zonesContext = context
+    zonesRequestID = nil
+    zones = []
+    zonesLoading = context != nil
+    zonesError = nil
+    showsAddDomain = false
+    showsR2Upload = false
+    showsPurgeCache = false
+    showsAddDNSRecord = false
+    showsCreateKVKey = false
+    showsCreateR2Bucket = false
+    showsAddPagesDomain = false
+    showsAddWorkerDomain = false
+    showsEnableDevelopmentMode = false
+    showsEnableUnderAttackMode = false
+    showsDemoConnect = false
+  }
+
+  private func isCurrentZonesRequest(
+    _ requestID: UUID,
+    context: AccountRequestContext
+  ) -> Bool {
+    !Task.isCancelled
+      && zonesRequestID == requestID
+      && zonesContext == context
+      && model.isCurrentAccount(context)
   }
 }
 
@@ -531,10 +608,10 @@ private struct HomeDemoExperienceSection: View {
       VStack(alignment: .leading, spacing: 16) {
         HStack(spacing: 12) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("Demo workspace")
+            Text(DashL10n.string("Demo workspace"))
               .dashTextStyle(.bodySemibold)
               .foregroundStyle(DashTheme.strong)
-            Text("A safe sample account")
+            Text(DashL10n.string("A safe sample account"))
               .dashTextStyle(.footnote)
               .foregroundStyle(DashTheme.subtle)
           }
@@ -543,7 +620,9 @@ private struct HomeDemoExperienceSection: View {
         }
 
         Text(
-          "Follow one issue from the signal to the affected resource. Changes stay locked until you connect Cloudflare."
+          DashL10n.string(
+            "Follow one issue from the signal to the affected resource. Changes stay locked until you connect Cloudflare."
+          )
         )
         .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
@@ -643,7 +722,9 @@ private struct HomeDemoConnectContent: View {
   var body: some View {
     VStack(spacing: 12) {
       Text(
-        "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+        DashL10n.string(
+          "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+        )
       )
       .dashTextStyle(.supporting)
       .foregroundStyle(DashTheme.subtle)
@@ -1825,6 +1906,10 @@ struct AddDomainSheet: View {
 
 // MARK: - Domains
 
+enum HomeDomainsAccess {
+  static let recoveryScopes = FeatureID.zones.capability.read
+}
+
 private struct HomeDomainsSection: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -2003,7 +2088,7 @@ private struct HomeDomainsSection: View {
         message: DashL10n.string("Grant access to see domains here.")
       )
       DashSecondaryPillButton(title: DashFailureAction.grantAccess.title) {
-        model.requestAccess(to: FeatureID.zones.capability.all)
+        model.requestAccess(to: HomeDomainsAccess.recoveryScopes)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2027,7 +2112,7 @@ private struct HomeDomainsSection: View {
     case .signInAgain:
       Task { await model.signOut() }
     case .grantAccess:
-      model.requestAccess(to: FeatureID.zones.capability.all)
+      model.requestAccess(to: HomeDomainsAccess.recoveryScopes)
     case .tryAgain:
       retry()
     }
@@ -2119,6 +2204,62 @@ private struct HomeDomainRow: View {
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityLabel("\(zone.name), \(zone.status ?? "unknown")")
+  }
+}
+
+// MARK: - Contextual education
+
+private struct HomeEducationTipCard: View {
+  let tip: HomeEducationTip
+  let dismiss: () -> Void
+
+  var body: some View {
+    DashCard {
+      HStack(alignment: .top, spacing: 12) {
+        SolarIcon(asset: icon, size: 24, color: DashTheme.brand)
+          .frame(width: 36, height: 36)
+          .background(DashTheme.brand.opacity(0.1), in: Circle())
+          .accessibilityHidden(true)
+
+        VStack(alignment: .leading, spacing: 4) {
+          Text(title)
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.strong)
+          Text(message)
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.rowSubtitle)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+
+        DashCloseButton(
+          accessibilityLabel: DashL10n.string("Dismiss tip"),
+          action: dismiss
+        )
+      }
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("home-education-r2-share")
+  }
+
+  private var icon: String {
+    switch tip {
+    case .r2ShareExtension: SolarAsset.Content.upload
+    }
+  }
+
+  private var title: String {
+    switch tip {
+    case .r2ShareExtension: DashL10n.string("Upload from any app")
+    }
+  }
+
+  private var message: String {
+    switch tip {
+    case .r2ShareExtension:
+      DashL10n.string(
+        "From Photos or Files, tap Share and choose Dash to upload straight to R2.")
+    }
   }
 }
 

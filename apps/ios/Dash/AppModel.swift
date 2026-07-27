@@ -21,6 +21,8 @@ struct AccountRequestContext: Hashable, Sendable {
 @MainActor
 @Observable
 final class AppModel {
+  static let demoGrantedScopes = DashAuthorizationScopes.initialReadOnly
+
   let configuration: AppConfiguration
   let tokenStore: KeychainTokenStore
   /// Swapped for a `DemoBackend`-served client while the demo session runs;
@@ -39,7 +41,11 @@ final class AppModel {
   // Mirrored into App Group defaults so the share extension knows which
   // account to upload into; standard defaults are invisible across processes.
   var activeAccountID: String? {
-    didSet { R2ShareDestination.setActiveAccountID(activeAccountID) }
+    didSet {
+      R2ShareDestination.setActiveAccountID(activeAccountID)
+      guard oldValue != activeAccountID else { return }
+      clearWatchtowerWidgetSnapshot()
+    }
   }
   var authState: AuthenticationState = .loading
   var errorMessage: String?
@@ -50,8 +56,9 @@ final class AppModel {
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
   var identityStale = false
-  /// Pending inbox count (Cloudflare alerts + Dash detections, minus ignored)
-  /// — drives the Watchtower tab badge and floating inbox badge together.
+  /// Current Dash issues plus unread Cloudflare deliveries, minus ignored
+  /// rows. History and coverage diagnostics never increment this shared
+  /// Watchtower tab / floating inbox badge.
   /// nil until the first check completes for the active account.
   var watchtowerIssueCount: Int?
 
@@ -61,12 +68,16 @@ final class AppModel {
   /// Buffered here because a link can arrive before the tab view mounts
   /// (cold launch) or before the user is authenticated.
   var pendingRoute: DashRoute?
+  /// An older notification that predates account-bound routes. It stays
+  /// buffered until identity proves there is exactly one possible account.
+  private var pendingLegacyNotificationRoute: DashRoute?
 
   /// APNs device token hex, buffered because the system callback can arrive
   /// before bootstrap finishes (RootWithSplash holds ~800ms).
   var pendingDeviceToken: String?
 
   private var authSession: ASWebAuthenticationSession?
+  private var pushReconcileTask: Task<Void, Never>?
   private var isRetryingIdentity = false
   private var accountGeneration: UInt64 = 0
 
@@ -95,11 +106,43 @@ final class AppModel {
     activeAccountID == context.accountID && accountGeneration == context.generation
   }
 
+  func receiveNotificationRoute(_ route: DashRoute) {
+    switch NotificationRoutePolicy.resolve(
+      route,
+      availableAccountIDs: Set(accounts.map(\.id)),
+      allowsLegacyAccountInference: !isDemoSession)
+    {
+    case .open(let route):
+      pendingLegacyNotificationRoute = nil
+      pendingRoute = route
+    case .deferUntilAccountsLoad:
+      pendingLegacyNotificationRoute = route
+    case .rejectAmbiguous:
+      pendingLegacyNotificationRoute = nil
+      toasts.warning(
+        "This older notification doesn't identify its Cloudflare account. Open Watchtower to review it safely."
+      )
+    }
+  }
+
+  private func resolvePendingLegacyNotificationRoute() {
+    guard let route = pendingLegacyNotificationRoute else { return }
+    receiveNotificationRoute(route)
+  }
+
   private func resetAccountScopedWork() {
+    pushReconcileTask?.cancel()
+    pushReconcileTask = nil
     accountGeneration &+= 1
     featureCache.clear()
     PagesBuildActivityController.shared.invalidateSession()
     watchtowerIssueCount = nil
+  }
+
+  private func clearWatchtowerWidgetSnapshot() {
+    guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
+    WatchtowerWidgetSnapshot.clear(at: url)
+    WidgetCenter.shared.reloadAllTimelines()
   }
 
   /// The headline for profile surfaces: the active account's label, else the
@@ -295,7 +338,14 @@ final class AppModel {
       authState = .unauthenticated
       return
     }
-    grantedScopes = try? await tokenStore.getGrantedScopes()
+    // Older installs can have a valid token without the scope mirror added by
+    // progressive authorization. Treat that unknown token conservatively as
+    // the reviewed read-only grant: browsing remains available, while no
+    // mutation is enabled until Cloudflare returns an explicit scope set.
+    grantedScopes =
+      (try? await tokenStore.getGrantedScopes())
+      ?? DashAuthorizationScopes.initialReadOnly
+    selectedScopes = grantedScopes ?? DashAuthorizationScopes.initialReadOnly
     do {
       try await loadIdentity()
       authState = .authenticated
@@ -338,8 +388,26 @@ final class AppModel {
   }
 
   func requestAccess(to scopes: Set<String>) {
+    guard !scopes.isEmpty else { return }
+    if isDemoSession {
+      // The demo is intentionally read-only. A write CTA means "connect my
+      // account", never "replace the demo client's token in place".
+      guard Self.demoAccessRequiresConnection(scopes) else { return }
+      exitDemo()
+      Task {
+        await Task.yield()
+        await R2TemporaryFile.removeAllFiles()
+      }
+      return
+    }
+    guard !isAuthenticating else { return }
+    if let grantedScopes, scopes.isSubset(of: grantedScopes) { return }
     let requested = Self.incrementalScopes(granted: grantedScopes, requested: scopes)
     authorize(scopes: requested, preservesExistingSession: true)
+  }
+
+  static func demoAccessRequiresConnection(_ scopes: Set<String>) -> Bool {
+    !scopes.isSubset(of: demoGrantedScopes)
   }
 
   static func incrementalScopes(
@@ -350,11 +418,12 @@ final class AppModel {
   }
 
   func hasScopes(_ scopes: Set<String>) -> Bool {
-    guard let grantedScopes else { return true }
+    guard let grantedScopes else { return false }
     return scopes.isSubset(of: grantedScopes)
   }
 
   private func authorize(scopes: Set<String>, preservesExistingSession: Bool) {
+    guard !isAuthenticating else { return }
     guard configuration.isConfigured else {
       errorMessage = "Add DASH_CLIENT_ID and DASH_REDIRECT_URI to Config/Secrets.xcconfig."
       return
@@ -425,14 +494,18 @@ final class AppModel {
           selectedScopes = granted
           resetAccountScopedWork()
           try await loadIdentity()
-          // Let the browser sheet finish dismissing first, or the login →
-          // catalog transition plays hidden behind it and sign-in reads as a
-          // hard cut.
-          try? await Task.sleep(for: .milliseconds(280))
-          // isAuthenticating stays true: the ring should survive the login
-          // screen's exit fade instead of vanishing mid-transition. signOut()
-          // resets it for the next visit.
-          authState = .authenticated
+          if preservesExistingSession {
+            // Incremental authorization stays on the current screen. Clear the
+            // busy state so a later action can request a different write scope.
+            isAuthenticating = false
+          } else {
+            // Let the browser sheet finish dismissing first, or the login →
+            // catalog transition plays hidden behind it and sign-in reads as a
+            // hard cut.
+            try? await Task.sleep(for: .milliseconds(280))
+            authState = .authenticated
+            isAuthenticating = false
+          }
         } catch {
           isAuthenticating = false
           if replacedTokens, let previousTokens {
@@ -473,13 +546,16 @@ final class AppModel {
   func enterDemo() {
     guard authState == .unauthenticated, !isDemoSession else { return }
     resetAccountScopedWork()
+    pendingLegacyNotificationRoute = nil
     isDemoSession = true
     errorMessage = nil
     client = CloudflareClient(
       clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
-    grantedScopes = Set(CloudflareScopes.published)
-    Task {
+    grantedScopes = Self.demoGrantedScopes
+    Task { [weak self] in
+      guard let self else { return }
       try? await loadIdentity()
+      guard isDemoSession else { return }
       authState = .authenticated
     }
   }
@@ -502,6 +578,8 @@ final class AppModel {
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
+    pendingLegacyNotificationRoute = nil
+    WatchtowerNotificationBaselineStore.clearAll()
     toasts.dismiss()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
@@ -516,16 +594,14 @@ final class AppModel {
       return
     }
     isAuthenticating = false
+    let pendingPushReconcile = pushReconcileTask
     resetAccountScopedWork()
     activeAccountID = nil
+    await pendingPushReconcile?.value
 
     // Push webhooks live in the user's Cloudflare accounts — delete them
     // before revoking the token, or the client can no longer authenticate.
-    let pushAccountIDs = UserDefaults.standard.dictionaryRepresentation().keys.compactMap {
-      key -> String? in
-      guard key.hasPrefix("dash.push.webhook_id.") else { return nil }
-      return String(key.dropFirst("dash.push.webhook_id.".count))
-    }
+    let pushAccountIDs = PushRegistrationService.enabledAccountIDs()
     for accountID in pushAccountIDs {
       try? await PushRegistrationService.disable(accountID: accountID, client: client)
     }
@@ -548,15 +624,14 @@ final class AppModel {
     identityStale = false
     watchtowerIssueCount = nil
     pendingRoute = nil
+    pendingLegacyNotificationRoute = nil
     pendingDeviceToken = nil
+    WatchtowerNotificationBaselineStore.clearAll()
     toasts.dismiss()
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
 
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-    if let url = WatchtowerWidgetSnapshot.containerFileURL {
-      WatchtowerWidgetSnapshot.clear(at: url)
-      WidgetCenter.shared.reloadAllTimelines()
-    }
+    clearWatchtowerWidgetSnapshot()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
     authState = .unauthenticated
@@ -620,7 +695,7 @@ final class AppModel {
     }
     featureCache.set(key, snapshot, ttl: nil)
     syncWatchtowerInboxBadge(from: snapshot, accountID: context.accountID)
-    publishWidgetSnapshot(snapshot)
+    publishWidgetSnapshot(snapshot, accountID: context.accountID)
     return snapshot
   }
 
@@ -635,7 +710,7 @@ final class AppModel {
     syncWatchtowerInboxBadge(from: cached, accountID: accountID)
   }
 
-  /// Clears every Pending inbox row for the current account (local ignore only).
+  /// Ignores every current or unread inbox row for the active account (local only).
   func ignoreAllWatchtowerAlerts() {
     guard let accountID = activeAccountID else { return }
     let cached: WatchtowerSnapshot? = featureCache.get(FeatureCacheKey.watchtower(accountID))
@@ -665,13 +740,23 @@ final class AppModel {
   /// widget, and fires any due local notifications by diffing against the
   /// previously shared snapshot. A missing container (entitlement not
   /// provisioned) is a silent no-op — the widget just shows its empty state.
-  private func publishWidgetSnapshot(_ snapshot: WatchtowerSnapshot) {
+  private func publishWidgetSnapshot(_ snapshot: WatchtowerSnapshot, accountID: String) {
     guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
-    let previous = try? WatchtowerWidgetSnapshot.load(from: url)
-    let widget = snapshot.widgetSnapshot(accountName: activeAccount?.name)
+    let widget = snapshot.widgetSnapshot(
+      accountID: accountID,
+      accountName: activeAccount?.name
+    )
+    let previous = WatchtowerNotificationBaselineStore.snapshot(accountID: accountID)
+    WatchtowerNotificationBaselineStore.store(widget, accountID: accountID)
     try? widget.write(to: url)
     WidgetCenter.shared.reloadAllTimelines()
-    Task { await WatchtowerNotifier.notifyIfNeeded(previous: previous, current: widget) }
+    Task {
+      await WatchtowerNotifier.notifyIfNeeded(
+        previous: previous,
+        current: widget,
+        accountID: accountID
+      )
+    }
   }
 
   static let backgroundRefreshID = "sh.xat.dash.app.watchtower.refresh"
@@ -711,6 +796,7 @@ final class AppModel {
     user = try await fetchedUser
     accounts = try await fetchedAccounts
     if activeAccount == nil, let first = accounts.first { selectAccount(first) }
+    resolvePendingLegacyNotificationRoute()
   }
 }
 
@@ -718,13 +804,26 @@ extension AppModel: PushTokenInbox {
   func receiveDeviceToken(_ token: Data) {
     let hex = PushRegistration.hexToken(from: token)
     pendingDeviceToken = hex
-    guard let accountID = activeAccountID,
-      PushRegistrationService.isEnabled(accountID: accountID)
-    else { return }
-    Task {
-      try? await PushRegistrationService.reconcile(
-        accountID: accountID, client: client,
-        configuration: configuration, deviceToken: hex)
+    guard !isDemoSession else { return }
+    guard hasScopes(["notifications.write"]) else { return }
+    let accountIDs = PushRegistrationService.enabledAccountIDs()
+    guard !accountIDs.isEmpty else { return }
+    let generation = accountGeneration
+    let client = client
+    let configuration = configuration
+    pushReconcileTask?.cancel()
+    pushReconcileTask = Task { [weak self] in
+      for accountID in accountIDs {
+        guard !Task.isCancelled, let self, !self.isDemoSession,
+          self.accountGeneration == generation
+        else { return }
+        try? await PushRegistrationService.reconcile(
+          accountID: accountID,
+          client: client,
+          configuration: configuration,
+          deviceToken: hex
+        )
+      }
     }
   }
 }

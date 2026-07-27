@@ -59,16 +59,88 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   /// Every non-ok signal, critical before warning. The widget renders a few;
   /// the notification planner diffs the whole set.
   var signals: [Signal]
+  /// True when the latest refresh could not establish full account health,
+  /// without inflating the operational issue badge. Defaults to false when
+  /// decoding snapshots written by older app versions.
+  var checksIncomplete: Bool
+  /// Account binding for widget taps. Optional so snapshots written by an
+  /// older app version remain decodable; an unbound snapshot is display-only.
+  var accountID: String?
   var accountName: String?
   var fetchedAt: Date
 
-  /// VoiceOver / widget headline that names severity instead of relying on color alone.
-  var severityHeadline: String {
-    Self.severityHeadline(criticalCount: criticalCount, warningCount: warningCount)
+  init(
+    issueCount: Int,
+    criticalCount: Int,
+    warningCount: Int,
+    signals: [Signal],
+    checksIncomplete: Bool = false,
+    accountID: String? = nil,
+    accountName: String?,
+    fetchedAt: Date
+  ) {
+    self.issueCount = issueCount
+    self.criticalCount = criticalCount
+    self.warningCount = warningCount
+    self.signals = signals
+    self.checksIncomplete = checksIncomplete
+    self.accountID = accountID
+    self.accountName = accountName
+    self.fetchedAt = fetchedAt
   }
 
-  static func severityHeadline(criticalCount: Int, warningCount: Int) -> String {
-    if criticalCount == 0, warningCount == 0 { return "All clear" }
+  private enum CodingKeys: String, CodingKey {
+    case issueCount
+    case criticalCount
+    case warningCount
+    case signals
+    case checksIncomplete
+    case accountID
+    case accountName
+    case fetchedAt
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    issueCount = try container.decode(Int.self, forKey: .issueCount)
+    criticalCount = try container.decode(Int.self, forKey: .criticalCount)
+    warningCount = try container.decode(Int.self, forKey: .warningCount)
+    signals = try container.decode([Signal].self, forKey: .signals)
+    checksIncomplete =
+      try container.decodeIfPresent(Bool.self, forKey: .checksIncomplete) ?? false
+    accountID = try container.decodeIfPresent(String.self, forKey: .accountID)
+    accountName = try container.decodeIfPresent(String.self, forKey: .accountName)
+    fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(issueCount, forKey: .issueCount)
+    try container.encode(criticalCount, forKey: .criticalCount)
+    try container.encode(warningCount, forKey: .warningCount)
+    try container.encode(signals, forKey: .signals)
+    try container.encode(checksIncomplete, forKey: .checksIncomplete)
+    try container.encodeIfPresent(accountID, forKey: .accountID)
+    try container.encodeIfPresent(accountName, forKey: .accountName)
+    try container.encode(fetchedAt, forKey: .fetchedAt)
+  }
+
+  /// VoiceOver / widget headline that names severity instead of relying on color alone.
+  var severityHeadline: String {
+    Self.severityHeadline(
+      criticalCount: criticalCount,
+      warningCount: warningCount,
+      checksIncomplete: checksIncomplete)
+  }
+
+  static func severityHeadline(
+    criticalCount: Int,
+    warningCount: Int,
+    checksIncomplete: Bool = false
+  ) -> String {
+    if criticalCount == 0, warningCount == 0 {
+      return checksIncomplete ? "Checks incomplete" : "All clear"
+    }
     var parts: [String] = []
     if criticalCount > 0 {
       parts.append("\(criticalCount) critical")
@@ -90,6 +162,20 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
 
   func staleness(now: Date = .now) -> WatchtowerFreshness {
     WatchtowerFreshness.classify(fetchedAt: fetchedAt, now: now)
+  }
+
+  var deepLinkURL: URL? {
+    guard
+      let accountID = accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !accountID.isEmpty
+    else {
+      return nil
+    }
+    var components = URLComponents()
+    components.scheme = "dash"
+    components.host = "watchtower"
+    components.queryItems = [URLQueryItem(name: "account", value: accountID)]
+    return components.url
   }
 
   static func load(from url: URL) throws -> WatchtowerWidgetSnapshot {

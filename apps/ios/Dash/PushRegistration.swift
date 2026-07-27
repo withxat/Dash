@@ -3,6 +3,31 @@ import Foundation
 import UIKit
 import UserNotifications
 
+enum NotificationRouteResolution: Equatable, Sendable {
+  case open(DashRoute)
+  case deferUntilAccountsLoad
+  case rejectAmbiguous
+}
+
+enum NotificationRoutePolicy {
+  /// Old delivered notifications may not contain an account. Preserve their
+  /// destination only when exactly one account can own it; otherwise never
+  /// reinterpret the resource under whichever account is currently active.
+  static func resolve(
+    _ route: DashRoute,
+    availableAccountIDs: Set<String>,
+    allowsLegacyAccountInference: Bool = true
+  ) -> NotificationRouteResolution {
+    if route.accountID != nil { return .open(route) }
+    guard allowsLegacyAccountInference else { return .rejectAmbiguous }
+    guard !availableAccountIDs.isEmpty else { return .deferUntilAccountsLoad }
+    guard availableAccountIDs.count == 1, let accountID = availableAccountIDs.first else {
+      return .rejectAmbiguous
+    }
+    return .open(route.scoped(to: accountID))
+  }
+}
+
 /// Sink that receives APNs device tokens from `PushDelegate`.
 @MainActor
 protocol PushTokenInbox: AnyObject {
@@ -50,7 +75,7 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
       if let routeString, let url = URL(string: routeString), let route = DashRoute.parse(url),
         let model = inbox as? AppModel
       {
-        model.pendingRoute = route
+        model.receiveNotificationRoute(route)
       }
     }
     completionHandler()
@@ -74,8 +99,10 @@ enum PushRegistration {
 /// APNs bridge. Server-side state lives in the user's own Cloudflare account;
 /// Dash only remembers the webhook id per account in UserDefaults.
 enum PushRegistrationService {
+  private static let webhookIDPrefix = "dash.push.webhook_id."
+
   static func webhookIDKey(accountID: String) -> String {
-    "dash.push.webhook_id.\(accountID)"
+    "\(webhookIDPrefix)\(accountID)"
   }
 
   static func storedWebhookID(accountID: String) -> String? {
@@ -84,6 +111,17 @@ enum PushRegistrationService {
 
   static func isEnabled(accountID: String) -> Bool {
     storedWebhookID(accountID: accountID) != nil
+  }
+
+  static func enabledAccountIDs(in defaults: UserDefaults = .standard) -> [String] {
+    Set(
+      defaults.dictionaryRepresentation().keys.compactMap { key in
+        guard key.hasPrefix(webhookIDPrefix) else { return nil }
+        guard let webhookID = defaults.string(forKey: key), !webhookID.isEmpty else { return nil }
+        let accountID = String(key.dropFirst(webhookIDPrefix.count))
+        return accountID.isEmpty ? nil : accountID
+      }
+    ).sorted()
   }
 
   struct RelayRegistration: Decodable, Sendable {
@@ -105,7 +143,12 @@ enum PushRegistrationService {
     guard let base = configuration.pushBaseURL else {
       throw PushRegistrationError.pushNotConfigured
     }
-    let registration = try await registerWithRelay(baseURL: base, token: deviceToken)
+    let registration = try await registerWithRelay(
+      baseURL: base,
+      token: deviceToken,
+      accountID: accountID
+    )
+    try Task.checkCancellation()
     let input = NotificationWebhookInput(
       name: webhookName, url: registration.url, secret: registration.secret)
 
@@ -114,22 +157,30 @@ enum PushRegistrationService {
         let updated = try await client.updateNotificationWebhook(
           accountID: accountID, webhookID: existingID, input: input)
         store(webhookID: updated.id, accountID: accountID)
+        try Task.checkCancellation()
         return
+      } catch is CancellationError {
+        throw CancellationError()
       } catch {
+        try Task.checkCancellation()
         // Stale id — fall through to adopt or create.
       }
     }
 
     let webhooks = try await client.listNotificationWebhooks(accountID: accountID)
+    try Task.checkCancellation()
     if let match = webhooks.first(where: { $0.url?.contains(deviceToken) == true }) {
       let updated = try await client.updateNotificationWebhook(
         accountID: accountID, webhookID: match.id, input: input)
       store(webhookID: updated.id, accountID: accountID)
+      try Task.checkCancellation()
       return
     }
 
+    try Task.checkCancellation()
     let created = try await client.createNotificationWebhook(accountID: accountID, input: input)
     store(webhookID: created.id, accountID: accountID)
+    try Task.checkCancellation()
   }
 
   /// Delete the webhook (unbinding policies first if Cloudflare rejects the
@@ -179,11 +230,19 @@ enum PushRegistrationService {
   /// Mint a notify URL for the current token and POST a synthetic Cloudflare
   /// alert payload so the user can verify APNs end-to-end.
   @MainActor
-  static func sendTestAlert(configuration: AppConfiguration, deviceToken: String) async throws {
+  static func sendTestAlert(
+    accountID: String,
+    configuration: AppConfiguration,
+    deviceToken: String
+  ) async throws {
     guard let base = configuration.pushBaseURL else {
       throw PushRegistrationError.pushNotConfigured
     }
-    let registration = try await registerWithRelay(baseURL: base, token: deviceToken)
+    let registration = try await registerWithRelay(
+      baseURL: base,
+      token: deviceToken,
+      accountID: accountID
+    )
     guard let notifyURL = URL(string: registration.url) else {
       throw PushRegistrationError.relayFailed(status: -1)
     }
@@ -209,18 +268,23 @@ enum PushRegistrationService {
   static func clearAllStoredWebhookIDs() {
     let defaults = UserDefaults.standard
     for key in defaults.dictionaryRepresentation().keys
-    where key.hasPrefix("dash.push.webhook_id.") {
+    where key.hasPrefix(webhookIDPrefix) {
       defaults.removeObject(forKey: key)
     }
   }
 
-  private static func registerWithRelay(baseURL: URL, token: String) async throws
+  private static func registerWithRelay(
+    baseURL: URL,
+    token: String,
+    accountID: String
+  ) async throws
     -> RelayRegistration
   {
     var request = URLRequest(url: baseURL.appending(path: "push/register"))
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONEncoder().encode([
+      "accountID": accountID,
       "token": token,
       "environment": PushRegistration.apnsEnvironment,
     ])
@@ -231,7 +295,50 @@ enum PushRegistrationService {
     guard (200..<300).contains(http.statusCode) else {
       throw PushRegistrationError.relayFailed(status: http.statusCode)
     }
-    return try JSONDecoder().decode(RelayRegistration.self, from: data)
+    let registration = try JSONDecoder().decode(RelayRegistration.self, from: data)
+    guard
+      isAccountBoundNotifyURL(
+        registration.url,
+        accountID: accountID,
+        relayBaseURL: baseURL)
+    else {
+      throw PushRegistrationError.relayAccountMismatch
+    }
+    return registration
+  }
+
+  static func isAccountBoundNotifyURL(
+    _ rawURL: String,
+    accountID: String,
+    relayBaseURL: URL? = nil
+  ) -> Bool {
+    guard let url = URL(string: rawURL), let component = url.pathComponents.last else {
+      return false
+    }
+    if let relayBaseURL {
+      guard
+        url.scheme == relayBaseURL.scheme,
+        url.host == relayBaseURL.host,
+        url.port == relayBaseURL.port
+      else {
+        return false
+      }
+    }
+    guard url.query == nil, url.fragment == nil,
+      url.path.hasPrefix("/push/notify/")
+    else {
+      return false
+    }
+    let fields = component.split(separator: ".", omittingEmptySubsequences: false)
+    guard fields.count == 4,
+      fields[0] == "sandbox" || fields[0] == "production",
+      (64...200).contains(fields[1].count),
+      fields[2] == accountID,
+      fields[3].count == 64
+    else {
+      return false
+    }
+    return fields[1].allSatisfy(\.isHexDigit) && fields[3].allSatisfy(\.isHexDigit)
   }
 
   private static func unbind(
@@ -268,6 +375,7 @@ enum PushRegistrationService {
 enum PushRegistrationError: Error, LocalizedError {
   case pushNotConfigured
   case relayFailed(status: Int)
+  case relayAccountMismatch
   case missingDeviceToken
 
   var errorDescription: String? {
@@ -276,6 +384,9 @@ enum PushRegistrationError: Error, LocalizedError {
       return DashL10n.string("Push alerts are not configured for this build.")
     case .relayFailed(let status):
       return DashL10n.string("Could not register with the push relay (HTTP \(status)).")
+    case .relayAccountMismatch:
+      return DashL10n.string(
+        "The push relay did not bind this notification to the selected Cloudflare account.")
     case .missingDeviceToken:
       return DashL10n.string(
         "This device has not received an APNs token yet. Try again in a moment.")

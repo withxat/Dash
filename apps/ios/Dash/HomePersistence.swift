@@ -171,7 +171,9 @@ enum HomeActionID: String, CaseIterable, Hashable, Identifiable, Sendable {
 enum HomeActions {
   static let key = "dash.home_actions"
   static let limit = 3
-  static let defaults: [HomeActionID] = [.addDomain, .uploadR2, .addDNSRecord]
+  /// Used only while `key` is absent. `@AppStorage` continues to return a
+  /// person's saved raw selection after an app update.
+  static let defaults: [HomeActionID] = [.purgeCache, .enableUnderAttackMode, .uploadR2]
   static let defaultValue = encode(defaults)
 
   static func decode(_ raw: String) -> [HomeActionID] {
@@ -382,6 +384,67 @@ enum RecentResources {
   /// This account's recents, newest first, capped for display.
   static func visible(in raw: String, accountID: String) -> [RecentResource] {
     Array(decode(raw).filter { $0.accountID == accountID }.prefix(displayLimit))
+  }
+}
+
+enum HomeEducationTip: String, Codable, Hashable, Sendable {
+  case r2ShareExtension
+}
+
+/// Small, evidence-led Home tips. Recommendations are derived only from local,
+/// account-scoped usage and each dismissal is stored per account so switching
+/// accounts never leaks another account's learning state.
+enum HomeEducation {
+  static let dismissalsKey = "dash.home_education_dismissals"
+
+  private struct Dismissal: Codable, Hashable {
+    let accountID: String
+    let tip: HomeEducationTip
+  }
+
+  static func recommendation(
+    recentsRaw: String,
+    accountID: String?,
+    dismissalsRaw: String,
+    isDemoSession: Bool
+  ) -> HomeEducationTip? {
+    guard !isDemoSession, let accountID, !accountID.isEmpty else { return nil }
+
+    let tip = HomeEducationTip.r2ShareExtension
+    guard
+      RecentResources.decode(recentsRaw).contains(where: {
+        $0.accountID == accountID && $0.kind == .r2Bucket
+      }),
+      !decodeDismissals(dismissalsRaw).contains(
+        where: { $0.accountID == accountID && $0.tip == tip })
+    else { return nil }
+
+    return tip
+  }
+
+  static func recordingDismissal(
+    _ tip: HomeEducationTip,
+    accountID: String,
+    in raw: String
+  ) -> String {
+    guard !accountID.isEmpty else { return raw }
+    var dismissals = decodeDismissals(raw)
+    let dismissal = Dismissal(accountID: accountID, tip: tip)
+    guard !dismissals.contains(dismissal) else { return raw }
+    dismissals.append(dismissal)
+    dismissals.sort {
+      if $0.accountID == $1.accountID {
+        return $0.tip.rawValue < $1.tip.rawValue
+      }
+      return $0.accountID < $1.accountID
+    }
+    guard let data = try? JSONEncoder().encode(dismissals) else { return raw }
+    return String(decoding: data, as: UTF8.self)
+  }
+
+  private static func decodeDismissals(_ raw: String) -> [Dismissal] {
+    guard !raw.isEmpty, let data = raw.data(using: .utf8) else { return [] }
+    return (try? JSONDecoder().decode([Dismissal].self, from: data)) ?? []
   }
 }
 

@@ -84,7 +84,6 @@ enum WatchtowerEngine {
     certificateChecks: ZoneScopedResult<CertificatePack>? = nil,
     healthcheckChecks: ZoneScopedResult<Healthcheck>? = nil
   ) -> WatchtowerSignal? {
-    let attemptedZones = min(totalZones, checkedLimit)
     var details: [String] = []
 
     if totalZones > checkedLimit {
@@ -97,13 +96,13 @@ enum WatchtowerEngine {
     if let certificateChecks, certificateChecks.failedCount > 0 {
       details.append(
         DashL10n.string(
-          "Certificate checks completed for \(certificateChecks.checkedCount) of \(attemptedZones) domains"
+          "Certificate checks completed for \(certificateChecks.checkedCount) of \(certificateChecks.attemptedCount) domains"
         ))
     }
     if let healthcheckChecks, healthcheckChecks.failedCount > 0 {
       details.append(
         DashL10n.string(
-          "Healthchecks completed for \(healthcheckChecks.checkedCount) of \(attemptedZones) domains"
+          "Healthchecks completed for \(healthcheckChecks.checkedCount) of \(healthcheckChecks.attemptedCount) domains"
         ))
     }
 
@@ -295,9 +294,6 @@ enum WatchtowerEngine {
 
     var checkedCount: Int { max(0, attemptedCount - failedCount) }
     var allFailed: Bool { attemptedCount > 0 && failedCount == attemptedCount }
-    var allPermissionDenied: Bool {
-      attemptedCount > 0 && permissionDeniedCount == attemptedCount
-    }
   }
 
   struct ZoneChecksLoadResult: Sendable {

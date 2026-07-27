@@ -44,19 +44,31 @@ struct FeatureRouterContent: View {
 }
 
 struct FeatureReadOnlyBanner: View {
-  @Environment(AppModel.self) private var model
   let feature: FeatureID
 
   var body: some View {
+    FeatureWriteAccessNotice(
+      message: "Read-only — grant write access to make changes.",
+      scopes: feature.capability.write)
+  }
+}
+
+/// Shared read-only affordance for a screen whose primary payload can still be
+/// inspected without its mutation scope.
+struct FeatureWriteAccessNotice: View {
+  @Environment(AppModel.self) private var model
+  let message: String
+  let scopes: Set<String>
+  var buttonTitle = "Grant write access"
+
+  var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      DashNotice(
-        kind: .warning,
-        message: "Read-only — grant write access to make changes.")
+      DashNotice(kind: .warning, message: message)
       DashPillButton(
-        title: "Grant write access",
+        title: model.isDemoSession ? "Connect your account" : buttonTitle,
         isLoading: model.isAuthenticating
       ) {
-        model.requestAccess(to: feature.capability.write)
+        model.requestAccess(to: scopes)
       }
     }
   }
@@ -105,8 +117,10 @@ func readScopes(for destination: Destination) -> Set<String> {
     ["zone.read"]
   case .zoneSettings:
     ["zone.read", "zone-settings.read"]
-  case .zoneAnalytics, .zoneWAF:
+  case .zoneAnalytics:
     DashAuthorizationScopes.zoneAnalytics
+  case .zoneWAF:
+    DashAuthorizationScopes.zoneAnalytics.union(["zone-settings.read"])
   case .zoneWebAnalytics:
     DashAuthorizationScopes.webAnalytics
   case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,
@@ -119,8 +133,8 @@ func readScopes(for destination: Destination) -> Set<String> {
 /// destination without enabling write controls owned by a sibling screen.
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .profile, .settings, .about, .openSource, .auditLogs, .watchtowerInbox,
-    .zoneAnalytics, .zoneWebAnalytics, .zoneWAF:
+  case .settings, .about, .openSource, .auditLogs, .watchtowerInbox, .zoneAnalytics,
+    .zoneWebAnalytics:
     []
   #if DEBUG
     case .debug:
@@ -128,11 +142,15 @@ func writeScopes(for destination: Destination) -> Set<String> {
   #endif
   case .pushAlerts:
     ["notifications.write"]
+  case .profile:
+    ["account-settings.write"]
   case .dns:
     ["dns.write"]
   case .cache:
     ["cache.purge"]
   case .zoneSettings:
+    ["zone-settings.write"]
+  case .zoneWAF:
     ["zone-settings.write"]
   case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,
     .r2BucketSettings, .kvNamespace, .kvKey:
@@ -145,7 +163,9 @@ func requiredScopes(for destination: Destination) -> Set<String> {
 }
 
 private struct FeatureWriteAccessKey: EnvironmentKey {
-  static let defaultValue = true
+  /// A feature screen rendered outside `DestinationRoutedContent` must never
+  /// inherit mutation access accidentally.
+  static let defaultValue = false
 }
 
 private struct FeatureRequiredScopesKey: EnvironmentKey {

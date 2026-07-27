@@ -757,9 +757,6 @@ struct OpenSourceView: View {
   }
 }
 
-/// The standalone Profile page, pushed from the avatar tray's Profile row:
-/// identity, user id and registration date, and the active account's details.
-/// Switching accounts and signing out stay on the tray menu.
 enum ProfileAccountRenameAccess {
   static let requiredScopes: Set<String> = ["account-settings.write"]
 
@@ -769,6 +766,9 @@ enum ProfileAccountRenameAccess {
   }
 }
 
+/// The standalone Profile page, pushed from the avatar tray's Profile row:
+/// identity, user id and registration date, and the active account's details.
+/// Switching accounts and signing out stay on the tray menu.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
   @State private var showsRename = false
