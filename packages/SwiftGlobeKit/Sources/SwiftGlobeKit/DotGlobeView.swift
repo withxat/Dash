@@ -141,6 +141,7 @@
   private struct GlobeSurface: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
     @Environment(\.displayScale) private var displayScale
     @Environment(\.scenePhase) private var scenePhase
     @State private var isVisible = false
@@ -168,6 +169,7 @@
         isActive: isActive && isVisible && scenePhase == .active,
         reduceMotion: reduceMotion,
         colorScheme: colorScheme,
+        colorSchemeContrast: colorSchemeContrast,
         displayScale: displayScale,
         onMarkerTap: onMarkerTap
       )
@@ -229,6 +231,7 @@
     var isActive: Bool
     var reduceMotion: Bool
     var colorScheme: ColorScheme
+    var colorSchemeContrast: ColorSchemeContrast
     var displayScale: CGFloat
     var onMarkerTap: (@MainActor (GlobeMarker) -> Void)?
   }
@@ -244,6 +247,7 @@
     var isActive: Bool
     var reduceMotion: Bool
     var colorScheme: ColorScheme
+    var colorSchemeContrast: ColorSchemeContrast
     var displayScale: CGFloat
     var onMarkerTap: (@MainActor (GlobeMarker) -> Void)?
 
@@ -274,6 +278,7 @@
           isActive: isActive,
           reduceMotion: reduceMotion,
           colorScheme: colorScheme,
+          colorSchemeContrast: colorSchemeContrast,
           displayScale: displayScale,
           onMarkerTap: onMarkerTap
         ),
@@ -577,6 +582,8 @@
         let traits = UITraitCollection { traits in
           traits.userInterfaceStyle =
             configuration.colorScheme == .dark ? .dark : .light
+          traits.accessibilityContrast =
+            configuration.colorSchemeContrast == .increased ? .high : .normal
           traits.displayScale = renderScale
         }
         let style = configuration.style

@@ -56,6 +56,7 @@
 		B00000000000000000000143 /* KVJSONFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000142 /* KVJSONFormatting.swift */; };
 		B00000000000000000000114 /* DashWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000114 /* DashWorkspace.swift */; };
 		B00000000000000000000115 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000006 /* SwiftDitherKit */; };
+		B00000000000000000000163 /* SwiftGlobeKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000010 /* SwiftGlobeKit */; };
 		B00000000000000000000116 /* WatchtowerTrafficView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000115 /* WatchtowerTrafficView.swift */; };
 		B00000000000000000000117 /* GradientAvatars in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000008 /* GradientAvatars */; };
 		B00000000000000000000118 /* R2ObjectViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000116 /* R2ObjectViews.swift */; };
@@ -243,6 +244,7 @@
 				B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */,
 				B00000000000000000000113 /* MarkdownUI in Frameworks */,
 				B00000000000000000000115 /* SwiftDitherKit in Frameworks */,
+				B00000000000000000000163 /* SwiftGlobeKit in Frameworks */,
 				B00000000000000000000142 /* CodeEditor in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -478,6 +480,7 @@
 				P0000000000000000000000A /* BlossomColorPickerCore */,
 				P00000000000000000000003 /* MarkdownUI */,
 				P00000000000000000000006 /* SwiftDitherKit */,
+				P00000000000000000000010 /* SwiftGlobeKit */,
 				P0000000000000000000000E /* CodeEditor */,
 			);
 			productName = Dash;
@@ -601,6 +604,7 @@
 				P00000000000000000000007 /* XCLocalSwiftPackageReference "../../packages/gradient-avatars" */,
 				P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */,
 				P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */,
+				P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */,
 				P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */,
 			);
@@ -1118,6 +1122,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../packages/SwiftDitherKit;
 		};
+		P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../packages/SwiftGlobeKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1174,6 +1182,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */;
 			productName = CodeEditor;
+		};
+		P00000000000000000000010 /* SwiftGlobeKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */;
+			productName = SwiftGlobeKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

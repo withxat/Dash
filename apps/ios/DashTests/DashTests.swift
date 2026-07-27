@@ -2292,20 +2292,15 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
   #expect(top.first?.label == "C9")
 }
 
-@Test func wafChartModelKeepsShortListsAndMapsData() {
+@Test func wafChartModelKeepsShortListsAndUsesStableTieOrder() {
   let buckets = [
     FirewallEventsBucket(label: "US", count: 64),
     FirewallEventsBucket(label: "CN", count: 38),
     FirewallEventsBucket(label: "RU", count: 21),
+    FirewallEventsBucket(label: "DE", count: 21),
   ]
   let top = WAFChartModel.topCountries(buckets)
-  #expect(top.count == 3)
-
-  let data = WAFChartModel.data(from: top)
-  #expect(data.map(\.id) == ["US", "CN", "RU"])
-  #expect(data.map(\.label) == ["US", "CN", "RU"])
-  #expect(data[0].values["blocks"] == 64)
-  #expect(data[2].values["blocks"] == 21)
+  #expect(top.map(\.label) == ["US", "CN", "DE", "RU"])
 }
 
 @Test func wafCountriesSummaryNamesLeaderAndTotal() {
@@ -2322,8 +2317,90 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
   #expect(summary.contains("64"))
   #expect(summary.contains("123"))
 
+  let fullSummary = WAFChartModel.countriesAccessibilitySummary(
+    buckets: [FirewallEventsBucket(label: "US", count: 64)],
+    totalBlocked: 400)
+  #expect(fullSummary.contains("64"))
+  #expect(fullSummary.contains("400"))
+
   let empty = WAFChartModel.countriesAccessibilitySummary(buckets: [])
   #expect(empty.contains("No blocked events"))
+}
+
+@Test func wafGlobeCentroidsCoverISOAlpha2AndCloudflareKosovoExtension() {
+  let expectedCodes = Set(
+    ("AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ "
+      + "BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR "
+      + "CU CV CW CX CY CZ DE DJ DK DM DO DZ EC EE EG EH ER ES ET FI FJ FK FM FO FR "
+      + "GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY HK HM HN HR HT HU "
+      + "ID IE IL IM IN IO IQ IR IS IT JE JM JO JP KE KG KH KI KM KN KP KR KW KY KZ "
+      + "LA LB LC LI LK LR LS LT LU LV LY MA MC MD ME MF MG MH MK ML MM MN MO MP MQ "
+      + "MR MS MT MU MV MW MX MY MZ NA NC NE NF NG NI NL NO NP NR NU NZ OM PA PE PF "
+      + "PG PH PK PL PM PN PR PS PT PW PY QA RE RO RS RU RW SA SB SC SD SE SG SH SI "
+      + "SJ SK SL SM SN SO SR SS ST SV SX SY SZ TC TD TF TG TH TJ TK TL TM TN TO TR "
+      + "TT TV TW TZ UA UG UM US UY UZ VA VC VE VG VI VN VU WF WS XK YE YT ZA ZM ZW").split(
+        separator: " "
+      ).map(String.init))
+
+  #expect(WAFISOCountryCentroids.supportedCodes == expectedCodes)
+  #expect(WAFISOCountryCentroids.coordinate(for: " us ")?.latitude == 39.538479)
+  #expect(WAFISOCountryCentroids.coordinate(for: "bq")?.longitude == -63.1334)
+  #expect(WAFISOCountryCentroids.coordinate(for: "UM") != nil)
+  #expect(WAFISOCountryCentroids.coordinate(for: "XX") == nil)
+  #expect(WAFISOCountryCentroids.coordinate(for: "T1") == nil)
+  #expect(WAFISOCountryCentroids.coordinate(for: "United States") == nil)
+}
+
+@Test func wafGlobeModelMergesSortsAndSafelyDropsUnknownCountries() throws {
+  let buckets = [
+    FirewallEventsBucket(label: "ru", count: 1),
+    FirewallEventsBucket(label: " CN ", count: 16),
+    FirewallEventsBucket(label: "cn", count: 9),
+    FirewallEventsBucket(label: "US", count: 64),
+    FirewallEventsBucket(label: "US", count: 0),
+    FirewallEventsBucket(label: "DE", count: -2),
+    FirewallEventsBucket(label: "XX", count: 10_000),
+    FirewallEventsBucket(label: "T1", count: 10_000),
+    FirewallEventsBucket(label: "not-a-country", count: 10_000),
+  ]
+  let points = WAFGlobeModel.points(from: buckets)
+
+  #expect(points.map(\.countryCode) == ["US", "CN", "RU"])
+  #expect(points.map(\.count) == [64, 25, 1])
+  #expect(points[0].markerSize == WAFGlobeModel.maximumMarkerSize)
+  #expect(points[0].markerSize > points[1].markerSize)
+  #expect(points[1].markerSize > points[2].markerSize)
+  #expect(
+    points.allSatisfy {
+      (WAFGlobeModel.minimumMarkerSize...WAFGlobeModel.maximumMarkerSize).contains($0.markerSize)
+    })
+
+  let marker = try #require(points.first?.marker(accessibilityLabel: "United States, 64 blocks"))
+  #expect(marker.id == "US")
+  #expect(marker.coordinate == points[0].coordinate)
+  #expect(marker.size == points[0].markerSize)
+  #expect(marker.accessibilityLabel == "United States, 64 blocks")
+}
+
+@Test func wafGlobeModelUsesStableTieOrderAndSquareRootMarkerScale() {
+  let tied = WAFGlobeModel.points(from: [
+    FirewallEventsBucket(label: "FR", count: 10),
+    FirewallEventsBucket(label: "DE", count: 10),
+  ])
+  #expect(tied.map(\.countryCode) == ["DE", "FR"])
+  #expect(tied.allSatisfy { $0.markerSize == WAFGlobeModel.maximumMarkerSize })
+
+  let quarterScale = WAFGlobeModel.markerSize(count: 25, maximumCount: 100)
+  let expected =
+    WAFGlobeModel.minimumMarkerSize
+    + (WAFGlobeModel.maximumMarkerSize - WAFGlobeModel.minimumMarkerSize) * 0.5
+  #expect(abs(quarterScale - expected) < 0.000_001)
+  #expect(
+    WAFGlobeModel.markerSize(count: 0, maximumCount: 100)
+      == WAFGlobeModel.minimumMarkerSize)
+  #expect(
+    WAFGlobeModel.markerSize(count: 200, maximumCount: 100)
+      == WAFGlobeModel.maximumMarkerSize)
 }
 
 // MARK: - DNS record-type donut chart model
