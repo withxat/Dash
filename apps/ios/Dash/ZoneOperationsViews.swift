@@ -510,7 +510,7 @@ enum WAFGlobeModel {
         guard let coordinate = WAFISOCountryCentroids.coordinate(for: countryCode) else {
           return nil
         }
-        WAFGlobePoint(
+        return WAFGlobePoint(
           countryCode: countryCode,
           count: count,
           coordinate: coordinate,
@@ -934,7 +934,7 @@ struct WAFEventsView: View {
     totalBlocked: Int
   ) -> some View {
     let points = WAFGlobeModel.points(from: countries)
-    DashListGroup(title: "Top countries") {
+    return DashListGroup(title: "Top countries") {
       DashCard {
         VStack(alignment: .leading, spacing: 12) {
           Text("Blocks by country")
