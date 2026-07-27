@@ -18,7 +18,9 @@ struct WatchtowerView: View {
   @Environment(\.dashTabActive) private var tabActive
   let customization: WatchtowerChartCustomizationState
   @State private var trafficState = WatchtowerTrafficState()
+  @State private var dragVisual = WatchtowerMetricDragVisualState()
   @State private var editorInteractionsReady = false
+  @State private var editorControlsVisible = false
   @State private var editorTransitionGeneration = 0
 
   /// Re-keys the load task on both account and activation so the deferred load
@@ -71,6 +73,7 @@ struct WatchtowerView: View {
       .onChange(of: customization.isEditing) { _, isEditing in
         guard !isEditing else { return }
         editorInteractionsReady = false
+        editorControlsVisible = false
       }
   }
 
@@ -111,8 +114,10 @@ struct WatchtowerView: View {
       WatchtowerTrafficView(
         state: trafficState,
         customization: customization,
+        dragVisual: dragVisual,
         isEditing: customization.isEditing,
         editorInteractionsReady: editorInteractionsReady,
+        editorControlsVisible: editorControlsVisible,
         usesPlaceholderCharts: customization.isEditing
       )
     }
@@ -161,17 +166,37 @@ struct WatchtowerView: View {
     editorTransitionGeneration += 1
     let generation = editorTransitionGeneration
     editorInteractionsReady = false
+    editorControlsVisible = false
     withAnimation(
       reduceMotion ? nil : DashTheme.Motion.morph,
       completionCriteria: .removed
     ) {
       customization.beginEditing()
     } completion: {
-      guard
-        generation == editorTransitionGeneration,
-        customization.isEditing
-      else { return }
-      editorInteractionsReady = true
+      Task { @MainActor in
+        // The controls need a committed hidden frame after the editor morph.
+        // Updating inside the completion transaction makes their transition
+        // collapse into an immediate insertion.
+        await Task.yield()
+        guard
+          generation == editorTransitionGeneration,
+          customization.isEditing
+        else { return }
+        // Mount the drag bridge before the controls animate. Coupling both to
+        // one state can spend the controls' entire entrance building UIKit
+        // interactions, so their first painted frame is already fully visible.
+        editorInteractionsReady = true
+        await Task.yield()
+        guard
+          generation == editorTransitionGeneration,
+          customization.isEditing
+        else { return }
+        withAnimation(
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content
+        ) {
+          editorControlsVisible = true
+        }
+      }
     }
   }
 
@@ -186,12 +211,38 @@ struct WatchtowerView: View {
 
   private func finishCustomization(commit: Bool) {
     editorTransitionGeneration += 1
-    editorInteractionsReady = false
-    withAnimation(reduceMotion ? nil : DashTheme.Motion.morphExit) {
-      if commit {
-        customization.commitEditing()
-      } else {
-        customization.cancelEditing()
+    let generation = editorTransitionGeneration
+
+    // Finish the controls' own transition before changing the editor layout.
+    // Without the explicit transaction, SwiftUI removes them in one frame;
+    // changing both states together also lets the parent morph cut them off.
+    withAnimation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morphExit
+    ) {
+      editorControlsVisible = false
+    }
+
+    Task { @MainActor in
+      try? await Task.sleep(
+        for: reduceMotion ? .milliseconds(120) : .milliseconds(240))
+      guard
+        generation == editorTransitionGeneration,
+        customization.isEditing
+      else { return }
+
+      editorInteractionsReady = false
+      await Task.yield()
+      guard
+        generation == editorTransitionGeneration,
+        customization.isEditing
+      else { return }
+
+      withAnimation(reduceMotion ? nil : DashTheme.Motion.morphExit) {
+        if commit {
+          customization.commitEditing()
+        } else {
+          customization.cancelEditing()
+        }
       }
     }
   }

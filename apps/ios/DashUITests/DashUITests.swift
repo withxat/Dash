@@ -133,6 +133,51 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 
+  func testWatchtowerChartsCanBeReorderedByLongPress() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let watchtower = app.buttons["Watchtower"]
+    XCTAssertTrue(Self.waitForHittable(watchtower))
+    watchtower.tap()
+
+    let editCharts = app.buttons["Edit charts"]
+    XCTAssertTrue(Self.waitForHittable(editCharts))
+    editCharts.tap()
+
+    let addChart = app.buttons["watchtower-add-chart"]
+    XCTAssertTrue(Self.waitForHittable(addChart))
+
+    let webTraffic = app.staticTexts.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "Web Traffic,")
+    ).firstMatch
+    let clientErrors = app.staticTexts.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "Client Request Errors,")
+    ).firstMatch
+    XCTAssertTrue(webTraffic.waitForExistence(timeout: 5))
+    XCTAssertTrue(clientErrors.waitForExistence(timeout: 5))
+
+    let originalWebTrafficY = webTraffic.frame.minY
+    let source = webTraffic.coordinate(
+      withNormalizedOffset: CGVector(dx: 0.35, dy: 0.65))
+    let destination = clientErrors.coordinate(
+      withNormalizedOffset: CGVector(dx: 0.35, dy: 0.65))
+    source.press(forDuration: 0.8, thenDragTo: destination)
+
+    let moved = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in
+        webTraffic.frame.minY > originalWebTrafficY + 20
+      },
+      object: webTraffic)
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [moved], timeout: 3),
+      .completed,
+      "Long-pressing a chart should start the native drag and reorder it."
+    )
+
+    app.buttons["watchtower-customize-cancel"].tap()
+  }
+
   func testNavigationDrillDownWorkersAndBack() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])

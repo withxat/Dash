@@ -296,6 +296,48 @@ final class AppModel {
         {
           featureCache.set(FeatureCacheKey.kvNamespaces("ui-account"), namespaces)
         }
+        let previewAnalyticsFormatter = ISO8601DateFormatter()
+        var previewHTTPPoints: [AccountAnalyticsPoint] = []
+        var previewWorkerPoints: [AccountAnalyticsPoint] = []
+        for index in 0..<8 {
+          let date = Date(timeIntervalSinceNow: TimeInterval(index - 7) * 10_800)
+          let datetime = previewAnalyticsFormatter.string(from: date)
+          previewHTTPPoints.append(
+            AccountAnalyticsPoint(
+              datetime: datetime,
+              requests: 920 + (index * 175),
+              bytes: Int64(11_800_000 + (index * 1_450_000)),
+              errors: 18 + index,
+              cacheRate: 0.72 + (Double(index) * 0.015),
+              clientErrorRate: 0.012 + (Double(index % 3) * 0.004),
+              encryptedRequestRate: 0.94,
+              encryptedBytes: Int64(11_100_000 + (index * 1_360_000))))
+          previewWorkerPoints.append(
+            AccountAnalyticsPoint(
+              datetime: datetime,
+              requests: 610 + (index * 92),
+              errors: 2 + (index % 3),
+              cpuTimeP90Us: 860 + (Double(index) * 48)))
+        }
+        for hours in [24, 168, 720] {
+          featureCache.set(
+            FeatureCacheKey.accountAnalytics("ui-account", hours: hours),
+            AccountAnalyticsSnapshot(
+              overview: AccountAnalyticsOverview(
+                webRequests: 12_480,
+                bytes: 158_400_000,
+                cacheRate: 0.78,
+                clientErrorRate: 0.016,
+                encryptedRequestRate: 0.94,
+                encryptedBytes: 148_800_000,
+                workerInvocations: 7_260,
+                workerErrors: 19,
+                cpuTimeP90Us: 1_180,
+                hours: hours),
+              httpPoints: previewHTTPPoints,
+              workerPoints: previewWorkerPoints),
+            ttl: nil)
+        }
         // Two Cloudflare deliveries so the inbox has both an unread row and a
         // history row to render.
         let watchtowerPreview = WatchtowerSnapshot(

@@ -599,6 +599,41 @@ struct LocalizationTests {
   #expect(sequence.visibleMode == nil)
 }
 
+@Test func watchtowerMetricRemovalExitsBeforeTheRemainingCardsReflow() {
+  var sequence = WatchtowerMetricRemovalSequence()
+
+  let beganCPUExit = sequence.begin(.cpuTime)
+  #expect(beganCPUExit)
+  #expect(sequence.phase == .exiting(.cpuTime))
+  #expect(sequence.departingMetric == .cpuTime)
+  let beganWorkerExit = sequence.begin(.workerInvocations)
+  #expect(!beganWorkerExit)
+
+  let finishedWorkerExit = sequence.finishExit(.workerInvocations)
+  #expect(!finishedWorkerExit)
+  let finishedCPUExit = sequence.finishExit(.cpuTime)
+  #expect(finishedCPUExit)
+  #expect(sequence.phase == .reflowing(.cpuTime))
+  #expect(sequence.departingMetric == .cpuTime)
+
+  sequence.finishReflow(.cpuTime)
+  #expect(sequence.isIdle)
+  #expect(sequence.departingMetric == nil)
+}
+
+@Test func watchtowerMetricRemovalCanCancelWithoutCommittingTheReflow() {
+  var sequence = WatchtowerMetricRemovalSequence()
+
+  let beganWebTrafficExit = sequence.begin(.webTraffic)
+  #expect(beganWebTrafficExit)
+  sequence.cancel()
+
+  #expect(sequence.isIdle)
+  #expect(sequence.departingMetric == nil)
+  let finishedWebTrafficExit = sequence.finishExit(.webTraffic)
+  #expect(!finishedWebTrafficExit)
+}
+
 @Test @MainActor func watchtowerDragOverlayPreservesGrabOffsetAndEndsCleanly() {
   let visualState = WatchtowerMetricDragVisualState()
   visualState.begin(

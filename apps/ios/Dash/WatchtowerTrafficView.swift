@@ -216,6 +216,50 @@ final class WatchtowerChartCustomizationState {
   }
 }
 
+struct WatchtowerMetricRemovalSequence: Equatable {
+  enum Phase: Equatable {
+    case idle
+    case exiting(WatchtowerAnalyticsMetric)
+    case reflowing(WatchtowerAnalyticsMetric)
+  }
+
+  private(set) var phase: Phase = .idle
+
+  var departingMetric: WatchtowerAnalyticsMetric? {
+    switch phase {
+    case .idle:
+      nil
+    case .exiting(let metric), .reflowing(let metric):
+      metric
+    }
+  }
+
+  var isIdle: Bool { phase == .idle }
+
+  @discardableResult
+  mutating func begin(_ metric: WatchtowerAnalyticsMetric) -> Bool {
+    guard isIdle else { return false }
+    phase = .exiting(metric)
+    return true
+  }
+
+  @discardableResult
+  mutating func finishExit(_ metric: WatchtowerAnalyticsMetric) -> Bool {
+    guard phase == .exiting(metric) else { return false }
+    phase = .reflowing(metric)
+    return true
+  }
+
+  mutating func finishReflow(_ metric: WatchtowerAnalyticsMetric) {
+    guard phase == .reflowing(metric) else { return }
+    phase = .idle
+  }
+
+  mutating func cancel() {
+    phase = .idle
+  }
+}
+
 struct WatchtowerMetricDragPresentation: Equatable {
   let metric: WatchtowerAnalyticsMetric
   let size: CGSize
@@ -687,10 +731,13 @@ struct WatchtowerTrafficView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Bindable var state: WatchtowerTrafficState
   let customization: WatchtowerChartCustomizationState
+  let dragVisual: WatchtowerMetricDragVisualState
   let isEditing: Bool
   let editorInteractionsReady: Bool
+  let editorControlsVisible: Bool
   let usesPlaceholderCharts: Bool
-  @State private var dragVisual = WatchtowerMetricDragVisualState()
+  @State private var removalSequence = WatchtowerMetricRemovalSequence()
+  @State private var layoutMorphingMetric: WatchtowerAnalyticsMetric?
 
   private var collapsedRaw: String {
     WatchtowerAnalyticsCardLayout.encode(Set(customization.collapsed.map(\.rawValue)))
@@ -755,12 +802,24 @@ struct WatchtowerTrafficView: View {
               )
             }
           } else {
-            VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-              ForEach(metricRows, id: \.rowID) { row in
-                metricRow(row, overview: overview, snapshot: snapshot)
+            WatchtowerMetricCardFlowLayout(spacing: DashTheme.Spacing.itemGap) {
+              ForEach(customization.visibleMetrics) { metric in
+                let expanded = isExpanded(metric)
+                reorderableMetricCard(
+                  metric,
+                  overview: overview,
+                  snapshot: snapshot,
+                  expanded: expanded
+                )
+                .layoutValue(
+                  key: WatchtowerMetricExpandedLayoutKey.self,
+                  value: expanded)
               }
               if let error = state.currentError {
                 DashNotice(kind: .warning, message: error)
+                  .layoutValue(
+                    key: WatchtowerMetricExpandedLayoutKey.self,
+                    value: true)
               }
             }
           }
@@ -788,32 +847,17 @@ struct WatchtowerTrafficView: View {
         isEnabled: editorInteractionsReady,
         customization: customization)
     )
+    .onChange(of: isEditing) {
+      if !isEditing {
+        removalSequence.cancel()
+        layoutMorphingMetric = nil
+      }
+    }
   }
 
   private func isExpanded(_ metric: WatchtowerAnalyticsMetric) -> Bool {
     if dynamicTypeSize.isAccessibilitySize { return true }
     return customization.isExpanded(metric)
-  }
-
-  @ViewBuilder
-  private func metricRow(
-    _ row: [WatchtowerAnalyticsMetric],
-    overview: AccountAnalyticsOverview,
-    snapshot: WatchtowerAnalyticsChartModel.Snapshot
-  ) -> some View {
-    if row.count == 1, let metric = row.first, isExpanded(metric) {
-      reorderableMetricCard(metric, overview: overview, snapshot: snapshot, expanded: true)
-    } else {
-      HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
-        ForEach(row) { metric in
-          reorderableMetricCard(metric, overview: overview, snapshot: snapshot, expanded: false)
-            .frame(maxWidth: .infinity)
-        }
-        if row.count == 1 {
-          Color.clear.frame(maxWidth: .infinity)
-        }
-      }
-    }
   }
 
   @ViewBuilder
@@ -823,17 +867,25 @@ struct WatchtowerTrafficView: View {
     snapshot: WatchtowerAnalyticsChartModel.Snapshot,
     expanded: Bool
   ) -> some View {
+    let isDeparting = removalSequence.departingMetric == metric
     let card = metricCard(
       metric, overview: overview, snapshot: snapshot, expanded: expanded)
     card
-      .opacity(isEditing && customization.draggedMetric == metric ? 0 : 1)
+      .opacity(
+        isDeparting || (isEditing && customization.draggedMetric == metric)
+          ? 0
+          : 1
+      )
+      .blur(radius: reduceMotion || !isDeparting ? 0 : 3)
       .overlay {
         if isEditing, customization.draggedMetric == metric {
           WatchtowerMetricDropPlaceholder()
         }
       }
       .scaleEffect(
-        isEditing && customization.dropTargetMetric == metric ? 1.015 : 1
+        isDeparting
+          ? (reduceMotion ? 1 : 0.95)
+          : (isEditing && customization.dropTargetMetric == metric ? 1.015 : 1)
       )
       .contentShape(
         RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
@@ -859,6 +911,13 @@ struct WatchtowerTrafficView: View {
       )
       .accessibilityHint(
         isEditing ? DashL10n.string("Touch and hold, then drag to reorder") : ""
+      )
+      .accessibilityHidden(isDeparting)
+      .allowsHitTesting(removalSequence.isIdle)
+      .zIndex(
+        isDeparting
+          ? 2
+          : (layoutMorphingMetric == metric ? 1 : 0)
       )
       .accessibilityActions {
         if isEditing {
@@ -890,21 +949,75 @@ struct WatchtowerTrafficView: View {
       chart: snapshot.charts[metric] ?? .empty,
       range: state.range,
       isExpanded: expanded,
-      showsEditingControls: editorInteractionsReady,
+      showsEditingControls: editorControlsVisible,
       renderingMode: WatchtowerMetricChartRenderingMode.resolved(
         isEditing: usesPlaceholderCharts),
       onToggleExpanded: {
-        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-          customization.toggleExpanded(metric)
-        }
+        toggleMetric(metric)
       },
       onRemove: {
-        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-          customization.remove(metric)
-        }
-        DashDelight.selectionChanged()
+        removeMetric(metric)
       }
     )
+  }
+
+  private func toggleMetric(_ metric: WatchtowerAnalyticsMetric) {
+    guard
+      removalSequence.isIdle,
+      layoutMorphingMetric == nil
+    else { return }
+
+    guard !reduceMotion else {
+      customization.toggleExpanded(metric)
+      return
+    }
+
+    layoutMorphingMetric = metric
+    withAnimation(
+      DashTheme.Motion.morph.logicallyComplete(after: 0.28),
+      completionCriteria: .logicallyComplete
+    ) {
+      customization.toggleExpanded(metric)
+    } completion: {
+      if layoutMorphingMetric == metric {
+        layoutMorphingMetric = nil
+      }
+    }
+  }
+
+  private func removeMetric(_ metric: WatchtowerAnalyticsMetric) {
+    guard
+      customization.isEditing,
+      removalSequence.isIdle,
+      layoutMorphingMetric == nil
+    else { return }
+    DashDelight.selectionChanged()
+
+    withAnimation(
+      (reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morphExit)
+        .logicallyComplete(after: reduceMotion ? 0.12 : 0.22),
+      completionCriteria: .logicallyComplete
+    ) {
+      removalSequence.begin(metric)
+    } completion: {
+      guard
+        customization.isEditing,
+        removalSequence.finishExit(metric)
+      else {
+        removalSequence.cancel()
+        return
+      }
+
+      withAnimation(
+        (reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph)
+          .logicallyComplete(after: reduceMotion ? 0.12 : 0.28),
+        completionCriteria: .logicallyComplete
+      ) {
+        customization.remove(metric)
+      } completion: {
+        removalSequence.finishReflow(metric)
+      }
+    }
   }
 
   /// Resources-style group title: relative “Updated …” on the leading edge. No
@@ -1079,6 +1192,102 @@ struct WatchtowerChartVisualSwapSequence: Equatable {
   }
 }
 
+private struct WatchtowerMetricExpandedLayoutKey: LayoutValueKey {
+  static let defaultValue = false
+}
+
+private struct WatchtowerMetricCardFlowLayout: Layout {
+  let spacing: CGFloat
+
+  private struct Result {
+    let frames: [CGRect]
+    let size: CGSize
+  }
+
+  func sizeThatFits(
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) -> CGSize {
+    result(width: resolvedWidth(proposal, subviews: subviews), subviews: subviews).size
+  }
+
+  func placeSubviews(
+    in bounds: CGRect,
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) {
+    let layout = result(width: bounds.width, subviews: subviews)
+    for (index, subview) in subviews.enumerated() {
+      let frame = layout.frames[index]
+      subview.place(
+        at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+        anchor: .topLeading,
+        proposal: ProposedViewSize(width: frame.width, height: frame.height))
+    }
+  }
+
+  private func resolvedWidth(
+    _ proposal: ProposedViewSize,
+    subviews: Subviews
+  ) -> CGFloat {
+    if let width = proposal.width, width.isFinite {
+      return max(0, width)
+    }
+    return subviews.reduce(CGFloat.zero) { width, subview in
+      max(width, subview.sizeThatFits(.unspecified).width)
+    }
+  }
+
+  private func result(width: CGFloat, subviews: Subviews) -> Result {
+    let columnWidth = max(0, (width - spacing) / 2)
+    var frames = Array(repeating: CGRect.zero, count: subviews.count)
+    var pendingCollapsedHeight: CGFloat?
+    var y: CGFloat = 0
+
+    func flushCollapsed() {
+      guard let pendingHeight = pendingCollapsedHeight else { return }
+      y += pendingHeight + spacing
+      pendingCollapsedHeight = nil
+    }
+
+    for (index, subview) in subviews.enumerated() {
+      if subview[WatchtowerMetricExpandedLayoutKey.self] {
+        flushCollapsed()
+        let size = subview.sizeThatFits(
+          ProposedViewSize(width: width, height: nil))
+        frames[index] = CGRect(x: 0, y: y, width: width, height: size.height)
+        y += size.height + spacing
+      } else {
+        let size = subview.sizeThatFits(
+          ProposedViewSize(width: columnWidth, height: nil))
+        if let pendingHeight = pendingCollapsedHeight {
+          frames[index] = CGRect(
+            x: columnWidth + spacing,
+            y: y,
+            width: columnWidth,
+            height: size.height)
+          y += max(pendingHeight, size.height) + spacing
+          pendingCollapsedHeight = nil
+        } else {
+          frames[index] = CGRect(
+            x: 0,
+            y: y,
+            width: columnWidth,
+            height: size.height)
+          pendingCollapsedHeight = size.height
+        }
+      }
+    }
+
+    flushCollapsed()
+    return Result(
+      frames: frames,
+      size: CGSize(width: width, height: max(0, y - spacing)))
+  }
+}
+
 private enum WatchtowerMetricDragLayout {
   static let controlsPassthroughSize = CGSize(width: 96, height: 60)
   static let titleTrailingClearance =
@@ -1184,10 +1393,14 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
 
   func updateUIView(_ uiView: WatchtowerMetricDragSourceUIView, context: Context) {
     let previousMetric = context.coordinator.metric
-    if previousMetric != metric {
+    let previousVisualState = context.coordinator.visualState
+    if previousVisualState !== visualState {
+      previousVisualState.unregisterSourceView(uiView, for: previousMetric)
+      context.coordinator.visualState = visualState
+    } else if previousMetric != metric {
       visualState.unregisterSourceView(uiView, for: previousMetric)
-      visualState.registerSourceView(uiView, for: metric)
     }
+    visualState.registerSourceView(uiView, for: metric)
     context.coordinator.metric = metric
     context.coordinator.isExpanded = isExpanded
   }
@@ -1204,7 +1417,7 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     var metric: WatchtowerAnalyticsMetric
     var isExpanded: Bool
     private let customization: WatchtowerChartCustomizationState
-    fileprivate let visualState: WatchtowerMetricDragVisualState
+    fileprivate var visualState: WatchtowerMetricDragVisualState
     private var active = false
     private var settling = false
     private var activeInteraction: UIDragInteraction?
@@ -1589,8 +1802,8 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
     operationID += 1
     let currentOperation = operationID
     withAnimation(
-      DashTheme.Motion.morph,
-      completionCriteria: .removed
+      DashTheme.Motion.morph.logicallyComplete(after: reduceMotion ? 0.12 : 0.28),
+      completionCriteria: .logicallyComplete
     ) {
       sequence.begin(step)
     } completion: {
@@ -1600,10 +1813,18 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
 
       switch expectedPhase {
       case .exiting:
-        if mode == .live, sequence.requestedMode != .live {
-          setLiveMounted(false)
+        let next = sequence.finishExit(mode)
+        Task { @MainActor in
+          // Commit the replacement's fully hidden baseline before starting its
+          // entrance. Running a nested animation in this completion transaction
+          // can otherwise collapse the entrance into an immediate state change.
+          await Task.yield()
+          guard
+            currentOperation == operationID,
+            sequence.phase == expectedPhase
+          else { return }
+          perform(next)
         }
-        perform(sequence.finishExit(mode))
       case .entering:
         let next = sequence.finishEnter(mode)
         if mode == .placeholder, next == .none {
@@ -1699,10 +1920,14 @@ private struct WatchtowerMetricChartCard: View {
     }
     .dashEmbossChrome(shape: panelShape)
     .overlay(alignment: .topTrailing) {
-      if showsEditingControls {
-        cardControls
-          .transition(.opacity)
+      ZStack(alignment: .topTrailing) {
+        if showsEditingControls {
+          cardControls
+            .transition(reduceMotion ? .opacity : .dashMorph)
+        }
       }
+      .allowsHitTesting(showsEditingControls)
+      .accessibilityHidden(!showsEditingControls)
     }
     .onChange(of: range) { selectedSeriesID = nil }
     .onChange(of: isExpanded) { selectedSeriesID = nil }
@@ -1723,7 +1948,9 @@ private struct WatchtowerMetricChartCard: View {
         .minimumScaleFactor(0.85)
         .padding(
           .trailing,
-          showsEditingControls ? WatchtowerMetricDragLayout.titleTrailingClearance : 0)
+          renderingMode == .placeholder
+            ? WatchtowerMetricDragLayout.titleTrailingClearance
+            : 0)
       Text(total.text)
         .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
         .monospacedDigit()
