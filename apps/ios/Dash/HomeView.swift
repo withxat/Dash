@@ -341,6 +341,18 @@ struct HomeView: View {
       guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = page.items
       model.featureCache.storeZones(page.items, accountID: context.accountID)
+      let catalogIsComplete: Bool
+      if let totalCount = page.resultInfo?.totalCount {
+        catalogIsComplete = page.items.count >= totalCount
+      } else {
+        catalogIsComplete =
+          page.items.count < (page.resultInfo?.perPage ?? ZonesView.pageSize)
+      }
+      MetricsWidgetPublisher.syncDomains(
+        page.items,
+        accountID: context.accountID,
+        accountName: model.activeAccount?.name ?? context.accountID,
+        replacesCatalog: catalogIsComplete)
     } catch {
       guard
         !error.dashIsCancellation,

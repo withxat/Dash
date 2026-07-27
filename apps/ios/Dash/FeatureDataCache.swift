@@ -156,17 +156,30 @@ final class FeatureDataCache {
   private var inFlight: [String: any InFlightTaskBox] = [:]
 
   func get<T>(_ key: String, maxAge: TimeInterval? = nil) -> T? {
+    getWithFetchedAt(key, maxAge: maxAge)?.value
+  }
+
+  func getWithFetchedAt<T>(
+    _ key: String,
+    maxAge: TimeInterval? = nil
+  ) -> (value: T, fetchedAt: Date)? {
     guard let entry = storage[key] else { return nil }
     let limit = maxAge ?? entry.ttl
     if let limit, Date().timeIntervalSince(entry.fetchedAt) > limit {
       storage.removeValue(forKey: key)
       return nil
     }
-    return entry.value as? T
+    guard let value = entry.value as? T else { return nil }
+    return (value, entry.fetchedAt)
   }
 
-  func set<T>(_ key: String, _ value: T, ttl: TimeInterval? = defaultTTL) {
-    storage[key] = Entry(value: value, fetchedAt: .now, ttl: ttl)
+  func set<T>(
+    _ key: String,
+    _ value: T,
+    fetchedAt: Date = .now,
+    ttl: TimeInterval? = defaultTTL
+  ) {
+    storage[key] = Entry(value: value, fetchedAt: fetchedAt, ttl: ttl)
     trimIfNeeded()
   }
 

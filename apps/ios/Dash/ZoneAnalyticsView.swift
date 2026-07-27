@@ -441,46 +441,74 @@ struct ZoneAnalyticsView: View {
   }
 
   private func loadRange(_ target: AnalyticsRange, force: Bool) async {
+    defer { loadingRanges.remove(target) }
+    guard let context = model.accountRequestContext else { return }
     do {
-      let snapshot = try await fetchSnapshot(range: target, force: force)
-      snapshotsByRange[target] = snapshot
+      let loaded = try await fetchSnapshot(range: target, force: force)
+      guard model.isCurrentAccount(context) else { return }
+      snapshotsByRange[target] = loaded.snapshot
       errorByRange[target] = nil
+      let domainName = model.featureCache
+        .cachedZone(id: zoneID, accountID: context.accountID)?.name
+      MetricsWidgetPublisher.publishDomain(
+        snapshot: loaded.snapshot,
+        accountID: context.accountID,
+        accountName: model.activeAccount?.name ?? context.accountID,
+        domainID: zoneID,
+        domainName: domainName,
+        range: target,
+        fetchedAt: loaded.fetchedAt)
     } catch {
+      guard model.isCurrentAccount(context) else { return }
       if snapshotsByRange[target] == nil {
         errorByRange[target] = error.dashActionableMessage
       }
     }
-    loadingRanges.remove(target)
   }
 
-  private func fetchSnapshot(range: AnalyticsRange, force: Bool) async throws
-    -> ZoneAnalyticsSnapshot
-  {
+  private func fetchSnapshot(
+    range: AnalyticsRange,
+    force: Bool
+  ) async throws -> (snapshot: ZoneAnalyticsSnapshot, fetchedAt: Date) {
     let points: [ZoneAnalyticsChartPoint]
+    let fetchedAt: Date
     switch range {
     case .day:
       let key = FeatureCacheKey.zoneAnalyticsHourly(zoneID)
-      if !force, let cached: [ZoneAnalyticsPoint] = model.featureCache.get(key) {
-        points = ZoneAnalyticsChartModel.points(fromHourly: cached)
+      if !force,
+        let cached: (value: [ZoneAnalyticsPoint], fetchedAt: Date) =
+          model.featureCache.getWithFetchedAt(key)
+      {
+        points = ZoneAnalyticsChartModel.points(fromHourly: cached.value)
+        fetchedAt = cached.fetchedAt
         break
       }
       let hourly = try await model.client.zoneAnalyticsHourly(zoneID: zoneID, hours: 24)
-      model.featureCache.set(key, hourly)
+      fetchedAt = .now
+      model.featureCache.set(key, hourly, fetchedAt: fetchedAt)
       points = ZoneAnalyticsChartModel.points(fromHourly: hourly)
     case .week, .month:
       let days = range == .week ? 7 : 30
       let key = FeatureCacheKey.zoneAnalytics(zoneID, days: days)
-      if !force, let cached: [ZoneAnalyticsDay] = model.featureCache.get(key) {
-        points = ZoneAnalyticsChartModel.points(fromDaily: cached)
+      if !force,
+        let cached: (value: [ZoneAnalyticsDay], fetchedAt: Date) =
+          model.featureCache.getWithFetchedAt(key)
+      {
+        points = ZoneAnalyticsChartModel.points(fromDaily: cached.value)
+        fetchedAt = cached.fetchedAt
         break
       }
       let daily = try await model.client.zoneAnalytics(zoneID: zoneID, days: days)
-      model.featureCache.set(key, daily)
+      fetchedAt = .now
+      model.featureCache.set(key, daily, fetchedAt: fetchedAt)
       points = ZoneAnalyticsChartModel.points(fromDaily: daily)
     }
-    return ZoneAnalyticsChartModel.snapshot(
-      points: points,
-      range: range,
-      locale: DashL10n.activeLocale)
+    return (
+      ZoneAnalyticsChartModel.snapshot(
+        points: points,
+        range: range,
+        locale: DashL10n.activeLocale),
+      fetchedAt
+    )
   }
 }

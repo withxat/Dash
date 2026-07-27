@@ -37,17 +37,27 @@ final class AppModel {
   /// Top-of-screen action feedback. Prefer this over sticky inline notices for
   /// completed / failed mutations; keep `DashNotice` for persistent state.
   let toasts = DashToastCenter()
-  var accounts: [CloudflareAccount] = []
+  var accounts: [CloudflareAccount] = [] {
+    didSet {
+      MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
+    }
+  }
   // Mirrored into App Group defaults so the share extension knows which
   // account to upload into; standard defaults are invisible across processes.
   var activeAccountID: String? {
     didSet {
       R2ShareDestination.setActiveAccountID(activeAccountID)
+      MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
       guard oldValue != activeAccountID else { return }
       clearWatchtowerWidgetSnapshot()
     }
   }
-  var authState: AuthenticationState = .loading
+  var authState: AuthenticationState = .loading {
+    didSet {
+      guard authState == .unauthenticated else { return }
+      MetricsWidgetPublisher.clear()
+    }
+  }
   var errorMessage: String?
   var isAuthenticating = false
   var grantedScopes: Set<String>?
@@ -631,6 +641,7 @@ final class AppModel {
     pendingRoute = nil
     pendingLegacyNotificationRoute = nil
     WatchtowerNotificationBaselineStore.clearAll()
+    MetricsWidgetPublisher.clear()
     toasts.dismiss()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
@@ -648,6 +659,7 @@ final class AppModel {
     let pendingPushReconcile = pushReconcileTask
     resetAccountScopedWork()
     activeAccountID = nil
+    MetricsWidgetPublisher.clear()
     await pendingPushReconcile?.value
 
     // Push webhooks live in the user's Cloudflare accounts — delete them
@@ -683,6 +695,7 @@ final class AppModel {
 
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     clearWatchtowerWidgetSnapshot()
+    MetricsWidgetPublisher.clear()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
     authState = .unauthenticated

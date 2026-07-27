@@ -6,6 +6,8 @@ import WidgetKit
 struct DashWidgetsBundle: WidgetBundle {
   var body: some Widget {
     WatchtowerWidget()
+    AccountMetricsWidget()
+    DomainMetricsWidget()
     PagesBuildLiveActivity()
   }
 }

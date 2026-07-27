@@ -733,11 +733,7 @@ final class WatchtowerTrafficState {
         context.accountID, hours: target.accountAnalyticsHours)
       // Session-scoped entries use `ttl: nil`, so this survives the whole sign-in.
       if let cached: AccountAnalyticsSnapshot = model.featureCache.get(key, maxAge: nil) {
-        snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
-          from: cached,
-          range: target,
-          locale: DashL10n.activeLocale)
-        errorByRange[target] = nil
+        commit(cached, for: target, model: model, context: context)
       }
     }
   }
@@ -756,11 +752,7 @@ final class WatchtowerTrafficState {
     let key = FeatureCacheKey.accountAnalytics(
       context.accountID, hours: target.accountAnalyticsHours)
     if !force, let cached: AccountAnalyticsSnapshot = model.featureCache.get(key, maxAge: nil) {
-      snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
-        from: cached,
-        range: target,
-        locale: DashL10n.activeLocale)
-      errorByRange[target] = nil
+      commit(cached, for: target, model: model, context: context)
       loadingRanges.remove(target)
       return
     }
@@ -775,11 +767,7 @@ final class WatchtowerTrafficState {
       guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
       // Keep until sign-out / account switch — Refresh is the explicit invalidation.
       model.featureCache.set(key, rawSnapshot, ttl: nil)
-      snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
-        from: rawSnapshot,
-        range: target,
-        locale: DashL10n.activeLocale)
-      errorByRange[target] = nil
+      commit(rawSnapshot, for: target, model: model, context: context)
     } catch {
       guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
       if snapshots[target] == nil {
@@ -790,6 +778,24 @@ final class WatchtowerTrafficState {
       }
     }
     loadingRanges.remove(target)
+  }
+
+  private func commit(
+    _ rawSnapshot: AccountAnalyticsSnapshot,
+    for target: AnalyticsRange,
+    model: AppModel,
+    context: AccountRequestContext
+  ) {
+    snapshots[target] = WatchtowerAnalyticsChartModel.snapshot(
+      from: rawSnapshot,
+      range: target,
+      locale: DashL10n.activeLocale)
+    errorByRange[target] = nil
+    MetricsWidgetPublisher.publishAccount(
+      snapshot: rawSnapshot,
+      accountID: context.accountID,
+      accountName: model.activeAccount?.name ?? context.accountID,
+      range: target)
   }
 
   private func reset(context: AccountRequestContext? = nil) {

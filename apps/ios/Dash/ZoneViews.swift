@@ -145,6 +145,11 @@ struct ZonesView: View {
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
         pageSize: Self.pageSize)
       model.featureCache.storeZones(zones, accountID: accountID)
+      MetricsWidgetPublisher.syncDomains(
+        zones,
+        accountID: accountID,
+        accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
+        replacesCatalog: !pageState.canLoadMore)
     } catch {
       self.error = error.dashActionableMessage
     }
@@ -163,6 +168,11 @@ struct ZonesView: View {
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
         pageSize: Self.pageSize)
       model.featureCache.storeZones(zones, accountID: accountID)
+      MetricsWidgetPublisher.syncDomains(
+        zones,
+        accountID: accountID,
+        accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
+        replacesCatalog: !pageState.canLoadMore)
       error = nil
     } catch {
       self.error = error.dashActionableMessage

@@ -102,6 +102,12 @@
 		B00000000000000000000160 /* DashFormChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000160 /* DashFormChrome.swift */; };
 		B00000000000000000000161 /* DashActionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000161 /* DashActionChrome.swift */; };
 		B00000000000000000000162 /* R2TransferSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000162 /* R2TransferSupport.swift */; };
+		B000000000000000000001A0 /* MetricsWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000163 /* MetricsWidgetSnapshot.swift */; };
+		B000000000000000000001A1 /* MetricsWidgetPublishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000164 /* MetricsWidgetPublishing.swift */; };
+		B000000000000000000001A2 /* MetricsWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000165 /* MetricsWidgets.swift */; };
+		B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000163 /* MetricsWidgetSnapshot.swift */; };
+		B000000000000000000001A4 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000011 /* SwiftDitherKit */; };
+		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -217,6 +223,10 @@
 		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000162 /* R2TransferSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferSupport.swift; sourceTree = "<group>"; };
+		F00000000000000000000163 /* MetricsWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetSnapshot.swift; sourceTree = "<group>"; };
+		F00000000000000000000164 /* MetricsWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetPublishing.swift; sourceTree = "<group>"; };
+		F00000000000000000000165 /* MetricsWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgets.swift; sourceTree = "<group>"; };
+		F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetSnapshotTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -267,6 +277,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B000000000000000000001A4 /* SwiftDitherKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -346,6 +357,8 @@
 				F0000000000000000000015F /* DashHeaderScrollChrome.swift */,
 				F00000000000000000000160 /* DashFormChrome.swift */,
 				F00000000000000000000161 /* DashActionChrome.swift */,
+				F00000000000000000000163 /* MetricsWidgetSnapshot.swift */,
+				F00000000000000000000164 /* MetricsWidgetPublishing.swift */,
 				F00000000000000000000101 /* Pagination.swift */,
 				F00000000000000000000103 /* HomePersistence.swift */,
 				F00000000000000000000105 /* DashRoute.swift */,
@@ -384,6 +397,7 @@
 				F00000000000000000000154 /* PagesBuildMonitorTests.swift */,
 				F00000000000000000000155 /* R2TransferTests.swift */,
 				F00000000000000000000156 /* WorkerWatchtowerTests.swift */,
+				F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -429,6 +443,7 @@
 			isa = PBXGroup;
 			children = (
 				F00000000000000000000109 /* DashWidgets.swift */,
+				F00000000000000000000165 /* MetricsWidgets.swift */,
 				F0000000000000000000010A /* Info.plist */,
 				F0000000000000000000010B /* DashWidgets.entitlements */,
 			);
@@ -536,6 +551,9 @@
 			dependencies = (
 			);
 			name = DashWidgets;
+			packageProductDependencies = (
+				P00000000000000000000011 /* SwiftDitherKit */,
+			);
 			productName = DashWidgets;
 			productReference = F00000000000000000000023 /* DashWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -710,6 +728,8 @@
 				B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */,
 				B00000000000000000000160 /* DashFormChrome.swift in Sources */,
 				B00000000000000000000161 /* DashActionChrome.swift in Sources */,
+				B000000000000000000001A0 /* MetricsWidgetSnapshot.swift in Sources */,
+				B000000000000000000001A1 /* MetricsWidgetPublishing.swift in Sources */,
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
 				B00000000000000000000101 /* Pagination.swift in Sources */,
 				B00000000000000000000103 /* HomePersistence.swift in Sources */,
@@ -748,6 +768,7 @@
 				B00000000000000000000154 /* PagesBuildMonitorTests.swift in Sources */,
 				B00000000000000000000155 /* R2TransferTests.swift in Sources */,
 				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
+				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -764,6 +785,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000109 /* DashWidgets.swift in Sources */,
+				B000000000000000000001A2 /* MetricsWidgets.swift in Sources */,
+				B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */,
 				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000123 /* PagesBuildActivity.swift in Sources */,
 			);
@@ -953,7 +976,7 @@
 				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DashWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -978,7 +1001,7 @@
 				DEVELOPMENT_TEAM = UH4FQTHMG2;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DashWidgets/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Watchtower;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1187,6 +1210,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */;
 			productName = SwiftGlobeKit;
+		};
+		P00000000000000000000011 /* SwiftDitherKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */;
+			productName = SwiftDitherKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

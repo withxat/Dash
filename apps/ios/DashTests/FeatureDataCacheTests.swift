@@ -4,6 +4,18 @@ import Testing
 
 @testable import Dash
 
+@Test @MainActor func featureDataCachePreservesTheSourceFetchDate() throws {
+  let cache = FeatureDataCache()
+  let fetchedAt = Date.now.addingTimeInterval(-30)
+  cache.set("dated", 42, fetchedAt: fetchedAt)
+
+  let cached: (value: Int, fetchedAt: Date) = try #require(
+    cache.getWithFetchedAt("dated"))
+
+  #expect(cached.value == 42)
+  #expect(cached.fetchedAt == fetchedAt)
+}
+
 @Test @MainActor func featureDataCacheJoinsConcurrentLoadsForOneKey() async throws {
   let cache = FeatureDataCache()
   let probe = FeatureLoadProbe()
