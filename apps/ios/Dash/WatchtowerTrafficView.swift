@@ -92,6 +92,10 @@ final class WatchtowerChartCustomizationState {
   private(set) var hidden: Set<WatchtowerAnalyticsMetric>
   private(set) var draggedMetric: WatchtowerAnalyticsMetric?
   private(set) var dropTargetMetric: WatchtowerAnalyticsMetric?
+  /// Expanded charts whose tooltip currently owns the finger. The scrub
+  /// recognizer recognizes simultaneously with enclosing scroll views, so
+  /// without this the tab pager pages away underneath a live tooltip.
+  private(set) var scrubbingMetrics: Set<WatchtowerAnalyticsMetric> = []
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private var savedDraft: Draft?
@@ -125,9 +129,23 @@ final class WatchtowerChartCustomizationState {
     !collapsed.contains(metric)
   }
 
+  /// True while any expanded chart is being scrubbed — `MainTabView` holds the
+  /// tab pager still for the duration.
+  var isScrubbing: Bool { !scrubbingMetrics.isEmpty }
+
+  func setScrubbing(_ scrubbing: Bool, for metric: WatchtowerAnalyticsMetric) {
+    if scrubbing {
+      scrubbingMetrics.insert(metric)
+    } else {
+      scrubbingMetrics.remove(metric)
+    }
+  }
+
   func beginEditing() {
     guard !isEditing else { return }
     savedDraft = Draft(order: order, collapsed: collapsed, hidden: hidden)
+    // Live charts hand off to placeholders here; nothing is left to scrub.
+    scrubbingMetrics.removeAll()
     isEditing = true
   }
 
@@ -1017,6 +1035,9 @@ struct WatchtowerTrafficView: View {
       },
       onRemove: {
         removeMetric(metric)
+      },
+      onScrubChange: { scrubbing in
+        customization.setScrubbing(scrubbing, for: metric)
       }
     )
   }
@@ -1994,6 +2015,8 @@ private struct WatchtowerMetricChartCard: View {
   let renderingMode: WatchtowerMetricChartRenderingMode
   let onToggleExpanded: () -> Void
   let onRemove: () -> Void
+  /// Called with `true` while the expanded chart's tooltip owns the finger.
+  var onScrubChange: (Bool) -> Void = { _ in }
   @State private var selectedSeriesID: String?
 
   private var total: (text: String, numeric: Double) {
@@ -2049,10 +2072,20 @@ private struct WatchtowerMetricChartCard: View {
       .accessibilityHidden(!showsEditingControls)
     }
     .onChange(of: range) { selectedSeriesID = nil }
-    .onChange(of: isExpanded) { selectedSeriesID = nil }
-    .onChange(of: renderingMode) {
-      if renderingMode == .placeholder { selectedSeriesID = nil }
+    // Collapse, the editor's placeholder swap, and unmount all take the live
+    // chart away without an end-of-scrub callback — release the pager by hand
+    // so a chart that vanished mid-hold can't strand the tab swipe.
+    .onChange(of: isExpanded) {
+      selectedSeriesID = nil
+      onScrubChange(false)
     }
+    .onChange(of: renderingMode) {
+      if renderingMode == .placeholder {
+        selectedSeriesID = nil
+        onScrubChange(false)
+      }
+    }
+    .onDisappear { onScrubChange(false) }
   }
 
   private var header: some View {
@@ -2134,6 +2167,9 @@ private struct WatchtowerMetricChartCard: View {
         .foregroundStyle(DashTheme.placeholder)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: expandedHeight, alignment: .leading)
+        // A refresh that empties the range takes the chart — and its
+        // end-of-scrub callback — with it.
+        .onAppear { onScrubChange(false) }
     } else {
       DitherAreaChart(
         data: chart.expandedData,
@@ -2142,7 +2178,8 @@ private struct WatchtowerMetricChartCard: View {
           showsLegend: false,
           accessibility: chartAccessibility),
         highlighted: selectedSeriesID != nil,
-        selection: $selectedSeriesID
+        selection: $selectedSeriesID,
+        onHoverChange: { index in onScrubChange(index != nil) }
       )
       .frame(height: expandedHeight)
     }

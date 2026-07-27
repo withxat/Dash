@@ -56,11 +56,17 @@ struct MainTabView: View {
   }
 
   /// Pages swipe only between the tab roots. A pushed feature/detail owns
-  /// horizontal gestures (the leading-edge back swipe must win), and an open
-  /// tray freezes the canvas underneath it. Enforced via `TabPagerScrollLock`
-  /// (pan recognizer only — never `scrollDisabled` / `isScrollEnabled`).
+  /// horizontal gestures (the leading-edge back swipe must win), an open tray
+  /// freezes the canvas underneath it, and a live chart tooltip owns the finger
+  /// it is scrubbing with (that recognizer recognizes simultaneously with
+  /// enclosing scroll views, so the pager would otherwise page Watchtower away
+  /// mid-scrub). Enforced via `TabPagerScrollLock` (pan recognizer only — never
+  /// `scrollDisabled` / `isScrollEnabled`).
   private var pagerLocked: Bool {
-    activeNavigationDepth > 0 || overlayTrays.presented || watchtowerCustomization.isEditing
+    activeNavigationDepth > 0
+      || overlayTrays.presented
+      || watchtowerCustomization.isEditing
+      || watchtowerCustomization.isScrubbing
   }
 
   private var activeNavigationDepth: Int {
