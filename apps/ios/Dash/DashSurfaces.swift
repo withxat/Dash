@@ -1112,6 +1112,13 @@ enum DashDelight {
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
   }
 
+  /// A drag lifted off. Stands in for the feedback UIKit plays with its own
+  /// lift preview, which a `previewForLifting` of nil suppresses.
+  static func dragLift() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+  }
+
   /// Picker, tab, or segment selection changed.
   static func selectionChanged() {
     guard DashInteractionPreferences.hapticsEnabled else { return }

@@ -180,6 +180,33 @@ final class WatchtowerChartCustomizationState {
     order = WatchtowerAnalyticsCardLayout.moving(order, item: metric, across: target)
   }
 
+  /// `index` addresses `visibleMetrics` with `metric` removed; `order` may also
+  /// hold hidden metrics, so the slot is translated through the visible list
+  /// rather than applied to `order` directly.
+  func move(_ metric: WatchtowerAnalyticsMetric, toVisibleIndex index: Int) {
+    guard isEditing, !hidden.contains(metric) else { return }
+    var remaining = visibleMetrics
+    guard let current = remaining.firstIndex(of: metric) else { return }
+    remaining.remove(at: current)
+    let slot = min(max(index, 0), remaining.count)
+    remaining.insert(metric, at: slot)
+    guard remaining != visibleMetrics else { return }
+
+    // Permute only the visible slots. A hidden metric keeps its position in
+    // `order`, which is where re-adding it puts it back.
+    var next: [WatchtowerAnalyticsMetric] = []
+    var visible = remaining[...]
+    for existing in order {
+      if hidden.contains(existing) {
+        next.append(existing)
+      } else if let first = visible.first {
+        next.append(first)
+        visible = visible.dropFirst()
+      }
+    }
+    order = next
+  }
+
   func moveVisible(_ metric: WatchtowerAnalyticsMetric, offset: Int) {
     guard let index = visibleMetrics.firstIndex(of: metric) else { return }
     let targetIndex = index + offset
@@ -345,6 +372,20 @@ final class WatchtowerMetricDragVisualState {
   func unregisterSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
     guard sourceViews[metric]?.value === view else { return }
     sourceViews[metric] = nil
+  }
+
+  /// Live card frames in the active drag's coordinate space, for the metrics
+  /// that still have a registered source view.
+  func frames(for metrics: [WatchtowerAnalyticsMetric]) -> [WatchtowerAnalyticsMetric: CGRect] {
+    guard let reference = activeReference ?? coordinateView else { return [:] }
+    var result: [WatchtowerAnalyticsMetric: CGRect] = [:]
+    for metric in metrics {
+      guard let view = sourceViews[metric]?.value, view.window != nil else { continue }
+      let frame = view.convert(view.bounds, to: reference)
+      guard frame.width > 0, frame.height > 0 else { continue }
+      result[metric] = frame
+    }
+    return result
   }
 
   func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
@@ -844,7 +885,7 @@ struct WatchtowerTrafficView: View {
         }
       }
 
-      if isEditing, let overview = state.overview {
+      if let overview = state.overview {
         WatchtowerMetricDragOverlay(
           state: dragVisual,
           overview: overview,
@@ -852,18 +893,17 @@ struct WatchtowerTrafficView: View {
         )
       }
     }
-    // Every lift resolves its coordinates against this view, so it mounts with
-    // the editor itself. Gating it — or the drag sources below — on the
-    // controls' readiness left a window where a long press reached a bridge
-    // whose reference was missing, and `itemsForBeginning` cancels that
-    // silently. Kept as a background so it matches the stack's frame exactly
-    // and never contributes to layout.
-    .background {
-      if isEditing {
-        WatchtowerMetricDragCoordinateView(state: dragVisual)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .allowsHitTesting(false)
-      }
+    // Every lift resolves its coordinates against this view, so it is mounted
+    // unconditionally: anything that appears or disappears on `isEditing` gets
+    // built during the editor morph, and a `UIViewRepresentable` inserted on
+    // that frame both eats the transition and leaves a window where a lift can
+    // find no reference — which `itemsForBeginning` cancels silently.
+    // `topLeading` anchors its origin to the stack's, so the ghost's
+    // coordinates hold even if the view resolves to a smaller size.
+    .background(alignment: .topLeading) {
+      WatchtowerMetricDragCoordinateView(state: dragVisual)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .allowsHitTesting(false)
     }
     .accessibilityIdentifier(isEditing ? "watchtower-chart-editor" : "watchtower-charts")
     .modifier(
@@ -915,24 +955,16 @@ struct WatchtowerTrafficView: View {
         RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
       )
       .overlay {
-        if isEditing {
-          WatchtowerNativeMetricDragSource(
-            metric: metric,
-            isExpanded: expanded,
-            customization: customization,
-            visualState: dragVisual
-          )
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .accessibilityHidden(true)
-        }
-      }
-      .modifier(
-        WatchtowerMetricDropModifier(
+        WatchtowerNativeMetricDragSource(
+          metric: metric,
+          isExpanded: expanded,
           isEnabled: isEditing,
-          target: metric,
           customization: customization,
-          reduceMotion: reduceMotion)
-      )
+          visualState: dragVisual
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
+      }
       .accessibilityHint(
         isEditing ? DashL10n.string("Touch and hold, then drag to reorder") : ""
       )
@@ -1316,6 +1348,40 @@ private struct WatchtowerMetricCardFlowLayout: Layout {
   }
 }
 
+/// Where a dragged card belongs, decided from one place: the ghost's centre
+/// against the other cards' frames.
+///
+/// The previous scheme let each card's SwiftUI `onDrop` reorder the moment the
+/// finger entered it. Reordering reflows the layout under the finger, so the
+/// card beneath it changed and fired the opposite move a frame later — the
+/// placeholder visibly jumped and snapped back. Crossing a *centre* instead of
+/// an *edge* makes each slot a fixed point: once the card lands in a slot the
+/// pointer sits inside it, and only travelling past the next centre moves it
+/// again. Entering a card's region was also the only thing that could reorder,
+/// so gaps between cards and the run-off below the last one addressed nothing.
+enum WatchtowerMetricDropTargeting {
+  /// True when the point has passed this card in the flow's reading order:
+  /// below its band outright, or level with it and past its horizontal centre.
+  /// Full-width cards have no left/right neighbour, so they compare on the
+  /// vertical centre alone.
+  static func precedes(_ frame: CGRect, point: CGPoint, isFullWidth: Bool) -> Bool {
+    if isFullWidth { return point.y > frame.midY }
+    if point.y < frame.minY { return false }
+    if point.y > frame.maxY { return true }
+    return point.x > frame.midX
+  }
+
+  /// Slot for the dragged card, counted over `otherFrames` — the remaining
+  /// cards in their current order. Returns `otherFrames.count` when the point
+  /// is past every card, which is the append slot.
+  static func destinationIndex(point: CGPoint, otherFrames: [CGRect]) -> Int {
+    guard let widest = otherFrames.map(\.width).max() else { return 0 }
+    return otherFrames.filter {
+      precedes($0, point: point, isFullWidth: $0.width >= widest - 1)
+    }.count
+  }
+}
+
 private enum WatchtowerMetricDragLayout {
   static let controlsPassthroughSize = CGSize(width: 96, height: 60)
   static let titleTrailingClearance =
@@ -1362,6 +1428,17 @@ private struct WatchtowerMetricDragCoordinateView: UIViewRepresentable {
   }
 
   func updateUIView(_ uiView: WatchtowerDragCoordinateUIView, context: Context) {
+    // A view on its way out of the hierarchy must never reclaim the
+    // registration from the one replacing it: the stale winner then
+    // deallocates, the weak reference goes nil, and every later lift is
+    // cancelled with no feedback at all.
+    if let current = state.coordinateView,
+      current !== uiView,
+      current.window != nil,
+      uiView.window == nil
+    {
+      return
+    }
     if state.coordinateView !== uiView {
       state.coordinateView = uiView
     }
@@ -1378,9 +1455,14 @@ private struct WatchtowerMetricDragCoordinateView: UIViewRepresentable {
 
 private final class WatchtowerMetricDragSourceUIView: UIView {
   var passthroughSize = WatchtowerMetricDragLayout.controlsPassthroughSize
+  /// The bridge stays mounted outside the editor so entering it never inserts
+  /// UIKit views mid-morph. Disabled it must be fully transparent to touches —
+  /// the expanded chart underneath owns a selection gesture of its own.
+  var isDragEnabled = false
+  var dragInteraction: UIDragInteraction?
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-    guard super.point(inside: point, with: event) else { return false }
+    guard isDragEnabled, super.point(inside: point, with: event) else { return false }
     let width = min(bounds.width, passthroughSize.width)
     let height = min(bounds.height, passthroughSize.height)
     let x =
@@ -1395,6 +1477,7 @@ private final class WatchtowerMetricDragSourceUIView: UIView {
 private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
   let metric: WatchtowerAnalyticsMetric
   let isExpanded: Bool
+  let isEnabled: Bool
   let customization: WatchtowerChartCustomizationState
   let visualState: WatchtowerMetricDragVisualState
 
@@ -1413,13 +1496,15 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     view.accessibilityElementsHidden = true
 
     let interaction = UIDragInteraction(delegate: context.coordinator)
-    interaction.isEnabled = true
     view.addInteraction(interaction)
+    view.dragInteraction = interaction
     visualState.registerSourceView(view, for: metric)
     return view
   }
 
   func updateUIView(_ uiView: WatchtowerMetricDragSourceUIView, context: Context) {
+    uiView.isDragEnabled = isEnabled
+    uiView.dragInteraction?.isEnabled = isEnabled
     let previousMetric = context.coordinator.metric
     let previousVisualState = context.coordinator.visualState
     if previousVisualState !== visualState {
@@ -1450,6 +1535,7 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     private var settling = false
     private var activeInteraction: UIDragInteraction?
     private var settleTask: Task<Void, Never>?
+    private var lastReorder: CFTimeInterval = 0
 
     init(
       metric: WatchtowerAnalyticsMetric,
@@ -1483,6 +1569,7 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
 
       active = true
       activeInteraction = interaction
+      lastReorder = 0
       visualState.begin(
         metric: metric,
         size: sourceView.bounds.size,
@@ -1491,6 +1578,10 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
         isExpanded: isExpanded,
         reference: reference,
         retaining: self)
+
+      // `previewForLifting` returns nil to suppress the system lift preview in
+      // favour of the ghost card, which takes its feedback with it.
+      DashDelight.dragLift()
 
       let provider = NSItemProvider(object: metric.rawValue as NSString)
       let item = UIDragItem(itemProvider: provider)
@@ -1513,6 +1604,53 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     ) {
       guard active, let reference = visualState.activeReference else { return }
       visualState.move(to: session.location(in: reference))
+      updateDropTarget()
+    }
+
+    /// Frames are read from live views that are still animating the previous
+    /// reorder, so a settled slot needs a moment before the next hit test is
+    /// meaningful. This is the local stand-in for `reorderingCadence`.
+    private static let reorderCadence: CFTimeInterval = 0.2
+
+    private func updateDropTarget() {
+      guard customization.draggedMetric == metric,
+        let center = visualState.presentation?.center
+      else { return }
+
+      // Frames come from live views. Inside the cadence window the previous
+      // reorder is still sliding, so every hit test against them is noise —
+      // for the hover cue as much as for the next move.
+      let now = CACurrentMediaTime()
+      guard now - lastReorder >= Self.reorderCadence else { return }
+
+      let order = customization.visibleMetrics
+      let frames = visualState.frames(for: order)
+      let others = order.filter { $0 != metric }
+      let otherFrames = others.compactMap { frames[$0] }
+      // A partial read means cards are still being laid out; acting on it would
+      // reorder against a frame set that does not describe the screen.
+      guard otherFrames.count == others.count else { return }
+
+      let hovered = others.first { frames[$0]?.contains(center) == true }
+      if customization.dropTargetMetric != hovered {
+        if let hovered {
+          customization.targetDrop(on: hovered)
+        } else {
+          customization.clearDropTarget()
+        }
+      }
+
+      let destination = WatchtowerMetricDropTargeting.destinationIndex(
+        point: center, otherFrames: otherFrames)
+      guard let current = order.firstIndex(of: metric), current != destination else { return }
+      lastReorder = now
+
+      withAnimation(
+        UIAccessibility.isReduceMotionEnabled ? nil : DashTheme.Motion.morph
+      ) {
+        customization.move(metric, toVisibleIndex: destination)
+      }
+      DashDelight.selectionChanged()
     }
 
     func dragInteraction(
@@ -1612,74 +1750,23 @@ private struct WatchtowerMetricDragOverlay: View {
   }
 }
 
-private struct WatchtowerMetricDropDelegate: DropDelegate {
-  let target: WatchtowerAnalyticsMetric
-  let customization: WatchtowerChartCustomizationState
-  let reduceMotion: Bool
-
-  func dropEntered(info: DropInfo) {
-    guard let dragged = customization.draggedMetric, dragged != target else { return }
-    customization.targetDrop(on: target)
-    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-      customization.move(dragged, across: target)
-    }
-    DashDelight.selectionChanged()
-  }
-
-  func dropExited(info: DropInfo) {
-    if customization.dropTargetMetric == target {
-      customization.clearDropTarget()
-    }
-  }
-
-  func dropUpdated(info: DropInfo) -> DropProposal? {
-    DropProposal(operation: .move)
-  }
-
-  func performDrop(info: DropInfo) -> Bool {
-    // The source UIDragInteraction owns the visual session lifetime. Keep the
-    // slot in place until its delegate receives the matching native end event.
-    customization.clearDropTarget()
-    return true
-  }
-}
-
-private struct WatchtowerMetricDropModifier: ViewModifier {
-  let isEnabled: Bool
-  let target: WatchtowerAnalyticsMetric
-  let customization: WatchtowerChartCustomizationState
-  let reduceMotion: Bool
-
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    if isEnabled {
-      content.onDrop(
-        of: [UTType.plainText],
-        delegate: WatchtowerMetricDropDelegate(
-          target: target,
-          customization: customization,
-          reduceMotion: reduceMotion)
-      )
-    } else {
-      content
-    }
-  }
-}
-
+/// Keeps the charts stack a valid destination so a released drag ends as a drop
+/// rather than a cancel. Targeting itself belongs to the drag source, which owns
+/// the one hit test in `WatchtowerMetricDropTargeting` — per-card `onDrop`
+/// delegates reordered on entry and fought each other across the reflow.
+///
+/// `onDrop` is applied unconditionally: an `if isEnabled` branch here changes
+/// the stack's structural identity the moment editing starts, tearing down and
+/// rebuilding the subtree on the editor morph's first frame.
 private struct WatchtowerMetricRootDropModifier: ViewModifier {
   let isEnabled: Bool
   let customization: WatchtowerChartCustomizationState
 
-  @ViewBuilder
   func body(content: Content) -> some View {
-    if isEnabled {
-      content.onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
-        guard customization.draggedMetric != nil else { return false }
-        customization.clearDropTarget()
-        return true
-      }
-    } else {
-      content
+    content.onDrop(of: [UTType.plainText], isTargeted: nil) { _ in
+      guard isEnabled, customization.draggedMetric != nil else { return false }
+      customization.clearDropTarget()
+      return true
     }
   }
 }

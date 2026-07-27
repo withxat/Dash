@@ -124,6 +124,22 @@ enum WatchtowerAnalyticsCardLayout {
     return next
   }
 
+  /// Moves a dragged card to an absolute slot. `index` counts the order with
+  /// the dragged card already removed, which is what a reading-order hit test
+  /// over the remaining cards produces — including `count`, the slot past the
+  /// last card that `moving(_:item:across:)` has no way to express.
+  static func moving(
+    _ metrics: [WatchtowerAnalyticsMetric],
+    item: WatchtowerAnalyticsMetric,
+    to index: Int
+  ) -> [WatchtowerAnalyticsMetric] {
+    guard let sourceIndex = metrics.firstIndex(of: item) else { return metrics }
+    var next = metrics
+    let moved = next.remove(at: sourceIndex)
+    next.insert(moved, at: min(max(index, 0), next.count))
+    return next
+  }
+
   /// Packs metrics into visual rows: each expanded metric owns a solo row;
   /// collapsed metrics pair into two-up rows (a leftover occupies half width).
   static func rows(

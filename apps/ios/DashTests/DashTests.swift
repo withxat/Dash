@@ -664,6 +664,66 @@ struct LocalizationTests {
   #expect(visualState.activeReference == nil)
 }
 
+/// Two collapsed cards over a full-width one, as the default layout paints it.
+private let watchtowerDropFrames: [CGRect] = [
+  CGRect(x: 0, y: 0, width: 180, height: 120),
+  CGRect(x: 192, y: 0, width: 180, height: 120),
+  CGRect(x: 0, y: 132, width: 372, height: 260),
+]
+
+@Test func watchtowerDropTargetingCountsCardsPassedInReadingOrder() {
+  func index(_ x: CGFloat, _ y: CGFloat) -> Int {
+    WatchtowerMetricDropTargeting.destinationIndex(
+      point: CGPoint(x: x, y: y), otherFrames: watchtowerDropFrames)
+  }
+
+  // Before everything.
+  #expect(index(40, 10) == 0)
+  // Past the first collapsed card's horizontal centre, level with it.
+  #expect(index(120, 60) == 1)
+  // Past both collapsed cards but above the full-width card's vertical centre.
+  #expect(index(300, 60) == 2)
+  // Past the full-width card's centre — the append slot, which is the run-off
+  // below the last card that entry-based targeting could never reach.
+  #expect(index(180, 400) == 3)
+}
+
+@Test func watchtowerDropTargetingHoldsASlotUntilTheNextCentreIsCrossed() {
+  let frame = watchtowerDropFrames[0]
+  // Entering the card is not enough; its centre is.
+  #expect(
+    !WatchtowerMetricDropTargeting.precedes(
+      frame, point: CGPoint(x: frame.minX + 4, y: frame.midY), isFullWidth: false))
+  #expect(
+    WatchtowerMetricDropTargeting.precedes(
+      frame, point: CGPoint(x: frame.midX + 4, y: frame.midY), isFullWidth: false))
+  // A full-width card has no left/right neighbour, so x must not decide it.
+  #expect(
+    !WatchtowerMetricDropTargeting.precedes(
+      watchtowerDropFrames[2],
+      point: CGPoint(x: 370, y: watchtowerDropFrames[2].midY - 4),
+      isFullWidth: true))
+}
+
+@Test func watchtowerVisibleMoveKeepsHiddenMetricsInPlace() {
+  let defaults = UserDefaults(suiteName: "watchtower-visible-move")!
+  defaults.removePersistentDomain(forName: "watchtower-visible-move")
+  let state = WatchtowerChartCustomizationState(defaults: defaults)
+  state.beginEditing()
+
+  let visible = state.visibleMetrics
+  guard let first = visible.first, visible.count >= 3 else {
+    Issue.record("default layout should ship at least three visible charts")
+    return
+  }
+  let hiddenBefore = state.order.filter(state.hidden.contains)
+
+  state.move(first, toVisibleIndex: state.visibleMetrics.count)
+  #expect(state.visibleMetrics.last == first)
+  #expect(state.visibleMetrics.count == visible.count)
+  #expect(state.order.filter(state.hidden.contains) == hiddenBefore)
+}
+
 /// A lift must never be cancelled because the charts stack's coordinate view is
 /// missing — `itemsForBeginning` returning an empty array is silent, so the
 /// window has to stand in.
