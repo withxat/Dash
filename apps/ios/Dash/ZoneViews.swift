@@ -1157,11 +1157,13 @@ struct DNSRecordsView: View {
   @ViewBuilder
   private var filterStrip: some View {
     if let bucket = selectedBucket {
-      DNSRecordTypeFilterStrip(
+      DashChartFilterStrip(
         label: DNSChartModel.label(for: bucket),
-        count: bucket.count,
-        total: records.count,
-        color: sliceColor(forBucketID: bucket.id)
+        countText: DashL10n.string(
+          "\(bucket.count.formatted()) of \(records.count.formatted()) records"),
+        color: sliceColor(forBucketID: bucket.id),
+        clearAccessibilityLabel: DashL10n.string("Show all record types"),
+        clearAccessibilityIdentifier: "dns-type-filter-clear"
       ) {
         withAnimation(DashTheme.Motion.morph) { selectedSliceID = nil }
       }
@@ -1277,45 +1279,6 @@ struct DNSRecordsView: View {
       if error.dashIsCancellation { return }
       self.error = error.dashActionableMessage
     }
-  }
-}
-
-/// States the active record-type filter under the donut legend. The legend chip
-/// toggles the same selection, but a chip only reads as selected next to its
-/// neighbours; this line names the narrowing in words and carries the escape
-/// hatch. Only Show all is a button — the line itself is a caption, not a row.
-private struct DNSRecordTypeFilterStrip: View {
-  let label: String
-  let count: Int
-  let total: Int
-  let color: DitherColor
-  let clear: () -> Void
-
-  var body: some View {
-    HStack(spacing: 6) {
-      Circle()
-        .fill(Color(red: color.red, green: color.green, blue: color.blue))
-        .frame(width: 8, height: 8)
-      // Record types are protocol names (A, CNAME, …) and stay verbatim.
-      Text(verbatim: label)
-        .dashTextStyle(.captionSemibold)
-        .foregroundStyle(DashTheme.strong)
-      Text(DashL10n.string("\(count.formatted()) of \(total.formatted()) records"))
-        .dashTextStyle(.caption)
-        .monospacedDigit()
-        .foregroundStyle(DashTheme.subtle)
-      Spacer(minLength: 8)
-      Button(DashL10n.string("Show all"), action: clear)
-        .dashTextStyle(.captionSemibold)
-        .foregroundStyle(DashTheme.brand)
-        .buttonStyle(DashPressButtonStyle())
-        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-        .dashHeaderActionHitTarget()
-        .accessibilityLabel(DashL10n.string("Show all record types"))
-        .accessibilityIdentifier("dns-type-filter-clear")
-    }
-    .lineLimit(1)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
   }
 }
 

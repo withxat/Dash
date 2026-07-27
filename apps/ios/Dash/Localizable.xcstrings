@@ -98,6 +98,17 @@
         }
       }
     },
+    "%@ of %@ deployments" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@ 次部署中的 %1$@ 次"
+          }
+        }
+      }
+    },
     "%@ of %@ records" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8913,6 +8924,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示全部"
+          }
+        }
+      }
+    },
+    "Show all build outcomes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示全部构建结果"
           }
         }
       }

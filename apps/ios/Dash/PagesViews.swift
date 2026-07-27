@@ -72,6 +72,7 @@ struct PagesProjectDetailView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   let projectName: String
   @State private var project: PagesProject?
@@ -143,7 +144,7 @@ struct PagesProjectDetailView: View {
           }
         } else {
           dashListCard {
-            dashListCardRows(items: deployments) { deployment in
+            dashListCardRows(items: visibleDeployments) { deployment in
               DashListGroupLink(
                 value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
               ) {
@@ -156,6 +157,7 @@ struct PagesProjectDetailView: View {
                 )
                 .accessibilityLabel(pagesDeploymentAccessibilityLabel(deployment))
               }
+              .transition(morphTransition)
             }
           }
         }
@@ -177,9 +179,6 @@ struct PagesProjectDetailView: View {
       await load()
     }
     .refreshable { await load(force: true) }
-    .onChange(of: deployments.map(\.id)) {
-      selectedSliceID = nil
-    }
   }
 
   private var buildOutcomesCard: some View {
@@ -198,14 +197,48 @@ struct PagesProjectDetailView: View {
                 buckets: PagesDeploymentChartModel.buckets(deployments)),
               categoryAxisLabel: DashL10n.ui("Outcome"),
               valueAxisLabel: DashL10n.ui("Deployments"))),
-          selection: $selectedSliceID
+          // Slice and legend taps drive the outcome strip and deployment-list
+          // diff in the same transaction, matching DNS record filtering.
+          selection: $selectedSliceID.animation(DashTheme.Motion.morph)
         )
         .frame(
           height: DashTheme.DitherChart.height(
             dynamicTypeSize: dynamicTypeSize,
             showsLegend: true))
+        filterStrip
       }
     }
+  }
+
+  @ViewBuilder
+  private var filterStrip: some View {
+    if let bucket = selectedBucket {
+      DashChartFilterStrip(
+        label: PagesDeploymentChartModel.label(for: bucket.outcome),
+        countText: DashL10n.string(
+          "\(bucket.count.formatted()) of \(deployments.count.formatted()) deployments"),
+        color: sliceColor(for: bucket.outcome),
+        clearAccessibilityLabel: DashL10n.string("Show all build outcomes"),
+        clearAccessibilityIdentifier: "pages-outcome-filter-clear"
+      ) {
+        withAnimation(DashTheme.Motion.morph) { selectedSliceID = nil }
+      }
+      .transition(morphTransition)
+    }
+  }
+
+  private var visibleDeployments: [PagesDeployment] {
+    PagesDeploymentChartModel.deployments(deployments, in: selectedSliceID)
+  }
+
+  private var selectedBucket: PagesDeploymentChartModel.Bucket? {
+    PagesDeploymentChartModel.bucket(deployments, withID: selectedSliceID)
+  }
+
+  /// Filtered-out deployments dissolve while surviving rows glide into their
+  /// new slots. Reduce Motion keeps only the opacity half of the transition.
+  private var morphTransition: AnyTransition {
+    reduceMotion ? .opacity : .dashMorph
   }
 
   private var outcomeSlices: [DitherSlice] {
@@ -939,6 +972,29 @@ enum PagesDeploymentChartModel {
     return Outcome.allCases.compactMap { outcome in
       guard let count = counts[outcome], count > 0 else { return nil }
       return Bucket(outcome: outcome, count: count)
+    }
+  }
+
+  /// The current bucket, resolved against fresh data so a selection can safely
+  /// survive a refresh while its outcome still exists.
+  static func bucket(_ deployments: [PagesDeployment], withID bucketID: String?) -> Bucket? {
+    guard let bucketID else { return nil }
+    return buckets(deployments).first { $0.id == bucketID }
+  }
+
+  /// Deployments belonging to the selected build outcome. Missing or stale
+  /// selections widen back to the complete list instead of showing an empty
+  /// result.
+  static func deployments(
+    _ deployments: [PagesDeployment],
+    in bucketID: String?
+  ) -> [PagesDeployment] {
+    guard let bucket = bucket(deployments, withID: bucketID) else { return deployments }
+    return deployments.filter {
+      outcome(
+        forStatus: $0.latestStage?.status,
+        isSkipped: $0.isSkipped == true
+      ) == bucket.outcome
     }
   }
 

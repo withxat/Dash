@@ -2278,6 +2278,48 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
   #expect(buckets.map(\.count) == [2, 1])
 }
 
+@Test func pagesDeploymentChartFilterNarrowsToSelectedOutcome() throws {
+  let deployments = try decodePagesDeployments(
+    """
+    [
+      {"id":"success-1","latest_stage":{"name":"deploy","status":"success"}},
+      {"id":"failure-1","latest_stage":{"name":"build","status":"failure"}},
+      {"id":"success-2","latest_stage":{"name":"deploy","status":"Success"}},
+      {"id":"skipped-1","is_skipped":true,"latest_stage":{"name":"queued","status":null}}
+    ]
+    """)
+
+  let successes = PagesDeploymentChartModel.deployments(deployments, in: "success")
+  let failures = PagesDeploymentChartModel.deployments(deployments, in: "failure")
+  let canceled = PagesDeploymentChartModel.deployments(deployments, in: "canceled")
+
+  #expect(successes.map(\.id) == ["success-1", "success-2"])
+  #expect(failures.map(\.id) == ["failure-1"])
+  #expect(canceled.map(\.id) == ["skipped-1"])
+
+  let buckets = PagesDeploymentChartModel.buckets(deployments)
+  #expect(
+    buckets.allSatisfy {
+      PagesDeploymentChartModel.deployments(deployments, in: $0.id).count == $0.count
+    })
+}
+
+@Test func pagesDeploymentChartFilterFallsBackForMissingOrStaleSelection() throws {
+  let deployments = try decodePagesDeployments(
+    """
+    [
+      {"id":"success-1","latest_stage":{"name":"deploy","status":"success"}},
+      {"id":"failure-1","latest_stage":{"name":"build","status":"failure"}}
+    ]
+    """)
+
+  #expect(PagesDeploymentChartModel.deployments(deployments, in: nil).count == 2)
+  #expect(PagesDeploymentChartModel.deployments(deployments, in: "canceled").count == 2)
+  #expect(PagesDeploymentChartModel.bucket(deployments, withID: nil) == nil)
+  #expect(PagesDeploymentChartModel.bucket(deployments, withID: "canceled") == nil)
+  #expect(PagesDeploymentChartModel.bucket(deployments, withID: "failure")?.count == 1)
+}
+
 @Test func pagesDeploymentChartAccessibilitySummaryCountsOutcomes() {
   let previousLocale = DashL10n.localeOverrideForTesting
   DashL10n.localeOverrideForTesting = Locale(identifier: "en")

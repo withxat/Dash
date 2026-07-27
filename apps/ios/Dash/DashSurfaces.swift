@@ -336,6 +336,44 @@ struct DashSurfaceStack<Content: View>: View {
   }
 }
 
+/// Names the category selected from a chart legend and provides the one escape
+/// hatch back to the complete data set. The legend chip itself shows selection
+/// visually; this strip states the filtering effect in words.
+struct DashChartFilterStrip: View {
+  let label: String
+  let countText: String
+  let color: DitherColor
+  let clearAccessibilityLabel: String
+  let clearAccessibilityIdentifier: String
+  let clear: () -> Void
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Circle()
+        .fill(Color(red: color.red, green: color.green, blue: color.blue))
+        .frame(width: 8, height: 8)
+      Text(verbatim: label)
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.strong)
+      Text(verbatim: countText)
+        .dashTextStyle(.caption)
+        .monospacedDigit()
+        .foregroundStyle(DashTheme.subtle)
+      Spacer(minLength: 8)
+      Button(DashL10n.string("Show all"), action: clear)
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.brand)
+        .buttonStyle(DashPressButtonStyle())
+        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+        .dashHeaderActionHitTarget()
+        .accessibilityLabel(clearAccessibilityLabel)
+        .accessibilityIdentifier(clearAccessibilityIdentifier)
+    }
+    .lineLimit(1)
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+  }
+}
+
 /// A colored surface with the app's static Metal grain. Keeping the shader on
 /// the background prevents it from changing text and icon rendering.
 struct DashGrainSurface: View {
