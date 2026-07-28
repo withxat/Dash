@@ -62,25 +62,25 @@ public enum CloudflareAPIError: Error, LocalizedError, Sendable {
     }
   }
 
-  public var isUnauthorized: Bool {
-    if case .request(let status, _) = self { return status == 401 }
+  /// One derivation for every status rule. `isForbidden` and
+  /// `isPermissionDenied` used to be two independently written 403 checks —
+  /// twins like that survive only until an edit moves one of them.
+  public func hasStatus(_ status: Int) -> Bool {
+    if case .request(let responseStatus, _) = self { return responseStatus == status }
     return false
   }
 
-  public var isForbidden: Bool {
-    if case .request(let status, _) = self { return status == 403 }
-    return false
-  }
+  public var isUnauthorized: Bool { hasStatus(401) }
 
-  public var isPermissionDenied: Bool {
-    if case .request(let status, _) = self { return status == 403 }
-    return false
-  }
+  public var isForbidden: Bool { hasStatus(403) }
 
-  public var isRateLimited: Bool {
-    if case .request(let status, _) = self { return status == 429 }
-    return false
-  }
+  /// Cloudflare answers a missing OAuth scope with 403, so a permission check
+  /// and a forbidden check are the same question spelled two ways.
+  public var isPermissionDenied: Bool { isForbidden }
+
+  public var isNotFound: Bool { hasStatus(404) }
+
+  public var isRateLimited: Bool { hasStatus(429) }
 
   public var isTransport: Bool {
     if case .transport = self { return true }

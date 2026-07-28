@@ -417,6 +417,17 @@ struct LocalizationTests {
   #expect(zoneSettingDisplayTitle("development_mode") == "Development Mode")
 }
 
+/// The settings menu commits with a plain `updateZoneSetting`, which stashes
+/// nothing — offering `under_attack` there would raise the shield behind
+/// `ZoneSecurityLevelOperation`'s back and lose the level it replaced when the
+/// WAF switch went off.
+@Test func zoneSettingsMenuNeverOffersUnderAttack() throws {
+  let securityLevels = try #require(zoneSettingOptions["security_level"])
+  #expect(!securityLevels.contains("under_attack"))
+  // The rest of Cloudflare's enum must survive the removal.
+  #expect(securityLevels == ["off", "essentially_off", "low", "medium", "high"])
+}
+
 @Test func pageStateAdvancesAndStopsOnTotals() {
   var state = DashPageState()
   #expect(state.nextPage == 1)
@@ -1697,15 +1708,22 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(prominent.contains(.badge))
   #expect(!prominent.contains(.provisional))
 
+  // `.notSupported` is what a real legacy install reports — the badge option
+  // was never requested, so iOS never had a setting to disable. Matching only
+  // `.disabled` skipped every one of them.
   let authorizedMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
     authorizationStatus: .authorized,
-    badgeSetting: .disabled)
+    badgeSetting: .notSupported)
   #expect(authorizedMigration == [.badge])
   let provisionalMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
     authorizationStatus: .provisional,
-    badgeSetting: .disabled)
+    badgeSetting: .notSupported)
   #expect(provisionalMigration?.contains(.badge) == true)
   #expect(provisionalMigration?.contains(.provisional) == true)
+  #expect(
+    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+      authorizationStatus: .authorized,
+      badgeSetting: .disabled) == [.badge])
   #expect(
     WatchtowerNotifier.badgeAuthorizationMigrationOptions(
       authorizationStatus: .authorized,
@@ -1713,7 +1731,11 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(
     WatchtowerNotifier.badgeAuthorizationMigrationOptions(
       authorizationStatus: .denied,
-      badgeSetting: .disabled) == nil)
+      badgeSetting: .notSupported) == nil)
+  #expect(
+    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+      authorizationStatus: .notDetermined,
+      badgeSetting: .notSupported) == nil)
 }
 
 @Test func pushChallengeInboxRejectsUnsolicitedAndReplayedChallenges() async throws {

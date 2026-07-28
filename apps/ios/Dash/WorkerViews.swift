@@ -255,8 +255,9 @@ struct WorkerDetailView: View {
         isLoading: subdomainUpdating
       )
       .dashSectionBoundary()
+      // No modifier here: padding this TupleView would re-eagerize the route
+      // rows. The section boundary rides domainsGroup's own header instead.
       domainsGroup
-        .dashSectionBoundary()
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.code),
@@ -331,79 +332,88 @@ struct WorkerDetailView: View {
   }
 
   @ViewBuilder private var domainsGroup: some View {
-    DashListGroup(
-      title: "Domains & Routes",
-      actionTitle: featureAllowsWrites ? "Add" : nil,
+    // Same reason as Deployments above: `routes` is the account-wide route sweep
+    // filtered to this script, which on a fan-out Worker is one row per zone.
+    // DashListGroup's eager inner VStack would mount every one of them at once.
+    DashListGroupHeader(
+      title: DashL10n.ui("Domains & Routes"),
+      actionTitle: featureAllowsWrites ? DashL10n.ui("Add") : nil,
       actionIcon: featureAllowsWrites ? SolarAsset.plus : nil,
       action: featureAllowsWrites ? { addsDomain = true } : nil
-    ) {
-      if let domainsError, domains.isEmpty {
-        DashNotice(kind: .warning, message: domainsError)
-      } else if domains.isEmpty, routes.isEmpty, routesError == nil, !routesLoading {
-        DashCard {
-          Text("Route a hostname from one of this account's zones to this Worker.")
+    )
+    .padding(.horizontal, 4)
+    .dashSectionBoundary()
+    .padding(.bottom, 8)
+    if let domainsError, domains.isEmpty {
+      DashNotice(kind: .warning, message: domainsError)
+        .dashListCardInset()
+    } else if domains.isEmpty, routes.isEmpty, routesError == nil, !routesLoading {
+      DashCard {
+        Text("Route a hostname from one of this account's zones to this Worker.")
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .dashListCardInset()
+    }
+    // Sibling ForEach collections, each insetting its own rows — never a shared
+    // wrapper, whose padding would re-eagerize both lists inside LazyVStack.
+    if !domains.isEmpty {
+      dashListCardRows(items: domains) { domain in
+        Button {
+          deleteDomainError = nil
+          selectedDomain = domain
+        } label: {
+          DashListRow(
+            title: domain.hostname,
+            subtitle: workerDomainSubtitle(domain),
+            icon: SolarAsset.Content.globe,
+            iconColor: FeatureVisualIdentity.catalogColor(for: .workers),
+            showsChevron: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel("\(domain.hostname), \(workerDomainSubtitle(domain))")
+        // dashListCardRows supplies the row's existing inset; this one
+        // replaces DashListGroup's former content inset.
+        .dashListCardInset()
+      }
+    }
+    if routesLoading {
+      DashCard {
+        HStack(spacing: 10) {
+          DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
+          Text("Loading routes…")
             .dashTextStyle(.footnote)
             .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
       }
-      // Sibling cards — one ForEach each — so inset stays on ForEach, not a
-      // TupleView that would re-eagerize both lists inside LazyVStack.
-      if !domains.isEmpty {
-        dashListCard {
-          dashListCardRows(items: domains) { domain in
-            Button {
-              deleteDomainError = nil
-              selectedDomain = domain
-            } label: {
-              DashListRow(
-                title: domain.hostname,
-                subtitle: workerDomainSubtitle(domain),
-                icon: SolarAsset.Content.globe,
-                iconColor: FeatureVisualIdentity.catalogColor(for: .workers),
-                showsChevron: false
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel("\(domain.hostname), \(workerDomainSubtitle(domain))")
+      .dashListCardInset()
+    }
+    if !routes.isEmpty {
+      dashListCardRows(items: routes) { route in
+        Button {
+          selectedRoute = route
+        } label: {
+          DashListRow(
+            title: route.pattern,
+            subtitle: route.zoneName,
+            icon: SolarAsset.Content.globe,
+            iconColor: DashTheme.iconMuted,
+            showsChevron: false
+          ) {
+            StatusBadge(.route)
           }
         }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel("\(route.pattern), \(route.zoneName), Route")
+        .dashListCardInset()
       }
-      if routesLoading {
-        DashCard {
-          HStack(spacing: 10) {
-            DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
-            Text("Loading routes…")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
-      if !routes.isEmpty {
-        dashListCard {
-          dashListCardRows(items: routes) { route in
-            Button {
-              selectedRoute = route
-            } label: {
-              DashListRow(
-                title: route.pattern,
-                subtitle: route.zoneName,
-                icon: SolarAsset.Content.globe,
-                iconColor: DashTheme.iconMuted,
-                showsChevron: false
-              ) {
-                StatusBadge(.route)
-              }
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel("\(route.pattern), \(route.zoneName), Route")
-          }
-        }
-      }
-      if let routesError {
-        DashNotice(kind: .warning, message: routesError)
-      }
+    }
+    if let routesError {
+      DashNotice(kind: .warning, message: routesError)
+        .dashListCardInset()
     }
   }
 

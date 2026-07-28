@@ -780,8 +780,11 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/members",
       query: ["page": String(page), "per_page": String(perPage)])
   }
+  /// Every page, not just the first: Dash decides whether its managed policy
+  /// already exists by scanning this list, so a truncated read creates a
+  /// duplicate policy in the user's real Cloudflare account.
   public func listNotificationPolicies(accountID: String) async throws -> [NotificationPolicy] {
-    try await list("/accounts/\(accountID)/alerting/v3/policies").items
+    try await listAllPages("/accounts/\(accountID)/alerting/v3/policies", perPage: 50)
   }
   public func createNotificationPolicy(accountID: String, input: NotificationPolicyInput)
     async throws -> NotificationPolicy
@@ -799,8 +802,11 @@ public actor CloudflareClient {
     let _: JSONValue = try await request(
       "/accounts/\(accountID)/alerting/v3/policies/\(policyID)", method: "DELETE")
   }
+  /// Paged for the same reason as the policies: a webhook missing from a
+  /// truncated page reads as "not registered yet" and registers a second one.
   public func listNotificationWebhooks(accountID: String) async throws -> [NotificationWebhook] {
-    try await list("/accounts/\(accountID)/alerting/v3/destinations/webhooks").items
+    try await listAllPages(
+      "/accounts/\(accountID)/alerting/v3/destinations/webhooks", perPage: 50)
   }
   public func createNotificationWebhook(accountID: String, input: NotificationWebhookInput)
     async throws -> NotificationWebhook
@@ -856,10 +862,14 @@ public actor CloudflareClient {
     return envelope.result ?? []
   }
   public func listAuditLogs(accountID: String, perPage: Int = 10) async throws -> [AuditLogEntry] {
-    // Prefer Audit Logs v2; fall back to v1 when the account lacks access.
+    // Prefer Audit Logs v2; fall back to v1 when the account lacks access —
+    // an account without v2 answers 403 or 404, and both mean "ask v1". The
+    // catch stays narrow on purpose: a bare one turns a cancelled task or a
+    // malformed v2 body into a second, pointless request whose empty result
+    // hides the real failure.
     do {
       return try await listAuditLogsV2(accountID: accountID, limit: perPage)
-    } catch let error as CloudflareAPIError where error.isPermissionDenied {
+    } catch let error as CloudflareAPIError where error.isForbidden || error.isNotFound {
       return try await list(
         "/accounts/\(accountID)/audit_logs",
         query: ["direction": "desc", "per_page": String(perPage)]
@@ -1472,9 +1482,13 @@ public actor CloudflareClient {
   /// Collects a page-number endpoint into the complete resource list expected
   /// by callers. Cloudflare's list envelopes are occasionally missing
   /// `total_count`, so a short/empty page remains the fallback terminator.
-  private func listAllPages<Value: CloudflareResource>(
+  ///
+  /// Only the string identity is required — demanding `CloudflareResource`
+  /// would shut out payloads like a notification policy, whose `name` is
+  /// optional, and push them back onto the single-page path.
+  private func listAllPages<Value: Decodable & Sendable & Identifiable>(
     _ path: String, query: [String: String?] = [:], perPage: Int
-  ) async throws -> [Value] {
+  ) async throws -> [Value] where Value.ID == String {
     var pageNumber = 1
     var items: [Value] = []
     var seenIDs: Set<String> = []

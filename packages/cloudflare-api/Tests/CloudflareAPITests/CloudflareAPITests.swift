@@ -69,10 +69,14 @@ import Testing
 @Test func authenticationAndAuthorizationErrorsAreDistinct() {
   let unauthorized = CloudflareAPIError.request(status: 401, errors: [])
   let forbidden = CloudflareAPIError.request(status: 403, errors: [])
+  let notFound = CloudflareAPIError.request(status: 404, errors: [])
   #expect(unauthorized.isUnauthorized)
   #expect(!unauthorized.isPermissionDenied)
   #expect(forbidden.isForbidden)
   #expect(forbidden.isPermissionDenied)
+  #expect(notFound.isNotFound)
+  #expect(!notFound.isForbidden)
+  #expect(!forbidden.isNotFound)
 }
 
 @Test func transportAndRateLimitErrorsAreDistinguishable() {
@@ -283,6 +287,98 @@ struct NetworkTests {
     #expect(alerts.first?.displayName == "Origin Error Rate Alert")
   }
 
+  /// Dash reads this list to decide whether its managed policy exists. Stop at
+  /// page one and an account with more policies than a page gets a duplicate.
+  @Test func listNotificationPoliciesCollectsEveryPage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/acct/alerting/v3/policies")
+      let query = Dictionary(
+        uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems ?? []).map {
+            ($0.name, $0.value ?? "")
+          })
+      let page = query["page"] ?? "1"
+      recorder.record(page)
+      #expect(query["per_page"] == "50")
+      if page == "1" {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[
+              {"id":"policy-1","alert_type":"http_alert_origin_error"}
+            ],"result_info":{"page":1,"per_page":1,"total_count":2}}
+            """#.utf8)
+        )
+      }
+      #expect(page == "2")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[
+            {"id":"dash-policy","name":"Dash","alert_type":"universal_ssl_event_type"}
+          ],"result_info":{"page":2,"per_page":1,"total_count":2}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let policies = try await client.listNotificationPolicies(accountID: "acct")
+
+    #expect(policies.map(\.id) == ["policy-1", "dash-policy"])
+    #expect(recorder.paths == ["1", "2"])
+  }
+
+  @Test func listNotificationWebhooksCollectsEveryPage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/acct/alerting/v3/destinations/webhooks")
+      let query = Dictionary(
+        uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems ?? []).map {
+            ($0.name, $0.value ?? "")
+          })
+      let page = query["page"] ?? "1"
+      recorder.record(page)
+      #expect(query["per_page"] == "50")
+      if page == "1" {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[
+              {"id":"hook-1","name":"Other","url":"https://example.test/other"}
+            ],"result_info":{"page":1,"per_page":1,"total_count":2}}
+            """#.utf8)
+        )
+      }
+      #expect(page == "2")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[
+            {"id":"dash-hook","name":"Dash","url":"https://dash.xat.sh/push/notify"}
+          ],"result_info":{"page":2,"per_page":1,"total_count":2}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let webhooks = try await client.listNotificationWebhooks(accountID: "acct")
+
+    #expect(webhooks.map(\.id) == ["hook-1", "dash-hook"])
+    #expect(recorder.paths == ["1", "2"])
+  }
+
   @Test func treatsNullNotificationHistoryAsEmpty() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
@@ -352,20 +448,43 @@ struct NetworkTests {
     #expect(recorder.paths == ["/accounts/acct/logs/audit", "/accounts/acct/audit_logs"])
   }
 
-  @Test func auditLogsDoNotTurnCancellationIntoAV1Request() async throws {
+  @Test func auditLogsFallBackToV1WhenV2IsNotFound() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()
-    MockURLProtocol.chunkSize = 1
-    MockURLProtocol.chunkDelay = 0.01
-    defer {
-      MockURLProtocol.chunkSize = nil
-      MockURLProtocol.chunkDelay = 0
-    }
     let session = mockSession { request in
       let path = request.url?.path ?? ""
       recorder.record(path)
       if path.hasSuffix("/logs/audit") {
-        return (200, Data(repeating: 0x20, count: 10_000))
+        return (
+          404,
+          Data(
+            #"{"success":false,"result":[],"errors":[{"code":7003,"message":"not found"}]}"#.utf8)
+        )
+      }
+      #expect(path == "/accounts/acct/audit_logs")
+      return (200, Data(#"{"success":true,"result":[]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let entries = try await client.listAuditLogs(accountID: "acct")
+
+    #expect(entries.isEmpty)
+    #expect(recorder.paths == ["/accounts/acct/logs/audit", "/accounts/acct/audit_logs"])
+  }
+
+  /// The transport failing the v2 request with a cancellation is the shape a
+  /// bare `catch` mishandles: the surrounding task is still alive, so it would
+  /// happily issue v1 and answer an aborted read with an empty log.
+  @Test func auditLogsDoNotTurnCancellationIntoAV1Request() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let path = request.url?.path ?? ""
+      recorder.record(path)
+      if path.hasSuffix("/logs/audit") {
+        throw URLError(.cancelled)
       }
       return (200, Data(#"{"success":true,"result":[]}"#.utf8))
     }
@@ -373,22 +492,9 @@ struct NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let operation = Task {
+    await #expect(throws: CancellationError.self) {
       try await client.listAuditLogs(accountID: "acct")
     }
-    while recorder.paths.isEmpty {
-      try await Task.sleep(for: .milliseconds(1))
-    }
-    operation.cancel()
-    do {
-      _ = try await operation.value
-      Issue.record("expected cancellation")
-    } catch is CancellationError {
-      // Expected.
-    } catch {
-      Issue.record("expected CancellationError, got \(error)")
-    }
-
     #expect(recorder.paths == ["/accounts/acct/logs/audit"])
   }
 

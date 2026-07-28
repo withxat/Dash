@@ -70,36 +70,26 @@ public struct ExpandedBlossomView: View {
           let dy = value.location.y - center.y
           let distance = sqrt(dx * dx + dy * dy)
 
-          print(
-            "[Gesture] onEnded: location=\(value.location), center=\(center), distance=\(distance)")
-
           if distance <= style.centerCircleSize / 2 {
             // Tap on center circle - check if it matches current selection
-            print("[Gesture] tap on center circle")
             let tappedColor = layout.centerColor
             if colorsMatch(tappedColor, model.selectedColor) {
-              print("[Gesture] center color matches selected - collapsing")
               model.collapse()
             } else {
-              print("[Gesture] selecting center color")
               model.selectCenterColor(layout: layout)
             }
           } else if let (index, ring) = layout.petalIndex(
             at: value.location, center: center, petalSize: style.petalSize)
           {
             // Tap on petal - check if it matches current selection
-            print("[Gesture] tap on petal: index=\(index), ring=\(ring)")
             let tappedColor = layout.color(for: index, ring: ring)
             if colorsMatch(tappedColor, model.selectedColor) {
-              print("[Gesture] petal color matches selected - collapsing")
               model.collapse()
             } else {
-              print("[Gesture] selecting petal color")
               model.selectPetal(index: index, ring: ring, layout: layout)
             }
-          } else {
-            print("[Gesture] tap outside petals and center")
           }
+          // A tap that lands on neither the center nor a petal keeps the picker open.
 
           model.hoveredPetalIndex = nil
           model.hoveredRing = nil

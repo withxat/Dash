@@ -18,9 +18,6 @@
       layout: PetalLayout,
       style: BlossomStyle = .default,
     ) {
-      print("[Presenter] show() called, screenPoint: \(screenPoint)")
-      print("[Presenter] model.isExpanded before: \(model.isExpanded)")
-
       // Dismiss any existing view first
       dismissImmediately()
 
@@ -29,19 +26,16 @@
       guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
         let window = windowScene.windows.first(where: { $0.isKeyWindow })
       else {
-        print("[Presenter] No key window found")
         return
       }
 
       let totalSize = ExpandedBlossomView.totalSize(layout: layout, style: style)
-      print("[Presenter] totalSize: \(totalSize)")
 
       // Create overlay view (full screen, transparent, captures taps outside)
       let overlay = PickerOverlayView(frame: window.bounds)
       overlay.backgroundColor = .clear
       overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
       overlay.onTapOutside = { [weak self] in
-        print("[Presenter] Tap outside - collapsing")
         self?.model?.collapse()
       }
 
@@ -59,7 +53,6 @@
         height: totalSize,
       )
       hostingController.view.frame = pickerFrame
-      print("[Presenter] picker frame: \(pickerFrame)")
 
       // Add to overlay
       overlay.addSubview(hostingController.view)
@@ -76,26 +69,18 @@
       setupBackgroundObserver()
 
       // Expand after view is mounted
-      print("[Presenter] scheduling expand()")
       Task { @MainActor in
-        print("[Presenter] calling model.expand()")
         model.expand()
-        print("[Presenter] model.isExpanded after expand: \(model.isExpanded)")
       }
     }
 
     func dismiss() {
-      print("[Presenter] dismiss() called")
-      print("[Presenter] model.isExpanded: \(model?.isExpanded ?? false)")
-
       // Remove observer
       removeObservers()
 
       // Wait for collapse animation to complete before removing view
-      print("[Presenter] waiting for animation...")
       Task { @MainActor in
         try? await Task.sleep(for: .milliseconds(350))
-        print("[Presenter] removing overlay after delay")
         overlayView?.removeFromSuperview()
         overlayView = nil
         hostingController = nil
@@ -104,7 +89,6 @@
     }
 
     private func dismissImmediately() {
-      print("[Presenter] dismissImmediately() called")
       removeObservers()
       overlayView?.removeFromSuperview()
       overlayView = nil
@@ -132,7 +116,6 @@
           object: nil,
           queue: .main,
         ) { [weak self] _ in
-          print("[Presenter] App entered background - closing picker")
           Task { @MainActor in
             self?.model?.collapse()
           }

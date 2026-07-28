@@ -138,9 +138,24 @@ private let curatedZoneSettings: [String] = [
 /// renders as an editable menu instead of a read-only value row. Values come
 /// from Cloudflare's OpenAPI schema (zones_*_value enums). The rest of
 /// `curatedZoneSettings` is on/off.
-private let zoneSettingOptions: [String: [String]] = [
+///
+/// `security_level` deliberately omits `under_attack`, even though the API
+/// accepts it: this menu commits through a plain `updateZoneSetting`, so raising
+/// the shield here would never stash the level it replaced, and the next time
+/// the WAF screen's Under Attack switch went off the zone would land on the
+/// "medium" fallback instead of the "high" it actually had. Under Attack is
+/// raised and lowered only through `ZoneSecurityLevelOperation`. A zone already
+/// at `under_attack` still reads correctly here — `DashMenuRow` labels itself
+/// from `value`, not from `options`.
+let zoneSettingOptions: [String: [String]] = [
   "ssl": ["off", "flexible", "full", "strict"],
-  "security_level": ["off", "essentially_off", "low", "medium", "high", "under_attack"],
+  "security_level": ["off", "essentially_off", "low", "medium", "high"],
+]
+
+/// Names the control that owns a value the menu above cannot offer, so the
+/// missing choice reads as "elsewhere" rather than "gone".
+private let zoneSettingCaptions: [String: String] = [
+  "security_level": "Under Attack mode lives on the zone's WAF screen."
 ]
 
 struct ZoneSettingsView: View {
@@ -217,6 +232,7 @@ struct ZoneSettingsView: View {
           DashMenuRow(
             title: setting.displayTitle,
             value: value,
+            caption: zoneSettingCaptions[setting.id],
             options: options,
             isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
             isLoading: updatingSettingIDs.contains(setting.id)

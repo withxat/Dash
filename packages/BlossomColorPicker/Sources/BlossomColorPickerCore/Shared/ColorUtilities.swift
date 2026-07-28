@@ -65,9 +65,5 @@ public func colorsMatch(_ color1: Color, _ color2: Color, tolerance: Double = 0.
   let satMatch = abs(s1 - s2) < tolerance
   let brightMatch = abs(bright1 - bright2) < tolerance
 
-  print("[ColorsMatch] color1: h=\(hue1), s=\(s1), b=\(bright1)")
-  print("[ColorsMatch] color2: h=\(hue2), s=\(s2), b=\(bright2)")
-  print("[ColorsMatch] match: hue=\(hueMatch), sat=\(satMatch), bright=\(brightMatch)")
-
   return hueMatch && satMatch && brightMatch
 }

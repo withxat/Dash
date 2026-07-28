@@ -130,39 +130,50 @@ struct PagesProjectDetailView: View {
         }
       }
 
-      DashListGroup(title: "Deployments") {
-        if deployments.isEmpty {
-          DashCard {
-            if let deploymentsError {
-              DashNotice(kind: .warning, message: deploymentsError)
-            } else {
-              Text("No deployments yet.")
-                .dashTextStyle(.footnote)
-                .foregroundStyle(DashTheme.subtle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-          }
-        } else {
-          dashListCard {
-            dashListCardRows(items: visibleDeployments) { deployment in
-              DashListGroupLink(
-                value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
-              ) {
-                DashListRow(
-                  title: pagesDeploymentTitle(deployment),
-                  subtitle: pagesDeploymentSubtitle(deployment),
-                  icon: SolarAsset.Content.codeCircle,
-                  iconColor: pagesStatusColor(deployment.latestStage?.status),
-                  showsChevron: true
-                )
-                .accessibilityLabel(pagesDeploymentAccessibilityLabel(deployment))
-              }
-              .transition(morphTransition)
-            }
+      // Keep the unbounded deployment ForEach as a direct child of
+      // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
+      // otherwise mount every deployment row at once.
+      DashListGroupHeader(title: DashL10n.ui("Deployments"))
+        .padding(.horizontal, 4)
+        .dashSectionBoundary()
+        .padding(.bottom, 8)
+      if deployments.isEmpty {
+        DashCard {
+          if let deploymentsError {
+            DashNotice(kind: .warning, message: deploymentsError)
+          } else {
+            Text("No deployments yet.")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+              .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
+        // Replaces DashListGroup's content inset for the empty state.
+        .dashListCardInset()
+      } else {
+        dashListCardRows(items: visibleDeployments) { deployment in
+          let title = pagesDeploymentTitle(deployment)
+          let subtitle = pagesDeploymentSubtitle(deployment)
+          DashListGroupLink(
+            value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
+          ) {
+            DashListRow(
+              title: title,
+              subtitle: subtitle,
+              icon: SolarAsset.Content.codeCircle,
+              iconColor: pagesStatusColor(deployment.latestStage?.status),
+              showsChevron: true
+            )
+            .accessibilityLabel(
+              pagesDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
+            )
+          }
+          .transition(morphTransition)
+          // dashListCardRows supplies the row's existing inset; this one
+          // replaces DashListGroup's former content inset.
+          .dashListCardInset()
+        }
       }
-      .dashSectionBoundary()
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.codeCircle),
@@ -885,8 +896,10 @@ private func pagesProjectSubtitle(_ project: PagesProject) -> String? {
   return project.subdomain
 }
 
-private func pagesDeploymentAccessibilityLabel(_ deployment: PagesDeployment) -> String {
-  "\(pagesDeploymentTitle(deployment)), \(pagesDeploymentSubtitle(deployment))"
+/// Takes the row's already-computed strings: recomputing the subtitle here ran
+/// the deployment's date formatting a second time for every row.
+private func pagesDeploymentAccessibilityLabel(title: String, subtitle: String) -> String {
+  "\(title), \(subtitle)"
 }
 
 private func pagesDeploymentTitle(_ deployment: PagesDeployment) -> String {
@@ -897,6 +910,7 @@ private func pagesDeploymentTitle(_ deployment: PagesDeployment) -> String {
   return deployment.shortID ?? String(deployment.id.prefix(8))
 }
 
+@MainActor
 private func pagesDeploymentSubtitle(_ deployment: PagesDeployment) -> String {
   var parts: [String] = []
   if let environment = deployment.environment {
@@ -925,20 +939,54 @@ private func pagesStatusColor(_ status: String?) -> Color {
   }
 }
 
+/// Formatters are expensive to build and this ran three times per deployment
+/// row. Held on the main actor because the relative formatter is not `Sendable`.
+@MainActor
+private enum PagesDeploymentDateFormatting {
+  private static let fractionalISO8601: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }()
+
+  private static let plainISO8601: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+  }()
+
+  /// Keyed by locale, not a bare `static let`: Settings → Language is in-app, and
+  /// a formatter cached for the process lifetime would keep printing "3d ago"
+  /// beside Chinese copy after the switch.
+  private static var relativeCache: (locale: Locale, formatter: RelativeDateTimeFormatter)?
+
+  static func date(from value: String) -> Date? {
+    fractionalISO8601.date(from: value) ?? plainISO8601.date(from: value)
+  }
+
+  static func relativeString(for date: Date, relativeTo now: Date, locale: Locale) -> String {
+    let formatter: RelativeDateTimeFormatter
+    if let cached = relativeCache, cached.locale == locale {
+      formatter = cached.formatter
+    } else {
+      formatter = RelativeDateTimeFormatter()
+      formatter.unitsStyle = .abbreviated
+      formatter.locale = locale
+      relativeCache = (locale, formatter)
+    }
+    return formatter.localizedString(for: date, relativeTo: now)
+  }
+}
+
+@MainActor
 private func pagesRelativeDate(_ value: String) -> String {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let plain = ISO8601DateFormatter()
-  plain.formatOptions = [.withInternetDateTime]
-  guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
+  guard let date = PagesDeploymentDateFormatting.date(from: value) else {
     return value
   }
-  let formatter = RelativeDateTimeFormatter()
-  formatter.unitsStyle = .abbreviated
-  // Settings → Language is in-app; without this the formatter follows the system
-  // locale and prints "3d ago" beside Chinese copy.
-  formatter.locale = DashL10n.activeLocale
-  return formatter.localizedString(for: date, relativeTo: .now)
+  return PagesDeploymentDateFormatting.relativeString(
+    for: date,
+    relativeTo: .now,
+    locale: DashL10n.activeLocale)
 }
 
 /// Pure bucketing + accessibility copy for the deployment build-outcomes

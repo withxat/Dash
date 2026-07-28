@@ -10505,6 +10505,23 @@
         }
       }
     },
+    "Under Attack mode lives on the zone's WAF screen." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Under Attack mode lives on the zone's WAF screen."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Under Attack 模式在该域名的 WAF 页面中。"
+          }
+        }
+      }
+    },
     "Under Attack, SSL, and dev mode" : {
       "extractionState" : "stale",
       "localizations" : {

@@ -116,7 +116,10 @@ enum WatchtowerNotificationBaselineStore {
 @MainActor
 enum WatchtowerNotifier {
   static let optInDefaultsKey = "dash.watchtower_notifications"
-  static let badgeAuthorizationMigrationKey = "dash.notifications.badge_migration_v1"
+  // _v2: the _v1 migration matched only `.disabled`, so it burned its one shot
+  // on every legacy install without ever asking for `.badge`. Renaming the key
+  // gives those installs the retry the fixed check can actually use.
+  static let badgeAuthorizationMigrationKey = "dash.notifications.badge_migration_v2"
 
   nonisolated static func watchtowerRoute(accountID: String) -> String? {
     route(host: "watchtower", path: nil, accountID: accountID)
@@ -219,11 +222,18 @@ enum WatchtowerNotifier {
   /// Preserve quiet authorization while adding the previously omitted badge
   /// option. Only an explicit "turn on banners" action may make a prominent
   /// request.
+  ///
+  /// The interesting value is `.notSupported`, not `.disabled`: iOS reports a
+  /// setting that was *never requested* as `.notSupported`, and reserves
+  /// `.disabled` for one the user switched off in Settings afterwards. Every
+  /// install that predates the badge option therefore reports `.notSupported`,
+  /// so matching only `.disabled` skipped exactly the population the migration
+  /// exists for — and with it `setBadgeCount`, which needs the same grant.
   nonisolated static func badgeAuthorizationMigrationOptions(
     authorizationStatus: UNAuthorizationStatus,
     badgeSetting: UNNotificationSetting
   ) -> UNAuthorizationOptions? {
-    guard badgeSetting == .disabled else { return nil }
+    guard badgeSetting != .enabled else { return nil }
     switch authorizationStatus {
     case .authorized:
       return [.badge]

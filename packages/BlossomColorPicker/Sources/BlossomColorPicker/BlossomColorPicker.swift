@@ -70,12 +70,7 @@ public struct BlossomColorPicker: View {
         .contentShape(Circle())
         .onTapGesture {
           // Prevent rapid re-opening
-          guard !isCooldown else {
-            print("[BlossomColorPicker] tap ignored - cooldown active")
-            return
-          }
-
-          print("[BlossomColorPicker] tap gesture, model.isExpanded: \(model.isExpanded)")
+          guard !isCooldown else { return }
 
           // Start cooldown
           isCooldown = true
@@ -87,7 +82,6 @@ public struct BlossomColorPicker: View {
           // Get screen position of swatch center
           let frame = geometry.frame(in: .global)
           let screenPoint = convertToScreenCoordinates(frame: frame)
-          print("[BlossomColorPicker] calling presenter.show()")
           presenter.show(at: screenPoint, model: model, layout: layout)
         }
         .accessibilityLabel("Color picker")
@@ -100,9 +94,7 @@ public struct BlossomColorPicker: View {
       onColorChange?(newValue)
     }
     .onChange(of: model.isExpanded) { wasExpanded, isExpanded in
-      print("[BlossomColorPicker] onChange isExpanded: \(wasExpanded) -> \(isExpanded)")
       if wasExpanded, !isExpanded {
-        print("[BlossomColorPicker] calling presenter.dismiss()")
         presenter.dismiss()
         onDismiss?(model.selectedColor)
       }
@@ -150,15 +142,20 @@ public struct BlossomColorPicker: View {
 }
 
 #Preview("Callback-based") {
-  BlossomColorPicker(
-    initialColor: .orange,
-    onColorChange: { color in
-      print("Color changed: \(color)")
-    },
-    onDismiss: { finalColor in
-      print("Dismissed with: \(finalColor)")
-    },
-  )
-  .frame(width: 32, height: 32)
+  @Previewable @State var latest = Color.orange
+
+  VStack(spacing: 40) {
+    BlossomColorPicker(
+      initialColor: .orange,
+      onColorChange: { latest = $0 },
+      onDismiss: { latest = $0 },
+    )
+    .frame(width: 32, height: 32)
+
+    Rectangle()
+      .fill(latest)
+      .frame(width: 100, height: 100)
+      .clipShape(RoundedRectangle(cornerRadius: 12))
+  }
   .padding(60)
 }
