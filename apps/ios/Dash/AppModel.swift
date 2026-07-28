@@ -380,7 +380,7 @@ final class AppModel {
           WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
           WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
           WatchtowerInboxStore.readKey, WatchtowerNotificationBaselineStore.key,
-          WatchtowerNotifier.optInDefaultsKey,
+          WatchtowerNotifier.optInDefaultsKey, DashWorkspaceWashPreset.storageKey,
         ] {
           previewDefaults.removeObject(forKey: key)
         }

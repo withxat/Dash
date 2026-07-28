@@ -21,6 +21,18 @@ import UIKit
   #expect(DashAppLanguage.system.localeIdentifier == nil)
 }
 
+@Test func workspaceWashPresetResolvesStoredPreference() {
+  #expect(DashWorkspaceWashPreset.defaultPreset == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "blue") == .blue)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "purple") == .purple)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "teal") == .teal)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "unknown") == .cloudflare)
+
+  let rawValues = DashWorkspaceWashPreset.allCases.map(\.rawValue)
+  #expect(Set(rawValues).count == rawValues.count)
+}
+
 /// Everything that pins `DashL10n.localeOverrideForTesting`. The pin is
 /// process-global and Swift Testing runs cases in parallel by default, so these
 /// have to be serialized or they read each other's locale.

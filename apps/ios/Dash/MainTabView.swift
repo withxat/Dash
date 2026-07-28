@@ -13,6 +13,8 @@ private struct AccountScopedRouteRequest {
 struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
+  @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
+    DashWorkspaceWashPreset.defaultPreset.rawValue
   @State private var selection: AppTab = .home
   @State private var homeNavigator = DestinationNavigator()
   @State private var featuresNavigator = DestinationNavigator()
@@ -32,6 +34,10 @@ struct MainTabView: View {
     DashTrayPresentation(
       content: showsProfile || showsIgnoreAllAlerts || nestedTray.content,
       large: nestedTray.large)
+  }
+
+  private var workspaceWashPreset: DashWorkspaceWashPreset {
+    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
   }
 
   private var hidesDock: Bool {
@@ -366,7 +372,7 @@ struct MainTabView: View {
     .background {
       ZStack(alignment: .top) {
         DashTheme.canvas
-        DashWorkspaceTopWash()
+        DashWorkspaceTopWash(color: DashTheme.workspaceWash(for: workspaceWashPreset))
       }
       .ignoresSafeArea()
     }
@@ -413,6 +419,8 @@ struct MainTabView: View {
 /// scrolled content passes across the light instead of being tinted by it. A
 /// pushed screen covers it with its own opaque canvas plate.
 struct DashWorkspaceTopWash: View {
+  let color: Color
+
   /// Fall-off distance from the physical top edge.
   private let depth: CGFloat = 300
 
@@ -420,15 +428,15 @@ struct DashWorkspaceTopWash: View {
     ZStack {
       LinearGradient(
         stops: [
-          .init(color: DashTheme.wash.opacity(0.34), location: 0),
-          .init(color: DashTheme.wash.opacity(0.2), location: 0.42),
-          .init(color: DashTheme.wash.opacity(0), location: 1),
+          .init(color: color.opacity(0.34), location: 0),
+          .init(color: color.opacity(0.2), location: 0.42),
+          .init(color: color.opacity(0), location: 1),
         ],
         startPoint: .top,
         endPoint: .bottom
       )
       RadialGradient(
-        colors: [DashTheme.wash.opacity(0.32), DashTheme.wash.opacity(0)],
+        colors: [color.opacity(0.32), color.opacity(0)],
         center: .top,
         startRadius: 0,
         endRadius: 290

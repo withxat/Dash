@@ -143,6 +143,35 @@ enum DashInteractionPreferences {
   }
 }
 
+/// Device-local color preference for the one shared light field behind the
+/// Home, Resources, and Watchtower roots. Persist the preset identity rather
+/// than a color value so every choice can keep following Kumo's adaptive
+/// light, dark, and Increased Contrast stops.
+enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
+  case cloudflare
+  case blue
+  case purple
+  case teal
+
+  static let storageKey = "dash.workspace_wash"
+  static let defaultPreset = DashWorkspaceWashPreset.cloudflare
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .cloudflare: DashL10n.string("Cloudflare")
+    case .blue: DashL10n.string("Blue")
+    case .purple: DashL10n.string("Purple")
+    case .teal: DashL10n.string("Teal")
+    }
+  }
+
+  static func resolved(stored raw: String) -> DashWorkspaceWashPreset {
+    DashWorkspaceWashPreset(rawValue: raw) ?? defaultPreset
+  }
+}
+
 /// In-app language preference (Settings → Language). Persisted separately from
 /// iOS per-app language so Dash can offer a first-class picker; `system` clears
 /// the process override and follows the phone (or Settings → Dash → Language).

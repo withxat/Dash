@@ -422,11 +422,31 @@ enum DashTheme {
   /// recognizable. Not the catalog blue (`brand`).
   static let accent = adaptive(
     light: 0xF6821F, dark: 0xFF9838, highLight: 0xC45A00, highDark: 0xFFB366)
-  /// Soft brand-orange glow for the workspace's top light field
-  /// (`DashWorkspaceTopWash`, shared by all three tab roots) and the About
-  /// halo — same adaptive stop as `accent`; call sites apply opacity so it
-  /// washes into `canvas`.
+  /// Soft brand-orange default for the workspace's configurable top light
+  /// field (`DashWorkspaceTopWash`, shared by all three tab roots), plus the
+  /// fixed About halo. Same adaptive stop as `accent`; call sites apply
+  /// opacity so it washes into `canvas`.
   static let wash = accent
+
+  /// Decorative workspace pigments. They retain the existing Kumo four-stop
+  /// adaptation instead of borrowing info/success/danger status roles. Purple
+  /// and teal match the app's categorical chart families.
+  static func workspaceWash(for preset: DashWorkspaceWashPreset) -> Color {
+    switch preset {
+    case .cloudflare:
+      wash
+    case .blue:
+      adaptive(
+        light: 0x2B7FFF, dark: 0x51A2FF, highLight: 0x1447E6, highDark: 0x8EC5FF)
+    case .purple:
+      adaptive(
+        light: 0x8E51FF, dark: 0x8E51FF, highLight: 0x6E11B0, highDark: 0xC4B4FF)
+    case .teal:
+      adaptive(
+        light: 0x009689, dark: 0x00BBA7, highLight: 0x00786F, highDark: 0x46ECD5)
+    }
+  }
+
   /// `color-kumo-brand` / `color-kumo-brand-hover` (high light) /
   /// `text-kumo-link` (high dark). Reserved for focus rings, primary CTAs,
   /// and rare accents — not catalog decoration.

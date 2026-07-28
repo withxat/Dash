@@ -287,11 +287,18 @@ struct SettingsView: View {
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
   @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
     true
+  @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
+    DashWorkspaceWashPreset.defaultPreset.rawValue
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
+  @State private var showsWorkspaceWashPicker = false
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
+  }
+
+  private var selectedWorkspaceWash: DashWorkspaceWashPreset {
+    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
   }
 
   private var hasShortcutsAndShareWriteAccess: Bool {
@@ -335,6 +342,25 @@ struct SettingsView: View {
             ),
             isOn: $holdToConfirmEnabled
           )
+        }
+
+        DashListGroup(title: "Appearance") {
+          dashListCard {
+            Button {
+              showsWorkspaceWashPicker = true
+            } label: {
+              DashListRow(
+                title: DashL10n.string("Top glow"),
+                subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
+                icon: SolarAsset.Content.slider,
+                iconColor: DashTheme.workspaceWash(for: selectedWorkspaceWash),
+                trailing: selectedWorkspaceWash.displayName
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("workspace-wash-color")
+            .dashListCardInset()
+          }
         }
 
         DashListGroup(title: "Watchtower") {
@@ -489,6 +515,12 @@ struct SettingsView: View {
     ) {
       LanguagePickerTray(languageRaw: $languageRaw)
     }
+    .dashTray(
+      isPresented: $showsWorkspaceWashPicker,
+      title: DashL10n.string("Top glow")
+    ) {
+      WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
+    }
   }
 
   private func externalRow(
@@ -510,6 +542,55 @@ struct SettingsView: View {
     .buttonStyle(DashSurfaceButtonStyle())
     .accessibilityHint(accessibilityHint)
     .dashListCardInset()
+  }
+}
+
+private struct WorkspaceWashPickerTray: View {
+  @Binding var workspaceWashRaw: String
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 12) {
+      ForEach(DashWorkspaceWashPreset.allCases) { preset in
+        let isSelected =
+          DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw) == preset
+        Button {
+          if workspaceWashRaw != preset.rawValue {
+            workspaceWashRaw = preset.rawValue
+            DashDelight.selectionChanged()
+          }
+          dismiss()
+        } label: {
+          HStack(spacing: 12) {
+            Circle()
+              .fill(DashTheme.workspaceWash(for: preset))
+              .frame(width: 22, height: 22)
+              .overlay(Circle().stroke(DashTheme.line, lineWidth: 1))
+              .accessibilityHidden(true)
+            Text(preset.displayName)
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            SolarIcon(
+              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
+              size: 22,
+              color: isSelected ? DashTheme.brand : DashTheme.placeholder
+            )
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+          .background(DashTheme.Sheet.shortcutItem)
+          .clipShape(DashTheme.buttonShape)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
+      }
+    }
   }
 }
 
