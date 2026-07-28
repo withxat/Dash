@@ -6,6 +6,12 @@ pre-commit:
       run: pnpm lint:fix
       stage_fixed: true
 
+    # `/usr/bin/git` is an xcrun shim, so every hook it spawns inherits
+    # SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk (plus CPATH
+    # and LIBRARY_PATH). That SDK ships no SwiftUI macro plugins, so any SwiftPM
+    # build of a package using `@Entry` or `#Preview` — BlossomColorPicker today
+    # — dies with "plugin for module 'SwiftUIMacros' not found" inside the hook
+    # and nowhere else. Strip the shim's vars so the toolchain picks its own SDK.
     - name: typecheck
-      run: pnpm typecheck
+      run: env -u SDKROOT -u CPATH -u LIBRARY_PATH pnpm typecheck
       glob: '**/*.{swift,ts,tsx,js,jsx,pbxproj,xcconfig}'
