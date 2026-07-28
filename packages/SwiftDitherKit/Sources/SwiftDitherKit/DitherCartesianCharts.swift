@@ -1,9 +1,5 @@
 import SwiftUI
 
-#if canImport(UIKit) && !os(watchOS)
-  import UIKit
-#endif
-
 /// Shared presentation and interaction options for area, line, and bar charts.
 public struct DitherCartesianOptions: Hashable, Sendable {
   /// How multiple series share the value axis.
@@ -633,11 +629,6 @@ private struct DitherCartesianPlot: View {
 }
 
 private struct DitherCartesianInteractionLayer: View {
-  /// Hold still before scrub / tooltip arms.
-  fileprivate static let scrubHoldDuration: TimeInterval = 0.28
-  /// Finger travel that cancels the hold (UIKit long-press allowable movement).
-  fileprivate static let scrubSlop: CGFloat = 10
-
   let kind: DitherChartKind
   let data: [DitherDatum]
   let series: [DitherSeries]
@@ -650,10 +641,11 @@ private struct DitherCartesianInteractionLayer: View {
   var body: some View {
     #if os(tvOS)
       Color.clear.allowsHitTesting(false)
-    #elseif canImport(UIKit) && !os(watchOS)
-      // UIKit long-press coexists with UIScrollView; SwiftUI DragGesture(minimumDistance: 0)
-      // and exclusive LongPress both steal vertical pans from the enclosing scroll view.
-      DitherCartesianScrubCatcher(
+    #elseif os(iOS)
+      // Hold to engage, then the chart owns the finger until it lifts — see
+      // `DitherHoldInteraction`. A SwiftUI `DragGesture(minimumDistance: 0)`
+      // here would instead steal every vertical pan from the page.
+      DitherHoldScrubCatcher(
         onScrub: { point in
           if let point {
             update(location: point)
@@ -679,7 +671,7 @@ private struct DitherCartesianInteractionLayer: View {
         .fill(Color.clear)
         .contentShape(Rectangle())
         .simultaneousGesture(
-          LongPressGesture(minimumDuration: Self.scrubHoldDuration)
+          LongPressGesture(minimumDuration: DitherHoldInteraction.holdDuration)
             .sequenced(
               before: DragGesture(minimumDistance: 0, coordinateSpace: .local)
             )
@@ -715,88 +707,6 @@ private struct DitherCartesianInteractionLayer: View {
     onHoverChange?(index)
   }
 }
-
-#if canImport(UIKit) && !os(watchOS)
-  /// Transparent catcher: long-press (then drag) scrubs; vertical pans stay with
-  /// the enclosing scroll view because the recognizer fails on movement and
-  /// always allows simultaneous recognition with `UIScrollView` pans.
-  private struct DitherCartesianScrubCatcher: UIViewRepresentable {
-    var onScrub: (CGPoint?) -> Void
-    var onTap: (CGPoint) -> Void
-
-    func makeUIView(context: Context) -> DitherCartesianScrubView {
-      let view = DitherCartesianScrubView()
-      view.onScrub = onScrub
-      view.onTap = onTap
-      return view
-    }
-
-    func updateUIView(_ uiView: DitherCartesianScrubView, context: Context) {
-      uiView.onScrub = onScrub
-      uiView.onTap = onTap
-    }
-  }
-
-  private final class DitherCartesianScrubView: UIView, UIGestureRecognizerDelegate {
-    var onScrub: ((CGPoint?) -> Void)?
-    var onTap: ((CGPoint) -> Void)?
-
-    private let longPress = UILongPressGestureRecognizer()
-    private let tap = UITapGestureRecognizer()
-
-    override init(frame: CGRect) {
-      super.init(frame: frame)
-      backgroundColor = .clear
-      isMultipleTouchEnabled = false
-
-      longPress.minimumPressDuration = DitherCartesianInteractionLayer.scrubHoldDuration
-      longPress.allowableMovement = DitherCartesianInteractionLayer.scrubSlop
-      longPress.cancelsTouchesInView = false
-      longPress.delaysTouchesBegan = false
-      longPress.delaysTouchesEnded = false
-      longPress.delegate = self
-      longPress.addTarget(self, action: #selector(handleLongPress(_:)))
-      addGestureRecognizer(longPress)
-
-      tap.numberOfTapsRequired = 1
-      tap.cancelsTouchesInView = false
-      tap.delaysTouchesBegan = false
-      tap.delegate = self
-      tap.addTarget(self, action: #selector(handleTap(_:)))
-      addGestureRecognizer(tap)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
-      switch gesture.state {
-      case .began, .changed:
-        onScrub?(gesture.location(in: self))
-      case .ended, .cancelled, .failed:
-        onScrub?(nil)
-      default:
-        break
-      }
-    }
-
-    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-      guard gesture.state == .ended else { return }
-      onTap?(gesture.location(in: self))
-    }
-
-    func gestureRecognizer(
-      _ gestureRecognizer: UIGestureRecognizer,
-      shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-      true
-    }
-
-    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-      true
-    }
-  }
-#endif
 
 extension Collection {
   fileprivate subscript(safe index: Index) -> Element? {

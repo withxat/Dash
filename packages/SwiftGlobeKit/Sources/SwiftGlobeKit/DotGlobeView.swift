@@ -295,7 +295,6 @@
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
       private static let dragRadiansPerPoint: Float = 0.005
       private static let maximumReleaseVelocity: Float = 6
-      private static let navigationEdgeWidth: CGFloat = 28
 
       private weak var view: MTKView?
       private var renderer: GlobeRenderer?
@@ -303,10 +302,18 @@
       private var camera: Binding<GlobeCamera>
       private var configuration: MetalGlobeConfiguration?
       private var markersByID: [String: GlobeMarker] = [:]
+      private var holdGesture: UILongPressGestureRecognizer?
       private var panGesture: UIPanGestureRecognizer?
       private var tapGesture: UITapGestureRecognizer?
       private var powerStateObserver: (any NSObjectProtocol)?
       private var isTornDown = false
+      /// A hold engaged: the globe owns this touch until it lifts.
+      private var isEngaged = false
+      /// The engaged hold turned into an actual rotation.
+      private var isRotating = false
+      /// Ancestor recognizers switched off for the duration of one hold. Held
+      /// strongly so they can be restored even if the globe is torn down first.
+      private var claimedGestures: [UIGestureRecognizer] = []
 
       init(camera: Binding<GlobeCamera>) {
         self.camera = camera
@@ -348,6 +355,21 @@
           }
         }
 
+        // Rotation is gated on this hold, never on the first touch — see
+        // `GlobeHoldInteraction`.
+        let holdGesture = UILongPressGestureRecognizer(
+          target: self,
+          action: #selector(handleHold(_:))
+        )
+        holdGesture.minimumPressDuration = GlobeHoldInteraction.holdDuration
+        holdGesture.allowableMovement = GlobeHoldInteraction.holdSlop
+        holdGesture.cancelsTouchesInView = false
+        holdGesture.delaysTouchesBegan = false
+        holdGesture.delaysTouchesEnded = false
+        holdGesture.delegate = self
+        view.addGestureRecognizer(holdGesture)
+        self.holdGesture = holdGesture
+
         let panGesture = UIPanGestureRecognizer(
           target: self,
           action: #selector(handlePan(_:))
@@ -364,6 +386,9 @@
         )
         tapGesture.cancelsTouchesInView = false
         tapGesture.require(toFail: panGesture)
+        // A hold that engaged is not a marker tap. This costs a plain tap
+        // nothing: the hold fails the instant a short touch lifts.
+        tapGesture.require(toFail: holdGesture)
         view.addGestureRecognizer(tapGesture)
         self.tapGesture = tapGesture
 
@@ -403,6 +428,13 @@
         }
         powerStateObserver = nil
 
+        // Before anything else: a globe torn down mid-hold must hand the page's
+        // scrolling back, or nothing under it ever scrolls again.
+        disengage()
+
+        if let holdGesture {
+          view?.removeGestureRecognizer(holdGesture)
+        }
         if let panGesture {
           view?.removeGestureRecognizer(panGesture)
         }
@@ -411,6 +443,8 @@
         }
         rendererSetupTask?.cancel()
         rendererSetupTask = nil
+        holdGesture?.delegate = nil
+        holdGesture = nil
         panGesture?.delegate = nil
         panGesture = nil
         tapGesture = nil
@@ -425,22 +459,93 @@
         _ gestureRecognizer: UIGestureRecognizer
       ) -> Bool {
         guard
-          gestureRecognizer === panGesture,
+          gestureRecognizer === panGesture || gestureRecognizer === holdGesture
+        else {
+          return true
+        }
+        guard
           let configuration,
           configuration.isActive,
-          configuration.behavior.allowsDragging,
-          let panGesture,
-          let view
+          configuration.behavior.allowsDragging
         else {
-          return gestureRecognizer !== panGesture
-        }
-
-        if panGesture.location(in: view).x <= Self.navigationEdgeWidth {
           return false
         }
+        // The drag itself is not a gesture the globe competes for: it starts
+        // only once a hold has engaged, so a plain swipe over the globe still
+        // belongs to the page (scroll, pager, back swipe) exactly as before.
+        return gestureRecognizer === holdGesture || isEngaged
+      }
 
-        let velocity = panGesture.velocity(in: view)
-        return abs(velocity.x) > abs(velocity.y)
+      /// The hold and the drag it arms are one interaction, so they run
+      /// together. Nothing outside the globe recognizes alongside them, which
+      /// is what settles a fresh conflict in the globe's favour once engaged.
+      func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+      ) -> Bool {
+        otherGestureRecognizer === panGesture || otherGestureRecognizer === holdGesture
+      }
+
+      @objc private func handleHold(_ gesture: UILongPressGestureRecognizer) {
+        switch gesture.state {
+        case .began:
+          guard
+            let configuration,
+            configuration.isActive,
+            configuration.behavior.allowsDragging
+          else {
+            return
+          }
+          isEngaged = true
+          claimAncestorGestures()
+          GlobeHoldInteraction.onEngage?()
+          // Park the globe under the finger: stopping the spin is the visible
+          // half of the cue the haptic gives.
+          renderer?.setAngularVelocity(.zero)
+          renderer?.setInteractionActive(true)
+        case .ended, .cancelled, .failed:
+          disengage()
+        default:
+          break
+        }
+      }
+
+      /// Hands the page's gestures back and, unless a drag is still settling
+      /// its own inertia, lets the globe resume its idle rotation.
+      private func disengage() {
+        isEngaged = false
+        releaseClaim()
+        guard !isRotating else { return }
+        renderer?.setInteractionActive(false)
+      }
+
+      private func claimAncestorGestures() {
+        guard claimedGestures.isEmpty, let view else { return }
+        var ancestor = view.superview
+        while let current = ancestor {
+          for recognizer in current.gestureRecognizers ?? [] {
+            let isDirectional =
+              recognizer is UIPanGestureRecognizer || recognizer is UISwipeGestureRecognizer
+            guard
+              GlobeHoldClaimRules.claims(
+                isDirectional: isDirectional,
+                isEnabled: recognizer.isEnabled,
+                isOwn: recognizer === panGesture)
+            else { continue }
+            recognizer.isEnabled = false
+            claimedGestures.append(recognizer)
+          }
+          ancestor = current.superview
+        }
+      }
+
+      /// Restores every claimed recognizer. Idempotent, and called on teardown
+      /// as well as on release: a stranded scroll view never scrolls again.
+      private func releaseClaim() {
+        for recognizer in claimedGestures {
+          recognizer.isEnabled = true
+        }
+        claimedGestures.removeAll()
       }
 
       @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -454,6 +559,7 @@
           else {
             return
           }
+          isRotating = true
           renderer.setAngularVelocity(.zero)
           renderer.setInteractionActive(true)
         case .changed:
@@ -463,6 +569,7 @@
             configuration.behavior.allowsDragging,
             let view
           else {
+            isRotating = false
             renderer.setInteractionActive(false)
             renderer.setAngularVelocity(.zero)
             return
@@ -476,6 +583,7 @@
           )
           gesture.setTranslation(.zero, in: view)
         case .ended:
+          isRotating = false
           renderer.setInteractionActive(false)
           if let configuration,
             configuration.isActive,
@@ -501,6 +609,7 @@
           }
           writeCamera(from: renderer.currentRotation)
         case .cancelled, .failed:
+          isRotating = false
           renderer.setInteractionActive(false)
           renderer.setAngularVelocity(.zero)
           writeCamera(from: renderer.currentRotation)
@@ -555,9 +664,12 @@
           && configuration.isActive
           && configuration.behavior.allowsDragging
         if panGesture?.isEnabled == true, !enablesDragging {
-          renderer?.setInteractionActive(false)
+          // Dragging went away under a live hold — release the page first.
+          isRotating = false
+          disengage()
           renderer?.setAngularVelocity(.zero)
         }
+        holdGesture?.isEnabled = enablesDragging
         panGesture?.isEnabled = enablesDragging
         tapGesture?.isEnabled =
           renderer != nil

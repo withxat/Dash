@@ -1,5 +1,7 @@
 import AppIntents
 import CloudflareAPI
+import SwiftDitherKit
+import SwiftGlobeKit
 import SwiftUI
 
 @main
@@ -10,6 +12,11 @@ struct DashApp: App {
   init() {
     DashMetricSubscriber.shared.start()
     R2TemporaryFile.removeStaleFiles(olderThan: 60 * 60)
+    // Charts and the globe both take the finger only after a hold, and both
+    // announce that with a haptic. Route it through Dash's own preference so
+    // one toggle still silences every buzz in the app.
+    DitherHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
+    GlobeHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
     #if DEBUG
       let model: AppModel
       if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion") {

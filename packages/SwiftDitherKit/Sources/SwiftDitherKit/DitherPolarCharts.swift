@@ -488,13 +488,39 @@ private struct DitherPieInteractionLayer: View {
       Rectangle()
         .fill(Color.clear)
         .allowsHitTesting(false)
+    #elseif os(iOS)
+      // Same hold-to-engage contract as the cartesian plots — see
+      // `DitherHoldInteraction`. Slice taps still land immediately.
+      DitherHoldScrubCatcher(
+        onScrub: { point in
+          if let point {
+            update(location: point)
+          } else {
+            update(index: nil)
+          }
+        },
+        onTap: { point in
+          if let index = index(at: point) {
+            onSelectIndex(index)
+          }
+        }
+      )
     #else
       Rectangle()
         .fill(Color.clear)
         .contentShape(Rectangle())
-        .gesture(
-          DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onChanged { value in update(location: value.location) }
+        .simultaneousGesture(
+          LongPressGesture(minimumDuration: DitherHoldInteraction.holdDuration)
+            .sequenced(
+              before: DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            )
+            .onChanged { value in
+              switch value {
+              case .second(true, let drag):
+                if let drag { update(location: drag.location) }
+              default: break
+              }
+            }
             .onEnded { _ in update(index: nil) }
         )
         .simultaneousGesture(
@@ -548,13 +574,33 @@ private struct DitherRadarInteractionLayer: View {
       Rectangle()
         .fill(Color.clear)
         .allowsHitTesting(false)
+    #elseif os(iOS)
+      DitherHoldScrubCatcher(
+        onScrub: { point in
+          if let point {
+            update(location: point)
+          } else {
+            update(index: nil)
+          }
+        },
+        onTap: nil
+      )
     #else
       Rectangle()
         .fill(Color.clear)
         .contentShape(Rectangle())
-        .gesture(
-          DragGesture(minimumDistance: 0, coordinateSpace: .local)
-            .onChanged { value in update(location: value.location) }
+        .simultaneousGesture(
+          LongPressGesture(minimumDuration: DitherHoldInteraction.holdDuration)
+            .sequenced(
+              before: DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            )
+            .onChanged { value in
+              switch value {
+              case .second(true, let drag):
+                if let drag { update(location: drag.location) }
+              default: break
+              }
+            }
             .onEnded { _ in update(index: nil) }
         )
         .onContinuousHover { phase in

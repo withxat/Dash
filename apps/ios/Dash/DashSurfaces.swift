@@ -1136,6 +1136,13 @@ enum DashDelight {
     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
   }
 
+  /// A hold inside a chart or the globe engaged: that surface now owns the
+  /// finger, and the page under it has stopped answering to it.
+  static func gestureEngaged() {
+    guard DashInteractionPreferences.hapticsEnabled else { return }
+    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+  }
+
   /// Picker, tab, or segment selection changed.
   static func selectionChanged() {
     guard DashInteractionPreferences.hapticsEnabled else { return }

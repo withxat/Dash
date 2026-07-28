@@ -92,9 +92,10 @@ final class WatchtowerChartCustomizationState {
   private(set) var hidden: Set<WatchtowerAnalyticsMetric>
   private(set) var draggedMetric: WatchtowerAnalyticsMetric?
   private(set) var dropTargetMetric: WatchtowerAnalyticsMetric?
-  /// Expanded charts whose tooltip currently owns the finger. The scrub
-  /// recognizer recognizes simultaneously with enclosing scroll views, so
-  /// without this the tab pager pages away underneath a live tooltip.
+  /// Expanded charts whose tooltip currently owns the finger. An engaged scrub
+  /// already switches the pager's own pan off (`DitherHoldInteraction`); this
+  /// keeps it off across a SwiftUI rebuild mid-scrub, which would otherwise
+  /// hand the pan back and page Watchtower away underneath a live tooltip.
   private(set) var scrubbingMetrics: Set<WatchtowerAnalyticsMetric> = []
 
   @ObservationIgnored private let defaults: UserDefaults
