@@ -242,6 +242,9 @@ public actor CloudflareClient {
         "type": type.flatMap { $0.isEmpty ? nil : $0 },
       ])
   }
+  public func getDNSRecord(zoneID: String, recordID: String) async throws -> DNSRecord {
+    try await request("/zones/\(zoneID)/dns_records/\(recordID)")
+  }
   public func createDNSRecord(zoneID: String, input: DNSRecordInput) async throws -> DNSRecord {
     try await request("/zones/\(zoneID)/dns_records", method: "POST", body: input)
   }
@@ -1773,23 +1776,39 @@ public actor CloudflareClient {
     // one refresh instead of each POSTing the rotating refresh token in
     // parallel. The keychain read moves inside the task for the same reason.
     let task = Task<TokenSet?, Error> {
+      let accessToken = try await store.getAccessToken()
       guard let refreshToken = try await store.getRefreshToken() else { return nil }
       do {
         let tokens = try await OAuth.refresh(
           clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
-        try await store.setTokens(tokens)
-        return tokens
+        let installed = try await store.replaceTokens(
+          tokens,
+          ifCurrentAccessToken: accessToken,
+          refreshToken: refreshToken)
+        if installed { return tokens }
+        return try await Self.currentTokens(in: store)
       } catch let error as CloudflareAPIError where error.isInvalidGrant {
         // The refresh token is expired or revoked and can never be renewed.
-        // Drop the dead credentials and report failure so the caller's 401
-        // surfaces to the existing sign-out path instead of retrying forever.
-        try? await store.clear()
-        return nil
+        // Clear only the credential that started this request. A completed
+        // OAuth replacement must survive a late invalid_grant from the old
+        // refresh token.
+        let cleared =
+          (try? await store.clearTokens(
+            ifCurrentAccessToken: accessToken,
+            refreshToken: refreshToken)) == true
+        return cleared ? nil : try await Self.currentTokens(in: store)
       }
     }
     refreshTask = task
     defer { refreshTask = nil }
     return try await task.value
+  }
+
+  private static func currentTokens(in store: any TokenStore) async throws -> TokenSet? {
+    guard let accessToken = try await store.getAccessToken() else { return nil }
+    return TokenSet(
+      accessToken: accessToken,
+      refreshToken: try await store.getRefreshToken())
   }
 }
 

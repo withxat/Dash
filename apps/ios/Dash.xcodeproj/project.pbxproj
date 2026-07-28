@@ -125,6 +125,7 @@
 		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
 		B00000000000000000000176 /* AlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000176 /* AlertRoutingTests.swift */; };
 		B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B4 /* WorkerBuildActivityTests.swift */; };
+		B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B5 /* DeferredDeletionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -268,6 +269,7 @@
 		F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetSnapshotTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000176 /* AlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRoutingTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
+		F000000000000000000001B5 /* DeferredDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -458,6 +460,7 @@
 				F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */,
 				F00000000000000000000176 /* AlertRoutingTests.swift */,
 				F000000000000000000001B4 /* WorkerBuildActivityTests.swift */,
+				F000000000000000000001B5 /* DeferredDeletionTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -880,6 +883,7 @@
 				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
 				B00000000000000000000176 /* AlertRoutingTests.swift in Sources */,
 				B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */,
+				B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

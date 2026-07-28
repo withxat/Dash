@@ -171,12 +171,13 @@ struct MainTabView: View {
       .onChange(of: scenePhase) { _, phase in
         switch phase {
         case .active:
+          model.deferredDeletions.resumeReconciliation()
           Task {
             await model.retryIdentityIfNeeded()
             await model.refreshWatchtowerIfStale()
           }
         case .background:
-          model.deferredDeletions.commitPendingOperations()
+          model.commitDeferredDeletionsForBackground()
           model.scheduleWatchtowerBackgroundRefresh()
         default:
           break

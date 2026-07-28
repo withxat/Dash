@@ -2987,9 +2987,8 @@ private func testDNSDeletion(
   #expect(toasts.current?.id == .deferredDeletionBatch)
   #expect(toasts.current?.action == .undoDeferredDeletionBatch)
 
-  await sleeper.fire()
-  await Task.yield()
-  await Task.yield()
+  coordinator.commitPendingOperations()
+  await coordinator.waitForActiveWork()
 
   #expect(await executor.executionCount() == 1)
   #expect(coordinator.isPendingDeletion(command.resourceKey))
@@ -3049,8 +3048,7 @@ private func testDNSDeletion(
 
   coordinator.schedule(command)
   coordinator.commitPendingOperations()
-  await Task.yield()
-  await Task.yield()
+  await coordinator.waitForActiveWork()
 
   #expect(!coordinator.isPendingDeletion(command.resourceKey))
   #expect(await executor.executionCount() == 1)
@@ -3084,8 +3082,7 @@ private func testDNSDeletion(
 
   coordinator.schedule(command)
   coordinator.commitPendingOperations()
-  await Task.yield()
-  await Task.yield()
+  await coordinator.waitForActiveWork()
 
   #expect(!coordinator.isPendingDeletion(command.resourceKey))
   #expect(await executor.executionCount() == 1)
@@ -3107,18 +3104,20 @@ private func testDNSDeletion(
 
 @Test @MainActor func toastQueuesFeedbackBehindProgrammaticDeletionToast() {
   let toasts = DashToastCenter()
+  let owner = toasts.claimDeferredDeletionOwner()
   toasts.show(
     DashToast(
       id: .deferredDeletionBatch,
       kind: .warning,
       message: "Pending",
       dismissBehavior: .programmaticOnly),
-    haptic: false)
+    haptic: false,
+    deferredDeletionOwner: owner)
 
   toasts.success("Saved.", haptic: false)
 
   #expect(toasts.current?.id == .deferredDeletionBatch)
-  toasts.dismiss(id: .deferredDeletionBatch)
+  toasts.releaseDeferredDeletionToast(owner: owner)
   #expect(toasts.current?.message == "Saved.")
 }
 

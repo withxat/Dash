@@ -2464,6 +2464,46 @@ struct NetworkTests {
     #expect(recorder.refreshCount == 1)
   }
 
+  @Test func lateRefreshResponseDoesNotOverwriteReplacedCredential() async throws {
+    let gate = RefreshResponseGate()
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "old", refresh: "old-refresh")
+    let session = mockSession { request in
+      if request.url?.path == "/token" {
+        gate.markStartedAndWait()
+        return (
+          200,
+          Data(#"{"access_token":"stale-refreshed","refresh_token":"stale-refresh"}"#.utf8)
+        )
+      }
+
+      let authorization = request.value(forHTTPHeaderField: "Authorization") ?? "missing"
+      recorder.record(authorization)
+      if authorization == "Bearer replacement" {
+        return (
+          200,
+          Data(#"{"success":true,"result":[{"id":"account","name":"Replacement"}]}"#.utf8)
+        )
+      }
+      return (401, Data(#"{"success":false,"errors":[{"code":1000,"message":"expired"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
+
+    let request = Task { try await client.listAccounts() }
+    await gate.waitUntilStarted()
+    await store.setTokens(
+      TokenSet(accessToken: "replacement", refreshToken: "replacement-refresh"))
+    gate.release()
+
+    let accounts = try await request.value
+    #expect(accounts.map(\.name) == ["Replacement"])
+    #expect(await store.getAccessToken() == "replacement")
+    #expect(await store.getRefreshToken() == "replacement-refresh")
+    #expect(recorder.paths == ["Bearer old", "Bearer replacement"])
+  }
+
   @Test func revokedRefreshTokenSurfacesUnauthorizedAndClearsCredentials() async throws {
     let store = MemoryTokenStore(access: "old", refresh: "revoked")
     let session = mockSession { request in
@@ -2487,6 +2527,43 @@ struct NetworkTests {
 
     let remainingRefresh = await store.getRefreshToken()
     #expect(remainingRefresh == nil)
+  }
+
+  @Test func lateInvalidGrantDoesNotClearReplacedCredential() async throws {
+    let gate = RefreshResponseGate()
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "old", refresh: "revoked")
+    let session = mockSession { request in
+      if request.url?.path == "/token" {
+        gate.markStartedAndWait()
+        return (400, Data(#"{"error":"invalid_grant"}"#.utf8))
+      }
+
+      let authorization = request.value(forHTTPHeaderField: "Authorization") ?? "missing"
+      recorder.record(authorization)
+      if authorization == "Bearer replacement" {
+        return (
+          200,
+          Data(#"{"success":true,"result":[{"id":"account","name":"Replacement"}]}"#.utf8)
+        )
+      }
+      return (401, Data(#"{"success":false,"errors":[{"code":1000,"message":"expired"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
+
+    let request = Task { try await client.listAccounts() }
+    await gate.waitUntilStarted()
+    await store.setTokens(
+      TokenSet(accessToken: "replacement", refreshToken: "replacement-refresh"))
+    gate.release()
+
+    let accounts = try await request.value
+    #expect(accounts.map(\.name) == ["Replacement"])
+    #expect(await store.getAccessToken() == "replacement")
+    #expect(await store.getRefreshToken() == "replacement-refresh")
+    #expect(recorder.paths == ["Bearer old", "Bearer replacement"])
   }
 
   @Test func rateLimitedRequestRetriesAfterShortWait() async throws {
@@ -2698,6 +2775,29 @@ private actor MemoryTokenStore: TokenStore {
     access = tokens.accessToken
     refresh = tokens.refreshToken
   }
+  func replaceTokens(
+    _ tokens: TokenSet,
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) -> Bool {
+    guard access == expectedAccessToken, refresh == expectedRefreshToken else {
+      return false
+    }
+    access = tokens.accessToken
+    refresh = tokens.refreshToken
+    return true
+  }
+  func clearTokens(
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) -> Bool {
+    guard access == expectedAccessToken, refresh == expectedRefreshToken else {
+      return false
+    }
+    access = nil
+    refresh = nil
+    return true
+  }
 }
 
 private func requestBodyData(_ request: URLRequest) -> Data? {
@@ -2760,6 +2860,50 @@ private final class RequestRecorder: @unchecked Sendable {
   var paths: [String] { lock.withLock { recorded } }
   func recordRefresh() { lock.withLock { count += 1 } }
   func record(_ path: String) { lock.withLock { recorded.append(path) } }
+}
+
+private final class RefreshResponseGate: @unchecked Sendable {
+  private let condition = NSCondition()
+  private var started = false
+  private var released = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func markStartedAndWait() {
+    condition.lock()
+    started = true
+    let waiters = startWaiters
+    startWaiters.removeAll()
+    condition.unlock()
+    for waiter in waiters {
+      waiter.resume()
+    }
+
+    condition.lock()
+    while !released {
+      condition.wait()
+    }
+    condition.unlock()
+  }
+
+  func waitUntilStarted() async {
+    await withCheckedContinuation { continuation in
+      condition.lock()
+      if started {
+        condition.unlock()
+        continuation.resume()
+      } else {
+        startWaiters.append(continuation)
+        condition.unlock()
+      }
+    }
+  }
+
+  func release() {
+    condition.lock()
+    released = true
+    condition.broadcast()
+    condition.unlock()
+  }
 }
 
 private final class ByteRecorder: @unchecked Sendable {

@@ -1,4 +1,5 @@
 import AppIntents
+import CloudflareAPI
 import SwiftUI
 
 @main
@@ -9,7 +10,20 @@ struct DashApp: App {
   init() {
     DashMetricSubscriber.shared.start()
     R2TemporaryFile.removeStaleFiles(olderThan: 60 * 60)
-    let model = AppModel()
+    #if DEBUG
+      let model: AppModel
+      if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion") {
+        DeferredDeletionUITestBackend.reset()
+        model = AppModel(
+          tokenStore: DeferredDeletionUITestTokenStore(),
+          session: DeferredDeletionUITestBackend.session,
+          deferredDeletionPersistence: nil)
+      } else {
+        model = AppModel()
+      }
+    #else
+      let model = AppModel()
+    #endif
     _model = State(initialValue: model)
     // System callbacks can arrive before SwiftUI mounts a scene (notably a
     // content-available launch). Wire the delegate during app construction,
@@ -66,14 +80,23 @@ struct DashApp: App {
 
   var body: some Scene {
     WindowGroup {
-      if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
-        KeyboardDismissalTestHost()
-          .tint(DashTheme.brand)
-          .environment(model)
-      } else {
+      #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
+          KeyboardDismissalTestHost()
+            .tint(DashTheme.brand)
+            .environment(model)
+        } else if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion") {
+          DeferredDeletionTestHost()
+            .tint(DashTheme.brand)
+            .environment(model)
+        } else {
+          RootWithSplash(model: model)
+            .tint(DashTheme.brand)
+        }
+      #else
         RootWithSplash(model: model)
           .tint(DashTheme.brand)
-      }
+      #endif
     }
     .backgroundTask(.appRefresh(AppModel.backgroundRefreshID)) {
       await model.performBackgroundWatchtowerRefresh()
@@ -320,23 +343,206 @@ private struct RootWithSplash: View {
   }
 }
 
-private struct KeyboardDismissalTestHost: View {
-  @State private var text = ""
-  @State private var presentsForm = true
+#if DEBUG
+  private struct KeyboardDismissalTestHost: View {
+    @State private var text = ""
+    @State private var presentsForm = true
 
-  var body: some View {
-    Color.clear
-      .dashTray(isPresented: $presentsForm, title: "Keyboard test") {
-        DashFormSheet(
-          onSave: {},
-          content: {
-            VStack(spacing: 24) {
-              DashFormField(label: "Name", text: $text)
-              Text("Form background")
-                .frame(maxWidth: .infinity, minHeight: 80)
+    var body: some View {
+      Color.clear
+        .dashTray(isPresented: $presentsForm, title: "Keyboard test") {
+          DashFormSheet(
+            onSave: {},
+            content: {
+              VStack(spacing: 24) {
+                DashFormField(label: "Name", text: $text)
+                Text("Form background")
+                  .frame(maxWidth: .infinity, minHeight: 80)
+              }
+            }
+          )
+        }
+    }
+  }
+
+  private struct DeferredDeletionTestHost: View {
+    @Environment(AppModel.self) private var model
+    @State private var ready = false
+
+    var body: some View {
+      Group {
+        if ready {
+          NavigationStack {
+            DNSRecordsView(zoneID: "ui-zone")
+              .environment(\.featureAllowsWrites, true)
+          }
+        } else {
+          ProgressView()
+        }
+      }
+      .dashToastHost()
+      .task {
+        model.activeAccountID = "ui-account"
+        model.grantedScopes = DashAuthorizationScopes.core
+        model.selectedScopes = DashAuthorizationScopes.core
+        model.featureCache.set(
+          FeatureCacheKey.dnsRecords("ui-zone"),
+          Self.records,
+          ttl: nil)
+        model.deferredDeletions.activateCredential(
+          profileID: "ui-deferred-profile",
+          availableAccountIDs: ["ui-account"])
+        ready = true
+      }
+    }
+
+    private static var records: [DNSRecord] {
+      let data = Data(DeferredDeletionUITestBackend.recordsJSON.utf8)
+      return (try? JSONDecoder().decode([DNSRecord].self, from: data)) ?? []
+    }
+  }
+
+  private struct DeferredDeletionUITestTokenStore: TokenStore {
+    func clear() async throws {}
+    func getAccessToken() async throws -> String? { "ui-test-token" }
+    func getRefreshToken() async throws -> String? { nil }
+    func setTokens(_: TokenSet) async throws {}
+  }
+
+  /// Deterministic URLProtocol backend for the production DNS screen used by
+  /// the UI test. It prevents either the refresh callback or a slow test run
+  /// from reaching Cloudflare or the simulator's persisted Keychain.
+  private final class DeferredDeletionUITestBackend: URLProtocol {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var deletedRecordIDs: Set<String> = []
+
+    static let session: URLSession = {
+      let configuration = URLSessionConfiguration.ephemeral
+      configuration.protocolClasses = [DeferredDeletionUITestBackend.self]
+      return URLSession(configuration: configuration)
+    }()
+
+    static let recordJSONByID = [
+      "record-1":
+        """
+      {
+        "id": "record-1",
+        "zone_id": "ui-zone",
+        "type": "A",
+        "name": "api.example.com",
+        "content": "192.0.2.1",
+        "proxied": false,
+        "ttl": 1
+      }
+      """,
+      "record-2":
+        """
+      {
+        "id": "record-2",
+        "zone_id": "ui-zone",
+        "type": "CNAME",
+        "name": "www.example.com",
+        "content": "api.example.com",
+        "proxied": true,
+        "ttl": 1
+      }
+      """,
+    ]
+
+    static var recordsJSON: String {
+      let records = lock.withLock {
+        recordJSONByID.keys.sorted().compactMap { id in
+          deletedRecordIDs.contains(id) ? nil : recordJSONByID[id]
+        }
+      }
+      return "[\(records.joined(separator: ","))]"
+    }
+
+    static func reset() {
+      lock.withLock { deletedRecordIDs.removeAll() }
+    }
+
+    override class func canInit(with _: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+      let reply = Self.reply(to: request)
+      let response = HTTPURLResponse(
+        url: request.url ?? URL(string: "https://api.cloudflare.com")!,
+        statusCode: reply.status,
+        httpVersion: nil,
+        headerFields: ["Content-Type": "application/json"])!
+      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+      client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
+      client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+
+    private static func reply(to request: URLRequest) -> (status: Int, body: String) {
+      guard let url = request.url else { return missingResponse }
+      var path = url.path
+      if path.hasPrefix("/client/v4") {
+        path.removeFirst("/client/v4".count)
+      }
+      let parts = path.split(separator: "/").map(String.init)
+      guard
+        parts.count >= 3,
+        parts[0] == "zones",
+        parts[1] == "ui-zone",
+        parts[2] == "dns_records"
+      else { return missingResponse }
+
+      let method = (request.httpMethod ?? "GET").uppercased()
+      if parts.count == 3, method == "GET" {
+        let records = recordsJSON
+        let count = lock.withLock { recordJSONByID.count - deletedRecordIDs.count }
+        return (
+          200,
+          """
+          {
+            "success": true,
+            "errors": [],
+            "messages": [],
+            "result": \(records),
+            "result_info": {
+              "page": 1,
+              "per_page": 50,
+              "count": \(count),
+              "total_count": \(count),
+              "total_pages": 1
             }
           }
+          """
         )
       }
+
+      guard parts.count == 4 else { return missingResponse }
+      let recordID = parts[3]
+      if method == "DELETE", recordJSONByID[recordID] != nil {
+        lock.withLock { _ = deletedRecordIDs.insert(recordID) }
+        return (
+          200,
+          #"{"success":true,"errors":[],"messages":[],"result":{"id":"\#(recordID)"}}"#
+        )
+      }
+      if method == "GET",
+        let record = recordJSONByID[recordID],
+        lock.withLock({ !deletedRecordIDs.contains(recordID) })
+      {
+        return (
+          200,
+          #"{"success":true,"errors":[],"messages":[],"result":\#(record)}"#
+        )
+      }
+      return missingResponse
+    }
+
+    private static var missingResponse: (status: Int, body: String) {
+      (
+        404,
+        #"{"success":false,"errors":[{"code":81044,"message":"Record not found"}],"messages":[],"result":null}"#
+      )
+    }
   }
-}
+#endif

@@ -3,6 +3,15 @@ import UIKit
 
 // MARK: - Tray content helpers
 
+enum DashFormDeletionPresentation: Equatable, Sendable {
+  /// Sensitive or irreversible actions keep the shared confirmation morph and
+  /// hold-to-confirm control.
+  case confirmThenExecute
+  /// Reversible ordinary deletion schedules immediately; the global Toast is
+  /// the single confirmation/Undo surface.
+  case deferToGlobalUndo
+}
+
 /// A form tray with exactly one action button. When a delete is supplied, a
 /// circular header button morphs the form — in place — into a confirmation whose
 /// single button is the destructive one; the Save button becomes Confirm rather
@@ -17,11 +26,15 @@ struct DashFormSheet<Content: View>: View {
   /// morph stays open instead of pretending success.
   var deleteError: String? = nil
   var onDelete: (() -> Void)? = nil
+  var deletionPresentation: DashFormDeletionPresentation = .confirmThenExecute
   let onSave: () -> Void
   @ViewBuilder let content: Content
   @State private var confirmingDelete = false
 
-  private var hasDelete: Bool { deleteMessage != nil && onDelete != nil }
+  private var hasDelete: Bool {
+    guard onDelete != nil else { return false }
+    return deletionPresentation == .deferToGlobalUndo || deleteMessage != nil
+  }
 
   var body: some View {
     DashConfirmMorph(
@@ -36,6 +49,7 @@ struct DashFormSheet<Content: View>: View {
       errorMessage: confirmingDelete ? deleteError : nil,
       action: { confirmingDelete ? onDelete?() : onSave() },
       headerDelete: hasDelete,
+      headerDeleteAction: deletionPresentation == .deferToGlobalUndo ? onDelete : nil,
       content: { content }
     )
     .dashKeyboardDismissal()
@@ -62,6 +76,7 @@ struct DashConfirmMorph<Content: View>: View {
   var errorMessage: String? = nil
   var action: () -> Void
   var headerDelete = false
+  var headerDeleteAction: (() -> Void)? = nil
   @ViewBuilder var content: () -> Content
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayPinsFooter) private var pinsFooter
@@ -129,7 +144,11 @@ struct DashConfirmMorph<Content: View>: View {
           id: "delete", icon: SolarAsset.trash,
           accessibilityLabel: DashL10n.string("Delete")
         ) {
-          withAnimation(DashTheme.Motion.morph) { confirming = true }
+          if let headerDeleteAction {
+            headerDeleteAction()
+          } else {
+            withAnimation(DashTheme.Motion.morph) { confirming = true }
+          }
         }
         : nil
     )

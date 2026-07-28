@@ -1071,23 +1071,36 @@ struct DNSRecordsView: View {
   @State private var createsRecord = false
   @State private var loading = true
   @State private var loadingMore = false
+  @State private var reloading = false
+  @State private var activeRequestID: UUID?
   @State private var pageState = DashPageState()
   @State private var error: String?
   @State private var selectedSliceID: String?
 
+  private var deferredDeletionRefreshGeneration: UInt64 {
+    guard let accountID = model.activeAccountID else { return 0 }
+    return model.deferredDeletions.refreshGeneration(
+      for: DeferredDeletionScope(accountID: accountID, zoneID: zoneID))
+  }
+
   var body: some View {
-    let buckets = DNSChartModel.buckets(records)
+    let displayedRecords = displayRecords
+    let hiddenRecordCount = records.count - displayedRecords.count
+    let displayedTotal = pageState.totalCount.map {
+      max(displayedRecords.count, $0 - hiddenRecordCount)
+    }
+    let buckets = DNSChartModel.buckets(displayedRecords)
     let selectedBucket = DNSChartModel.bucket(in: buckets, withID: selectedSliceID)
-    let visibleRecords = visibleRecords(in: buckets)
+    let visibleRecords = visibleRecords(in: displayedRecords, buckets: buckets)
     let slices = recordTypeSlices(for: buckets)
 
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: !records.isEmpty,
+      hasContent: !displayedRecords.isEmpty,
       retry: { Task { await load(force: true) } }
     ) {
-      if records.isEmpty {
+      if displayedRecords.isEmpty {
         DashEmptyState(
           icon: SolarAsset.Content.globus,
           title: "No DNS records",
@@ -1097,7 +1110,8 @@ struct DNSRecordsView: View {
         recordTypesCard(
           buckets: buckets,
           slices: slices,
-          selectedBucket: selectedBucket
+          selectedBucket: selectedBucket,
+          displayedRecordCount: displayedRecords.count
         )
         // Bottom padding on the card, not top padding on the rows: the rows
         // are a bare lazy `ForEach` and must stay untouched (StorageViews
@@ -1119,18 +1133,20 @@ struct DNSRecordsView: View {
               )
             }
             .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("dns-record-\(record.id)")
             .transition(morphTransition)
           }
         }
       }
       if pageState.canLoadMore {
         DashLoadMoreFooter(
-          loaded: records.count,
-          total: pageState.totalCount,
+          loaded: displayedRecords.count,
+          total: displayedTotal,
           noun: "records",
           caption: filterCaption(
             selectedBucket: selectedBucket,
-            visibleRecordCount: visibleRecords.count),
+            visibleRecordCount: visibleRecords.count,
+            displayedRecordCount: displayedRecords.count),
           isLoading: loadingMore
         ) { Task { await loadMore() } }
       }
@@ -1163,13 +1179,27 @@ struct DNSRecordsView: View {
         Task { await load(force: true) }
       }
     }
-    .task { await load() }
+    .task(id: deferredDeletionRefreshGeneration) {
+      // The first mounted DNS view that wins this forced load writes the
+      // shared cache. Acknowledging the generation back to zero then reruns
+      // every other mounted instance against that same snapshot, so none can
+      // retain a pre-deletion local row.
+      let generation = deferredDeletionRefreshGeneration
+      let accountID = model.activeAccountID
+      let loaded = await load(force: generation > 0)
+      if loaded, generation > 0, let accountID {
+        model.deferredDeletions.acknowledgeRefresh(
+          for: DeferredDeletionScope(accountID: accountID, zoneID: zoneID),
+          generation: generation)
+      }
+    }
   }
 
   private func recordTypesCard(
     buckets: [DNSChartModel.Bucket],
     slices: [DitherSlice],
-    selectedBucket: DNSChartModel.Bucket?
+    selectedBucket: DNSChartModel.Bucket?,
+    displayedRecordCount: Int
   ) -> some View {
     DashCard {
       VStack(alignment: .leading, spacing: 12) {
@@ -1197,7 +1227,10 @@ struct DNSRecordsView: View {
         // Under the legend, not beside the card title: engaging a filter grows
         // the card downward, so the donut the user just tapped stays put and
         // only the list below — which is re-flowing anyway — moves.
-        filterStrip(bucket: selectedBucket, slices: slices)
+        filterStrip(
+          bucket: selectedBucket,
+          slices: slices,
+          displayedRecordCount: displayedRecordCount)
       }
     }
   }
@@ -1205,13 +1238,14 @@ struct DNSRecordsView: View {
   @ViewBuilder
   private func filterStrip(
     bucket: DNSChartModel.Bucket?,
-    slices: [DitherSlice]
+    slices: [DitherSlice],
+    displayedRecordCount: Int
   ) -> some View {
     if let bucket {
       DashChartFilterStrip(
         label: DNSChartModel.label(for: bucket),
         countText: DashL10n.string(
-          "\(bucket.count.formatted()) of \(records.count.formatted()) records"),
+          "\(bucket.count.formatted()) of \(displayedRecordCount.formatted()) records"),
         color: sliceColor(forBucketID: bucket.id, in: slices),
         clearAccessibilityLabel: DashL10n.string("Show all record types"),
         clearAccessibilityIdentifier: "dns-type-filter-clear"
@@ -1226,10 +1260,10 @@ struct DNSRecordsView: View {
   /// screen, so the common path is the full list. `DitherPieChart` clears a
   /// selection that stops naming a slice, which is why Load more can widen the
   /// data without the view resetting the filter itself.
-  private func visibleRecords(in buckets: [DNSChartModel.Bucket]) -> [DNSRecord] {
-    DNSChartModel.records(records, in: selectedSliceID, buckets: buckets).filter { record in
-      guard let accountID = model.activeAccountID else { return true }
-      return !model.deferredDeletions.isPendingDeletion(
+  private var displayRecords: [DNSRecord] {
+    guard let accountID = model.activeAccountID else { return records }
+    return records.filter { record in
+      !model.deferredDeletions.isPendingDeletion(
         DeferredDeletionResourceKey(
           kind: .dnsRecord,
           accountID: accountID,
@@ -1238,16 +1272,24 @@ struct DNSRecordsView: View {
     }
   }
 
+  private func visibleRecords(
+    in displayedRecords: [DNSRecord],
+    buckets: [DNSChartModel.Bucket]
+  ) -> [DNSRecord] {
+    DNSChartModel.records(displayedRecords, in: selectedSliceID, buckets: buckets)
+  }
+
   /// A filtered list would make the footer's default "Showing X of Y" caption
   /// describe rows that are not on screen. Name the narrowed subset instead —
   /// Load more still fetches whole pages, not more of the selected type.
   private func filterCaption(
     selectedBucket: DNSChartModel.Bucket?,
-    visibleRecordCount: Int
+    visibleRecordCount: Int,
+    displayedRecordCount: Int
   ) -> String? {
     guard selectedBucket != nil else { return nil }
     return DashL10n.string(
-      "Filtered to \(visibleRecordCount) of \(records.count) loaded records")
+      "Filtered to \(visibleRecordCount) of \(displayedRecordCount) loaded records")
   }
 
   /// Filtered-out rows dissolve with the same blur the tray morph uses, so the
@@ -1293,14 +1335,30 @@ struct DNSRecordsView: View {
       ?? DashTheme.DitherChart.neutral(colorScheme: colorScheme, contrast: colorSchemeContrast)
   }
 
-  private func load(force: Bool = false) async {
+  @discardableResult
+  private func load(force: Bool = false) async -> Bool {
+    let requestID = UUID()
+    activeRequestID = requestID
+    reloading = true
+    loadingMore = false
+    defer {
+      if activeRequestID == requestID {
+        reloading = false
+        loading = false
+      }
+    }
     let key = FeatureCacheKey.dnsRecords(zoneID)
     if !force, let cached: [DNSRecord] = model.featureCache.get(key) {
       records = cached
       pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
-      loading = false
       error = nil
-      return
+      return true
+    }
+    let requestScope = model.activeAccountID.map {
+      DeferredDeletionScope(accountID: $0, zoneID: zoneID)
+    }
+    let globalRequestGeneration = requestScope.map {
+      model.deferredDeletions.beginDNSLoad(for: $0)
     }
     if records.isEmpty { loading = true }
     error = nil
@@ -1308,45 +1366,95 @@ struct DNSRecordsView: View {
       pageState.reset()
       let page = try await model.client.listDNSRecords(
         zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+      guard
+        activeRequestID == requestID,
+        acceptsDNSResponse(
+          scope: requestScope,
+          generation: globalRequestGeneration)
+      else { return false }
       records = page.items
-      reconcileDeferredDeletions()
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: records.count,
         pageSize: Self.pageSize)
+      reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(key, records)
+      return true
     } catch {
-      if error.dashIsCancellation { return }
+      guard
+        activeRequestID == requestID,
+        acceptsDNSResponse(
+          scope: requestScope,
+          generation: globalRequestGeneration)
+      else { return false }
+      if error.dashIsCancellation { return false }
       self.error = error.dashActionableMessage
+      return false
     }
-    loading = false
   }
 
   private func loadMore() async {
-    guard !loadingMore else { return }
+    guard !loadingMore, !reloading else { return }
+    let requestID = UUID()
+    activeRequestID = requestID
     loadingMore = true
-    defer { loadingMore = false }
+    let requestScope = model.activeAccountID.map {
+      DeferredDeletionScope(accountID: $0, zoneID: zoneID)
+    }
+    let globalRequestGeneration = requestScope.map {
+      model.deferredDeletions.beginDNSLoad(for: $0)
+    }
+    defer {
+      if activeRequestID == requestID {
+        loadingMore = false
+      }
+    }
     do {
       let page = try await model.client.listDNSRecords(
         zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+      guard
+        activeRequestID == requestID,
+        acceptsDNSResponse(
+          scope: requestScope,
+          generation: globalRequestGeneration)
+      else { return }
       records += page.items
-      reconcileDeferredDeletions()
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: records.count,
         pageSize: Self.pageSize)
+      reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(FeatureCacheKey.dnsRecords(zoneID), records)
       error = nil
     } catch {
+      guard
+        activeRequestID == requestID,
+        acceptsDNSResponse(
+          scope: requestScope,
+          generation: globalRequestGeneration)
+      else { return }
       if error.dashIsCancellation { return }
       self.error = error.dashActionableMessage
     }
   }
 
-  private func reconcileDeferredDeletions() {
+  private func reconcileDeferredDeletions(loadGeneration: UInt64?) {
     guard let accountID = model.activeAccountID else { return }
     model.deferredDeletions.reconcileDNSRecords(
       accountID: accountID,
       zoneID: zoneID,
-      serverRecordIDs: Set(records.map(\.id)))
+      serverRecordIDs: Set(records.map(\.id)),
+      isCompleteSnapshot: !pageState.canLoadMore,
+      loadGeneration: loadGeneration)
+  }
+
+  private func acceptsDNSResponse(
+    scope: DeferredDeletionScope?,
+    generation: UInt64?
+  ) -> Bool {
+    guard let scope, let generation else { return true }
+    return model.activeAccountID == scope.accountID
+      && model.deferredDeletions.isCurrentDNSLoad(
+        for: scope,
+        generation: generation)
   }
 }
 
@@ -1551,7 +1659,8 @@ struct DNSRecordEditor: View {
         } : nil,
       isDeleting: deleting,
       deleteError: error,
-      onDelete: allowsWrites ? record.map { rec in { Task { await delete(rec) } } } : nil,
+      onDelete: allowsWrites ? record.map { rec in { delete(rec) } } : nil,
+      deletionPresentation: .deferToGlobalUndo,
       onSave: {
         if allowsWrites {
           Task { await save() }
@@ -1712,21 +1821,22 @@ struct DNSRecordEditor: View {
     saving = false
   }
 
-  private func delete(_ record: DNSRecord) async {
+  private func delete(_ record: DNSRecord) {
     guard allowsWrites else {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
     guard let accountID = model.activeAccountID else { return }
     error = nil
-    model.deferredDeletions.schedule(
-      .dnsRecord(
-        accountID: accountID,
-        zoneID: zoneID,
-        recordID: record.id,
-        recordType: record.type,
-        displayName: record.name))
-    saved()
+    guard
+      model.deferredDeletions.schedule(
+        .dnsRecord(
+          accountID: accountID,
+          zoneID: zoneID,
+          recordID: record.id,
+          recordType: record.type,
+          displayName: record.name)) != nil
+    else { return }
     dismiss()
   }
 }

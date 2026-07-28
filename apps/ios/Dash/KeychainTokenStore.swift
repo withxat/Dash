@@ -39,6 +39,39 @@ actor KeychainTokenStore: TokenStore {
   }
 
   func setTokens(_ tokens: TokenSet) async throws {
+    try store(tokens)
+  }
+
+  func replaceTokens(
+    _ tokens: TokenSet,
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool {
+    guard
+      try read(Key.access) == expectedAccessToken,
+      try read(Key.refresh) == expectedRefreshToken
+    else {
+      return false
+    }
+    try store(tokens)
+    return true
+  }
+
+  func clearTokens(
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool {
+    guard
+      try read(Key.access) == expectedAccessToken,
+      try read(Key.refresh) == expectedRefreshToken
+    else {
+      return false
+    }
+    try clearStoredCredential()
+    return true
+  }
+
+  private func store(_ tokens: TokenSet) throws {
     try write(tokens.accessToken, key: Key.access)
     if let refresh = tokens.refreshToken { try write(refresh, key: Key.refresh) }
     if let scope = tokens.scope {
@@ -52,6 +85,13 @@ actor KeychainTokenStore: TokenStore {
         String(Date().addingTimeInterval(TimeInterval(expiresIn)).timeIntervalSince1970),
         key: Key.expiry)
     }
+  }
+
+  private func clearStoredCredential() throws {
+    try delete(Key.access)
+    try delete(Key.refresh)
+    try delete(Key.expiry)
+    try delete(Key.scopes)
   }
 
   private func query(_ key: String) -> [String: Any] {

@@ -308,6 +308,7 @@ private struct DashSheetMenuButtons: View {
         }
         .buttonStyle(DashPressButtonStyle())
         .accessibilityLabel(trailingAction.accessibilityLabel)
+        .accessibilityIdentifier("dash-tray-header-\(trailingAction.id)")
       }
       DashCloseButton { dismiss() }
     }

@@ -201,11 +201,52 @@ public protocol TokenStore: Sendable {
   func getGrantedScopes() async throws -> Set<String>?
   func setGrantedScopes(_ scopes: Set<String>) async throws
   func setTokens(_ tokens: TokenSet) async throws
+  func replaceTokens(
+    _ tokens: TokenSet,
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool
+  func clearTokens(
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool
 }
 
 extension TokenStore {
   public func getGrantedScopes() async throws -> Set<String>? { nil }
   public func setGrantedScopes(_: Set<String>) async throws {}
+
+  /// Stores that cannot provide an atomic compare-and-swap still get a
+  /// fail-closed default. Credential stores used by the app override this so
+  /// an OAuth replacement cannot race an already-started refresh.
+  public func replaceTokens(
+    _ tokens: TokenSet,
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool {
+    guard
+      try await getAccessToken() == expectedAccessToken,
+      try await getRefreshToken() == expectedRefreshToken
+    else {
+      return false
+    }
+    try await setTokens(tokens)
+    return true
+  }
+
+  public func clearTokens(
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) async throws -> Bool {
+    guard
+      try await getAccessToken() == expectedAccessToken,
+      try await getRefreshToken() == expectedRefreshToken
+    else {
+      return false
+    }
+    try await clear()
+    return true
+  }
 }
 
 public protocol CloudflareResource: Codable, Identifiable, Sendable where ID == String {

@@ -13,6 +13,52 @@ enum AuthenticationState: Sendable, Equatable {
   case unauthenticated
 }
 
+/// A background-task completion can arrive after a newer lease has replaced
+/// it. Binding every expiration/waiter to a generation prevents an older
+/// callback from ending the newer task.
+@MainActor
+final class DeferredDeletionBackgroundTaskLease {
+  private var current: (generation: UUID, identifier: UIBackgroundTaskIdentifier)?
+  private let endHandler: @MainActor (UIBackgroundTaskIdentifier) -> Void
+
+  init(
+    endHandler: @escaping @MainActor (UIBackgroundTaskIdentifier) -> Void = {
+      UIApplication.shared.endBackgroundTask($0)
+    }
+  ) {
+    self.endHandler = endHandler
+  }
+
+  @discardableResult
+  func replace(
+    using begin: (_ expirationHandler: @escaping @Sendable () -> Void)
+      -> UIBackgroundTaskIdentifier
+  ) -> UUID {
+    endCurrent()
+    let generation = UUID()
+    let identifier = begin { [weak self] in
+      Task { @MainActor in
+        self?.end(generation: generation)
+      }
+    }
+    if identifier != .invalid {
+      current = (generation, identifier)
+    }
+    return generation
+  }
+
+  func end(generation: UUID) {
+    guard current?.generation == generation else { return }
+    endCurrent()
+  }
+
+  private func endCurrent() {
+    guard let current else { return }
+    self.current = nil
+    endHandler(current.identifier)
+  }
+}
+
 struct AccountRequestContext: Hashable, Sendable {
   let accountID: String
   let generation: UInt64
@@ -116,7 +162,7 @@ final class AppModel {
   static let demoGrantedScopes = DashAuthorizationScopes.initialReadOnly
 
   let configuration: AppConfiguration
-  let tokenStore: KeychainTokenStore
+  let tokenStore: any TokenStore
   /// Swapped for a `DemoBackend`-served client while the demo session runs;
   /// every consumer reads it per-call, so the swap takes effect everywhere.
   private(set) var client: CloudflareClient
@@ -189,17 +235,27 @@ final class AppModel {
   private var isRetryingIdentity = false
   private var isSigningOut = false
   private var accountGeneration: UInt64 = 0
+  private let deferredDeletionBackgroundLease = DeferredDeletionBackgroundTaskLease()
+  private let deferredDeletionExecutor: CloudflareDeferredDeletionExecutor
+  private let authenticatedSession: URLSession
 
-  init(configuration: AppConfiguration = .current) {
+  init(
+    configuration: AppConfiguration = .current,
+    tokenStore: any TokenStore = KeychainTokenStore(),
+    session: URLSession = DashAPISession.shared,
+    deferredDeletionPersistence: UserDefaults? = .standard
+  ) {
     self.configuration = configuration
     selectedScopes = DashAuthorizationScopes.core
-    let store = KeychainTokenStore()
-    tokenStore = store
+    self.tokenStore = tokenStore
+    authenticatedSession = session
     let apiClient = CloudflareClient(
-      clientID: configuration.clientID, tokenStore: store, session: DashAPISession.shared)
+      clientID: configuration.clientID, tokenStore: tokenStore, session: session)
     client = apiClient
+    let deferredDeletionExecutor = CloudflareDeferredDeletionExecutor(client: apiClient)
+    self.deferredDeletionExecutor = deferredDeletionExecutor
     deferredDeletions = DeferredDeletionCoordinator(
-      executor: CloudflareDeferredDeletionExecutor(client: apiClient),
+      executor: deferredDeletionExecutor,
       toasts: toasts,
       invalidateCache: { [featureCache] command in
         switch command {
@@ -207,7 +263,8 @@ final class AppModel {
           featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
         }
       },
-      persistence: .standard)
+      persistence: deferredDeletionPersistence,
+      requiresCredentialActivation: true)
     activeAccountID = UserDefaults.standard.string(forKey: "dash.active_account_id")
     // Property observers don't fire during init — mirror explicitly so the
     // share extension works without waiting for an account switch.
@@ -223,6 +280,8 @@ final class AppModel {
       deferredDeletions.undoCurrentBatch()
     case .retryDeferredDeletion(let operationID):
       deferredDeletions.retry(operationID)
+    case .retryDeferredDeletions(let operationIDs):
+      deferredDeletions.retryFailures(operationIDs)
     }
   }
 
@@ -512,6 +571,9 @@ final class AppModel {
           fetchedAt: .now)
         featureCache.set(FeatureCacheKey.watchtower("ui-account"), watchtowerPreview)
         syncWatchtowerInboxBadge(from: watchtowerPreview, accountID: "ui-account")
+        deferredDeletions.activateCredential(
+          profileID: "ui-profile",
+          availableAccountIDs: ["ui-account"])
         authState = .authenticated
         return
       }
@@ -519,10 +581,12 @@ final class AppModel {
 
     do {
       guard try await tokenStore.getAccessToken() != nil else {
+        deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
         authState = .unauthenticated
         return
       }
     } catch {
+      deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
       authState = .unauthenticated
       return
     }
@@ -669,26 +733,39 @@ final class AppModel {
           return
         }
         let previousScopes = grantedScopes
+        let previousProfileID = user?.id
+        let previousAccountIDs = Set(accounts.map(\.id))
         let previousTokens: TokenSet?
-        let oldAccessToken =
-          preservesExistingSession ? try? await tokenStore.getAccessToken() : nil
-        if let accessToken = oldAccessToken {
-          previousTokens = TokenSet(
-            accessToken: accessToken,
-            refreshToken: try? await tokenStore.getRefreshToken(),
-            scope: previousScopes?.sorted().joined(separator: " ")
-          )
-        } else {
-          previousTokens = nil
+        do {
+          if preservesExistingSession,
+            let accessToken = try await tokenStore.getAccessToken()
+          {
+            previousTokens = TokenSet(
+              accessToken: accessToken,
+              refreshToken: try await tokenStore.getRefreshToken(),
+              scope: previousScopes?.sorted().joined(separator: " ")
+            )
+          } else {
+            previousTokens = nil
+          }
+        } catch {
+          // If the old credential cannot be snapshotted completely, leave it
+          // untouched instead of beginning a replacement we cannot roll back.
+          isAuthenticating = false
+          errorMessage = error.localizedDescription
+          return
         }
-        var replacedTokens = false
+        var credentialReplacementPrepared = false
         do {
           let tokens = try await OAuth.exchangeCode(
             clientID: configuration.clientID, code: code, verifier: pkce.verifier,
             redirectURI: configuration.redirectURI, session: DashAPISession.shared
           )
-          try await tokenStore.setTokens(tokens)
-          replacedTokens = true
+          // Keep the old token installed until every already-started deletion
+          // has finished or entered read-only reconciliation.
+          await deferredDeletions.prepareForCredentialReplacement()
+          credentialReplacementPrepared = true
+          try await replaceStoredTokens(with: tokens)
           let granted =
             tokens.scope.map { Set($0.split(separator: " ").map(String.init)) }
             ?? requestedScopes
@@ -711,16 +788,16 @@ final class AppModel {
           }
         } catch {
           isAuthenticating = false
-          if replacedTokens, let previousTokens {
-            try? await tokenStore.setTokens(previousTokens)
-            if let previousScopes {
-              try? await tokenStore.setGrantedScopes(previousScopes)
-            }
-            grantedScopes = previousScopes
-            selectedScopes = previousScopes ?? selectedScopes
-          }
+          let restoredPreviousCredential =
+            await handleCredentialReplacementFailure(
+              replacementPrepared: credentialReplacementPrepared,
+              preservesExistingSession: preservesExistingSession,
+              previousTokens: previousTokens,
+              previousScopes: previousScopes,
+              previousProfileID: previousProfileID,
+              previousAccountIDs: previousAccountIDs)
           errorMessage = error.localizedDescription
-          if !preservesExistingSession {
+          if !preservesExistingSession || !restoredPreviousCredential {
             authState = .unauthenticated
           }
         }
@@ -743,17 +820,85 @@ final class AppModel {
     }
   }
 
+  private func replaceStoredTokens(with tokens: TokenSet) async throws {
+    // `TokenStore.setTokens` intentionally preserves a refresh token omitted
+    // by a normal refresh response. An OAuth identity replacement is
+    // different: clear first so fields from two people can never be mixed.
+    try await tokenStore.clear()
+    try await tokenStore.setTokens(tokens)
+  }
+
+  @discardableResult
+  func handleCredentialReplacementFailure(
+    replacementPrepared: Bool,
+    preservesExistingSession: Bool,
+    previousTokens: TokenSet?,
+    previousScopes: Set<String>?,
+    previousProfileID: String?,
+    previousAccountIDs: Set<String>
+  ) async -> Bool {
+    guard replacementPrepared else {
+      // Code exchange failed before any token/coordinator mutation. The
+      // existing session and recovery journal must remain untouched.
+      return preservesExistingSession
+    }
+    if let previousTokens {
+      return await restoreCredentialAfterFailedReplacement(
+        previousTokens: previousTokens,
+        previousScopes: previousScopes,
+        previousProfileID: previousProfileID,
+        previousAccountIDs: previousAccountIDs)
+    }
+    try? await tokenStore.clear()
+    deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+    return false
+  }
+
+  @discardableResult
+  func restoreCredentialAfterFailedReplacement(
+    previousTokens: TokenSet,
+    previousScopes: Set<String>?,
+    previousProfileID: String?,
+    previousAccountIDs: Set<String>
+  ) async -> Bool {
+    do {
+      try await replaceStoredTokens(with: previousTokens)
+      if let previousScopes {
+        try await tokenStore.setGrantedScopes(previousScopes)
+      }
+      grantedScopes = previousScopes
+      selectedScopes = previousScopes ?? selectedScopes
+      guard let previousProfileID else {
+        deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+        return false
+      }
+      deferredDeletions.activateCredential(
+        profileID: previousProfileID,
+        availableAccountIDs: previousAccountIDs)
+      return true
+    } catch {
+      // The keychain may now contain no credential or only part of one.
+      // Never bind coordinator work to a guessed identity in that state.
+      try? await tokenStore.clear()
+      deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+      return false
+    }
+  }
+
   /// Enters the read-only demo session: swaps the client for one served
   /// entirely by `DemoBackend`, then runs the normal identity path so the
   /// demo exercises the same code as a real sign-in.
   func enterDemo() {
     guard authState == .unauthenticated, !isDemoSession else { return }
+    toasts.clearAll()
     resetAccountScopedWork()
     pendingLegacyNotificationRoute = nil
     isDemoSession = true
     errorMessage = nil
-    client = CloudflareClient(
+    let demoClient = CloudflareClient(
       clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
+    client = demoClient
+    deferredDeletionExecutor.replaceClient(demoClient)
     grantedScopes = Self.demoGrantedScopes
     Task { [weak self] in
       guard let self else { return }
@@ -767,11 +912,13 @@ final class AppModel {
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
   private func exitDemo() {
-    deferredDeletions.cancelPendingOperations()
+    deferredDeletions.discardEphemeralCredentialStatePreservingRecovery()
     resetAccountScopedWork()
     isDemoSession = false
-    client = CloudflareClient(
-      clientID: configuration.clientID, tokenStore: tokenStore, session: DashAPISession.shared)
+    let authenticatedClient = CloudflareClient(
+      clientID: configuration.clientID, tokenStore: tokenStore, session: authenticatedSession)
+    client = authenticatedClient
+    deferredDeletionExecutor.replaceClient(authenticatedClient)
     avatars.clear()
     Task { await r2Thumbnails.clear() }
     accounts = []
@@ -785,7 +932,7 @@ final class AppModel {
     pendingLegacyNotificationRoute = nil
     WatchtowerNotificationBaselineStore.clearAll()
     MetricsWidgetPublisher.clear()
-    toasts.dismiss()
+    toasts.clearAll()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
     authState = .unauthenticated
@@ -799,10 +946,12 @@ final class AppModel {
       return
     }
     guard !isSigningOut else { return }
-    deferredDeletions.cancelPendingOperations()
     isSigningOut = true
     defer { isSigningOut = false }
     isAuthenticating = false
+    // This handshake runs before token revocation so an in-flight DELETE never
+    // resumes under a replacement credential.
+    await deferredDeletions.prepareForCredentialReplacement()
     let pushAccountIDs = Set(accounts.map(\.id))
       .union(PushRegistrationService.enabledAccountIDs())
       .union(PushRegistrationService.pendingCleanupAccountIDs())
@@ -842,6 +991,7 @@ final class AppModel {
         clientID: configuration.clientID, token: token, session: DashAPISession.shared)
     }
     try? await tokenStore.clear()
+    deferredDeletions.discardCredentialState()
     avatars.clear()
     await r2Thumbnails.clear()
     accounts = []
@@ -855,7 +1005,7 @@ final class AppModel {
     pendingDeviceToken = nil
     WatchtowerNotificationBaselineStore.clearAll()
     WatchtowerRemoteRefreshInvalidationStore.clearAll()
-    toasts.dismiss()
+    toasts.clearAll()
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
 
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
@@ -881,7 +1031,7 @@ final class AppModel {
     resetAccountScopedWork()
     Task { await r2Thumbnails.clear() }
     watchtowerUnreadAlertCount = nil
-    toasts.dismiss()
+    toasts.clearAll()
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
   }
@@ -890,7 +1040,8 @@ final class AppModel {
   /// rebuild Watchtower (and similar) strings without a process restart.
   func discardLocalizedCaches() {
     featureCache.remove(prefix: "watchtower:")
-    toasts.dismiss()
+    deferredDeletions.refreshLocalizedPresentation()
+    toasts.clearAll(preserving: .deferredDeletionBatch)
   }
 
   /// Single entry point for Watchtower data: serves the cached snapshot when
@@ -1068,6 +1219,22 @@ final class AppModel {
     try? BGTaskScheduler.shared.submit(request)
   }
 
+  /// Ends the undo window synchronously and asks iOS for the short amount of
+  /// execution time needed to finish DELETE or persist its uncertain outcome.
+  func commitDeferredDeletionsForBackground() {
+    let leaseGeneration = deferredDeletionBackgroundLease.replace { expirationHandler in
+      UIApplication.shared.beginBackgroundTask(
+        withName: "Deferred deletion",
+        expirationHandler: expirationHandler)
+    }
+    deferredDeletions.commitPendingOperations()
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      await deferredDeletions.waitForActiveWork()
+      deferredDeletionBackgroundLease.end(generation: leaseGeneration)
+    }
+  }
+
   /// Runs from the BGAppRefresh handler: refresh if stale (which republishes
   /// the snapshot and notifies through the shared choke point), then reschedule.
   func performBackgroundWatchtowerRefresh() async {
@@ -1097,6 +1264,7 @@ final class AppModel {
     async let fetchedUser = client.getUser()
     async let fetchedAccounts = client.listAccounts()
     var identity = try await (fetchedUser, fetchedAccounts)
+    var definitivelyUnavailableAccountIDs: Set<String> = []
     if let preferredAccountID,
       !identity.1.contains(where: { $0.id == preferredAccountID })
     {
@@ -1110,6 +1278,31 @@ final class AppModel {
         guard case .request(let status, _) = error, status == 403 || status == 404 else {
           throw error
         }
+        definitivelyUnavailableAccountIDs.insert(preferredAccountID)
+      }
+    }
+    var availableAccountIDs = Set(identity.1.map(\.id))
+    let missingRecoveryAccountIDs =
+      deferredDeletions
+      .recoveryAccountIDs(forCredentialProfileID: identity.0.id)
+      .subtracting(availableAccountIDs)
+      .subtracting(definitivelyUnavailableAccountIDs)
+    for accountID in missingRecoveryAccountIDs.sorted() {
+      do {
+        let recoveredAccount = try await client.getAccount(accountID)
+        identity.1.append(recoveredAccount)
+        availableAccountIDs.insert(accountID)
+      } catch let error as CloudflareAPIError {
+        if case .request(let status, _) = error, status == 403 || status == 404 {
+          definitivelyUnavailableAccountIDs.insert(accountID)
+        } else {
+          // A transient direct lookup is not proof that membership vanished.
+          // Keep recovery frozen to this identity and let read-only
+          // reconciliation retry instead of deleting its journal.
+          availableAccountIDs.insert(accountID)
+        }
+      } catch {
+        availableAccountIDs.insert(accountID)
       }
     }
     try Task.checkCancellation()
@@ -1120,6 +1313,15 @@ final class AppModel {
     accounts = identity.1
     // Only a direct 403/404 above proves the saved account is unavailable.
     if activeAccount == nil, let first = accounts.first { selectAccount(first) }
+    if isDemoSession {
+      deferredDeletions.activateEphemeralCredential(
+        profileID: identity.0.id,
+        availableAccountIDs: availableAccountIDs)
+    } else {
+      deferredDeletions.activateCredential(
+        profileID: identity.0.id,
+        availableAccountIDs: availableAccountIDs)
+    }
     resolvePendingLegacyNotificationRoute()
     await retryPendingPushCleanups(expectedGeneration: accountGeneration)
   }

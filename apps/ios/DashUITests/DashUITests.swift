@@ -17,6 +17,20 @@ final class DashUITests: XCTestCase {
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
   }
 
+  private func openDNSRecordAndDelete(_ recordID: String, in app: XCUIApplication) {
+    let record = app.buttons["dns-record-\(recordID)"]
+    XCTAssertTrue(record.waitForExistence(timeout: 5))
+    for _ in 0..<5 where !record.isHittable {
+      app.swipeUp()
+    }
+    XCTAssertTrue(Self.waitForHittable(record))
+    record.tap()
+
+    let delete = app.buttons["dash-tray-header-delete"]
+    XCTAssertTrue(Self.waitForHittable(delete))
+    delete.tap()
+  }
+
   func testLaunchesWithDashBrand() {
     let app = XCUIApplication()
     launch(app)
@@ -103,6 +117,51 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 2))
     app.staticTexts["Form background"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 2))
+  }
+
+  func testDeferredDNSDeletionHidesImmediatelyAndUndoRestoresIt() {
+    let app = XCUIApplication()
+    launch(
+      app,
+      arguments: [
+        "-uiTestDeferredDeletion",
+        "-UIPreferredContentSizeCategoryName",
+        "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+      ])
+
+    let record = app.buttons["dns-record-record-1"]
+    openDNSRecordAndDelete("record-1", in: app)
+
+    XCTAssertTrue(record.waitForNonExistence(timeout: 2))
+    let undo = app.buttons["dash-toast-action"]
+    XCTAssertTrue(Self.waitForHittable(undo))
+    XCTAssertTrue(undo.label.contains("Undo"))
+    XCTAssertGreaterThanOrEqual(undo.frame.height, 44)
+
+    undo.tap()
+
+    XCTAssertTrue(record.waitForExistence(timeout: 2))
+  }
+
+  func testDeferredDNSDeletionRollsIntoOneUndoAllBatch() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-uiTestDeferredDeletion"])
+
+    openDNSRecordAndDelete("record-1", in: app)
+    openDNSRecordAndDelete("record-2", in: app)
+
+    XCTAssertTrue(app.buttons["dns-record-record-1"].waitForNonExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-record-2"].waitForNonExistence(timeout: 2))
+    XCTAssertTrue(app.staticTexts["No DNS records"].waitForExistence(timeout: 2))
+    XCTAssertFalse(app.staticTexts["Record types"].exists)
+    let undoAll = app.buttons["dash-toast-action"]
+    XCTAssertTrue(Self.waitForHittable(undoAll))
+    XCTAssertTrue(undoAll.label.contains("Undo all"))
+
+    undoAll.tap()
+
+    XCTAssertTrue(app.buttons["dns-record-record-1"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-record-2"].waitForExistence(timeout: 2))
   }
 
   func testPrimaryTabsSurviveFeaturePop() {
