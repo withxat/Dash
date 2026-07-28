@@ -705,58 +705,11 @@ public actor CloudflareClient {
     let _: Data = try await raw(
       "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/values/\(key)", method: "DELETE")
   }
-  public func listD1Databases(accountID: String, page: Int = 1) async throws -> Page<D1Database> {
-    try await list(
-      "/accounts/\(accountID)/d1/database", query: ["page": String(page), "per_page": "50"])
-  }
   public func queryD1(accountID: String, databaseID: String, sql: String) async throws
     -> [D1QueryResult]
   {
     try await request(
       "/accounts/\(accountID)/d1/database/\(databaseID)/query", method: "POST", body: ["sql": sql])
-  }
-  public func listImages(accountID: String, page: Int = 1, perPage: Int = 50) async throws
-    -> [CloudflareImage]
-  {
-    let result: ImagesListResult = try await request(
-      "/accounts/\(accountID)/images/v1",
-      query: ["page": String(page), "per_page": String(perPage)])
-    return result.images ?? []
-  }
-  /// Uploads one image through the Images v1 multipart endpoint.
-  @discardableResult
-  public func uploadImage(accountID: String, filename: String, data: Data) async throws
-    -> CloudflareImage
-  {
-    var form = MultipartForm()
-    form.addFile(
-      name: "file", filename: filename, contentType: "application/octet-stream", data: data)
-    let response = try await raw(
-      "/accounts/\(accountID)/images/v1",
-      method: "POST", data: form.encode(), contentType: form.contentType)
-    let envelope = try JSONDecoder().decode(APIEnvelope<CloudflareImage>.self, from: response)
-    guard envelope.success else {
-      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
-    }
-    return envelope.result
-  }
-
-  /// Stream basic upload — multipart POST, documented for files under 200 MB.
-  @discardableResult
-  public func uploadStreamVideo(accountID: String, filename: String, data: Data) async throws
-    -> StreamVideo
-  {
-    var form = MultipartForm()
-    form.addFile(
-      name: "file", filename: filename, contentType: "application/octet-stream", data: data)
-    let response = try await raw(
-      "/accounts/\(accountID)/stream",
-      method: "POST", data: form.encode(), contentType: form.contentType)
-    let envelope = try JSONDecoder().decode(APIEnvelope<StreamVideo>.self, from: response)
-    guard envelope.success else {
-      throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
-    }
-    return envelope.result
   }
 
   /// Imports a video into Stream from a public URL.
@@ -978,29 +931,13 @@ public actor CloudflareClient {
   public func listRumSites(accountID: String) async throws -> [RumSite] {
     try await list("/accounts/\(accountID)/rum/site_info/list").items
   }
-  public func listTunnels(accountID: String, isDeleted: Bool = false) async throws
-    -> [CloudflareTunnel]
-  {
-    try await list(
-      "/accounts/\(accountID)/cfd_tunnel", query: ["is_deleted": String(isDeleted)]
-    ).items
-  }
   public func listLoadBalancerPools(accountID: String) async throws -> [LoadBalancerPool] {
     try await list("/accounts/\(accountID)/load_balancers/pools").items
-  }
-  public func listRegistrarDomains(accountID: String) async throws -> [RegistrarDomain] {
-    try await list("/accounts/\(accountID)/registrar/domains").items.filter(\.hasIdentity)
   }
   public func getRegistrarRegistration(accountID: String, domainName: String) async throws
     -> RegistrarRegistration
   {
     try await request("/accounts/\(accountID)/registrar/registrations/\(domainName)")
-  }
-  public func listCertificatePacks(zoneID: String) async throws -> [CertificatePack] {
-    try await list("/zones/\(zoneID)/ssl/certificate_packs", query: ["status": "all"]).items
-  }
-  public func listHealthchecks(zoneID: String) async throws -> [Healthcheck] {
-    try await list("/zones/\(zoneID)/healthchecks").items
   }
   public func listResources(path: String, query: [String: String?] = [:]) async throws -> Page<
     GenericResource
@@ -1019,10 +956,6 @@ public actor CloudflareClient {
 
   // MARK: Rulesets — basePath is "/accounts/{id}" or "/zones/{id}" so one
   // code path serves both scopes.
-
-  public func listRulesets(basePath: String) async throws -> [Ruleset] {
-    try await request("\(basePath)/rulesets")
-  }
 
   public func getRuleset(basePath: String, id: String) async throws -> RulesetDetail {
     try await request("\(basePath)/rulesets/\(id)")
@@ -1062,10 +995,6 @@ public actor CloudflareClient {
   }
 
   // MARK: Access policies
-
-  public func listAccessApps(accountID: String) async throws -> [AccessApp] {
-    try await request("/accounts/\(accountID)/access/apps")
-  }
 
   public func listAccessPolicies(accountID: String) async throws -> [AccessPolicy] {
     try await request("/accounts/\(accountID)/access/policies")
@@ -1999,7 +1928,6 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
   }
 }
 
-private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
 private struct R2BucketResult: Decodable, Sendable {
   let buckets: [LossyElement<R2Bucket>]?
 }

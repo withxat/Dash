@@ -150,8 +150,8 @@ enum ExpiryReminders {
     center.removePendingNotificationRequests(withIdentifiers: ours)
   }
 
-  /// Parses the ISO 8601 stamps RDAP and Cloudflare's certificate endpoints
-  /// return, with or without fractional seconds.
+  /// Parses ISO 8601 stamps from RDAP and Cloudflare APIs, with or without
+  /// fractional seconds.
   static func date(fromISO8601 value: String) -> Date? {
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

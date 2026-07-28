@@ -5912,16 +5912,6 @@
         }
       }
     },
-    "Keep this value under 256 KB to edit it in Dash." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请将此值控制在 256 KB 以内，以便在 Dash 中编辑。"
-          }
-        }
-      }
-    },
     "Key" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6002,6 +5992,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "KV 命名空间"
+          }
+        }
+      }
+    },
+    "KV values can be up to 25 MiB." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KV 值最大可为 25 MiB。"
           }
         }
       }
@@ -10184,12 +10184,12 @@
         }
       }
     },
-    "This value is too large to view or edit on this device. You can still copy or delete it." : {
+    "This value exceeds Dash's 256 KiB viewer and editor limit. You can still copy or delete it." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "此值过大，无法在此设备上查看或编辑。你仍可复制或删除它。"
+            "value" : "此值超过 Dash 的 256 KiB 查看与编辑上限。你仍可复制或删除它。"
           }
         }
       }
@@ -10886,6 +10886,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "值不可用"
+          }
+        }
+      }
+    },
+    "Values over 256 KiB can be saved, but cannot be viewed or edited in Dash afterward." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过 256 KiB 的值仍可保存，但保存后无法在 Dash 中查看或编辑。"
           }
         }
       }

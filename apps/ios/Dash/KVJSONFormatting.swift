@@ -1,5 +1,19 @@
 import Foundation
 
+/// Cloudflare's service-side write ceiling, independent of Dash's smaller
+/// boundary for loading an existing value into the editor.
+enum KVValueLimits {
+  static let writeByteLimit = 25 * 1024 * 1024
+
+  static func isWithinWriteLimit(_ text: String) -> Bool {
+    isWithinWriteLimit(byteCount: text.utf8.count)
+  }
+
+  static func isWithinWriteLimit(byteCount: Int) -> Bool {
+    byteCount <= writeByteLimit
+  }
+}
+
 /// Pretty-print / validate helpers for KV values shown in `CodeEditor`.
 /// CodeEditor highlights text; indentation comes from Foundation before display.
 enum KVJSONFormatting {
@@ -9,13 +23,17 @@ enum KVJSONFormatting {
     case nonText
   }
 
-  /// TextKit 1 lays out a `CodeEditor` value on the main thread. Keep that
-  /// surface bounded even though Cloudflare KV itself accepts values up to
-  /// 25 MiB; large values remain copyable without mounting them in the editor.
+  /// TextKit 1 lays out a `CodeEditor` value on the main thread. Bound values
+  /// loaded from Cloudflare, JSON formatting, and post-save remounting. A value
+  /// entered by the user can still be submitted up to the service write limit.
   static let displayByteLimit = 256 * 1024
 
   static func isWithinDisplayLimit(_ text: String) -> Bool {
-    text.utf8.count <= displayByteLimit
+    isWithinDisplayLimit(byteCount: text.utf8.count)
+  }
+
+  static func isWithinDisplayLimit(byteCount: Int) -> Bool {
+    byteCount <= displayByteLimit
   }
 
   static func isValidJSON(_ text: String) -> Bool {

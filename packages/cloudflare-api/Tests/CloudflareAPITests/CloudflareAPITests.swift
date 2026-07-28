@@ -519,28 +519,6 @@ struct NetworkTests {
     #expect(recorder.paths == ["/accounts/acct/logs/audit"])
   }
 
-  @Test func registrarDomainsAcceptNameOrIDAsIdentity() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      #expect(request.url?.path == "/accounts/acct/registrar/domains")
-      let body = #"""
-        {"success":true,"result":[
-          {"name":"live.example","expires_at":"2027-01-01T00:00:00Z"},
-          {"id":"documented.example","expires_at":"2027-02-01T00:00:00Z"}
-        ]}
-        """#
-      return (200, Data(body.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-
-    let domains = try await client.listRegistrarDomains(accountID: "acct")
-
-    #expect(domains.map(\.id) == ["live.example", "documented.example"])
-    #expect(domains.map(\.name) == ["live.example", "documented.example"])
-  }
-
   @Test func createZonePostsNameAndAccountAndDecodesNameServers() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
@@ -1069,20 +1047,6 @@ struct NetworkTests {
       from: Data(#"{"id":"r1","pattern":"example.com/*","script":"worker"}"#.utf8))
     #expect(route.id == "r1")
     #expect(route.name == "example.com/*")
-  }
-
-  @Test func decodesImagesListEnvelope() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { _ in
-      let body =
-        #"{"success":true,"result":{"images":[{"id":"img","filename":"hero.png","requireSignedURLs":false}]}}"#
-      return (200, Data(body.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let images = try await client.listImages(accountID: "account")
-    #expect(images.first?.filename == "hero.png")
   }
 
   @Test func decodesR2ResponseWrappers() async throws {
@@ -1768,18 +1732,9 @@ struct NetworkTests {
       accountID: "account", bucket: "assets", domain: "img.example.com")
   }
 
-  @Test func decodesRulesetListAndDetail() async throws {
+  @Test func decodesRulesetDetail() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      if request.url?.path == "/accounts/account/rulesets" {
-        let body = #"""
-          {"success":true,"result":[
-          {"id":"rs1","name":"Custom rules","kind":"custom","phase":"http_request_firewall_custom"},
-          {"id":"rs2","name":"Managed","kind":"managed","phase":"http_request_firewall_managed"}
-          ]}
-          """#
-        return (200, Data(body.utf8))
-      }
+    let session = mockSession { _ in
       let body = #"""
         {"success":true,"result":{"id":"rs1","name":"Custom rules","kind":"custom",
         "phase":"http_request_firewall_custom","rules":[
@@ -1791,8 +1746,6 @@ struct NetworkTests {
     let client = CloudflareClient(
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
-    let rulesets = try await client.listRulesets(basePath: "/accounts/account")
-    #expect(rulesets.map(\.kind) == ["custom", "managed"])
     let detail = try await client.getRuleset(basePath: "/accounts/account", id: "rs1")
     #expect(detail.rules?.first?.action == "block")
     #expect(detail.rules?.first?.enabled == true)
@@ -1984,31 +1937,6 @@ struct NetworkTests {
     #expect(member.roles?.first?.id == "r1")
   }
 
-  @Test func mediaUploadsSendMultipartFilePart() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let recorder = RequestRecorder()
-    let session = mockSession { request in
-      recorder.record(request.url?.path ?? "")
-      let contentType = request.value(forHTTPHeaderField: "Content-Type") ?? ""
-      #expect(contentType.hasPrefix("multipart/form-data; boundary="))
-      if request.url?.path.hasSuffix("/images/v1") == true {
-        return (200, Data(#"{"success":true,"result":{"id":"img1","filename":"a.jpg"}}"#.utf8))
-      }
-      return (200, Data(#"{"success":true,"result":{"uid":"vid1"}}"#.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let image = try await client.uploadImage(
-      accountID: "account", filename: "a.jpg", data: Data("img".utf8))
-    #expect(image.id == "img1")
-    let video = try await client.uploadStreamVideo(
-      accountID: "account", filename: "a.mp4", data: Data("vid".utf8))
-    #expect(video.uid == "vid1")
-    #expect(
-      recorder.paths == ["/accounts/account/images/v1", "/accounts/account/stream"])
-  }
-
   @Test func streamCopySendsURLAndOptionalName() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
@@ -2126,12 +2054,12 @@ struct NetworkTests {
   @Test func listSkipsMalformedElementsInsteadOfFailingThePage() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
-      #expect(request.url?.path == "/zones/zone-1/healthchecks")
+      #expect(request.url?.path == "/zones")
       let body = #"""
         {"success":true,"result":[
-          {"id":"hc-1","name":"Primary","status":"healthy"},
-          {"name":"missing id"},
-          {"id":"hc-2","status":"unhealthy"}
+          {"id":"zone-1","name":"one.example","status":"active"},
+          {"id":"zone-broken","status":"active"},
+          {"id":"zone-2","name":"two.example","status":"pending"}
         ]}
         """#
       return (200, Data(body.utf8))
@@ -2140,9 +2068,9 @@ struct NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let checks = try await client.listHealthchecks(zoneID: "zone-1")
+    let zones = try await client.listZones(accountID: "account")
 
-    #expect(checks.map(\.id) == ["hc-1", "hc-2"])
+    #expect(zones.items.map(\.id) == ["zone-1", "zone-2"])
   }
 
   @Test func listWorkerDeploymentsSkipsMalformedEntries() async throws {

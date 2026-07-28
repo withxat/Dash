@@ -291,14 +291,6 @@ public struct CloudflareAccount: CloudflareResource, Hashable {
   }
 }
 
-public struct Ruleset: CloudflareResource, Hashable {
-  public let id: String
-  public let name: String
-  public let kind: String?
-  public let phase: String?
-  public let description: String?
-}
-
 public struct RulesetRule: Codable, Identifiable, Hashable, Sendable {
   public let id: String
   public let action: String?
@@ -315,13 +307,6 @@ public struct RulesetDetail: Codable, Hashable, Sendable {
   public let phase: String?
   public let description: String?
   public let rules: [RulesetRule]?
-}
-
-public struct AccessApp: CloudflareResource, Hashable {
-  public let id: String
-  public let name: String
-  public let domain: String?
-  public let type: String?
 }
 
 public struct AccessPolicy: Codable, Identifiable, Hashable, Sendable {
@@ -1186,34 +1171,10 @@ public struct KVKey: Codable, Hashable, Identifiable, Sendable {
   public let metadata: JSONValue?
 }
 
-public struct D1Database: CloudflareResource, Hashable {
-  public let uuid: String
-  public let name: String
-  public let version: String?
-  public let numTables: Int?
-  public let fileSize: Int?
-  public var id: String { uuid }
-
-  enum CodingKeys: String, CodingKey {
-    case uuid, name, version
-    case numTables = "num_tables"
-    case fileSize = "file_size"
-  }
-}
-
 public struct D1QueryResult: Codable, Hashable, Sendable {
   public let results: [[String: JSONValue]]?
   public let success: Bool?
   public let meta: [String: JSONValue]?
-}
-
-public struct CloudflareImage: Codable, Hashable, Identifiable, Sendable {
-  public let id: String
-  public let filename: String?
-  public let uploaded: String?
-  public let requireSignedURLs: Bool?
-
-  public var name: String { filename ?? id }
 }
 
 public struct StreamVideo: Codable, Hashable, Identifiable, Sendable {
@@ -1727,34 +1688,10 @@ public struct WorkerAnalyticsBucket: Hashable, Sendable, Identifiable {
   }
 }
 
-public struct CloudflareTunnel: Codable, Hashable, Identifiable, Sendable {
-  public let id: String
-  public let name: String?
-  public let status: String?
-}
-
 public struct LoadBalancerPool: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let enabled: Bool?
-}
-
-public struct RegistrarDomain: CloudflareResource, Hashable {
-  private let storedID: String?
-  private let storedName: String?
-  public let expiresAt: String?
-
-  public var id: String { storedID?.nilIfEmpty ?? storedName?.nilIfEmpty ?? "" }
-  public var name: String { storedName?.nilIfEmpty ?? storedID?.nilIfEmpty ?? "" }
-  public var hasIdentity: Bool {
-    storedID?.nilIfEmpty != nil || storedName?.nilIfEmpty != nil
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case storedID = "id"
-    case storedName = "name"
-    case expiresAt = "expires_at"
-  }
 }
 
 /// Canonical registration state returned by `/registrar/registrations/{domain}`.
@@ -1776,26 +1713,6 @@ public struct RegistrarRegistration: Codable, Hashable, Identifiable, Sendable {
     case autoRenew = "auto_renew"
     case privacyMode = "privacy_mode"
   }
-}
-
-public struct CertificatePack: Codable, Hashable, Identifiable, Sendable {
-  public let id: String
-  public let status: String
-  public let certificates: [CertificatePackCertificate]?
-}
-
-public struct CertificatePackCertificate: Codable, Hashable, Sendable {
-  public let expiresOn: String?
-
-  enum CodingKeys: String, CodingKey {
-    case expiresOn = "expires_on"
-  }
-}
-
-public struct Healthcheck: Codable, Hashable, Identifiable, Sendable {
-  public let id: String
-  public let name: String?
-  public let status: String?
 }
 
 public struct GenericResource: CloudflareResource, Hashable {

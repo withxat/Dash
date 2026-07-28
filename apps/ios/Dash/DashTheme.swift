@@ -234,7 +234,6 @@ enum DashTheme {
     static let card: CGFloat = 16
     /// Gap between tiles in home shortcut grids and similar 2-up layouts.
     static let itemGap: CGFloat = 12
-    static let listInset: CGFloat = 0
     /// Optical inset for bare list rows, matching the group title above them.
     static let rowInset: CGFloat = 4
     /// Tight inline rhythm — search rows, tool-tile stacks, banner internals.

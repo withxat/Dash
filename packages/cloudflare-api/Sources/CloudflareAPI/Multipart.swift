@@ -1,7 +1,6 @@
 import Foundation
 
-/// Minimal multipart/form-data encoder for Cloudflare upload endpoints
-/// (Worker script content, Images, Stream basic upload).
+/// Minimal multipart/form-data encoder for Worker script content.
 public struct MultipartForm: Sendable {
   public struct Part: Sendable {
     public let name: String

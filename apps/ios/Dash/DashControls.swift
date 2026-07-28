@@ -4,12 +4,6 @@ import SwiftDitherKit
 import SwiftUI
 import UIKit
 
-extension View {
-  func dashGroupedList() -> some View {
-    modifier(DashGroupedListModifier())
-  }
-}
-
 struct DashListRow<Accessory: View>: View {
   let title: String
   var subtitle: String?
@@ -487,38 +481,6 @@ struct DashCodePanel: View {
   }
 }
 
-/// Read-only companion to DashCodePanel for command output and source code.
-struct DashCodeBlock: View {
-  var title: String?
-  let text: String
-  var placeholder: String?
-  var minHeight: CGFloat = 120
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      if let title {
-        Text(title)
-          .dashTextStyle(.sectionTitle)
-          .foregroundStyle(DashTheme.strong)
-      }
-      ScrollView(.horizontal, showsIndicators: false) {
-        Text(text.isEmpty ? (placeholder ?? "") : text)
-          .dashTextStyle(.code)
-          .foregroundStyle(text.isEmpty ? DashTheme.subtle : DashTheme.text)
-          .textSelection(.enabled)
-          .padding(12)
-      }
-      .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
-      .background(DashTheme.base)
-      .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-    }
-    .padding(DashTheme.Spacing.card)
-    .background(
-      DashTheme.recessed,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-  }
-}
-
 struct DashNotice: View {
   enum Kind {
     case success, error, warning
@@ -576,19 +538,6 @@ struct DashNotice: View {
 
   static func accessibilityText(kind: Kind, title: String, message: String) -> String {
     "\(title): \(message)"
-  }
-}
-
-struct DashListButtonStyle: ButtonStyle {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .opacity(configuration.isPressed ? 0.58 : 1)
-      .animation(
-        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick,
-        value: configuration.isPressed
-      )
   }
 }
 
@@ -821,36 +770,5 @@ struct DashTextTabs<Selection: Hashable>: View {
         .fill(DashTheme.Sheet.headerBorder)
         .frame(height: 1)
     }
-  }
-}
-
-private struct DashGroupedListModifier: ViewModifier {
-  func body(content: Content) -> some View {
-    content
-      .listStyle(.insetGrouped)
-      .contentMargins(.horizontal, DashTheme.Spacing.screen, for: .scrollContent)
-      .contentMargins(.top, 0, for: .scrollContent)
-      .contentMargins(.bottom, DashTheme.Spacing.scrollBottomInset, for: .scrollContent)
-      .listSectionSpacing(DashTheme.Spacing.section)
-      .listRowSpacing(0)
-      .listRowSeparator(.hidden)
-      .listSectionSeparator(.hidden)
-      .listRowBackground(DashTheme.base)
-      .listRowInsets(
-        EdgeInsets(
-          top: 0,
-          leading: DashTheme.Spacing.listInset,
-          bottom: 0,
-          trailing: DashTheme.Spacing.listInset
-        )
-      )
-      .environment(\.defaultMinListRowHeight, 1)
-      .dashTextStyle(.bodyMedium)
-      .buttonStyle(DashListButtonStyle())
-      .tint(DashTheme.strong)
-      .headerProminence(.increased)
-      .scrollContentBackground(.hidden)
-      .background(DashTheme.canvas)
-      .foregroundStyle(DashTheme.text)
   }
 }

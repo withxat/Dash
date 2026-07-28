@@ -1621,13 +1621,14 @@ struct KVCreateKeySheet: View {
   @State private var error: String?
   @State private var canFormat = false
   @State private var valueFitsDisplayLimit = true
+  @State private var valueFitsWriteLimit = true
 
   var body: some View {
     DashFormSheet(
       saveTitle: DashL10n.string("Create key"),
       isSaving: creating,
       canSave: !keyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && valueFitsDisplayLimit,
+        && valueFitsWriteLimit,
       onSave: { Task { await create() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
@@ -1639,15 +1640,20 @@ struct KVCreateKeySheet: View {
             Text(DashL10n.string("Value"))
               .dashTextStyle(.footnoteSemibold)
               .foregroundStyle(DashTheme.subtle)
-            DashKVCodeEditor(text: $value, editable: true)
+            DashKVCodeEditor(text: $value, editable: !creating)
               .frame(minHeight: 160)
               .clipShape(
                 RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-            if !valueFitsDisplayLimit {
+            if !valueFitsWriteLimit {
+              DashNotice(
+                kind: .error,
+                message: DashL10n.string("KV values can be up to 25 MiB."))
+            } else if !valueFitsDisplayLimit {
               DashNotice(
                 kind: .warning,
                 message: DashL10n.string(
-                  "Keep this value under 256 KB to edit it in Dash."))
+                  "Values over 256 KiB can be saved, but cannot be viewed or edited in Dash afterward."
+                ))
             }
             Button {
               if let pretty = KVJSONFormatting.prettyPrintedForDisplay(value) {
@@ -1662,6 +1668,7 @@ struct KVCreateKeySheet: View {
             .disabled(!canFormat)
           }
         }
+        .disabled(creating)
       }
     )
     .task(id: value) {
@@ -1672,9 +1679,12 @@ struct KVCreateKeySheet: View {
   private func refreshJSONValidity() async {
     canFormat = false
     let candidate = value
-    let fitsDisplayLimit = KVJSONFormatting.isWithinDisplayLimit(candidate)
+    let byteCount = candidate.utf8.count
+    let fitsDisplayLimit = KVJSONFormatting.isWithinDisplayLimit(byteCount: byteCount)
+    let fitsWriteLimit = KVValueLimits.isWithinWriteLimit(byteCount: byteCount)
     guard !Task.isCancelled, value == candidate else { return }
     valueFitsDisplayLimit = fitsDisplayLimit
+    valueFitsWriteLimit = fitsWriteLimit
     guard fitsDisplayLimit else { return }
     do {
       try await Task.sleep(for: .milliseconds(250))
@@ -1692,11 +1702,12 @@ struct KVCreateKeySheet: View {
     guard let context = model.accountRequestContext else { return }
     let trimmed = keyName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
-    guard KVJSONFormatting.isWithinDisplayLimit(value) else {
-      error = DashL10n.string("Keep this value under 256 KB to edit it in Dash.")
+    guard KVValueLimits.isWithinWriteLimit(value) else {
+      error = DashL10n.string("KV values can be up to 25 MiB.")
       return
     }
     let client = model.client
+    let submittedData = Data(value.utf8)
     creating = true
     error = nil
     defer {
@@ -1707,7 +1718,7 @@ struct KVCreateKeySheet: View {
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: trimmed,
-        data: Data(value.utf8))
+        data: submittedData)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.toasts.success(DashL10n.string("Created successfully."))
       onCreated()
@@ -1744,6 +1755,7 @@ struct KVKeyDetailView: View {
   @State private var loadedContext: AccountRequestContext?
   @State private var canFormat = false
   @State private var valueFitsDisplayLimit = true
+  @State private var valueFitsWriteLimit = true
   @State private var displayIssue: KVJSONFormatting.DisplayValue?
   @State private var rawValueData: Data?
 
@@ -1770,16 +1782,23 @@ struct KVKeyDetailView: View {
                   message: displayIssueMessage(displayIssue)
                 )
               } else if loaded {
-                DashKVCodeEditor(text: $value, editable: mode == .editing)
+                DashKVCodeEditor(text: $value, editable: mode == .editing && !saving)
                   .frame(maxWidth: .infinity)
                   .frame(height: max(280, geo.size.height - 220))
                   .clipShape(
                     RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-                if mode == .editing, !valueFitsDisplayLimit {
-                  DashNotice(
-                    kind: .warning,
-                    message: DashL10n.string(
-                      "Keep this value under 256 KB to edit it in Dash."))
+                if mode == .editing {
+                  if !valueFitsWriteLimit {
+                    DashNotice(
+                      kind: .error,
+                      message: DashL10n.string("KV values can be up to 25 MiB."))
+                  } else if !valueFitsDisplayLimit {
+                    DashNotice(
+                      kind: .warning,
+                      message: DashL10n.string(
+                        "Values over 256 KiB can be saved, but cannot be viewed or edited in Dash afterward."
+                      ))
+                  }
                 }
               } else if error == nil {
                 HStack(spacing: 10) {
@@ -1801,6 +1820,7 @@ struct KVKeyDetailView: View {
             }
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .disabled(saving || deleting)
         }
       )
     }
@@ -1900,7 +1920,7 @@ struct KVKeyDetailView: View {
     case .viewing:
       return featureAllowsWrites && loaded && displayIssue == nil && ownsCurrentAccount
     case .editing:
-      return loaded && !saving && valueFitsDisplayLimit && ownsCurrentAccount
+      return loaded && !saving && valueFitsWriteLimit && ownsCurrentAccount
     }
   }
 
@@ -1962,12 +1982,13 @@ struct KVKeyDetailView: View {
     guard featureAllowsWrites, let context = model.accountRequestContext,
       loadedContext == context
     else { return }
-    guard KVJSONFormatting.isWithinDisplayLimit(value) else {
-      error = DashL10n.string("Keep this value under 256 KB to edit it in Dash.")
+    guard KVValueLimits.isWithinWriteLimit(value) else {
+      error = DashL10n.string("KV values can be up to 25 MiB.")
       return
     }
     let client = model.client
     let submittedValue = value
+    let submittedData = Data(submittedValue.utf8)
     saving = true
     error = nil
     defer {
@@ -1978,10 +1999,19 @@ struct KVKeyDetailView: View {
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key,
-        data: Data(submittedValue.utf8))
+        data: submittedData)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      committedValue = submittedValue
-      value = submittedValue
+      if KVJSONFormatting.isWithinDisplayLimit(byteCount: submittedData.count) {
+        committedValue = submittedValue
+        value = submittedValue
+        displayIssue = nil
+        rawValueData = nil
+      } else {
+        committedValue = ""
+        value = ""
+        displayIssue = .tooLarge
+        rawValueData = submittedData
+      }
       invalidateKeys(context: context)
       model.toasts.success(DashL10n.string("Saved successfully."))
       withAnimation(DashTheme.Motion.morph) { mode = .viewing }
@@ -2031,6 +2061,7 @@ struct KVKeyDetailView: View {
     copied = false
     canFormat = false
     valueFitsDisplayLimit = true
+    valueFitsWriteLimit = true
     displayIssue = nil
     rawValueData = nil
   }
@@ -2039,7 +2070,8 @@ struct KVKeyDetailView: View {
     switch issue {
     case .tooLarge:
       DashL10n.string(
-        "This value is too large to view or edit on this device. You can still copy or delete it.")
+        "This value exceeds Dash's 256 KiB viewer and editor limit. You can still copy or delete it."
+      )
     case .nonText:
       DashL10n.string(
         "This value is not UTF-8 text, so it cannot be viewed or edited. You can still copy or delete it."
@@ -2067,9 +2099,12 @@ struct KVKeyDetailView: View {
       return
     }
     let candidate = value
-    let fitsDisplayLimit = KVJSONFormatting.isWithinDisplayLimit(candidate)
+    let byteCount = candidate.utf8.count
+    let fitsDisplayLimit = KVJSONFormatting.isWithinDisplayLimit(byteCount: byteCount)
+    let fitsWriteLimit = KVValueLimits.isWithinWriteLimit(byteCount: byteCount)
     guard !Task.isCancelled, value == candidate else { return }
     valueFitsDisplayLimit = fitsDisplayLimit
+    valueFitsWriteLimit = fitsWriteLimit
     guard fitsDisplayLimit else { return }
     do {
       try await Task.sleep(for: .milliseconds(250))

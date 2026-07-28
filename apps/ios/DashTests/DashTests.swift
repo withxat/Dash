@@ -2857,6 +2857,13 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(KVJSONFormatting.prettyPrintedForDisplay(compactExpandingJSON) == nil)
   #expect(KVJSONFormatting.preparedForDisplay(compactExpandingJSON) == compactExpandingJSON)
 
+  let aboveDisplayLimit = KVJSONFormatting.displayByteLimit + 1
+  #expect(!KVJSONFormatting.isWithinDisplayLimit(byteCount: aboveDisplayLimit))
+  #expect(KVValueLimits.writeByteLimit == 25 * 1024 * 1024)
+  #expect(KVValueLimits.isWithinWriteLimit(byteCount: aboveDisplayLimit))
+  #expect(KVValueLimits.isWithinWriteLimit(byteCount: KVValueLimits.writeByteLimit))
+  #expect(!KVValueLimits.isWithinWriteLimit(byteCount: KVValueLimits.writeByteLimit + 1))
+
   let oversized = Data(repeating: 0x61, count: KVJSONFormatting.displayByteLimit + 1)
   #expect(KVJSONFormatting.displayValue(for: oversized) == .tooLarge)
   #expect(KVJSONFormatting.displayValue(for: Data([0xFF, 0xFE])) == .nonText)

@@ -437,18 +437,6 @@ struct DashToolTile: View {
   }
 }
 
-/// Tool-tile grid that reflows with available width — typically two-up on
-/// iPhone, kept usable down to 320pt Display Zoom windows.
-struct DashTileGrid<Content: View>: View {
-  @ViewBuilder let content: () -> Content
-
-  var body: some View {
-    LazyVGrid(columns: [GridItem(.adaptive(minimum: 136), spacing: 12)], spacing: 12) {
-      content()
-    }
-  }
-}
-
 /// Opens a destination on the enclosing tab's navigation stack.
 struct DashListGroupLink<Label: View>: View {
   let value: Destination
@@ -457,18 +445,6 @@ struct DashListGroupLink<Label: View>: View {
 
   var body: some View {
     DestinationLink(destination: value, onNavigate: onNavigate, label: label)
-  }
-}
-
-/// Routes `Destination` values through the tab navigation stack.
-struct DashDestinationLink<Label: View>: View {
-  let destination: Destination
-  @ViewBuilder let label: () -> Label
-
-  var body: some View {
-    DestinationLink(destination: destination, label: label)
-      .listRowSeparator(.hidden)
-      .listSectionSeparator(.hidden)
   }
 }
 
@@ -1619,13 +1595,5 @@ struct DashEmptyState: View {
     .listRowSeparator(.hidden)
     .listSectionSeparator(.hidden)
     .listRowBackground(Color.clear)
-  }
-}
-
-extension View {
-  func dashScreen() -> some View {
-    scrollContentBackground(.hidden)
-      .background(DashTheme.canvas)
-      .foregroundStyle(DashTheme.text)
   }
 }
