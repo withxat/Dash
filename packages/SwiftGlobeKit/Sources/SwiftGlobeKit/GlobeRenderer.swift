@@ -883,15 +883,60 @@ final class GlobeRenderer: NSObject, MTKViewDelegate {
       return cachedShaderLibrary.library
     }
 
-    let library: any MTLLibrary
+    let library = try await makeShaderLibrary(device: device)
+    cachedShaderLibrary = (device.registryID, library)
+    return library
+  }
+
+  /// Loads `GlobeShaders.metal`, preferring the library the build system
+  /// compiled into the resource bundle.
+  ///
+  /// Xcode compiles the shader and emits `default.metallib` into
+  /// `SwiftGlobeKit_SwiftGlobeKit.bundle`, so hosts get a prebuilt library.
+  /// SwiftPM has no Metal compilation rule and copies the `.metal` file
+  /// verbatim, so `swift build` and `swift test` produce a bundle with the
+  /// source but no default library. Compiling that same source at runtime
+  /// keeps the package testable outside Xcode and degrades gracefully rather
+  /// than failing outright if a host's build ever stops emitting the library.
+  private static func makeShaderLibrary(
+    device: any MTLDevice
+  ) async throws -> any MTLLibrary {
+    let defaultLibraryError: Error
     do {
-      library = try device.makeDefaultLibrary(bundle: Bundle.module)
+      return try device.makeDefaultLibrary(bundle: Bundle.module)
+    } catch {
+      defaultLibraryError = error
+    }
+
+    guard
+      let sourceURL = Bundle.module.url(
+        forResource: "GlobeShaders",
+        withExtension: "metal"
+      )
+    else {
+      throw GlobeRendererError.shaderLibraryLoadingFailed(defaultLibraryError)
+    }
+
+    do {
+      let source = try String(contentsOf: sourceURL, encoding: .utf8)
+      return try await withCheckedThrowingContinuation { continuation in
+        device.makeLibrary(source: source, options: nil) { library, error in
+          if let library {
+            continuation.resume(returning: library)
+          } else if let error {
+            continuation.resume(throwing: error)
+          } else {
+            continuation.resume(
+              throwing: GlobeRendererError.shaderLibraryLoadingFailed(
+                defaultLibraryError
+              )
+            )
+          }
+        }
+      }
     } catch {
       throw GlobeRendererError.shaderLibraryLoadingFailed(error)
     }
-
-    cachedShaderLibrary = (device.registryID, library)
-    return library
   }
 
   private static func loadLandTexture(
