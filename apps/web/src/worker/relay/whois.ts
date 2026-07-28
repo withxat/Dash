@@ -50,7 +50,12 @@ async function whoisQuery(hostname: string, query: string): Promise<string> {
 			await socket.opened
 			const writer = socket.writable.getWriter()
 			await writer.write(new TextEncoder().encode(`${query}\r\n`))
-			await writer.close()
+			// Release the lock, never `writer.close()`. Workers sockets have no
+			// half-close: closing the writable side tears the whole socket down,
+			// so the server's reply is discarded and the read loop below returns
+			// 0 bytes. WHOIS servers answer the CRLF-terminated line and hang up
+			// on their own, which is what ends that loop.
+			writer.releaseLock()
 
 			const reader = socket.readable.getReader()
 			const chunks: Uint8Array[] = []
