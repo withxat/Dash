@@ -1952,6 +1952,20 @@ struct NetworkTests {
     #expect(registration.nameservers == ["a.iana-servers.net"])
   }
 
+  @Test func rdapStripsRootDotFromNameservers() throws {
+    // bbc.co.uk answers RDAP with fully-qualified nameservers; the relay's WHOIS
+    // leg returns them bare. Both feed the same zone card, so they must agree.
+    let body = #"""
+      {
+        "ldhName": "bbc.co.uk",
+        "nameservers": [{"ldhName": "ddns0.bbc.co.uk."}, {"ldhName": "dns0.bbc.com."}]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "bbc.co.uk"))
+    #expect(registration.nameservers == ["ddns0.bbc.co.uk", "dns0.bbc.com"])
+  }
+
   @Test func rdapLookupDecodesRelaySnapshot() async throws {
     let session = mockSession { request in
       #expect(request.url?.path == "/api/registration/xat.sh")

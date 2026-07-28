@@ -70,6 +70,20 @@ describe('parseRdapJson', () => {
 		assert.equal(snapshot.expiresOn, '2027-08-13T04:00:00Z')
 		assert.deepEqual(snapshot.nameservers, ['a.iana-servers.net'])
 	})
+
+	it('strips the root dot from fully-qualified nameservers', () => {
+		// bbc.co.uk answers RDAP with trailing dots; the WHOIS leg returns them
+		// bare. Both legs feed the same zone card, so they have to agree.
+		const snapshot = parseRdapJson({
+			ldhName: 'bbc.co.uk',
+			nameservers: [
+				{ ldhName: 'DDNS0.BBC.CO.UK.' },
+				{ ldhName: 'dns0.bbc.com.' },
+			],
+		}, 'bbc.co.uk')
+		assert.ok(snapshot)
+		assert.deepEqual(snapshot.nameservers, ['ddns0.bbc.co.uk', 'dns0.bbc.com'])
+	})
 })
 
 describe('whois referrals', () => {

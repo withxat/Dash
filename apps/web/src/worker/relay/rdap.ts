@@ -57,8 +57,11 @@ export function parseRdapJson(data: unknown, fallbackDomain: string): null | Reg
 				continue
 			const row = ns as Record<string, unknown>
 			const name = stringField(row.ldhName) ?? stringField(row.unicodeName)
+			// Some RDAP servers return the fully-qualified form (`ns1.example.com.`).
+			// parseWhoisText strips the root dot, so strip it here too — otherwise the
+			// zone card renders the field differently depending on which leg answered.
 			if (name)
-				nameservers.push(name.toLowerCase())
+				nameservers.push(name.toLowerCase().replace(/\.$/, ''))
 		}
 	}
 

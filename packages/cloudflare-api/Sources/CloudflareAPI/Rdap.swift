@@ -97,7 +97,7 @@ public enum RdapClient: Sendable {
     let nameservers =
       ((root["nameservers"] as? [[String: Any]]) ?? []).compactMap {
         ($0["ldhName"] as? String) ?? ($0["unicodeName"] as? String)
-      }
+      }.map(strippingRootDot)
     let registrar = registrarName(from: root["entities"] as? [[String: Any]] ?? [])
     let registration = RdapRegistration(
       domain: domain,
@@ -108,6 +108,13 @@ public enum RdapClient: Sendable {
       updatedOn: eventDate("last changed") ?? eventDate("last update of RDAP database"),
       nameservers: nameservers)
     return usefulOrNil(registration)
+  }
+
+  /// Some RDAP servers return the fully-qualified form (`ns1.example.com.`).
+  /// The relay's WHOIS leg strips the root dot, so strip it here too — otherwise
+  /// the zone card renders the field differently depending on which leg answered.
+  private static func strippingRootDot(_ host: String) -> String {
+    host.hasSuffix(".") ? String(host.dropLast()) : host
   }
 
   private static func decodeSnapshot(_ data: Data) -> RdapRegistration? {
