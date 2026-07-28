@@ -1087,7 +1087,7 @@ struct WatchtowerTrafficView: View {
         .logicallyComplete(after: reduceMotion ? 0.12 : 0.22),
       completionCriteria: .logicallyComplete
     ) {
-      removalSequence.begin(metric)
+      _ = removalSequence.begin(metric)
     } completion: {
       guard
         customization.isEditing,
