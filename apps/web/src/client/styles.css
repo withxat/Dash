@@ -4,6 +4,13 @@
 
 @layer base {
 	html {
+		/* Light only, deliberately. Kumo's tokens are `light-dark()` pairs, but the
+		   switch is its own `[data-mode="dark"]` attribute, not
+		   `prefers-color-scheme`, and `:root { color-scheme: light }` from Kumo
+		   outranks anything set here in `@layer base`. Flipping it also inverts
+		   every `kumo-contrast` band from near-black to near-white, which recomposes
+		   the page rather than recoloring it. Dark mode is a real task; do not
+		   enable it by editing this one line. */
 		color-scheme: light;
 		scroll-behavior: smooth;
 	}
@@ -37,33 +44,6 @@
 	}
 }
 
-@keyframes hero-enter {
-	from {
-		opacity: 0;
-		transform: translateY(10px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-@utility hero-enter {
-	animation: hero-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-
-@utility hero-enter-1 {
-	animation-delay: 0ms;
-}
-
-@utility hero-enter-2 {
-	animation-delay: 70ms;
-}
-
-@utility hero-enter-3 {
-	animation-delay: 140ms;
-}
-
 @utility pressable {
 	transition-property: scale;
 	transition-duration: 150ms;
@@ -72,6 +52,14 @@
 	&:active {
 		scale: 0.96;
 	}
+}
+
+/* A hairline inside a `kumo-contrast` band. `kumo-inverse` exists only as a text
+   color, so this rides currentColor and stays correct whichever way the band is
+   painted. Applied per item rather than via `divide-y` so it also works across
+   the columns of a grid. */
+@utility rule-on-contrast {
+	border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 }
 
 @utility app-shot-frame {

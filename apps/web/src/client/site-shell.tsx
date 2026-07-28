@@ -78,7 +78,7 @@ function SiteHeader() {
 						variant="secondary"
 						external
 					>
-						Source
+						GitHub
 					</LinkButton>
 				</div>
 			</div>

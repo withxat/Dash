@@ -2,21 +2,33 @@
 
 ## 1. Visual theme and atmosphere
 
-Dash uses Cloudflare Kumo as the web design system and the native iPhone app as the visual subject. The page is quiet, direct, and product-led. Real App Store captures are the primary visual anchor; never reconstruct the iOS interface in HTML for marketing imagery.
+Dash uses Cloudflare Kumo as the web design system and the native iPhone app as the visual subject. The page is quiet, direct, and product-led. Real device captures are the primary visual anchor; never reconstruct the iOS interface in HTML for marketing imagery.
+
+The page never talks about itself. No copy about screenshots being unfinished, no notes on what will be published later, no commentary on the page's own construction.
+
+Invent nothing. No metrics, user counts, testimonials, customer logos, awards, or time-saved claims. No pricing copy and no implied paid tier, because none exists. The material that survives a cynical developer's read is the same material every time: things deliberately not built, limits stated plainly, and a demo that lets them check the claims themselves.
 
 ## 2. Color palette and roles
 
-Use Kumo semantic tokens for surfaces, text, status, and controls. Black and white alpha values are reserved for shadows, image outlines, and dividers on `kumo-contrast`.
+Use Kumo semantic tokens for surfaces, text, status, and controls. Black and white alpha values are reserved for shadows and image outlines.
 
 - `kumo-canvas`: long-form page canvas
 - `kumo-base`: navigation and primary content surface
 - `kumo-elevated`: iPhone screenshot frame
-- `kumo-recessed`: screenshot placeholder and grouped icon background
-- `kumo-contrast`: product stage and security section
+- `kumo-recessed`: grouped icon wells and tinted panels
+- `kumo-contrast`: the product stage and the relay section
 - `kumo-brand`: primary actions and active product emphasis
 - `kumo-info`, `kumo-success`, `kumo-warning`, `kumo-danger`: semantic status only
 - `kumo-default`, `kumo-strong`, `kumo-subtle`, `kumo-inverse`: text hierarchy
-- `kumo-hairline`, `kumo-line`, `kumo-focus`: separators, rings, and focus states
+
+Two contrast traps, both measured on this page:
+
+- `kumo-subtle` clears WCAG AA on `kumo-base` (4.74:1) but **fails on `kumo-recessed`** (4.27:1). Body copy on a recessed surface takes `kumo-default`.
+- `kumo-inactive` is the **disabled-control** token, not a text token. As body copy on `kumo-base` it measures **1.48:1**. Never use it for fine print. Fine print is still text and takes `kumo-subtle`.
+
+Re-measure contrast whenever a text token moves onto a new surface. Resolve `oklch()` through a canvas pixel before computing a ratio; parsing the numbers out of the string gives nonsense.
+
+The page is light only, deliberately. Kumo's tokens are `light-dark()` pairs, but the switch is Kumo's own `[data-mode="dark"]` attribute rather than `prefers-color-scheme`, and its `:root { color-scheme: light }` outranks anything set in `@layer base`. Enabling dark mode also inverts every `kumo-contrast` band from near-black to near-white, which recomposes the page rather than recoloring it. Dark mode is a project, not a one-line change.
 
 ## 3. Typography rules
 
@@ -28,70 +40,98 @@ Use Kumo semantic tokens for surfaces, text, status, and controls. Black and whi
 - Inline emphasis uses `font-medium`; never use `font-bold`.
 - Descriptions use pretty wrapping and stay near 65 characters per line.
 - Dynamic or aligned numbers use tabular numerals.
+- No em dashes or en dashes anywhere in visible copy. Use a period, a comma, a colon, or a plain hyphen.
+- Vary heading rhythm. A run of headings built as short declarative fragments is a voice tic, and it is the most recognisable generated cadence there is.
 
 ## 4. Component styling
 
-- Use `LinkButton` for primary navigation calls to action and `Link` for lower-emphasis navigation.
-- Use `Badge` for compact product metadata.
+- Use `LinkButton` for primary calls to action and `Link` for lower-emphasis navigation.
+- Use `Badge` for compact product metadata. A given badge text appears **once** per page.
 - Calls to action use an interruptible `scale(0.96)` press state over 150ms.
-- Use the same Solar SVG assets generated for the iOS app. Content icons may use filled variants; chrome uses outline variants.
+- Use the same Solar SVG assets generated for the iOS app. Do not reach for a near-miss glyph to fill a slot; a section with no honest icon gets no icon.
 - Use the official Dash App icon for the favicon and every brand lockup.
-- `AppScreenshot` owns screenshot geometry. When a capture is unavailable, render its labeled placeholder instead of drawing a fake interface.
-- Screenshot frames use a 40px outer radius, 32px inner radius, and 8px padding.
+- `AppScreenshot` owns screenshot geometry: a 40px outer radius, 32px inner radius, and 8px padding. It never draws a fake interface.
+- One call-to-action label per intent across the whole page, navigation included.
 
 ## 5. Layout principles
 
 - Maximum content width is `max-w-7xl`.
 - Page gutters are 20px on compact screens and 32px from the small breakpoint.
-- Use one 12-column desktop grid for every main section.
-- The hero pairs one oversized claim with a single supporting column containing the App icon, copy, and action.
-- The screenshot stage is a square-edged, full-width `kumo-contrast` field, not a rounded supporting card.
-- Feature capabilities form a numbered index with full-width dividers. Do not wrap capabilities in cards.
-- Every section uses the same marker, heading scale, gutters, and 80px to 96px vertical rhythm.
-- App gallery captures are equal-width, upright, and aligned to the same baseline.
-- Every section has one job: introduce, show, explain, establish trust, or convert.
+- The hero carries at most four text elements: one badge, the headline, one paragraph, and the action row. No trailing micro-copy under the buttons.
+- The product stage is a square-edged, full-width `kumo-contrast` field, not a rounded supporting card.
+- **Every section uses a different layout family.** As shipped: asymmetric hero split, centered full-bleed stage, sticky product tour, offset label-and-text list, dark item grid, and the closing two-column action band.
+- **No section numbering.** No `01 / Capabilities` markers, no numbered capability index, no numbered principles. A section's position on the page is its label.
+- Keep eyebrows to at most one per three sections. As shipped the page has exactly one, the hero badge.
+- Do not put a large headline on the left and a small explanatory paragraph on the right as a section header. Stack them, or give the second column real content.
+- Every section has one job: act, verify, undo, reach, trust, or convert.
 
 ## 6. Depth and elevation
 
 - Establish depth through `canvas`, `base`, `contrast`, and `elevated` surface steps.
 - Use layered transparent shadows for screenshot frames and Kumo's native treatment for controls.
-- Use borders only for dividers, section boundaries, and placeholder instructions.
+- Use borders only for dividers and section boundaries.
 - Real screenshot images receive a 1px inset pure-black outline at 10% opacity.
 - Never combine a visible border and a decorative drop shadow on the same surface.
+- Hairlines inside a `kumo-contrast` band use the `rule-on-contrast` utility, which rides `currentColor`. `kumo-inverse` exists only as a text color, so a border token cannot be used there, and a hardcoded white alpha would be wrong if the band is ever repainted.
 
-## 7. Do and do not
+## 7. Motion
 
-- Do make the real iPhone screenshots the strongest visual anchor.
+Motion lives in `motion-primitives.tsx` and uses Motion (`motion/react`). One easing curve, `cubic-bezier(0.16, 1, 0.3, 1)`, and one duration, 0.62s, for the whole site.
+
+- `Stagger` / `StaggerItem` sequence a group so it reads in the order it should be understood. `on="load"` above the fold, `on="view"` below it.
+- Above-the-fold entrances are **translate only, never opacity**. An `opacity: 0` hero headline is not painted, so fading it in pushes out Largest Contentful Paint by the length of its own entrance.
+- `Reveal` is the single-block version for content with nothing to sequence.
+- `Parallax` applies a scroll-linked vertical offset.
+- `StickyTour` holds one device still while the surfaces inside it change. The pin is the argument: the product is a single compact app, not a pile of separate screens. It is built on CSS `position: sticky` rather than a scroll-hijacking pin, so it cannot desynchronise from the scrollbar or strand a reader mid-section, and below `lg` it degrades to a plain stacked list with each capture inline.
+- Every animation must answer "what does this communicate?" with hierarchy, sequence, or feedback. Decoration is not an answer.
+- Scroll values stay on Motion values (`useScroll`, `useTransform`). Never drive continuous scroll or pointer values through React state, and never attach a `scroll` listener.
+- Everything degrades through `useReducedMotion()` to a static, fully visible page, backed by the CSS `prefers-reduced-motion` block.
+
+Screenshots get **one** scroll-linked entrance and nothing else. No perpetual float, no rotation, no 3D tilt, no hover transform.
+
+**`useTransform` input ranges must stay inside `[0,1]` and never decrease.** Motion binds the value to a WAAPI animation at mount, and an out-of-range or non-monotonic offset throws `Offsets must be monotonically non-decreasing` during render, which takes down the entire page with an empty `#root` and no error overlay. For a crossfade, give the first and last stops open-ended bands rather than letting them start below 0 or end above 1, and check that the opacities across all layers sum to 1 at every progress value so there is never a blank or double-exposed frame.
+
+## 8. Do and do not
+
+- Do make real iPhone captures the strongest visual anchor.
 - Do use Kumo semantic tokens for every interface color role.
-- Do use the Kumo font stack for navigation, labels, chapter markers, body copy, and technical facts.
 - Do let product imagery, whitespace, and surface changes provide the visual hierarchy.
 - Do preserve visible keyboard focus and 44px touch targets.
-- Do keep Solar as the only interface icon family.
-- Do respect reduced-motion preferences.
+- Do state limits plainly. The 100 MB ceiling, iPhone only, no server-side copy, unread tracked per device, and background refresh being best effort are all trust-building, not weaknesses to hide.
 - Do not rebuild or approximate the iOS interface in React.
 - Do not introduce decorative gradients, glass effects, or generic feature-card grids.
-- Do not rotate, float, or animate static screenshots.
 - Do not introduce a second editorial or terminal-style typography system beside Kumo.
 - Do not round the primary section containers. The iPhone frame is the only large rounded object.
-- Do not use invented metrics, fictional screenshots, or placeholder image services.
 - Do not use `transition: all`, bounce, or elastic easing.
-- Do not animate static navigation icons.
 
-## 8. Responsive behavior
+## 9. Capturing screenshots
+
+Captures come from the shipping app at 1206x2622 on an iPhone 17 Pro, saved to `public/screens/` and referenced with a `?v=` suffix that is bumped on replacement.
+
+Store them as WebP, not PNG. A raw simulator capture is about 1.7 MB, which is unacceptable for a hero image; `sharp(src).webp({ quality: 85, effort: 6 })` brings it to roughly 40 to 150 KB with the dithered chart fills still crisp. `sharp` is already a workspace dependency.
+
+**Demo mode is usable, but only below the feature roots.** Demo grants read scopes only, so every feature *root* screen (Resources, Domains, Workers, Pages, R2, KV) carries a pinned `Read-only` warning and a `Connect your account` button. Published as marketing those say the app cannot write, so those screens are unusable. **Drill-down screens carry no such chrome**: a zone detail, an R2 bucket browser, a Pages project, and a KV key editor are all clean. Watchtower is clean at its root because it has no write controls.
+
+Also avoid demo screens whose sample data is bulk filler (`site-01` through `site-08`, `bulk:item-001`) or joke corporations (Initech, Umbrella Corp, Cyberdyne, Tyrell). `example.com` and its siblings are ideal: neutral, reserved, and instantly legible.
+
+The four captures the page ships are the zone detail, Watchtower charts, the Pages project with its build-outcome chart, and an R2 bucket browser.
+
+## 10. Shared-link preview
+
+`public/og.png` is generated, not hand-made: `node apps/web/scripts/generate-og-image.mjs` composites the real zone capture against the hero claim at 1200x630, the size both Open Graph and Twitter `summary_large_image` expect. Regenerate it whenever the hero claim or that capture changes, and bump the `?v=` on the meta tags in `index.html`.
+
+## 11. Responsive behavior
 
 - The primary text navigation hides below the small breakpoint; the GitHub action remains available.
 - The hero becomes a vertical claim, supporting copy, App icon, and action sequence on compact screens.
-- Product stage copy and replacement guidance stack around the screenshot on compact screens.
-- The capability index remains a single readable list at every width.
-- App gallery captures stack on compact screens and align in two equal columns from the small breakpoint.
+- The sticky tour collapses to a stacked list with each capture inline below its copy.
 - Every action keeps a minimum 44px hit area.
-- Desktop and 375px are required browser checks for visual changes.
+- Desktop and 375px are required browser checks for visual changes; confirm `documentElement.scrollWidth` never exceeds `clientWidth`.
 
-## 9. Agent prompt guide
+## 12. Agent prompt guide
 
-- "Build a quiet Dash hero with Kumo `bg-kumo-base`, a 12-column desktop grid, a `clamp(56px, 7.5vw, 104px)` semibold headline at `-0.04em`, and one supporting column containing the App icon, copy, and primary action."
-- "Add a portrait `AppScreenshot` using a 40px outer radius, 32px inner radius, 8px padding, and a real 1179×2556 capture. Use the labeled placeholder if the file is absent."
-- "Create a five-item numbered capability index using Solar filled icons, `border-kumo-hairline` dividers, 40px icon wells, and no individual cards."
-- "Create an aligned screenshot gallery with two upright `max-w-80` portrait captures, a 32px desktop gap, and no hover transform."
-- "Add a Kumo `LinkButton` with an interruptible 150ms `scale(0.96)` press state and no color transition."
-- "Review the page at full width and 375px, checking screenshot geometry, long labels, focus visibility, and horizontal overflow."
+- "Build a quiet Dash hero with Kumo `bg-kumo-base`, a 12-column desktop grid, a `clamp(56px, 7.5vw, 104px)` semibold headline at `-0.04em`, and one supporting column holding the App icon, one paragraph, and the action row."
+- "Add a portrait `AppScreenshot` using a 40px outer radius, 32px inner radius, 8px padding, and a real 1206x2622 WebP capture."
+- "Add a stop to `StickyTour` with a headline, two short paragraphs, and one capture, and state in one sentence what holding the device still communicates at that stop."
+- "Wrap a section in `Stagger` and its children in `StaggerItem` so they enter in reading order."
+- "Review the page at full width and 375px, checking screenshot geometry, long labels, focus visibility, horizontal overflow, and text contrast on every surface the token touches."

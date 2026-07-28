@@ -1,102 +1,114 @@
-import type { SolarIconComponent } from './solar-icons'
+import type { TourStop } from './motion-primitives'
 
 import { Badge } from '@cloudflare/kumo/components/badge'
 import { LinkButton } from '@cloudflare/kumo/components/button'
 import { Link } from '@cloudflare/kumo/components/link'
 
 import { dashAppIconUrl } from './brand-assets'
+import { Parallax, Reveal, Stagger, StaggerItem, StickyTour } from './motion-primitives'
 import { SiteShell } from './site-shell'
-import {
-	SolarChartIcon,
-	SolarCloudIcon,
-	SolarCloudStorageIcon,
-	SolarCodeIcon,
-	SolarDatabaseIcon,
-	SolarGlobalIcon,
-	SolarLockIcon,
-} from './solar-icons'
 
-// GitHub is the only public release destination until the App Store listing is
-// actually live. Keep the label and destination aligned, and never publish a
-// placeholder App Store URL.
+// GitHub is the only public destination that exists today. Keep the label and
+// the destination aligned, never publish a placeholder App Store URL, and use
+// this one label everywhere the page asks for the same thing.
 const PRIMARY_CTA_HREF = 'https://github.com/withxat/Dash'
-const PRIMARY_CTA_LABEL = 'Follow development on GitHub'
-const RELEASE_STATUS = 'App Store release in progress'
+const PRIMARY_CTA_LABEL = 'Read the source on GitHub'
 
-interface Feature {
-	description: string
-	icon: SolarIconComponent
-	name: string
-	number: string
-}
+// Real device captures from the shipping app, stored as WebP at native iPhone
+// 17 Pro resolution (a raw capture is ~1.7 MB, far too heavy for the page).
+// Bump the query version when a capture is replaced.
+const SHOT_VERSION = '?v=1'
+const SHOT_WIDTH = 1206
+const SHOT_HEIGHT = 2622
 
 interface ScreenshotSpec {
 	alt: string
-	description: string
-	label: string
-	src?: string
+	src: string
 }
 
-const features: Feature[] = [
+const zoneShot: ScreenshotSpec = {
+	alt: 'A zone open in Dash, showing its nameservers and quick actions for DNS, HTTP traffic, Web Analytics, WAF, cache, and settings',
+	src: `/screens/zone.webp${SHOT_VERSION}`,
+}
+
+const watchtowerShot: ScreenshotSpec = {
+	alt: 'The Dash Watchtower screen, charting web traffic, CPU time, and Worker invocations over the last 24 hours',
+	src: `/screens/watchtower.webp${SHOT_VERSION}`,
+}
+
+const pagesShot: ScreenshotSpec = {
+	alt: 'A Pages project in Dash, showing a build outcome chart and a deployment history with commit messages and build results',
+	src: `/screens/pages.webp${SHOT_VERSION}`,
+}
+
+const r2Shot: ScreenshotSpec = {
+	alt: 'An R2 bucket open in Dash, listing virtual folders and files with per-format glyphs',
+	src: `/screens/r2.webp${SHOT_VERSION}`,
+}
+
+interface LabelledItem {
+	label: string
+	text: string
+}
+
+const rollbackSteps: LabelledItem[] = [
 	{
-		description: 'DNS, analytics, and zone settings.',
-		icon: SolarGlobalIcon,
-		name: 'Zones',
-		number: '01',
+		label: 'Pick',
+		text: 'Choose any earlier deployment from the history. The live one is badged, so there is no ambiguity about what you are leaving.',
 	},
 	{
-		description: 'Deployments, routes, and traffic.',
-		icon: SolarCodeIcon,
-		name: 'Workers',
-		number: '02',
+		label: 'Confirm',
+		text: 'Dash states that this sends all traffic to the deployment you picked. Gradual splits are unsupported on purpose: a partial cut-over you cannot watch from a phone is worse than a whole one you can.',
 	},
 	{
-		description: 'Projects, builds, and live activity.',
-		icon: SolarCloudIcon,
-		name: 'Pages',
-		number: '03',
-	},
-	{
-		description: 'Browse, preview, upload, and share.',
-		icon: SolarCloudStorageIcon,
-		name: 'R2',
-		number: '04',
-	},
-	{
-		description: 'Inspect namespaces and key-value data.',
-		icon: SolarDatabaseIcon,
-		name: 'KV',
-		number: '05',
+		label: 'Watch',
+		text: 'The write goes to the Cloudflare API, which stays the final boundary. If Cloudflare refuses, the control reverts and says why.',
 	},
 ]
 
-const homeScreenshot: ScreenshotSpec = {
-	alt: 'Dash Home screen',
-	description: 'The compact launch point for daily Cloudflare work.',
-	label: 'Home',
-}
+// The argument for a native client, made with the parts of it that run when the
+// app is not the thing in front of you.
+const osSurfaces: LabelledItem[] = [
+	{
+		label: 'Live Activities',
+		text: 'A Pages build in progress runs on the lock screen. Dash keeps it current in the foreground and continues in the background when iOS grants the time. Background refresh is best effort, so the foreground view stays authoritative.',
+	},
+	{
+		label: 'Push alerts',
+		text: 'Cloudflare alerts arrive as real notifications. Opening one lands on the screen the alert is about, not at the top of the app.',
+	},
+	{
+		label: 'Home screen widget',
+		text: 'It counts one number: Cloudflare deliveries you have not read on this iPhone. Cloudflare publishes no read state, so unread is tracked locally and ignoring an alert is reversible.',
+	},
+	{
+		label: 'Siri and Shortcuts',
+		text: 'Purge Cache, Under Attack, Development Mode, Upload to R2, and Open Watchtower are App Intents. Say them, or wire them into your own automations.',
+	},
+	{
+		label: 'Share extension',
+		text: 'Share an image from any app into your last used R2 bucket. The public URL is on the clipboard when it finishes.',
+	},
+]
 
-const resourcesScreenshot: ScreenshotSpec = {
-	alt: 'Dash Resources screen',
-	description: 'Zones, Workers, Pages, R2, and KV in one phone-first stack.',
-	label: 'Resources',
-}
-
-const watchtowerScreenshot: ScreenshotSpec = {
-	alt: 'Dash Watchtower screen',
-	description: 'Account health folded into signals that lead somewhere useful.',
-	label: 'Watchtower',
-}
+const relayFacts: LabelledItem[] = [
+	{ label: 'Redirects OAuth', text: 'It answers the HTTPS callback and hands you back to the app.' },
+	{ label: 'Forwards alerts', text: 'It passes mapped Cloudflare alert webhooks to APNs, deep link included.' },
+	{ label: 'Stores nothing', text: 'No KV, no D1, no Durable Objects. Nothing of yours has anywhere to sit.' },
+	{ label: 'Receives no secrets', text: 'Not your Cloudflare credentials, not your tokens, not the PKCE verifier.' },
+	{ label: 'Keeps no record', text: 'No query strings, no device tokens, no alert payloads. Only APNs status codes.' },
+	{ label: 'Holds nothing you cannot revoke', text: 'Push setup lives in your own Cloudflare account. Delete it there and delivery stops.' },
+]
 
 export function LandingPage() {
 	return (
 		<SiteShell mainId="main-content">
 			<main id="main-content">
 				<Hero />
-				<CapabilityIndex />
-				<AppGallery />
-				<NativeSection />
-				<SecuritySection />
+				<ZoneStage />
+				<IncidentTour />
+				<OperatingSystemSurfaces />
+				<RelaySection />
 				<FinalCallToAction />
 			</main>
 		</SiteShell>
@@ -106,10 +118,12 @@ export function LandingPage() {
 function Hero() {
 	return (
 		<section className="overflow-hidden bg-kumo-base" data-od-id="dash-hero">
-			<div className="
-				mx-auto w-full max-w-7xl px-5 py-16
-				sm:px-8 sm:py-24
-			"
+			<Stagger
+				className="
+					mx-auto w-full max-w-7xl px-5 pt-14 pb-16
+					sm:px-8 sm:pt-20 sm:pb-24
+				"
+				on="load"
 			>
 				<div className="
 					grid gap-12
@@ -117,19 +131,17 @@ function Hero() {
 				"
 				>
 					<div className="lg:col-span-8">
-						<div className="hero-enter hero-enter-1">
-							<Badge variant="orange">Built for iPhone</Badge>
-						</div>
-						<h1 className="mt-6 max-w-[11ch] hero-enter text-[clamp(3.5rem,7.5vw,6.5rem)]/[0.9] font-semibold tracking-[-0.04em] text-balance text-kumo-strong hero-enter-2">
-							Run Cloudflare beyond the desk.
-						</h1>
+						<StaggerItem>
+							<Badge variant="orange">Open source. App Store release in progress.</Badge>
+						</StaggerItem>
+						<StaggerItem>
+							<h1 className="mt-6 max-w-[11ch] text-[clamp(3.5rem,7.5vw,6.5rem)]/[0.9] font-semibold tracking-[-0.04em] text-balance text-kumo-strong">
+								Run Cloudflare beyond the desk.
+							</h1>
+						</StaggerItem>
 					</div>
 
-					<div className="
-						hero-enter hero-enter-3
-						lg:col-span-4
-					"
-					>
+					<StaggerItem className="lg:col-span-4">
 						<img
 							alt=""
 							className="size-16 rounded-[14px]"
@@ -138,11 +150,10 @@ function Hero() {
 							width="64"
 						/>
 						<p className="mt-6 max-w-md text-base/6 text-pretty text-kumo-subtle">
-							Dash brings the Cloudflare work that cannot wait into one focused,
-							native iPhone app. Sign in with OAuth, then go straight to the
-							resource that needs you.
+							Purge a cache, roll back a deploy, and watch the traffic recover.
+							Zones, Workers, Pages, R2, and KV, in a native iPhone app.
 						</p>
-						<div className="mt-8 flex flex-col items-start gap-2">
+						<div className="mt-8 flex flex-wrap items-center gap-x-2 gap-y-1">
 							<LinkButton
 								className="pressable"
 								href={PRIMARY_CTA_HREF}
@@ -153,180 +164,176 @@ function Hero() {
 								{PRIMARY_CTA_LABEL}
 							</LinkButton>
 							<Link
-								className="flex min-h-11 items-center rounded-md px-1 text-sm font-medium"
+								className="flex min-h-11 items-center rounded-md px-3 text-sm font-medium"
 								href="#app"
 								variant="plain"
 							>
-								Preview the app
+								See the app
 							</Link>
 						</div>
-						<p className="mt-4 max-w-md text-sm/5 text-pretty text-kumo-subtle">
-							{RELEASE_STATUS}
-							. GitHub is the current source for code and updates.
-						</p>
-						<p className="mt-2 text-sm text-kumo-inactive">
-							OAuth + PKCE. Tokens stay in the Keychain.
-						</p>
-					</div>
+					</StaggerItem>
 				</div>
-			</div>
-
-			<ProductField />
+			</Stagger>
 		</section>
 	)
 }
 
-function ProductField() {
+function ZoneStage() {
 	return (
-		<div className="hero-enter bg-kumo-contrast text-kumo-inverse hero-enter-3">
+		<div
+			className="scroll-mt-20 overflow-hidden bg-kumo-contrast text-kumo-inverse"
+			data-od-id="zone-stage"
+			id="app"
+		>
 			<div className="
-				mx-auto grid w-full max-w-7xl gap-12 px-5 py-16
-				sm:px-8 sm:py-20
-				lg:grid-cols-12 lg:items-center lg:gap-x-10
+				mx-auto w-full max-w-7xl px-5 pt-16
+				sm:px-8 sm:pt-20
 			"
 			>
-				<div className="lg:col-span-3">
-					<p className="text-sm font-medium text-kumo-inverse/60">App preview</p>
-					<h2 className="mt-4 max-w-[9ch] text-3xl/[1] font-semibold tracking-[-0.022em] text-balance">
-						A real product preview is coming.
+				<Reveal>
+					<h2 className="
+						mx-auto max-w-[20ch] text-center text-3xl/[1.05] font-semibold tracking-[-0.022em] text-balance
+						sm:text-4xl/[1.02]
+					"
+					>
+						The first minute, on one screen.
 					</h2>
-					<p className="mt-5 max-w-60 text-sm/6 text-pretty text-kumo-inverse/60">
-						We will publish real device captures from the shipping app, never a
-						reconstructed dashboard or fictional product shot.
+					<p className="mx-auto mt-6 max-w-xl text-center text-sm/6 text-pretty text-kumo-inverse/60">
+						Purge a single URL or purge everything. Turn on Under Attack mode. Edit
+						a DNS record and its proxy status. See what the WAF is blocking and
+						where it came from. Nameservers and plan sit on the same screen, in
+						mono, for the moment somebody asks you to read them out.
 					</p>
-				</div>
-
-				<div className="
-					flex items-end justify-center overflow-hidden
-					lg:col-span-6 lg:px-6
-				"
-				>
-					<AppScreenshot screenshot={homeScreenshot} size="hero" />
-				</div>
-
-				<div className="lg:col-span-3">
-					<p className="text-sm font-medium text-kumo-inverse/70">Release preview</p>
-					<p className="mt-3 max-w-60 text-sm/6 text-pretty text-kumo-inverse/55">
-						Real Home, Resources, and Watchtower captures will appear here before
-						the App Store release.
-					</p>
-					<p className="mt-5 text-sm text-kumo-inverse/70">
-						Native iPhone app · iOS 17+
-					</p>
-				</div>
+				</Reveal>
 			</div>
+
+			{/* The device rises out of the fold as the band scrolls past. One
+			    entrance, not a perpetual float. */}
+			<Parallax
+				className="
+					mt-14 flex justify-center px-5
+					sm:mt-16 sm:px-8
+				"
+				depth={28}
+			>
+				<AppScreenshot screenshot={zoneShot} size="hero" priority />
+			</Parallax>
 		</div>
 	)
 }
 
-function CapabilityIndex() {
-	return (
-		<section className="scroll-mt-20 border-b border-kumo-hairline bg-kumo-base" data-od-id="capability-index" id="features">
-			<div className="
-				mx-auto grid w-full max-w-7xl gap-10 px-5 py-20
-				sm:px-8 sm:py-24
-				lg:grid-cols-12 lg:gap-x-6
-			"
-			>
-				<div className="lg:col-span-3">
-					<SectionMarker label="Capabilities" number="01" />
-				</div>
-				<div className="lg:col-span-9">
-					<div className="
-						grid gap-8 border-b border-kumo-line pb-10
-						sm:grid-cols-[minmax(0,1.2fr)_minmax(16rem,0.8fr)] sm:items-end
+function IncidentTour() {
+	// One device, three surfaces: act, verify, undo. The pin is the argument.
+	const stops: TourStop[] = [
+		{
+			content: (
+				<>
+					<h3 className="
+						max-w-[16ch] text-3xl/[1.05] font-semibold tracking-tight text-balance text-kumo-strong
+						sm:text-4xl/[1.02]
 					"
 					>
-						<h2 className="
-							max-w-[12ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
-							sm:text-5xl/[0.96]
-						"
-						>
-							Five Cloudflare surfaces. No filler.
-						</h2>
-						<p className="
-							max-w-md text-sm/6 text-pretty text-kumo-subtle
-							sm:justify-self-end
-						"
-						>
-							Each destination is a native workflow, not a thin web wrapper. The
-							actual screenshots can carry the visual detail.
-						</p>
-					</div>
-
-					<ol className="divide-y divide-kumo-hairline border-b border-kumo-hairline">
-						{features.map(({ description, icon: IconComponent, name, number }) => (
-							<li
+						Then you find out whether it worked.
+					</h3>
+					<p className="mt-6 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						A fix is a guess until the lines move. Watchtower charts traffic, cache
+						rate, request errors, Worker invocations, and CPU time over 24 hours,
+						7 days, or 30 days, in a card layout you arrange once and keep.
+					</p>
+					<p className="mt-4 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						The numbers are Cloudflare's, drawn the way Cloudflare reports them.
+						Dash publishes no health verdict of its own. A tool that raises an
+						alarm your provider never raised is training you to ignore it.
+					</p>
+				</>
+			),
+			id: 'verify',
+			media: <AppScreenshot screenshot={watchtowerShot} size="standard" />,
+		},
+		{
+			content: (
+				<>
+					<h3 className="
+						max-w-[16ch] text-3xl/[1.05] font-semibold tracking-tight text-balance text-kumo-strong
+						sm:text-4xl/[1.02]
+					"
+					>
+						Go back to the deployment that was fine.
+					</h3>
+					<p className="mt-6 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						Workers and Pages both carry their whole deployment history, not just
+						what is live. Each one shows its commit message and build outcome, so
+						finding the last good build is a look rather than a search.
+					</p>
+					<dl className="mt-10 max-w-md">
+						{rollbackSteps.map(({ label, text }) => (
+							<div
 								className="
-									grid gap-4 py-6
-									sm:grid-cols-[3rem_minmax(10rem,0.8fr)_minmax(0,1.2fr)] sm:items-center sm:gap-6
+									border-t border-kumo-hairline py-5
+									last:border-b
 								"
-								key={name}
+								key={label}
 							>
-								<span className="text-xs text-kumo-inactive tabular-nums">{number}</span>
-								<div className="flex items-center gap-3">
-									<span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-kumo-recessed text-kumo-brand">
-										<IconComponent size={20} weight="fill" aria-hidden />
-									</span>
-									<h3 className="text-xl font-medium tracking-[-0.012em] text-kumo-strong">{name}</h3>
-								</div>
-								<p className="text-sm/5 text-pretty text-kumo-subtle">{description}</p>
-							</li>
+								<dt className="text-sm font-medium text-kumo-strong">{label}</dt>
+								<dd className="mt-1.5 text-sm/6 text-pretty text-kumo-subtle">{text}</dd>
+							</div>
 						))}
-					</ol>
-				</div>
-			</div>
-		</section>
-	)
-}
+					</dl>
+				</>
+			),
+			id: 'undo',
+			media: <AppScreenshot screenshot={pagesShot} size="standard" />,
+		},
+		{
+			content: (
+				<>
+					<h3 className="
+						max-w-[16ch] text-3xl/[1.05] font-semibold tracking-tight text-balance text-kumo-strong
+						sm:text-4xl/[1.02]
+					"
+					>
+						Not every fix is a switch.
+					</h3>
+					<p className="mt-6 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						Some of them are a file. R2 browses like a small file manager: buckets
+						open into folders, images carry thumbnails, and everything else gets a
+						glyph for its format. Tap an object and it opens in the system preview,
+						with Apple's own share and done controls left intact.
+					</p>
+					<p className="mt-4 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						Uploads run off the main thread with progress and cancel. Some fixes are
+						a config value instead, so KV keys open in a JSON editor with Format and
+						Save.
+					</p>
+				</>
+			),
+			id: 'handle',
+			media: <AppScreenshot screenshot={r2Shot} size="standard" />,
+		},
+	]
 
-function AppGallery() {
 	return (
-		<section className="scroll-mt-20 bg-kumo-canvas" data-od-id="app-gallery" id="app">
+		<section className="scroll-mt-20 bg-kumo-base" data-od-id="incident-tour" id="features">
 			<div className="
 				mx-auto w-full max-w-7xl px-5 py-20
 				sm:px-8 sm:py-24
 			"
 			>
-				<div className="
-					grid gap-10
-					lg:grid-cols-12 lg:gap-x-6
-				"
-				>
-					<div className="lg:col-span-3">
-						<SectionMarker label="The app" number="02" />
-					</div>
-					<div className="lg:col-span-9">
-						<p className="text-sm font-medium text-kumo-brand">Product tour in progress</p>
-						<h2 className="
-							mt-4 max-w-[14ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
-							sm:text-5xl/[0.96]
-						"
-						>
-							Three places. One compact stack.
-						</h2>
-						<p className="mt-6 max-w-xl text-base/6 text-pretty text-kumo-subtle">
-							Home, Resources, and Watchtower are real shipping surfaces. Their
-							labeled frames stay honest until final device captures are ready.
-						</p>
-					</div>
-				</div>
-
-				<div className="
-					mt-14 grid items-start gap-12
-					sm:grid-cols-2 sm:gap-8
-					lg:ml-[25%]
-				"
-				>
-					<AppScreenshot screenshot={resourcesScreenshot} size="standard" />
-					<AppScreenshot screenshot={watchtowerScreenshot} size="standard" />
-				</div>
+				<StickyTour stops={stops} />
 			</div>
 		</section>
 	)
 }
 
-function AppScreenshot({ screenshot, size }: { screenshot: ScreenshotSpec, size: 'hero' | 'standard' }) {
+function AppScreenshot({
+	priority = false,
+	screenshot,
+	size,
+}: {
+	priority?: boolean
+	screenshot: ScreenshotSpec
+	size: 'hero' | 'standard'
+}) {
 	const widthClass = size === 'hero' ? 'max-w-96' : 'max-w-80'
 
 	return (
@@ -336,177 +343,107 @@ function AppScreenshot({ screenshot, size }: { screenshot: ScreenshotSpec, size:
 		`}
 		>
 			<div className="rounded-[2.5rem] bg-kumo-elevated p-2 app-shot-frame">
-				{screenshot.src
-					? (
-							<img
-								alt={screenshot.alt}
-								className="aspect-9/19.5 w-full rounded-4xl object-cover app-shot-image"
-								height="2556"
-								loading={size === 'hero' ? 'eager' : 'lazy'}
-								src={screenshot.src}
-								width="1179"
-							/>
-						)
-					: (
-							<div
-								className="
-									flex aspect-9/19.5 w-full flex-col items-center justify-center rounded-4xl bg-kumo-recessed px-6 text-center
-									text-kumo-default ring-1 ring-kumo-line ring-inset
-								"
-								aria-label={`${screenshot.alt} placeholder`}
-								role="img"
-							>
-								<img alt="" className="size-16" height="64" src={dashAppIconUrl} width="64" />
-								<p className="mt-5 text-sm font-medium">
-									{screenshot.label}
-									{' '}
-									capture coming
-								</p>
-								<p className="mt-2 max-w-44 text-xs/5 text-pretty text-kumo-subtle">
-									Real iPhone imagery has not been published yet.
-								</p>
-							</div>
-						)}
+				<img
+					alt={screenshot.alt}
+					className="aspect-9/19.5 w-full rounded-4xl object-cover app-shot-image"
+					fetchPriority={priority ? 'high' : 'auto'}
+					height={SHOT_HEIGHT}
+					loading={priority ? 'eager' : 'lazy'}
+					src={screenshot.src}
+					width={SHOT_WIDTH}
+				/>
 			</div>
-			{size === 'standard' && (
-				<figcaption className="mt-5 border-t border-kumo-hairline pt-4">
-					<p className="text-sm font-medium text-kumo-strong">{screenshot.label}</p>
-					<p className="mt-1 text-sm/5 text-pretty text-kumo-subtle">{screenshot.description}</p>
-				</figcaption>
-			)}
 		</figure>
 	)
 }
 
-function NativeSection() {
+function OperatingSystemSurfaces() {
 	return (
-		<section className="border-y border-kumo-hairline bg-kumo-base" data-od-id="native-principles">
+		<section className="border-y border-kumo-hairline bg-kumo-canvas" data-od-id="os-surfaces">
 			<div className="
-				mx-auto grid w-full max-w-7xl gap-10 px-5 py-20
+				mx-auto grid w-full max-w-7xl gap-12 px-5 py-20
 				sm:px-8 sm:py-24
-				lg:grid-cols-12 lg:gap-x-6
+				lg:grid-cols-12 lg:gap-x-10
 			"
 			>
-				<div className="lg:col-span-3">
-					<SectionMarker label="Native principles" number="03" />
-				</div>
-				<div className="lg:col-span-9">
-					<Badge variant="neutral">Built for iPhone</Badge>
+				<Reveal className="lg:col-span-4">
 					<h2 className="
-						mt-5 max-w-[16ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
+						max-w-[14ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
 						sm:text-5xl/[0.96]
 					"
 					>
-						One phone. One stack. No squeezed dashboard.
+						Some of it happens with the app closed.
 					</h2>
-
-					<div className="
-						mt-14 grid border-y border-kumo-hairline
-						lg:grid-cols-3
-					"
-					>
-						<Principle
-							description="SwiftUI, system navigation, and one compact portrait canvas per tab."
-							icon={SolarGlobalIcon}
-							number="01"
-							title="Native from the start"
-						/>
-						<Principle
-							description="OAuth tokens stay in the Keychain. The relay never receives Cloudflare credentials."
-							icon={SolarLockIcon}
-							number="02"
-							title="Your account stays yours"
-						/>
-						<Principle
-							description="Watchtower turns account health into concise signals with useful destinations."
-							icon={SolarChartIcon}
-							number="03"
-							title="Operational at a glance"
-						/>
-					</div>
-				</div>
-			</div>
-		</section>
-	)
-}
-
-function Principle({
-	description,
-	icon: IconComponent,
-	number,
-	title,
-}: {
-	description: string
-	icon: SolarIconComponent
-	number: string
-	title: string
-}) {
-	return (
-		<div className="
-			border-b border-kumo-hairline py-7
-			lg:border-r lg:border-b-0 lg:px-6
-			lg:first:pl-0
-			lg:last:border-r-0 lg:last:pr-0
-		"
-		>
-			<div className="flex items-center justify-between gap-4">
-				<span className="text-xs text-kumo-inactive tabular-nums">{number}</span>
-				<span className="flex size-10 shrink-0 items-center justify-center rounded-[10px] bg-kumo-recessed text-kumo-brand">
-					<IconComponent size={20} aria-hidden />
-				</span>
-			</div>
-			<h3 className="mt-8 max-w-[12ch] text-xl/[1.05] font-medium tracking-[-0.012em] text-balance text-kumo-strong">{title}</h3>
-			<p className="mt-4 text-sm/6 text-pretty text-kumo-subtle">{description}</p>
-		</div>
-	)
-}
-
-function SecuritySection() {
-	return (
-		<section className="scroll-mt-20 bg-kumo-contrast text-kumo-inverse" data-od-id="security-model" id="security">
-			<div className="
-				mx-auto grid w-full max-w-7xl gap-10 px-5 py-20
-				sm:px-8 sm:py-24
-				lg:grid-cols-12 lg:gap-x-6
-			"
-			>
-				<div className="lg:col-span-3">
-					<SectionMarker label="Security model" number="04" dark />
-				</div>
-				<div className="lg:col-span-9">
-					<h2 className="
-						max-w-[14ch] text-4xl/[1] font-semibold tracking-tight text-balance
-						sm:text-5xl/[0.96]
-					"
-					>
-						The relay redirects. Your secrets do not.
-					</h2>
-					<p className="mt-6 max-w-xl text-sm/6 text-pretty text-kumo-inverse/60">
-						Cloudflare requires an HTTPS OAuth callback. Dash uses a stateless
-						Worker only to return the authorization response to the app.
+					<p className="mt-6 max-w-sm text-base/6 text-pretty text-kumo-subtle">
+						An iPhone client that only works while you are looking at it is a
+						website with an icon.
 					</p>
+				</Reveal>
 
-					<dl className="mt-14 divide-y divide-white/15 border-y border-white/15">
-						<SecurityFact detail="Keychain only" term="OAuth tokens" />
-						<SecurityFact detail="Never relayed" term="PKCE verifier" />
-						<SecurityFact detail="Zero" term="Server storage" />
-					</dl>
-				</div>
+				<Stagger className="lg:col-span-7 lg:col-start-6">
+					{osSurfaces.map(({ label, text }) => (
+						<StaggerItem
+							className="
+								grid gap-2 border-t border-kumo-hairline py-6
+								last:border-b
+								sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)] sm:gap-8
+							"
+							key={label}
+						>
+							<h3 className="text-base font-medium tracking-[-0.012em] text-kumo-strong">{label}</h3>
+							<p className="text-sm/6 text-pretty text-kumo-subtle">{text}</p>
+						</StaggerItem>
+					))}
+				</Stagger>
 			</div>
 		</section>
 	)
 }
 
-function SecurityFact({ detail, term }: { detail: string, term: string }) {
+function RelaySection() {
 	return (
-		<div className="
-			grid min-h-24 gap-3 py-5
-			sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-8
-		"
+		<section
+			className="scroll-mt-20 bg-kumo-contrast text-kumo-inverse"
+			data-od-id="relay-model"
+			id="security"
 		>
-			<dt className="text-sm text-kumo-inverse/55">{term}</dt>
-			<dd className="text-xl font-medium tracking-[-0.012em] tabular-nums">{detail}</dd>
-		</div>
+			<div className="
+				mx-auto w-full max-w-7xl px-5 py-20
+				sm:px-8 sm:py-24
+			"
+			>
+				<Reveal>
+					<h2 className="
+						max-w-[18ch] text-4xl/[1] font-semibold tracking-tight text-balance
+						sm:text-5xl/[0.96]
+					"
+					>
+						One server exists, and this is all of it.
+					</h2>
+					<p className="mt-6 max-w-xl text-base/6 text-pretty text-kumo-inverse/60">
+						Sign in is Cloudflare OAuth with PKCE. The verifier never leaves the
+						iPhone, the code exchange runs on the device, and the tokens go into the
+						Keychain. One server is involved, because Cloudflare accepts only HTTPS
+						redirect URIs and APNs needs something that holds the signing key. That
+						is its entire job.
+					</p>
+				</Reveal>
+
+				<Stagger className="
+					mt-14 grid gap-x-10
+					sm:grid-cols-2
+					lg:grid-cols-3
+				"
+				>
+					{relayFacts.map(({ label, text }) => (
+						<StaggerItem className="py-6 rule-on-contrast" key={label}>
+							<h3 className="text-base font-medium tracking-[-0.012em]">{label}</h3>
+							<p className="mt-2 text-sm/6 text-pretty text-kumo-inverse/60">{text}</p>
+						</StaggerItem>
+					))}
+				</Stagger>
+			</div>
+		</section>
 	)
 }
 
@@ -514,61 +451,52 @@ function FinalCallToAction() {
 	return (
 		<section className="bg-kumo-base" data-od-id="final-call-to-action">
 			<div className="
-				mx-auto grid w-full max-w-7xl gap-10 px-5 py-20
+				mx-auto grid w-full max-w-7xl gap-12 px-5 py-20
 				sm:px-8 sm:py-24
-				lg:grid-cols-12 lg:items-end lg:gap-x-6
+				lg:grid-cols-12 lg:gap-x-10
 			"
 			>
-				<div className="lg:col-span-2">
+				<Reveal className="lg:col-span-6">
 					<img alt="" className="size-20 rounded-[18px]" height="80" src={dashAppIconUrl} width="80" />
-				</div>
-				<div className="lg:col-span-7">
-					<p className="text-sm font-medium text-kumo-brand">Dash for Cloudflare</p>
 					<h2 className="
-						mt-4 max-w-[12ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
+						mt-8 max-w-[16ch] text-4xl/[1] font-semibold tracking-tight text-balance text-kumo-strong
 						sm:text-5xl/[0.96]
 					"
 					>
-						Cloudflare, within reach.
+						Check it before you connect it.
 					</h2>
-					<p className="mt-5 text-sm text-kumo-subtle">
-						Built for iPhone. Available as open source.
-						{' '}
-						{RELEASE_STATUS}
-						.
+				</Reveal>
+
+				<Reveal className="lg:col-span-5 lg:col-start-8 lg:pt-4" delay={0.08}>
+					<p className="max-w-md text-base/6 text-pretty text-kumo-subtle">
+						Claims about custody are worth what you can verify. Explore the demo
+						opens a read-only sample account inside the app, with no sign-in and no
+						token of any kind. Mutating controls stay locked, and the demo backend
+						refuses writes even if something gets past the interface.
 					</p>
-				</div>
-				<div className="lg:col-span-3 lg:justify-self-end">
-					<LinkButton
-						className="pressable"
-						href={PRIMARY_CTA_HREF}
-						size="lg"
-						variant="primary"
-						external
-					>
-						{PRIMARY_CTA_LABEL}
-					</LinkButton>
-				</div>
+					<p className="mt-4 max-w-md text-base/6 text-pretty text-kumo-subtle">
+						Or read the repository first. The app, the Cloudflare API package, and
+						the relay Worker are all in it, including the storage bindings that are
+						not there.
+					</p>
+					<div className="mt-8">
+						<LinkButton
+							className="pressable"
+							href={PRIMARY_CTA_HREF}
+							size="lg"
+							variant="primary"
+							external
+						>
+							{PRIMARY_CTA_LABEL}
+						</LinkButton>
+					</div>
+					{/* `kumo-inactive` is the disabled-control token and lands at 1.48:1
+					    here. Fine print is still text, so it takes a text token. */}
+					<p className="mt-6 text-sm/6 text-pretty text-kumo-subtle">
+						iPhone, iOS 17 and later, portrait. English and Simplified Chinese.
+					</p>
+				</Reveal>
 			</div>
 		</section>
-	)
-}
-
-function SectionMarker({ dark = false, label, number }: { dark?: boolean, label: string, number: string }) {
-	return (
-		<div className={`
-			flex items-center gap-3 text-sm
-			${dark ? 'text-kumo-inverse/70' : 'text-kumo-subtle'}
-		`}
-		>
-			<span className={`
-				font-medium tabular-nums
-				${dark ? 'text-kumo-inverse' : 'text-kumo-brand'}
-			`}
-			>
-				{number}
-			</span>
-			<p className="font-medium">{label}</p>
-		</div>
 	)
 }
