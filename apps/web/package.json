@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "tsc -b && vite build",
-		"deploy": "pnpm run build && wrangler versions upload && wrangler versions deploy --yes",
+		"deploy": "pnpm run build && wrangler deploy",
 		"preview": "pnpm run build && vite preview",
 		"typecheck": "tsc -b --noEmit && pnpm test",
 		"test": "node --experimental-strip-types --test src/worker/relay/*.test.ts",
