@@ -230,6 +230,49 @@ final class PagesBuildActivityControllerBox {
     _ = await refreshDeployment(key: key, client: client, source: source)
   }
 
+  /// Adopts a build Dash itself just started, using the deployment the create
+  /// call already returned.
+  ///
+  /// Without this the Live Activity waits a full request for the re-keyed
+  /// screen's initial refresh to discover what we were just told. Builds started
+  /// outside Dash keep that discovery path — it is the only thing that can find
+  /// them — but a build triggered from this app should not have to be
+  /// rediscovered.
+  ///
+  /// A finished deployment is ignored: `retryPagesDeployment` can hand back
+  /// something already terminal, and raising a Live Activity for it would put a
+  /// build that is over on the Lock Screen.
+  func adopt(
+    deployment: PagesDeployment,
+    key: PagesBuildMonitorKey,
+    client: CloudflareClient
+  ) async {
+    guard deployment.isInProgress else { return }
+    let serial = invalidationSerial
+    let keepsActivity = await startOrUpdate(
+      projectName: key.projectName,
+      deployment: deployment,
+      accountID: key.accountID,
+      serial: serial)
+    guard !Task.isCancelled, serial == invalidationSerial else { return }
+
+    if monitor?.key != key {
+      stopMonitor(cancelRefresh: true)
+      monitor = Monitor(key: key, client: client, keepsAliveForActivity: keepsActivity)
+    } else {
+      monitor?.keepsAliveForActivity = keepsActivity
+    }
+    monitor?.latest = deployment
+    monitor?.consecutiveFailures = 0
+    monitor?.retryPending = false
+    broadcast(.deployment(deployment, source: .initial), for: key)
+
+    if keepsActivity {
+      scheduleBackgroundRefresh()
+    }
+    updatePolling()
+  }
+
   /// Synchronously cuts every account-scoped task off before AppModel swaps
   /// account or client state. Captured Activity values are ended asynchronously;
   /// a newly-created activity cannot be swept up by this cleanup.

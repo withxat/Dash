@@ -611,6 +611,14 @@ struct PagesDeploymentDetailView: View {
           accountGeneration: key.accountGeneration,
           projectName: key.projectName,
           deploymentID: created.id)
+        // Prime the monitor before re-keying the screen, so the Live Activity
+        // is up on this build immediately instead of after the re-keyed task's
+        // first fetch comes back.
+        await PagesBuildActivityController.shared.adopt(
+          deployment: created,
+          key: replacementKey,
+          client: model.client)
+        guard model.isCurrentAccount(context), monitorKey == key else { return }
         observedKey = replacementKey
         deployment = created
         hasPresentedContent = true
@@ -619,6 +627,11 @@ struct PagesDeploymentDetailView: View {
         hasRequestedLogs = false
         replacementDeploymentID = created.id
       } else {
+        await PagesBuildActivityController.shared.adopt(
+          deployment: created,
+          key: key,
+          client: model.client)
+        guard model.isCurrentAccount(context), monitorKey == key else { return }
         await refreshManually()
       }
     } catch {

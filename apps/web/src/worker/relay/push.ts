@@ -22,6 +22,7 @@ import {
 	clearJWTCache,
 	hostForEnvironment,
 	sendAlert,
+	sendBackgroundRefresh,
 } from './apns'
 import { mintNotifyMAC, verifyNotifyMAC, webhookSecret } from './hmac'
 import {
@@ -35,7 +36,15 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024
 
-export async function handlePush(request: Request, url: URL, env: Env): Promise<Response> {
+/** Defers work past the response; falls back to awaiting when absent. */
+export type WaitUntil = (promise: Promise<unknown>) => void
+
+export async function handlePush(
+	request: Request,
+	url: URL,
+	env: Env,
+	waitUntil?: WaitUntil,
+): Promise<Response> {
 	if (url.pathname === '/push/register') {
 		return register(request, url, env)
 	}
@@ -49,6 +58,7 @@ export async function handlePush(request: Request, url: URL, env: Env): Promise<
 			notify.token,
 			notify.mac,
 			notify.accountID,
+			waitUntil,
 		)
 	}
 
@@ -107,6 +117,7 @@ async function notifyDevice(
 	token: string,
 	mac: string,
 	accountID?: string,
+	waitUntil?: WaitUntil,
 ): Promise<Response> {
 	// Always 200 to Cloudflare after auth — a single dead token must not
 	// disable the webhook destination.
@@ -172,6 +183,22 @@ async function notifyDevice(
 
 	// 410 Unregistered / other failures: drop silently.
 	console.warn(`apns ${result.status}${result.reason ? ` ${result.reason}` : ''}`)
+
+	// Only chase the silent refresh once the alert itself landed — a dead token
+	// or a wrong environment would just burn a second APNs call.
+	if (result.status === 200) {
+		const refresh = sendBackgroundRefresh(env, host, token).then((background) => {
+			if (background.status !== 200) {
+				console.warn(`apns background ${background.status}`)
+			}
+		})
+		if (waitUntil) {
+			waitUntil(refresh)
+		}
+		else {
+			await refresh
+		}
+	}
 
 	return ok()
 }

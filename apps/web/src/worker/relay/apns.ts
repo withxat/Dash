@@ -96,6 +96,41 @@ export interface APNsResult {
 	status: number
 }
 
+/**
+ * Builds the APNs JSON body. Exported for tests: the payload shape is a
+ * contract with the app's Notification Service Extension and its registered
+ * categories, and it is cheaper to assert here than to read it off a device.
+ */
+export function alertPayloadJSON(alert: AlertPayload): string {
+	const aps: Record<string, unknown> = {
+		'alert': { body: alert.body, title: alert.title },
+		'interruption-level': alert.interruptionLevel,
+		// Lets the extension rewrite the English body into the user's language
+		// and stamp the badge before iOS displays anything.
+		'mutable-content': 1,
+		'relevance-score': alert.relevanceScore,
+		'sound': 'default',
+	}
+	if (alert.category) {
+		aps.category = alert.category
+	}
+	if (alert.threadID) {
+		aps['thread-id'] = alert.threadID
+	}
+
+	const payloadObject: Record<string, unknown> = { aps }
+	if (alert.dashRoute) {
+		payloadObject.dashRoute = alert.dashRoute
+	}
+	if (alert.alertType) {
+		payloadObject.dashAlertType = alert.alertType
+	}
+	if (alert.subject) {
+		payloadObject.dashSubject = alert.subject
+	}
+	return JSON.stringify(payloadObject)
+}
+
 export async function sendAlert(
 	env: Env,
 	host: APNsHost,
@@ -103,17 +138,6 @@ export async function sendAlert(
 	alert: AlertPayload,
 ): Promise<APNsResult> {
 	const jwt = await mintJWT(env)
-	const aps: Record<string, unknown> = {
-		'alert': { body: alert.body, title: alert.title },
-		'interruption-level': 'time-sensitive',
-		'sound': 'default',
-	}
-	const payloadObject: Record<string, unknown> = { aps }
-	if (alert.dashRoute) {
-		payloadObject.dashRoute = alert.dashRoute
-	}
-	const payload = JSON.stringify(payloadObject)
-
 	const headers: Record<string, string> = {
 		'apns-priority': '10',
 		'apns-push-type': 'alert',
@@ -125,6 +149,47 @@ export async function sendAlert(
 		headers['apns-collapse-id'] = alert.collapseID
 	}
 
+	return post(host, deviceToken, headers, alertPayloadJSON(alert))
+}
+
+/**
+ * Silent companion push that wakes the app to refresh the Watchtower snapshot
+ * and reload the widget, so the Lock Screen unread count is right without the
+ * user opening Dash. Best-effort by design: iOS budgets background pushes, and
+ * the alert above is what the user actually sees.
+ *
+ * Sent as its own request rather than folded into the alert — a payload with
+ * both `alert` and `content-available` is delivered as an alert and the
+ * background handler only runs if the user taps it, which is exactly the case
+ * this is meant to cover.
+ */
+export async function sendBackgroundRefresh(
+	env: Env,
+	host: APNsHost,
+	deviceToken: string,
+): Promise<APNsResult> {
+	const jwt = await mintJWT(env)
+	const headers: Record<string, string> = {
+		'apns-priority': '5',
+		'apns-push-type': 'background',
+		'apns-topic': env.APNS_TOPIC,
+		'authorization': `bearer ${jwt}`,
+		'content-type': 'application/json',
+	}
+	return post(
+		host,
+		deviceToken,
+		headers,
+		JSON.stringify({ aps: { 'content-available': 1 } }),
+	)
+}
+
+async function post(
+	host: APNsHost,
+	deviceToken: string,
+	headers: Record<string, string>,
+	payload: string,
+): Promise<APNsResult> {
 	const response = await fetch(`https://${host}/3/device/${deviceToken}`, {
 		body: payload,
 		headers,

@@ -122,7 +122,56 @@ registration, Cloudflare webhook + policies, and optional test alert. Pages
 build Live Activities poll every 10s in the foreground and continue via
 best-effort `BGAppRefresh` (`sh.xat.dash.app.pages-build-refresh`) while a
 build is in progress; they still request an ActivityKit push token, but the
-relay does not send Live Activity pushes (zero-storage invariant).
+relay does not send Live Activity pushes (zero-storage invariant). A Live
+Activity is raised two ways and only two: the deployment screen's initial
+refresh finds a build already running (the only way to catch one started on the
+web), or `retry()` hands the returned deployment straight to
+`PagesBuildActivityController.adopt` so a build started *in* Dash does not wait
+to be rediscovered. Push-to-start is deliberately not used.
+
+`mapAlert` derives severity, grouping, and actions from `alert_type` and the
+structured `data` only — **never** from the wording of `text`. Cloudflare
+rewrites that string without notice, and the extension could not localize what
+the relay had already branched on (same rule as `StatusBadge`). It emits
+`interruption-level` (time-sensitive only for outage-shaped types, `passive` for
+digests), `relevance-score`, a per-resource `thread-id`, and an `aps.category` —
+but a category only when its actions have a target, since the zone actions need
+a zone id. Category raw values are a wire contract with
+`DashNotificationCategory`; every action is `.foreground` and retargets the
+notification's own route (`dash://zone/<id>` → `…/cache`), so a Lock Screen
+button can never perform an unconfirmed write and the `?account=` scope always
+survives. After a successful alert the relay fires one silent
+`content-available` push (via `waitUntil`, so Cloudflare's webhook delivery is
+not held open); the app answers it with `performPushTriggeredRefresh`, which
+forces a Watchtower reload with `notifiesLocally: false` — the baseline still
+advances, but the local diff stays quiet or every alert arrives twice.
+
+`DashNotificationService` (bundle `sh.xat.dash.app.notification-service`) is the
+only place that can localize an alert: the relay has no catalog and no idea what
+language the phone is set to, and Cloudflare's `text` is always English. It maps
+`dashAlertType` → localized copy through `AlertLocalization`, leaves unknown
+types untouched, and stamps the badge from the App Group snapshot the widget
+reads (the relay is stateless and cannot count). Because an extension's
+`UserDefaults.standard` is its own suite, `DashApp` mirrors the in-app language
+choice into App Group defaults — without that mirror the extension only ever
+sees the system language. `Localizable.xcstrings` is a Resources member here
+too, for the same reason it is in DashWidgets and DashShare.
+
+Per-domain alert subscriptions (`ZoneAlertsSection`, on zone settings) are
+notification policy **filters**, not one policy per domain: Dash keeps one policy
+per alert type and moves zone ids in and out of `filters["zones"]`, because the
+policy list is shared with the Cloudflare dashboard and has no folders. A managed
+policy is one matched by name *and* still bound to this device's webhook. A
+policy with no `zones` filter means "every zone" to Cloudflare, so it renders as
+read-only `.allDomains` — a per-domain switch there would either silently widen
+an account-wide alert or have to invent a list of every other zone.
+
+Domain-expiry reminders (`ExpiryReminders`) are local `UNCalendarNotification`s
+at 30/7/1 days, scheduled off the RDAP lookup the zone screen already performs —
+no relay call, no stored state, cleared on sign-out. Certificate expiry is
+deliberately absent: Cloudflare renews Universal SSL itself and publishes
+`universal_ssl_event_type` when that fails, so a local countdown would be the
+same invented alarm this app removed from Watchtower.
 
 Invariants that still hold:
 

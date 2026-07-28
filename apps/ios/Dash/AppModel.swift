@@ -670,6 +670,10 @@ final class AppModel {
     }
     UIApplication.shared.unregisterForRemoteNotifications()
     PushRegistrationService.clearAllStoredWebhookIDs()
+    // Locally-scheduled domain reminders name a specific domain in a specific
+    // account. Left behind, one would announce a domain the app can no longer
+    // open — so unlike the preference below, these do not survive sign-out.
+    await ExpiryReminders.cancelAll()
     // Watchtower's local "Notify on new issues" preference is intentionally
     // kept — it has no server-side side effects.
 
@@ -725,7 +729,10 @@ final class AppModel {
   /// Single entry point for Watchtower data: serves the cached snapshot when
   /// fresh, joins an in-flight refresh for the same account instead of
   /// doubling the fan-out, and keeps the tab-badge count in sync.
-  func watchtowerSnapshot(force: Bool = false) async -> WatchtowerSnapshot? {
+  func watchtowerSnapshot(
+    force: Bool = false,
+    notifiesLocally: Bool = true
+  ) async -> WatchtowerSnapshot? {
     guard let context = accountRequestContext else { return nil }
     let key = FeatureCacheKey.watchtower(context.accountID)
     if !force, let cached: WatchtowerSnapshot = featureCache.get(key) {
@@ -756,7 +763,8 @@ final class AppModel {
     }
     featureCache.set(key, snapshot, ttl: nil)
     syncWatchtowerInboxBadge(from: snapshot, accountID: context.accountID)
-    publishWidgetSnapshot(snapshot, accountID: context.accountID)
+    publishWidgetSnapshot(
+      snapshot, accountID: context.accountID, notifiesLocally: notifiesLocally)
     return snapshot
   }
 
@@ -803,7 +811,15 @@ final class AppModel {
   /// widget, and fires any due local notifications by diffing against the
   /// previously shared snapshot. A missing container (entitlement not
   /// provisioned) is a silent no-op — the widget just shows its empty state.
-  private func publishWidgetSnapshot(_ snapshot: WatchtowerSnapshot, accountID: String) {
+  ///
+  /// `notifiesLocally: false` still advances the baseline — the refresh was
+  /// triggered by a push that already showed the user these deliveries, so
+  /// re-announcing them locally would double every alert.
+  private func publishWidgetSnapshot(
+    _ snapshot: WatchtowerSnapshot,
+    accountID: String,
+    notifiesLocally: Bool = true
+  ) {
     guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
     let widget = snapshot.widgetSnapshot(
       accountID: accountID,
@@ -813,6 +829,7 @@ final class AppModel {
     WatchtowerNotificationBaselineStore.store(widget, accountID: accountID)
     try? widget.write(to: url)
     WidgetCenter.shared.reloadAllTimelines()
+    guard notifiesLocally else { return }
     Task {
       await WatchtowerNotifier.notifyIfNeeded(
         previous: previous,
@@ -864,6 +881,15 @@ final class AppModel {
 }
 
 extension AppModel: PushTokenInbox {
+  /// Woken by the relay's silent push. Forces a Watchtower reload — the TTL
+  /// says the snapshot is fresh, but a delivery just landed, so it isn't — and
+  /// suppresses the local-notification diff so the user is told once, by the
+  /// alert push that arrived alongside this one.
+  func performPushTriggeredRefresh() async {
+    guard !isDemoSession, accountRequestContext != nil else { return }
+    _ = await watchtowerSnapshot(force: true, notifiesLocally: false)
+  }
+
   func receiveDeviceToken(_ token: Data) {
     let hex = PushRegistration.hexToken(from: token)
     pendingDeviceToken = hex

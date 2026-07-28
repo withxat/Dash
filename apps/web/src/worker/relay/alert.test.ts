@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { mapAlert } from './alert.ts'
+import { alertPayloadJSON } from './apns.ts'
 
 describe('mapAlert', () => {
 	it('includes a watchtower deep link by default', () => {
@@ -61,5 +62,127 @@ describe('mapAlert', () => {
 			text: 'Origin is down',
 		})
 		assert.equal(alert.dashRoute, 'dash://feature/zones')
+	})
+})
+
+describe('alert tiering', () => {
+	it('reserves time-sensitive for alerts that mean something is broken', () => {
+		for (const type of [
+			'http_alert_origin_error',
+			'dos_attack_l7',
+			'advanced_ddos_attack_l7_alert',
+			'load_balancing_health_alert',
+			'tunnel_health_event',
+			'secondary_dns_all_primaries_failing',
+		]) {
+			assert.equal(
+				mapAlert({ alert_type: type, text: 'x' }).interruptionLevel,
+				'time-sensitive',
+				type,
+			)
+		}
+	})
+
+	it('keeps digests quiet and everything else merely active', () => {
+		assert.equal(
+			mapAlert({ alert_type: 'weekly_account_overview', text: 'x' }).interruptionLevel,
+			'passive',
+		)
+		assert.equal(
+			mapAlert({ alert_type: 'billing_usage_alert', text: 'x' }).interruptionLevel,
+			'passive',
+		)
+		assert.equal(
+			mapAlert({ alert_type: 'universal_ssl_event_type', text: 'x' }).interruptionLevel,
+			'active',
+		)
+		assert.equal(mapAlert({ text: 'x' }).interruptionLevel, 'active')
+	})
+
+	it('never reads severity out of the alert wording', () => {
+		// Cloudflare rewrites `text` freely; only alert_type may drive the tier.
+		const alarming = mapAlert({
+			alert_type: 'weekly_account_overview',
+			text: 'CRITICAL: everything failed and the origin is down',
+		})
+		assert.equal(alarming.interruptionLevel, 'passive')
+	})
+
+	it('groups a stack per resource', () => {
+		assert.equal(
+			mapAlert({ alert_type: 'dos_attack_l7', data: { zone_id: 'z1' }, text: 'x' }).threadID,
+			'zone:z1',
+		)
+		assert.equal(
+			mapAlert({ alert_type: 'pages_event', data: { project_name: 'docs' }, text: 'x' })
+				.threadID,
+			'pages:docs',
+		)
+		assert.equal(mapAlert({ alert_type: 'dash_test', text: 'x' }).threadID, 'type:dash_test')
+	})
+
+	it('only offers zone actions when a zone id can target them', () => {
+		assert.equal(
+			mapAlert({ alert_type: 'dos_attack_l7', data: { zone_id: 'z1' }, text: 'x' }).category,
+			'dash.alert.zone.attack',
+		)
+		assert.equal(
+			mapAlert({ alert_type: 'http_alert_origin_error', data: { zone_id: 'z1' }, text: 'x' })
+				.category,
+			'dash.alert.zone.origin',
+		)
+		assert.equal(
+			mapAlert({ alert_type: 'universal_ssl_event_type', data: { zone_id: 'z1' }, text: 'x' })
+				.category,
+			'dash.alert.zone.certificate',
+		)
+		// Zone name only: Purge / Under Attack have nothing to act on.
+		assert.equal(
+			mapAlert({ alert_type: 'dos_attack_l7', data: { zone_name: 'a.com' }, text: 'x' })
+				.category,
+			undefined,
+		)
+		assert.equal(mapAlert({ text: 'x' }).category, undefined)
+	})
+
+	it('forwards the raw alert type so the extension can localize', () => {
+		const alert = mapAlert({
+			alert_type: 'http_alert_origin_error',
+			data: { zone_id: 'z1', zone_name: 'example.com' },
+			text: 'Origin is down',
+		})
+		assert.equal(alert.alertType, 'http_alert_origin_error')
+		assert.equal(alert.subject, 'example.com')
+	})
+})
+
+describe('alertPayloadJSON', () => {
+	it('emits the aps keys the app depends on', () => {
+		const payload = JSON.parse(
+			alertPayloadJSON(
+				mapAlert({
+					alert_type: 'dos_attack_l7',
+					data: { zone_id: 'z1', zone_name: 'example.com' },
+					name: 'L7 DDoS',
+					text: 'Attack detected',
+				}),
+			),
+		)
+		assert.deepEqual(payload.aps.alert, { body: 'Attack detected', title: 'L7 DDoS' })
+		assert.equal(payload.aps['interruption-level'], 'time-sensitive')
+		assert.equal(payload.aps['mutable-content'], 1)
+		assert.equal(payload.aps['thread-id'], 'zone:z1')
+		assert.equal(payload.aps.category, 'dash.alert.zone.attack')
+		assert.equal(payload.aps['relevance-score'], 1)
+		assert.equal(payload.dashRoute, 'dash://zone/z1')
+		assert.equal(payload.dashAlertType, 'dos_attack_l7')
+		assert.equal(payload.dashSubject, 'example.com')
+	})
+
+	it('omits category and thread-id rather than sending empty ones', () => {
+		const payload = JSON.parse(alertPayloadJSON(mapAlert({ text: 'Alert fired.' })))
+		assert.equal('category' in payload.aps, false)
+		assert.equal(payload.aps['thread-id'], undefined)
+		assert.equal(payload.aps['interruption-level'], 'active')
 	})
 })

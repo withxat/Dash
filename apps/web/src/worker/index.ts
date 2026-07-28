@@ -34,7 +34,10 @@ app.get('/oauth/callback', (c) => {
 })
 
 app.all('/push/*', (c) => {
-	return handlePush(c.req.raw, new URL(c.req.url), c.env)
+	// The silent widget-refresh push runs after the response so Cloudflare's
+	// webhook delivery is never held open on a second APNs round trip.
+	return handlePush(c.req.raw, new URL(c.req.url), c.env, promise =>
+		c.executionCtx.waitUntil(promise))
 })
 
 export default app

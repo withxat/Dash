@@ -154,9 +154,15 @@ private struct RootWithSplash: View {
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
       }
-      .onAppear { appLanguage.applyToProcess() }
+      .onAppear {
+        appLanguage.applyToProcess()
+        // The notification extension has its own defaults suite; the App Group
+        // mirror is the only way the language choice reaches it.
+        DashAlertStrings.mirrorLanguage(languageRaw)
+      }
       .onChange(of: languageRaw) { _, _ in
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()
+        DashAlertStrings.mirrorLanguage(languageRaw)
         model.discardLocalizedCaches()
       }
       .task {

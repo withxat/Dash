@@ -28,10 +28,12 @@ enum NotificationRoutePolicy {
   }
 }
 
-/// Sink that receives APNs device tokens from `PushDelegate`.
+/// Sink that receives APNs device tokens and silent wake-ups from `PushDelegate`.
 @MainActor
 protocol PushTokenInbox: AnyObject {
   func receiveDeviceToken(_ token: Data)
+  /// A `content-available` push arrived: refresh Watchtower and the widget.
+  func performPushTriggeredRefresh() async
 }
 
 /// UIApplicationDelegate that forwards device tokens into an explicit sink.
@@ -46,7 +48,20 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     UNUserNotificationCenter.current().delegate = self
+    DashNotificationCategory.registerAll()
     return true
+  }
+
+  /// Silent companion push from the relay. Refreshes Watchtower so the widget,
+  /// the tab dot, and the badge are already right when the user looks — the
+  /// alert they can see was delivered by its own push.
+  nonisolated func application(
+    _ application: UIApplication,
+    didReceiveRemoteNotification userInfo: [AnyHashable: Any]
+  ) async -> UIBackgroundFetchResult {
+    guard let inbox = await self.inbox else { return .noData }
+    await inbox.performPushTriggeredRefresh()
+    return .newData
   }
 
   nonisolated func application(
@@ -70,15 +85,34 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     didReceive response: UNNotificationResponse,
     withCompletionHandler completionHandler: @escaping () -> Void
   ) {
-    let routeString = response.notification.request.content.userInfo["dashRoute"] as? String
+    let content = response.notification.request.content
+    let routeString = content.userInfo["dashRoute"] as? String
+    let categoryIdentifier = content.categoryIdentifier
+    let actionIdentifier = response.actionIdentifier
     Task { @MainActor in
       if let routeString, let url = URL(string: routeString), let route = DashRoute.parse(url),
         let model = inbox as? AppModel
       {
-        model.receiveNotificationRoute(route)
+        // An action button retargets the same notification's route; the plain
+        // tap keeps it. Either way the account scope rides along and is
+        // re-checked before anything opens.
+        model.receiveNotificationRoute(
+          DashNotificationCategory.route(
+            forAction: actionIdentifier,
+            category: categoryIdentifier,
+            notificationRoute: route))
       }
     }
     completionHandler()
+  }
+
+  /// Shows Cloudflare alerts even while Dash is open — the user is usually on a
+  /// different screen than the one the alert is about.
+  nonisolated func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification
+  ) async -> UNNotificationPresentationOptions {
+    [.banner, .list, .sound]
   }
 }
 

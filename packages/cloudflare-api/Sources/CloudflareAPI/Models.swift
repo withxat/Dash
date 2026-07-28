@@ -1269,6 +1269,19 @@ public struct AvailableAlert: Codable, Hashable, Sendable, Identifiable {
   }
 }
 
+/// One product's worth of alert types, as Cloudflare groups them.
+public struct AvailableAlertGroup: Hashable, Identifiable, Sendable {
+  public let category: String
+  public let alerts: [AvailableAlert]
+
+  public var id: String { category }
+
+  public init(category: String, alerts: [AvailableAlert]) {
+    self.category = category
+    self.alerts = alerts
+  }
+}
+
 public struct NotificationHistoryEntry: Codable, Hashable, Identifiable, Sendable {
   /// Cloudflare history UUID when the API returns one.
   public let historyID: String?

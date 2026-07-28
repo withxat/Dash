@@ -454,6 +454,7 @@ struct ZoneDetailView: View {
     let key = FeatureCacheKey.zoneRdap(zoneID)
     if !force, let cached: RdapRegistration = model.featureCache.get(key) {
       rdap = cached
+      await scheduleExpiryReminder(cached, zoneName: zone.name)
       return
     }
     do {
@@ -462,12 +463,35 @@ struct ZoneDetailView: View {
       ) {
         rdap = registration
         model.featureCache.set(key, registration)
+        await scheduleExpiryReminder(registration, zoneName: zone.name)
       } else {
         rdap = nil
       }
     } catch {
       rdap = nil
     }
+  }
+
+  /// Rides along with the registration card's own lookup — no extra request, and
+  /// the reminder is refreshed every time the user opens the domain, so a
+  /// renewal moves the schedule the next time they visit.
+  private func scheduleExpiryReminder(
+    _ registration: RdapRegistration,
+    zoneName: String
+  ) async {
+    guard !model.isDemoSession,
+      let accountID = model.activeAccountID,
+      let raw = registration.expiresOn,
+      let expiresOn = ExpiryReminders.date(fromISO8601: raw)
+    else { return }
+    await ExpiryReminders.schedule(
+      ExpiryReminders.plans(
+        subject: .domain,
+        displayName: zoneName,
+        accountID: accountID,
+        resourceID: zoneID,
+        expiresOn: expiresOn,
+        route: WatchtowerNotifier.zoneRoute(zoneID: zoneID, accountID: accountID)))
   }
 
   /// The zone's name only exists after a load, so recency is recorded here

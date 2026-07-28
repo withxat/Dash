@@ -745,11 +745,28 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/alerting/v3/destinations/webhooks/\(webhookID)", method: "DELETE")
   }
   public func listAvailableAlerts(accountID: String) async throws -> [AvailableAlert] {
+    try await listAvailableAlertGroups(accountID: accountID).flatMap(\.alerts)
+  }
+
+  /// Cloudflare returns available alerts already grouped by product ("Pages",
+  /// "SSL", "Traffic Monitoring"). The flat `listAvailableAlerts` throws that
+  /// away; a picker over 40-odd alert types needs it back, and the grouping is
+  /// Cloudflare's own vocabulary rather than a taxonomy Dash would have to
+  /// invent and keep current.
+  public func listAvailableAlertGroups(accountID: String) async throws -> [AvailableAlertGroup] {
     let grouped: [String: [AvailableAlert]] = try await request(
       "/accounts/\(accountID)/alerting/v3/available_alerts")
-    return grouped.values.flatMap { $0 }.sorted {
-      ($0.displayName ?? $0.type ?? "") < ($1.displayName ?? $1.type ?? "")
-    }
+    return
+      grouped
+      .map { category, alerts in
+        AvailableAlertGroup(
+          category: category,
+          alerts: alerts.sorted {
+            ($0.displayName ?? $0.type ?? "") < ($1.displayName ?? $1.type ?? "")
+          })
+      }
+      .filter { !$0.alerts.isEmpty }
+      .sorted { $0.category.localizedCaseInsensitiveCompare($1.category) == .orderedAscending }
   }
   public func listNotificationHistory(accountID: String, perPage: Int = 10) async throws
     -> [NotificationHistoryEntry]

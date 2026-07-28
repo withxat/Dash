@@ -87,6 +87,16 @@
         }
       }
     },
+    "%@ expires %@. Renew it with your registrar." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 将于%2$@到期，请在注册商处续费。"
+          }
+        }
+      }
+    },
     "%@ is on Cloudflare." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -435,6 +445,26 @@
         }
       }
     },
+    "A certificate event for %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 有证书事件。"
+          }
+        }
+      }
+    },
+    "A build for %@ finished." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的一次构建已完成。"
+          }
+        }
+      }
+    },
     "A dithered Watchtower trend for your account." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -453,6 +483,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以点阵趋势图展示单个域名的分析指标。"
+          }
+        }
+      }
+    },
+    "A load balancer pool for %@ changed health." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的负载均衡池健康状态发生变化。"
           }
         }
       }
@@ -476,6 +516,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "安全的示例账户"
+          }
+        }
+      }
+    },
+    "A tunnel for %@ changed health." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的 Tunnel 健康状态发生变化。"
           }
         }
       }
@@ -888,6 +938,26 @@
         }
       }
     },
+    "Alert turned on." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒已开启。"
+          }
+        }
+      }
+    },
+    "Alert turned off." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒已关闭。"
+          }
+        }
+      }
+    },
     "Alert type" : {
       "localizations" : {
         "zh-Hans" : {
@@ -911,6 +981,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提醒"
+          }
+        }
+      }
+    },
+    "Alerts will now appear as banners." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒现在会以横幅形式显示。"
           }
         }
       }
@@ -973,6 +1053,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已显示所有图表"
+          }
+        }
+      }
+    },
+    "All deployments" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部部署"
           }
         }
       }
@@ -1169,6 +1259,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "异步图片加载"
+          }
+        }
+      }
+    },
+    "At most every hour" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多每小时一次"
+          }
+        }
+      }
+    },
+    "At most every 5 minutes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多每 5 分钟一次"
+          }
+        }
+      }
+    },
+    "At most every 30 minutes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多每 30 分钟一次"
+          }
+        }
+      }
+    },
+    "At most every 15 minutes" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多每 15 分钟一次"
           }
         }
       }
@@ -2295,6 +2425,16 @@
         }
       }
     },
+    "Cloudflare is mitigating an attack on %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 正在缓解针对 %@ 的攻击。"
+          }
+        }
+      }
+    },
     "Cloudflare is rechecking now — the status usually updates within a few minutes." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2302,6 +2442,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloudflare 正在重新检查，状态通常会在几分钟内更新。"
+          }
+        }
+      }
+    },
+    "Cloudflare is returning errors for %@." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 正在为 %@ 返回错误。"
           }
         }
       }
@@ -2319,6 +2469,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloudflare 暂时不可用。请稍后再试。"
+          }
+        }
+      }
+    },
+    "Cloudflare mitigates an attack on this domain" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 缓解针对该域名的攻击"
           }
         }
       }
@@ -3269,6 +3429,16 @@
         }
       }
     },
+    "Dash test alert" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 测试提醒"
+          }
+        }
+      }
+    },
     "Dash will request all permissions used by its current features." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3437,6 +3607,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除成功"
+          }
+        }
+      }
+    },
+    "Deliver alerts prominently" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以横幅方式提醒"
           }
         }
       }
@@ -3965,6 +4145,26 @@
         }
       }
     },
+    "Domain settings" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "域名设置"
+          }
+        }
+      }
+    },
+    "Domain expiring" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "域名即将到期"
+          }
+        }
+      }
+    },
     "Domain Metric" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4173,6 +4373,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在下载…"
+          }
+        }
+      }
+    },
+    "Edge errors" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边缘错误"
           }
         }
       }
@@ -4496,6 +4706,26 @@
         }
       }
     },
+    "Every occurrence" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每次触发"
+          }
+        }
+      }
+    },
+    "Every primary nameserver for %@ is failing." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的所有主 DNS 服务器都不可用。"
+          }
+        }
+      }
+    },
     "Expand chart" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4693,6 +4923,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "免费版"
+          }
+        }
+      }
+    },
+    "Frequency" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "频率"
           }
         }
       }
@@ -5248,6 +5488,16 @@
         }
       }
     },
+    "in %lld days" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 天后"
+          }
+        }
+      }
+    },
     "In progress" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5688,6 +5938,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已关联"
+          }
+        }
+      }
+    },
+    "Load balancer health" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "负载均衡健康度"
           }
         }
       }
@@ -6817,6 +7077,16 @@
         }
       }
     },
+    "On for all domains" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已对所有域名开启"
+          }
+        }
+      }
+    },
     "Open api.example.net and review its state" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7209,6 +7479,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Pages"
+          }
+        }
+      }
+    },
+    "Pages builds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pages 构建"
           }
         }
       }
@@ -7899,6 +8179,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "配置 OAuth 回调地址后才能使用推送。"
+          }
+        }
+      }
+    },
+    "Push is working." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "推送工作正常。"
           }
         }
       }
@@ -8783,6 +9073,26 @@
         }
       }
     },
+    "Security" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全"
+          }
+        }
+      }
+    },
+    "Secondary DNS" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辅助 DNS"
+          }
+        }
+      }
+    },
     "Security Level" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9546,6 +9856,16 @@
         }
       }
     },
+    "The origin for %@ is returning errors." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的源站正在返回错误。"
+          }
+        }
+      }
+    },
     "The push relay did not bind this notification to the selected Cloudflare account." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9660,6 +9980,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "时间"
+          }
+        }
+      }
+    },
+    "tomorrow" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "明天"
           }
         }
       }
@@ -9804,6 +10134,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "TTL"
+          }
+        }
+      }
+    },
+    "Tunnel health" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tunnel 健康度"
           }
         }
       }
@@ -10491,6 +10831,16 @@
         }
       }
     },
+    "Weekly overview" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "每周概览"
+          }
+        }
+      }
+    },
     "Weight" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10734,6 +11084,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的 Cloudflare 会话已失效。请重新登录。"
+          }
+        }
+      }
+    },
+    "Your server starts returning 5xx" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "源站开始返回 5xx"
+          }
+        }
+      }
+    },
+    "Your weekly Cloudflare summary is ready." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "你的每周 Cloudflare 摘要已生成。"
           }
         }
       }

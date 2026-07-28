@@ -118,11 +118,29 @@ enum WatchtowerNotifier {
   static let optInDefaultsKey = "dash.watchtower_notifications"
 
   nonisolated static func watchtowerRoute(accountID: String) -> String? {
+    route(host: "watchtower", path: nil, accountID: accountID)
+  }
+
+  /// Account-scoped deep link to one domain, for locally-scheduled reminders.
+  nonisolated static func zoneRoute(zoneID: String, accountID: String) -> String? {
+    let zoneID = zoneID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !zoneID.isEmpty else { return nil }
+    return route(host: "zone", path: zoneID, accountID: accountID)
+  }
+
+  private nonisolated static func route(
+    host: String,
+    path: String?,
+    accountID: String
+  ) -> String? {
     let accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !accountID.isEmpty else { return nil }
     var components = URLComponents()
     components.scheme = "dash"
-    components.host = "watchtower"
+    components.host = host
+    if let path {
+      components.path = "/\(path)"
+    }
     components.queryItems = [URLQueryItem(name: "account", value: accountID)]
     return components.url?.absoluteString
   }
@@ -136,7 +154,9 @@ enum WatchtowerNotifier {
     guard let route = watchtowerRoute(accountID: accountID) else { return }
     let center = UNUserNotificationCenter.current()
     let settings = await center.notificationSettings()
-    guard settings.authorizationStatus == .authorized else { return }
+    // Provisional counts: quiet delivery is still delivery, and dropping it
+    // here would make the opt-in look broken to anyone who never saw a prompt.
+    guard delivers(settings.authorizationStatus) else { return }
 
     for plan in WatchtowerNotificationPlanner.plans(previous: previous, current: current) {
       let content = UNMutableNotificationContent()
@@ -150,16 +170,37 @@ enum WatchtowerNotifier {
     }
   }
 
-  /// Prompts only for local notification authorization.
-  static func requestAuthorization() async -> Bool {
+  /// Requests notification delivery.
+  ///
+  /// Provisional by default. iOS grants provisional authorization with no
+  /// dialog and delivers quietly to Notification Center, then asks the user to
+  /// keep or turn off notifications *on the first real alert* — when they can
+  /// see what they are deciding about, instead of at the instant they flipped a
+  /// switch and have nothing to judge. `.alert` and `.sound` ride along so the
+  /// grant is already complete if they choose to keep them prominently.
+  ///
+  /// Pass `prominently: true` only for an explicit "turn on banners" action:
+  /// that is the one case where the system prompt is what the user asked for.
+  static func requestAuthorization(prominently: Bool = false) async -> Bool {
     let center = UNUserNotificationCenter.current()
-    return (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+    let options: UNAuthorizationOptions =
+      prominently ? [.alert, .sound] : [.alert, .sound, .provisional]
+    return (try? await center.requestAuthorization(options: options)) ?? false
   }
 
-  /// Current system authorization (does not prompt).
+  /// True once the system will deliver anything at all, quietly or otherwise.
   static func isAuthorized() async -> Bool {
-    let settings = await UNUserNotificationCenter.current().notificationSettings()
-    switch settings.authorizationStatus {
+    delivers(await UNUserNotificationCenter.current().notificationSettings().authorizationStatus)
+  }
+
+  /// True while Dash is delivering quietly and could be promoted to banners.
+  static func isProvisional() async -> Bool {
+    await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+      == .provisional
+  }
+
+  static func delivers(_ status: UNAuthorizationStatus) -> Bool {
+    switch status {
     case .authorized, .provisional, .ephemeral:
       return true
     case .notDetermined, .denied:

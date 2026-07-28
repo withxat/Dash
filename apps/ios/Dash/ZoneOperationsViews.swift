@@ -189,6 +189,8 @@ struct ZoneSettingsView: View {
         }
       }
       .dashSectionBoundary()
+      ZoneAlertsSection(zoneID: zoneID)
+        .dashSectionBoundary()
     }
     .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
     .refreshable { await load(force: true) }

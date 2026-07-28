@@ -47,6 +47,10 @@
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
+		B00000000000000000000173 /* ExpiryReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000173 /* ExpiryReminders.swift */; };
+		B00000000000000000000172 /* ZoneAlertsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000172 /* ZoneAlertsSection.swift */; };
+		B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000171 /* ZoneAlertSubscriptions.swift */; };
+		B00000000000000000000170 /* NotificationCategories.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000170 /* NotificationCategories.swift */; };
 		B0000000000000000000010D /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010D /* LegalDocumentView.swift */; };
 		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
 		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
@@ -67,6 +71,13 @@
 		B0000000000000000000011C /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
 		B0000000000000000000011D /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppConfiguration.swift */; };
 		B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000024 /* DashShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B00000000000000000000184 /* DashNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000025 /* DashNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B00000000000000000000180 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000180 /* NotificationService.swift */; };
+		B00000000000000000000174 /* AlertLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000174 /* AlertLocalization.swift */; };
+		B00000000000000000000181 /* AlertLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000174 /* AlertLocalization.swift */; };
+		B00000000000000000000175 /* WatchtowerBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* WatchtowerBadgeReader.swift */; };
+		B00000000000000000000182 /* WatchtowerBadgeReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* WatchtowerBadgeReader.swift */; };
+		B00000000000000000000183 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
 		B0000000000000000000011F /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000009 /* CloudflareAPI */; };
 		B00000000000000000000120 /* NetworkAccessProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000120 /* NetworkAccessProbe.swift */; };
 		B00000000000000000000121 /* PagesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000121 /* PagesViews.swift */; };
@@ -108,6 +119,7 @@
 		B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000163 /* MetricsWidgetSnapshot.swift */; };
 		B000000000000000000001A4 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000011 /* SwiftDitherKit */; };
 		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
+		B00000000000000000000176 /* AlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000176 /* AlertRoutingTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -132,6 +144,13 @@
 			remoteGlobalIDString = A00000000000000000000006;
 			remoteInfo = DashShare;
 		};
+		C00000000000000000000031 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000007;
+			remoteInfo = DashNotificationService;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -143,6 +162,7 @@
 			files = (
 				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
 				B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */,
+				B00000000000000000000184 /* DashNotificationService.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -176,6 +196,12 @@
 		F00000000000000000000022 /* DashUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000024 /* DashShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000025 /* DashNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000180 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		F00000000000000000000181 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F00000000000000000000182 /* DashNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashNotificationService.entitlements; sourceTree = "<group>"; };
+		F00000000000000000000174 /* AlertLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertLocalization.swift; sourceTree = "<group>"; };
+		F00000000000000000000175 /* WatchtowerBadgeReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerBadgeReader.swift; sourceTree = "<group>"; };
 		F00000000000000000000030 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = Config/Base.xcconfig; sourceTree = SOURCE_ROOT; };
 		F00000000000000000000031 /* UserAvatar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserAvatar.swift; sourceTree = "<group>"; };
 		F00000000000000000000033 /* WatchtowerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerModel.swift; sourceTree = "<group>"; };
@@ -196,6 +222,10 @@
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
+		F00000000000000000000173 /* ExpiryReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiryReminders.swift; sourceTree = "<group>"; };
+		F00000000000000000000172 /* ZoneAlertsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertsSection.swift; sourceTree = "<group>"; };
+		F00000000000000000000171 /* ZoneAlertSubscriptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertSubscriptions.swift; sourceTree = "<group>"; };
+		F00000000000000000000170 /* NotificationCategories.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationCategories.swift; sourceTree = "<group>"; };
 		F0000000000000000000010D /* LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentView.swift; sourceTree = "<group>"; };
 		F0000000000000000000010E /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
 		F0000000000000000000010F /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
@@ -227,6 +257,7 @@
 		F00000000000000000000164 /* MetricsWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetPublishing.swift; sourceTree = "<group>"; };
 		F00000000000000000000165 /* MetricsWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgets.swift; sourceTree = "<group>"; };
 		F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetSnapshotTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000176 /* AlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRoutingTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -289,6 +320,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -308,6 +346,7 @@
 				A00000000000000000000013 /* DashUITests */,
 				A00000000000000000000017 /* DashWidgets */,
 				A00000000000000000000019 /* DashShare */,
+				A00000000000000000000020 /* DashNotificationService */,
 				A00000000000000000000014 /* Products */,
 				A00000000000000000000015 /* Frameworks */,
 				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
@@ -366,6 +405,12 @@
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F00000000000000000000108 /* WatchtowerNotifications.swift */,
 				F0000000000000000000010C /* PushRegistration.swift */,
+				F00000000000000000000174 /* AlertLocalization.swift */,
+				F00000000000000000000175 /* WatchtowerBadgeReader.swift */,
+				F00000000000000000000173 /* ExpiryReminders.swift */,
+				F00000000000000000000172 /* ZoneAlertsSection.swift */,
+				F00000000000000000000171 /* ZoneAlertSubscriptions.swift */,
+				F00000000000000000000170 /* NotificationCategories.swift */,
 				F00000000000000000000125 /* PushAlertsView.swift */,
 				F00000000000000000000126 /* Localizable.xcstrings */,
 				F0000000000000000000010D /* LegalDocumentView.swift */,
@@ -398,6 +443,7 @@
 				F00000000000000000000155 /* R2TransferTests.swift */,
 				F00000000000000000000156 /* WorkerWatchtowerTests.swift */,
 				F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */,
+				F00000000000000000000176 /* AlertRoutingTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -418,6 +464,7 @@
 				F00000000000000000000022 /* DashUITests.xctest */,
 				F00000000000000000000023 /* DashWidgets.appex */,
 				F00000000000000000000024 /* DashShare.appex */,
+				F00000000000000000000025 /* DashNotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -470,6 +517,16 @@
 			path = DashShare;
 			sourceTree = "<group>";
 		};
+		A00000000000000000000020 /* DashNotificationService */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000180 /* NotificationService.swift */,
+				F00000000000000000000181 /* Info.plist */,
+				F00000000000000000000182 /* DashNotificationService.entitlements */,
+			);
+			path = DashNotificationService;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -487,6 +544,7 @@
 			dependencies = (
 				C00000000000000000000014 /* PBXTargetDependency */,
 				C00000000000000000000016 /* PBXTargetDependency */,
+				C00000000000000000000030 /* PBXTargetDependency */,
 			);
 			name = Dash;
 			packageProductDependencies = (
@@ -578,6 +636,23 @@
 			productReference = F00000000000000000000024 /* DashShare.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A00000000000000000000007 /* DashNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000007 /* Build configuration list for PBXNativeTarget "DashNotificationService" */;
+			buildPhases = (
+				D00000000000000000000030 /* Sources */,
+				D00000000000000000000031 /* Frameworks */,
+				D00000000000000000000032 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashNotificationService;
+			productName = DashNotificationService;
+			productReference = F00000000000000000000025 /* DashNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -633,6 +708,7 @@
 				A00000000000000000000002 /* Dash */,
 				A00000000000000000000005 /* DashWidgets */,
 				A00000000000000000000006 /* DashShare */,
+				A00000000000000000000007 /* DashNotificationService */,
 				A00000000000000000000003 /* DashTests */,
 				A00000000000000000000004 /* DashUITests */,
 			);
@@ -681,6 +757,14 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000032 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000183 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -738,6 +822,12 @@
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
 				B0000000000000000000010C /* PushRegistration.swift in Sources */,
+				B00000000000000000000174 /* AlertLocalization.swift in Sources */,
+				B00000000000000000000175 /* WatchtowerBadgeReader.swift in Sources */,
+				B00000000000000000000173 /* ExpiryReminders.swift in Sources */,
+				B00000000000000000000172 /* ZoneAlertsSection.swift in Sources */,
+				B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */,
+				B00000000000000000000170 /* NotificationCategories.swift in Sources */,
 				B00000000000000000000125 /* PushAlertsView.swift in Sources */,
 				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,
 				B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */,
@@ -769,6 +859,7 @@
 				B00000000000000000000155 /* R2TransferTests.swift in Sources */,
 				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
 				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
+				B00000000000000000000176 /* AlertRoutingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -803,6 +894,16 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000180 /* NotificationService.swift in Sources */,
+				B00000000000000000000181 /* AlertLocalization.swift in Sources */,
+				B00000000000000000000182 /* WatchtowerBadgeReader.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -825,6 +926,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000006 /* DashShare */;
 			targetProxy = C00000000000000000000015 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000030 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000007 /* DashNotificationService */;
+			targetProxy = C00000000000000000000031 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1069,6 +1175,56 @@
 			};
 			name = Release;
 		};
+		E00000000000000000000071 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashNotificationService/DashNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashNotificationService/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.notification-service;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E00000000000000000000072 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DashNotificationService/DashNotificationService.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashNotificationService/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.notification-service;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1122,6 +1278,15 @@
 			buildConfigurations = (
 				E00000000000000000000061 /* Debug */,
 				E00000000000000000000062 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000007 /* Build configuration list for PBXNativeTarget "DashNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000071 /* Debug */,
+				E00000000000000000000072 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
