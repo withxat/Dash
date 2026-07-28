@@ -3340,7 +3340,7 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
   #expect(empty.contains("No blocked events"))
 }
 
-@Test func wafGlobeCentroidsCoverISOAlpha2AndCloudflareKosovoExtension() {
+@Test func wafGlobeCentroidsCoverISOAlpha2AndCloudflareKosovoExtension() throws {
   let expectedCodes = Set(
     ("AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ "
       + "BL BM BN BO BQ BR BS BT BV BW BY BZ CA CC CD CF CG CH CI CK CL CM CN CO CR "
@@ -3357,7 +3357,8 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
 
   #expect(WAFISOCountryCentroids.supportedCodes == expectedCodes)
   #expect(WAFISOCountryCentroids.coordinate(for: " us ")?.latitude == 39.538479)
-  #expect(WAFISOCountryCentroids.coordinate(for: "bq")?.longitude == -63.1334)
+  let bqLongitude = try #require(WAFISOCountryCentroids.coordinate(for: "bq")?.longitude)
+  #expect(abs(bqLongitude - (-63.1334)) < 1e-9)
   #expect(WAFISOCountryCentroids.coordinate(for: "UM") != nil)
   #expect(WAFISOCountryCentroids.coordinate(for: "XX") == nil)
   #expect(WAFISOCountryCentroids.coordinate(for: "T1") == nil)
