@@ -129,6 +129,7 @@ final class AppModel {
   /// Top-of-screen action feedback. Prefer this over sticky inline notices for
   /// completed / failed mutations; keep `DashNotice` for persistent state.
   let toasts = DashToastCenter()
+  let deferredDeletions: DeferredDeletionCoordinator
   var accounts: [CloudflareAccount] = [] {
     didSet {
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
@@ -191,8 +192,19 @@ final class AppModel {
     selectedScopes = DashAuthorizationScopes.core
     let store = KeychainTokenStore()
     tokenStore = store
-    client = CloudflareClient(
+    let apiClient = CloudflareClient(
       clientID: configuration.clientID, tokenStore: store, session: DashAPISession.shared)
+    client = apiClient
+    deferredDeletions = DeferredDeletionCoordinator(
+      executor: CloudflareDeferredDeletionExecutor(client: apiClient),
+      toasts: toasts,
+      invalidateCache: { [featureCache] command in
+        switch command {
+        case .dnsRecord(_, let zoneID, _, _, _):
+          featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+        }
+      },
+      persistence: .standard)
     activeAccountID = UserDefaults.standard.string(forKey: "dash.active_account_id")
     // Property observers don't fire during init — mirror explicitly so the
     // share extension works without waiting for an account switch.
@@ -201,6 +213,15 @@ final class AppModel {
   }
 
   var activeAccount: CloudflareAccount? { accounts.first { $0.id == activeAccountID } }
+
+  func performToastAction(_ action: DashToast.Action) {
+    switch action {
+    case .undoDeferredDeletionBatch:
+      deferredDeletions.undoCurrentBatch()
+    case .retryDeferredDeletion(let operationID):
+      deferredDeletions.retry(operationID)
+    }
+  }
 
   var accountRequestContext: AccountRequestContext? {
     guard let activeAccountID else { return nil }
@@ -741,6 +762,7 @@ final class AppModel {
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
   private func exitDemo() {
+    deferredDeletions.cancelPendingOperations()
     resetAccountScopedWork()
     isDemoSession = false
     client = CloudflareClient(
@@ -772,6 +794,7 @@ final class AppModel {
       return
     }
     guard !isSigningOut else { return }
+    deferredDeletions.cancelPendingOperations()
     isSigningOut = true
     defer { isSigningOut = false }
     isAuthenticating = false
@@ -849,6 +872,7 @@ final class AppModel {
 
   func selectAccount(_ account: CloudflareAccount) {
     guard activeAccountID != account.id else { return }
+    deferredDeletions.cancelPendingOperations(forAccountID: activeAccountID)
     resetAccountScopedWork()
     Task { await r2Thumbnails.clear() }
     watchtowerUnreadAlertCount = nil

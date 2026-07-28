@@ -97,6 +97,7 @@
 		B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000143 /* WatchtowerInboxStore.swift */; };
 		B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000144 /* WatchtowerInboxView.swift */; };
 		B00000000000000000000146 /* DashToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000145 /* DashToast.swift */; };
+		B00000000000000000000190 /* DeferredDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000190 /* DeferredDeletion.swift */; };
 		B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */; };
 		B00000000000000000000148 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000147 /* DebugView.swift */; };
 		B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000150 /* PerformanceDiagnostics.swift */; };
@@ -242,6 +243,7 @@
 		F00000000000000000000143 /* WatchtowerInboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000144 /* WatchtowerInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxView.swift; sourceTree = "<group>"; };
 		F00000000000000000000145 /* DashToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashToast.swift; sourceTree = "<group>"; };
+		F00000000000000000000190 /* DeferredDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletion.swift; sourceTree = "<group>"; };
 		F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerIgnoreAllTray.swift; sourceTree = "<group>"; };
 		F00000000000000000000147 /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
 		F00000000000000000000150 /* PerformanceDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceDiagnostics.swift; sourceTree = "<group>"; };
@@ -433,6 +435,7 @@
 				F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */,
 				F00000000000000000000147 /* DebugView.swift */,
 				F00000000000000000000145 /* DashToast.swift */,
+				F00000000000000000000190 /* DeferredDeletion.swift */,
 				F00000000000000000000112 /* DashAuthorizationScopes.swift */,
 				F00000000000000000000114 /* DashWorkspace.swift */,
 				F00000000000000000000120 /* NetworkAccessProbe.swift */,
@@ -855,6 +858,7 @@
 				B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */,
 				B00000000000000000000148 /* DebugView.swift in Sources */,
 				B00000000000000000000146 /* DashToast.swift in Sources */,
+				B00000000000000000000190 /* DeferredDeletion.swift in Sources */,
 				B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */,
 				B00000000000000000000114 /* DashWorkspace.swift in Sources */,
 				B00000000000000000000120 /* NetworkAccessProbe.swift in Sources */,

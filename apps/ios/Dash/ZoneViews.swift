@@ -1210,7 +1210,15 @@ struct DNSRecordsView: View {
   /// selection that stops naming a slice, which is why Load more can widen the
   /// data without the view resetting the filter itself.
   private var visibleRecords: [DNSRecord] {
-    DNSChartModel.records(records, in: selectedSliceID)
+    DNSChartModel.records(records, in: selectedSliceID).filter { record in
+      guard let accountID = model.activeAccountID else { return true }
+      return !model.deferredDeletions.isPendingDeletion(
+        DeferredDeletionResourceKey(
+          kind: .dnsRecord,
+          accountID: accountID,
+          zoneID: zoneID,
+          resourceID: record.id))
+    }
   }
 
   private var selectedBucket: DNSChartModel.Bucket? {
@@ -1285,6 +1293,7 @@ struct DNSRecordsView: View {
       let page = try await model.client.listDNSRecords(
         zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
       records = page.items
+      reconcileDeferredDeletions()
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: records.count,
         pageSize: Self.pageSize)
@@ -1304,6 +1313,7 @@ struct DNSRecordsView: View {
       let page = try await model.client.listDNSRecords(
         zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
       records += page.items
+      reconcileDeferredDeletions()
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: records.count,
         pageSize: Self.pageSize)
@@ -1313,6 +1323,14 @@ struct DNSRecordsView: View {
       if error.dashIsCancellation { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func reconcileDeferredDeletions() {
+    guard let accountID = model.activeAccountID else { return }
+    model.deferredDeletions.reconcileDNSRecords(
+      accountID: accountID,
+      zoneID: zoneID,
+      serverRecordIDs: Set(records.map(\.id)))
   }
 }
 
@@ -1672,17 +1690,16 @@ struct DNSRecordEditor: View {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
-    deleting = true
+    guard let accountID = model.activeAccountID else { return }
     error = nil
-    do {
-      try await model.client.deleteDNSRecord(zoneID: zoneID, recordID: record.id)
-      model.toasts.success(DashL10n.string("DNS record deleted."))
-      saved()
-      dismiss()
-    } catch {
-      self.error = error.dashActionableMessage
-      DashDelight.failError()
-    }
-    deleting = false
+    model.deferredDeletions.schedule(
+      .dnsRecord(
+        accountID: accountID,
+        zoneID: zoneID,
+        recordID: record.id,
+        recordType: record.type,
+        displayName: record.name))
+    saved()
+    dismiss()
   }
 }

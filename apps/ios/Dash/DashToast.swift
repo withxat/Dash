@@ -4,6 +4,11 @@ import UIKit
 /// Transient top-of-screen feedback for completed or failed actions.
 /// Persistent capability / form state stays in `DashNotice`.
 struct DashToast: Identifiable, Equatable, Sendable {
+  enum ID: Hashable, Sendable {
+    case transient(UUID)
+    case deferredDeletionBatch
+  }
+
   enum Kind: Equatable, Sendable {
     case success
     case error
@@ -26,24 +31,46 @@ struct DashToast: Identifiable, Equatable, Sendable {
     }
   }
 
-  let id: UUID
+  enum Action: Equatable, Sendable {
+    case undoDeferredDeletionBatch
+    case retryDeferredDeletion(UUID)
+  }
+
+  enum DismissBehavior: Equatable, Sendable {
+    case automatic
+    case programmaticOnly
+  }
+
+  let id: ID
   let kind: Kind
   var title: String?
   let message: String
   var duration: TimeInterval
+  var action: Action?
+  var actionTitle: String?
+  var actionAccessibilityLabel: String?
+  var dismissBehavior: DismissBehavior
 
   init(
-    id: UUID = UUID(),
+    id: ID = .transient(UUID()),
     kind: Kind,
     title: String? = nil,
     message: String,
-    duration: TimeInterval? = nil
+    duration: TimeInterval? = nil,
+    action: Action? = nil,
+    actionTitle: String? = nil,
+    actionAccessibilityLabel: String? = nil,
+    dismissBehavior: DismissBehavior = .automatic
   ) {
     self.id = id
     self.kind = kind
     self.title = title
     self.message = message
     self.duration = duration ?? kind.duration
+    self.action = action
+    self.actionTitle = actionTitle
+    self.actionAccessibilityLabel = actionAccessibilityLabel
+    self.dismissBehavior = dismissBehavior
   }
 
   var resolvedTitle: String { title ?? kind.defaultTitle }
@@ -56,6 +83,7 @@ struct DashToast: Identifiable, Equatable, Sendable {
 final class DashToastCenter {
   private(set) var current: DashToast?
   private var dismissTask: Task<Void, Never>?
+  private var queued: DashToast?
 
   func success(_ message: String, title: String? = nil, haptic: Bool = true) {
     show(DashToast(kind: .success, title: title, message: message), haptic: haptic)
@@ -70,23 +98,44 @@ final class DashToastCenter {
   }
 
   func show(_ toast: DashToast, haptic: Bool = true) {
+    if current?.id == .deferredDeletionBatch,
+      current?.dismissBehavior == .programmaticOnly,
+      toast.id != .deferredDeletionBatch
+    {
+      queued = toast
+      return
+    }
     dismissTask?.cancel()
     current = toast
     if haptic { playHaptic(for: toast.kind) }
     UIAccessibility.post(
       notification: .announcement,
       argument: "\(toast.resolvedTitle). \(toast.message)")
-    scheduleDismiss(for: toast)
+    if toast.dismissBehavior == .automatic {
+      scheduleDismiss(for: toast)
+    }
+  }
+
+  func update(_ toast: DashToast, haptic: Bool = false) {
+    guard current?.id == toast.id else {
+      show(toast, haptic: haptic)
+      return
+    }
+    show(toast, haptic: haptic)
   }
 
   func dismiss() {
     dismissTask?.cancel()
     dismissTask = nil
     current = nil
+    if let queued {
+      self.queued = nil
+      show(queued)
+    }
   }
 
   /// Drops the toast only if it is still the one that scheduled dismissal.
-  func dismiss(id: UUID) {
+  func dismiss(id: DashToast.ID) {
     guard current?.id == id else { return }
     dismiss()
   }
@@ -129,11 +178,13 @@ struct DashToastHost: View {
           .padding(.top, DashTheme.Sheet.floatingMargin)
           .offset(y: min(0, dragOffset))
           .opacity(dragOpacity)
-          .gesture(dismissDrag)
+          .gesture(toast.dismissBehavior == .automatic ? dismissDrag : nil)
           .transition(toastTransition)
-          .onTapGesture { dismissAnimated() }
-          .accessibilityAddTraits(.isButton)
-          .accessibilityHint(DashL10n.string("Double tap to dismiss"))
+          .onTapGesture {
+            if toast.dismissBehavior == .automatic, toast.action == nil {
+              dismissAnimated()
+            }
+          }
       }
     }
     .frame(maxWidth: .infinity, alignment: .top)
@@ -200,6 +251,7 @@ private enum DashToastMotion {
 }
 
 private struct DashToastCard: View {
+  @Environment(AppModel.self) private var model
   let toast: DashToast
 
   private var colors: (foreground: Color, tint: Color, icon: String) {
@@ -232,13 +284,24 @@ private struct DashToastCard: View {
           .fixedSize(horizontal: false, vertical: true)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
+
+      if let action = toast.action, let actionTitle = toast.actionTitle {
+        Button(DashL10n.ui(actionTitle)) {
+          model.performToastAction(action)
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(colors.foreground)
+        .accessibilityLabel(
+          DashL10n.ui(toast.actionAccessibilityLabel ?? actionTitle))
+      }
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 14)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(DashTheme.Sheet.background, in: shape)
     .dashShadow(.raised, in: shape)
-    .accessibilityElement(children: .combine)
+    .accessibilityElement(children: toast.action == nil ? .combine : .contain)
     .accessibilityLabel("\(toast.resolvedTitle): \(toast.message)")
   }
 }

@@ -2459,6 +2459,235 @@ func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() thr
   #expect(DashToast(kind: .success, message: "ok", duration: 1).duration == 1)
 }
 
+private actor DeferredDeletionTestExecutor: DeferredDeletionExecuting {
+  enum Result: Sendable {
+    case success
+    case failure
+    case missing
+    case uncertain
+  }
+
+  private(set) var executed: [DeferredDeleteCommand] = []
+  var result: Result = .success
+  var reconciliation: DeferredDeletionReconciliationResult = .resourceMissing
+
+  func execute(_ command: DeferredDeleteCommand) async throws {
+    executed.append(command)
+    switch result {
+    case .success:
+      return
+    case .failure:
+      throw CloudflareAPIError.request(
+        status: 403,
+        errors: [APIErrorItem(code: 10000, message: "Forbidden")])
+    case .missing:
+      throw CloudflareAPIError.request(status: 404, errors: [])
+    case .uncertain:
+      throw CloudflareAPIError.transport("Connection lost")
+    }
+  }
+
+  func reconcile(_ command: DeferredDeleteCommand) async throws
+    -> DeferredDeletionReconciliationResult
+  {
+    reconciliation
+  }
+
+  func executionCount() -> Int {
+    executed.count
+  }
+
+  func setResultForTesting(_ result: Result) {
+    self.result = result
+  }
+
+  func setReconciliationForTesting(_ result: DeferredDeletionReconciliationResult) {
+    reconciliation = result
+  }
+}
+
+private actor DeferredDeletionTestSleeper {
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func sleep() async {
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+
+  func fire() {
+    let pending = continuations
+    continuations.removeAll()
+    for continuation in pending {
+      continuation.resume()
+    }
+  }
+}
+
+private func testDNSDeletion(
+  recordID: String = "record-1",
+  displayName: String = "api.example.com"
+) -> DeferredDeleteCommand {
+  .dnsRecord(
+    accountID: "account-1",
+    zoneID: "zone-1",
+    recordID: recordID,
+    recordType: "A",
+    displayName: displayName)
+}
+
+@Test @MainActor func deferredDeletionWaitsForDeadlineBeforeExecuting() async {
+  let executor = DeferredDeletionTestExecutor()
+  let sleeper = DeferredDeletionTestSleeper()
+  let toasts = DashToastCenter()
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: toasts,
+    sleeper: { _ in await sleeper.sleep() })
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+
+  #expect(coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 0)
+  #expect(toasts.current?.id == .deferredDeletionBatch)
+  #expect(toasts.current?.action == .undoDeferredDeletionBatch)
+
+  await sleeper.fire()
+  await Task.yield()
+  await Task.yield()
+
+  #expect(await executor.executionCount() == 1)
+  #expect(coordinator.isPendingDeletion(command.resourceKey))
+}
+
+@Test @MainActor func deferredDeletionUndoRemovesTombstoneAndNeverExecutes() async {
+  let executor = DeferredDeletionTestExecutor()
+  let sleeper = DeferredDeletionTestSleeper()
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: DashToastCenter(),
+    sleeper: { _ in await sleeper.sleep() })
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+  coordinator.undoCurrentBatch()
+  await sleeper.fire()
+  await Task.yield()
+
+  #expect(!coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 0)
+}
+
+@Test @MainActor func deferredDeletionBatchUsesOneToastAndUndoesEveryItem() async {
+  let executor = DeferredDeletionTestExecutor()
+  let sleeper = DeferredDeletionTestSleeper()
+  let toasts = DashToastCenter()
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: toasts,
+    sleeper: { _ in await sleeper.sleep() })
+  let first = testDNSDeletion()
+  let second = testDNSDeletion(recordID: "record-2", displayName: "www.example.com")
+
+  coordinator.schedule(first)
+  coordinator.schedule(second)
+
+  #expect(toasts.current?.id == .deferredDeletionBatch)
+  #expect(toasts.current?.actionTitle == "Undo all")
+  #expect(coordinator.isPendingDeletion(first.resourceKey))
+  #expect(coordinator.isPendingDeletion(second.resourceKey))
+
+  coordinator.undoCurrentBatch()
+
+  #expect(!coordinator.isPendingDeletion(first.resourceKey))
+  #expect(!coordinator.isPendingDeletion(second.resourceKey))
+  #expect(await executor.executionCount() == 0)
+}
+
+@Test @MainActor func deferredDeletionFailureRestoresResource() async {
+  let executor = DeferredDeletionTestExecutor()
+  await executor.setResultForTesting(.failure)
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: DashToastCenter())
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+  coordinator.commitPendingOperations()
+  await Task.yield()
+  await Task.yield()
+
+  #expect(!coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 1)
+}
+
+@Test @MainActor func deferredDeletionTreatsMissingResourceAsSuccess() async {
+  let executor = DeferredDeletionTestExecutor()
+  await executor.setResultForTesting(.missing)
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: DashToastCenter())
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+  coordinator.commitPendingOperations()
+  await Task.yield()
+  await Task.yield()
+
+  #expect(coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 1)
+}
+
+@Test @MainActor func uncertainDeletionReconcilesBeforeRestoringResource() async {
+  let executor = DeferredDeletionTestExecutor()
+  await executor.setResultForTesting(.uncertain)
+  await executor.setReconciliationForTesting(.resourceExists)
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: DashToastCenter())
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+  coordinator.commitPendingOperations()
+  await Task.yield()
+  await Task.yield()
+
+  #expect(!coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 1)
+}
+
+@Test @MainActor func accountSwitchCancelsOnlyPendingOperations() async {
+  let executor = DeferredDeletionTestExecutor()
+  let coordinator = DeferredDeletionCoordinator(
+    executor: executor,
+    toasts: DashToastCenter())
+  let command = testDNSDeletion()
+
+  coordinator.schedule(command)
+  coordinator.cancelPendingOperations(forAccountID: "account-1")
+
+  #expect(!coordinator.isPendingDeletion(command.resourceKey))
+  #expect(await executor.executionCount() == 0)
+}
+
+@Test @MainActor func toastQueuesFeedbackBehindProgrammaticDeletionToast() {
+  let toasts = DashToastCenter()
+  toasts.show(
+    DashToast(
+      id: .deferredDeletionBatch,
+      kind: .warning,
+      message: "Pending",
+      dismissBehavior: .programmaticOnly),
+    haptic: false)
+
+  toasts.success("Saved.", haptic: false)
+
+  #expect(toasts.current?.id == .deferredDeletionBatch)
+  toasts.dismiss(id: .deferredDeletionBatch)
+  #expect(toasts.current?.message == "Saved.")
+}
+
 // MARK: - Pages deployment build-outcomes donut
 
 private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] {

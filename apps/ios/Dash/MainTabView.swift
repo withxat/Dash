@@ -176,6 +176,7 @@ struct MainTabView: View {
             await model.refreshWatchtowerIfStale()
           }
         case .background:
+          model.deferredDeletions.commitPendingOperations()
           model.scheduleWatchtowerBackgroundRefresh()
         default:
           break

@@ -1998,6 +1998,17 @@
         }
       }
     },
+    "Checking whether Cloudflare completed the deletion…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在确认 Cloudflare 是否已完成删除…"
+          }
+        }
+      }
+    },
     "Checking network access for Cloudflare data…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2782,6 +2793,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "确认"
+          }
+        }
+      }
+    },
+    "Confirming deletion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在确认删除"
           }
         }
       }
@@ -3680,6 +3702,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除成功"
+          }
+        }
+      }
+    },
+    "Deletion failed. The item still exists." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除失败，该项目仍然存在。"
+          }
+        }
+      }
+    },
+    "Deletion undone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已撤销删除。"
           }
         }
       }
@@ -8997,6 +9041,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重试部署"
+          }
+        }
+      }
+    },
+    "Retrying deletion…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在重新删除…"
           }
         }
       }
