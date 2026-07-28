@@ -2,7 +2,7 @@
  * Public domain registration lookup for the iOS zone detail card.
  *
  * GET /api/registration/:domain
- *   → RDAP (rdap.org bootstrap)
+ *   → RDAP (IANA bootstrap → registry, rdap.org as redirector fallback)
  *   → port-43 WHOIS fallback (IANA referral → registry → optional registrar)
  *   → flat JSON matching iOS RdapRegistration
  *

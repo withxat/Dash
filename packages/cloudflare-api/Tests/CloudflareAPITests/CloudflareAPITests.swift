@@ -1966,6 +1966,39 @@ struct NetworkTests {
     #expect(registration.nameservers == ["ddns0.bbc.co.uk", "dns0.bbc.com"])
   }
 
+  @Test func rdapPrefersRegistrarNameOverIanaHandle() throws {
+    // Verisign answers .com with handle "1910" *and* the name. Showing the
+    // handle put a bare IANA registrar id on the zone card.
+    let body = #"""
+      {
+        "ldhName": "cloudflare.com",
+        "nameservers": [{"ldhName": "NS3.CLOUDFLARE.COM."}],
+        "entities": [{
+          "roles": ["registrar"],
+          "handle": "1910",
+          "publicIds": [{"type": "IANA Registrar ID", "identifier": "1910"}],
+          "vcardArray": ["vcard", [["version", {}, "text", "4.0"],
+                                   ["fn", {}, "text", "Cloudflare, Inc."]]]
+        }]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "cloudflare.com"))
+    #expect(registration.registrar == "Cloudflare, Inc.")
+    // Same normalization as the relay: lowercased, root dot stripped.
+    #expect(registration.nameservers == ["ns3.cloudflare.com"])
+  }
+
+  @Test func rdapFallsBackToHandleWhenNoVCardName() throws {
+    let body = #"""
+      {"ldhName": "example.test",
+       "entities": [{"roles": ["registrar"], "handle": "Registry Operator"}]}
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "example.test"))
+    #expect(registration.registrar == "Registry Operator")
+  }
+
   @Test func rdapLookupDecodesRelaySnapshot() async throws {
     let session = mockSession { request in
       #expect(request.url?.path == "/api/registration/xat.sh")

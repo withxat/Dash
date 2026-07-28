@@ -94,10 +94,12 @@ public enum RdapClient: Sendable {
         ($0["eventAction"] as? String)?.caseInsensitiveCompare(action) == .orderedSame
       }?["eventDate"] as? String
     }
+    // Lowercased and stripped of the root dot, matching the relay's parseRdapJson
+    // and parseWhoisText — the card must not change shape with the answering leg.
     let nameservers =
       ((root["nameservers"] as? [[String: Any]]) ?? []).compactMap {
         ($0["ldhName"] as? String) ?? ($0["unicodeName"] as? String)
-      }.map(strippingRootDot)
+      }.map { strippingRootDot($0.lowercased()) }
     let registrar = registrarName(from: root["entities"] as? [[String: Any]] ?? [])
     let registration = RdapRegistration(
       domain: domain,
@@ -139,7 +141,9 @@ public enum RdapClient: Sendable {
       let roles = (entity["roles"] as? [String]) ?? []
       guard roles.contains(where: { $0.caseInsensitiveCompare("registrar") == .orderedSame })
       else { continue }
-      if let handle = entity["handle"] as? String, !handle.isEmpty { return handle }
+      // The vCard `fn` carries the registrar's actual name. `handle` is usually
+      // just its IANA registrar id — "376", "1910" — which the zone card would
+      // render as a bare number, so the name wins and the id is a last resort.
       if let vcard = entity["vcardArray"] as? [Any],
         let rows = vcard.last as? [[Any]]
       {
@@ -150,6 +154,7 @@ public enum RdapClient: Sendable {
           return value
         }
       }
+      if let handle = entity["handle"] as? String, !handle.isEmpty { return handle }
     }
     return nil
   }
