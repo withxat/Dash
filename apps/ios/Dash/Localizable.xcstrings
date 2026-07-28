@@ -88,6 +88,7 @@
       }
     },
     "%@ expires %@. Renew it with your registrar." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -445,17 +446,8 @@
         }
       }
     },
-    "A certificate event for %@." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 有证书事件。"
-          }
-        }
-      }
-    },
     "A build for %@ finished." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -465,13 +457,13 @@
         }
       }
     },
-    "A dithered Watchtower trend for your account." : {
+    "A certificate event for %@." : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "以点阵趋势图展示账户的 Watchtower 指标。"
+            "value" : "%@ 有证书事件。"
           }
         }
       }
@@ -487,7 +479,19 @@
         }
       }
     },
+    "A dithered Watchtower trend for your account." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以点阵趋势图展示账户的 Watchtower 指标。"
+          }
+        }
+      }
+    },
     "A load balancer pool for %@ changed health." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -521,6 +525,7 @@
       }
     },
     "A tunnel for %@ changed health." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -938,17 +943,8 @@
         }
       }
     },
-    "Alert turned on." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "提醒已开启。"
-          }
-        }
-      }
-    },
     "Alert turned off." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -958,7 +954,19 @@
         }
       }
     },
+    "Alert turned on." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒已开启。"
+          }
+        }
+      }
+    },
     "Alert type" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -986,6 +994,7 @@
       }
     },
     "Alerts will now appear as banners." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1058,6 +1067,7 @@
       }
     },
     "All deployments" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1263,17 +1273,8 @@
         }
       }
     },
-    "At most every hour" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最多每小时一次"
-          }
-        }
-      }
-    },
     "At most every 5 minutes" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1283,7 +1284,19 @@
         }
       }
     },
+    "At most every 15 minutes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最多每 15 分钟一次"
+          }
+        }
+      }
+    },
     "At most every 30 minutes" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1293,12 +1306,13 @@
         }
       }
     },
-    "At most every 15 minutes" : {
+    "At most every hour" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "最多每 15 分钟一次"
+            "value" : "最多每小时一次"
           }
         }
       }
@@ -1606,22 +1620,24 @@
         }
       }
     },
-    "Build cancelled." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "构建已取消。"
-          }
-        }
-      }
-    },
     "Build %@" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "构建 %@"
+          }
+        }
+      }
+    },
+    "Build cancelled." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建已取消。"
           }
         }
       }
@@ -1655,6 +1671,7 @@
       }
     },
     "Building" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1665,6 +1682,7 @@
       }
     },
     "Builds" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -1815,6 +1833,7 @@
       }
     },
     "Cancel build" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2476,6 +2495,7 @@
       }
     },
     "Cloudflare is mitigating an attack on %@." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2497,6 +2517,7 @@
       }
     },
     "Cloudflare is returning errors for %@." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -2524,6 +2545,7 @@
       }
     },
     "Cloudflare mitigates an attack on this domain" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3480,6 +3502,7 @@
       }
     },
     "Dash test alert" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -3662,6 +3685,7 @@
       }
     },
     "Deliver alerts prominently" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4195,17 +4219,8 @@
         }
       }
     },
-    "Domain settings" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "域名设置"
-          }
-        }
-      }
-    },
     "Domain expiring" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4233,6 +4248,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "域名指标"
+          }
+        }
+      }
+    },
+    "Domain settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "域名设置"
           }
         }
       }
@@ -4428,6 +4454,7 @@
       }
     },
     "Edge errors" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4757,6 +4784,7 @@
       }
     },
     "Every occurrence" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4767,6 +4795,7 @@
       }
     },
     "Every primary nameserver for %@ is failing." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4865,6 +4894,7 @@
       }
     },
     "Finished" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -4988,6 +5018,7 @@
       }
     },
     "Frequency" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -5549,6 +5580,7 @@
       }
     },
     "in %lld days" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -6003,6 +6035,7 @@
       }
     },
     "Load balancer health" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -6303,17 +6336,6 @@
         }
       }
     },
-    "Milliseconds" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "毫秒"
-          }
-        }
-      }
-    },
     "Metric" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6321,6 +6343,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "指标"
+          }
+        }
+      }
+    },
+    "Milliseconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "毫秒"
           }
         }
       }
@@ -7138,6 +7171,7 @@
       }
     },
     "On for all domains" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -7544,6 +7578,7 @@
       }
     },
     "Pages builds" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8244,6 +8279,7 @@
       }
     },
     "Push is working." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -8345,6 +8381,17 @@
         }
       }
     },
+    "Read & write" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "读取和写入"
+          }
+        }
+      }
+    },
     "Read only" : {
       "comment" : "A label displayed above a list of read-only settings.",
       "isCommentAutoGenerated" : true,
@@ -8353,17 +8400,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只读"
-          }
-        }
-      }
-    },
-    "Read & write" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "读取和写入"
           }
         }
       }
@@ -9133,22 +9169,24 @@
         }
       }
     },
-    "Security" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "安全"
-          }
-        }
-      }
-    },
     "Secondary DNS" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "辅助 DNS"
+          }
+        }
+      }
+    },
+    "Security" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "安全"
           }
         }
       }
@@ -9432,17 +9470,6 @@
         }
       }
     },
-    "Show one dithered Watchtower metric for a Cloudflare account." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以点阵趋势图展示一个 Cloudflare 账户的 Watchtower 指标。"
-          }
-        }
-      }
-    },
     "Show one dithered analytics metric for a Cloudflare domain." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9450,6 +9477,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以点阵趋势图展示一个 Cloudflare 域名的分析指标。"
+          }
+        }
+      }
+    },
+    "Show one dithered Watchtower metric for a Cloudflare account." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以点阵趋势图展示一个 Cloudflare 账户的 Watchtower 指标。"
           }
         }
       }
@@ -9917,6 +9955,7 @@
       }
     },
     "The origin for %@ is returning errors." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -10045,6 +10084,7 @@
       }
     },
     "tomorrow" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -10199,6 +10239,7 @@
       }
     },
     "Tunnel health" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -10238,6 +10279,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "类型"
+          }
+        }
+      }
+    },
+    "Unavailable account" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可用的账户"
+          }
+        }
+      }
+    },
+    "Unavailable domain" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不可用的域名"
           }
         }
       }
@@ -10305,28 +10368,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Under Attack、SSL 与开发模式"
-          }
-        }
-      }
-    },
-    "Unavailable account" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用的账户"
-          }
-        }
-      }
-    },
-    "Unavailable domain" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用的域名"
           }
         }
       }
@@ -10892,6 +10933,7 @@
       }
     },
     "Weekly overview" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -11149,6 +11191,7 @@
       }
     },
     "Your server starts returning 5xx" : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
@@ -11159,6 +11202,7 @@
       }
     },
     "Your weekly Cloudflare summary is ready." : {
+      "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
