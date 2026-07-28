@@ -659,6 +659,112 @@ public struct WorkerScript: CloudflareResource, Hashable {
   }
 }
 
+/// What a Workers Build was built from — branch, commit, and the commands the
+/// trigger ran.
+public struct WorkerBuildTriggerMetadata: Codable, Hashable, Sendable {
+  public let branch: String?
+  public let commitHash: String?
+  public let commitMessage: String?
+  public let author: String?
+  public let buildCommand: String?
+  public let deployCommand: String?
+  public let buildTriggerSource: String?
+
+  /// Seven characters, the length every git UI settled on.
+  public var shortCommit: String? {
+    commitHash.map { String($0.prefix(7)) }
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case branch, author
+    case commitHash = "commit_hash"
+    case commitMessage = "commit_message"
+    case buildCommand = "build_command"
+    case deployCommand = "deploy_command"
+    case buildTriggerSource = "build_trigger_source"
+  }
+}
+
+/// One build from Workers Builds
+/// (`GET /accounts/{id}/builds/workers/{external_script_id}/builds`).
+///
+/// Every field is optional because Cloudflare's schema marks every field
+/// optional — including `status` and `build_uuid`. Nothing here may assume a
+/// field arrived.
+public struct WorkerBuild: Codable, Hashable, Identifiable, Sendable {
+  public let buildUUID: String?
+  /// Cloudflare documents no enum for this. Read it through `phase`, never by
+  /// comparing raw strings at a call site.
+  public let status: String?
+  public let buildOutcome: String?
+  public let createdOn: String?
+  public let initializingOn: String?
+  public let runningOn: String?
+  public let stoppedOn: String?
+  public let modifiedOn: String?
+  public let buildTriggerMetadata: WorkerBuildTriggerMetadata?
+
+  public var id: String { buildUUID ?? createdOn ?? UUID().uuidString }
+
+  public var shortID: String {
+    buildUUID.map { String($0.prefix(8)) } ?? "—"
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case status
+    case buildUUID = "build_uuid"
+    case buildOutcome = "build_outcome"
+    case createdOn = "created_on"
+    case initializingOn = "initializing_on"
+    case runningOn = "running_on"
+    case stoppedOn = "stopped_on"
+    case modifiedOn = "modified_on"
+    case buildTriggerMetadata = "build_trigger_metadata"
+  }
+}
+
+extension WorkerBuild {
+  /// Where a build sits in its lifecycle.
+  public enum Phase: Equatable, Sendable {
+    case queued
+    case initializing
+    case running
+    case finished
+  }
+
+  /// Cloudflare publishes no enum for `status`, so this reads the lifecycle from
+  /// the *timestamps*, which are unambiguous, and uses `status` only to spot a
+  /// queued build that has no timestamp yet.
+  ///
+  /// The bias is deliberate: anything not positively recognised as in-flight
+  /// counts as `finished`. A Live Activity that fails to start is a missing
+  /// nicety; one pinned to the Lock Screen by an unrecognised status is a bug
+  /// the user can only clear by force-quitting the app.
+  public var phase: Phase {
+    if stoppedOn != nil || buildOutcome != nil { return .finished }
+    if runningOn != nil { return .running }
+    if initializingOn != nil { return .initializing }
+    guard let status = status?.lowercased() else { return .finished }
+    // Only these two are known-live without a timestamp to prove it.
+    return status == "queued" || status == "pending" ? .queued : .finished
+  }
+
+  public var isInProgress: Bool { phase != .finished }
+
+  /// True only when Cloudflare said the build failed. An absent outcome is
+  /// unknown, not success — a build can stop without one.
+  public var didFail: Bool {
+    guard let outcome = buildOutcome?.lowercased() else { return false }
+    return outcome != "success"
+  }
+}
+
+/// `GET /accounts/{id}/builds/builds/latest?external_script_ids=…` returns the
+/// newest build per script, keyed by script tag.
+public struct WorkerLatestBuilds: Codable, Sendable {
+  public let builds: [String: WorkerBuild]?
+}
+
 public struct WorkerSubdomainStatus: Codable, Hashable, Sendable {
   public let enabled: Bool
   public let previewsEnabled: Bool?

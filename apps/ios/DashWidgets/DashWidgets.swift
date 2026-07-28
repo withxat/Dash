@@ -9,7 +9,111 @@ struct DashWidgetsBundle: WidgetBundle {
     AccountMetricsWidget()
     DomainMetricsWidget()
     PagesBuildLiveActivity()
+    WorkerBuildLiveActivity()
   }
+}
+
+struct WorkerBuildLiveActivity: Widget {
+  var body: some WidgetConfiguration {
+    ActivityConfiguration(for: WorkerBuildAttributes.self) { context in
+      WorkerBuildLockScreenView(context: context)
+        .widgetURL(workerBuildDeepLink(context))
+    } dynamicIsland: { context in
+      DynamicIsland {
+        DynamicIslandExpandedRegion(.leading) {
+          HStack(spacing: 6) {
+            Circle()
+              .fill(WidgetColor.workerBuild(context.state))
+              .frame(width: 8, height: 8)
+            Text(context.attributes.scriptName)
+              .font(.caption.weight(.semibold))
+              .lineLimit(1)
+          }
+        }
+        DynamicIslandExpandedRegion(.trailing) {
+          Text(context.state.shortCommit ?? "")
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        DynamicIslandExpandedRegion(.bottom) {
+          Text(workerBuildStatusLine(context.state))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      } compactLeading: {
+        Image(systemName: WorkerBuildGlyph.symbol)
+          .foregroundStyle(WidgetColor.workerBuild(context.state))
+      } compactTrailing: {
+        Text(context.state.branch ?? context.state.shortCommit ?? "")
+          .font(.caption2.monospaced().weight(.semibold))
+          .foregroundStyle(WidgetColor.workerBuild(context.state))
+          .lineLimit(1)
+      } minimal: {
+        Image(systemName: WorkerBuildGlyph.symbol)
+          .foregroundStyle(WidgetColor.workerBuild(context.state))
+      }
+      .widgetURL(workerBuildDeepLink(context))
+    }
+  }
+}
+
+private enum WorkerBuildGlyph {
+  static let symbol = "hammer.fill"
+}
+
+private struct WorkerBuildLockScreenView: View {
+  let context: ActivityViewContext<WorkerBuildAttributes>
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Image(systemName: WorkerBuildGlyph.symbol)
+        .font(.title3.weight(.semibold))
+        .foregroundStyle(WidgetColor.workerBuild(context.state))
+        .frame(width: 28)
+      VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
+          Circle()
+            .fill(WidgetColor.workerBuild(context.state))
+            .frame(width: 8, height: 8)
+          Text(context.attributes.scriptName)
+            .font(.headline)
+            .lineLimit(1)
+          Spacer(minLength: 0)
+        }
+        Text(workerBuildStatusLine(context.state))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+        if let commit = context.state.shortCommit {
+          Text(commit)
+            .font(.caption2.monospaced())
+            .foregroundStyle(.tertiary)
+            .lineLimit(1)
+        }
+      }
+    }
+    .padding()
+  }
+}
+
+/// The app already localized `phase`; this only joins it to the branch. Nothing
+/// here re-derives copy from a raw Cloudflare status — the widget bundle would
+/// resolve it against a catalog it cannot map.
+private func workerBuildStatusLine(_ state: WorkerBuildAttributes.ContentState) -> String {
+  guard let branch = state.branch, !branch.isEmpty else { return state.phase }
+  return "\(state.phase) · \(branch)"
+}
+
+private func workerBuildDeepLink(_ context: ActivityViewContext<WorkerBuildAttributes>) -> URL? {
+  guard let accountID = context.attributes.accountID, !accountID.isEmpty else { return nil }
+  var components = URLComponents()
+  components.scheme = "dash"
+  components.host = "worker"
+  components.path = "/\(context.attributes.scriptName)"
+  components.queryItems = [URLQueryItem(name: "account", value: accountID)]
+  return components.url
 }
 
 struct PagesBuildLiveActivity: Widget {
@@ -133,6 +237,20 @@ private enum WidgetColor {
     case "active", "idle": warning
     default: ok
     }
+  }
+
+  /// Colour comes from the phase token the app computed, plus the outcome once
+  /// there is one. A finished build with no outcome is not painted green —
+  /// Cloudflare simply did not say how it ended.
+  static func workerBuild(_ state: WorkerBuildAttributes.ContentState) -> Color {
+    if state.phaseToken == "finished" {
+      switch state.outcome?.lowercased() {
+      case "success": return ok
+      case .some: return critical
+      case nil: return warning
+      }
+    }
+    return warning
   }
 }
 

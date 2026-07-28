@@ -1606,6 +1606,26 @@
         }
       }
     },
+    "Build cancelled." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建已取消。"
+          }
+        }
+      }
+    },
+    "Build %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建 %@"
+          }
+        }
+      }
+    },
     "Build log" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1630,6 +1650,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "构建结果"
+          }
+        }
+      }
+    },
+    "Building" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建中"
+          }
+        }
+      }
+    },
+    "Builds" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建"
           }
         }
       }
@@ -1770,6 +1810,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消"
+          }
+        }
+      }
+    },
+    "Cancel build" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取消构建"
           }
         }
       }
@@ -4810,6 +4860,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已从 %2$lld 条已加载记录中筛选出 %1$lld 条"
+          }
+        }
+      }
+    },
+    "Finished" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已结束"
           }
         }
       }

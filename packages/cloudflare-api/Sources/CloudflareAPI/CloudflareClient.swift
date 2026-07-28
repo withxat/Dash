@@ -303,6 +303,51 @@ public actor CloudflareClient {
       body: body)
   }
 
+  // MARK: Workers Builds
+  //
+  // These endpoints live under `/accounts/{id}/builds/…`, not under
+  // `/workers/…`, and they key on the script's immutable **tag**
+  // (`external_script_id`), never its name. `WorkerScript.tag` carries it.
+  //
+  // Cloudflare documents these as requiring a user-scoped API token and
+  // rejecting account-scoped ones. Dash's OAuth tokens are user-scoped, so this
+  // should hold — but it is the first thing to check if every call here 403s
+  // while the rest of the Workers screens work.
+
+  /// Recent builds for one Worker, newest first.
+  public func listWorkerBuilds(
+    accountID: String,
+    scriptTag: String,
+    page: Int = 1,
+    perPage: Int = 20
+  ) async throws -> Page<WorkerBuild> {
+    try await list(
+      "/accounts/\(accountID)/builds/workers/\(scriptTag)/builds",
+      query: ["page": String(page), "per_page": String(perPage)])
+  }
+
+  /// Newest build per script tag, for showing build state across a list of
+  /// Workers in one request. Cloudflare caps the batch at 20 tags.
+  public func latestWorkerBuilds(
+    accountID: String,
+    scriptTags: [String]
+  ) async throws -> [String: WorkerBuild] {
+    let tags = Array(scriptTags.prefix(20))
+    guard !tags.isEmpty else { return [:] }
+    let result: WorkerLatestBuilds = try await request(
+      "/accounts/\(accountID)/builds/builds/latest",
+      query: ["external_script_ids": tags.joined(separator: ",")])
+    return result.builds ?? [:]
+  }
+
+  /// Stops an in-flight build. The response body is intentionally discarded and
+  /// decoded as an opaque value: Cloudflare does not document its shape, and a
+  /// cancel that worked must not surface as a decode failure.
+  public func cancelWorkerBuild(accountID: String, buildUUID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/builds/builds/\(buildUUID)/cancel", method: "PUT")
+  }
+
   public func listWorkerDomains(accountID: String, service: String? = nil) async throws
     -> [WorkerDomain]
   {

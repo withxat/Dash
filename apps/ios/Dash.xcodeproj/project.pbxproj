@@ -47,6 +47,9 @@
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
+		B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
+		B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B1 /* WorkerBuildsSection.swift */; };
+		B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B0 /* WorkerBuildActivityController.swift */; };
 		B00000000000000000000173 /* ExpiryReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000173 /* ExpiryReminders.swift */; };
 		B00000000000000000000172 /* ZoneAlertsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000172 /* ZoneAlertsSection.swift */; };
 		B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000171 /* ZoneAlertSubscriptions.swift */; };
@@ -83,6 +86,7 @@
 		B00000000000000000000121 /* PagesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000121 /* PagesViews.swift */; };
 		B00000000000000000000122 /* PagesBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000122 /* PagesBuildActivity.swift */; };
 		B00000000000000000000123 /* PagesBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000122 /* PagesBuildActivity.swift */; };
+		B000000000000000000001B3 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B00000000000000000000124 /* PagesBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000124 /* PagesBuildActivityController.swift */; };
 		B00000000000000000000125 /* PushAlertsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000125 /* PushAlertsView.swift */; };
 		B00000000000000000000126 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
@@ -120,6 +124,7 @@
 		B000000000000000000001A4 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000011 /* SwiftDitherKit */; };
 		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
 		B00000000000000000000176 /* AlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000176 /* AlertRoutingTests.swift */; };
+		B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B4 /* WorkerBuildActivityTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -222,6 +227,9 @@
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
+		F000000000000000000001B2 /* WorkerBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivity.swift; sourceTree = "<group>"; };
+		F000000000000000000001B1 /* WorkerBuildsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildsSection.swift; sourceTree = "<group>"; };
+		F000000000000000000001B0 /* WorkerBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityController.swift; sourceTree = "<group>"; };
 		F00000000000000000000173 /* ExpiryReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiryReminders.swift; sourceTree = "<group>"; };
 		F00000000000000000000172 /* ZoneAlertsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertsSection.swift; sourceTree = "<group>"; };
 		F00000000000000000000171 /* ZoneAlertSubscriptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertSubscriptions.swift; sourceTree = "<group>"; };
@@ -258,6 +266,7 @@
 		F00000000000000000000165 /* MetricsWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgets.swift; sourceTree = "<group>"; };
 		F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsWidgetSnapshotTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000176 /* AlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRoutingTests.swift; sourceTree = "<group>"; };
+		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -405,6 +414,9 @@
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F00000000000000000000108 /* WatchtowerNotifications.swift */,
 				F0000000000000000000010C /* PushRegistration.swift */,
+				F000000000000000000001B2 /* WorkerBuildActivity.swift */,
+				F000000000000000000001B1 /* WorkerBuildsSection.swift */,
+				F000000000000000000001B0 /* WorkerBuildActivityController.swift */,
 				F00000000000000000000174 /* AlertLocalization.swift */,
 				F00000000000000000000175 /* WatchtowerBadgeReader.swift */,
 				F00000000000000000000173 /* ExpiryReminders.swift */,
@@ -444,6 +456,7 @@
 				F00000000000000000000156 /* WorkerWatchtowerTests.swift */,
 				F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */,
 				F00000000000000000000176 /* AlertRoutingTests.swift */,
+				F000000000000000000001B4 /* WorkerBuildActivityTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -822,6 +835,9 @@
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
 				B0000000000000000000010C /* PushRegistration.swift in Sources */,
+				B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */,
+				B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */,
+				B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */,
 				B00000000000000000000174 /* AlertLocalization.swift in Sources */,
 				B00000000000000000000175 /* WatchtowerBadgeReader.swift in Sources */,
 				B00000000000000000000173 /* ExpiryReminders.swift in Sources */,
@@ -860,6 +876,7 @@
 				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
 				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
 				B00000000000000000000176 /* AlertRoutingTests.swift in Sources */,
+				B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -880,6 +897,7 @@
 				B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */,
 				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B00000000000000000000123 /* PagesBuildActivity.swift in Sources */,
+				B000000000000000000001B3 /* WorkerBuildActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

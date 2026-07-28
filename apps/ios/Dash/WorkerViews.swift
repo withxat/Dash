@@ -156,6 +156,9 @@ struct WorkerDetailView: View {
   @State private var deleteDomainError: String?
   @State private var error: String?
   @State private var loading = true
+  /// Re-keys the builds section on pull-to-refresh; it owns its own task and
+  /// is not reached by this screen's `load(force:)`.
+  @State private var buildsRefreshID = UUID()
   @State private var loadedSubdomain = false
   @State private var subdomainEnabled = false
   @State private var subdomainUpdating = false
@@ -190,8 +193,12 @@ struct WorkerDetailView: View {
       } else if let analyticsError {
         DashNotice(kind: .warning, message: analyticsError)
       }
-      deploymentsGroup
+      // Builds sit above deployments: a build is what *produces* a deployment,
+      // and it renders nothing at all unless this Worker is repo-connected.
+      WorkerBuildsSection(scriptName: name, refreshID: buildsRefreshID)
         .dashSectionBoundary(analytics != nil || analyticsError != nil)
+      deploymentsGroup
+        .dashSectionBoundary()
       DashToggleRow(
         title: "workers.dev",
         subtitle: workersDevSubtitle,
@@ -611,6 +618,7 @@ struct WorkerDetailView: View {
     if force {
       model.featureCache.remove(prefix: cacheKey)
       model.featureCache.remove(FeatureCacheKey.workerRoutes(accountID))
+      buildsRefreshID = UUID()
     }
     if !hasPresentedContent || force { loading = true }
     error = nil

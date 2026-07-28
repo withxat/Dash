@@ -145,6 +145,7 @@ final class AppModel {
     accountGeneration &+= 1
     featureCache.clear()
     PagesBuildActivityController.shared.invalidateSession()
+    WorkerBuildActivityController.shared.invalidateSession()
     watchtowerUnreadAlertCount = nil
   }
 
