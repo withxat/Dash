@@ -118,8 +118,12 @@ final class WorkerBuildActivityControllerBox {
       return
     }
     let serial = invalidationSerial
+    // Unwrap inside the task rather than optional-chaining the call: the latter
+    // makes the closure yield `Void?`, so the task types as `Task<()?, Never>`
+    // and no longer matches `loadTask`.
     let task = Task { [weak self] in
-      await self?.load(key: key, client: client, serial: serial)
+      guard let self else { return }
+      await self.load(key: key, client: client, serial: serial)
     }
     loadTask = task
     await task.value

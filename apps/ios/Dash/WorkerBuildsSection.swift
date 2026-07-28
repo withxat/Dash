@@ -98,7 +98,7 @@ struct WorkerBuildsSection: View {
           icon: SolarAsset.Content.bolt,
           showsChevron: false
         ) {
-          StatusBadge(token: statusToken(build))
+          StatusBadge(statusToken(build))
         }
       }
     }

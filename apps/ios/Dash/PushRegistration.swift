@@ -55,11 +55,15 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
   /// Silent companion push from the relay. Refreshes Watchtower so the widget,
   /// the tab dot, and the badge are already right when the user looks — the
   /// alert they can see was delivered by its own push.
-  nonisolated func application(
+  /// Stays main-actor isolated, unlike its siblings: every line of the body is
+  /// `@MainActor` work through `PushTokenInbox`, so opting out would only defer
+  /// the hop, and it would force the non-Sendable `userInfo` across an
+  /// isolation boundary to get there.
+  func application(
     _ application: UIApplication,
     didReceiveRemoteNotification userInfo: [AnyHashable: Any]
   ) async -> UIBackgroundFetchResult {
-    guard let inbox = await self.inbox else { return .noData }
+    guard let inbox else { return .noData }
     await inbox.performPushTriggeredRefresh()
     return .newData
   }
