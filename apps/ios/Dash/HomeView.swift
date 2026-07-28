@@ -1301,15 +1301,11 @@ private struct HomeZoneModeAction: View {
         guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         result = DashL10n.string("Development Mode is on for \(zone.name).")
       case .underAttack:
-        let settings = try await client.listZoneSettings(zoneID: zone.id)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-        if case .string(let current)? = settings.first(where: { $0.id == "security_level" })?
-          .value
-        {
-          UserDefaults.standard.set(current, forKey: "dash.previous_security_level.\(zone.id)")
-        }
-        _ = try await client.updateZoneSetting(
-          zoneID: zone.id, settingID: "security_level", value: .string("under_attack"))
+        _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+          zoneID: zone.id,
+          enabled: true,
+          client: client,
+          isCurrent: { model.isCurrentAccount(context) })
         guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         result = DashL10n.string("Under Attack mode is on for \(zone.name).")
       }

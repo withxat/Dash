@@ -113,7 +113,7 @@ export function alertPayloadJSON(alert: AlertPayload, accountID?: string): strin
 		},
 		'interruption-level': alert.interruptionLevel,
 		// Lets the extension rewrite the English body into the user's language
-		// and stamp the badge before iOS displays anything.
+		// before iOS displays anything.
 		'mutable-content': 1,
 		'relevance-score': alert.relevanceScore,
 		'sound': 'default',

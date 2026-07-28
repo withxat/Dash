@@ -97,17 +97,19 @@ public struct ResultInfo: Codable, Hashable, Sendable {
   public let page: Int?
   public let perPage: Int?
   public let totalCount: Int?
+  public let totalPages: Int?
   public let cursor: String?
   public let delimited: [String]?
   public let isTruncated: Bool?
 
   public init(
-    page: Int? = nil, perPage: Int? = nil, totalCount: Int? = nil, cursor: String? = nil,
-    delimited: [String]? = nil, isTruncated: Bool? = nil
+    page: Int? = nil, perPage: Int? = nil, totalCount: Int? = nil, totalPages: Int? = nil,
+    cursor: String? = nil, delimited: [String]? = nil, isTruncated: Bool? = nil
   ) {
     self.page = page
     self.perPage = perPage
     self.totalCount = totalCount
+    self.totalPages = totalPages
     self.cursor = cursor
     self.delimited = delimited
     self.isTruncated = isTruncated
@@ -117,6 +119,7 @@ public struct ResultInfo: Codable, Hashable, Sendable {
     case page, cursor, delimited
     case perPage = "per_page"
     case totalCount = "total_count"
+    case totalPages = "total_pages"
     case isTruncated = "is_truncated"
   }
 }

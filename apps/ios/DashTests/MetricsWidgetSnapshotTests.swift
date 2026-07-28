@@ -269,6 +269,60 @@ import Testing
   #expect(decoded.activeAccountID == accountB.id)
 }
 
+@Test @MainActor func metricsWidgetPublisherSkipsIdenticalWritesAndTimelineReloads() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-publisher-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+
+  let initialStore = MetricsWidgetSnapshotStore(
+    activeAccountID: account.id,
+    accounts: [account])
+  try initialStore.write(to: fileURL)
+  let sentinelModificationDate = Date(timeIntervalSince1970: 10)
+  try FileManager.default.setAttributes(
+    [.modificationDate: sentinelModificationDate],
+    ofItemAtPath: fileURL.path)
+  let initialData = try Data(contentsOf: fileURL)
+  var reloads: [[String]] = []
+
+  let identicalChanged = MetricsWidgetPublisher.updateStore(
+    at: fileURL,
+    reloading: ["AccountMetricsWidget"],
+    reload: { reloads.append($0) },
+    update: {
+      $0.setAccounts([account], activeAccountID: account.id)
+    })
+
+  #expect(!identicalChanged)
+  #expect(reloads.isEmpty)
+  #expect(try Data(contentsOf: fileURL) == initialData)
+  let unchangedAttributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+  #expect(unchangedAttributes[.modificationDate] as? Date == sentinelModificationDate)
+
+  let changed = MetricsWidgetPublisher.updateStore(
+    at: fileURL,
+    reloading: ["AccountMetricsWidget"],
+    reload: { reloads.append($0) },
+    update: {
+      $0.setAccounts(
+        [MetricsWidgetAccount(id: account.id, name: "Renamed")],
+        activeAccountID: account.id)
+    })
+
+  #expect(changed)
+  #expect(reloads == [["AccountMetricsWidget"]])
+  #expect(
+    try MetricsWidgetSnapshotStore.load(from: fileURL)
+      .account(id: account.id)?.name == "Renamed")
+}
+
 @Test func metricsWidgetStoreKeepsNewestThirtyTwoDomainScopesAndAllTheirRanges() {
   let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
   var snapshots = (0..<35).map { index in

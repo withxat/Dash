@@ -197,8 +197,56 @@ struct WorkerDetailView: View {
       // and it renders nothing at all unless this Worker is repo-connected.
       WorkerBuildsSection(scriptName: name, refreshID: buildsRefreshID)
         .dashSectionBoundary(analytics != nil || analyticsError != nil)
-      deploymentsGroup
+      // Keep the unbounded deployment ForEach as a direct child of
+      // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
+      // otherwise mount every deployment row at once.
+      DashListGroupHeader(title: DashL10n.ui("Deployments"))
+        .padding(.horizontal, 4)
         .dashSectionBoundary()
+        .padding(.bottom, 8)
+      if deployments.isEmpty {
+        DashCard {
+          if let deploymentError {
+            DashNotice(kind: .warning, message: deploymentError)
+          } else {
+            Text("No deployments yet.")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }
+        // Replaces DashListGroup's content inset for the empty state.
+        .dashListCardInset()
+      } else {
+        dashListCardRows(items: deployments) { deployment in
+          let isActive = deployment.id == deployments.first?.id
+          let title = workerDeploymentTitle(deployment)
+          let subtitle = workerDeploymentRowSubtitle(deployment, isActive: isActive)
+          Button {
+            activationError = nil
+            confirmingActivation = false
+            selectedDeployment = deployment
+          } label: {
+            DashListRow(
+              title: title,
+              subtitle: subtitle,
+              icon: SolarAsset.Content.code,
+              iconColor: isActive
+                ? FeatureVisualIdentity.catalogColor(for: .workers) : DashTheme.iconMuted,
+              showsChevron: false
+            ) {
+              if isActive { StatusBadge(.current) }
+            }
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityLabel(
+            workerDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
+          )
+          // dashListCardRows supplies the row's existing inset; this one
+          // replaces DashListGroup's former content inset.
+          .dashListCardInset()
+        }
+      }
       DashToggleRow(
         title: "workers.dev",
         subtitle: workersDevSubtitle,
@@ -280,48 +328,6 @@ struct WorkerDetailView: View {
         subdomainEnabled = enabled
         Task { await setSubdomain(enabled) }
       })
-  }
-
-  @ViewBuilder private var deploymentsGroup: some View {
-    DashListGroup(title: "Deployments") {
-      if deployments.isEmpty {
-        DashCard {
-          if let deploymentError {
-            DashNotice(kind: .warning, message: deploymentError)
-          } else {
-            Text("No deployments yet.")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }
-      } else {
-        dashListCard {
-          dashListCardRows(items: deployments) { deployment in
-            let isActive = deployment.id == deployments.first?.id
-            Button {
-              activationError = nil
-              confirmingActivation = false
-              selectedDeployment = deployment
-            } label: {
-              DashListRow(
-                title: workerDeploymentTitle(deployment),
-                subtitle: workerDeploymentRowSubtitle(deployment, isActive: isActive),
-                icon: SolarAsset.Content.code,
-                iconColor: isActive
-                  ? FeatureVisualIdentity.catalogColor(for: .workers) : DashTheme.iconMuted,
-                showsChevron: false
-              ) {
-                if isActive { StatusBadge(.current) }
-              }
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel(
-              workerDeploymentAccessibilityLabel(deployment, isActive: isActive))
-          }
-        }
-      }
-    }
   }
 
   @ViewBuilder private var domainsGroup: some View {
@@ -616,8 +622,10 @@ struct WorkerDetailView: View {
     let accountID = context.accountID
     let cacheKey = WorkerDetailSnapshot.cacheKey(accountID: accountID, name: name)
     if force {
-      model.featureCache.remove(prefix: cacheKey)
-      model.featureCache.remove(FeatureCacheKey.workerRoutes(accountID))
+      WorkerDetailCache.invalidate(
+        model.featureCache,
+        accountID: accountID,
+        name: name)
       buildsRefreshID = UUID()
     }
     if !hasPresentedContent || force { loading = true }
@@ -748,8 +756,10 @@ struct WorkerDetailView: View {
   }
 
   private func invalidateWorkerDetailCache(_ context: AccountRequestContext) {
-    model.featureCache.remove(
-      prefix: WorkerDetailSnapshot.cacheKey(accountID: context.accountID, name: name))
+    WorkerDetailCache.invalidate(
+      model.featureCache,
+      accountID: context.accountID,
+      name: name)
   }
 
   /// Mutation-scoped refreshes update only the visible section. They invalidate
@@ -877,11 +887,8 @@ private func workerPrimaryVersionID(_ deployment: WorkerDeploymentSummary) -> St
   return deployment.versions.first?.versionID
 }
 
-private func workerDeploymentAccessibilityLabel(
-  _ deployment: WorkerDeploymentSummary, isActive: Bool
-) -> String {
-  let title = workerDeploymentTitle(deployment)
-  return "\(title), \(workerDeploymentRowSubtitle(deployment, isActive: isActive))"
+private func workerDeploymentAccessibilityLabel(title: String, subtitle: String) -> String {
+  "\(title), \(subtitle)"
 }
 
 private func workerDeploymentTitle(_ deployment: WorkerDeploymentSummary) -> String {
@@ -898,6 +905,7 @@ private func workerDomainSubtitle(_ domain: WorkerDomain) -> String {
     ? DashL10n.string("Custom domain") : domain.zoneName
 }
 
+@MainActor
 private func workerDeploymentRowSubtitle(
   _ deployment: WorkerDeploymentSummary, isActive: Bool
 ) -> String {
@@ -1012,8 +1020,10 @@ struct WorkerAddDomainForm: View {
       guard model.isCurrentAccount(context) else { return }
       model.featureCache.remove(
         FeatureCacheKey.workerDomains(accountID: accountID, name: service))
-      model.featureCache.remove(
-        prefix: WorkerDetailSnapshot.cacheKey(accountID: accountID, name: service))
+      WorkerDetailCache.invalidate(
+        model.featureCache,
+        accountID: accountID,
+        name: service)
       await onAdded()
       guard model.isCurrentAccount(context) else { return }
       model.toasts.success(DashL10n.string("Added successfully."))
@@ -1025,21 +1035,50 @@ struct WorkerAddDomainForm: View {
   }
 }
 
-private func workerDeploymentAgeText(_ value: String, now: Date = .now) -> String {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let plain = ISO8601DateFormatter()
-  plain.formatOptions = [.withInternetDateTime]
-  guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
+@MainActor
+private enum WorkerDeploymentDateFormatting {
+  private static let fractionalISO8601: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }()
+
+  private static let plainISO8601: ISO8601DateFormatter = {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    return formatter
+  }()
+
+  private static var relativeCache: (locale: Locale, formatter: RelativeDateTimeFormatter)?
+
+  static func date(from value: String) -> Date? {
+    fractionalISO8601.date(from: value) ?? plainISO8601.date(from: value)
+  }
+
+  static func relativeString(for date: Date, relativeTo now: Date, locale: Locale) -> String {
+    let formatter: RelativeDateTimeFormatter
+    if let cached = relativeCache, cached.locale == locale {
+      formatter = cached.formatter
+    } else {
+      formatter = RelativeDateTimeFormatter()
+      formatter.unitsStyle = .abbreviated
+      formatter.locale = locale
+      relativeCache = (locale, formatter)
+    }
+    return formatter.localizedString(for: date, relativeTo: now)
+  }
+}
+
+@MainActor
+func workerDeploymentAgeText(_ value: String, now: Date = .now) -> String {
+  guard let date = WorkerDeploymentDateFormatting.date(from: value) else {
     return DashL10n.string("Deployed \(value)")
   }
-  let formatter = RelativeDateTimeFormatter()
-  formatter.unitsStyle = .abbreviated
-  // Without this the phrase localizes but the duration does not: Settings →
-  // Language is an in-app preference, and the formatter otherwise follows the
-  // system locale — "3天前" and "3d ago" on the same row.
-  formatter.locale = DashL10n.activeLocale
-  return DashL10n.string("Deployed \(formatter.localizedString(for: date, relativeTo: now))")
+  let relative = WorkerDeploymentDateFormatting.relativeString(
+    for: date,
+    relativeTo: now,
+    locale: DashL10n.activeLocale)
+  return DashL10n.string("Deployed \(relative)")
 }
 
 private func workerDeploymentTrafficText(_ deployment: WorkerDeploymentSummary) -> String {

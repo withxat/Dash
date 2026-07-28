@@ -120,14 +120,17 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
 
   /// VoiceOver / widget headline. Counts deliveries — it never characterises
   /// the account, because Cloudflare is the only thing that decides that here.
-  var headline: String {
+  var headline: LocalizedStringResource {
     Self.headline(unreadCount: unreadCount, alertsUnavailable: alertsUnavailable)
   }
 
-  static func headline(unreadCount: Int, alertsUnavailable: Bool = false) -> String {
+  static func headline(
+    unreadCount: Int,
+    alertsUnavailable: Bool = false
+  ) -> LocalizedStringResource {
     if alertsUnavailable { return "Alerts unavailable" }
     if unreadCount == 0 { return "No unread alerts" }
-    return unreadCount == 1 ? "1 unread alert" : "\(unreadCount) unread alerts"
+    return "\(unreadCount) unread alerts"
   }
 
   static let appGroupID = "group.sh.xat.dash.app"

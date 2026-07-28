@@ -151,6 +151,7 @@ final class AppModel {
       syncNotificationAccountAuthorization()
       if authState == .unauthenticated {
         MetricsWidgetPublisher.clear()
+        clearWatchtowerWidgetSnapshot()
       }
     }
   }
@@ -183,6 +184,8 @@ final class AppModel {
 
   private var authSession: ASWebAuthenticationSession?
   private var pushReconcileTask: Task<Void, Never>?
+  private var systemBadgeTask: Task<Void, Never>?
+  private var systemBadgeGeneration: UInt64 = 0
   private var isRetryingIdentity = false
   private var isSigningOut = false
   private var accountGeneration: UInt64 = 0
@@ -275,9 +278,11 @@ final class AppModel {
   }
 
   private func clearWatchtowerWidgetSnapshot() {
-    guard let url = WatchtowerWidgetSnapshot.containerFileURL else { return }
-    WatchtowerWidgetSnapshot.clear(at: url)
-    WidgetCenter.shared.reloadAllTimelines()
+    if let url = WatchtowerWidgetSnapshot.containerFileURL {
+      WatchtowerWidgetSnapshot.clear(at: url)
+      WidgetCenter.shared.reloadAllTimelines()
+    }
+    setSystemBadgeCount(0)
   }
 
   /// The headline for profile surfaces: the active account's label, else the
@@ -961,6 +966,7 @@ final class AppModel {
   func refreshWatchtowerInboxBadge() {
     guard let accountID = activeAccountID else {
       watchtowerUnreadAlertCount = nil
+      setSystemBadgeCount(0)
       return
     }
     let cached: WatchtowerSnapshot? = featureCache.get(FeatureCacheKey.watchtower(accountID))
@@ -990,10 +996,32 @@ final class AppModel {
   }
 
   private func syncWatchtowerInboxBadge(from snapshot: WatchtowerSnapshot, accountID: String) {
-    watchtowerUnreadAlertCount = WatchtowerInboxStore.unreadCount(
+    let unreadCount = WatchtowerInboxStore.unreadCount(
       accountID: accountID,
       alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : []
     )
+    watchtowerUnreadAlertCount = unreadCount
+    setSystemBadgeCount(unreadCount)
+  }
+
+  /// SpringBoard has one badge, so the app-owned Watchtower count is its only
+  /// writer. The Notification Service Extension deliberately never guesses
+  /// `snapshot + 1`: visible and silent pushes can arrive in either order, and
+  /// an extension may be processing a different account.
+  ///
+  /// Writes are chained and obsolete queued values are skipped. This prevents
+  /// an older asynchronous `setBadgeCount` completion from landing after a
+  /// newer read/ignore/refresh transition.
+  private func setSystemBadgeCount(_ count: Int) {
+    systemBadgeGeneration &+= 1
+    let generation = systemBadgeGeneration
+    let normalizedCount = max(0, count)
+    let previous = systemBadgeTask
+    systemBadgeTask = Task { @MainActor [weak self] in
+      _ = await previous?.result
+      guard let self, self.systemBadgeGeneration == generation else { return }
+      try? await UNUserNotificationCenter.current().setBadgeCount(normalizedCount)
+    }
   }
 
   /// Writes the slim snapshot into the App Group container, refreshes the
@@ -1065,15 +1093,32 @@ final class AppModel {
 
   func loadIdentity() async throws {
     let loadGeneration = accountGeneration
+    let preferredAccountID = activeAccountID
     async let fetchedUser = client.getUser()
     async let fetchedAccounts = client.listAccounts()
-    let identity = try await (fetchedUser, fetchedAccounts)
+    var identity = try await (fetchedUser, fetchedAccounts)
+    if let preferredAccountID,
+      !identity.1.contains(where: { $0.id == preferredAccountID })
+    {
+      do {
+        // Page-number APIs can drift while membership changes, and the lossy
+        // list decoder may skip one malformed row. Confirm the persisted
+        // account directly before replacing the user's selection.
+        let preferredAccount = try await client.getAccount(preferredAccountID)
+        identity.1.append(preferredAccount)
+      } catch let error as CloudflareAPIError {
+        guard case .request(let status, _) = error, status == 403 || status == 404 else {
+          throw error
+        }
+      }
+    }
     try Task.checkCancellation()
     guard accountGeneration == loadGeneration, !isSigningOut else {
       throw CancellationError()
     }
     user = identity.0
     accounts = identity.1
+    // Only a direct 403/404 above proves the saved account is unavailable.
     if activeAccount == nil, let first = accounts.first { selectAccount(first) }
     resolvePendingLegacyNotificationRoute()
     await retryPendingPushCleanups(expectedGeneration: accountGeneration)

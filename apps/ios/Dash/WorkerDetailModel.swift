@@ -74,6 +74,21 @@ struct WorkerDetailSnapshot: Hashable, Sendable {
 
 }
 
+/// Cache invalidation for one Worker detail. Account-wide routes are
+/// deliberately not part of this operation: discovering them fans out across
+/// every zone and a pull-to-refresh on one Worker must not trigger that scan.
+@MainActor
+enum WorkerDetailCache {
+  static func invalidate(
+    _ cache: FeatureDataCache,
+    accountID: String,
+    name: String
+  ) {
+    cache.remove(WorkerDetailSnapshot.cacheKey(accountID: accountID, name: name))
+    cache.remove(WorkerDetailSnapshot.primaryLoadKey(accountID: accountID, name: name))
+  }
+}
+
 struct WorkerDetailLoadResult: Sendable {
   let subdomain: WorkerDetailSection<Bool>
   let workersDevHostname: WorkerDetailSection<String>

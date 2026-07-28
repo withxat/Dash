@@ -255,6 +255,42 @@
         }
       }
     },
+    "%lld unread alerts" : {
+      "comment" : "The Watchtower widget headline. The argument is the number of unread Cloudflare alert deliveries.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread alert"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld unread alerts"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld 条未读提醒"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld values" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -989,6 +1025,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提醒"
+          }
+        }
+      }
+    },
+    "Alerts unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Alerts unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提醒暂不可用"
           }
         }
       }
@@ -5859,6 +5912,16 @@
         }
       }
     },
+    "Keep this value under 256 KB to edit it in Dash." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请将此值控制在 256 KB 以内，以便在 Dash 中编辑。"
+          }
+        }
+      }
+    },
     "Key" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6989,6 +7052,12 @@
     "No unread alerts" : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No unread alerts"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -10105,6 +10174,26 @@
         }
       }
     },
+    "This value is not UTF-8 text, so it cannot be viewed or edited. You can still copy or delete it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此值不是 UTF-8 文本，无法查看或编辑。你仍可复制或删除它。"
+          }
+        }
+      }
+    },
+    "This value is too large to view or edit on this device. You can still copy or delete it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此值过大，无法在此设备上查看或编辑。你仍可复制或删除它。"
+          }
+        }
+      }
+    },
     "This virtual folder has no objects." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10770,6 +10859,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "值"
+          }
+        }
+      }
+    },
+    "Value unavailable" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值不可用"
           }
         }
       }

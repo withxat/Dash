@@ -152,6 +152,117 @@ import Testing
 
 @Suite(.serialized)
 struct NetworkTests {
+  @Test func listAccountsCollectsEveryPage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let query = Dictionary(
+        uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems ?? []).map {
+            ($0.name, $0.value ?? "")
+          })
+      let page = query["page"] ?? "1"
+      recorder.record(page)
+      #expect(query["per_page"] == "50")
+      if page == "1" {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[
+              {"id":"account-1","name":"First"},
+              {"id":"account-2","name":"Second"}
+            ],"result_info":{"page":1,"per_page":2,"total_count":3}}
+            """#.utf8)
+        )
+      }
+      #expect(page == "2")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[
+            {"id":"saved-account","name":"Saved"}
+          ],"result_info":{"page":2,"per_page":2,"total_count":3}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let accounts = try await client.listAccounts()
+
+    #expect(accounts.map(\.id) == ["account-1", "account-2", "saved-account"])
+    #expect(recorder.paths == ["1", "2"])
+  }
+
+  @Test func getAccountTargetsThePersistedAccountDirectly() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/saved-account")
+      return (
+        200,
+        Data(
+          #"{"success":true,"result":{"id":"saved-account","name":"Saved"}}"#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let account = try await client.getAccount("saved-account")
+
+    #expect(account.id == "saved-account")
+    #expect(account.name == "Saved")
+  }
+
+  @Test func listPagesProjectsCollectsEveryPage() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/account/pages/projects")
+      let query = Dictionary(
+        uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems ?? []).map {
+            ($0.name, $0.value ?? "")
+          })
+      let page = query["page"] ?? "1"
+      recorder.record(page)
+      #expect(query["per_page"] == "50")
+      if page == "1" {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[
+              {"id":"project-1","name":"one"},
+              {"id":"project-2","name":"two"}
+            ],"result_info":{"page":1,"per_page":2,"total_pages":2}}
+            """#.utf8)
+        )
+      }
+      #expect(page == "2")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":[
+            {"id":"project-3","name":"three"}
+          ],"result_info":{"page":2,"per_page":2,"total_pages":2}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let projects = try await client.listPagesProjects(accountID: "account")
+
+    #expect(projects.map(\.id) == ["project-1", "project-2", "project-3"])
+    #expect(recorder.paths == ["1", "2"])
+  }
+
   @Test func flattensAvailableAlertsFromCategoryMap() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
@@ -213,6 +324,93 @@ struct NetworkTests {
     #expect(history.count == 1)
     #expect(history.first?.historyID == "f174e90afafe4643bbbc4a0ed4fc8415")
     #expect(history.first?.id == "f174e90afafe4643bbbc4a0ed4fc8415")
+  }
+
+  @Test func auditLogsFallBackToV1OnlyWhenV2IsForbidden() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let path = request.url?.path ?? ""
+      recorder.record(path)
+      if path.hasSuffix("/logs/audit") {
+        return (
+          403,
+          Data(
+            #"{"success":false,"result":[],"errors":[{"code":1000,"message":"forbidden"}]}"#.utf8)
+        )
+      }
+      #expect(path == "/accounts/acct/audit_logs")
+      return (200, Data(#"{"success":true,"result":[]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let entries = try await client.listAuditLogs(accountID: "acct")
+
+    #expect(entries.isEmpty)
+    #expect(recorder.paths == ["/accounts/acct/logs/audit", "/accounts/acct/audit_logs"])
+  }
+
+  @Test func auditLogsDoNotTurnCancellationIntoAV1Request() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    MockURLProtocol.chunkSize = 1
+    MockURLProtocol.chunkDelay = 0.01
+    defer {
+      MockURLProtocol.chunkSize = nil
+      MockURLProtocol.chunkDelay = 0
+    }
+    let session = mockSession { request in
+      let path = request.url?.path ?? ""
+      recorder.record(path)
+      if path.hasSuffix("/logs/audit") {
+        return (200, Data(repeating: 0x20, count: 10_000))
+      }
+      return (200, Data(#"{"success":true,"result":[]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let operation = Task {
+      try await client.listAuditLogs(accountID: "acct")
+    }
+    while recorder.paths.isEmpty {
+      try await Task.sleep(for: .milliseconds(1))
+    }
+    operation.cancel()
+    do {
+      _ = try await operation.value
+      Issue.record("expected cancellation")
+    } catch is CancellationError {
+      // Expected.
+    } catch {
+      Issue.record("expected CancellationError, got \(error)")
+    }
+
+    #expect(recorder.paths == ["/accounts/acct/logs/audit"])
+  }
+
+  @Test func auditLogsDoNotHideMalformedV2ResponsesBehindV1() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let path = request.url?.path ?? ""
+      recorder.record(path)
+      if path.hasSuffix("/logs/audit") {
+        return (200, Data(#"{"success":true,"result":"not-an-array"}"#.utf8))
+      }
+      return (200, Data(#"{"success":true,"result":[]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    await #expect(throws: DecodingError.self) {
+      try await client.listAuditLogs(accountID: "acct")
+    }
+    #expect(recorder.paths == ["/accounts/acct/logs/audit"])
   }
 
   @Test func registrarDomainsAcceptNameOrIDAsIdentity() async throws {
@@ -793,6 +991,114 @@ struct NetworkTests {
       session: session)
     let buckets = try await client.listR2Buckets(accountID: "account")
     #expect(buckets.map(\.name) == ["assets"])
+  }
+
+  @Test func listR2BucketsAcceptsMissingCollectionsAndSkipsNamelessRows() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { _ in
+      recorder.record("request")
+      if recorder.paths.count == 1 {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{"buckets":[
+              {"creation_date":"2026-07-05"},
+              {"name":"assets","creation_date":"2026-07-06"}
+            ]},"result_info":{"cursor":"next"}}
+            """#.utf8)
+        )
+      }
+      return (200, Data(#"{"success":true,"result":{}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let buckets = try await client.listR2Buckets(accountID: "account")
+
+    #expect(buckets.map(\.name) == ["assets"])
+    #expect(recorder.paths.count == 2)
+  }
+
+  @Test func listR2BucketsCollectsCursorPages() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let query = Dictionary(
+        uniqueKeysWithValues: (URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems ?? []).map {
+            ($0.name, $0.value ?? "")
+          })
+      #expect(query["per_page"] == "1000")
+      if let cursor = query["cursor"] {
+        recorder.record(cursor)
+        #expect(cursor == "opaque+cursor")
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{"buckets":[
+              {"name":"second","creation_date":"2026-07-07"}
+            ]},"result_info":{"per_page":1000}}
+            """#.utf8)
+        )
+      }
+      recorder.record("first")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{"buckets":[
+            {"name":"first","creation_date":"2026-07-06"}
+          ]},"result_info":{"cursor":"opaque+cursor","per_page":1000}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let buckets = try await client.listR2Buckets(accountID: "account")
+
+    #expect(buckets.map(\.name) == ["first", "second"])
+    #expect(recorder.paths == ["first", "opaque+cursor"])
+  }
+
+  @Test func listR2BucketsRejectsANonAdvancingCursor() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let cursor =
+        URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+        .queryItems?.first { $0.name == "cursor" }?.value
+      recorder.record(cursor ?? "first")
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{"buckets":[
+            {"name":"assets","creation_date":"2026-07-06"}
+          ]},"result_info":{"cursor":"stuck","per_page":1000}}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    do {
+      _ = try await client.listR2Buckets(accountID: "account")
+      Issue.record("a repeated cursor should be rejected")
+    } catch let error as CloudflareAPIError {
+      guard case .invalidResponse = error else {
+        Issue.record("expected invalidResponse, got \(error)")
+        return
+      }
+    }
+
+    #expect(recorder.paths == ["first", "stuck"])
   }
 
   @Test func listsR2ObjectsAndVirtualFolders() async throws {
@@ -2203,6 +2509,42 @@ struct NetworkTests {
     let accounts = try await client.listAccounts()
     #expect(accounts.first?.name == "Example")
     #expect(recorder.paths.count == 2)
+  }
+
+  @Test func rateLimitRetryDoesNotConsumeUnauthorizedRefresh() async throws {
+    let store = MemoryTokenStore(access: "old", refresh: "refresh")
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let path = request.url?.path ?? ""
+      recorder.record(path)
+      if path == "/token" {
+        recorder.recordRefresh()
+        return (200, Data(#"{"access_token":"new","refresh_token":"refresh"}"#.utf8))
+      }
+      let apiRequestCount = recorder.paths.filter { $0 == "/accounts" }.count
+      if apiRequestCount == 1 {
+        return (
+          429, Data(#"{"success":false,"errors":[{"code":971,"message":"rate limited"}]}"#.utf8)
+        )
+      }
+      if request.value(forHTTPHeaderField: "Authorization") == "Bearer old" {
+        return (
+          401, Data(#"{"success":false,"errors":[{"code":1000,"message":"expired"}]}"#.utf8)
+        )
+      }
+      return (200, Data(#"{"success":true,"result":[{"id":"account","name":"Example"}]}"#.utf8))
+    }
+    MockURLProtocol.responseHeaders = ["Retry-After": "0"]
+    defer { MockURLProtocol.responseHeaders = nil }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session, tokenURL: URL(string: "https://auth.example.test/token")!)
+
+    let accounts = try await client.listAccounts()
+
+    #expect(accounts.map(\.name) == ["Example"])
+    #expect(recorder.refreshCount == 1)
+    #expect(recorder.paths == ["/accounts", "/accounts", "/token", "/accounts"])
   }
 
   @Test func rateLimitedRequestSurfacesLongWaitImmediately() async throws {

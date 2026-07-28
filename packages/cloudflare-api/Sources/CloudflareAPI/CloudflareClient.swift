@@ -197,7 +197,10 @@ public actor CloudflareClient {
 
   public func getUser() async throws -> CloudflareUser { try await request("/user") }
   public func listAccounts() async throws -> [CloudflareAccount] {
-    try await list("/accounts").items
+    try await listAllPages("/accounts", perPage: 50)
+  }
+  public func getAccount(_ id: String) async throws -> CloudflareAccount {
+    try await request("/accounts/\(id)")
   }
   public func listZones(accountID: String, page: Int = 1, perPage: Int = 50, name: String? = nil)
     async throws -> Page<CloudflareZone>
@@ -465,7 +468,7 @@ public actor CloudflareClient {
     try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
   }
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
-    try await list("/accounts/\(accountID)/pages/projects").items
+    try await listAllPages("/accounts/\(accountID)/pages/projects", perPage: 50)
   }
 
   public func getPagesProject(accountID: String, projectName: String) async throws -> PagesProject {
@@ -536,8 +539,32 @@ public actor CloudflareClient {
       method: "DELETE")
   }
   public func listR2Buckets(accountID: String) async throws -> [R2Bucket] {
-    let result: R2BucketResult = try await request("/accounts/\(accountID)/r2/buckets")
-    return result.buckets
+    let path = "/accounts/\(accountID)/r2/buckets"
+    var buckets: [R2Bucket] = []
+    var seenBucketNames: Set<String> = []
+    var seenCursors: Set<String> = []
+    var cursor: String?
+
+    while true {
+      let data = try await raw(
+        path, query: ["cursor": cursor, "per_page": "1000"])
+      let envelope = try JSONDecoder().decode(APIEnvelope<R2BucketResult>.self, from: data)
+      guard envelope.success else {
+        throw CloudflareAPIError.request(status: 200, errors: envelope.errors ?? [])
+      }
+      buckets.append(
+        contentsOf: (envelope.result.buckets ?? []).compactMap(\.value).filter {
+          seenBucketNames.insert($0.name).inserted
+        })
+
+      guard let nextCursor = envelope.resultInfo?.cursor, !nextCursor.isEmpty else { break }
+      guard nextCursor != cursor, seenCursors.insert(nextCursor).inserted else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      cursor = nextCursor
+    }
+
+    return buckets
   }
   public func createR2Bucket(accountID: String, name: String) async throws -> R2Bucket {
     try await request("/accounts/\(accountID)/r2/buckets", method: "POST", body: ["name": name])
@@ -829,7 +856,7 @@ public actor CloudflareClient {
     // Prefer Audit Logs v2; fall back to v1 when the account lacks access.
     do {
       return try await listAuditLogsV2(accountID: accountID, limit: perPage)
-    } catch {
+    } catch let error as CloudflareAPIError where error.isPermissionDenied {
       return try await list(
         "/accounts/\(accountID)/audit_logs",
         query: ["direction": "desc", "per_page": String(perPage)]
@@ -1439,20 +1466,62 @@ public actor CloudflareClient {
     return Page(items: envelope.result.compactMap(\.value), resultInfo: envelope.resultInfo)
   }
 
+  /// Collects a page-number endpoint into the complete resource list expected
+  /// by callers. Cloudflare's list envelopes are occasionally missing
+  /// `total_count`, so a short/empty page remains the fallback terminator.
+  private func listAllPages<Value: CloudflareResource>(
+    _ path: String, query: [String: String?] = [:], perPage: Int
+  ) async throws -> [Value] {
+    var pageNumber = 1
+    var items: [Value] = []
+    var seenIDs: Set<String> = []
+
+    while true {
+      var pageQuery = query
+      pageQuery["page"] = String(pageNumber)
+      pageQuery["per_page"] = String(perPage)
+      let page: Page<Value> = try await list(path, query: pageQuery)
+      let newItems = page.items.filter { seenIDs.insert($0.id).inserted }
+      items.append(contentsOf: newItems)
+
+      if let totalCount = page.resultInfo?.totalCount, items.count >= totalCount {
+        break
+      }
+      if let totalPages = page.resultInfo?.totalPages, pageNumber >= totalPages {
+        break
+      }
+      guard !page.items.isEmpty else { break }
+      if page.resultInfo?.totalCount == nil, page.resultInfo?.totalPages == nil {
+        let reportedPageSize = page.resultInfo?.perPage ?? perPage
+        guard page.items.count >= reportedPageSize else { break }
+      }
+      guard !newItems.isEmpty else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      pageNumber += 1
+    }
+
+    return items
+  }
+
   private func raw(
     _ path: String, method: String = "GET", query: [String: String?] = [:], data: Data? = nil,
-    contentType: String? = nil, attempt: Int = 0
+    contentType: String? = nil, rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> Data {
     return try await raw(
       url: requestURL(path: path, query: query), method: method, data: data,
-      contentType: contentType, attempt: attempt)
+      contentType: contentType, rateLimitAttempt: rateLimitAttempt, refreshed: refreshed)
   }
 
-  private func raw(url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0)
+  private func raw(
+    url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
+    refreshed: Bool = false
+  )
     async throws -> Data
   {
     try await rawResponse(
-      url: url, method: method, data: data, contentType: contentType, attempt: attempt
+      url: url, method: method, data: data, contentType: contentType,
+      rateLimitAttempt: rateLimitAttempt, refreshed: refreshed
     ).0
   }
 
@@ -1497,8 +1566,8 @@ public actor CloudflareClient {
     return (request, requestToken)
   }
 
-  private func canRetryUnauthorized(requestToken: String?, attempt: Int) async throws -> Bool {
-    guard attempt == 0 else { return false }
+  private func canRetryUnauthorized(requestToken: String?, refreshed: Bool) async throws -> Bool {
+    guard !refreshed else { return false }
     let currentToken = try await tokenStore.getAccessToken()
     if currentToken != nil, currentToken != requestToken {
       return true
@@ -1514,7 +1583,8 @@ public actor CloudflareClient {
   }
 
   private func rawResponse(
-    url: URL, method: String, data: Data?, contentType: String?, attempt: Int = 0
+    url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
+    refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
     var (request, requestToken) = try await authorizedRequest(
       url: url, method: method, contentType: contentType)
@@ -1525,17 +1595,19 @@ public actor CloudflareClient {
         throw CloudflareAPIError.invalidResponse
       }
       if response.statusCode == 401 {
-        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
+        if try await canRetryUnauthorized(requestToken: requestToken, refreshed: refreshed) {
           return try await rawResponse(
-            url: url, method: method, data: data, contentType: contentType, attempt: 1)
+            url: url, method: method, data: data, contentType: contentType,
+            rateLimitAttempt: rateLimitAttempt, refreshed: true)
         }
       }
-      if response.statusCode == 429, attempt < Self.maxAttempts,
+      if response.statusCode == 429, rateLimitAttempt < Self.maxAttempts,
         let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
       {
         if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
         return try await rawResponse(
-          url: url, method: method, data: data, contentType: contentType, attempt: attempt + 1)
+          url: url, method: method, data: data, contentType: contentType,
+          rateLimitAttempt: rateLimitAttempt + 1, refreshed: refreshed)
       }
       try validateResponse(response, body: body)
       return (body, response)
@@ -1549,7 +1621,8 @@ public actor CloudflareClient {
   }
 
   private func uploadResponse(
-    url: URL, method: String, fileURL: URL, contentType: String?, attempt: Int = 0
+    url: URL, method: String, fileURL: URL, contentType: String?, rateLimitAttempt: Int = 0,
+    refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
     let (request, requestToken) = try await authorizedRequest(
       url: url, method: method, contentType: contentType)
@@ -1559,18 +1632,19 @@ public actor CloudflareClient {
         throw CloudflareAPIError.invalidResponse
       }
       if response.statusCode == 401 {
-        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
+        if try await canRetryUnauthorized(requestToken: requestToken, refreshed: refreshed) {
           return try await uploadResponse(
-            url: url, method: method, fileURL: fileURL, contentType: contentType, attempt: 1)
+            url: url, method: method, fileURL: fileURL, contentType: contentType,
+            rateLimitAttempt: rateLimitAttempt, refreshed: true)
         }
       }
-      if response.statusCode == 429, attempt < Self.maxAttempts,
+      if response.statusCode == 429, rateLimitAttempt < Self.maxAttempts,
         let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
       {
         if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
         return try await uploadResponse(
           url: url, method: method, fileURL: fileURL, contentType: contentType,
-          attempt: attempt + 1)
+          rateLimitAttempt: rateLimitAttempt + 1, refreshed: refreshed)
       }
       try validateResponse(response, body: body)
       return (body, response)
@@ -1586,7 +1660,8 @@ public actor CloudflareClient {
   }
 
   private func downloadResponse(
-    url: URL, method: String, destination: URL, maximumBytes: Int64?, attempt: Int = 0
+    url: URL, method: String, destination: URL, maximumBytes: Int64?,
+    rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> URL {
     let (request, requestToken) = try await authorizedRequest(
       url: url, method: method, contentType: nil)
@@ -1605,19 +1680,19 @@ public actor CloudflareClient {
         request, to: partialURL, maximumBytes: maximumBytes)
       let response = download.response
       if response.statusCode == 401 {
-        if try await canRetryUnauthorized(requestToken: requestToken, attempt: attempt) {
+        if try await canRetryUnauthorized(requestToken: requestToken, refreshed: refreshed) {
           return try await downloadResponse(
             url: url, method: method, destination: destination, maximumBytes: maximumBytes,
-            attempt: 1)
+            rateLimitAttempt: rateLimitAttempt, refreshed: true)
         }
       }
-      if response.statusCode == 429, attempt < Self.maxAttempts,
+      if response.statusCode == 429, rateLimitAttempt < Self.maxAttempts,
         let delay = Self.retryDelay(retryAfter: response.value(forHTTPHeaderField: "Retry-After"))
       {
         if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
         return try await downloadResponse(
           url: url, method: method, destination: destination, maximumBytes: maximumBytes,
-          attempt: attempt + 1)
+          rateLimitAttempt: rateLimitAttempt + 1, refreshed: refreshed)
       }
       if !(200..<300).contains(response.statusCode) {
         let body = try download.fileURL.map(boundedBody(from:)) ?? Data()
@@ -1892,5 +1967,7 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
 }
 
 private struct ImagesListResult: Decodable, Sendable { let images: [CloudflareImage]? }
-private struct R2BucketResult: Decodable, Sendable { let buckets: [R2Bucket] }
+private struct R2BucketResult: Decodable, Sendable {
+  let buckets: [LossyElement<R2Bucket>]?
+}
 private struct R2CustomDomainList: Decodable, Sendable { let domains: [R2CustomDomain] }

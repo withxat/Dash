@@ -73,6 +73,8 @@ jobs:
         run: |
           pnpm api:test
           pnpm avatars:test
+          pnpm blossom:test
+          pnpm dither:test
           pnpm globe:test
 
       - name: Test Dash unit target

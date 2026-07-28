@@ -1171,31 +1171,20 @@ struct WAFEventsView: View {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
+    guard let context = model.accountRequestContext else { return }
     securityUpdating = true
     defer { securityUpdating = false }
-    let defaults = UserDefaults.standard
-    let stashKey = "dash.previous_security_level.\(zoneID)"
     do {
-      if enabled {
-        let settings = try await model.client.listZoneSettings(zoneID: zoneID)
-        if case .string(let current)? = settings.first(where: { $0.id == "security_level" })?
-          .value, current != "under_attack"
-        {
-          defaults.set(current, forKey: stashKey)
-        }
-        _ = try await model.client.updateZoneSetting(
-          zoneID: zoneID, settingID: "security_level", value: .string("under_attack"))
-        underAttack = true
-      } else {
-        let level = SetUnderAttackIntent.restoreLevel(stashed: defaults.string(forKey: stashKey))
-        defaults.removeObject(forKey: stashKey)
-        _ = try await model.client.updateZoneSetting(
-          zoneID: zoneID, settingID: "security_level", value: .string(level))
-        underAttack = false
-      }
+      let outcome = try await ZoneSecurityLevelOperation.setUnderAttack(
+        zoneID: zoneID,
+        enabled: enabled,
+        client: model.client,
+        isCurrent: { model.isCurrentAccount(context) })
+      underAttack = outcome.isUnderAttack
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
       DashDelight.celebrateSuccess()
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       underAttack = !enabled
       model.toasts.error(error.dashActionableMessage)
     }

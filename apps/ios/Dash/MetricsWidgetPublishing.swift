@@ -136,10 +136,30 @@ enum MetricsWidgetPublisher {
     _ update: (inout MetricsWidgetSnapshotStore) -> Void
   ) {
     guard let url = MetricsWidgetSnapshotStore.containerFileURL else { return }
-    var store = (try? MetricsWidgetSnapshotStore.load(from: url)) ?? .empty
+    updateStore(
+      at: url,
+      reloading: kinds,
+      reload: { reloadTimelines(for: $0) },
+      update: update)
+  }
+
+  /// Testable read-modify-write seam. Identical mutations are intentionally a
+  /// no-op so cache hydration cannot rewrite the App Group file or wake every
+  /// configured widget with an unchanged timeline.
+  @discardableResult
+  static func updateStore(
+    at url: URL,
+    reloading kinds: [String],
+    reload: ([String]) -> Void,
+    update: (inout MetricsWidgetSnapshotStore) -> Void
+  ) -> Bool {
+    let original = (try? MetricsWidgetSnapshotStore.load(from: url)) ?? .empty
+    var store = original
     update(&store)
-    guard (try? store.write(to: url)) != nil else { return }
-    reloadTimelines(for: kinds)
+    guard store != original else { return false }
+    guard (try? store.write(to: url)) != nil else { return false }
+    reload(kinds)
+    return true
   }
 
   private static func reloadTimelines(for kinds: [String]) {

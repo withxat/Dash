@@ -23,5 +23,9 @@ let package = Package(
       name: "BlossomColorPicker",
       dependencies: ["BlossomColorPickerCore"]
     ),
+    .testTarget(
+      name: "BlossomColorPickerCoreTests",
+      dependencies: ["BlossomColorPickerCore"]
+    ),
   ]
 )

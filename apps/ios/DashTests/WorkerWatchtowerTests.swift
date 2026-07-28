@@ -221,6 +221,34 @@ import Testing
   #expect(result.isComplete)
 }
 
+@Test @MainActor func workerDetailRefreshPreservesAccountWideRoutesCache() throws {
+  let cache = FeatureDataCache()
+  let accountID = "account"
+  let name = "worker"
+  let routes = [
+    WorkerZoneRoute(
+      id: "route",
+      pattern: "example.com/*",
+      script: name,
+      zoneName: "example.com")
+  ]
+  let routesKey = FeatureCacheKey.workerRoutes(accountID)
+  let detailKey = WorkerDetailSnapshot.cacheKey(accountID: accountID, name: name)
+  let siblingDetailKey = WorkerDetailSnapshot.cacheKey(accountID: accountID, name: "\(name)-two")
+  cache.set(routesKey, routes)
+  cache.set(detailKey, "detail")
+  cache.set(siblingDetailKey, "sibling")
+
+  WorkerDetailCache.invalidate(cache, accountID: accountID, name: name)
+
+  let cachedRoutes: [WorkerZoneRoute]? = cache.get(routesKey)
+  let cachedDetail: String? = cache.get(detailKey)
+  let cachedSiblingDetail: String? = cache.get(siblingDetailKey)
+  #expect(cachedRoutes == routes)
+  #expect(cachedDetail == nil)
+  #expect(cachedSiblingDetail == "sibling")
+}
+
 @Test func partialWorkerRoutesRemainVisibleButCannotProduceACacheSnapshot() async throws {
   let topProbe = ConcurrencyProbe(delay: .zero)
   let routeProbe = ConcurrencyProbe(delay: .milliseconds(10))

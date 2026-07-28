@@ -11,9 +11,20 @@ struct DashApp: App {
     R2TemporaryFile.removeStaleFiles(olderThan: 60 * 60)
     let model = AppModel()
     _model = State(initialValue: model)
+    // System callbacks can arrive before SwiftUI mounts a scene (notably a
+    // content-available launch). Wire the delegate during app construction,
+    // rather than waiting for the root view's first onAppear.
+    pushDelegate.inbox = model
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
     AppDependencyManager.shared.add(dependency: model)
+    if UserDefaults.standard.bool(forKey: WatchtowerNotifier.optInDefaultsKey)
+      || !PushRegistrationService.enabledAccountIDs().isEmpty
+    {
+      Task {
+        await WatchtowerNotifier.migrateLegacyBadgeAuthorizationIfNeeded()
+      }
+    }
 
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
       .font: UIFont.dashTitle(size: AvatarHeaderMetrics.titleSize, weight: .bold),
@@ -62,7 +73,6 @@ struct DashApp: App {
       } else {
         RootWithSplash(model: model)
           .tint(DashTheme.brand)
-          .onAppear { pushDelegate.inbox = model }
       }
     }
     .backgroundTask(.appRefresh(AppModel.backgroundRefreshID)) {

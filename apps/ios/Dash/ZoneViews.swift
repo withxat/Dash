@@ -1076,6 +1076,11 @@ struct DNSRecordsView: View {
   @State private var selectedSliceID: String?
 
   var body: some View {
+    let buckets = DNSChartModel.buckets(records)
+    let selectedBucket = DNSChartModel.bucket(in: buckets, withID: selectedSliceID)
+    let visibleRecords = visibleRecords(in: buckets)
+    let slices = recordTypeSlices(for: buckets)
+
     DashFeatureList(
       isLoading: loading,
       error: error,
@@ -1089,11 +1094,15 @@ struct DNSRecordsView: View {
           message: "Create a record with the add button."
         )
       } else {
-        recordTypesCard
-          // Bottom padding on the card, not top padding on the rows: the rows
-          // are a bare lazy `ForEach` and must stay untouched (StorageViews
-          // precedent).
-          .padding(.bottom, DashTheme.Spacing.itemGap)
+        recordTypesCard(
+          buckets: buckets,
+          slices: slices,
+          selectedBucket: selectedBucket
+        )
+        // Bottom padding on the card, not top padding on the rows: the rows
+        // are a bare lazy `ForEach` and must stay untouched (StorageViews
+        // precedent).
+        .padding(.bottom, DashTheme.Spacing.itemGap)
         dashListCard {
           dashListCardRows(items: visibleRecords) { record in
             Button {
@@ -1119,7 +1128,9 @@ struct DNSRecordsView: View {
           loaded: records.count,
           total: pageState.totalCount,
           noun: "records",
-          caption: filterCaption,
+          caption: filterCaption(
+            selectedBucket: selectedBucket,
+            visibleRecordCount: visibleRecords.count),
           isLoading: loadingMore
         ) { Task { await loadMore() } }
       }
@@ -1155,20 +1166,23 @@ struct DNSRecordsView: View {
     .task { await load() }
   }
 
-  private var recordTypesCard: some View {
+  private func recordTypesCard(
+    buckets: [DNSChartModel.Bucket],
+    slices: [DitherSlice],
+    selectedBucket: DNSChartModel.Bucket?
+  ) -> some View {
     DashCard {
       VStack(alignment: .leading, spacing: 12) {
         Text("Record types")
           .dashTextStyle(.footnoteSemibold)
           .foregroundStyle(DashTheme.subtle)
         DitherPieChart(
-          slices: recordTypeSlices,
+          slices: slices,
           innerRadiusRatio: 0.62,
           options: DashTheme.DitherChart.polarOptions(
             accessibility: DitherAccessibility(
               title: DashL10n.ui("DNS record types"),
-              summary: DNSChartModel.chartAccessibilitySummary(
-                buckets: DNSChartModel.buckets(records)),
+              summary: DNSChartModel.chartAccessibilitySummary(buckets: buckets),
               categoryAxisLabel: DashL10n.ui("Record type"),
               valueAxisLabel: DashL10n.ui("Records"))),
           // Slice and legend taps land here, so the write is what morphs the
@@ -1183,19 +1197,22 @@ struct DNSRecordsView: View {
         // Under the legend, not beside the card title: engaging a filter grows
         // the card downward, so the donut the user just tapped stays put and
         // only the list below — which is re-flowing anyway — moves.
-        filterStrip
+        filterStrip(bucket: selectedBucket, slices: slices)
       }
     }
   }
 
   @ViewBuilder
-  private var filterStrip: some View {
-    if let bucket = selectedBucket {
+  private func filterStrip(
+    bucket: DNSChartModel.Bucket?,
+    slices: [DitherSlice]
+  ) -> some View {
+    if let bucket {
       DashChartFilterStrip(
         label: DNSChartModel.label(for: bucket),
         countText: DashL10n.string(
           "\(bucket.count.formatted()) of \(records.count.formatted()) records"),
-        color: sliceColor(forBucketID: bucket.id),
+        color: sliceColor(forBucketID: bucket.id, in: slices),
         clearAccessibilityLabel: DashL10n.string("Show all record types"),
         clearAccessibilityIdentifier: "dns-type-filter-clear"
       ) {
@@ -1209,8 +1226,8 @@ struct DNSRecordsView: View {
   /// screen, so the common path is the full list. `DitherPieChart` clears a
   /// selection that stops naming a slice, which is why Load more can widen the
   /// data without the view resetting the filter itself.
-  private var visibleRecords: [DNSRecord] {
-    DNSChartModel.records(records, in: selectedSliceID).filter { record in
+  private func visibleRecords(in buckets: [DNSChartModel.Bucket]) -> [DNSRecord] {
+    DNSChartModel.records(records, in: selectedSliceID, buckets: buckets).filter { record in
       guard let accountID = model.activeAccountID else { return true }
       return !model.deferredDeletions.isPendingDeletion(
         DeferredDeletionResourceKey(
@@ -1221,17 +1238,16 @@ struct DNSRecordsView: View {
     }
   }
 
-  private var selectedBucket: DNSChartModel.Bucket? {
-    DNSChartModel.bucket(records, withID: selectedSliceID)
-  }
-
   /// A filtered list would make the footer's default "Showing X of Y" caption
   /// describe rows that are not on screen. Name the narrowed subset instead —
   /// Load more still fetches whole pages, not more of the selected type.
-  private var filterCaption: String? {
+  private func filterCaption(
+    selectedBucket: DNSChartModel.Bucket?,
+    visibleRecordCount: Int
+  ) -> String? {
     guard selectedBucket != nil else { return nil }
     return DashL10n.string(
-      "Filtered to \(visibleRecords.count) of \(records.count) loaded records")
+      "Filtered to \(visibleRecordCount) of \(records.count) loaded records")
   }
 
   /// Filtered-out rows dissolve with the same blur the tray morph uses, so the
@@ -1244,7 +1260,7 @@ struct DNSRecordsView: View {
 
   /// Named buckets take the categorical palette positionally; the folded
   /// Other bucket always renders neutral grey.
-  private var recordTypeSlices: [DitherSlice] {
+  private func recordTypeSlices(for buckets: [DNSChartModel.Bucket]) -> [DitherSlice] {
     let palette = [
       DashTheme.DitherChart.brand(colorScheme: colorScheme, contrast: colorSchemeContrast),
       DashTheme.DitherChart.positive(colorScheme: colorScheme, contrast: colorSchemeContrast),
@@ -1253,7 +1269,7 @@ struct DNSRecordsView: View {
       DashTheme.DitherChart.accentTeal(colorScheme: colorScheme, contrast: colorSchemeContrast),
     ]
     var nextColor = 0
-    return DNSChartModel.buckets(records).map { bucket in
+    return buckets.map { bucket in
       let color: DitherColor
       if bucket.id == DNSChartModel.otherBucketID {
         color = DashTheme.DitherChart.neutral(
@@ -1272,8 +1288,8 @@ struct DNSRecordsView: View {
 
   /// The filter strip borrows its dot from the slice it stands for, so the
   /// palette stays assigned in exactly one place.
-  private func sliceColor(forBucketID id: String) -> DitherColor {
-    recordTypeSlices.first { $0.id == id }?.color
+  private func sliceColor(forBucketID id: String, in slices: [DitherSlice]) -> DitherColor {
+    slices.first { $0.id == id }?.color
       ?? DashTheme.DitherChart.neutral(colorScheme: colorScheme, contrast: colorSchemeContrast)
   }
 
@@ -1381,23 +1397,34 @@ enum DNSChartModel {
   /// a named type into Other), so callers resolve against the current buckets
   /// instead of trusting the stored id.
   static func bucket(_ records: [DNSRecord], withID bucketID: String?) -> Bucket? {
+    bucket(in: buckets(records), withID: bucketID)
+  }
+
+  static func bucket(in buckets: [Bucket], withID bucketID: String?) -> Bucket? {
     guard let bucketID else { return nil }
-    return buckets(records).first { $0.id == bucketID }
+    return buckets.first { $0.id == bucketID }
   }
 
   /// Loaded records belonging to one donut bucket — the list-side half of
   /// slice selection. A `nil` id, or one no bucket claims, filters nothing, so
   /// a stale selection degrades to the full list rather than an empty one.
   static func records(_ records: [DNSRecord], in bucketID: String?) -> [DNSRecord] {
+    Self.records(records, in: bucketID, buckets: buckets(records))
+  }
+
+  static func records(
+    _ records: [DNSRecord],
+    in bucketID: String?,
+    buckets: [Bucket]
+  ) -> [DNSRecord] {
     guard let bucketID else { return records }
-    let all = buckets(records)
-    guard all.contains(where: { $0.id == bucketID }) else { return records }
+    guard buckets.contains(where: { $0.id == bucketID }) else { return records }
     guard bucketID == otherBucketID else {
       return records.filter { $0.type.uppercased() == bucketID }
     }
     // Other holds the remainder by construction: whatever the named slices
     // did not claim.
-    let named = Set(all.map(\.id)).subtracting([otherBucketID])
+    let named = Set(buckets.map(\.id)).subtracting([otherBucketID])
     return records.filter { !named.contains($0.type.uppercased()) }
   }
 

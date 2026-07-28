@@ -332,13 +332,13 @@ struct WatchtowerWidgetView: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 8) {
         Circle().fill(statusColor(snapshot)).frame(width: 10, height: 10)
-        Text(headline(snapshot))
+        Text(snapshot.headline)
           .font(.headline)
           .minimumScaleFactor(0.8)
         Spacer(minLength: 0)
       }
       .accessibilityElement(children: .combine)
-      .accessibilityLabel(snapshot.headline)
+      .accessibilityLabel(Text(snapshot.headline))
       if let account = snapshot.accountName {
         Text(account)
           .font(.caption2)
@@ -394,10 +394,6 @@ struct WatchtowerWidgetView: View {
         .foregroundStyle(.secondary)
       Spacer(minLength: 0)
     }
-  }
-
-  private func headline(_ snapshot: WatchtowerWidgetSnapshot) -> String {
-    snapshot.headline
   }
 
   private func statusColor(_ snapshot: WatchtowerWidgetSnapshot) -> Color {

@@ -7,11 +7,6 @@ import UserNotifications
 /// * **Language.** The relay forwards Cloudflare's `text`, which is English and
 ///   always will be — the relay has no catalog and no idea what language this
 ///   iPhone is set to. This is the only place that knows both.
-/// * **Badge.** The relay is stateless by design (no KV, no DO, no D1), so it
-///   cannot count anything. The unread count already lives in the App Group
-///   container that feeds the widget, so the badge is read from there rather
-///   than invented.
-///
 /// The 30-second budget applies: on expiry iOS delivers whatever was last
 /// handed to `contentHandler`, so `serviceExtensionTimeWillExpire` must always
 /// have a usable copy ready.
@@ -47,7 +42,6 @@ final class NotificationService: UNNotificationServiceExtension {
       content.interruptionLevel = .passive
       content.sound = nil
       content.userInfo = [:]
-      content.badge = 0
       contentHandler(content)
       return
     }
@@ -73,10 +67,6 @@ final class NotificationService: UNNotificationServiceExtension {
     {
       content.title = rewrite.title
       content.body = rewrite.body
-    }
-
-    if let badge = WatchtowerBadgeReader.unreadCount() {
-      content.badge = NSNumber(value: badge)
     }
 
     contentHandler(content)

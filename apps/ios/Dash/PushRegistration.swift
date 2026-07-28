@@ -156,7 +156,7 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     _ center: UNUserNotificationCenter,
     willPresent notification: UNNotification
   ) async -> UNNotificationPresentationOptions {
-    [.banner, .list, .sound]
+    [.banner, .list, .sound, .badge]
   }
 }
 

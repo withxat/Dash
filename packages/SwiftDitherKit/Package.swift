@@ -17,6 +17,7 @@ let package = Package(
     .library(name: "SwiftDitherKit", targets: ["SwiftDitherKit"])
   ],
   targets: [
-    .target(name: "SwiftDitherKit")
+    .target(name: "SwiftDitherKit"),
+    .testTarget(name: "SwiftDitherKitTests", dependencies: ["SwiftDitherKit"]),
   ]
 )

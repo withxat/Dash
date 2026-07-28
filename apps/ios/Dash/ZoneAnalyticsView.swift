@@ -442,22 +442,25 @@ struct ZoneAnalyticsView: View {
 
   private func loadRange(_ target: AnalyticsRange, force: Bool) async {
     defer { loadingRanges.remove(target) }
+    guard force || snapshotsByRange[target] == nil else { return }
     guard let context = model.accountRequestContext else { return }
     do {
       let loaded = try await fetchSnapshot(range: target, force: force)
       guard model.isCurrentAccount(context) else { return }
       snapshotsByRange[target] = loaded.snapshot
       errorByRange[target] = nil
-      let domainName = model.featureCache
-        .cachedZone(id: zoneID, accountID: context.accountID)?.name
-      MetricsWidgetPublisher.publishDomain(
-        snapshot: loaded.snapshot,
-        accountID: context.accountID,
-        accountName: model.activeAccount?.name ?? context.accountID,
-        domainID: zoneID,
-        domainName: domainName,
-        range: target,
-        fetchedAt: loaded.fetchedAt)
+      if loaded.isNewData {
+        let domainName = model.featureCache
+          .cachedZone(id: zoneID, accountID: context.accountID)?.name
+        MetricsWidgetPublisher.publishDomain(
+          snapshot: loaded.snapshot,
+          accountID: context.accountID,
+          accountName: model.activeAccount?.name ?? context.accountID,
+          domainID: zoneID,
+          domainName: domainName,
+          range: target,
+          fetchedAt: loaded.fetchedAt)
+      }
     } catch {
       guard model.isCurrentAccount(context) else { return }
       if snapshotsByRange[target] == nil {
@@ -469,9 +472,10 @@ struct ZoneAnalyticsView: View {
   private func fetchSnapshot(
     range: AnalyticsRange,
     force: Bool
-  ) async throws -> (snapshot: ZoneAnalyticsSnapshot, fetchedAt: Date) {
+  ) async throws -> (snapshot: ZoneAnalyticsSnapshot, fetchedAt: Date, isNewData: Bool) {
     let points: [ZoneAnalyticsChartPoint]
     let fetchedAt: Date
+    let isNewData: Bool
     switch range {
     case .day:
       let key = FeatureCacheKey.zoneAnalyticsHourly(zoneID)
@@ -481,12 +485,14 @@ struct ZoneAnalyticsView: View {
       {
         points = ZoneAnalyticsChartModel.points(fromHourly: cached.value)
         fetchedAt = cached.fetchedAt
+        isNewData = false
         break
       }
       let hourly = try await model.client.zoneAnalyticsHourly(zoneID: zoneID, hours: 24)
       fetchedAt = .now
       model.featureCache.set(key, hourly, fetchedAt: fetchedAt)
       points = ZoneAnalyticsChartModel.points(fromHourly: hourly)
+      isNewData = true
     case .week, .month:
       let days = range == .week ? 7 : 30
       let key = FeatureCacheKey.zoneAnalytics(zoneID, days: days)
@@ -496,19 +502,22 @@ struct ZoneAnalyticsView: View {
       {
         points = ZoneAnalyticsChartModel.points(fromDaily: cached.value)
         fetchedAt = cached.fetchedAt
+        isNewData = false
         break
       }
       let daily = try await model.client.zoneAnalytics(zoneID: zoneID, days: days)
       fetchedAt = .now
       model.featureCache.set(key, daily, fetchedAt: fetchedAt)
       points = ZoneAnalyticsChartModel.points(fromDaily: daily)
+      isNewData = true
     }
     return (
       ZoneAnalyticsChartModel.snapshot(
         points: points,
         range: range,
         locale: DashL10n.activeLocale),
-      fetchedAt
+      fetchedAt,
+      isNewData
     )
   }
 }

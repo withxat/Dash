@@ -42,6 +42,28 @@ struct LocalizationTests {
     #expect(DashL10n.ui("Domains") == "Domains")
   }
 
+  @MainActor
+  @Test func workerDeploymentAgeFollowsInAppLanguageChanges() {
+    let previous = DashL10n.localeOverrideForTesting
+    defer { DashL10n.localeOverrideForTesting = previous }
+    let deployedAt = "2026-07-25T12:00:00.123Z"
+    let now = Date(timeIntervalSince1970: 1_785_240_000)
+
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    let english = workerDeploymentAgeText(deployedAt, now: now)
+    DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+    let chinese = workerDeploymentAgeText(deployedAt, now: now)
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    let englishAgain = workerDeploymentAgeText(deployedAt, now: now)
+
+    #expect(english.hasPrefix("Deployed "))
+    #expect(english.contains("ago"))
+    #expect(chinese.hasPrefix("部署于"))
+    #expect(chinese.contains("前"))
+    #expect(!chinese.contains("ago"))
+    #expect(englishAgain == english)
+  }
+
   /// `ui(_:)` returns an unknown key unchanged. That is right for data — it is
   /// called on zone names and object keys too — and it is also why a translation
   /// that was never spliced reached the screen in English without a sound.
@@ -530,12 +552,32 @@ struct LocalizationTests {
 /// The widget counts Cloudflare's deliveries. It never characterises the
 /// account: Dash no longer decides that anything is wrong.
 @Test func widgetHeadlineCountsUnreadDeliveries() {
-  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 0) == "No unread alerts")
-  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 1) == "1 unread alert")
-  #expect(WatchtowerWidgetSnapshot.headline(unreadCount: 4) == "4 unread alerts")
+  func localized(
+    _ resource: LocalizedStringResource,
+    locale identifier: String
+  ) -> String {
+    var resource = resource
+    resource.locale = Locale(identifier: identifier)
+    return String(localized: resource)
+  }
+
+  let empty = WatchtowerWidgetSnapshot.headline(unreadCount: 0)
+  let singular = WatchtowerWidgetSnapshot.headline(unreadCount: 1)
+  let plural = WatchtowerWidgetSnapshot.headline(unreadCount: 4)
+  let unavailable = WatchtowerWidgetSnapshot.headline(
+    unreadCount: 0,
+    alertsUnavailable: true)
+
+  #expect(localized(empty, locale: "en") == "No unread alerts")
+  #expect(localized(singular, locale: "en") == "1 unread alert")
+  #expect(localized(plural, locale: "en") == "4 unread alerts")
   #expect(
-    WatchtowerWidgetSnapshot.headline(unreadCount: 0, alertsUnavailable: true)
+    localized(unavailable, locale: "en")
       == "Alerts unavailable")
+  #expect(localized(empty, locale: "zh-Hans") == "没有未读提醒")
+  #expect(localized(singular, locale: "zh-Hans") == "1 条未读提醒")
+  #expect(localized(plural, locale: "zh-Hans") == "4 条未读提醒")
+  #expect(localized(unavailable, locale: "zh-Hans") == "提醒暂不可用")
 }
 
 @Test func analyticsChartAccessibilitySummaryIncludesTotals() {
@@ -1642,6 +1684,38 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(PushRemoteNotificationPayload.accountID(from: ["dashAccountID": "  "]) == nil)
 }
 
+@Test func pushAuthorizationIncludesBadgeDelivery() {
+  let provisional = WatchtowerNotifier.authorizationOptions(prominently: false)
+  #expect(provisional.contains(.alert))
+  #expect(provisional.contains(.sound))
+  #expect(provisional.contains(.badge))
+  #expect(provisional.contains(.provisional))
+
+  let prominent = WatchtowerNotifier.authorizationOptions(prominently: true)
+  #expect(prominent.contains(.alert))
+  #expect(prominent.contains(.sound))
+  #expect(prominent.contains(.badge))
+  #expect(!prominent.contains(.provisional))
+
+  let authorizedMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    authorizationStatus: .authorized,
+    badgeSetting: .disabled)
+  #expect(authorizedMigration == [.badge])
+  let provisionalMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    authorizationStatus: .provisional,
+    badgeSetting: .disabled)
+  #expect(provisionalMigration?.contains(.badge) == true)
+  #expect(provisionalMigration?.contains(.provisional) == true)
+  #expect(
+    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+      authorizationStatus: .authorized,
+      badgeSetting: .enabled) == nil)
+  #expect(
+    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+      authorizationStatus: .denied,
+      badgeSetting: .disabled) == nil)
+}
+
 @Test func pushChallengeInboxRejectsUnsolicitedAndReplayedChallenges() async throws {
   let inbox = PushRegistrationChallengeInbox()
   let challenge = PushRegistrationChallenge(
@@ -1833,10 +1907,357 @@ func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() thr
   #expect(!gate.accepts(second))
 }
 
-@Test func underAttackRestoreLevelFallsBackToMedium() {
-  #expect(SetUnderAttackIntent.restoreLevel(stashed: "high") == "high")
-  #expect(SetUnderAttackIntent.restoreLevel(stashed: "essentially_off") == "essentially_off")
-  #expect(SetUnderAttackIntent.restoreLevel(stashed: nil) == "medium")
+private actor ZoneSecurityLevelTestLatch {
+  private var isOpen = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    guard !isOpen else { return }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+
+  func open() {
+    guard !isOpen else { return }
+    isOpen = true
+    let pending = continuations
+    continuations.removeAll()
+    for continuation in pending {
+      continuation.resume()
+    }
+  }
+}
+
+@Test @MainActor func underAttackOperationsSerializeAcrossCloudflareAwaits() async throws {
+  let suite = "dash.tests.under-attack-serialized.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let zoneID = "zone"
+  let updateStarted = ZoneSecurityLevelTestLatch()
+  let allowUpdate = ZoneSecurityLevelTestLatch()
+  var remoteLevel = "high"
+  var events: [String] = []
+
+  let backend = ZoneSecurityLevelOperation.Backend(
+    securityLevelValue: { _ in
+      events.append("read:\(remoteLevel)")
+      return .string(remoteLevel)
+    },
+    updateLevel: { _, level in
+      events.append("write:\(level):start")
+      if level == "under_attack" {
+        await updateStarted.open()
+        await allowUpdate.wait()
+      }
+      remoteLevel = level
+      events.append("write:\(level):end")
+    })
+
+  let enable = Task { @MainActor in
+    try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: true,
+      defaults: defaults,
+      backend: backend)
+  }
+  await updateStarted.wait()
+
+  let disable = Task { @MainActor in
+    try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: false,
+      defaults: defaults,
+      backend: backend)
+  }
+  await Task.yield()
+  await Task.yield()
+  #expect(events == ["read:high", "write:under_attack:start"])
+
+  await allowUpdate.open()
+  let enabled = try await enable.value
+  let disabled = try await disable.value
+
+  #expect(enabled == .init(currentLevel: "under_attack", changed: true))
+  #expect(disabled == .init(currentLevel: "high", changed: true))
+  #expect(remoteLevel == "high")
+  #expect(defaults.string(forKey: ZoneSecurityLevelOperation.key(for: zoneID)) == nil)
+  #expect(
+    events == [
+      "read:high",
+      "write:under_attack:start",
+      "write:under_attack:end",
+      "read:under_attack",
+      "write:high:start",
+      "write:high:end",
+    ])
+}
+
+@Test @MainActor func underAttackEnableDefinitiveFailureClearsStagedStashAndReleasesGate()
+  async throws
+{
+  let suite = "dash.tests.under-attack-definitive-failure.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let zoneID = "zone"
+  let key = ZoneSecurityLevelOperation.key(for: zoneID)
+  defaults.set("stale", forKey: key)
+  var shouldReject = true
+
+  let backend = ZoneSecurityLevelOperation.Backend(
+    securityLevelValue: { _ in .string("high") },
+    updateLevel: { _, _ in
+      if shouldReject {
+        throw CloudflareAPIError.request(status: 403, errors: [])
+      }
+    })
+
+  do {
+    _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: true,
+      defaults: defaults,
+      backend: backend)
+    Issue.record("Expected the explicit Cloudflare rejection.")
+  } catch {
+    guard case .request(let status, _) = error as? CloudflareAPIError else {
+      Issue.record("Expected a Cloudflare request error, got \(error).")
+      return
+    }
+    #expect(status == 403)
+  }
+  #expect(defaults.string(forKey: key) == nil)
+
+  shouldReject = false
+  let retry = try await ZoneSecurityLevelOperation.setUnderAttack(
+    zoneID: zoneID,
+    enabled: true,
+    defaults: defaults,
+    backend: backend)
+  #expect(retry == .init(currentLevel: "under_attack", changed: true))
+  #expect(defaults.string(forKey: key) == "high")
+}
+
+@Test @MainActor func underAttackAmbiguousEnableFailuresPreserveTheStagedLevel() async throws {
+  let suite = "dash.tests.under-attack-ambiguous-failure.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let failures: [(String, CloudflareAPIError)] = [
+    ("transport", .transport("Connection lost")),
+    ("server", .request(status: 503, errors: [])),
+  ]
+
+  for (zoneID, failure) in failures {
+    let backend = ZoneSecurityLevelOperation.Backend(
+      securityLevelValue: { _ in .string("high") },
+      updateLevel: { _, _ in throw failure })
+
+    do {
+      _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+        zoneID: zoneID,
+        enabled: true,
+        defaults: defaults,
+        backend: backend)
+      Issue.record("Expected the ambiguous Cloudflare failure.")
+    } catch {
+      // The stash assertion is the contract under test; both failures propagate.
+    }
+
+    #expect(
+      defaults.string(forKey: ZoneSecurityLevelOperation.key(for: zoneID)) == "high")
+  }
+}
+
+@Test @MainActor func underAttackDisableFailurePreservesRestoreLevel() async throws {
+  let suite = "dash.tests.under-attack-disable-failure.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let zoneID = "zone"
+  let key = ZoneSecurityLevelOperation.key(for: zoneID)
+  defaults.set("high", forKey: key)
+  let backend = ZoneSecurityLevelOperation.Backend(
+    securityLevelValue: { _ in .string("under_attack") },
+    updateLevel: { _, _ in
+      throw CloudflareAPIError.request(status: 403, errors: [])
+    })
+
+  do {
+    _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: false,
+      defaults: defaults,
+      backend: backend)
+    Issue.record("Expected the restore request to fail.")
+  } catch {
+    // A retry still needs the exact restore level after every failed disable.
+  }
+
+  #expect(defaults.string(forKey: key) == "high")
+}
+
+@Test @MainActor func underAttackReadFailurePreservesStashAndNeverWrites() async throws {
+  let suite = "dash.tests.under-attack-read-failure.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  var updateCount = 0
+
+  for enabled in [true, false] {
+    let zoneID = enabled ? "enable" : "disable"
+    let key = ZoneSecurityLevelOperation.key(for: zoneID)
+    defaults.set("high", forKey: key)
+    let backend = ZoneSecurityLevelOperation.Backend(
+      securityLevelValue: { _ in
+        throw CloudflareAPIError.request(status: 403, errors: [])
+      },
+      updateLevel: { _, _ in updateCount += 1 })
+
+    do {
+      _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+        zoneID: zoneID,
+        enabled: enabled,
+        defaults: defaults,
+        backend: backend)
+      Issue.record("Expected the security-level read to fail.")
+    } catch {
+      // A failed GET proves nothing about the remote state, so the stash stays.
+    }
+
+    #expect(defaults.string(forKey: key) == "high")
+  }
+  #expect(updateCount == 0)
+}
+
+@Test @MainActor func underAttackInvalidSecurityValueFailsClosed() async throws {
+  let suite = "dash.tests.under-attack-invalid-value.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let invalidValues: [JSONValue?] = [nil, .bool(true)]
+  var updateCount = 0
+
+  for (index, value) in invalidValues.enumerated() {
+    let zoneID = "zone-\(index)"
+    let key = ZoneSecurityLevelOperation.key(for: zoneID)
+    defaults.set("stale", forKey: key)
+    let backend = ZoneSecurityLevelOperation.Backend(
+      securityLevelValue: { _ in value },
+      updateLevel: { _, _ in updateCount += 1 })
+
+    do {
+      _ = try await ZoneSecurityLevelOperation.setUnderAttack(
+        zoneID: zoneID,
+        enabled: true,
+        defaults: defaults,
+        backend: backend)
+      Issue.record("Expected a missing or non-string security level to fail.")
+    } catch {
+      guard case .invalidResponse = error as? CloudflareAPIError else {
+        Issue.record("Expected invalidResponse, got \(error).")
+        continue
+      }
+    }
+
+    #expect(defaults.string(forKey: key) == "stale")
+  }
+  #expect(updateCount == 0)
+}
+
+@Test @MainActor func underAttackDisableWhenAlreadyOffClearsStaleStashWithoutWriting()
+  async throws
+{
+  let suite = "dash.tests.under-attack-disable-no-op.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let zoneID = "zone"
+  let key = ZoneSecurityLevelOperation.key(for: zoneID)
+  defaults.set("high", forKey: key)
+  var updateCount = 0
+  let backend = ZoneSecurityLevelOperation.Backend(
+    securityLevelValue: { _ in .string("low") },
+    updateLevel: { _, _ in updateCount += 1 })
+
+  let outcome = try await ZoneSecurityLevelOperation.setUnderAttack(
+    zoneID: zoneID,
+    enabled: false,
+    defaults: defaults,
+    backend: backend)
+
+  #expect(outcome == .init(currentLevel: "low", changed: false))
+  #expect(updateCount == 0)
+  #expect(defaults.string(forKey: key) == nil)
+}
+
+@Test @MainActor func underAttackCancellationReleasesGateAndSkipsCancelledWaiter()
+  async throws
+{
+  let suite = "dash.tests.under-attack-cancellation.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let zoneID = "zone"
+  let updateStarted = ZoneSecurityLevelTestLatch()
+  let allowUpdate = ZoneSecurityLevelTestLatch()
+  var remoteLevel = "high"
+  var readCount = 0
+
+  let backend = ZoneSecurityLevelOperation.Backend(
+    securityLevelValue: { _ in
+      readCount += 1
+      return .string(remoteLevel)
+    },
+    updateLevel: { _, level in
+      await updateStarted.open()
+      await allowUpdate.wait()
+      remoteLevel = level
+    })
+
+  let active = Task { @MainActor in
+    try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: true,
+      defaults: defaults,
+      backend: backend)
+  }
+  await updateStarted.wait()
+
+  let cancelledWaiter = Task { @MainActor in
+    try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: true,
+      defaults: defaults,
+      backend: backend)
+  }
+  await Task.yield()
+  await Task.yield()
+  cancelledWaiter.cancel()
+  do {
+    _ = try await cancelledWaiter.value
+    Issue.record("Expected the queued operation to be cancelled.")
+  } catch {
+    #expect(error is CancellationError)
+  }
+
+  let follower = Task { @MainActor in
+    try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zoneID,
+      enabled: true,
+      defaults: defaults,
+      backend: backend)
+  }
+  active.cancel()
+  await allowUpdate.open()
+
+  do {
+    _ = try await active.value
+    Issue.record("Expected the active operation to observe cancellation.")
+  } catch {
+    #expect(error is CancellationError)
+  }
+  let outcome = try await follower.value
+
+  #expect(outcome == .init(currentLevel: "under_attack", changed: false))
+  #expect(remoteLevel == "under_attack")
+  #expect(readCount == 2)
+  #expect(
+    defaults.string(forKey: ZoneSecurityLevelOperation.key(for: zoneID)) == "high")
 }
 
 @Test func r2BucketIntentEntityIdentifierIncludesAccount() throws {
@@ -2407,6 +2828,19 @@ func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() thr
 
   #expect(KVJSONFormatting.preparedForDisplay("plain") == "plain")
   #expect(KVJSONFormatting.preparedForDisplay(#"{"x":1}"#).contains("\n"))
+  let compactExpandingJSON =
+    "[" + Array(repeating: "0", count: 70_000).joined(separator: ",") + "]"
+  #expect(KVJSONFormatting.isWithinDisplayLimit(compactExpandingJSON))
+  #expect(KVJSONFormatting.prettyPrinted(compactExpandingJSON) != nil)
+  #expect(KVJSONFormatting.prettyPrintedForDisplay(compactExpandingJSON) == nil)
+  #expect(KVJSONFormatting.preparedForDisplay(compactExpandingJSON) == compactExpandingJSON)
+
+  let oversized = Data(repeating: 0x61, count: KVJSONFormatting.displayByteLimit + 1)
+  #expect(KVJSONFormatting.displayValue(for: oversized) == .tooLarge)
+  #expect(KVJSONFormatting.displayValue(for: Data([0xFF, 0xFE])) == .nonText)
+  #expect(
+    KVJSONFormatting.displayValue(for: Data(#"{"x":1}"#.utf8))
+      == .text("{\n  \"x\" : 1\n}"))
 }
 
 @Test func demoKVKeysDecodeAsValidJSON() async throws {
@@ -3047,7 +3481,7 @@ private func makeDNSRecords(types: [String]) throws -> [DNSRecord] {
   // its own count, and together they account for the whole list.
   let buckets = DNSChartModel.buckets(records)
   let matchesSliceCounts = buckets.allSatisfy {
-    DNSChartModel.records(records, in: $0.id).count == $0.count
+    DNSChartModel.records(records, in: $0.id, buckets: buckets).count == $0.count
   }
   #expect(matchesSliceCounts)
   #expect(buckets.reduce(0) { $0 + $1.count } == records.count)

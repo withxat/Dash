@@ -121,6 +121,218 @@ struct PurgeCacheIntent: AppIntent {
   }
 }
 
+/// Serializes every Under Attack transition for a zone and owns the local
+/// restore level. The gate deliberately stays held across Cloudflare reads and
+/// writes so two entry points cannot interleave their read-modify-write cycles.
+@MainActor
+enum ZoneSecurityLevelOperation {
+  struct Outcome: Equatable, Sendable {
+    let currentLevel: String
+    let changed: Bool
+
+    var isUnderAttack: Bool {
+      currentLevel == ZoneSecurityLevelOperation.underAttackLevel
+    }
+  }
+
+  /// Injectable Cloudflare seam used by the production client and focused
+  /// concurrency/error tests.
+  struct Backend {
+    let securityLevelValue: @MainActor (_ zoneID: String) async throws -> JSONValue?
+    let updateLevel: @MainActor (_ zoneID: String, _ level: String) async throws -> Void
+  }
+
+  private static let keyPrefix = "dash.previous_security_level."
+  nonisolated fileprivate static let underAttackLevel = "under_attack"
+  private static let fallbackLevel = "medium"
+  private static let gate = ZoneSecurityLevelGate()
+
+  static func key(for zoneID: String) -> String {
+    "\(keyPrefix)\(zoneID)"
+  }
+
+  static func setUnderAttack(
+    zoneID: String,
+    enabled: Bool,
+    client: CloudflareClient,
+    defaults: UserDefaults = .standard,
+    isCurrent: @escaping @MainActor () -> Bool = { true }
+  ) async throws -> Outcome {
+    let backend = Backend(
+      securityLevelValue: { zoneID in
+        let settings = try await client.listZoneSettings(zoneID: zoneID)
+        return settings.first(where: { $0.id == "security_level" })?.value
+      },
+      updateLevel: { zoneID, level in
+        _ = try await client.updateZoneSetting(
+          zoneID: zoneID,
+          settingID: "security_level",
+          value: .string(level))
+      })
+
+    return try await setUnderAttack(
+      zoneID: zoneID,
+      enabled: enabled,
+      defaults: defaults,
+      backend: backend,
+      isCurrent: isCurrent)
+  }
+
+  static func setUnderAttack(
+    zoneID: String,
+    enabled: Bool,
+    defaults: UserDefaults,
+    backend: Backend,
+    isCurrent: @escaping @MainActor () -> Bool = { true }
+  ) async throws -> Outcome {
+    try await gate.withLock(for: zoneID) {
+      try checkContinuation(isCurrent)
+
+      let current: String
+      guard case .string(let level)? = try await backend.securityLevelValue(zoneID) else {
+        throw CloudflareAPIError.invalidResponse
+      }
+      current = level
+      try checkContinuation(isCurrent)
+
+      if enabled {
+        guard current != underAttackLevel else {
+          return Outcome(currentLevel: current, changed: false)
+        }
+
+        defaults.set(current, forKey: key(for: zoneID))
+        do {
+          try await backend.updateLevel(zoneID, underAttackLevel)
+        } catch {
+          clearStashAfterDefinitiveFailure(error, zoneID: zoneID, defaults: defaults)
+          throw error
+        }
+        try checkContinuation(isCurrent)
+        return Outcome(currentLevel: underAttackLevel, changed: true)
+      }
+
+      guard current == underAttackLevel else {
+        defaults.removeObject(forKey: key(for: zoneID))
+        return Outcome(currentLevel: current, changed: false)
+      }
+
+      let restoreLevel = restoreLevel(for: zoneID, defaults: defaults)
+      try await backend.updateLevel(zoneID, restoreLevel)
+      try checkContinuation(isCurrent)
+      defaults.removeObject(forKey: key(for: zoneID))
+      return Outcome(currentLevel: restoreLevel, changed: true)
+    }
+  }
+
+  private static func restoreLevel(for zoneID: String, defaults: UserDefaults) -> String {
+    guard let stashed = defaults.string(forKey: key(for: zoneID)),
+      stashed != underAttackLevel
+    else {
+      return fallbackLevel
+    }
+    return stashed
+  }
+
+  private static func checkContinuation(_ isCurrent: @MainActor () -> Bool) throws {
+    try Task.checkCancellation()
+    guard isCurrent() else { throw CancellationError() }
+  }
+
+  private static func clearStashAfterDefinitiveFailure(
+    _ error: Error,
+    zoneID: String,
+    defaults: UserDefaults
+  ) {
+    guard
+      case .request(let status, _) = error as? CloudflareAPIError,
+      (400..<500).contains(status)
+    else {
+      return
+    }
+    defaults.removeObject(forKey: key(for: zoneID))
+  }
+}
+
+@MainActor
+private final class ZoneSecurityLevelGate {
+  @MainActor
+  private final class Waiter {
+    let id = UUID()
+    var continuation: CheckedContinuation<Bool, Never>?
+  }
+
+  private var lockedZones: Set<String> = []
+  private var waiters: [String: [Waiter]] = [:]
+
+  func withLock<Value>(
+    for zoneID: String,
+    operation: @MainActor () async throws -> Value
+  ) async throws -> Value {
+    guard await acquire(for: zoneID) else { throw CancellationError() }
+    defer { release(for: zoneID) }
+    try Task.checkCancellation()
+    return try await operation()
+  }
+
+  private func acquire(for zoneID: String) async -> Bool {
+    guard lockedZones.contains(zoneID) else {
+      guard !Task.isCancelled else { return false }
+      lockedZones.insert(zoneID)
+      return true
+    }
+
+    let waiter = Waiter()
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        guard !Task.isCancelled else {
+          continuation.resume(returning: false)
+          return
+        }
+        waiter.continuation = continuation
+        waiters[zoneID, default: []].append(waiter)
+      }
+    } onCancel: {
+      Task { @MainActor in
+        self.cancel(waiter, for: zoneID)
+      }
+    }
+  }
+
+  private func cancel(_ waiter: Waiter, for zoneID: String) {
+    guard var queued = waiters[zoneID],
+      let index = queued.firstIndex(where: { $0.id == waiter.id })
+    else {
+      return
+    }
+
+    queued.remove(at: index)
+    if queued.isEmpty {
+      waiters.removeValue(forKey: zoneID)
+    } else {
+      waiters[zoneID] = queued
+    }
+    let continuation = waiter.continuation
+    waiter.continuation = nil
+    continuation?.resume(returning: false)
+  }
+
+  private func release(for zoneID: String) {
+    while var queued = waiters[zoneID], !queued.isEmpty {
+      let waiter = queued.removeFirst()
+      if queued.isEmpty {
+        waiters.removeValue(forKey: zoneID)
+      } else {
+        waiters[zoneID] = queued
+      }
+      guard let continuation = waiter.continuation else { continue }
+      waiter.continuation = nil
+      continuation.resume(returning: true)
+      return
+    }
+    lockedZones.remove(zoneID)
+  }
+}
+
 struct SetUnderAttackIntent: AppIntent {
   static let title: LocalizedStringResource = "Set Under Attack Mode"
   static let description = IntentDescription(
@@ -130,32 +342,19 @@ struct SetUnderAttackIntent: AppIntent {
   @Parameter(title: "Enabled") var enabled: Bool
   @Dependency private var model: AppModel
 
-  private static func stashKey(_ zoneID: String) -> String {
-    "dash.previous_security_level.\(zoneID)"
-  }
-
-  /// Pure: the level to restore when turning Under Attack off.
-  static func restoreLevel(stashed: String?) -> String { stashed ?? "medium" }
-
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
     try await DashIntentAuthorization.require(["zone-settings.write"], model: model)
-    let defaults = UserDefaults.standard
-    if enabled {
-      let settings = try await model.client.listZoneSettings(zoneID: zone.id)
-      if case .string(let current)? = settings.first(where: { $0.id == "security_level" })?.value {
-        defaults.set(current, forKey: Self.stashKey(zone.id))
-      }
-      _ = try await model.client.updateZoneSetting(
-        zoneID: zone.id, settingID: "security_level", value: .string("under_attack"))
+    let outcome = try await ZoneSecurityLevelOperation.setUnderAttack(
+      zoneID: zone.id,
+      enabled: enabled,
+      client: model.client)
+    if outcome.isUnderAttack {
       return .result(dialog: "Under Attack mode is on for \(zone.name).")
-    } else {
-      let level = Self.restoreLevel(stashed: defaults.string(forKey: Self.stashKey(zone.id)))
-      defaults.removeObject(forKey: Self.stashKey(zone.id))
-      _ = try await model.client.updateZoneSetting(
-        zoneID: zone.id, settingID: "security_level", value: .string(level))
-      return .result(dialog: "Security level for \(zone.name) restored to \(displayLevel(level)).")
     }
+    return .result(
+      dialog:
+        "Security level for \(zone.name) restored to \(displayLevel(outcome.currentLevel)).")
   }
 
   private func displayLevel(_ level: String) -> String {

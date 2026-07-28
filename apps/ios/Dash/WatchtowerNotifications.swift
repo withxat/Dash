@@ -116,6 +116,7 @@ enum WatchtowerNotificationBaselineStore {
 @MainActor
 enum WatchtowerNotifier {
   static let optInDefaultsKey = "dash.watchtower_notifications"
+  static let badgeAuthorizationMigrationKey = "dash.notifications.badge_migration_v1"
 
   nonisolated static func watchtowerRoute(accountID: String) -> String? {
     route(host: "watchtower", path: nil, accountID: accountID)
@@ -183,9 +184,56 @@ enum WatchtowerNotifier {
   /// that is the one case where the system prompt is what the user asked for.
   static func requestAuthorization(prominently: Bool = false) async -> Bool {
     let center = UNUserNotificationCenter.current()
-    let options: UNAuthorizationOptions =
-      prominently ? [.alert, .sound] : [.alert, .sound, .provisional]
+    let options = authorizationOptions(prominently: prominently)
     return (try? await center.requestAuthorization(options: options)) ?? false
+  }
+
+  nonisolated static func authorizationOptions(
+    prominently: Bool
+  ) -> UNAuthorizationOptions {
+    prominently ? [.alert, .sound, .badge] : [.alert, .sound, .badge, .provisional]
+  }
+
+  /// Older Dash versions asked for alerts and sounds without asking for badge
+  /// delivery. Retry that missing option once for an already-authorized user;
+  /// iOS remains authoritative when the user has since changed notification
+  /// settings, and the migration never nags on every launch.
+  static func migrateLegacyBadgeAuthorizationIfNeeded(
+    defaults: UserDefaults = .standard
+  ) async {
+    guard !defaults.bool(forKey: badgeAuthorizationMigrationKey) else { return }
+    let center = UNUserNotificationCenter.current()
+    let settings = await center.notificationSettings()
+    guard
+      let options = badgeAuthorizationMigrationOptions(
+        authorizationStatus: settings.authorizationStatus,
+        badgeSetting: settings.badgeSetting)
+    else {
+      defaults.set(true, forKey: badgeAuthorizationMigrationKey)
+      return
+    }
+    _ = try? await center.requestAuthorization(options: options)
+    defaults.set(true, forKey: badgeAuthorizationMigrationKey)
+  }
+
+  /// Preserve quiet authorization while adding the previously omitted badge
+  /// option. Only an explicit "turn on banners" action may make a prominent
+  /// request.
+  nonisolated static func badgeAuthorizationMigrationOptions(
+    authorizationStatus: UNAuthorizationStatus,
+    badgeSetting: UNNotificationSetting
+  ) -> UNAuthorizationOptions? {
+    guard badgeSetting == .disabled else { return nil }
+    switch authorizationStatus {
+    case .authorized:
+      return [.badge]
+    case .provisional:
+      return [.badge, .provisional]
+    case .notDetermined, .denied, .ephemeral:
+      return nil
+    @unknown default:
+      return nil
+    }
   }
 
   /// True once the system will deliver anything at all, quietly or otherwise.
