@@ -235,7 +235,11 @@ final class WatchtowerChartCustomizationState {
 
   @discardableResult
   func beginDragging(_ metric: WatchtowerAnalyticsMetric) -> Bool {
-    guard isEditing, !hidden.contains(metric) else { return false }
+    guard
+      isEditing,
+      draggedMetric == nil,
+      !hidden.contains(metric)
+    else { return false }
     draggedMetric = metric
     dropTargetMetric = nil
     return true
@@ -309,22 +313,36 @@ struct WatchtowerMetricRemovalSequence: Equatable {
 struct WatchtowerMetricDragPresentation: Equatable {
   let metric: WatchtowerAnalyticsMetric
   let size: CGSize
-  let grabOffset: CGPoint
   let isExpanded: Bool
-  var location: CGPoint
+  var fingerLocation: CGPoint
+  var centerOffset: CGSize
+  var scale: CGFloat
 
   var center: CGPoint {
     CGPoint(
-      x: location.x - grabOffset.x,
-      y: location.y - grabOffset.y)
+      x: fingerLocation.x + centerOffset.width,
+      y: fingerLocation.y + centerOffset.height)
   }
 }
 
 @MainActor
 @Observable
 final class WatchtowerMetricDragVisualState {
+  enum Phase: Equatable {
+    case pressing
+    case lifting
+    case tracking
+    case settling
+  }
+
+  private struct Press: Equatable {
+    let metric: WatchtowerAnalyticsMetric
+    let identifier: UUID
+  }
+
+  private var press: Press?
   private(set) var presentation: WatchtowerMetricDragPresentation?
-  private(set) var isSettling = false
+  private(set) var phase: Phase?
   @ObservationIgnored weak var coordinateView: UIView?
   /// The space the live `presentation` coordinates are expressed in. Held for
   /// the length of one session so move / settle keep measuring against the same
@@ -350,37 +368,109 @@ final class WatchtowerMetricDragVisualState {
     coordinateView ?? sourceView.window
   }
 
-  func begin(
-    metric: WatchtowerAnalyticsMetric,
+  var pressedMetric: WatchtowerAnalyticsMetric? {
+    press?.metric
+  }
+
+  var isSettling: Bool {
+    phase == .settling
+  }
+
+  var animatesPresentation: Bool {
+    phase == .lifting || phase == .settling
+  }
+
+  func beginPress(
+    _ metric: WatchtowerAnalyticsMetric,
+    identifier: UUID,
     size: CGSize,
-    location: CGPoint,
-    grabOffset: CGPoint,
+    fingerLocation: CGPoint,
+    sourceCenter: CGPoint,
     isExpanded: Bool,
     reference: UIView,
-    retaining delegate: AnyObject
+    reduceMotion: Bool
   ) {
-    retainedDelegate = delegate
+    guard phase == nil || phase == .pressing else { return }
+    press = Press(metric: metric, identifier: identifier)
     activeReference = reference
-    isSettling = false
+    phase = .pressing
+    // Keep a hidden ghost mounted throughout the system long-press. Its pose
+    // has therefore rendered before UIKit accepts the lift, giving the spring
+    // a deterministic source frame instead of relying on run-loop timing.
     presentation = WatchtowerMetricDragPresentation(
       metric: metric,
       size: size,
-      grabOffset: grabOffset,
       isExpanded: isExpanded,
-      location: location)
+      fingerLocation: fingerLocation,
+      centerOffset: reduceMotion
+        ? .zero
+        : CGSize(
+          width: sourceCenter.x - fingerLocation.x,
+          height: sourceCenter.y - fingerLocation.y),
+      scale: reduceMotion ? 1 : 0.97)
   }
 
-  func move(to location: CGPoint) {
+  func endPress(identifier: UUID) {
+    guard press?.identifier == identifier else { return }
+    press = nil
+    guard phase == .pressing else { return }
+    presentation = nil
+    phase = nil
+    activeReference = nil
+  }
+
+  func beginLift(
+    metric: WatchtowerAnalyticsMetric,
+    size: CGSize,
+    fingerLocation: CGPoint,
+    sourceCenter: CGPoint,
+    isExpanded: Bool,
+    reference: UIView,
+    retaining delegate: AnyObject,
+    reduceMotion: Bool
+  ) {
+    press = nil
+    retainedDelegate = delegate
+    activeReference = reference
+    phase = reduceMotion ? .tracking : .lifting
+    presentation = WatchtowerMetricDragPresentation(
+      metric: metric,
+      size: size,
+      isExpanded: isExpanded,
+      fingerLocation: fingerLocation,
+      centerOffset: reduceMotion
+        ? .zero
+        : CGSize(
+          width: sourceCenter.x - fingerLocation.x,
+          height: sourceCenter.y - fingerLocation.y),
+      scale: reduceMotion ? 1 : 0.97)
+  }
+
+  /// Finger position is direct-manipulation state. The one-shot lift spring
+  /// belongs to `centerOffset` and `scale`, so the panel never trails the touch.
+  func trackFinger(to location: CGPoint) {
     guard var presentation else { return }
-    presentation.location = location
+    presentation.fingerLocation = location
     self.presentation = presentation
+  }
+
+  func liftToFinger() {
+    guard phase == .lifting, var presentation else { return }
+    presentation.centerOffset = .zero
+    presentation.scale = 1
+    self.presentation = presentation
+  }
+
+  func finishLift() {
+    guard phase == .lifting else { return }
+    phase = .tracking
   }
 
   func moveCenter(to center: CGPoint) {
     guard var presentation else { return }
-    presentation.location = CGPoint(
-      x: center.x + presentation.grabOffset.x,
-      y: center.y + presentation.grabOffset.y)
+    presentation.centerOffset = CGSize(
+      width: center.x - presentation.fingerLocation.x,
+      height: center.y - presentation.fingerLocation.y)
     self.presentation = presentation
   }
 
@@ -419,12 +509,13 @@ final class WatchtowerMetricDragVisualState {
 
   func beginSettling() {
     guard presentation != nil else { return }
-    isSettling = true
+    phase = .settling
   }
 
   func finish() {
+    press = nil
     presentation = nil
-    isSettling = false
+    phase = nil
     activeReference = nil
     retainedDelegate = nil
   }
@@ -986,6 +1077,7 @@ struct WatchtowerTrafficView: View {
       if !isEditing {
         removalSequence.cancel()
         layoutMorphingMetric = nil
+        dragVisual.finish()
       }
     }
   }
@@ -1003,9 +1095,18 @@ struct WatchtowerTrafficView: View {
     expanded: Bool
   ) -> some View {
     let isDeparting = removalSequence.departingMetric == metric
+    let isPressed = isEditing && dragVisual.pressedMetric == metric
     let card = metricCard(
       metric, overview: overview, snapshot: snapshot, expanded: expanded)
     card
+      // Reordering is the one card interaction that intentionally borrows the
+      // button press pose: the held object itself is the direct manipulation.
+      .scaleEffect(isPressed && !reduceMotion ? 0.97 : 1)
+      .opacity(isPressed && reduceMotion ? 0.88 : 1)
+      .animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.press,
+        value: isPressed
+      )
       .opacity(
         isDeparting || (isEditing && customization.draggedMetric == metric)
           ? 0
@@ -1529,11 +1630,19 @@ private struct WatchtowerMetricDragCoordinateView: UIViewRepresentable {
 
 private final class WatchtowerMetricDragSourceUIView: UIView {
   var passthroughSize = WatchtowerMetricDragLayout.controlsPassthroughSize
+  var onPressChanged: (@MainActor (WatchtowerMetricDragSourceUIView, Bool, CGPoint?) -> Void)?
   /// The bridge stays mounted outside the editor so entering it never inserts
   /// UIKit views mid-morph. Disabled it must be fully transparent to touches —
   /// the expanded chart underneath owns a selection gesture of its own.
-  var isDragEnabled = false
+  var isDragEnabled = false {
+    didSet {
+      if !isDragEnabled {
+        setPressing(false)
+      }
+    }
+  }
   var dragInteraction: UIDragInteraction?
+  private var isPressing = false
 
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     guard isDragEnabled, super.point(inside: point, with: event) else { return false }
@@ -1545,6 +1654,32 @@ private final class WatchtowerMetricDragSourceUIView: UIView {
       : bounds.maxX - width
     let controlsFrame = CGRect(x: x, y: bounds.minY, width: width, height: height)
     return !controlsFrame.contains(point)
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesBegan(touches, with: event)
+    guard isDragEnabled else { return }
+    setPressing(true, location: touches.first?.location(in: self))
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesEnded(touches, with: event)
+    setPressing(false)
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+    super.touchesCancelled(touches, with: event)
+    setPressing(false)
+  }
+
+  func cancelPress() {
+    setPressing(false)
+  }
+
+  private func setPressing(_ pressing: Bool, location: CGPoint? = nil) {
+    guard isPressing != pressing else { return }
+    isPressing = pressing
+    onPressChanged?(self, pressing, location)
   }
 }
 
@@ -1568,6 +1703,13 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     view.backgroundColor = .clear
     view.isOpaque = false
     view.accessibilityElementsHidden = true
+    view.onPressChanged = {
+      [weak coordinator = context.coordinator] sourceView, pressed, sourceLocation in
+      coordinator?.setPressed(
+        pressed,
+        sourceView: sourceView,
+        sourceLocation: sourceLocation)
+    }
 
     let interaction = UIDragInteraction(delegate: context.coordinator)
     view.addInteraction(interaction)
@@ -1577,11 +1719,15 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
   }
 
   func updateUIView(_ uiView: WatchtowerMetricDragSourceUIView, context: Context) {
+    let previousMetric = context.coordinator.metric
+    if previousMetric != metric {
+      uiView.cancelPress()
+    }
     uiView.isDragEnabled = isEnabled
     uiView.dragInteraction?.isEnabled = isEnabled
-    let previousMetric = context.coordinator.metric
     let previousVisualState = context.coordinator.visualState
     if previousVisualState !== visualState {
+      uiView.cancelPress()
       previousVisualState.unregisterSourceView(uiView, for: previousMetric)
       context.coordinator.visualState = visualState
     } else if previousMetric != metric {
@@ -1596,6 +1742,8 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     _ uiView: WatchtowerMetricDragSourceUIView,
     coordinator: Coordinator
   ) {
+    uiView.cancelPress()
+    uiView.onPressChanged = nil
     coordinator.visualState.unregisterSourceView(uiView, for: coordinator.metric)
   }
 
@@ -1608,8 +1756,12 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
     private var active = false
     private var settling = false
     private var activeInteraction: UIDragInteraction?
-    private var settleTask: Task<Void, Never>?
+    private var pressReleaseTask: Task<Void, Never>?
     private var lastReorder: CFTimeInterval = 0
+    private let pressIdentifier = UUID()
+    private var dragIdentifier: UUID?
+    private var liftOrigin: CGPoint?
+    private var movedDuringLift = false
 
     init(
       metric: WatchtowerAnalyticsMetric,
@@ -1623,6 +1775,52 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       self.visualState = visualState
     }
 
+    func setPressed(
+      _ pressed: Bool,
+      sourceView: WatchtowerMetricDragSourceUIView,
+      sourceLocation: CGPoint?
+    ) {
+      if pressed {
+        guard
+          !active,
+          !settling,
+          customization.draggedMetric == nil
+        else { return }
+        pressReleaseTask?.cancel()
+        pressReleaseTask = nil
+        guard let reference = visualState.reference(for: sourceView) else { return }
+        let sourceCenter = sourceView.convert(
+          CGPoint(x: sourceView.bounds.midX, y: sourceView.bounds.midY),
+          to: reference)
+        let fingerLocation = sourceView.convert(
+          sourceLocation
+            ?? CGPoint(x: sourceView.bounds.midX, y: sourceView.bounds.midY),
+          to: reference)
+        visualState.beginPress(
+          metric,
+          identifier: pressIdentifier,
+          size: sourceView.bounds.size,
+          fingerLocation: fingerLocation,
+          sourceCenter: sourceCenter,
+          isExpanded: isExpanded,
+          reference: reference,
+          reduceMotion: UIAccessibility.isReduceMotionEnabled)
+      } else {
+        pressReleaseTask?.cancel()
+        let pressedVisualState = visualState
+        let currentPressIdentifier = pressIdentifier
+        pressReleaseTask = Task { @MainActor [weak self] in
+          // UIDragInteraction may cancel the UIView touch as it accepts the
+          // same lift. Give `itemsForBeginning` one display interval to claim
+          // the pre-mounted pose before treating cancellation as release.
+          try? await Task.sleep(for: .milliseconds(16))
+          guard !Task.isCancelled, self?.active != true else { return }
+          pressedVisualState.endPress(identifier: currentPressIdentifier)
+          self?.pressReleaseTask = nil
+        }
+      }
+    }
+
     func dragInteraction(
       _ interaction: UIDragInteraction,
       itemsForBeginning session: any UIDragSession
@@ -1630,28 +1828,60 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       // Returning an empty array cancels the lift with no feedback at all, so
       // nothing here may depend on state that can go missing between mounting
       // the bridge and the touch — `reference(for:)` always resolves.
+      pressReleaseTask?.cancel()
+      pressReleaseTask = nil
       guard let sourceView = interaction.view,
-        let reference = visualState.reference(for: sourceView),
-        customization.beginDragging(metric)
-      else { return [] }
+        let reference = visualState.reference(for: sourceView)
+      else {
+        visualState.endPress(identifier: pressIdentifier)
+        return []
+      }
+      guard customization.beginDragging(metric) else {
+        visualState.endPress(identifier: pressIdentifier)
+        return []
+      }
 
       let location = session.location(in: reference)
-      let sourceLocation = session.location(in: sourceView)
-      let grabOffset = CGPoint(
-        x: sourceLocation.x - sourceView.bounds.midX,
-        y: sourceLocation.y - sourceView.bounds.midY)
+      let sourceCenter = sourceView.convert(
+        CGPoint(x: sourceView.bounds.midX, y: sourceView.bounds.midY),
+        to: reference)
+      let reduceMotion = UIAccessibility.isReduceMotionEnabled
+      let currentDragIdentifier = UUID()
 
       active = true
       activeInteraction = interaction
+      dragIdentifier = currentDragIdentifier
+      liftOrigin = location
+      movedDuringLift = false
       lastReorder = 0
-      visualState.begin(
+      visualState.beginLift(
         metric: metric,
         size: sourceView.bounds.size,
-        location: location,
-        grabOffset: grabOffset,
+        fingerLocation: location,
+        sourceCenter: sourceCenter,
         isExpanded: isExpanded,
         reference: reference,
-        retaining: self)
+        retaining: self,
+        reduceMotion: reduceMotion)
+
+      if !reduceMotion {
+        withAnimation(
+          DashTheme.Motion.pop.logicallyComplete(after: 0.3),
+          completionCriteria: .logicallyComplete
+        ) {
+          visualState.liftToFinger()
+        } completion: { [weak self] in
+          guard let self,
+            self.active,
+            !self.settling,
+            self.dragIdentifier == currentDragIdentifier
+          else { return }
+          self.visualState.finishLift()
+          if self.movedDuringLift {
+            self.updateDropTarget()
+          }
+        }
+      }
 
       // `previewForLifting` returns nil to suppress the system lift preview in
       // favour of the ghost card, which takes its feedback with it.
@@ -1677,8 +1907,24 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       sessionDidMove session: any UIDragSession
     ) {
       guard active, let reference = visualState.activeReference else { return }
-      visualState.move(to: session.location(in: reference))
-      updateDropTarget()
+      let location = session.location(in: reference)
+      visualState.trackFinger(to: location)
+      if visualState.phase == .tracking {
+        updateDropTarget()
+      } else if visualState.phase == .lifting,
+        let liftOrigin
+      {
+        let deltaX = location.x - liftOrigin.x
+        let deltaY = location.y - liftOrigin.y
+        if deltaX * deltaX + deltaY * deltaY >= 16 {
+          movedDuringLift = true
+          // Deliberate motion takes priority over the threshold pop. Tracking
+          // now owns the position transaction, so the reorder morph cannot
+          // leak animation into the finger's `.position`.
+          visualState.finishLift()
+          updateDropTarget()
+        }
+      }
     }
 
     /// Frames are read from live views that are still animating the previous
@@ -1763,24 +2009,35 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
 
       let reduceMotion = UIAccessibility.isReduceMotionEnabled
       visualState.beginSettling()
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
+      if reduceMotion {
         visualState.moveCenter(to: targetCenter)
+        completeDrag()
+        return
       }
-
-      let delay = reduceMotion ? 120 : 280
-      settleTask = Task { @MainActor [weak self] in
-        try? await Task.sleep(for: .milliseconds(delay))
-        guard !Task.isCancelled else { return }
-        self?.completeDrag()
+      let currentDragIdentifier = dragIdentifier
+      withAnimation(
+        DashTheme.Motion.morph,
+        completionCriteria: .removed
+      ) {
+        visualState.moveCenter(to: targetCenter)
+      } completion: { [weak self] in
+        guard let self,
+          self.settling,
+          self.dragIdentifier == currentDragIdentifier
+        else { return }
+        self.completeDrag()
       }
     }
 
     private func completeDrag() {
-      settleTask?.cancel()
-      settleTask = nil
+      pressReleaseTask?.cancel()
+      pressReleaseTask = nil
       active = false
       settling = false
       activeInteraction = nil
+      dragIdentifier = nil
+      liftOrigin = nil
+      movedDuringLift = false
       customization.finishDragging()
       visualState.finish()
     }
@@ -1807,7 +2064,12 @@ private struct WatchtowerMetricDragOverlay: View {
           onRemove: {}
         )
         .frame(width: presentation.size.width, height: presentation.size.height)
-        .position(presentation.center)
+        .scaleEffect(presentation.scale)
+        // Direct finger motion and the one-shot lift offset stay in separate
+        // animatable properties, so the spring can resolve without adding lag.
+        .position(presentation.fingerLocation)
+        .offset(presentation.centerOffset)
+        .opacity(state.phase == .pressing ? 0 : 1)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
         .zIndex(1)
@@ -1817,7 +2079,7 @@ private struct WatchtowerMetricDragOverlay: View {
     .allowsHitTesting(false)
     // Finger tracking must not inherit the row-reorder morph animation.
     .transaction { transaction in
-      if !state.isSettling {
+      if !state.animatesPresentation {
         transaction.animation = nil
       }
     }

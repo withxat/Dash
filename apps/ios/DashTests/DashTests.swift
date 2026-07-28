@@ -716,23 +716,57 @@ struct LocalizationTests {
   #expect(!finishedWebTrafficExit)
 }
 
-@Test @MainActor func watchtowerDragOverlayPreservesGrabOffsetAndEndsCleanly() {
+@Test @MainActor func watchtowerDragOverlayLiftsToTheFingerAndEndsCleanly() {
   let visualState = WatchtowerMetricDragVisualState()
   let reference = UIView()
-  visualState.begin(
-    metric: .webTraffic,
+  let pressIdentifier = UUID()
+
+  visualState.beginPress(
+    .webTraffic,
+    identifier: pressIdentifier,
     size: CGSize(width: 160, height: 220),
-    location: CGPoint(x: 220, y: 360),
-    grabOffset: CGPoint(x: 30, y: -20),
+    fingerLocation: CGPoint(x: 220, y: 360),
+    sourceCenter: CGPoint(x: 190, y: 380),
     isExpanded: true,
     reference: reference,
-    retaining: NSObject())
+    reduceMotion: false)
+  #expect(visualState.pressedMetric == .webTraffic)
+  #expect(visualState.phase == .pressing)
+  #expect(visualState.presentation?.center == CGPoint(x: 190, y: 380))
+  #expect(visualState.presentation?.scale == 0.97)
+
+  visualState.beginLift(
+    metric: .webTraffic,
+    size: CGSize(width: 160, height: 220),
+    fingerLocation: CGPoint(x: 220, y: 360),
+    sourceCenter: CGPoint(x: 190, y: 380),
+    isExpanded: true,
+    reference: reference,
+    retaining: NSObject(),
+    reduceMotion: false)
 
   #expect(visualState.activeReference === reference)
+  #expect(visualState.pressedMetric == nil)
+  #expect(visualState.phase == .lifting)
   #expect(visualState.presentation?.center == CGPoint(x: 190, y: 380))
+  #expect(visualState.presentation?.scale == 0.97)
 
-  visualState.move(to: CGPoint(x: 260, y: 410))
-  #expect(visualState.presentation?.center == CGPoint(x: 230, y: 430))
+  // UIKit may cancel the source view's touch as UIDragInteraction takes over.
+  visualState.endPress(identifier: pressIdentifier)
+  #expect(visualState.phase == .lifting)
+  #expect(visualState.presentation != nil)
+
+  visualState.trackFinger(to: CGPoint(x: 230, y: 370))
+  #expect(visualState.presentation?.center == CGPoint(x: 200, y: 390))
+
+  visualState.liftToFinger()
+  #expect(visualState.presentation?.center == CGPoint(x: 230, y: 370))
+  #expect(visualState.presentation?.scale == 1)
+  visualState.finishLift()
+  #expect(visualState.phase == .tracking)
+
+  visualState.trackFinger(to: CGPoint(x: 260, y: 410))
+  #expect(visualState.presentation?.center == CGPoint(x: 260, y: 410))
 
   visualState.moveCenter(to: CGPoint(x: 120, y: 240))
   #expect(visualState.presentation?.center == CGPoint(x: 120, y: 240))
@@ -742,8 +776,61 @@ struct LocalizationTests {
 
   visualState.finish()
   #expect(visualState.presentation == nil)
+  #expect(visualState.phase == nil)
   #expect(!visualState.isSettling)
   #expect(visualState.activeReference == nil)
+}
+
+@Test @MainActor func watchtowerDragOverlayRemovesMotionFromTheLift() {
+  let visualState = WatchtowerMetricDragVisualState()
+  let reference = UIView()
+
+  visualState.beginLift(
+    metric: .cpuTime,
+    size: CGSize(width: 160, height: 120),
+    fingerLocation: CGPoint(x: 220, y: 360),
+    sourceCenter: CGPoint(x: 190, y: 380),
+    isExpanded: false,
+    reference: reference,
+    retaining: NSObject(),
+    reduceMotion: true)
+
+  #expect(visualState.phase == .tracking)
+  #expect(visualState.presentation?.center == CGPoint(x: 220, y: 360))
+  #expect(visualState.presentation?.scale == 1)
+}
+
+@Test @MainActor func watchtowerDragPressIgnoresAnOldViewCancellation() {
+  let visualState = WatchtowerMetricDragVisualState()
+  let reference = UIView()
+  let oldIdentifier = UUID()
+  let currentIdentifier = UUID()
+
+  visualState.beginPress(
+    .webTraffic,
+    identifier: oldIdentifier,
+    size: CGSize(width: 160, height: 220),
+    fingerLocation: CGPoint(x: 80, y: 110),
+    sourceCenter: CGPoint(x: 80, y: 110),
+    isExpanded: true,
+    reference: reference,
+    reduceMotion: false)
+  visualState.beginPress(
+    .cpuTime,
+    identifier: currentIdentifier,
+    size: CGSize(width: 160, height: 120),
+    fingerLocation: CGPoint(x: 80, y: 60),
+    sourceCenter: CGPoint(x: 80, y: 60),
+    isExpanded: false,
+    reference: reference,
+    reduceMotion: false)
+
+  visualState.endPress(identifier: oldIdentifier)
+  #expect(visualState.pressedMetric == .cpuTime)
+  visualState.endPress(identifier: currentIdentifier)
+  #expect(visualState.pressedMetric == nil)
+  #expect(visualState.presentation == nil)
+  #expect(visualState.phase == nil)
 }
 
 /// Two collapsed cards over a full-width one, as the default layout paints it.
@@ -804,6 +891,21 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(state.visibleMetrics.last == first)
   #expect(state.visibleMetrics.count == visible.count)
   #expect(state.order.filter(state.hidden.contains) == hiddenBefore)
+}
+
+@Test @MainActor func watchtowerChartCustomizationAllowsOnlyOneActiveDrag() {
+  let suite = "watchtower-single-active-drag-\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let state = WatchtowerChartCustomizationState(defaults: defaults)
+  state.beginEditing()
+
+  #expect(state.beginDragging(.webTraffic))
+  #expect(!state.beginDragging(.cpuTime))
+  #expect(state.draggedMetric == .webTraffic)
+
+  state.finishDragging()
+  #expect(state.beginDragging(.cpuTime))
 }
 
 /// A lift must never be cancelled because the charts stack's coordinate view is
