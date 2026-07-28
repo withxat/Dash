@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { mintNotifyMAC, verifyNotifyMAC, webhookSecret } from './hmac.ts'
+import {
+	mintNotifyMAC,
+	verifyNotifyMAC,
+	verifyWebhookSecret,
+	webhookSecret,
+} from './hmac.ts'
 
 const SECRET = 'unit-test-hmac-secret'
 const TOKEN = 'a'.repeat(64)
@@ -59,5 +64,25 @@ describe('webhookSecret', () => {
 			await webhookSecret(SECRET, 'sandbox', TOKEN, 'other-account'),
 		)
 		assert.match(secret, /^[0-9a-f]{64}$/)
+		assert.equal(
+			await verifyWebhookSecret(
+				SECRET,
+				'sandbox',
+				TOKEN,
+				secret,
+				ACCOUNT_ID,
+			),
+			true,
+		)
+		assert.equal(
+			await verifyWebhookSecret(
+				SECRET,
+				'sandbox',
+				TOKEN,
+				`${secret.slice(0, -1)}${secret.endsWith('0') ? '1' : '0'}`,
+				ACCOUNT_ID,
+			),
+			false,
+		)
 	})
 })

@@ -49,7 +49,8 @@ enum DashAuthorizationScopes {
 
   /// Mutations exposed outside Dash's normal feature screens. App Intents and
   /// the share extension cannot safely present OAuth themselves, so Settings
-  /// offers one explicit incremental grant for this reviewed set.
+  /// checks this subset to explain whether those actions are ready. Any
+  /// reauthorization still requests `core` in one reviewed grant.
   static let shortcutsAndShareWrites: Set<String> = Set([
     "zone-settings.write",
     "cache.purge",

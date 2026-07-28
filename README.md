@@ -18,7 +18,7 @@ Five resource surfaces, plus the shell that makes them usable:
 | **R2** | Buckets, browse/upload/preview, rename/move, public URLs, share extension and Shortcuts |
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 
-Shell around those features: Home launcher, Resources catalog, Watchtower health signals, Settings (push alerts, About), multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Settings (push alerts, About), multi-account OAuth, and iPhone-only single-stack navigation.
 
 Out of MVP scope: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
@@ -48,7 +48,9 @@ cp apps/ios/Config/Secrets.xcconfig.example apps/ios/Config/Secrets.xcconfig
 
 Set `DASH_CLIENT_ID` to the public Cloudflare OAuth client ID and `DASH_REDIRECT_URI` to the deployed relay's HTTPS `/oauth/callback` URL. The HTTPS redirect must be registered on the Cloudflare OAuth client. Do not register the custom scheme with Cloudflare; the relay converts the final callback to `dash://oauth/callback`.
 
-Changing scopes requires enabling the same exact scope IDs on the OAuth client and signing in again.
+Real-account sign-in requests the audited union of read and write permissions used by Dash's current features in one authorization. The Demo remains read-only. Existing narrower or unknown grants are upgraded to that current set the next time an access action opens OAuth.
+
+Changing scopes requires enabling the same exact scope IDs on the OAuth client and authorizing the updated request again.
 
 ## Develop
 

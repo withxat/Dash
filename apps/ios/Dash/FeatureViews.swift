@@ -59,13 +59,13 @@ struct FeatureWriteAccessNotice: View {
   @Environment(AppModel.self) private var model
   let message: String
   let scopes: Set<String>
-  var buttonTitle = "Grant write access"
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       DashNotice(kind: .warning, message: message)
+      DashAuthorizationDisclosure()
       DashPillButton(
-        title: model.isDemoSession ? "Connect your account" : buttonTitle,
+        title: model.isDemoSession ? "Connect your account" : "Grant access",
         isLoading: model.isAuthenticating
       ) {
         model.requestAccess(to: scopes)
@@ -206,13 +206,19 @@ private struct FeatureAccessRequiredView: View {
           SolarIcon(
             asset: SolarAsset.Content.lock, size: 30,
             color: FeatureVisualIdentity.heroColor(for: feature))
-          Text("Grant access to \(feature.title)")
+          Text("Cloudflare access")
             .dashTextStyle(.sectionTitle)
             .foregroundStyle(DashTheme.strong)
           Text(
             "This module needs \(feature.capability.read.sorted().joined(separator: ", ")). You can review the request before Cloudflare opens."
           )
           .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+          Text(
+            "Dash requests all permissions used by its current features in one authorization."
+          )
+          .dashTextStyle(.caption)
           .foregroundStyle(DashTheme.subtle)
           .fixedSize(horizontal: false, vertical: true)
           DashPillButton(

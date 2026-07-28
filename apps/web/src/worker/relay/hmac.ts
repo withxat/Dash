@@ -1,10 +1,9 @@
 /**
- * Stateless HMAC helpers for signed push URLs and cf-webhook-auth secrets.
+ * Stateless HMAC helpers for push capabilities.
  *
- * The device token is never stored; new notify URLs embed env + token +
- * account id and an HMAC over that tuple so the resulting deep link remains
- * bound to the Cloudflare account that registered the webhook. The webhook
- * secret is derived the same way so the worker stays zero-storage.
+ * The tuple-based helpers at the bottom preserve existing notify URLs during
+ * migration. New registrations use the generic domain-separated helpers from
+ * this module with an opaque AEAD binding instead.
  */
 
 function toHex(bytes: ArrayBuffer): string {
@@ -31,10 +30,28 @@ async function importKey(secret: string): Promise<CryptoKey> {
 	)
 }
 
-async function sign(secret: string, message: string): Promise<string> {
+export async function signPushHMAC(secret: string, message: string): Promise<string> {
 	const key = await importKey(secret)
 	const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message))
 	return toHex(mac)
+}
+
+/** Verifies a hex HMAC without comparing secret material in JavaScript. */
+export async function verifyPushHMAC(
+	secret: string,
+	message: string,
+	macHex: string,
+): Promise<boolean> {
+	const mac = fromHex(macHex)
+	if (!mac)
+		return false
+	const key = await importKey(secret)
+	return crypto.subtle.verify(
+		'HMAC',
+		key,
+		mac,
+		new TextEncoder().encode(message),
+	)
 }
 
 function notifyBinding(environment: string, token: string, accountID?: string): string {
@@ -50,7 +67,7 @@ export async function mintNotifyMAC(
 	token: string,
 	accountID?: string,
 ): Promise<string> {
-	return sign(secret, notifyBinding(environment, token, accountID))
+	return signPushHMAC(secret, notifyBinding(environment, token, accountID))
 }
 
 /** Constant-time verify of a notify-URL MAC via WebCrypto. */
@@ -61,16 +78,7 @@ export async function verifyNotifyMAC(
 	macHex: string,
 	accountID?: string,
 ): Promise<boolean> {
-	const mac = fromHex(macHex)
-	if (!mac)
-		return false
-	const key = await importKey(secret)
-	return crypto.subtle.verify(
-		'HMAC',
-		key,
-		mac,
-		new TextEncoder().encode(notifyBinding(environment, token, accountID)),
-	)
+	return verifyPushHMAC(secret, notifyBinding(environment, token, accountID), macHex)
 }
 
 /**
@@ -84,5 +92,23 @@ export async function webhookSecret(
 	token: string,
 	accountID?: string,
 ): Promise<string> {
-	return sign(secret, `cf-webhook-auth:${notifyBinding(environment, token, accountID)}`)
+	return signPushHMAC(
+		secret,
+		`cf-webhook-auth:${notifyBinding(environment, token, accountID)}`,
+	)
+}
+
+/** Constant-time verification for legacy `cf-webhook-auth` values. */
+export async function verifyWebhookSecret(
+	secret: string,
+	environment: string,
+	token: string,
+	provided: string,
+	accountID?: string,
+): Promise<boolean> {
+	return verifyPushHMAC(
+		secret,
+		`cf-webhook-auth:${notifyBinding(environment, token, accountID)}`,
+		provided,
+	)
 }

@@ -31,8 +31,7 @@ struct CachePurgeView: View {
               if !allowsWrites {
                 FeatureWriteAccessNotice(
                   message: "Read-only — grant cache purge access before removing cached assets.",
-                  scopes: requiredWriteScopes,
-                  buttonTitle: "Grant purge access")
+                  scopes: requiredWriteScopes)
               }
               VStack(alignment: .leading, spacing: 4) {
                 Text("Purge by URL")

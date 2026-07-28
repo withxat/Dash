@@ -7,6 +7,7 @@ on:
       - 'apps/ios/**'
       - 'packages/BlossomColorPicker/**'
       - 'packages/SwiftDitherKit/**'
+      - 'packages/SwiftGlobeKit/**'
       - 'packages/cloudflare-api/**'
       - 'packages/gradient-avatars/**'
       - 'package.json'
@@ -21,6 +22,7 @@ on:
       - 'apps/ios/**'
       - 'packages/BlossomColorPicker/**'
       - 'packages/SwiftDitherKit/**'
+      - 'packages/SwiftGlobeKit/**'
       - 'packages/cloudflare-api/**'
       - 'packages/gradient-avatars/**'
       - 'package.json'
@@ -71,6 +73,7 @@ jobs:
         run: |
           pnpm api:test
           pnpm avatars:test
+          pnpm globe:test
 
       - name: Test Dash unit target
         run: |

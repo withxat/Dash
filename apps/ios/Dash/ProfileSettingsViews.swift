@@ -339,9 +339,9 @@ struct SettingsView: View {
 
         DashListGroup(title: "Watchtower") {
           DashToggleRow(
-            title: DashL10n.string("Notify after background checks"),
+            title: DashL10n.string("Notifications"),
             subtitle: DashL10n.string(
-              "Dash checks opportunistically when iOS allows background refresh. Alerts are local and only fire for newly detected issues."
+              "Cloudflare delivers an alert here when one of your notification policies fires."
             ),
             isOn: $watchtowerNotifications
           )
@@ -405,7 +405,7 @@ struct SettingsView: View {
                 DashListRow(
                   title: DashL10n.string("Shortcuts & Share write access"),
                   subtitle: DashL10n.string(
-                    "Dash will request all permissions used by its current features."
+                    "Dash requests all permissions used by its current features in one authorization."
                   ),
                   icon: SolarAsset.Content.shieldCheck,
                   trailing: model.isAuthenticating
@@ -812,6 +812,9 @@ struct ProfileView: View {
 
         if let account = model.activeAccount {
           VStack(alignment: .leading, spacing: 8) {
+            if !canRenameAccount {
+              DashAuthorizationDisclosure()
+            }
             HStack(spacing: 12) {
               Text(DashL10n.string("Active account"))
                 .dashTextStyle(.footnoteSemibold)

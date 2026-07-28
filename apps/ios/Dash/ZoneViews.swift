@@ -1497,7 +1497,7 @@ struct DNSRecordEditor: View {
   var body: some View {
     DashFormSheet(
       saveTitle: allowsWrites
-        ? "Save" : (model.isDemoSession ? "Connect your account" : "Grant write access"),
+        ? "Save" : (model.isDemoSession ? "Connect your account" : "Grant access"),
       isSaving: saving,
       canSave: allowsWrites ? canSave : true,
       deleteMessage: allowsWrites
@@ -1519,7 +1519,11 @@ struct DNSRecordEditor: View {
           if !allowsWrites {
             DashNotice(
               kind: .warning,
-              message: "Read-only — grant DNS write access to edit or delete this record.")
+              message:
+                model.isDemoSession
+                ? "Connect your account when you are ready to make changes"
+                : "Dash requests all permissions used by its current features in one authorization."
+            )
           }
 
           Group {

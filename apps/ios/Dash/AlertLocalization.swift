@@ -15,6 +15,9 @@ enum AlertLocalization {
   /// APNs payload keys the relay sets alongside `aps`.
   enum PayloadKey {
     static let alertType = "dashAlertType"
+    static let accountID = "dashAccountID"
+    static let originalBody = "dashOriginalBody"
+    static let originalTitle = "dashOriginalTitle"
     static let route = "dashRoute"
     static let subject = "dashSubject"
   }
@@ -114,6 +117,49 @@ enum AlertLocalization {
       return Rewrite(title: known.title, body: originalBody)
     }
     return Rewrite(title: known.title, body: known.body(subject: ""))
+  }
+}
+
+/// Accounts whose notification contents may be shown on this device.
+///
+/// The app mirrors the current OAuth identity into the App Group. The
+/// Notification Service checks it before exposing a resource name, so a
+/// webhook that could not be deleted during sign-out cannot leak an old
+/// account's content onto the Lock Screen.
+enum NotificationAccountAuthorizationStore {
+  static let appGroupID = "group.sh.xat.dash.app"
+  static let key = "dash.notification_authorized_accounts"
+
+  static func replace(
+    with accountIDs: Set<String>,
+    in defaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
+  ) {
+    let normalized =
+      accountIDs
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+      .sorted()
+    if normalized.isEmpty {
+      defaults?.removeObject(forKey: key)
+    } else {
+      defaults?.set(normalized, forKey: key)
+    }
+  }
+
+  static func contains(
+    _ accountID: String?,
+    in defaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
+  ) -> Bool {
+    guard let accountID else { return false }
+    let normalized = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !normalized.isEmpty else { return false }
+    return Set(defaults?.stringArray(forKey: key) ?? []).contains(normalized)
+  }
+
+  static func clear(
+    in defaults: UserDefaults? = UserDefaults(suiteName: appGroupID)
+  ) {
+    defaults?.removeObject(forKey: key)
   }
 }
 

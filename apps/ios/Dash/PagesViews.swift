@@ -845,18 +845,23 @@ struct PagesAddDomainForm: View {
   }
 
   private func save() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
+    let client = model.client
+    let domain = normalized
     saving = true
     defer { saving = false }
     do {
-      try await model.client.addPagesDomain(
-        accountID: accountID, projectName: projectName, name: normalized)
+      try await client.addPagesDomain(
+        accountID: context.accountID, projectName: projectName, name: domain)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.featureCache.remove(
-        FeatureCacheKey.pagesDomains(accountID: accountID, name: projectName))
+        FeatureCacheKey.pagesDomains(accountID: context.accountID, name: projectName))
       model.toasts.success(DashL10n.string("Added successfully."))
       await onAdded()
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       dismiss()
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
   }

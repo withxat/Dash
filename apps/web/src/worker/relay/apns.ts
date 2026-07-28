@@ -101,9 +101,16 @@ export interface APNsResult {
  * contract with the app's Notification Service Extension and its registered
  * categories, and it is cheaper to assert here than to read it off a device.
  */
-export function alertPayloadJSON(alert: AlertPayload): string {
+export function alertPayloadJSON(alert: AlertPayload, accountID?: string): string {
 	const aps: Record<string, unknown> = {
-		'alert': { body: alert.body, title: alert.title },
+		// Failure-safe Lock Screen copy. The Notification Service Extension
+		// restores/localizes the Cloudflare copy only after its account allowlist
+		// check. If iOS skips the extension, stale-account resource names still
+		// never appear in the visible notification.
+		'alert': {
+			body: 'Open Dash to sync your Cloudflare alerts.',
+			title: 'Dash',
+		},
 		'interruption-level': alert.interruptionLevel,
 		// Lets the extension rewrite the English body into the user's language
 		// and stamp the badge before iOS displays anything.
@@ -119,6 +126,8 @@ export function alertPayloadJSON(alert: AlertPayload): string {
 	}
 
 	const payloadObject: Record<string, unknown> = { aps }
+	payloadObject.dashOriginalTitle = alert.title
+	payloadObject.dashOriginalBody = alert.body
 	if (alert.dashRoute) {
 		payloadObject.dashRoute = alert.dashRoute
 	}
@@ -128,6 +137,9 @@ export function alertPayloadJSON(alert: AlertPayload): string {
 	if (alert.subject) {
 		payloadObject.dashSubject = alert.subject
 	}
+	if (accountID) {
+		payloadObject.dashAccountID = accountID
+	}
 	return JSON.stringify(payloadObject)
 }
 
@@ -136,6 +148,7 @@ export async function sendAlert(
 	host: APNsHost,
 	deviceToken: string,
 	alert: AlertPayload,
+	accountID?: string,
 ): Promise<APNsResult> {
 	const jwt = await mintJWT(env)
 	const headers: Record<string, string> = {
@@ -149,7 +162,56 @@ export async function sendAlert(
 		headers['apns-collapse-id'] = alert.collapseID
 	}
 
-	return post(host, deviceToken, headers, alertPayloadJSON(alert))
+	return post(host, deviceToken, headers, alertPayloadJSON(alert, accountID))
+}
+
+export interface RegistrationChallengePayload {
+	nonce: string
+	requestID: string
+	ticket: string
+}
+
+export function registrationChallengePayloadJSON(
+	challenge: RegistrationChallengePayload,
+): string {
+	return JSON.stringify({
+		aps: { 'content-available': 1 },
+		dashKind: 'registration-challenge',
+		nonce: challenge.nonce,
+		requestID: challenge.requestID,
+		ticket: challenge.ticket,
+	})
+}
+
+/**
+ * Delivers the proof material only to the APNs token being registered.
+ *
+ * A fixed collapse id means repeated start requests for one device replace
+ * each other in APNs rather than queueing background wakes. Expiration zero
+ * prevents a stale challenge from being stored for later delivery.
+ */
+export async function sendRegistrationChallenge(
+	env: Env,
+	host: APNsHost,
+	deviceToken: string,
+	challenge: RegistrationChallengePayload,
+): Promise<APNsResult> {
+	const jwt = await mintJWT(env)
+	const headers: Record<string, string> = {
+		'apns-collapse-id': 'dash-registration',
+		'apns-expiration': '0',
+		'apns-priority': '5',
+		'apns-push-type': 'background',
+		'apns-topic': env.APNS_TOPIC,
+		'authorization': `bearer ${jwt}`,
+		'content-type': 'application/json',
+	}
+	return post(
+		host,
+		deviceToken,
+		headers,
+		registrationChallengePayloadJSON(challenge),
+	)
 }
 
 /**
@@ -167,6 +229,7 @@ export async function sendBackgroundRefresh(
 	env: Env,
 	host: APNsHost,
 	deviceToken: string,
+	accountID?: string,
 ): Promise<APNsResult> {
 	const jwt = await mintJWT(env)
 	const headers: Record<string, string> = {
@@ -180,8 +243,18 @@ export async function sendBackgroundRefresh(
 		host,
 		deviceToken,
 		headers,
-		JSON.stringify({ aps: { 'content-available': 1 } }),
+		backgroundRefreshPayloadJSON(accountID),
 	)
+}
+
+export function backgroundRefreshPayloadJSON(accountID?: string): string {
+	const payload: Record<string, unknown> = {
+		aps: { 'content-available': 1 },
+	}
+	if (accountID) {
+		payload.dashAccountID = accountID
+	}
+	return JSON.stringify(payload)
 }
 
 async function post(

@@ -9,8 +9,31 @@
 	},
 	"observability": {
 		"enabled": true,
-		"head_sampling_rate": 1
+		"head_sampling_rate": 1,
+		"logs": {
+			// Legacy notify capabilities contain an APNs token in the path.
+			// Keep status-only custom logs, but never persist request URLs.
+			"invocation_logs": false
+		}
 	},
+	"ratelimits": [
+		{
+			"name": "PUSH_REGISTRATION_GLOBAL_LIMITER",
+			"namespace_id": "2026072801",
+			"simple": {
+				"limit": 300,
+				"period": 60
+			}
+		},
+		{
+			"name": "PUSH_REGISTRATION_ACTOR_LIMITER",
+			"namespace_id": "2026072802",
+			"simple": {
+				"limit": 30,
+				"period": 60
+			}
+		}
+	],
 	"assets": {
 		"not_found_handling": "single-page-application",
 		"run_worker_first": ["/oauth/*", "/push/*", "/api/*", "/health"]

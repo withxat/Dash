@@ -260,9 +260,9 @@ final class DashUITests: XCTestCase {
     launch(app, arguments: ["-ui-preview"])
 
     XCTAssertTrue(app.staticTexts["What are we doing today?"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["home-quick-add-domain"].exists)
+    XCTAssertTrue(app.buttons["home-quick-purge-cache"].exists)
+    XCTAssertTrue(app.buttons["home-quick-enable-under-attack-mode"].exists)
     XCTAssertTrue(app.buttons["home-quick-upload-r2"].exists)
-    XCTAssertTrue(app.buttons["home-quick-add-dns"].exists)
 
     // Domains ships collapsed: the group header is there, zone names are not.
     let domainsToggle = app.buttons["home-domains-toggle"]
@@ -283,19 +283,17 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.staticTexts["View all domains"].exists)
   }
 
-  func testHomeQuickActionOpensAddDomainTray() {
+  func testHomeQuickActionOpensPurgeCacheTray() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    let addDomain = app.buttons["home-quick-add-domain"]
-    XCTAssertTrue(addDomain.waitForExistence(timeout: 5))
-    addDomain.tap()
+    let purgeCache = app.buttons["home-quick-purge-cache"]
+    XCTAssertTrue(purgeCache.waitForExistence(timeout: 5))
+    purgeCache.tap()
 
-    XCTAssertTrue(app.textFields["Domain"].waitForExistence(timeout: 5))
     XCTAssertTrue(
-      app.staticTexts
-        .matching(NSPredicate(format: "label CONTAINS[c] %@", "name servers"))
-        .firstMatch.exists)
+      app.staticTexts["Choose the domain whose cache you want to clear."]
+        .waitForExistence(timeout: 5))
   }
 
   func testDomainCardColorCanBeCustomized() {
@@ -357,7 +355,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Current"].exists)
   }
 
-  /// Push alerts live in Settings — Watchtower stays local-only.
+  /// Push setup lives in Settings; Watchtower only presents Cloudflare deliveries.
   func testWatchtowerAlertsDoNotExposeRemotePush() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
@@ -379,13 +377,15 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["History"].exists)
     XCTAssertTrue(app.buttons["Ignored"].exists)
 
-    // Live Dash warnings land in the inbox as normal rows.
-    let tunnelAlert = app.buttons.matching(
-      NSPredicate(format: "identifier CONTAINS %@", "dash:live:tunnels")
-    ).firstMatch
+    // The preview inbox is Cloudflare-only: one delivery is unread and one is
+    // the explicitly seeded first-page history baseline.
+    let tunnelAlert = app.buttons["watchtower-inbox-cf:ui-alert-1"]
     XCTAssertTrue(tunnelAlert.waitForExistence(timeout: 5))
+    XCTAssertFalse(
+      app.buttons.matching(
+        NSPredicate(format: "identifier CONTAINS %@", "dash:live:")
+      ).firstMatch.exists)
     tunnelAlert.tap()
-    XCTAssertTrue(app.staticTexts["Tunnels"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Ignore"].waitForExistence(timeout: 5))
   }
 

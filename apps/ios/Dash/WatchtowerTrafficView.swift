@@ -664,8 +664,13 @@ final class WatchtowerTrafficState {
   var loadingRanges: Set<AnalyticsRange> = []
   var needsAnalyticsAccess = false
 
+  private struct RangeLoad {
+    let id: UUID
+    let task: Task<Void, Never>
+  }
+
   private var loadedContext: AccountRequestContext?
-  private var rangeLoadIDs: [AnalyticsRange: UUID] = [:]
+  private var rangeLoads: [AnalyticsRange: RangeLoad] = [:]
 
   var snapshot: WatchtowerAnalyticsChartModel.Snapshot? { snapshots[range] }
   var overview: AccountAnalyticsOverview? { snapshot?.overview }
@@ -749,6 +754,13 @@ final class WatchtowerTrafficState {
       return
     }
 
+    if force {
+      rangeLoads.removeValue(forKey: target)?.task.cancel()
+    } else if let existing = rangeLoads[target] {
+      await existing.task.value
+      return
+    }
+
     let key = FeatureCacheKey.accountAnalytics(
       context.accountID, hours: target.accountAnalyticsHours)
     if !force, let cached: AccountAnalyticsSnapshot = model.featureCache.get(key, maxAge: nil) {
@@ -757,19 +769,46 @@ final class WatchtowerTrafficState {
       return
     }
 
-    let token = UUID()
-    rangeLoadIDs[target] = token
+    let loadID = UUID()
+    let task = Task { [weak self] in
+      guard let self else { return }
+      await self.performRangeLoad(
+        target,
+        loadID: loadID,
+        key: key,
+        model: model,
+        context: context)
+    }
+    rangeLoads[target] = RangeLoad(id: loadID, task: task)
+    await task.value
+    guard rangeLoads[target]?.id == loadID else { return }
+    rangeLoads.removeValue(forKey: target)
+    loadingRanges.remove(target)
+  }
+
+  private func performRangeLoad(
+    _ target: AnalyticsRange,
+    loadID: UUID,
+    key: String,
+    model: AppModel,
+    context: AccountRequestContext
+  ) async {
+    guard !Task.isCancelled else { return }
     do {
       let rawSnapshot = try await model.client.accountAnalytics(
         accountID: context.accountID,
         hours: target.accountAnalyticsHours,
         granularity: target.accountAnalyticsGranularity)
-      guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, rangeLoads[target]?.id == loadID,
+        model.isCurrentAccount(context)
+      else { return }
       // Keep until sign-out / account switch — Refresh is the explicit invalidation.
       model.featureCache.set(key, rawSnapshot, ttl: nil)
       commit(rawSnapshot, for: target, model: model, context: context)
     } catch {
-      guard rangeLoadIDs[target] == token, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, rangeLoads[target]?.id == loadID,
+        model.isCurrentAccount(context)
+      else { return }
       if snapshots[target] == nil {
         errorByRange[target] = error.dashActionableMessage
       }
@@ -777,7 +816,6 @@ final class WatchtowerTrafficState {
         needsAnalyticsAccess = true
       }
     }
-    loadingRanges.remove(target)
   }
 
   private func commit(
@@ -799,8 +837,11 @@ final class WatchtowerTrafficState {
   }
 
   private func reset(context: AccountRequestContext? = nil) {
+    for load in rangeLoads.values {
+      load.task.cancel()
+    }
     loadedContext = context
-    rangeLoadIDs = [:]
+    rangeLoads = [:]
     snapshots = [:]
     errorByRange = [:]
     loadingRanges = context == nil ? [] : Set(AnalyticsRange.allCases)
@@ -852,8 +893,12 @@ struct WatchtowerTrafficView: View {
           statusCard {
             emptyContent(
               title: DashL10n.string("Analytics access needed"),
-              message: DashL10n.string(
-                "Allow Account Analytics: Read to load account traffic."),
+              message: [
+                DashL10n.string("Allow Account Analytics: Read to load account traffic."),
+                DashL10n.string(
+                  "Dash requests all permissions used by its current features in one authorization."
+                ),
+              ].joined(separator: " "),
               buttonTitle: DashL10n.string("Grant access")
             ) {
               model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)

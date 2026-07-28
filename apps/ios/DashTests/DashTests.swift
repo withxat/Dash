@@ -1572,7 +1572,7 @@ private let watchtowerDropFrames: [CGRect] = [
       == .open(scoped))
 }
 
-@Test func pushRegistrationTracksAndValidatesAccountBindings() throws {
+@Test func pushRegistrationTracksAccountsAndValidatesOpaqueRelayURLs() throws {
   let suite = "dash.tests.push.\(UUID().uuidString)"
   let defaults = try #require(UserDefaults(suiteName: suite))
   defer { defaults.removePersistentDomain(forName: suite) }
@@ -1585,26 +1585,252 @@ private let watchtowerDropFrames: [CGRect] = [
     PushRegistrationService.enabledAccountIDs(in: defaults)
       == ["account-a", "account-b"])
 
-  let token = String(repeating: "a", count: 64)
-  let mac = String(repeating: "b", count: 64)
-  let scoped = "https://dash.xat.sh/push/notify/production.\(token).account-a.\(mac)"
+  let opaque = String(repeating: "Abc_123-", count: 10)
+  let scoped = "https://dash.xat.sh/push/notify/\(opaque)"
   let relay = try #require(URL(string: "https://dash.xat.sh"))
-  #expect(PushRegistrationService.isAccountBoundNotifyURL(scoped, accountID: "account-a"))
   #expect(
-    PushRegistrationService.isAccountBoundNotifyURL(
+    PushRegistrationService.isValidRelayNotifyURL(
       scoped,
-      accountID: "account-a",
       relayBaseURL: relay))
-  #expect(!PushRegistrationService.isAccountBoundNotifyURL(scoped, accountID: "account-b"))
   #expect(
-    !PushRegistrationService.isAccountBoundNotifyURL(
+    !PushRegistrationService.isValidRelayNotifyURL(
       scoped.replacingOccurrences(of: "dash.xat.sh", with: "example.com"),
-      accountID: "account-a",
       relayBaseURL: relay))
   #expect(
-    !PushRegistrationService.isAccountBoundNotifyURL(
-      "https://dash.xat.sh/push/notify/production.token.mac",
-      accountID: "account-a"))
+    !PushRegistrationService.isValidRelayNotifyURL(
+      "https://dash.xat.sh/push/notify/short",
+      relayBaseURL: relay))
+  #expect(
+    !PushRegistrationService.isValidRelayNotifyURL(
+      "https://dash.xat.sh/push/notify/\(opaque).legacy",
+      relayBaseURL: relay))
+  #expect(
+    !PushRegistrationService.isValidRelayNotifyURL(
+      "https://dash.xat.sh/push/notify/\(opaque)?account=account-a",
+      relayBaseURL: relay))
+  #expect(
+    !PushRegistrationService.isValidRelayNotifyURL(
+      "https://dash.xat.sh/push/notify/\(opaque)/extra",
+      relayBaseURL: relay))
+}
+
+@Test func pushPayloadSeparatesPossessionChallengeFromAccountRefresh() throws {
+  let challenge = try #require(
+    PushRemoteNotificationPayload.registrationChallenge(from: [
+      "aps": ["content-available": 1],
+      "dashKind": "registration-challenge",
+      "requestID": "request-1",
+      "ticket": "sealed-ticket",
+      "nonce": "nonce-1",
+    ]))
+  #expect(
+    challenge
+      == PushRegistrationChallenge(
+        requestID: "request-1",
+        ticket: "sealed-ticket",
+        nonce: "nonce-1"))
+  #expect(
+    PushRemoteNotificationPayload.accountID(from: [
+      "aps": ["content-available": 1],
+      "dashAccountID": "account-a",
+    ]) == "account-a")
+  #expect(
+    PushRemoteNotificationPayload.registrationChallenge(from: [
+      "dashKind": "registration-challenge",
+      "requestID": "unsolicited",
+    ]) == nil)
+  #expect(PushRemoteNotificationPayload.accountID(from: ["dashAccountID": "  "]) == nil)
+}
+
+@Test func pushChallengeInboxRejectsUnsolicitedAndReplayedChallenges() async throws {
+  let inbox = PushRegistrationChallengeInbox()
+  let challenge = PushRegistrationChallenge(
+    requestID: "request-1",
+    ticket: "sealed-ticket",
+    nonce: "nonce-1")
+  let unsolicited = await inbox.receive(challenge)
+  #expect(!unsolicited)
+
+  await inbox.prepare(requestID: challenge.requestID)
+  let accepted = await inbox.receive(challenge)
+  #expect(accepted)
+  let delivered = try await inbox.wait(for: challenge.requestID, timeout: .seconds(1))
+  #expect(delivered == challenge)
+  let replayed = await inbox.receive(challenge)
+  #expect(!replayed)
+}
+
+@Test @MainActor func pushOperationGateLetsDisableSupersedeReconcile() throws {
+  let accountID = "gate-\(UUID().uuidString)"
+  let reconcile = try #require(
+    PushRegistrationOperationGate.beginReconcile(
+      accountID: accountID,
+      isCurrentlyEnabled: true))
+  #expect(PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
+
+  let disable = PushRegistrationOperationGate.beginDesiredChange(
+    accountID: accountID,
+    enabled: false)
+  #expect(!PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
+  #expect(PushRegistrationOperationGate.isCurrent(disable, enabled: false))
+  #expect(
+    PushRegistrationOperationGate.beginReconcile(
+      accountID: accountID,
+      isCurrentlyEnabled: true) == nil)
+}
+
+@Test @MainActor func signOutPreparationInvalidatesUnstoredPushEnables() {
+  let enablingAccount = "enable-\(UUID().uuidString)"
+  let reconcilingAccount = "reconcile-\(UUID().uuidString)"
+  let enable = PushRegistrationOperationGate.beginDesiredChange(
+    accountID: enablingAccount,
+    enabled: true)
+  let reconcile = PushRegistrationOperationGate.beginReconcile(
+    accountID: reconcilingAccount,
+    isCurrentlyEnabled: true)
+
+  PushRegistrationService.prepareForSignOut(
+    accountIDs: [enablingAccount, reconcilingAccount])
+
+  #expect(!PushRegistrationOperationGate.isCurrent(enable, enabled: true))
+  #expect(reconcile != nil)
+  if let reconcile {
+    #expect(!PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
+  }
+  #expect(
+    PushRegistrationOperationGate.beginReconcile(
+      accountID: enablingAccount,
+      isCurrentlyEnabled: true) == nil)
+  #expect(
+    PushRegistrationOperationGate.beginReconcile(
+      accountID: reconcilingAccount,
+      isCurrentlyEnabled: true) == nil)
+}
+
+@Test func pushWebhookNameIsStableWithoutExposingTheDeviceToken() {
+  let token = String(repeating: "ab", count: 32)
+  let otherToken = String(repeating: "cd", count: 32)
+  let name = PushRegistrationService.webhookName(deviceToken: token)
+  #expect(name == PushRegistrationService.webhookName(deviceToken: token.uppercased()))
+  #expect(name != PushRegistrationService.webhookName(deviceToken: otherToken))
+  #expect(!name.localizedCaseInsensitiveContains(token))
+}
+
+@Test func pushCleanupTombstonesPreserveTheRemoteDeletionHandle() throws {
+  let suite = "dash.tests.push-cleanup.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let webhookKey = PushRegistrationService.webhookIDKey(accountID: "account-a")
+  defaults.set("webhook-a", forKey: webhookKey)
+
+  PushRegistrationService.recordCleanupAttempt(
+    webhookID: "webhook-a",
+    accountID: "account-a",
+    defaults: defaults,
+    now: Date(timeIntervalSince1970: 100))
+  PushRegistrationService.recordCleanupAttempt(
+    webhookID: "webhook-a",
+    accountID: "account-a",
+    defaults: defaults,
+    now: Date(timeIntervalSince1970: 200))
+
+  #expect(defaults.string(forKey: webhookKey) == "webhook-a")
+  #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults) == ["account-a"])
+  #expect(PushRegistrationService.reconcilableAccountIDs(in: defaults).isEmpty)
+  let tombstone = try #require(
+    PushRegistrationService.cleanupTombstone(accountID: "account-a", in: defaults))
+  #expect(tombstone.webhookID == "webhook-a")
+  #expect(tombstone.attempts == 2)
+  #expect(tombstone.lastAttemptAt == Date(timeIntervalSince1970: 200))
+
+  PushRegistrationService.clearCleanup(accountID: "account-a", defaults: defaults)
+  #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults).isEmpty)
+  #expect(PushRegistrationService.reconcilableAccountIDs(in: defaults) == ["account-a"])
+}
+
+@Test @MainActor
+func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() throws {
+  let suite = "dash.tests.watchtower-remote-refresh.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+
+  WatchtowerRemoteRefreshInvalidationStore.mark(
+    accountID: "account-b",
+    defaults: defaults)
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.contains(
+      accountID: "account-b", defaults: defaults))
+  #expect(
+    !WatchtowerRemoteRefreshInvalidationStore.contains(
+      accountID: "account-a", defaults: defaults))
+  #expect(
+    !WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
+      source: .foreground,
+      accountID: "account-b",
+      defaults: defaults))
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
+      source: .foreground,
+      accountID: "account-a",
+      defaults: defaults))
+  #expect(
+    !WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
+      source: .remoteNotification,
+      accountID: "account-a",
+      defaults: defaults))
+  WatchtowerRemoteRefreshInvalidationStore.mark(
+    accountID: "account-b",
+    defaults: defaults)
+  WatchtowerRemoteRefreshInvalidationStore.clear(
+    accountID: "account-b",
+    matching: 1,
+    defaults: defaults)
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.pendingGeneration(
+      accountID: "account-b", defaults: defaults) == 2)
+  WatchtowerRemoteRefreshInvalidationStore.clear(
+    accountID: "account-b",
+    matching: 2,
+    defaults: defaults)
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.generation(
+      accountID: "account-b", defaults: defaults) == 2)
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.pendingGeneration(
+      accountID: "account-b", defaults: defaults) == nil)
+  #expect(
+    WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
+      source: .foreground,
+      accountID: "account-b",
+      defaults: defaults))
+}
+
+@Test func notificationAccountAuthorizationDefaultsClosed() throws {
+  let suite = "dash.tests.notification-accounts.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+
+  #expect(!NotificationAccountAuthorizationStore.contains("account-a", in: defaults))
+  NotificationAccountAuthorizationStore.replace(
+    with: ["account-a", " account-b ", ""],
+    in: defaults)
+  #expect(NotificationAccountAuthorizationStore.contains("account-a", in: defaults))
+  #expect(NotificationAccountAuthorizationStore.contains("account-b", in: defaults))
+  #expect(!NotificationAccountAuthorizationStore.contains("account-c", in: defaults))
+  #expect(!NotificationAccountAuthorizationStore.contains(nil, in: defaults))
+  NotificationAccountAuthorizationStore.clear(in: defaults)
+  #expect(!NotificationAccountAuthorizationStore.contains("account-a", in: defaults))
+}
+
+@Test func r2DelayedAttachmentGateRejectsStaleAndDismantledCallbacks() {
+  var gate = R2DelayedAttachmentGate()
+  let first = gate.schedule()
+  #expect(gate.accepts(first))
+  let second = gate.schedule()
+  #expect(!gate.accepts(first))
+  #expect(gate.accepts(second))
+  gate.invalidate()
+  #expect(!gate.accepts(second))
 }
 
 @Test func underAttackRestoreLevelFallsBackToMedium() {

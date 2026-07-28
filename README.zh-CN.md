@@ -18,7 +18,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | **R2** | 桶浏览/上传/预览、改名移动、公开 URL、分享扩展与快捷指令 |
 | **KV** | Namespace、key 列表、读取与创建·编辑·删除 |
 
-壳层能力：Home 启动器、Resources 目录、Watchtower 健康信号、Settings（推送告警、About）、多账户 OAuth，以及仅 iPhone 的单栈导航。
+壳层能力：Home 启动器、Resources 目录、Watchtower 流量图表与 Cloudflare 通知历史、Settings（推送告警、About）、多账户 OAuth，以及仅 iPhone 的单栈导航。
 
 不在 MVP 范围：D1、Queues、Vectorize、Secrets Store、Images、Stream、Access，以及 iPad / 分栏布局。
 
@@ -39,6 +39,10 @@ cp apps/ios/Config/Secrets.xcconfig.example apps/ios/Config/Secrets.xcconfig
 ```
 
 在本地配置中填写 Cloudflare OAuth Client ID 和 relay 的 HTTPS `/oauth/callback` 地址。Cloudflare 控制台只注册 HTTPS 地址；relay 会把最终回调转换成 `dash://oauth/callback`。
+
+真实账户登录会在一次授权中请求 Dash 当前功能使用的全部读写权限；Demo 仍保持只读。已有的较窄或未知授权会在下一次访问操作打开 OAuth 时升级到当前权限集合。
+
+调整 scope 时，Cloudflare OAuth 客户端必须启用完全相同的 scope ID，并重新确认更新后的授权请求。
 
 ## 开发与验证
 

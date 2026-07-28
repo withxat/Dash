@@ -20,6 +20,12 @@ struct PushAlertsSettingsCard: View {
     DashListGroup(title: "Push alerts") {
       dashListCard {
         VStack(alignment: .leading, spacing: 10) {
+          if !model.hasScopes(PushAlertScopes.all) {
+            DashAuthorizationDisclosure()
+              .padding(.horizontal, 16)
+              .padding(.top, 12)
+          }
+
           DashToggleRow(
             title: "Push alerts",
             subtitle:
@@ -604,7 +610,7 @@ private struct AlertPolicyCreateForm: View {
   var body: some View {
     DashFormSheet(
       saveTitle: allowsWrites
-        ? "Create" : (model.isDemoSession ? "Connect your account" : "Grant write access"),
+        ? "Create" : (model.isDemoSession ? "Connect your account" : "Grant access"),
       isSaving: saving,
       canSave: allowsWrites ? !name.isEmpty && !selectedType.isEmpty : true,
       onSave: {
@@ -619,7 +625,11 @@ private struct AlertPolicyCreateForm: View {
           if !allowsWrites {
             DashNotice(
               kind: .warning,
-              message: "Read-only — grant notification write access to create a policy.")
+              message:
+                model.isDemoSession
+                ? "Connect your account when you are ready to make changes"
+                : "Dash requests all permissions used by its current features in one authorization."
+            )
           }
           if let saveError {
             DashNotice(kind: .error, message: saveError)

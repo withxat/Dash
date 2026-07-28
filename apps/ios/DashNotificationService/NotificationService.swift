@@ -31,6 +31,41 @@ final class NotificationService: UNNotificationServiceExtension {
     bestAttempt = content
 
     let userInfo = content.userInfo
+    guard
+      NotificationAccountAuthorizationStore.contains(
+        userInfo[AlertLocalization.PayloadKey.accountID] as? String)
+    else {
+      // A best-effort webhook deletion can fail while the phone is offline.
+      // Once the app has signed out, never expose that old account's resource
+      // name, route, thread, or actions on the Lock Screen.
+      content.title = DashAlertStrings.string("Dash")
+      content.subtitle = ""
+      content.body = DashAlertStrings.string("Open Dash to sync your Cloudflare alerts.")
+      content.categoryIdentifier = ""
+      content.threadIdentifier = "dash"
+      content.targetContentIdentifier = nil
+      content.interruptionLevel = .passive
+      content.sound = nil
+      content.userInfo = [:]
+      content.badge = 0
+      contentHandler(content)
+      return
+    }
+
+    // The relay's visible `aps.alert` is deliberately generic. Restore the
+    // original Cloudflare copy only after the account boundary above succeeds;
+    // if iOS ever skips this extension, the Lock Screen remains fail-closed.
+    if let originalTitle =
+      userInfo[AlertLocalization.PayloadKey.originalTitle] as? String
+    {
+      content.title = originalTitle
+    }
+    if let originalBody =
+      userInfo[AlertLocalization.PayloadKey.originalBody] as? String
+    {
+      content.body = originalBody
+    }
+
     if let rewrite = AlertLocalization.rewrite(
       alertType: userInfo[AlertLocalization.PayloadKey.alertType] as? String,
       subject: userInfo[AlertLocalization.PayloadKey.subject] as? String,

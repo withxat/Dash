@@ -528,7 +528,7 @@ func dashListCardRows<Item: Identifiable, Row: View>(
   inset: Bool = true,
   @ViewBuilder row: @escaping (Item) -> Row
 ) -> some View {
-  ForEach(Array(items.enumerated()), id: \.element.id) { _, item in
+  ForEach(items) { item in
     if inset {
       row(item)
         .dashListCardInset()
@@ -678,6 +678,9 @@ struct DashFeatureList<Header: View, Content: View>: View {
     let presentation = DashFailurePresentation.from(message: message)
     VStack(alignment: .leading, spacing: DashTheme.Spacing.compact) {
       DashNotice(kind: .error, message: presentation.message)
+      if presentation.action == .grantAccess {
+        DashAuthorizationDisclosure()
+      }
       DashSecondaryPillButton(title: presentation.action.title) {
         switch presentation.action {
         case .signInAgain:
@@ -1415,7 +1418,15 @@ struct ErrorStateView: View {
   var body: some View {
     DashListSkeleton()
       .dashColdFailure(
-        message: presentation.message,
+        message:
+          presentation.action == .grantAccess && !model.isDemoSession
+          ? [
+            presentation.message,
+            DashL10n.string(
+              "Dash requests all permissions used by its current features in one authorization."
+            ),
+          ].joined(separator: " ")
+          : presentation.message,
         actionTitle: presentation.action.title,
         extent: .scrollViewport,
         action: recover)
@@ -1431,6 +1442,26 @@ struct ErrorStateView: View {
           ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
     case .tryAgain:
       retry()
+    }
+  }
+}
+
+/// Explains the real OAuth boundary before any access-recovery control opens
+/// Cloudflare. Dash currently upgrades real accounts to the complete reviewed
+/// scope set, even when the missing permission belongs to one feature.
+struct DashAuthorizationDisclosure: View {
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    if !model.isDemoSession {
+      Text(
+        DashL10n.string(
+          "Dash requests all permissions used by its current features in one authorization."
+        )
+      )
+      .dashTextStyle(.caption)
+      .foregroundStyle(DashTheme.subtle)
+      .fixedSize(horizontal: false, vertical: true)
     }
   }
 }

@@ -919,6 +919,7 @@ struct WorkerAddDomainForm: View {
   @State private var hostname = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
+  @State private var zonesContext: AccountRequestContext?
   @State private var saving = false
   @State private var error: String?
 
@@ -968,22 +969,38 @@ struct WorkerAddDomainForm: View {
         }
       }
     )
-    .task { await loadZones() }
+    .task(id: model.accountRequestContext) { await loadZones() }
   }
 
   private func loadZones() async {
-    guard let accountID = model.activeAccountID else { return }
-    if let cached: [CloudflareZone] = model.featureCache.get(FeatureCacheKey.zones(accountID)) {
+    let context = model.accountRequestContext
+    zonesContext = context
+    zones = []
+    zonesLoaded = false
+    guard let context else { return }
+    if let cached: [CloudflareZone] = model.featureCache.get(
+      FeatureCacheKey.zones(context.accountID))
+    {
+      guard model.isCurrentAccount(context), zonesContext == context else { return }
       zones = cached
       zonesLoaded = true
       return
     }
-    zones = (try? await model.client.listZones(accountID: accountID, perPage: 50).items) ?? []
+    let client = model.client
+    let loaded =
+      (try? await client.listZones(accountID: context.accountID, perPage: 50).items) ?? []
+    guard !Task.isCancelled, model.isCurrentAccount(context), zonesContext == context else {
+      return
+    }
+    zones = loaded
     zonesLoaded = true
   }
 
   private func save() async {
-    guard let context = model.accountRequestContext, let zone = matchedZone else { return }
+    guard let context = model.accountRequestContext,
+      zonesContext == context,
+      let zone = matchedZone
+    else { return }
     let accountID = context.accountID
     saving = true
     defer { saving = false }

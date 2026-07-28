@@ -44,10 +44,6 @@ private struct DestinationNavigatorKey: EnvironmentKey {
   static let defaultValue: DestinationNavigator? = nil
 }
 
-private struct NavigationSurfaceActiveKey: EnvironmentKey {
-  static let defaultValue = true
-}
-
 private struct DashTabActiveKey: EnvironmentKey {
   static let defaultValue = true
 }
@@ -56,12 +52,6 @@ extension EnvironmentValues {
   var destinationNavigator: DestinationNavigator? {
     get { self[DestinationNavigatorKey.self] }
     set { self[DestinationNavigatorKey.self] = newValue }
-  }
-
-  /// False when this tab is hidden or this destination is buried under a push.
-  var navigationSurfaceActive: Bool {
-    get { self[NavigationSurfaceActiveKey.self] }
-    set { self[NavigationSurfaceActiveKey.self] = newValue }
   }
 
   /// True when this tab is the selected page, regardless of push depth. Every
@@ -103,9 +93,6 @@ struct DestinationStackHost<Root: View>: View {
             // through mid-push.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(DashTheme.canvas.ignoresSafeArea())
-            // Buried surfaces stay mounted; only the visible top is active.
-            .environment(
-              \.navigationSurfaceActive, isTabActive && destination == navigator.path.last)
         }
     }
     // No host plate: the stack is transparent so its tab root shows the
@@ -119,7 +106,6 @@ struct DestinationStackHost<Root: View>: View {
     }
     .environment(\.destinationNavigator, navigator)
     .environment(\.dashTabActive, isTabActive)
-    .environment(\.navigationSurfaceActive, isTabActive && navigator.path.isEmpty)
   }
 
 }

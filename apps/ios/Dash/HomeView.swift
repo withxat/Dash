@@ -896,13 +896,17 @@ private struct HomeCreateKVKeyAction: View {
   @State private var selectedNamespaceID: String?
   @State private var loading = true
   @State private var error: String?
+  @State private var loadedContext: AccountRequestContext?
 
   var body: some View {
     Group {
-      if let selectedNamespaceID {
+      if loadedContext != model.accountRequestContext {
+        HomeActionLoadingRow(title: DashL10n.string("Loading KV namespaces…"))
+      } else if let selectedNamespaceID {
         KVCreateKeySheet(namespaceID: selectedNamespaceID) {
-          guard let accountID = model.activeAccountID else { return }
-          model.featureCache.remove(prefix: "kvKeys:\(accountID):\(selectedNamespaceID):")
+          guard let context = loadedContext, model.isCurrentAccount(context) else { return }
+          model.featureCache.remove(
+            prefix: "kvKeys:\(context.accountID):\(selectedNamespaceID):")
         }
       } else if loading {
         HStack(spacing: 10) {
@@ -945,33 +949,51 @@ private struct HomeCreateKVKeyAction: View {
         }
       }
     }
-    .task { await loadNamespaces() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await loadNamespaces()
+    }
   }
 
   private func loadNamespaces() async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       loading = false
       return
     }
-    let key = FeatureCacheKey.kvNamespaces(accountID)
+    let key = FeatureCacheKey.kvNamespaces(context.accountID)
     if let cached: [KVNamespace] = model.featureCache.get(key) {
-      apply(cached)
+      guard model.isCurrentAccount(context) else { return }
+      apply(cached, context: context)
       return
     }
+    let client = model.client
     do {
-      let loaded = try await model.client.listKVNamespaces(accountID: accountID).items
+      let loaded = try await client.listKVNamespaces(accountID: context.accountID).items
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.featureCache.set(key, loaded)
-      apply(loaded)
+      apply(loaded, context: context)
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       loading = false
     }
   }
 
-  private func apply(_ loaded: [KVNamespace]) {
+  private func apply(_ loaded: [KVNamespace], context: AccountRequestContext) {
+    guard model.isCurrentAccount(context), loadedContext == context else { return }
     namespaces = loaded
     selectedNamespaceID = loaded.count == 1 ? loaded.first?.id : nil
     loading = false
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    namespaces = []
+    selectedNamespaceID = nil
+    loading = context != nil
+    error = nil
   }
 }
 
@@ -981,16 +1003,22 @@ private struct HomePagesDomainAction: View {
   @State private var selectedProject: String?
   @State private var loading = true
   @State private var error: String?
+  @State private var loadedContext: AccountRequestContext?
 
   var body: some View {
     Group {
-      if let selectedProject {
+      if loadedContext != model.accountRequestContext {
+        HomeActionLoadingRow(title: DashL10n.string("Loading Pages projects…"))
+      } else if let selectedProject {
         PagesAddDomainForm(projectName: selectedProject, onAdded: {})
       } else {
         actionPicker
       }
     }
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
   }
 
   @ViewBuilder private var actionPicker: some View {
@@ -1027,29 +1055,43 @@ private struct HomePagesDomainAction: View {
   }
 
   private func load() async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       loading = false
       return
     }
-    let key = FeatureCacheKey.pagesProjects(accountID)
+    let key = FeatureCacheKey.pagesProjects(context.accountID)
     if let cached: [PagesProject] = model.featureCache.get(key) {
-      apply(cached)
+      apply(cached, context: context)
       return
     }
+    let client = model.client
     do {
-      let loaded = try await model.client.listPagesProjects(accountID: accountID)
+      let loaded = try await client.listPagesProjects(accountID: context.accountID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.featureCache.set(key, loaded)
-      apply(loaded)
+      apply(loaded, context: context)
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       loading = false
     }
   }
 
-  private func apply(_ loaded: [PagesProject]) {
+  private func apply(_ loaded: [PagesProject], context: AccountRequestContext) {
+    guard model.isCurrentAccount(context), loadedContext == context else { return }
     projects = loaded
     selectedProject = loaded.count == 1 ? loaded.first?.name : nil
     loading = false
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    projects = []
+    selectedProject = nil
+    loading = context != nil
+    error = nil
   }
 }
 
@@ -1059,16 +1101,22 @@ private struct HomeWorkerDomainAction: View {
   @State private var selectedWorker: String?
   @State private var loading = true
   @State private var error: String?
+  @State private var loadedContext: AccountRequestContext?
 
   var body: some View {
     Group {
-      if let selectedWorker {
+      if loadedContext != model.accountRequestContext {
+        HomeActionLoadingRow(title: DashL10n.string("Loading Workers…"))
+      } else if let selectedWorker {
         WorkerAddDomainForm(service: selectedWorker, onAdded: {})
       } else {
         actionPicker
       }
     }
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
   }
 
   @ViewBuilder private var actionPicker: some View {
@@ -1101,29 +1149,43 @@ private struct HomeWorkerDomainAction: View {
   }
 
   private func load() async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       loading = false
       return
     }
-    let key = FeatureCacheKey.workers(accountID)
+    let key = FeatureCacheKey.workers(context.accountID)
     if let cached: [WorkerScript] = model.featureCache.get(key) {
-      apply(cached)
+      apply(cached, context: context)
       return
     }
+    let client = model.client
     do {
-      let loaded = try await model.client.listWorkers(accountID: accountID)
+      let loaded = try await client.listWorkers(accountID: context.accountID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.featureCache.set(key, loaded)
-      apply(loaded)
+      apply(loaded, context: context)
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       loading = false
     }
   }
 
-  private func apply(_ loaded: [WorkerScript]) {
+  private func apply(_ loaded: [WorkerScript], context: AccountRequestContext) {
+    guard model.isCurrentAccount(context), loadedContext == context else { return }
     workers = loaded
     selectedWorker = loaded.count == 1 ? loaded.first?.id : nil
     loading = false
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    workers = []
+    selectedWorker = nil
+    loading = context != nil
+    error = nil
   }
 }
 
@@ -1226,24 +1288,29 @@ private struct HomeZoneModeAction: View {
   }
 
   private func enable(for zone: CloudflareZone) async {
+    guard let context = model.accountRequestContext else { return }
+    let client = model.client
     working = true
     error = nil
     defer { working = false }
     do {
       switch mode {
       case .development:
-        _ = try await model.client.updateZoneSetting(
+        _ = try await client.updateZoneSetting(
           zoneID: zone.id, settingID: "development_mode", value: .string("on"))
+        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         result = DashL10n.string("Development Mode is on for \(zone.name).")
       case .underAttack:
-        let settings = try await model.client.listZoneSettings(zoneID: zone.id)
+        let settings = try await client.listZoneSettings(zoneID: zone.id)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         if case .string(let current)? = settings.first(where: { $0.id == "security_level" })?
           .value
         {
           UserDefaults.standard.set(current, forKey: "dash.previous_security_level.\(zone.id)")
         }
-        _ = try await model.client.updateZoneSetting(
+        _ = try await client.updateZoneSetting(
           zoneID: zone.id, settingID: "security_level", value: .string("under_attack"))
+        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         result = DashL10n.string("Under Attack mode is on for \(zone.name).")
       }
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zone.id))
@@ -1251,6 +1318,7 @@ private struct HomeZoneModeAction: View {
         model.toasts.success(result)
       }
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       DashDelight.failError()
     }
@@ -1702,21 +1770,25 @@ struct AddDomainSheet: View {
   }
 
   private func create() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
+    let client = model.client
+    let normalizedName = AddDomainValidation.normalized(name)
     creating = true
     error = nil
+    defer { creating = false }
     do {
-      let zone = try await model.client.createZone(
-        name: AddDomainValidation.normalized(name), accountID: accountID)
+      let zone = try await client.createZone(
+        name: normalizedName, accountID: context.accountID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.toasts.success(DashL10n.string("Created successfully."))
       onCreated()
       withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
         created = zone
       }
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
-    creating = false
   }
 }
 
@@ -1903,6 +1975,7 @@ private struct HomeDomainsSection: View {
         kind: .warning,
         message: DashL10n.string("Grant access to see domains here.")
       )
+      DashAuthorizationDisclosure()
       DashSecondaryPillButton(title: DashFailureAction.grantAccess.title) {
         model.requestAccess(to: HomeDomainsAccess.recoveryScopes)
       }
@@ -1915,6 +1988,9 @@ private struct HomeDomainsSection: View {
     let presentation = DashFailurePresentation.from(message: message)
     return VStack(alignment: .leading, spacing: 10) {
       DashNotice(kind: .error, message: presentation.message)
+      if presentation.action == .grantAccess {
+        DashAuthorizationDisclosure()
+      }
       DashSecondaryPillButton(title: presentation.action.title) {
         performFailureAction(presentation.action)
       }

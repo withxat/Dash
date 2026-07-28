@@ -10,4 +10,6 @@ export interface Env {
 	APNS_TEAM_ID: string
 	APNS_TOPIC: string
 	PUSH_HMAC_SECRET: string
+	PUSH_REGISTRATION_ACTOR_LIMITER: RateLimit
+	PUSH_REGISTRATION_GLOBAL_LIMITER: RateLimit
 }

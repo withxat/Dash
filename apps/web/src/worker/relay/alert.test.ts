@@ -2,7 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { mapAlert } from './alert.ts'
-import { alertPayloadJSON } from './apns.ts'
+import {
+	alertPayloadJSON,
+	backgroundRefreshPayloadJSON,
+	registrationChallengePayloadJSON,
+} from './apns.ts'
 
 describe('mapAlert', () => {
 	it('includes a watchtower deep link by default', () => {
@@ -168,7 +172,12 @@ describe('alertPayloadJSON', () => {
 				}),
 			),
 		)
-		assert.deepEqual(payload.aps.alert, { body: 'Attack detected', title: 'L7 DDoS' })
+		assert.deepEqual(payload.aps.alert, {
+			body: 'Open Dash to sync your Cloudflare alerts.',
+			title: 'Dash',
+		})
+		assert.equal(payload.dashOriginalTitle, 'L7 DDoS')
+		assert.equal(payload.dashOriginalBody, 'Attack detected')
 		assert.equal(payload.aps['interruption-level'], 'time-sensitive')
 		assert.equal(payload.aps['mutable-content'], 1)
 		assert.equal(payload.aps['thread-id'], 'zone:z1')
@@ -184,5 +193,35 @@ describe('alertPayloadJSON', () => {
 		assert.equal('category' in payload.aps, false)
 		assert.equal(payload.aps['thread-id'], undefined)
 		assert.equal(payload.aps['interruption-level'], 'active')
+	})
+
+	it('carries account identity at the top level when the binding is scoped', () => {
+		const payload = JSON.parse(
+			alertPayloadJSON(mapAlert({ text: 'Alert fired.' }), 'account-1'),
+		)
+		assert.equal(payload.dashAccountID, 'account-1')
+		assert.equal(
+			JSON.parse(backgroundRefreshPayloadJSON('account-1')).dashAccountID,
+			'account-1',
+		)
+		assert.equal(
+			'dashAccountID' in JSON.parse(backgroundRefreshPayloadJSON()),
+			false,
+		)
+	})
+
+	it('keeps registration proof material in the silent challenge payload', () => {
+		const payload = JSON.parse(registrationChallengePayloadJSON({
+			nonce: 'nonce',
+			requestID: 'request-1',
+			ticket: 'ticket',
+		}))
+		assert.deepEqual(payload, {
+			aps: { 'content-available': 1 },
+			dashKind: 'registration-challenge',
+			nonce: 'nonce',
+			requestID: 'request-1',
+			ticket: 'ticket',
+		})
 	})
 })

@@ -1069,6 +1069,26 @@ private final class R2ObjectFrameStore {
 /// UITableView-style multiselect: a two-finger pan on the bucket's scroll view
 /// enters selection mode and paints rows under the fingers. One-finger scroll
 /// stays exclusive (`maximumNumberOfTouches = 1` while attached).
+struct R2DelayedAttachmentGate {
+  private(set) var generation = 0
+  private(set) var isMounted = true
+
+  mutating func schedule() -> Int {
+    isMounted = true
+    generation &+= 1
+    return generation
+  }
+
+  mutating func invalidate() {
+    isMounted = false
+    generation &+= 1
+  }
+
+  func accepts(_ candidate: Int) -> Bool {
+    isMounted && generation == candidate
+  }
+}
+
 private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
   var isEnabled: Bool
   var onBegan: () -> Void
@@ -1094,16 +1114,17 @@ private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
     coordinator.onPaintAt = onPaintAt
     coordinator.onEnded = onEnded
     coordinator.recognizer?.isEnabled = isEnabled
+    let generation = coordinator.scheduleAttachment()
     DispatchQueue.main.async {
-      coordinator.attach(from: uiView)
+      coordinator.attach(from: uiView, generation: generation)
       DispatchQueue.main.async {
-        coordinator.attach(from: uiView)
+        coordinator.attach(from: uiView, generation: generation)
       }
     }
   }
 
   static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
-    coordinator.detach()
+    coordinator.invalidate()
   }
 
   final class Coordinator: NSObject, UIGestureRecognizerDelegate {
@@ -1114,9 +1135,17 @@ private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
     weak var scrollView: UIScrollView?
     weak var recognizer: UIPanGestureRecognizer?
     private var originalMaxTouches: Int?
+    private var attachmentGate = R2DelayedAttachmentGate()
 
-    func attach(from probe: UIView) {
-      guard let scroll = Self.contentScrollView(from: probe) else { return }
+    func scheduleAttachment() -> Int {
+      attachmentGate.schedule()
+    }
+
+    func attach(from probe: UIView, generation: Int) {
+      guard attachmentGate.accepts(generation), probe.window != nil,
+        let scroll = Self.contentScrollView(from: probe),
+        scroll.window === probe.window
+      else { return }
       if scrollView === scroll, recognizer != nil {
         recognizer?.isEnabled = isEnabled
         return
@@ -1133,6 +1162,14 @@ private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
       pan.isEnabled = isEnabled
       scroll.addGestureRecognizer(pan)
       recognizer = pan
+    }
+
+    func invalidate() {
+      attachmentGate.invalidate()
+      onBegan = {}
+      onPaintAt = { _ in }
+      onEnded = {}
+      detach()
     }
 
     func detach() {
@@ -1245,6 +1282,7 @@ struct KVNamespacesView: View {
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var loadedContext: AccountRequestContext?
 
   var body: some View {
     DashFeatureList(
@@ -1278,43 +1316,64 @@ struct KVNamespacesView: View {
       }
     }
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
     .onAppear { reloadIfInvalidated() }
   }
 
   /// The cache drops under this list on memory pressure while it stays alive
   /// below a child screen; refresh on return when the cache went cold.
   private func reloadIfInvalidated() {
-    guard let id = model.activeAccountID, !namespaces.isEmpty else { return }
-    let cached: [KVNamespace]? = model.featureCache.get(FeatureCacheKey.kvNamespaces(id))
+    guard let context = loadedContext, model.isCurrentAccount(context), !namespaces.isEmpty
+    else { return }
+    let cached: [KVNamespace]? = model.featureCache.get(
+      FeatureCacheKey.kvNamespaces(context.accountID))
     if cached == nil { Task { await load(force: true) } }
   }
 
   private func recordRecent(_ namespace: KVNamespace) {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = loadedContext, model.isCurrentAccount(context) else { return }
     recentsRaw = RecentResources.recording(
       RecentResource(
-        accountID: accountID, kind: .kvNamespace, resourceID: namespace.id,
+        accountID: context.accountID, kind: .kvNamespace, resourceID: namespace.id,
         title: namespace.title),
       in: recentsRaw)
   }
 
   private func load(force: Bool = false) async {
-    guard let id = model.activeAccountID else { return }
-    let key = FeatureCacheKey.kvNamespaces(id)
+    guard let context = model.accountRequestContext else { return }
+    let key = FeatureCacheKey.kvNamespaces(context.accountID)
     if !force, let cached: [KVNamespace] = model.featureCache.get(key) {
+      guard model.isCurrentAccount(context) else { return }
       namespaces = cached
       loading = false
       error = nil
       return
     }
     if namespaces.isEmpty { loading = true }
+    let client = model.client
     do {
-      namespaces = try await model.client.listKVNamespaces(accountID: id).items
-      model.featureCache.set(key, namespaces)
+      let fetched = try await client.listKVNamespaces(accountID: context.accountID).items
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      namespaces = fetched
+      model.featureCache.set(key, fetched)
       error = nil
-    } catch { self.error = error.dashActionableMessage }
-    loading = false
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+    if model.isCurrentAccount(context) { loading = false }
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    namespaces = []
+    error = nil
+    loading = context != nil
   }
 }
 
@@ -1329,6 +1388,7 @@ struct KVNamespaceView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var loadingMore = false
+  @State private var loadedContext: AccountRequestContext?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
 
@@ -1394,7 +1454,10 @@ struct KVNamespaceView: View {
       }
       .dashSeparateToolbarBackground()
     }
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
     .refreshable { await load(force: true) }
     .onAppear { reloadIfKeysInvalidated() }
     .dashTray(isPresented: $showsCreateKey, title: DashL10n.string("Create key")) {
@@ -1406,59 +1469,90 @@ struct KVNamespaceView: View {
   }
 
   private func invalidateKeys() {
-    guard let id = model.activeAccountID else { return }
-    model.featureCache.remove(prefix: "kvKeys:\(id):\(namespaceID):")
+    guard let context = model.accountRequestContext else { return }
+    invalidateKeys(context: context)
+  }
+
+  private func invalidateKeys(context: AccountRequestContext) {
+    model.featureCache.remove(prefix: "kvKeys:\(context.accountID):\(namespaceID):")
   }
 
   /// Key detail deletes drop the cache while this list stays alive underneath;
   /// refresh on return when the entry went cold.
   private func reloadIfKeysInvalidated() {
-    guard let id = model.activeAccountID, !keys.isEmpty else { return }
+    guard let context = loadedContext, model.isCurrentAccount(context), !keys.isEmpty
+    else { return }
     let cached: CursorPageSnapshot<KVKey>? = model.featureCache.get(
-      FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: ""))
+      FeatureCacheKey.kvKeys(
+        accountID: context.accountID, namespaceID: namespaceID, prefix: ""))
     if cached == nil { Task { await load(force: true) } }
   }
 
   private func load(force: Bool = false) async {
-    guard let id = model.activeAccountID else { return }
-    let key = FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: "")
+    guard let context = model.accountRequestContext else { return }
+    let key = FeatureCacheKey.kvKeys(
+      accountID: context.accountID, namespaceID: namespaceID, prefix: "")
     if !force, let cached: CursorPageSnapshot<KVKey> = model.featureCache.get(key) {
+      guard model.isCurrentAccount(context) else { return }
       keys = cached.items
       cursor = cached.cursor
       error = nil
       loading = false
       return
     }
+    let client = model.client
     do {
-      let page = try await model.client.listKVKeys(accountID: id, namespaceID: namespaceID)
+      let page = try await client.listKVKeys(
+        accountID: context.accountID, namespaceID: namespaceID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       keys = page.items
       cursor = page.cursor
       model.featureCache.set(key, CursorPageSnapshot(items: keys, cursor: cursor))
       error = nil
     } catch {
-      if error.dashIsCancellation { return }
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
-    loading = false
+    if model.isCurrentAccount(context) { loading = false }
   }
 
   private func loadMore() async {
-    guard let id = model.activeAccountID, canLoadMore, !loadingMore else { return }
+    guard let context = model.accountRequestContext, canLoadMore, !loadingMore else { return }
+    let requestedCursor = cursor
+    let client = model.client
     loadingMore = true
-    defer { loadingMore = false }
+    defer {
+      if model.isCurrentAccount(context) {
+        loadingMore = false
+      }
+    }
     do {
-      let page = try await model.client.listKVKeys(
-        accountID: id, namespaceID: namespaceID, cursor: cursor)
+      let page = try await client.listKVKeys(
+        accountID: context.accountID, namespaceID: namespaceID, cursor: requestedCursor)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       keys += page.items
       cursor = page.cursor
       model.featureCache.set(
-        FeatureCacheKey.kvKeys(accountID: id, namespaceID: namespaceID, prefix: ""),
+        FeatureCacheKey.kvKeys(
+          accountID: context.accountID, namespaceID: namespaceID, prefix: ""),
         CursorPageSnapshot(items: keys, cursor: cursor))
       error = nil
     } catch {
-      if error.dashIsCancellation { return }
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    keys = []
+    cursor = nil
+    error = nil
+    loading = context != nil
+    loadingMore = false
+    showsCreateKey = false
   }
 }
 
@@ -1564,19 +1658,27 @@ struct KVCreateKeySheet: View {
   }
 
   private func create() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
     let trimmed = keyName.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
+    let client = model.client
     creating = true
     error = nil
-    defer { creating = false }
+    defer {
+      if model.isCurrentAccount(context) {
+        creating = false
+      }
+    }
     do {
-      try await model.client.putKVValue(
-        accountID: accountID, namespaceID: namespaceID, key: trimmed, data: Data(value.utf8))
+      try await client.putKVValue(
+        accountID: context.accountID, namespaceID: namespaceID, key: trimmed,
+        data: Data(value.utf8))
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       model.toasts.success(DashL10n.string("Created successfully."))
       onCreated()
       dismiss()
     } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
   }
@@ -1604,6 +1706,7 @@ struct KVKeyDetailView: View {
   @State private var deleting = false
   @State private var confirmingDelete = false
   @State private var copied = false
+  @State private var loadedContext: AccountRequestContext?
 
   private var canFormat: Bool { KVJSONFormatting.isValidJSON(value) }
 
@@ -1662,7 +1765,9 @@ struct KVKeyDetailView: View {
     )
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
-        if featureAllowsWrites, mode == .viewing, loaded, !confirmingDelete {
+        if featureAllowsWrites, mode == .viewing, loaded, ownsCurrentAccount,
+          !confirmingDelete
+        {
           DashToolbarIconButton(
             asset: SolarAsset.trash,
             accessibilityLabel: DashL10n.string("Delete")
@@ -1674,7 +1779,10 @@ struct KVKeyDetailView: View {
       .dashSeparateToolbarBackground()
     }
     .dashKeyboardDismissal()
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
   }
 
   @ViewBuilder private var accessoryRow: some View {
@@ -1731,11 +1839,18 @@ struct KVKeyDetailView: View {
   }
 
   private var footerEnabled: Bool {
-    if confirmingDelete { return true }
+    if confirmingDelete { return ownsCurrentAccount && !deleting }
     switch mode {
-    case .viewing: return featureAllowsWrites && loaded
-    case .editing: return loaded && !saving
+    case .viewing:
+      return featureAllowsWrites && loaded && ownsCurrentAccount
+    case .editing:
+      return loaded && !saving && ownsCurrentAccount
     }
+  }
+
+  private var ownsCurrentAccount: Bool {
+    guard let loadedContext else { return false }
+    return model.isCurrentAccount(loadedContext)
   }
 
   private func primaryAction() {
@@ -1751,52 +1866,96 @@ struct KVKeyDetailView: View {
     }
   }
 
-  private func invalidateKeys() {
-    guard let id = model.activeAccountID else { return }
-    model.featureCache.remove(prefix: "kvKeys:\(id):\(namespaceID):")
+  private func invalidateKeys(context: AccountRequestContext) {
+    model.featureCache.remove(prefix: "kvKeys:\(context.accountID):\(namespaceID):")
   }
 
   private func load() async {
-    guard let id = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
+    let client = model.client
     do {
       let raw = String(
-        decoding: try await model.client.getKVValue(
-          accountID: id, namespaceID: namespaceID, key: key), as: UTF8.self)
+        decoding: try await client.getKVValue(
+          accountID: context.accountID, namespaceID: namespaceID, key: key), as: UTF8.self)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       let prepared = KVJSONFormatting.preparedForDisplay(raw)
       value = prepared
       committedValue = prepared
       loaded = true
       error = nil
-    } catch { self.error = error.dashActionableMessage }
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
   }
 
   private func save() async {
-    guard featureAllowsWrites, let id = model.activeAccountID else { return }
+    guard featureAllowsWrites, let context = model.accountRequestContext,
+      loadedContext == context
+    else { return }
+    let client = model.client
+    let submittedValue = value
     saving = true
     error = nil
-    defer { saving = false }
+    defer {
+      if model.isCurrentAccount(context) {
+        saving = false
+      }
+    }
     do {
-      try await model.client.putKVValue(
-        accountID: id, namespaceID: namespaceID, key: key, data: Data(value.utf8))
-      committedValue = value
-      invalidateKeys()
+      try await client.putKVValue(
+        accountID: context.accountID, namespaceID: namespaceID, key: key,
+        data: Data(submittedValue.utf8))
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      committedValue = submittedValue
+      value = submittedValue
+      invalidateKeys(context: context)
       model.toasts.success(DashL10n.string("Saved successfully."))
       withAnimation(DashTheme.Motion.morph) { mode = .viewing }
-    } catch { self.error = error.dashActionableMessage }
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
   }
 
   private func deleteKey() async {
-    guard featureAllowsWrites, let id = model.activeAccountID else { return }
+    guard featureAllowsWrites, let context = model.accountRequestContext,
+      loadedContext == context
+    else { return }
+    let client = model.client
     deleting = true
     error = nil
-    defer { deleting = false }
+    defer {
+      if model.isCurrentAccount(context) {
+        deleting = false
+      }
+    }
     do {
-      try await model.client.deleteKVValue(
-        accountID: id, namespaceID: namespaceID, key: key)
-      invalidateKeys()
+      try await client.deleteKVValue(
+        accountID: context.accountID, namespaceID: namespaceID, key: key)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      invalidateKeys(context: context)
       model.toasts.success(DashL10n.string("Deleted successfully."))
       navigator?.pop()
-    } catch { self.error = error.dashActionableMessage }
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    mode = .viewing
+    value = ""
+    committedValue = ""
+    error = nil
+    loaded = false
+    saving = false
+    deleting = false
+    confirmingDelete = false
+    copied = false
   }
 }
 

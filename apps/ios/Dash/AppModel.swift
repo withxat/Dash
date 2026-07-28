@@ -18,6 +18,98 @@ struct AccountRequestContext: Hashable, Sendable {
   let generation: UInt64
 }
 
+enum WatchtowerRefreshSource: Equatable, Sendable {
+  case foreground
+  case background
+  case remoteNotification
+
+  var allowsLocalNotifications: Bool {
+    self != .remoteNotification
+  }
+}
+
+@MainActor
+enum WatchtowerRemoteRefreshInvalidationStore {
+  private static let prefix = "dash.watchtower.remote_refresh."
+  private static let generationPrefix = "\(prefix)generation."
+  private static let handledPrefix = "\(prefix)handled."
+
+  static func generationKey(accountID: String) -> String {
+    "\(generationPrefix)\(accountID)"
+  }
+
+  static func handledKey(accountID: String) -> String {
+    "\(handledPrefix)\(accountID)"
+  }
+
+  static func generation(
+    accountID: String,
+    defaults: UserDefaults = .standard
+  ) -> UInt64 {
+    UInt64(max(0, defaults.integer(forKey: generationKey(accountID: accountID))))
+  }
+
+  static func handledGeneration(
+    accountID: String,
+    defaults: UserDefaults = .standard
+  ) -> UInt64 {
+    UInt64(max(0, defaults.integer(forKey: handledKey(accountID: accountID))))
+  }
+
+  @discardableResult
+  static func mark(
+    accountID: String,
+    defaults: UserDefaults = .standard
+  ) -> UInt64 {
+    let next =
+      max(
+        generation(accountID: accountID, defaults: defaults),
+        handledGeneration(accountID: accountID, defaults: defaults)
+      ) &+ 1
+    defaults.set(Int(next), forKey: generationKey(accountID: accountID))
+    return next
+  }
+
+  static func pendingGeneration(
+    accountID: String,
+    defaults: UserDefaults = .standard
+  ) -> UInt64? {
+    let current = generation(accountID: accountID, defaults: defaults)
+    return current > handledGeneration(accountID: accountID, defaults: defaults)
+      ? current : nil
+  }
+
+  static func contains(accountID: String, defaults: UserDefaults = .standard) -> Bool {
+    pendingGeneration(accountID: accountID, defaults: defaults) != nil
+  }
+
+  static func allowsLocalNotifications(
+    source: WatchtowerRefreshSource,
+    accountID: String,
+    defaults: UserDefaults = .standard
+  ) -> Bool {
+    source.allowsLocalNotifications && !contains(accountID: accountID, defaults: defaults)
+  }
+
+  static func clear(
+    accountID: String,
+    matching generation: UInt64? = nil,
+    defaults: UserDefaults = .standard
+  ) {
+    let current = self.generation(accountID: accountID, defaults: defaults)
+    if let generation, current != generation {
+      return
+    }
+    defaults.set(Int(current), forKey: handledKey(accountID: accountID))
+  }
+
+  static func clearAll(defaults: UserDefaults = .standard) {
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
+      defaults.removeObject(forKey: key)
+    }
+  }
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -40,6 +132,7 @@ final class AppModel {
   var accounts: [CloudflareAccount] = [] {
     didSet {
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
+      syncNotificationAccountAuthorization()
     }
   }
   // Mirrored into App Group defaults so the share extension knows which
@@ -54,8 +147,10 @@ final class AppModel {
   }
   var authState: AuthenticationState = .loading {
     didSet {
-      guard authState == .unauthenticated else { return }
-      MetricsWidgetPublisher.clear()
+      syncNotificationAccountAuthorization()
+      if authState == .unauthenticated {
+        MetricsWidgetPublisher.clear()
+      }
     }
   }
   var errorMessage: String?
@@ -88,6 +183,7 @@ final class AppModel {
   private var authSession: ASWebAuthenticationSession?
   private var pushReconcileTask: Task<Void, Never>?
   private var isRetryingIdentity = false
+  private var isSigningOut = false
   private var accountGeneration: UInt64 = 0
 
   init(configuration: AppConfiguration = .current) {
@@ -113,6 +209,14 @@ final class AppModel {
 
   func isCurrentAccount(_ context: AccountRequestContext) -> Bool {
     activeAccountID == context.accountID && accountGeneration == context.generation
+  }
+
+  private func syncNotificationAccountAuthorization() {
+    guard authState == .authenticated, !isDemoSession, !isSigningOut else {
+      NotificationAccountAuthorizationStore.clear()
+      return
+    }
+    NotificationAccountAuthorizationStore.replace(with: Set(accounts.map(\.id)))
   }
 
   func receiveNotificationRoute(_ route: DashRoute) {
@@ -182,14 +286,20 @@ final class AppModel {
       }
 
       if ProcessInfo.processInfo.arguments.contains("-ui-preview") {
-        // Pin bootstrap is one-shot per account and persists in UserDefaults,
-        // so stub launches must shed pins and recents from earlier runs or Home
-        // layout and every test built on it becomes order-dependent.
+        // UI previews share the simulator's UserDefaults across launches. Seed
+        // every persisted value that changes the tested Home / Watchtower shape
+        // so a prior test run can never change the next launch.
+        let previewDefaults = UserDefaults.standard
         for key in [
           PinnedZones.key, PinnedZones.initializedAccountsKey, RecentResources.key,
+          WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
+          WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
+          WatchtowerInboxStore.readKey, WatchtowerNotificationBaselineStore.key,
+          WatchtowerNotifier.optInDefaultsKey,
         ] {
-          UserDefaults.standard.removeObject(forKey: key)
+          previewDefaults.removeObject(forKey: key)
         }
+        previewDefaults.set(HomeActions.defaultValue, forKey: HomeActions.key)
         grantedScopes = Set(CloudflareScopes.published)
         activeAccountID = "ui-account"
         if let zones = try? JSONDecoder().decode(
@@ -350,7 +460,11 @@ final class AppModel {
             ttl: nil)
         }
         // Two Cloudflare deliveries so the inbox has both an unread row and a
-        // history row to render.
+        // history row to render. The first-page baseline is seeded explicitly;
+        // the newer delivery sits after it and therefore remains unread.
+        WatchtowerInboxStore.markRead(
+          ["cf:ui-alert-2"], accountID: "ui-account", defaults: previewDefaults)
+        let previewNow = Date.now
         let watchtowerPreview = WatchtowerSnapshot(
           alerts: [
             NotificationHistoryEntry(
@@ -358,14 +472,15 @@ final class AppModel {
               name: "Tunnel health",
               alertType: "tunnel_health_event",
               alertBody: "homelab-01 disconnected from Cloudflare",
-              sent: ISO8601DateFormatter().string(from: .now)),
+              sent: ISO8601DateFormatter().string(
+                from: previewNow.addingTimeInterval(60))),
             NotificationHistoryEntry(
               historyID: "ui-alert-2",
               name: "Certificate expiring",
               alertType: "universal_ssl_event_type",
               alertBody: "api.example.net",
               sent: ISO8601DateFormatter().string(
-                from: Date(timeIntervalSinceNow: -86_400))),
+                from: previewNow.addingTimeInterval(-86_400))),
           ],
           alertsStatus: .ok,
           fetchedAt: .now)
@@ -656,21 +771,37 @@ final class AppModel {
       await R2TemporaryFile.removeAllFiles()
       return
     }
+    guard !isSigningOut else { return }
+    isSigningOut = true
+    defer { isSigningOut = false }
     isAuthenticating = false
+    let pushAccountIDs = Set(accounts.map(\.id))
+      .union(PushRegistrationService.enabledAccountIDs())
+      .union(PushRegistrationService.pendingCleanupAccountIDs())
+    // Invalidate user-started enable work before it can mint/store a webhook
+    // after our initial enabled-id snapshot. Each disable below then waits on
+    // the same per-account lock, so revocation cannot overtake remote cleanup.
+    PushRegistrationService.prepareForSignOut(accountIDs: pushAccountIDs)
     let pendingPushReconcile = pushReconcileTask
     resetAccountScopedWork()
     activeAccountID = nil
+    // Close the Lock Screen disclosure boundary immediately. Remote webhook
+    // cleanup is best-effort and can outlive this local sign-out.
+    NotificationAccountAuthorizationStore.clear()
     MetricsWidgetPublisher.clear()
     await pendingPushReconcile?.value
 
     // Push webhooks live in the user's Cloudflare accounts — delete them
     // before revoking the token, or the client can no longer authenticate.
-    let pushAccountIDs = PushRegistrationService.enabledAccountIDs()
-    for accountID in pushAccountIDs {
-      try? await PushRegistrationService.disable(accountID: accountID, client: client)
+    var pushCleanupFailureCount = 0
+    for accountID in pushAccountIDs.sorted() {
+      do {
+        try await PushRegistrationService.disable(accountID: accountID, client: client)
+      } catch {
+        pushCleanupFailureCount += 1
+      }
     }
     UIApplication.shared.unregisterForRemoteNotifications()
-    PushRegistrationService.clearAllStoredWebhookIDs()
     // Locally-scheduled domain reminders name a specific domain in a specific
     // account. Left behind, one would announce a domain the app can no longer
     // open — so unlike the preference below, these do not survive sign-out.
@@ -695,15 +826,21 @@ final class AppModel {
     pendingLegacyNotificationRoute = nil
     pendingDeviceToken = nil
     WatchtowerNotificationBaselineStore.clearAll()
+    WatchtowerRemoteRefreshInvalidationStore.clearAll()
     toasts.dismiss()
     BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.backgroundRefreshID)
 
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
+    UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     clearWatchtowerWidgetSnapshot()
     MetricsWidgetPublisher.clear()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
     authState = .unauthenticated
+    errorMessage =
+      pushCleanupFailureCount == 0
+      ? nil
+      : "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
     // Let SwiftUI tear down account-scoped views and cancel their transfers
     // before removing the session's temporary R2 files.
     await Task.yield()
@@ -732,18 +869,29 @@ final class AppModel {
   /// doubling the fan-out, and keeps the tab-badge count in sync.
   func watchtowerSnapshot(
     force: Bool = false,
-    notifiesLocally: Bool = true
+    source: WatchtowerRefreshSource = .foreground
   ) async -> WatchtowerSnapshot? {
     guard let context = accountRequestContext else { return nil }
     let key = FeatureCacheKey.watchtower(context.accountID)
-    if !force, let cached: WatchtowerSnapshot = featureCache.get(key) {
+    let observedRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.generation(
+      accountID: context.accountID)
+    let pendingRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.pendingGeneration(
+      accountID: context.accountID)
+    if !force, pendingRemoteGeneration == nil,
+      let cached: WatchtowerSnapshot = featureCache.get(key)
+    {
       syncWatchtowerInboxBadge(from: cached, accountID: context.accountID)
       return cached
     }
+    let effectiveSource: WatchtowerRefreshSource =
+      pendingRemoteGeneration == nil ? source : .remoteNotification
+    let loadKey =
+      pendingRemoteGeneration.map { "\(key):remote:\($0)" }
+      ?? key
     let client = client
     let snapshot: WatchtowerSnapshot
     do {
-      snapshot = try await featureCache.coalescedLoad(key) {
+      snapshot = try await featureCache.coalescedLoad(loadKey) {
         try Task.checkCancellation()
         let result = try await WatchtowerAlertsLoader.loadCancellable(
           client: client, accountID: context.accountID)
@@ -757,6 +905,13 @@ final class AppModel {
       return nil
     }
     guard !Task.isCancelled, isCurrentAccount(context) else { return nil }
+    let currentRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.generation(
+      accountID: context.accountID)
+    // A request that began before a silent push, or before a newer push, must
+    // never commit its older page or clear the newer invalidation.
+    guard currentRemoteGeneration == observedRemoteGeneration else {
+      return featureCache.get(key)
+    }
     if let committed: WatchtowerSnapshot = featureCache.get(key),
       committed.fetchedAt >= snapshot.fetchedAt
     {
@@ -765,7 +920,16 @@ final class AppModel {
     featureCache.set(key, snapshot, ttl: nil)
     syncWatchtowerInboxBadge(from: snapshot, accountID: context.accountID)
     publishWidgetSnapshot(
-      snapshot, accountID: context.accountID, notifiesLocally: notifiesLocally)
+      snapshot,
+      accountID: context.accountID,
+      notifiesLocally: WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
+        source: effectiveSource,
+        accountID: context.accountID))
+    if let pendingRemoteGeneration {
+      WatchtowerRemoteRefreshInvalidationStore.clear(
+        accountID: context.accountID,
+        matching: pendingRemoteGeneration)
+    }
     return snapshot
   }
 
@@ -856,28 +1020,62 @@ final class AppModel {
   /// the snapshot and notifies through the shared choke point), then reschedule.
   func performBackgroundWatchtowerRefresh() async {
     guard (try? await tokenStore.getAccessToken()) != nil else { return }
-    await refreshWatchtowerIfStale()
+    await refreshWatchtowerIfStale(source: .background)
     scheduleWatchtowerBackgroundRefresh()
   }
 
   /// Foreground/warm-up hook: cheap when the snapshot is younger than the
   /// TTL, otherwise re-runs the checks in the background.
-  func refreshWatchtowerIfStale() async {
+  func refreshWatchtowerIfStale(source: WatchtowerRefreshSource = .foreground) async {
     guard let accountID = activeAccountID else { return }
+    let wasRemotelyInvalidated = WatchtowerRemoteRefreshInvalidationStore.contains(
+      accountID: accountID)
     if let cached: WatchtowerSnapshot = featureCache.get(FeatureCacheKey.watchtower(accountID)) {
       syncWatchtowerInboxBadge(from: cached, accountID: accountID)
-      guard cached.isStale(ttl: Self.watchtowerTTL) else { return }
+      guard wasRemotelyInvalidated || cached.isStale(ttl: Self.watchtowerTTL) else { return }
     }
-    _ = await watchtowerSnapshot(force: true)
+    _ = await watchtowerSnapshot(
+      force: true,
+      source: wasRemotelyInvalidated ? .remoteNotification : source)
   }
 
   func loadIdentity() async throws {
+    let loadGeneration = accountGeneration
     async let fetchedUser = client.getUser()
     async let fetchedAccounts = client.listAccounts()
-    user = try await fetchedUser
-    accounts = try await fetchedAccounts
+    let identity = try await (fetchedUser, fetchedAccounts)
+    try Task.checkCancellation()
+    guard accountGeneration == loadGeneration, !isSigningOut else {
+      throw CancellationError()
+    }
+    user = identity.0
+    accounts = identity.1
     if activeAccount == nil, let first = accounts.first { selectAccount(first) }
     resolvePendingLegacyNotificationRoute()
+    await retryPendingPushCleanups(expectedGeneration: accountGeneration)
+  }
+
+  private func retryPendingPushCleanups(expectedGeneration: UInt64) async {
+    guard accountGeneration == expectedGeneration, !isSigningOut else { return }
+    let available = Set(accounts.map(\.id))
+    let pending = PushRegistrationService.pendingCleanupAccountIDs()
+      .filter(available.contains)
+    guard !pending.isEmpty else { return }
+    var failures = 0
+    for accountID in pending {
+      guard accountGeneration == expectedGeneration, !isSigningOut else { return }
+      do {
+        try await PushRegistrationService.disable(accountID: accountID, client: client)
+      } catch {
+        guard accountGeneration == expectedGeneration, !isSigningOut else { return }
+        failures += 1
+      }
+    }
+    if failures > 0, accountGeneration == expectedGeneration, !isSigningOut {
+      toasts.warning(
+        "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
+      )
+    }
   }
 }
 
@@ -886,9 +1084,23 @@ extension AppModel: PushTokenInbox {
   /// says the snapshot is fresh, but a delivery just landed, so it isn't — and
   /// suppresses the local-notification diff so the user is told once, by the
   /// alert push that arrived alongside this one.
-  func performPushTriggeredRefresh() async {
-    guard !isDemoSession, accountRequestContext != nil else { return }
-    _ = await watchtowerSnapshot(force: true, notifiesLocally: false)
+  func performPushTriggeredRefresh(accountID: String) async -> Bool {
+    guard !isDemoSession,
+      NotificationAccountAuthorizationStore.contains(accountID)
+    else { return false }
+    WatchtowerRemoteRefreshInvalidationStore.mark(accountID: accountID)
+    guard accountRequestContext?.accountID == accountID else {
+      // Do not query through another account's mounted UI state. The durable
+      // dirty bit forces a source-aware refresh as soon as this account opens.
+      return true
+    }
+    return await watchtowerSnapshot(force: true, source: .remoteNotification) != nil
+  }
+
+  func receivePushRegistrationChallenge(
+    _ challenge: PushRegistrationChallenge
+  ) async -> Bool {
+    await PushRegistrationChallengeInbox.shared.receive(challenge)
   }
 
   func receiveDeviceToken(_ token: Data) {
@@ -896,7 +1108,7 @@ extension AppModel: PushTokenInbox {
     pendingDeviceToken = hex
     guard !isDemoSession else { return }
     guard hasScopes(["notifications.write"]) else { return }
-    let accountIDs = PushRegistrationService.enabledAccountIDs()
+    let accountIDs = PushRegistrationService.reconcilableAccountIDs()
     guard !accountIDs.isEmpty else { return }
     let generation = accountGeneration
     let client = client

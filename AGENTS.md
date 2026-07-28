@@ -115,8 +115,10 @@ Route ownership:
 - `GET /oauth/callback` → 302 to `dash://oauth/callback` (worker-first)
 - `GET /api/registration/:domain` → RDAP then port-43 WHOIS snapshot for the
   iOS zone registration card (Cache API only; worker-first)
-- `/push/*` → APNs bridge (worker-first): register mints an HMAC notify URL;
-  notify forwards mapped alerts (including `dashRoute` deep links) to APNs
+- `/push/*` → APNs bridge (worker-first): registration proves possession of the
+  APNs token through a silent-push challenge before returning an opaque notify
+  capability; notify forwards mapped alerts (including `dashRoute` deep links)
+  to APNs
 
 Settings → Push alerts enables the client path: APNs entitlement, device token
 registration, Cloudflare webhook + policies, and optional test alert. Pages
@@ -152,7 +154,10 @@ only place that can localize an alert: the relay has no catalog and no idea what
 language the phone is set to, and Cloudflare's `text` is always English. It maps
 `dashAlertType` → localized copy through `AlertLocalization`, leaves unknown
 types untouched, and stamps the badge from the App Group snapshot the widget
-reads (the relay is stateless and cannot count). Because an extension's
+reads (the relay is stateless and cannot count). The visible APNs fallback is
+generic; original Cloudflare copy is restored only after the extension confirms
+that `dashAccountID` is still authorized on this device, so a skipped extension
+cannot leak a signed-out account's resource name. Because an extension's
 `UserDefaults.standard` is its own suite, `DashApp` mirrors the in-app language
 choice into App Group defaults — without that mirror the extension only ever
 sees the system language. `Localizable.xcstrings` is a Resources member here
