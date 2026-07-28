@@ -199,7 +199,10 @@ enum WatchtowerNotifier {
       == .provisional
   }
 
-  static func delivers(_ status: UNAuthorizationStatus) -> Bool {
+  /// Pure predicate over a Sendable enum, so it carries no main-actor
+  /// requirement of its own and only inherited one from the enclosing type.
+  /// `ExpiryReminders` is nonisolated and needs to ask the same question.
+  nonisolated static func delivers(_ status: UNAuthorizationStatus) -> Bool {
     switch status {
     case .authorized, .provisional, .ephemeral:
       return true

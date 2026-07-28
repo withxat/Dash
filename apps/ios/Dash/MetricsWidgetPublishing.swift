@@ -209,14 +209,17 @@ enum MetricsWidgetPublisher {
     _ snapshot: ZoneAnalyticsSnapshot,
     metric: DomainMetricsWidgetMetric
   ) -> Double {
+    // Every arm returns explicitly: the `guard` in `.cacheRate` makes that arm
+    // a statement block, which disqualifies the whole switch from being an
+    // implicit-return expression and leaves the bare arms as discarded values.
     switch metric {
-    case .requests: Double(snapshot.totalRequests)
-    case .bandwidth: Double(snapshot.totalBytes)
+    case .requests: return Double(snapshot.totalRequests)
+    case .bandwidth: return Double(snapshot.totalBytes)
     case .cacheRate:
       guard snapshot.totalRequests > 0 else { return 0 }
       return Double(snapshot.totalCachedRequests) / Double(snapshot.totalRequests)
-    case .threats: Double(snapshot.totalThreats)
-    case .uniqueVisitors: Double(snapshot.peakUniques)
+    case .threats: return Double(snapshot.totalThreats)
+    case .uniqueVisitors: return Double(snapshot.peakUniques)
     }
   }
 
@@ -225,13 +228,13 @@ enum MetricsWidgetPublisher {
     metric: DomainMetricsWidgetMetric
   ) -> Double {
     switch metric {
-    case .requests: Double(point.requests)
-    case .bandwidth: Double(point.bytes)
+    case .requests: return Double(point.requests)
+    case .bandwidth: return Double(point.bytes)
     case .cacheRate:
       guard point.requests > 0 else { return 0 }
       return Double(point.cachedRequests) / Double(point.requests)
-    case .threats: Double(point.threats)
-    case .uniqueVisitors: Double(point.uniques)
+    case .threats: return Double(point.threats)
+    case .uniqueVisitors: return Double(point.uniques)
     }
   }
 }
