@@ -62,38 +62,35 @@ import Testing
       domainID: "shared-zone",
       range: .day) == nil)
 
+  let resolvedAccountURL = try #require(resolvedAccountB.deepLinkURL)
   let accountLink = try #require(
-    URLComponents(
-      url: try #require(resolvedAccountB.deepLinkURL),
-      resolvingAgainstBaseURL: false))
+    URLComponents(url: resolvedAccountURL, resolvingAgainstBaseURL: false))
   #expect(accountLink.scheme == "dash")
   #expect(accountLink.host == "watchtower")
   #expect(accountLink.path.isEmpty)
   #expect(accountLink.queryItems == [URLQueryItem(name: "account", value: accountB.id)])
 
+  let resolvedDomainURL = try #require(resolvedDomainA.deepLinkURL)
   let domainLink = try #require(
-    URLComponents(
-      url: try #require(resolvedDomainA.deepLinkURL),
-      resolvingAgainstBaseURL: false))
+    URLComponents(url: resolvedDomainURL, resolvingAgainstBaseURL: false))
   #expect(domainLink.scheme == "dash")
   #expect(domainLink.host == "zone")
   #expect(domainLink.path == "/shared-zone/analytics")
   #expect(domainLink.queryItems == [URLQueryItem(name: "account", value: accountA.id)])
 
+  let missingAccountURL = try #require(
+    AccountMetricsWidgetSnapshot.deepLinkURL(accountID: accountB.id))
   let missingAccountLink = try #require(
-    URLComponents(
-      url: try #require(AccountMetricsWidgetSnapshot.deepLinkURL(accountID: accountB.id)),
-      resolvingAgainstBaseURL: false))
+    URLComponents(url: missingAccountURL, resolvingAgainstBaseURL: false))
   #expect(missingAccountLink.host == "watchtower")
   #expect(missingAccountLink.queryItems == [URLQueryItem(name: "account", value: accountB.id)])
 
+  let missingDomainURL = try #require(
+    DomainMetricsWidgetSnapshot.deepLinkURL(
+      accountID: accountA.id,
+      domainID: "shared-zone"))
   let missingDomainLink = try #require(
-    URLComponents(
-      url: try #require(
-        DomainMetricsWidgetSnapshot.deepLinkURL(
-          accountID: accountA.id,
-          domainID: "shared-zone")),
-      resolvingAgainstBaseURL: false))
+    URLComponents(url: missingDomainURL, resolvingAgainstBaseURL: false))
   #expect(missingDomainLink.host == "zone")
   #expect(missingDomainLink.path == "/shared-zone/analytics")
   #expect(missingDomainLink.queryItems == [URLQueryItem(name: "account", value: accountA.id)])

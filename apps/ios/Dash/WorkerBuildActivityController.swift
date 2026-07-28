@@ -68,7 +68,7 @@ final class WorkerBuildActivityControllerBox {
 
   /// Backoff shared with the Pages monitor's ladder, so a flapping account does
   /// not hammer two endpoints at different rates.
-  static func pollDelaySeconds(consecutiveFailures: Int) -> Int {
+  nonisolated static func pollDelaySeconds(consecutiveFailures: Int) -> Int {
     let delays = [10, 20, 40, 60]
     return delays[min(max(consecutiveFailures, 0), delays.count - 1)]
   }
@@ -283,7 +283,7 @@ final class WorkerBuildActivityControllerBox {
     }
   }
 
-  static func phaseToken(_ phase: WorkerBuild.Phase) -> String {
+  nonisolated static func phaseToken(_ phase: WorkerBuild.Phase) -> String {
     switch phase {
     case .queued: "queued"
     case .initializing: "initializing"

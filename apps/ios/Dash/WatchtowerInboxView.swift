@@ -385,6 +385,7 @@ private struct WatchtowerInboxEntryTray: View {
           ? DashL10n.string("Stop ignoring") : DashL10n.string("Ignore"),
         action: isIgnored ? unignore : ignore
       )
+      .accessibilityIdentifier("watchtower-inbox-ignore-toggle")
     }
   }
 

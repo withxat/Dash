@@ -8,7 +8,7 @@ private func build(_ json: String) throws -> WorkerBuild {
   try JSONDecoder().decode(WorkerBuild.self, from: Data(json.utf8))
 }
 
-@Test func liveActivityStateCarriesAMachineTokenAndLocalizedCopy() throws {
+@Test @MainActor func liveActivityStateCarriesAMachineTokenAndLocalizedCopy() throws {
   let previousLocale = DashL10n.localeOverrideForTesting
   DashL10n.localeOverrideForTesting = Locale(identifier: "en")
   defer { DashL10n.localeOverrideForTesting = previousLocale }
@@ -39,7 +39,7 @@ private func build(_ json: String) throws -> WorkerBuild {
   #expect(WorkerBuildActivityControllerBox.phaseToken(.finished) == "finished")
 }
 
-@Test func finishedBuildKeepsItsOutcomeForTheWidgetToColour() throws {
+@Test @MainActor func finishedBuildKeepsItsOutcomeForTheWidgetToColour() throws {
   let failed = try build(#"{"build_uuid":"b","build_outcome":"failure","stopped_on":"t"}"#)
   let state = WorkerBuildActivityControllerBox.contentState(for: failed)
   #expect(state.phaseToken == "finished")

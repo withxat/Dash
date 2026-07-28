@@ -386,7 +386,8 @@ final class DashUITests: XCTestCase {
         NSPredicate(format: "identifier CONTAINS %@", "dash:live:")
       ).firstMatch.exists)
     tunnelAlert.tap()
-    XCTAssertTrue(app.buttons["Ignore"].waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      app.buttons["watchtower-inbox-ignore-toggle"].waitForExistence(timeout: 5))
   }
 
   func testSettingsExposesPushAlerts() {

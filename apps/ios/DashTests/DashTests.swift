@@ -722,7 +722,7 @@ private let watchtowerDropFrames: [CGRect] = [
       isFullWidth: true))
 }
 
-@Test func watchtowerVisibleMoveKeepsHiddenMetricsInPlace() {
+@Test @MainActor func watchtowerVisibleMoveKeepsHiddenMetricsInPlace() {
   let defaults = UserDefaults(suiteName: "watchtower-visible-move")!
   defaults.removePersistentDomain(forName: "watchtower-visible-move")
   let state = WatchtowerChartCustomizationState(defaults: defaults)
