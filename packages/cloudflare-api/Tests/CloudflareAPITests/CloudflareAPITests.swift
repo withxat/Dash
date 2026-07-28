@@ -52,13 +52,13 @@ import Testing
 }
 
 @Test func generatedCatalogCoversOfficialOAuthScopes() {
-  #expect(OAuthScopeCatalog.all.count == 368)
+  #expect(OAuthScopeCatalog.all.count == 379)
   #expect(Set(OAuthScopeCatalog.allIDs).count == OAuthScopeCatalog.all.count)
   #expect(OAuthScopeCatalog.byID["query-cache.read"]?.name == "Hyperdrive Read")
   #expect(CloudflareScopes.invalid(in: CloudflareScopes.published).isEmpty)
   #expect(Set(CloudflareScopes.required).isSubset(of: Set(CloudflareScopes.published)))
   #expect(!CloudflareScopes.published.contains("ai-search.metadata_read"))
-  #expect(CloudflareScopes.published.count == 359)
+  #expect(CloudflareScopes.published.count == 370)
   #expect(CloudflareScopes.unsupportedByOAuthClient.count == 10)
   #expect(
     CloudflareScopes.unsupported(in: CloudflareScopes.all)

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-10",
+  "generatedAt": "2026-07-28",
   "scopes": [
     {
       "id": "account-api-gateway.write",
@@ -172,8 +172,23 @@
       "category": "ai_and_machine_learning"
     },
     {
+      "id": "websearch.metadata_read",
+      "name": "Websearch Metadata Read",
+      "category": "ai_and_machine_learning"
+    },
+    {
+      "id": "websearch.read",
+      "name": "Websearch Read",
+      "category": "ai_and_machine_learning"
+    },
+    {
       "id": "websearch.run",
       "name": "Websearch Run",
+      "category": "ai_and_machine_learning"
+    },
+    {
+      "id": "websearch.write",
+      "name": "Websearch Write",
       "category": "ai_and_machine_learning"
     },
     {
@@ -349,6 +364,16 @@
     {
       "id": "domain-page-shield.read",
       "name": "Domain Page Shield Read",
+      "category": "app_security"
+    },
+    {
+      "id": "field-extractor.read",
+      "name": "Field Extractors Read",
+      "category": "app_security"
+    },
+    {
+      "id": "field-extractor.write",
+      "name": "Field Extractors Write",
       "category": "app_security"
     },
     {
@@ -963,12 +988,12 @@
     },
     {
       "id": "browser-rendering.read",
-      "name": "Browser Rendering Read",
+      "name": "Browser Run Read",
       "category": "developer_platform"
     },
     {
       "id": "browser-rendering.write",
-      "name": "Browser Rendering Write",
+      "name": "Browser Run Write",
       "category": "developer_platform"
     },
     {
@@ -1059,6 +1084,21 @@
     {
       "id": "mcp-portals.write",
       "name": "MCP Portals Write",
+      "category": "developer_platform"
+    },
+    {
+      "id": "messaging.edit",
+      "name": "Messaging Edit",
+      "category": "developer_platform"
+    },
+    {
+      "id": "messaging.metadata_read",
+      "name": "Messaging Metadata Read",
+      "category": "developer_platform"
+    },
+    {
+      "id": "messaging.read",
+      "name": "Messaging Read",
       "category": "developer_platform"
     },
     {
@@ -1379,6 +1419,11 @@
     {
       "id": "cloud-email-security.write",
       "name": "Cloud Email Security: Write",
+      "category": "email_and_messaging"
+    },
+    {
+      "id": "email-routing-account-rule.read",
+      "name": "Email Routing Account Rules Read",
       "category": "email_and_messaging"
     },
     {
@@ -1789,6 +1834,16 @@
     {
       "id": "origin.write",
       "name": "Origin Write",
+      "category": "rules_and_configuration"
+    },
+    {
+      "id": "payments-gateway.read",
+      "name": "Payments Gateway Read",
+      "category": "rules_and_configuration"
+    },
+    {
+      "id": "payments-gateway.write",
+      "name": "Payments Gateway Write",
       "category": "rules_and_configuration"
     },
     {
