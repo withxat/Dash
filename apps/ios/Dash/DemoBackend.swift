@@ -22,6 +22,12 @@ struct DemoTokenStore: TokenStore {
 /// credentials. Reads serve one small coherent world; writes return a
 /// friendly read-only error.
 final class DemoBackend: URLProtocol {
+  /// The account a fresh demo session lands on. The demo user is a member of
+  /// three of them (`DemoWorld.accounts`) — one person with a main workspace,
+  /// a client account, and a hobby account, which is the shape Cloudflare's
+  /// account switcher actually exists for. Every account-scoped fixture keys
+  /// off the account in the path, so switching changes what each screen shows
+  /// instead of relabelling one world.
   static let accountID = "demo-account"
 
   /// The session handed to the demo `CloudflareClient`. Nothing escapes to
@@ -122,10 +128,14 @@ final class DemoBackend: URLProtocol {
       )
     case "/accounts":
       return ok(
-        #"[{"id":"demo-account","name":"Demo Workspace","type":"standard","created_on":"2024-03-01T09:00:00Z"}]"#,
-        info: #"{"page":1,"per_page":20,"total_count":1}"#)
+        "[\(DemoWorld.accounts.map(\.json).joined(separator: ","))]",
+        info:
+          #"{"page":1,"per_page":50,"total_count":\#(DemoWorld.accounts.count)}"#)
     case "/zones":
-      let zones = DemoWorld.zones.filter { zone in
+      // Zones are the one list Cloudflare scopes by query parameter rather
+      // than by path, so `account.id` is what makes Home, Domains, and search
+      // show one account's domains instead of every domain the demo knows.
+      let zones = DemoWorld.zones(accountID: query("account.id")).filter { zone in
         guard let needle = query("name")?.lowercased() else { return true }
         return zone.name.lowercased().contains(needle)
       }
@@ -146,14 +156,15 @@ final class DemoBackend: URLProtocol {
 
     let parts = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
 
-    // /zones/{id}/...
+    // /zones/{id}/... — a zone id is unique across accounts, so this resolves
+    // against every account's zones, exactly like Cloudflare does.
     if parts.count >= 2, parts[0] == "zones", let zone = DemoWorld.zone(id: parts[1]) {
       let rest = Array(parts.dropFirst(2))
       switch rest.first {
       case nil:
         return ok(zone.json)
       case "dns_records"?:
-        var records = DemoWorld.dnsRecords(zoneID: zone.id)
+        var records = DemoWorld.dnsRecords(zone: zone)
         if let needle = query("search")?.lowercased() {
           records = records.filter {
             $0.lowercased().contains(needle)
@@ -168,43 +179,57 @@ final class DemoBackend: URLProtocol {
       case "settings"?:
         return ok(DemoWorld.zoneSettings)
       case "workers"? where rest.count >= 2 && rest[1] == "routes":
-        let routes =
-          zone.id == "zone-example"
-          ? #"[{"id":"route-1","pattern":"example.com/api/*","script":"api-worker"}]"# : "[]"
-        return ok(routes)
+        return ok("[\(DemoWorld.workerRoutes(zoneID: zone.id).joined(separator: ","))]")
       default:
         return ok("[]")
       }
     }
 
-    // /accounts/demo-account/...
-    guard parts.count >= 2, parts[0] == "accounts", parts[1] == accountID else {
-      return ok("[]")
+    guard parts.count >= 2, parts[0] == "accounts" else { return ok("[]") }
+    guard let account = DemoWorld.account(id: parts[1]) else {
+      // A bare lookup for an account this demo user is not in has to fail the
+      // way Cloudflare fails it. `loadIdentity` reads 403/404 as proof that a
+      // remembered account is gone and moves on; an empty array would come
+      // back as a decode error instead and strand the whole session — which is
+      // reachable now that the demo has an account you can switch away from.
+      // Sub-resources still answer empty, so a request left in flight across a
+      // switch cannot make a screen show an error for the account you left.
+      guard parts.count == 2 else { return ok("[]") }
+      return Reply(
+        status: 404,
+        json:
+          #"{"success":false,"errors":[{"code":1003,"message":"Account not found."}],"messages":[],"result":null}"#
+      )
     }
     let rest = Array(parts.dropFirst(2))
 
     switch rest.first {
+    case nil:
+      // GET /accounts/{id}: `loadIdentity` confirms a remembered account this
+      // way when the list it just fetched does not contain it.
+      return ok(account.json)
     case "workers"?:
-      return workers(rest: Array(rest.dropFirst()))
+      return workers(account: account, rest: Array(rest.dropFirst()))
     case "pages"?:
-      return pages(rest: Array(rest.dropFirst()))
+      return pages(account: account, rest: Array(rest.dropFirst()))
     case "r2"?:
       return r2(
-        rest: Array(rest.dropFirst()), prefix: query("prefix"), delimiter: query("delimiter"))
+        account: account, rest: Array(rest.dropFirst()), prefix: query("prefix"),
+        delimiter: query("delimiter"))
     case "rum"?:
       // Configured sites let Domain detail resolve its RUM site tag while the
       // remaining demo zones still exercise the beacon-missing empty state.
-      return ok(DemoWorld.rumSites)
+      return ok(DemoWorld.rumSites(accountID: account.id))
     case "storage"?:
-      return kv(rest: Array(rest.dropFirst()), prefix: query("prefix"))
+      return kv(account: account, rest: Array(rest.dropFirst()), prefix: query("prefix"))
     case "alerting"?:
       if rest.contains("available_alerts") { return ok("{}") }
-      if rest.contains("history") { return ok(DemoWorld.alertHistory) }
+      if rest.contains("history") { return ok(DemoWorld.alertHistory(accountID: account.id)) }
       return ok("[]")
     case "audit_logs"?:
-      return ok(DemoWorld.auditLogs)
+      return ok(DemoWorld.auditLogs(accountID: account.id))
     case "logs"? where rest.count >= 2 && rest[1] == "audit":
-      return ok(DemoWorld.auditLogs)
+      return ok(DemoWorld.auditLogs(accountID: account.id))
     default:
       return ok("[]")
     }
@@ -212,37 +237,31 @@ final class DemoBackend: URLProtocol {
 
   // MARK: Workers
 
-  private static func workers(rest: [String]) -> Reply {
+  private static func workers(account: DemoWorld.Account, rest: [String]) -> Reply {
     // workers/subdomain | workers/scripts[/{name}/(deployments|subdomain|content/v2)] | workers/domains
     if rest.first == "subdomain" {
-      return ok(#"{"subdomain":"demo"}"#)
+      return ok(#"{"subdomain":"\#(account.workersSubdomain)"}"#)
     }
     if rest.first == "domains" {
-      return ok(
-        #"[{"id":"wd-1","hostname":"api.example.net","service":"api-worker","zone_id":"zone-api","zone_name":"api.example.net","cert_id":"cert-1","environment":"production"}]"#
-      )
+      return ok("[\(DemoWorld.workerDomains(accountID: account.id).joined(separator: ","))]")
     }
     guard rest.first == "scripts" else { return ok("[]") }
+    let scripts = DemoWorld.workerScripts(accountID: account.id)
     if rest.count == 1 {
       return ok(
-        "[\(DemoWorld.workerScripts.joined(separator: ","))]",
-        info: #"{"page":1,"per_page":100,"total_count":\#(DemoWorld.workerScripts.count)}"#)
+        "[\(scripts.joined(separator: ","))]",
+        info: #"{"page":1,"per_page":100,"total_count":\#(scripts.count)}"#)
     }
+    let name = rest[1]
     switch rest.dropFirst(2).first {
     case "deployments"?:
-      return ok(
-        #"""
-        {"deployments":[
-          {"id":"deploy-live","created_on":"\#(DemoClock.iso(hoursAgo: 2))","source":"api","strategy":"percentage","versions":[{"version_id":"v-2001","percentage":100}],"annotations":{"workers/message":"Ship the new rate limiter","workers/triggered_by":"deployment"},"author_email":"demo@example.com"},
-          {"id":"deploy-prev","created_on":"\#(DemoClock.iso(hoursAgo: 74))","source":"wrangler","strategy":"percentage","versions":[{"version_id":"v-1994","percentage":100}],"author_email":"demo@example.com"}
-        ]}
-        """#)
+      return ok(DemoWorld.workerDeployments(name: name))
     case "subdomain"?:
       return ok(#"{"enabled":true,"previews_enabled":false}"#)
     case "content"?:
       return Reply(
         contentType: "application/javascript",
-        data: Data(DemoWorld.workerScript.utf8))
+        data: Data(DemoWorld.workerScript(name: name).utf8))
     default:
       return ok("[]")
     }
@@ -250,35 +269,35 @@ final class DemoBackend: URLProtocol {
 
   // MARK: Pages
 
-  private static func pages(rest: [String]) -> Reply {
+  private static func pages(account: DemoWorld.Account, rest: [String]) -> Reply {
     // pages/projects[/{name}[/deployments[/{id}[/history/logs]] | /domains]]
     guard rest.first == "projects" else { return ok("[]") }
+    let projects = DemoWorld.pagesProjects(accountID: account.id)
     if rest.count == 1 {
       return ok(
-        "[\(DemoWorld.pagesProjects.joined(separator: ","))]",
-        info:
-          #"{"page":1,"per_page":25,"total_count":\#(DemoWorld.pagesProjects.count)}"#)
+        "[\(projects.map(DemoWorld.pagesProject(named:)).joined(separator: ","))]",
+        info: #"{"page":1,"per_page":25,"total_count":\#(projects.count)}"#)
     }
+    let name = rest[1]
     switch rest.dropFirst(2).first {
     case nil:
-      let name = rest[1]
       return ok(DemoWorld.pagesProject(named: name))
     case "deployments":
+      let deployments = DemoWorld.pagesDeployments(project: name)
       if rest.count >= 4 {
         if rest.contains("logs") { return ok(DemoWorld.pagesBuildLogs) }
         let id = rest[3]
-        if let deployment = DemoWorld.pagesDeployments.first(where: { $0.contains("\"\(id)\"") }) {
+        if let deployment = deployments.first(where: { $0.contains("\"\(id)\"") }) {
           return ok(deployment)
         }
-        return ok(DemoWorld.pagesDeployments[0])
+        guard let newest = deployments.first else { return ok("[]") }
+        return ok(newest)
       }
       return ok(
-        "[\(DemoWorld.pagesDeployments.joined(separator: ","))]",
-        info: #"{"page":1,"per_page":25,"total_count":\#(DemoWorld.pagesDeployments.count)}"#)
+        "[\(deployments.joined(separator: ","))]",
+        info: #"{"page":1,"per_page":25,"total_count":\#(deployments.count)}"#)
     case "domains"?:
-      return ok(
-        #"[{"id":"pdom-1","name":"www.example.org","status":"active","created_on":"2026-01-09T08:00:00Z","zone_tag":"zone-shop"}]"#
-      )
+      return ok("[\(DemoWorld.pagesDomains(project: name).joined(separator: ","))]")
     default:
       return ok("[]")
     }
@@ -286,23 +305,31 @@ final class DemoBackend: URLProtocol {
 
   // MARK: R2
 
-  private static func r2(rest: [String], prefix: String?, delimiter: String?) -> Reply {
+  private static func r2(
+    account: DemoWorld.Account, rest: [String], prefix: String?, delimiter: String?
+  ) -> Reply {
     // r2/buckets[/{bucket}/(objects[/key…] | domains/(managed|custom))]
     guard rest.first == "buckets" else { return ok("[]") }
+    let buckets = DemoWorld.r2Buckets(accountID: account.id)
     if rest.count == 1 {
-      return ok(
-        #"{"buckets":[{"name":"assets","creation_date":"2026-01-15T12:00:00Z"},{"name":"backups","creation_date":"2025-09-01T12:00:00Z"}]}"#
-      )
+      return ok(#"{"buckets":[\#(buckets.map(\.json).joined(separator: ","))]}"#)
     }
-    let bucket = rest[1]
+    let name = rest[1]
     let tail = Array(rest.dropFirst(2))
+    // A bucket this account does not own answers like an empty one, so a
+    // request left in flight across an account switch cannot 404 a screen.
+    let bucket =
+      buckets.first { $0.name == name }
+      ?? DemoWorld.R2DemoBucket(
+        name: name, creationDate: DemoClock.iso(hoursAgo: 720),
+        r2DevDomain: "pub-\(name).r2.dev", r2DevEnabled: false, objects: [])
     switch tail.first {
     case "objects"?:
       let key = tail.dropFirst().joined(separator: "/")
       if key.isEmpty {
         return r2ObjectList(bucket: bucket, prefix: prefix ?? "", delimiter: delimiter)
       }
-      guard let object = DemoWorld.r2Objects(in: bucket).first(where: { $0.key == key }) else {
+      guard let object = bucket.objects.first(where: { $0.key == key }) else {
         return Reply(
           status: 404,
           json:
@@ -311,9 +338,9 @@ final class DemoBackend: URLProtocol {
       }
       return Reply(contentType: object.contentType, data: object.body)
     case "domains"? where tail.count >= 2 && tail[1] == "managed":
-      let domain = bucket == "assets" ? "pub-dash-demo.r2.dev" : "pub-dash-backups.r2.dev"
-      let enabled = bucket == "assets"
-      return ok(#"{"bucketId":"\#(bucket)","domain":"\#(domain)","enabled":\#(enabled)}"#)
+      return ok(
+        #"{"bucketId":"\#(bucket.name)","domain":"\#(bucket.r2DevDomain)","enabled":\#(bucket.r2DevEnabled)}"#
+      )
     case "domains"?:
       return ok(#"{"domains":[]}"#)
     default:
@@ -321,8 +348,10 @@ final class DemoBackend: URLProtocol {
     }
   }
 
-  private static func r2ObjectList(bucket: String, prefix: String, delimiter: String?) -> Reply {
-    let all = DemoWorld.r2Objects(in: bucket).filter { $0.key.hasPrefix(prefix) }
+  private static func r2ObjectList(
+    bucket: DemoWorld.R2DemoBucket, prefix: String, delimiter: String?
+  ) -> Reply {
+    let all = bucket.objects.filter { $0.key.hasPrefix(prefix) }
     var rows: [String] = []
     var folders: Set<String> = []
     for object in all {
@@ -341,14 +370,15 @@ final class DemoBackend: URLProtocol {
 
   // MARK: KV
 
-  private static func kv(rest: [String], prefix: String?) -> Reply {
+  private static func kv(account: DemoWorld.Account, rest: [String], prefix: String?) -> Reply {
     // storage/kv/namespaces[/{id}/(keys|values/{key})]
     guard rest.count >= 2, rest[0] == "kv", rest[1] == "namespaces" else { return ok("[]") }
+    let namespaces = DemoWorld.kvNamespaces(accountID: account.id)
     let tail = Array(rest.dropFirst(2))
     if tail.isEmpty {
       return ok(
-        #"[{"id":"kv-prod","title":"production-config"},{"id":"kv-cache","title":"edge-cache"}]"#,
-        info: #"{"page":1,"per_page":20,"total_count":2}"#)
+        "[\(namespaces.map(\.json).joined(separator: ","))]",
+        info: #"{"page":1,"per_page":20,"total_count":\#(namespaces.count)}"#)
     }
     let namespace = tail[0]
     switch tail.dropFirst().first {
@@ -373,35 +403,41 @@ final class DemoBackend: URLProtocol {
 
   private static func graphQL(body: Data?) -> Reply {
     let query = body.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    // Analytics carries its account (or zone) inside the document, not the
+    // path, so the scale has to be read back out of the filter — otherwise
+    // every account replays the flagship account's traffic.
+    let scale = DemoWorld.trafficScale(
+      accountID: tag("accountTag", in: query),
+      zoneID: tag("zoneTag", in: query))
     // Account overview must win before the Workers / zone Adaptive matchers —
     // its document names both `httpRequestsOverviewAdaptiveGroups` and
     // `workersInvocationsAdaptive`, and Overview is not a substring of the
     // zone Adaptive node.
     if query.contains("httpRequestsOverviewAdaptiveGroups") {
-      return Reply(json: DemoWorld.accountAnalyticsOverview())
+      return Reply(json: DemoWorld.accountAnalyticsOverview(scale: scale))
     }
     if query.contains("workersInvocationsAdaptive") {
-      return Reply(json: DemoWorld.workerAnalytics())
+      return Reply(json: DemoWorld.workerAnalytics(scale: scale))
     }
     if query.contains("httpRequests1hGroups") {
-      return Reply(json: DemoWorld.zoneAnalyticsHourly())
+      return Reply(json: DemoWorld.zoneAnalyticsHourly(scale: scale))
     }
     if query.contains("httpRequests1dGroups") {
       // The daily chart asks for 7 or 30 days through `limit:`; honor it so the
       // ranges are not identical fixtures.
-      return Reply(json: DemoWorld.zoneAnalyticsDaily(days: limit(in: query) ?? 7))
+      return Reply(json: DemoWorld.zoneAnalyticsDaily(days: limit(in: query) ?? 7, scale: scale))
     }
     if query.contains("httpRequestsAdaptiveGroups") {
-      return Reply(json: DemoWorld.zoneRequestsHourly())
+      return Reply(json: DemoWorld.zoneRequestsHourly(scale: scale))
     }
     if query.contains("pageload: rumPageloadEventsAdaptiveGroups") {
-      return Reply(json: DemoWorld.rumMetrics(days: limit(in: query) ?? 14))
+      return Reply(json: DemoWorld.rumMetrics(days: limit(in: query) ?? 14, scale: scale))
     }
     if query.contains("rumPageloadEventsAdaptiveGroups") {
-      return Reply(json: DemoWorld.rumPageviews(days: limit(in: query) ?? 7))
+      return Reply(json: DemoWorld.rumPageviews(days: limit(in: query) ?? 7, scale: scale))
     }
     if query.contains("firewallEventsAdaptiveGroups") {
-      return Reply(json: DemoWorld.firewallEvents())
+      return Reply(json: DemoWorld.firewallEvents(scale: scale))
     }
     return Reply(json: #"{"data":null,"errors":null}"#)
   }
@@ -413,6 +449,22 @@ final class DemoBackend: URLProtocol {
     let digits = query[marker.upperBound...].drop(while: { $0 == " " }).prefix(while: \.isNumber)
     return Int(digits)
   }
+
+  /// First `name: "value"` filter tag in a GraphQL query — how an
+  /// account-scoped or zone-scoped document says which world it is asking
+  /// about.
+  ///
+  /// The document reaches us inside a JSON request body, so its quotes are
+  /// escaped: the bytes read `accountTag: \"demo-account\"`, not
+  /// `accountTag: "demo-account"`. Skipping the backslashes is the whole
+  /// reason this is a parser and not a `contains` check.
+  private static func tag(_ name: String, in query: String) -> String? {
+    guard let marker = query.range(of: "\(name):") else { return nil }
+    let opened = query[marker.upperBound...].drop { $0 == " " || $0 == "\\" }
+    guard opened.first == "\"" else { return nil }
+    let value = opened.dropFirst().prefix { $0 != "\"" && $0 != "\\" }
+    return value.isEmpty ? nil : String(value)
+  }
 }
 
 // MARK: - Fixture world
@@ -421,34 +473,103 @@ final class DemoBackend: URLProtocol {
 /// pagination stress. Behavior stays in `DemoBackend`. Datetimes that feed
 /// charts and "time ago" labels are generated relative to now so the demo
 /// always looks alive.
+///
+/// Everything account-scoped is keyed by account id, because the demo user
+/// belongs to three accounts. Switching has to change the domains, the
+/// Workers, the buckets, the inbox, and the charts — an account switcher that
+/// only changes a label teaches the wrong thing about the app.
 private enum DemoWorld {
+
+  // MARK: Accounts
+
+  struct Account {
+    let id: String
+    let name: String
+    let createdOn: String
+    /// The `*.workers.dev` subdomain, so Worker URLs differ per account.
+    let workersSubdomain: String
+    /// Multiplies every generated series. A side-project account should draw
+    /// a small chart, not the flagship account's chart with a new title.
+    let trafficScale: Double
+
+    var json: String {
+      #"{"id":"\#(id)","name":"\#(name)","type":"standard","created_on":"\#(createdOn)"}"#
+    }
+  }
+
+  /// One person, three Cloudflare accounts: the main workspace they live in,
+  /// a client account they were invited to, and the account their weekend
+  /// projects ended up in.
+  static let accounts: [Account] = [
+    Account(
+      id: DemoBackend.accountID, name: "Demo Workspace",
+      createdOn: "2024-03-01T09:00:00Z", workersSubdomain: "demo", trafficScale: 1),
+    Account(
+      id: "demo-account-studio", name: "Foxglove Studio",
+      createdOn: "2025-02-17T14:20:00Z", workersSubdomain: "foxglove", trafficScale: 0.24),
+    Account(
+      id: "demo-account-side", name: "Side Projects",
+      createdOn: "2026-05-06T18:45:00Z", workersSubdomain: "inkline", trafficScale: 0.06),
+  ]
+
+  static func account(id: String) -> Account? { accounts.first { $0.id == id } }
+
+  static func trafficScale(accountID: String?, zoneID: String?) -> Double {
+    if let accountID, let account = account(id: accountID) { return account.trafficScale }
+    if let zoneID, let zone = zone(id: zoneID), let account = account(id: zone.accountID) {
+      return account.trafficScale
+    }
+    return 1
+  }
+
+  /// Scales a generated volume, flooring at 1 so a quiet account reads as
+  /// quiet rather than as a failed fetch.
+  private static func scaled(_ value: Int, _ scale: Double) -> Int {
+    guard scale < 1 else { return value }
+    return max(1, Int((Double(value) * scale).rounded()))
+  }
+
+  /// Like `scaled`, but keeps zero at zero — error and threat counts have to
+  /// be able to say "none".
+  private static func scaledOrZero(_ value: Int, _ scale: Double) -> Int {
+    guard scale < 1, value != 0 else { return value }
+    return Int((Double(value) * scale).rounded())
+  }
+
+  /// A stable small integer for a name. `hashValue` is seeded per process, so
+  /// deriving a pages.dev subdomain or an ETag from it would rename the demo's
+  /// resources on every launch.
+  static func seed(_ name: String) -> Int {
+    name.unicodeScalars.reduce(7) { ($0 &* 31 &+ Int($1.value)) % 100_000 }
+  }
+
+  // MARK: Zones
+
   struct Zone {
     let id: String
     let name: String
+    let accountID: String
     let json: String
+
+    init(
+      id: String, name: String, accountID: String, status: String = "active",
+      plan: (id: String, name: String) = ("free", "Free Website")
+    ) {
+      self.id = id
+      self.name = name
+      self.accountID = accountID
+      json =
+        #"{"id":"\#(id)","name":"\#(name)","status":"\#(status)","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"\#(plan.id)","name":"\#(plan.name)","legacy_id":"\#(plan.id)"}}"#
+    }
   }
 
+  private static let pro = (id: "pro", name: "Pro Website")
+
   private static let coreZones: [Zone] = [
-    Zone(
-      id: "zone-example", name: "example.com",
-      json:
-        #"{"id":"zone-example","name":"example.com","status":"active","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"pro","name":"Pro Website","legacy_id":"pro"}}"#
-    ),
-    Zone(
-      id: "zone-docs", name: "docs.example.com",
-      json:
-        #"{"id":"zone-docs","name":"docs.example.com","status":"active","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"free","name":"Free Website","legacy_id":"free"}}"#
-    ),
-    Zone(
-      id: "zone-api", name: "api.example.net",
-      json:
-        #"{"id":"zone-api","name":"api.example.net","status":"pending","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"free","name":"Free Website","legacy_id":"free"}}"#
-    ),
-    Zone(
-      id: "zone-shop", name: "shop.example.org",
-      json:
-        #"{"id":"zone-shop","name":"shop.example.org","status":"active","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"free","name":"Free Website","legacy_id":"free"}}"#
-    ),
+    Zone(id: "zone-example", name: "example.com", accountID: "demo-account", plan: pro),
+    Zone(id: "zone-docs", name: "docs.example.com", accountID: "demo-account"),
+    Zone(id: "zone-api", name: "api.example.net", accountID: "demo-account", status: "pending"),
+    Zone(id: "zone-shop", name: "shop.example.org", accountID: "demo-account"),
   ]
 
   /// Varied labels so large-demo Domains cards don't hash into near-identical
@@ -474,55 +595,637 @@ private enum DemoWorld {
     "sandstone.arch", "meadowlark.bird", "thunderhead.storm",
   ]
 
-  static var zones: [Zone] {
+  /// The client account: a handful of domains, one of them still pending —
+  /// the shape a small studio actually has.
+  private static let studioZones: [Zone] = [
+    Zone(
+      id: "zone-studio-www", name: "foxglove.studio",
+      accountID: "demo-account-studio", plan: pro),
+    Zone(
+      id: "zone-studio-clients", name: "clients.foxglove.studio",
+      accountID: "demo-account-studio"),
+    Zone(
+      id: "zone-studio-preview", name: "preview.foxglove.studio",
+      accountID: "demo-account-studio", status: "pending"),
+  ]
+
+  /// The hobby account: two domains and nothing else to speak of.
+  private static let sideZones: [Zone] = [
+    Zone(id: "zone-side-inkline", name: "inkline.dev", accountID: "demo-account-side"),
+    Zone(id: "zone-side-notes", name: "notes.inkline.dev", accountID: "demo-account-side"),
+  ]
+
+  static var allZones: [Zone] {
     let bulk = bulkZoneNames.enumerated().map { offset, name -> Zone in
       let index = offset + 1
-      let id = "zone-bulk-\(index)"
-      let status = index % 11 == 0 ? "pending" : "active"
       return Zone(
-        id: id, name: name,
-        json:
-          #"{"id":"\#(id)","name":"\#(name)","status":"\#(status)","paused":false,"development_mode":0,"name_servers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"plan":{"id":"free","name":"Free Website","legacy_id":"free"}}"#
-      )
+        id: "zone-bulk-\(index)", name: name, accountID: "demo-account",
+        status: index % 11 == 0 ? "pending" : "active")
     }
-    return coreZones + bulk
+    return coreZones + bulk + studioZones + sideZones
   }
 
-  static func zone(id: String) -> Zone? { zones.first { $0.id == id } }
-
-  static var workerScripts: [String] {
-    var scripts = [
-      #"{"id":"api-worker","tag":"w-api-1","modified_on":"2026-07-20T03:04:05Z","created_on":"2025-11-02T10:00:00Z"}"#,
-      #"{"id":"edge-cache","tag":"w-edge-2","modified_on":"2026-07-18T22:11:00Z","created_on":"2026-02-14T08:30:00Z"}"#,
-    ]
-    scripts += (1...38).map { index in
-      let id = "worker-\(String(format: "%02d", index))"
-      return
-        #"{"id":"\#(id)","tag":"w-bulk-\#(index)","modified_on":"\#(DemoClock.iso(hoursAgo: index))","created_on":"2026-01-01T10:00:00Z"}"#
-    }
-    return scripts
+  /// `nil` means "every zone the demo knows" — only reachable if a caller
+  /// stops scoping the list, which the client never does.
+  static func zones(accountID: String?) -> [Zone] {
+    guard let accountID else { return allZones }
+    return allZones.filter { $0.accountID == accountID }
   }
 
-  static var pagesProjects: [String] {
-    var projects = [pagesProject(named: "marketing-site")]
-    projects += (1...18).map { index in
-      pagesProject(named: "site-\(String(format: "%02d", index))")
+  static func zone(id: String) -> Zone? { allZones.first { $0.id == id } }
+
+  // MARK: Workers
+
+  static func workerScripts(accountID: String) -> [String] {
+    func script(id: String, tag: String, modifiedOn: String, createdOn: String) -> String {
+      #"{"id":"\#(id)","tag":"\#(tag)","modified_on":"\#(modifiedOn)","created_on":"\#(createdOn)"}"#
     }
-    return projects
+    switch accountID {
+    case "demo-account":
+      var scripts = [
+        script(
+          id: "api-worker", tag: "w-api-1", modifiedOn: "2026-07-20T03:04:05Z",
+          createdOn: "2025-11-02T10:00:00Z"),
+        script(
+          id: "edge-cache", tag: "w-edge-2", modifiedOn: "2026-07-18T22:11:00Z",
+          createdOn: "2026-02-14T08:30:00Z"),
+      ]
+      scripts += (1...38).map { index in
+        script(
+          id: "worker-\(String(format: "%02d", index))", tag: "w-bulk-\(index)",
+          modifiedOn: DemoClock.iso(hoursAgo: index), createdOn: "2026-01-01T10:00:00Z")
+      }
+      return scripts
+    case "demo-account-studio":
+      return [
+        script(
+          id: "image-resizer", tag: "w-studio-1", modifiedOn: DemoClock.iso(hoursAgo: 9),
+          createdOn: "2025-03-04T11:15:00Z"),
+        script(
+          id: "form-relay", tag: "w-studio-2", modifiedOn: DemoClock.iso(hoursAgo: 130),
+          createdOn: "2025-06-21T16:40:00Z"),
+      ]
+    case "demo-account-side":
+      return [
+        script(
+          id: "link-shortener", tag: "w-side-1", modifiedOn: DemoClock.iso(hoursAgo: 51),
+          createdOn: "2026-05-09T20:05:00Z")
+      ]
+    default:
+      return []
+    }
   }
 
-  static func pagesProject(named name: String) -> String {
-    let seed = name == "marketing-site" ? "7ab" : String(name.hashValue.magnitude % 1000)
+  static func workerDomains(accountID: String) -> [String] {
+    switch accountID {
+    case "demo-account":
+      return [
+        #"{"id":"wd-1","hostname":"api.example.net","service":"api-worker","zone_id":"zone-api","zone_name":"api.example.net","cert_id":"cert-1","environment":"production"}"#
+      ]
+    case "demo-account-studio":
+      return [
+        #"{"id":"wd-studio-1","hostname":"images.foxglove.studio","service":"image-resizer","zone_id":"zone-studio-www","zone_name":"foxglove.studio","cert_id":"cert-studio-1","environment":"production"}"#
+      ]
+    default:
+      // The hobby account's Worker runs on workers.dev only — the empty
+      // custom-domain state is the common one.
+      return []
+    }
+  }
+
+  static func workerRoutes(zoneID: String) -> [String] {
+    switch zoneID {
+    case "zone-example":
+      return [#"{"id":"route-1","pattern":"example.com/api/*","script":"api-worker"}"#]
+    case "zone-studio-www":
+      return [
+        #"{"id":"route-studio-1","pattern":"foxglove.studio/img/*","script":"image-resizer"}"#
+      ]
+    default:
+      return []
+    }
+  }
+
+  static func workerDeployments(name: String) -> String {
+    let message =
+      switch name {
+      case "image-resizer": "Switch to AVIF where supported"
+      case "form-relay": "Add the honeypot field"
+      case "link-shortener": "Cache 301s at the edge"
+      default: "Ship the new rate limiter"
+      }
     return #"""
-      {"id":"pp-\#(name)","name":"\#(name)","subdomain":"\#(name)-\#(seed).pages.dev","created_on":"2026-01-08T12:00:00Z","latest_deployment":{"id":"pd-\#(name)-3","url":"https://\#(name)-\#(seed).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"}}}
+      {"deployments":[
+        {"id":"deploy-live","created_on":"\#(DemoClock.iso(hoursAgo: 2))","source":"api","strategy":"percentage","versions":[{"version_id":"v-2001","percentage":100}],"annotations":{"workers/message":"\#(message)","workers/triggered_by":"deployment"},"author_email":"demo@example.com"},
+        {"id":"deploy-prev","created_on":"\#(DemoClock.iso(hoursAgo: 74))","source":"wrangler","strategy":"percentage","versions":[{"version_id":"v-1994","percentage":100}],"author_email":"demo@example.com"}
+      ]}
       """#
   }
 
-  static func dnsRecords(zoneID: String) -> [String] {
-    guard zoneID == "zone-example" else {
+  static func workerScript(name: String) -> String {
+    switch name {
+    case "image-resizer":
+      return """
+        export default {
+          async fetch(request, env, ctx) {
+            const url = new URL(request.url)
+            const accepts = request.headers.get("Accept") ?? ""
+            const format = accepts.includes("image/avif") ? "avif" : "webp"
+            return fetch(request, {
+              cf: { image: { format, width: Number(url.searchParams.get("w")) || 1200 } }
+            })
+          }
+        }
+        """
+    case "form-relay":
+      return """
+        export default {
+          async fetch(request, env) {
+            if (request.method !== "POST") {
+              return new Response("Method not allowed", { status: 405 })
+            }
+            const form = await request.formData()
+            if (form.get("company")) {
+              return new Response("ok")
+            }
+            await env.INBOX.send(Object.fromEntries(form))
+            return Response.redirect("https://foxglove.studio/thanks", 303)
+          }
+        }
+        """
+    case "link-shortener":
+      return """
+        export default {
+          async fetch(request, env) {
+            const slug = new URL(request.url).pathname.slice(1)
+            const target = await env.LINKS.get(slug)
+            if (!target) {
+              return new Response("Not found", { status: 404 })
+            }
+            return Response.redirect(target, 301)
+          }
+        }
+        """
+    default:
+      return """
+        export default {
+          async fetch(request, env) {
+            const url = new URL(request.url)
+            if (url.pathname === "/health") {
+              return new Response("ok")
+            }
+            const limited = await env.LIMITER.check(request)
+            if (limited) {
+              return new Response("Slow down", { status: 429 })
+            }
+            return fetch(request)
+          }
+        }
+        """
+    }
+  }
+
+  // MARK: Pages
+
+  static func pagesProjects(accountID: String) -> [String] {
+    switch accountID {
+    case "demo-account":
+      return ["marketing-site"] + (1...18).map { "site-\(String(format: "%02d", $0))" }
+    case "demo-account-studio":
+      return ["foxglove-www", "client-portal"]
+    default:
+      // Nothing on Pages: the hobby account is what the Pages empty state is
+      // for, and every real user has an account like it.
+      return []
+    }
+  }
+
+  static func pagesProject(named name: String) -> String {
+    let subdomain = pagesSubdomain(for: name)
+    return #"""
+      {"id":"pp-\#(name)","name":"\#(name)","subdomain":"\#(subdomain).pages.dev","created_on":"2026-01-08T12:00:00Z","latest_deployment":{"id":"pd-\#(name)-3","url":"https://\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"}}}
+      """#
+  }
+
+  private static func pagesSubdomain(for project: String) -> String {
+    let suffix = project == "marketing-site" ? "7ab" : String(format: "%03d", seed(project) % 1000)
+    return "\(project)-\(suffix)"
+  }
+
+  static func pagesDomains(project: String) -> [String] {
+    switch project {
+    case "marketing-site":
       return [
-        #"{"id":"dns-\#(zoneID)-a","zone_id":"\#(zoneID)","type":"A","name":"@","content":"203.0.113.24","proxied":true,"ttl":1}"#,
-        #"{"id":"dns-\#(zoneID)-www","zone_id":"\#(zoneID)","type":"CNAME","name":"www","content":"example.com","proxied":true,"ttl":1}"#,
+        #"{"id":"pdom-1","name":"www.example.org","status":"active","created_on":"2026-01-09T08:00:00Z","zone_tag":"zone-shop"}"#
+      ]
+    case "foxglove-www":
+      return [
+        #"{"id":"pdom-studio-1","name":"www.foxglove.studio","status":"active","created_on":"2025-03-12T09:30:00Z","zone_tag":"zone-studio-www"}"#
+      ]
+    default:
+      return []
+    }
+  }
+
+  /// Deployment history for a project. The commit messages differ per project
+  /// so a build screen in one account never looks like a build screen in
+  /// another, and the middle build always failed — the failure row is half of
+  /// what the Pages screen exists to show.
+  static func pagesDeployments(project: String) -> [String] {
+    let subdomain = pagesSubdomain(for: project)
+    let commits: [(hash: String, message: String)] =
+      switch project {
+      case "foxglove-www":
+        [
+          ("4e77c02", "Refresh the case study grid"),
+          ("b19d3fa", "Try the new image pipeline"),
+          ("0a5c118", "Add the studio contact form"),
+        ]
+      case "client-portal":
+        [
+          ("d3a90b6", "Gate invoices behind Access"),
+          ("62fe114", "Upgrade the PDF renderer"),
+          ("18cc730", "Initial portal scaffold"),
+        ]
+      default:
+        [
+          ("9c2f4e1", "Polish the hero copy"),
+          ("1d8ab90", "Bump dependencies"),
+          ("77aa02e", "Launch the summer campaign"),
+        ]
+      }
+    return [
+      #"""
+      {"id":"pd-3","short_id":"\#(commits[0].hash)","url":"https://\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","modified_on":"\#(DemoClock.iso(hoursAgo: 2))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[0].hash)","commit_message":"\#(commits[0].message)"}},"aliases":\#(pagesAliases(project: project))}
+      """#,
+      #"""
+      {"id":"pd-2","short_id":"\#(commits[1].hash)","url":"https://\#(commits[1].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 26))","modified_on":"\#(DemoClock.iso(hoursAgo: 26))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"build","status":"failure","started_on":"\#(DemoClock.iso(hoursAgo: 26))","ended_on":"\#(DemoClock.iso(hoursAgo: 26))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[1].hash)","commit_message":"\#(commits[1].message)"}},"aliases":null}
+      """#,
+      #"""
+      {"id":"pd-1","short_id":"\#(commits[2].hash)","url":"https://\#(commits[2].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 96))","modified_on":"\#(DemoClock.iso(hoursAgo: 96))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 96))","ended_on":"\#(DemoClock.iso(hoursAgo: 96))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[2].hash)","commit_message":"\#(commits[2].message)"}},"aliases":null}
+      """#,
+    ]
+  }
+
+  /// The newest production deployment answers on the project's custom domain
+  /// when it has one — that alias is what the deployment screen shows instead
+  /// of the pages.dev hash.
+  private static func pagesAliases(project: String) -> String {
+    switch project {
+    case "marketing-site": #"["https://www.example.org"]"#
+    case "foxglove-www": #"["https://www.foxglove.studio"]"#
+    default: "null"
+    }
+  }
+
+  static let pagesBuildLogs = #"""
+    {"total":6,"includes_container_logs":false,"data":[
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Cloning repository..."},
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Installing dependencies with pnpm"},
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Running build command: pnpm build"},
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Compiled 42 routes in 8.3s"},
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Uploading build output (3.2 MB)"},
+      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Success: deployment is live"}
+    ]}
+    """#
+
+  // MARK: R2
+
+  struct R2DemoObject {
+    let key: String
+    let contentType: String
+    let body: Data
+
+    var listJSON: String {
+      #"{"key":"\#(key)","size":\#(body.count),"etag":"demo-\#(DemoWorld.seed(key))","last_modified":"\#(DemoClock.iso(hoursAgo: 30))","http_metadata":{"contentType":"\#(contentType)"}}"#
+    }
+  }
+
+  struct R2DemoBucket {
+    let name: String
+    let creationDate: String
+    let r2DevDomain: String
+    let r2DevEnabled: Bool
+    let objects: [R2DemoObject]
+
+    var json: String {
+      #"{"name":"\#(name)","creation_date":"\#(creationDate)"}"#
+    }
+  }
+
+  /// A 1×1 transparent PNG — real bytes so thumbnails and previews work.
+  static let tinyPNG = Data(
+    base64Encoded:
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+  )!
+
+  static func r2Buckets(accountID: String) -> [R2DemoBucket] {
+    switch accountID {
+    case "demo-account":
+      return [
+        R2DemoBucket(
+          name: "assets", creationDate: "2026-01-15T12:00:00Z",
+          r2DevDomain: "pub-dash-demo.r2.dev", r2DevEnabled: true, objects: assetsObjects),
+        R2DemoBucket(
+          name: "backups", creationDate: "2025-09-01T12:00:00Z",
+          r2DevDomain: "pub-dash-backups.r2.dev", r2DevEnabled: false, objects: backupsObjects),
+      ]
+    case "demo-account-studio":
+      return [
+        R2DemoBucket(
+          name: "studio-media", creationDate: "2025-03-08T10:30:00Z",
+          r2DevDomain: "pub-foxglove-media.r2.dev", r2DevEnabled: true, objects: studioMediaObjects)
+      ]
+    case "demo-account-side":
+      return [
+        R2DemoBucket(
+          name: "uploads", creationDate: "2026-05-11T21:10:00Z",
+          r2DevDomain: "pub-inkline-uploads.r2.dev", r2DevEnabled: false, objects: uploadsObjects)
+      ]
+    default:
+      return []
+    }
+  }
+
+  private static var assetsObjects: [R2DemoObject] {
+    var objects = [
+      R2DemoObject(
+        key: "readme.md", contentType: "text/markdown",
+        body: Data(
+          """
+          # Assets bucket
+
+          Static files served through the `assets` R2 bucket.
+
+          - `styles.css` — the marketing site stylesheet
+          - `images/` — logos and icons
+          - `notes.txt` — deploy checklist
+          """.utf8)),
+      R2DemoObject(
+        key: "styles.css", contentType: "text/css",
+        body: Data(
+          """
+          :root {
+            --brand: #f6821f;
+            --ink: #1d1d1f;
+          }
+
+          body {
+            font-family: -apple-system, sans-serif;
+            color: var(--ink);
+          }
+          """.utf8)),
+      R2DemoObject(
+        key: "notes.txt", contentType: "text/plain",
+        body: Data(
+          """
+          Deploy checklist
+          1. pnpm build
+          2. wrangler pages deploy
+          3. purge the cache
+          """.utf8)),
+      R2DemoObject(
+        key: "data.json", contentType: "application/json",
+        body: Data(#"{"regions":["iad","lhr","hkg"],"buildID":"9c2f4e1"}"#.utf8)),
+      R2DemoObject(key: "images/logo.png", contentType: "image/png", body: tinyPNG),
+      R2DemoObject(key: "images/favicon.png", contentType: "image/png", body: tinyPNG),
+    ]
+    for folder in ["media", "docs", "build", "archive"] {
+      for index in 1...24 {
+        let key = "\(folder)/file-\(String(format: "%03d", index)).txt"
+        objects.append(
+          R2DemoObject(
+            key: key, contentType: "text/plain",
+            body: Data("bulk demo object \(key)\n".utf8)))
+      }
+    }
+    return objects
+  }
+
+  private static var backupsObjects: [R2DemoObject] {
+    var objects = [
+      R2DemoObject(
+        key: "kv-export-2026-07-20.json", contentType: "application/json",
+        body: Data(#"{"exported":"2026-07-20T04:00:00Z","keys":3}"#.utf8)),
+      R2DemoObject(
+        key: "dns-snapshot.txt", contentType: "text/plain",
+        body: Data("example.com A 203.0.113.10\nwww CNAME example.com\n".utf8)),
+    ]
+    objects += (1...40).map { index in
+      R2DemoObject(
+        key: "snapshots/day-\(String(format: "%03d", index)).json",
+        contentType: "application/json",
+        body: Data(#"{"day":\#(index),"ok":true}"#.utf8))
+    }
+    return objects
+  }
+
+  private static var studioMediaObjects: [R2DemoObject] {
+    var objects = [
+      R2DemoObject(
+        key: "brand-guide.md", contentType: "text/markdown",
+        body: Data(
+          """
+          # Foxglove Studio brand
+
+          - Logo lockups live in `logos/`
+          - Client shoots live in `clients/`
+          - Never re-export the wordmark below 240px wide
+          """.utf8)),
+      R2DemoObject(key: "logos/foxglove-mark.png", contentType: "image/png", body: tinyPNG),
+      R2DemoObject(key: "logos/foxglove-wordmark.png", contentType: "image/png", body: tinyPNG),
+      R2DemoObject(
+        key: "rate-card.json", contentType: "application/json",
+        body: Data(#"{"currency":"EUR","dayRate":980,"retainerMonths":6}"#.utf8)),
+    ]
+    for client in ["northgate", "sundial", "verity"] {
+      for index in 1...8 {
+        objects.append(
+          R2DemoObject(
+            key: "clients/\(client)/shot-\(String(format: "%02d", index)).png",
+            contentType: "image/png", body: tinyPNG))
+      }
+    }
+    return objects
+  }
+
+  private static var uploadsObjects: [R2DemoObject] {
+    [
+      R2DemoObject(
+        key: "og-image.png", contentType: "image/png", body: tinyPNG),
+      R2DemoObject(
+        key: "resume.md", contentType: "text/markdown",
+        body: Data("# Résumé\n\nStill a work in progress.\n".utf8)),
+      R2DemoObject(
+        key: "links.json", contentType: "application/json",
+        body: Data(#"{"dash":"https://dash.xat.sh","notes":"https://notes.inkline.dev"}"#.utf8)),
+    ]
+  }
+
+  // MARK: KV
+
+  struct KVDemoNamespace {
+    let id: String
+    let title: String
+
+    var json: String { #"{"id":"\#(id)","title":"\#(title)"}"# }
+  }
+
+  static func kvNamespaces(accountID: String) -> [KVDemoNamespace] {
+    switch accountID {
+    case "demo-account":
+      return [
+        KVDemoNamespace(id: "kv-prod", title: "production-config"),
+        KVDemoNamespace(id: "kv-cache", title: "edge-cache"),
+      ]
+    case "demo-account-studio":
+      return [KVDemoNamespace(id: "kv-studio", title: "studio-settings")]
+    default:
+      // Namespaces cannot be created in Dash, so the hobby account is also
+      // how the KV empty state gets seen at all.
+      return []
+    }
+  }
+
+  static func kvKeys(in namespace: String) -> [String] {
+    switch namespace {
+    case "kv-prod":
+      var keys = [
+        #"{"name":"config:homepage"}"#,
+        #"{"name":"feature-flags"}"#,
+        #"{"name":"session:8f3a2c","expiration":1795000000}"#,
+      ]
+      // After \#(...), keep a content quote before } — otherwise `"#` steals it
+      // and the JSON string never closes (`{"name":"bulk:item-001}`).
+      keys += (1...96).map { index in
+        let name = String(format: "bulk:item-%03d", index)
+        return #"{"name":"\#(name)"}"#
+      }
+      return keys
+    case "kv-cache":
+      var keys = [
+        #"{"name":"cache:hero-image"}"#,
+        #"{"name":"cache:pricing-table"}"#,
+      ]
+      keys += (1...48).map { index in
+        let name = String(format: "cache:page-%03d", index)
+        return #"{"name":"\#(name)"}"#
+      }
+      return keys
+    case "kv-studio":
+      return [
+        #"{"name":"site:nav"}"#,
+        #"{"name":"site:theme"}"#,
+        #"{"name":"redirects"}"#,
+      ]
+    default:
+      return []
+    }
+  }
+
+  static func kvValue(namespace: String, key: String) -> String {
+    switch (namespace, key) {
+    case ("kv-prod", "config:homepage"):
+      return #"{"title":"Example, Inc.","heroImage":"/images/logo.png","cacheSeconds":300}"#
+    case ("kv-prod", "feature-flags"):
+      return #"{"newDashboard":true,"betaBanner":false,"maxUploadMB":100}"#
+    case ("kv-prod", "session:8f3a2c"):
+      return #"{"userID":"u-1042","createdAt":"\#(DemoClock.iso(hoursAgo: 4))"}"#
+    case ("kv-cache", "cache:hero-image"):
+      return #"{"etag":"9c2f4e1","bytes":48213}"#
+    case ("kv-cache", "cache:pricing-table"):
+      return #"{"etag":"77aa02e","bytes":9120}"#
+    case ("kv-studio", "site:nav"):
+      return #"{"items":[{"label":"Work","href":"/work"},{"label":"Studio","href":"/studio"}]}"#
+    case ("kv-studio", "site:theme"):
+      // Extra `#` on the delimiters: a hex colour puts `"#` right after the
+      // key's colon, which would otherwise close a `#"…"#` string early.
+      return ##"{"accent":"#7a4fbf","radius":18,"grain":true}"##
+    case ("kv-studio", "redirects"):
+      return #"{"/portfolio":"/work","/about":"/studio"}"#
+    default:
+      if key.hasPrefix("bulk:") || key.hasPrefix("cache:page-") {
+        return #"{"key":"\#(key)","demo":true}"#
+      }
+      return "{}"
+    }
+  }
+
+  // MARK: Web Analytics sites
+
+  static func rumSites(accountID: String) -> String {
+    let sites: [String] =
+      switch accountID {
+      case "demo-account":
+        [
+          #"{"site_tag":"demo-site","site_token":"demo-token","auto_install":true,"ruleset":{"id":"demo-ruleset","zone_tag":"zone-example","zone_name":"example.com","enabled":true}}"#,
+          #"{"site_tag":"docs-site","site_token":"docs-token","auto_install":true,"ruleset":{"id":"docs-ruleset","zone_tag":"zone-docs","zone_name":"docs.example.com","enabled":true}}"#,
+          #"{"site_tag":"api-site","site_token":"api-token","auto_install":true,"ruleset":{"id":"api-ruleset","zone_tag":"zone-api","zone_name":"api.example.net","enabled":false}}"#,
+          #"{"site_tag":"shop-site","site_token":"shop-token","auto_install":true,"ruleset":{"id":"shop-ruleset","zone_tag":"zone-shop","zone_name":"shop.example.org","enabled":true}}"#,
+          #"{"site_tag":"northwind-site","site_token":"northwind-token","auto_install":true,"ruleset":{"id":"northwind-ruleset","zone_tag":"zone-bulk-1","zone_name":"northwind.io","enabled":true}}"#,
+        ]
+      case "demo-account-studio":
+        [
+          #"{"site_tag":"foxglove-site","site_token":"foxglove-token","auto_install":true,"ruleset":{"id":"foxglove-ruleset","zone_tag":"zone-studio-www","zone_name":"foxglove.studio","enabled":true}}"#
+        ]
+      default:
+        []
+      }
+    return "[\(sites.joined(separator: ","))]"
+  }
+
+  // MARK: Alerts / audit
+
+  static func alertHistory(accountID: String) -> String {
+    let entries: [String] =
+      switch accountID {
+      case "demo-account":
+        [
+          #"{"id":"hist-tunnel-1","policy_id":"pol-1","name":"Tunnel health","alert_type":"tunnel_health_event","mechanism":"email","alert_body":"homelab-01 disconnected from Cloudflare","sent":"\#(DemoClock.iso(hoursAgo: 6))"}"#,
+          #"{"id":"hist-pages-1","policy_id":"pol-2","name":"Pages build alerts","alert_type":"pages_event_alert","mechanism":"email","alert_body":"marketing-site: production build failed","sent":"\#(DemoClock.iso(hoursAgo: 26))"}"#,
+        ]
+      case "demo-account-studio":
+        [
+          #"{"id":"hist-studio-ssl","policy_id":"pol-studio-1","name":"Universal SSL","alert_type":"universal_ssl_event_type","mechanism":"email","alert_body":"preview.foxglove.studio: certificate validation is pending","sent":"\#(DemoClock.iso(hoursAgo: 11))"}"#,
+          #"{"id":"hist-studio-origin","policy_id":"pol-studio-2","name":"Origin errors","alert_type":"http_alert_origin_error","mechanism":"email","alert_body":"clients.foxglove.studio: origin returned 5xx for 4% of requests","sent":"\#(DemoClock.iso(hoursAgo: 40))"}"#,
+        ]
+      default:
+        // Nothing has ever gone wrong here, which is its own thing to see:
+        // an empty Watchtower inbox and no badge on the tab.
+        []
+      }
+    return "[\(entries.joined(separator: ","))]"
+  }
+
+  static func auditLogs(accountID: String) -> String {
+    let entries: [String] =
+      switch accountID {
+      case "demo-account":
+        [
+          #"{"id":"log-1","action":{"type":"rollback","description":"Rolled back Worker deployment","result":"success","time":"\#(DemoClock.iso(hoursAgo: 5))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"script","product":"workers","id":"api-worker"},"when":"\#(DemoClock.iso(hoursAgo: 5))"}"#,
+          #"{"id":"log-2","action":{"type":"add","description":"Created DNS record","result":"success","time":"\#(DemoClock.iso(hoursAgo: 22))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"dns_record","product":"dns","id":"dns-caa"},"when":"\#(DemoClock.iso(hoursAgo: 22))"}"#,
+          #"{"id":"log-3","action":{"type":"purge","description":"Purged zone cache","result":"success","time":"\#(DemoClock.iso(hoursAgo: 49))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"zone","product":"caching","id":"zone-example"},"when":"\#(DemoClock.iso(hoursAgo: 49))"}"#,
+        ]
+      case "demo-account-studio":
+        [
+          #"{"id":"log-studio-1","action":{"type":"add","description":"Added custom domain to Worker","result":"success","time":"\#(DemoClock.iso(hoursAgo: 9))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"worker_domain","product":"workers","id":"images.foxglove.studio"},"when":"\#(DemoClock.iso(hoursAgo: 9))"}"#,
+          #"{"id":"log-studio-2","action":{"type":"add","description":"Added domain","result":"success","time":"\#(DemoClock.iso(hoursAgo: 64))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"zone","product":"zones","id":"zone-studio-preview"},"when":"\#(DemoClock.iso(hoursAgo: 64))"}"#,
+        ]
+      default:
+        [
+          #"{"id":"log-side-1","action":{"type":"add","description":"Created R2 bucket","result":"success","time":"\#(DemoClock.iso(hoursAgo: 120))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"bucket","product":"r2","id":"uploads"},"when":"\#(DemoClock.iso(hoursAgo: 120))"}"#
+        ]
+      }
+    return "[\(entries.joined(separator: ","))]"
+  }
+
+  // MARK: Zone fixtures
+
+  static func dnsRecords(zone: Zone) -> [String] {
+    guard zone.id == "zone-example" else {
+      return [
+        #"{"id":"dns-\#(zone.id)-a","zone_id":"\#(zone.id)","type":"A","name":"\#(zone.name)","content":"203.0.113.24","proxied":true,"ttl":1}"#,
+        #"{"id":"dns-\#(zone.id)-www","zone_id":"\#(zone.id)","type":"CNAME","name":"www.\#(zone.name)","content":"\#(zone.name)","proxied":true,"ttl":1}"#,
       ]
     }
     return [
@@ -550,212 +1253,6 @@ private enum DemoWorld {
     ]
     """#
 
-  static let workerScript = """
-    export default {
-      async fetch(request, env) {
-        const url = new URL(request.url)
-        if (url.pathname === "/health") {
-          return new Response("ok")
-        }
-        const limited = await env.LIMITER.check(request)
-        if (limited) {
-          return new Response("Slow down", { status: 429 })
-        }
-        return fetch(request)
-      }
-    }
-    """
-
-  static let pagesDeployments: [String] = [
-    #"""
-    {"id":"pd-3","short_id":"7ab12cd","url":"https://marketing-site-7ab.pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","modified_on":"\#(DemoClock.iso(hoursAgo: 2))","project_name":"marketing-site","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"9c2f4e1","commit_message":"Polish the hero copy"}},"aliases":["https://www.example.org"]}
-    """#,
-    #"""
-    {"id":"pd-2","short_id":"5fe98ba","url":"https://5fe98ba.marketing-site-7ab.pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 26))","modified_on":"\#(DemoClock.iso(hoursAgo: 26))","project_name":"marketing-site","is_skipped":false,"latest_stage":{"name":"build","status":"failure","started_on":"\#(DemoClock.iso(hoursAgo: 26))","ended_on":"\#(DemoClock.iso(hoursAgo: 26))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"1d8ab90","commit_message":"Bump dependencies"}},"aliases":null}
-    """#,
-    #"""
-    {"id":"pd-1","short_id":"20cc1f0","url":"https://20cc1f0.marketing-site-7ab.pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 96))","modified_on":"\#(DemoClock.iso(hoursAgo: 96))","project_name":"marketing-site","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 96))","ended_on":"\#(DemoClock.iso(hoursAgo: 96))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"77aa02e","commit_message":"Launch the summer campaign"}},"aliases":null}
-    """#,
-  ]
-
-  static let pagesBuildLogs = #"""
-    {"total":6,"includes_container_logs":false,"data":[
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Cloning repository..."},
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Installing dependencies with pnpm"},
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Running build command: pnpm build"},
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Compiled 42 routes in 8.3s"},
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Uploading build output (3.2 MB)"},
-      {"ts":"\#(DemoClock.iso(hoursAgo: 2))","line":"Success: deployment is live"}
-    ]}
-    """#
-
-  // MARK: R2 objects
-
-  struct R2DemoObject {
-    let key: String
-    let contentType: String
-    let body: Data
-
-    var listJSON: String {
-      #"{"key":"\#(key)","size":\#(body.count),"etag":"demo-\#(key.hashValue.magnitude)","last_modified":"\#(DemoClock.iso(hoursAgo: 30))","http_metadata":{"contentType":"\#(contentType)"}}"#
-    }
-  }
-
-  /// A 1×1 transparent PNG — real bytes so thumbnails and previews work.
-  static let tinyPNG = Data(
-    base64Encoded:
-      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
-  )!
-
-  static func r2Objects(in bucket: String) -> [R2DemoObject] {
-    switch bucket {
-    case "assets":
-      var objects = [
-        R2DemoObject(
-          key: "readme.md", contentType: "text/markdown",
-          body: Data(
-            """
-            # Assets bucket
-
-            Static files served through the `assets` R2 bucket.
-
-            - `styles.css` — the marketing site stylesheet
-            - `images/` — logos and icons
-            - `notes.txt` — deploy checklist
-            """.utf8)),
-        R2DemoObject(
-          key: "styles.css", contentType: "text/css",
-          body: Data(
-            """
-            :root {
-              --brand: #f6821f;
-              --ink: #1d1d1f;
-            }
-
-            body {
-              font-family: -apple-system, sans-serif;
-              color: var(--ink);
-            }
-            """.utf8)),
-        R2DemoObject(
-          key: "notes.txt", contentType: "text/plain",
-          body: Data(
-            """
-            Deploy checklist
-            1. pnpm build
-            2. wrangler pages deploy
-            3. purge the cache
-            """.utf8)),
-        R2DemoObject(
-          key: "data.json", contentType: "application/json",
-          body: Data(#"{"regions":["iad","lhr","hkg"],"buildID":"9c2f4e1"}"#.utf8)),
-        R2DemoObject(key: "images/logo.png", contentType: "image/png", body: tinyPNG),
-        R2DemoObject(key: "images/favicon.png", contentType: "image/png", body: tinyPNG),
-      ]
-      for folder in ["media", "docs", "build", "archive"] {
-        for index in 1...24 {
-          let key = "\(folder)/file-\(String(format: "%03d", index)).txt"
-          objects.append(
-            R2DemoObject(
-              key: key, contentType: "text/plain",
-              body: Data("bulk demo object \(key)\n".utf8)))
-        }
-      }
-      return objects
-    case "backups":
-      var objects = [
-        R2DemoObject(
-          key: "kv-export-2026-07-20.json", contentType: "application/json",
-          body: Data(#"{"exported":"2026-07-20T04:00:00Z","keys":3}"#.utf8)),
-        R2DemoObject(
-          key: "dns-snapshot.txt", contentType: "text/plain",
-          body: Data("example.com A 203.0.113.10\nwww CNAME example.com\n".utf8)),
-      ]
-      objects += (1...40).map { index in
-        R2DemoObject(
-          key: "snapshots/day-\(String(format: "%03d", index)).json",
-          contentType: "application/json",
-          body: Data(#"{"day":\#(index),"ok":true}"#.utf8))
-      }
-      return objects
-    default:
-      return []
-    }
-  }
-
-  // MARK: KV
-
-  static func kvKeys(in namespace: String) -> [String] {
-    switch namespace {
-    case "kv-prod":
-      var keys = [
-        #"{"name":"config:homepage"}"#,
-        #"{"name":"feature-flags"}"#,
-        #"{"name":"session:8f3a2c","expiration":1795000000}"#,
-      ]
-      // After \#(...), keep a content quote before } — otherwise `"#` steals it
-      // and the JSON string never closes (`{"name":"bulk:item-001}`).
-      keys += (1...96).map { index in
-        let name = String(format: "bulk:item-%03d", index)
-        return #"{"name":"\#(name)"}"#
-      }
-      return keys
-    case "kv-cache":
-      var keys = [
-        #"{"name":"cache:hero-image"}"#,
-        #"{"name":"cache:pricing-table"}"#,
-      ]
-      keys += (1...48).map { index in
-        let name = String(format: "cache:page-%03d", index)
-        return #"{"name":"\#(name)"}"#
-      }
-      return keys
-    default:
-      return []
-    }
-  }
-
-  static func kvValue(namespace: String, key: String) -> String {
-    switch (namespace, key) {
-    case ("kv-prod", "config:homepage"):
-      return #"{"title":"Example, Inc.","heroImage":"/images/logo.png","cacheSeconds":300}"#
-    case ("kv-prod", "feature-flags"):
-      return #"{"newDashboard":true,"betaBanner":false,"maxUploadMB":100}"#
-    case ("kv-prod", "session:8f3a2c"):
-      return #"{"userID":"u-1042","createdAt":"\#(DemoClock.iso(hoursAgo: 4))"}"#
-    case ("kv-cache", "cache:hero-image"):
-      return #"{"etag":"9c2f4e1","bytes":48213}"#
-    case ("kv-cache", "cache:pricing-table"):
-      return #"{"etag":"77aa02e","bytes":9120}"#
-    default:
-      if key.hasPrefix("bulk:") || key.hasPrefix("cache:page-") {
-        return #"{"key":"\#(key)","demo":true}"#
-      }
-      return "{}"
-    }
-  }
-
-  // MARK: Alerts / audit
-
-  static var alertHistory: String {
-    #"""
-    [
-      {"id":"hist-tunnel-1","policy_id":"pol-1","name":"Tunnel health","alert_type":"tunnel_health_event","mechanism":"email","alert_body":"homelab-01 disconnected from Cloudflare","sent":"\#(DemoClock.iso(hoursAgo: 6))"},
-      {"id":"hist-pages-1","policy_id":"pol-2","name":"Pages build alerts","alert_type":"pages_event_alert","mechanism":"email","alert_body":"marketing-site: production build failed","sent":"\#(DemoClock.iso(hoursAgo: 26))"}
-    ]
-    """#
-  }
-
-  static var auditLogs: String {
-    #"""
-    [
-      {"id":"log-1","action":{"type":"rollback","description":"Rolled back Worker deployment","result":"success","time":"\#(DemoClock.iso(hoursAgo: 5))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"script","product":"workers","id":"api-worker"},"when":"\#(DemoClock.iso(hoursAgo: 5))"},
-      {"id":"log-2","action":{"type":"add","description":"Created DNS record","result":"success","time":"\#(DemoClock.iso(hoursAgo: 22))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"dns_record","product":"dns","id":"dns-caa"},"when":"\#(DemoClock.iso(hoursAgo: 22))"},
-      {"id":"log-3","action":{"type":"purge","description":"Purged zone cache","result":"success","time":"\#(DemoClock.iso(hoursAgo: 49))"},"actor":{"email":"demo@example.com","type":"user"},"resource":{"type":"zone","product":"caching","id":"zone-example"},"when":"\#(DemoClock.iso(hoursAgo: 49))"}
-    ]
-    """#
-  }
-
   // MARK: GraphQL payloads
 
   /// Deterministic traffic wave: a day-shaped curve so charts look alive
@@ -765,19 +1262,19 @@ private enum DemoWorld {
     return base + Int(Double(swing) * (0.5 + 0.5 * sin(phase - .pi / 2)))
   }
 
-  static func zoneAnalyticsHourly() -> String {
+  static func zoneAnalyticsHourly(scale: Double) -> String {
     let rows = (0..<24).map { hour -> String in
-      let requests = wave(hour, base: 620, swing: 1400)
+      let requests = scaled(wave(hour, base: 620, swing: 1400), scale)
       return
-        #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? 3 : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 82 / 100),"cachedBytes":\#(requests * 11800 * 74 / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
+        #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? scaledOrZero(3, scale) : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 82 / 100),"cachedBytes":\#(requests * 11800 * 74 / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
     }
     return
       #"{"data":{"viewer":{"zones":[{"httpRequests1hGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
   }
 
-  static func zoneRequestsHourly() -> String {
+  static func zoneRequestsHourly(scale: Double) -> String {
     let rows = (0..<24).map { hour -> String in
-      let requests = wave(hour, base: 620, swing: 1400)
+      let requests = scaled(wave(hour, base: 620, swing: 1400), scale)
       return
         #"{"count":\#(requests),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"}}"#
     }
@@ -785,35 +1282,19 @@ private enum DemoWorld {
       #"{"data":{"viewer":{"zones":[{"httpRequestsAdaptiveGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
   }
 
-  static func zoneAnalyticsDaily(days: Int = 7) -> String {
+  static func zoneAnalyticsDaily(days: Int = 7, scale: Double) -> String {
     let rows = (0..<max(days, 1)).map { day -> String in
-      let requests = 18_500 + wave(day, base: 0, swing: 9000)
+      let requests = scaled(18_500 + wave(day, base: 0, swing: 9000), scale)
       return
-        #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: day))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(day % 3 == 0 ? 14 : 2),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 79 / 100),"cachedBytes":\#(requests * 11800 * 71 / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
+        #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: day))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(scaledOrZero(day % 3 == 0 ? 14 : 2, scale)),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 79 / 100),"cachedBytes":\#(requests * 11800 * 71 / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
     }
     return
       #"{"data":{"viewer":{"zones":[{"httpRequests1dGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
   }
 
-  static let rumSites =
-    #"""
-    [
-      {"site_tag":"demo-site","site_token":"demo-token","auto_install":true,\#
-       "ruleset":{"id":"demo-ruleset","zone_tag":"zone-example","zone_name":"example.com","enabled":true}},
-      {"site_tag":"docs-site","site_token":"docs-token","auto_install":true,\#
-       "ruleset":{"id":"docs-ruleset","zone_tag":"zone-docs","zone_name":"docs.example.com","enabled":true}},
-      {"site_tag":"api-site","site_token":"api-token","auto_install":true,\#
-       "ruleset":{"id":"api-ruleset","zone_tag":"zone-api","zone_name":"api.example.net","enabled":false}},
-      {"site_tag":"shop-site","site_token":"shop-token","auto_install":true,\#
-       "ruleset":{"id":"shop-ruleset","zone_tag":"zone-shop","zone_name":"shop.example.org","enabled":true}},
-      {"site_tag":"northwind-site","site_token":"northwind-token","auto_install":true,\#
-       "ruleset":{"id":"northwind-ruleset","zone_tag":"zone-bulk-1","zone_name":"northwind.io","enabled":true}}
-    ]
-    """#
-
-  static func rumPageviews(days: Int) -> String {
+  static func rumPageviews(days: Int, scale: Double) -> String {
     let rows = (0..<max(days, 1)).map { day -> String in
-      let views = 640 + wave(day, base: 0, swing: 420)
+      let views = scaled(640 + wave(day, base: 0, swing: 420), scale)
       return
         #"{"count":\#(views),"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: days - 1 - day))"}}"#
     }
@@ -821,14 +1302,17 @@ private enum DemoWorld {
       #"{"data":{"viewer":{"accounts":[{"rumPageloadEventsAdaptiveGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
   }
 
-  static func rumMetrics(days: Int) -> String {
+  static func rumMetrics(days: Int, scale: Double) -> String {
     let count = max(days, 1)
     let pageload = (0..<count).map { day -> String in
-      let views = 640 + wave(day, base: 0, swing: 420)
+      // Floor at 2 so the `visits` share below never rounds down to zero — a
+      // demo chart with a zero row reads as a broken fetch, not as low traffic.
+      let views = max(2, scaled(640 + wave(day, base: 0, swing: 420), scale))
       return
-        #"{"count":\#(views),"sum":{"visits":\#(views * 47 / 100)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+        #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
     }
     let performance = (0..<count).map { day -> String in
+      // Latency is not volume: a quiet account is not a faster one.
       let p50 = 680 + wave(day, base: 0, swing: 260)
       return
         #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
@@ -841,10 +1325,10 @@ private enum DemoWorld {
       """#
   }
 
-  static func workerAnalytics() -> String {
+  static func workerAnalytics(scale: Double) -> String {
     let rows = (0..<12).map { slot -> String in
-      let requests = wave(slot, base: 80, swing: 160)
-      let errors = slot == 7 ? 3 : 0
+      let requests = scaled(wave(slot, base: 80, swing: 160), scale)
+      let errors = slot == 7 ? scaledOrZero(3, scale) : 0
       let cpu = Double(wave(slot, base: 640, swing: 420)) + (slot == 7 ? 380.0 : 0.0)
       return
         #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#
@@ -855,9 +1339,9 @@ private enum DemoWorld {
 
   /// Account overview + series for Watchtower's 24h / 7d / 30d ranges.
   /// Hourly stamps for short windows; the client also accepts `date` buckets.
-  static func accountAnalyticsOverview() -> String {
+  static func accountAnalyticsOverview(scale: Double) -> String {
     let httpSeries = (0..<24).map { slot -> String in
-      let requests = wave(slot, base: 420, swing: 280)
+      let requests = scaled(wave(slot, base: 420, swing: 280), scale)
       let bytes = requests * 48_000
       let cache = 0.55 + Double(slot % 5) * 0.03
       let encrypted = 0.94 + Double(slot % 3) * 0.01
@@ -867,15 +1351,15 @@ private enum DemoWorld {
         """#
     }
     let workerSeries = (0..<24).map { slot -> String in
-      let requests = wave(slot, base: 160, swing: 90)
-      let errors = slot == 11 ? 4 : 0
+      let requests = scaled(wave(slot, base: 160, swing: 90), scale)
+      let errors = slot == 11 ? scaledOrZero(4, scale) : 0
       let cpu = Double(wave(slot, base: 900, swing: 500))
       return #"""
         {"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP90":\#(cpu)},"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - slot))"}}
         """#
     }
-    let webRequests = 12_840
-    let bytes = 52_428_800
+    let webRequests = scaled(12_840, scale)
+    let bytes = scaled(52_428_800, scale)
     return #"""
       {"data":{"viewer":{"accounts":[{
         "overview":[{
@@ -884,7 +1368,7 @@ private enum DemoWorld {
         }],
         "httpSeries":[\#(httpSeries.joined(separator: ","))],
         "workers":[{
-          "sum":{"requests":4820,"errors":12},
+          "sum":{"requests":\#(scaled(4820, scale)),"errors":\#(scaledOrZero(12, scale))},
           "quantiles":{"cpuTimeP90":1260.0}
         }],
         "workerSeries":[\#(workerSeries.joined(separator: ","))]
@@ -892,19 +1376,19 @@ private enum DemoWorld {
       """#
   }
 
-  static func firewallEvents() -> String {
+  static func firewallEvents(scale: Double) -> String {
     #"""
     {"data":{"viewer":{"zones":[{
-      "blocked":[{"count":152}],
+      "blocked":[{"count":\#(scaled(152, scale))}],
       "byCountry":[
-        {"count":64,"dimensions":{"clientCountryName":"US"}},
-        {"count":38,"dimensions":{"clientCountryName":"CN"}},
-        {"count":21,"dimensions":{"clientCountryName":"RU"}},
-        {"count":12,"dimensions":{"clientCountryName":"BR"}}
+        {"count":\#(scaled(64, scale)),"dimensions":{"clientCountryName":"US"}},
+        {"count":\#(scaled(38, scale)),"dimensions":{"clientCountryName":"CN"}},
+        {"count":\#(scaled(21, scale)),"dimensions":{"clientCountryName":"RU"}},
+        {"count":\#(scaled(12, scale)),"dimensions":{"clientCountryName":"BR"}}
       ],
       "byRule":[
-        {"count":98,"dimensions":{"ruleId":"rate-limit-login"}},
-        {"count":54,"dimensions":{"ruleId":"block-bad-bots"}}
+        {"count":\#(scaled(98, scale)),"dimensions":{"ruleId":"rate-limit-login"}},
+        {"count":\#(scaled(54, scale)),"dimensions":{"ruleId":"block-bad-bots"}}
       ]
     }]}},"errors":null}
     """#
