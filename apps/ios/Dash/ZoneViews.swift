@@ -290,12 +290,14 @@ struct ZoneDetailView: View {
     ) {
       if let zone = displayedZone {
         zoneHero(zone)
-        if let servers = zone.nameServers, !servers.isEmpty {
-          nameserversGroup(servers)
-            .dashSectionBoundary()
-        }
-        // Stays under the name servers: the activation copy points at them.
+        // Nameservers appear only while activation needs them copied — the
+        // activation copy points at them. Active zones keep a reference copy
+        // at the top of Settings instead of a permanent card here.
         if needsActivation(zone) {
+          if let servers = zone.nameServers, !servers.isEmpty {
+            ZoneNameserversGroup(servers: servers)
+              .dashSectionBoundary()
+          }
           activationCard(zone)
             .dashSectionBoundary()
         }
@@ -561,16 +563,6 @@ struct ZoneDetailView: View {
     .accessibilityHidden(showsCustomizeOverlay)
   }
 
-  /// Cloudflare assigns two, so this stays bounded and can live in
-  /// `DashInfoGroup`'s eager stack.
-  private func nameserversGroup(_ servers: [String]) -> some View {
-    DashInfoGroup(title: "Nameservers") {
-      ForEach(servers, id: \.self) { server in
-        DashInfoRow(value: server, mono: true)
-      }
-    }
-  }
-
   private func primaryActions() -> some View {
     DashListGroup(title: "Quick actions") {
       dashListCardRows(items: tools, inset: false) { tool in
@@ -675,6 +667,21 @@ struct ZoneDetailView: View {
         }
       }
       .dashSectionBoundary()
+    }
+  }
+}
+
+/// Assigned-nameserver reference shared by zone detail (activation states only)
+/// and the top of zone Settings. Cloudflare assigns two, so this stays bounded
+/// and can live in `DashInfoGroup`'s eager stack.
+struct ZoneNameserversGroup: View {
+  let servers: [String]
+
+  var body: some View {
+    DashInfoGroup(title: "Nameservers") {
+      ForEach(servers, id: \.self) { server in
+        DashInfoRow(value: server, mono: true)
+      }
     }
   }
 }

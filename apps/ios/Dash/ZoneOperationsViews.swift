@@ -175,6 +175,14 @@ struct ZoneSettingsView: View {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
   }
 
+  /// Settings is only reachable from zone detail, so the zone is already
+  /// cached; this is where active zones keep their assigned nameservers now
+  /// that the detail card only appears during activation.
+  private var nameservers: [String] {
+    model.featureCache.cachedZone(id: zoneID, accountID: model.activeAccountID)?
+      .nameServers ?? []
+  }
+
   var body: some View {
     DashFeatureList(
       isLoading: loading, error: error, hasContent: !curated.isEmpty,
@@ -184,6 +192,10 @@ struct ZoneSettingsView: View {
         FeatureWriteAccessNotice(
           message: "Read-only — grant zone settings write access to make changes.",
           scopes: requiredWriteScopes)
+      }
+      if !nameservers.isEmpty {
+        ZoneNameserversGroup(servers: nameservers)
+          .dashSectionBoundary(!allowsWrites)
       }
       DashCard {
         Text(
@@ -196,7 +208,7 @@ struct ZoneSettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .dashSectionBoundary(!allowsWrites)
+      .dashSectionBoundary(!allowsWrites || !nameservers.isEmpty)
       DashSurfaceStack {
         ForEach(curated) { setting in
           settingRow(setting)
