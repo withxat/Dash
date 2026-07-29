@@ -32,6 +32,9 @@ struct DashApp: App {
       let model = AppModel()
     #endif
     _model = State(initialValue: model)
+    if ICloudPreferencesSync.shouldStartForCurrentProcess {
+      ICloudPreferencesSync.shared.start()
+    }
     // System callbacks can arrive before SwiftUI mounts a scene (notably a
     // content-available launch). Wire the delegate during app construction,
     // rather than waiting for the root view's first onAppear.
@@ -127,6 +130,7 @@ private struct RootWithSplash: View {
   var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.scenePhase) private var scenePhase
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system
     .rawValue
   @State private var phase: Phase = .holding
@@ -204,6 +208,11 @@ private struct RootWithSplash: View {
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()
         DashAlertStrings.mirrorLanguage(languageRaw)
         model.discardLocalizedCaches()
+      }
+      .onChange(of: scenePhase) { _, phase in
+        if phase == .active {
+          ICloudPreferencesSync.shared.refresh()
+        }
       }
       .task {
         async let bootstrap: Void = model.bootstrap()

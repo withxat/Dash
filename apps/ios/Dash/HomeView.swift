@@ -192,6 +192,12 @@ struct HomeView: View {
     .dashTray(isPresented: $showsDemoConnect, title: DashL10n.string("Connect your account")) {
       HomeDemoConnectContent(connect: leaveDemoForConnection)
     }
+    .onChange(of: actionsRaw) { _, _ in
+      ICloudPreferencesSync.shared.publish(.homeActions)
+    }
+    .onChange(of: shortcutsRaw) { _, _ in
+      ICloudPreferencesSync.shared.publish(.homeShortcuts)
+    }
   }
 
   private func perform(_ action: HomeActionID) {

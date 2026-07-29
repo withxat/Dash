@@ -175,6 +175,16 @@ struct MainTabView: View {
   var body: some View {
     tabContainer
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
+      .onReceive(
+        NotificationCenter.default.publisher(
+          for: ICloudPreferencesSync.didApplyRemoteChanges)
+      ) { notification in
+        if ICloudPreferencesSync.changedGroups(in: notification)
+          .contains(.watchtowerLayout)
+        {
+          watchtowerCustomization.reloadPersistedLayout()
+        }
+      }
       .onChange(of: scenePhase) { _, phase in
         switch phase {
         case .active:

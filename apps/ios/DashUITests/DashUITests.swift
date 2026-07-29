@@ -3,7 +3,9 @@ import XCTest
 @MainActor
 final class DashUITests: XCTestCase {
   /// Pin English so zh-Hans String Catalog never breaks label assertions.
-  private static let englishLaunchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+  private static let englishLaunchArguments = [
+    "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ui-testing",
+  ]
 
   private func launch(_ app: XCUIApplication, arguments: [String] = []) {
     app.launchArguments = Self.englishLaunchArguments + arguments
@@ -449,7 +451,7 @@ final class DashUITests: XCTestCase {
       app.buttons["watchtower-inbox-ignore-toggle"].waitForExistence(timeout: 5))
   }
 
-  func testSettingsExposesPushAlerts() {
+  func testSettingsExposesPushAlertsAndICloudSync() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -463,7 +465,41 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(settings.waitForExistence(timeout: 5))
     settings.tap()
 
-    XCTAssertTrue(app.staticTexts["Push alerts"].waitForExistence(timeout: 5))
+    let iCloudSync = app.switches["icloud-settings-sync"]
+    XCTAssertTrue(Self.waitForHittable(iCloudSync))
+    XCTAssertEqual(iCloudSync.value as? String, "On")
+    iCloudSync.tap()
+    let syncOff = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "Off"),
+      object: iCloudSync)
+    XCTAssertEqual(XCTWaiter.wait(for: [syncOff], timeout: 5), .completed)
+
+    let details = app.buttons["icloud-settings-details"]
+    XCTAssertTrue(Self.waitForHittable(details))
+    details.tap()
+    XCTAssertTrue(app.staticTexts["What syncs"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Watchtower charts"].waitForExistence(timeout: 5))
+    XCTAssertTrue(
+      app.staticTexts[
+        "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
+      ].waitForExistence(timeout: 5))
+
+    let close = app.buttons["Close"]
+    XCTAssertTrue(Self.waitForHittable(close))
+    close.tap()
+
+    XCTAssertTrue(Self.waitForHittable(iCloudSync))
+    iCloudSync.tap()
+    let syncOn = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "On"),
+      object: iCloudSync)
+    XCTAssertEqual(XCTWaiter.wait(for: [syncOn], timeout: 5), .completed)
+
+    let pushAlerts = app.staticTexts["Push alerts"]
+    for _ in 0..<5 where !pushAlerts.exists {
+      app.swipeUp()
+    }
+    XCTAssertTrue(pushAlerts.waitForExistence(timeout: 5))
     // DashToggleRow combines title + switch into one accessibility element.
     XCTAssertTrue(
       app.buttons["Push alerts"].exists || app.switches["Push alerts"].exists)

@@ -375,13 +375,19 @@ final class AppModel {
         // every persisted value that changes the tested Home / Watchtower shape
         // so a prior test run can never change the next launch.
         let previewDefaults = UserDefaults.standard
-        for key in [
-          PinnedZones.key, PinnedZones.initializedAccountsKey, RecentResources.key,
-          WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
-          WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
-          WatchtowerInboxStore.readKey, WatchtowerNotificationBaselineStore.key,
-          WatchtowerNotifier.optInDefaultsKey, DashWorkspaceWashPreset.storageKey,
-        ] {
+        let previewKeys =
+          [
+            PinnedZones.key, PinnedZones.initializedAccountsKey, RecentResources.key,
+            WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
+            WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
+            WatchtowerInboxStore.readKey, WatchtowerNotificationBaselineStore.key,
+            WatchtowerNotifier.optInDefaultsKey, DashWorkspaceWashPreset.storageKey,
+            ICloudPreferencesSync.enabledKey,
+          ]
+          + ICloudPreferencesSync.Group.allCases.flatMap {
+            [$0.modifiedAtKey, $0.pendingModifiedAtKey]
+          }
+        for key in previewKeys {
           previewDefaults.removeObject(forKey: key)
         }
         previewDefaults.set(HomeActions.defaultValue, forKey: HomeActions.key)

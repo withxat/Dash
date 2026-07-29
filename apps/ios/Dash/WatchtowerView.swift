@@ -239,6 +239,7 @@ struct WatchtowerView: View {
       withAnimation(reduceMotion ? nil : DashTheme.Motion.morphExit) {
         if commit {
           customization.commitEditing()
+          ICloudPreferencesSync.shared.publish(.watchtowerLayout)
         } else {
           customization.cancelEditing()
         }

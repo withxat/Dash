@@ -292,9 +292,11 @@ struct SettingsView: View {
     true
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
     DashWorkspaceWashPreset.defaultPreset.rawValue
+  @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceWashPicker = false
+  @State private var showsICloudSyncDetails = false
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
@@ -362,6 +364,36 @@ struct SettingsView: View {
             }
             .buttonStyle(DashSurfaceButtonStyle())
             .accessibilityIdentifier("workspace-wash-color")
+            .dashListCardInset()
+          }
+        }
+
+        DashListGroup(title: "iCloud") {
+          DashToggleRow(
+            title: DashL10n.string("Sync settings"),
+            subtitle: DashL10n.string(
+              iCloudSyncEnabled
+                ? "Keep selected Dash preferences in sync across iPhones using your iCloud account."
+                : "Settings on this iPhone stay local."
+            ),
+            isOn: $iCloudSyncEnabled
+          )
+          .accessibilityIdentifier("icloud-settings-sync")
+
+          dashListCard {
+            Button {
+              showsICloudSyncDetails = true
+            } label: {
+              DashListRow(
+                title: DashL10n.string("What syncs"),
+                subtitle: DashL10n.string(
+                  "Quick actions, Shortcuts, Watchtower charts, and Top glow."
+                ),
+                icon: SolarAsset.Content.cloud
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("icloud-settings-details")
             .dashListCardInset()
           }
         }
@@ -524,6 +556,18 @@ struct SettingsView: View {
     ) {
       WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
     }
+    .dashTray(
+      isPresented: $showsICloudSyncDetails,
+      title: DashL10n.string("What syncs")
+    ) {
+      ICloudSyncDetailsTray(isEnabled: iCloudSyncEnabled)
+    }
+    .onChange(of: iCloudSyncEnabled) { _, enabled in
+      ICloudPreferencesSync.shared.setEnabled(enabled)
+    }
+    .onChange(of: workspaceWashRaw) { _, _ in
+      ICloudPreferencesSync.shared.publish(.workspaceWash)
+    }
   }
 
   private func externalRow(
@@ -545,6 +589,56 @@ struct SettingsView: View {
     .buttonStyle(DashSurfaceButtonStyle())
     .accessibilityHint(accessibilityHint)
     .dashListCardInset()
+  }
+}
+
+private struct ICloudSyncDetailsTray: View {
+  let isEnabled: Bool
+
+  private var items: [String] {
+    [
+      DashL10n.string("Quick actions"),
+      DashL10n.string("Shortcuts"),
+      DashL10n.string("Watchtower charts"),
+      DashL10n.string("Top glow"),
+    ]
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      ForEach(items, id: \.self) { item in
+        HStack(spacing: 12) {
+          SolarIcon(
+            asset: isEnabled ? SolarAsset.checkCircleFill : SolarAsset.circle,
+            size: 22,
+            color: isEnabled ? DashTheme.brand : DashTheme.placeholder
+          )
+          .accessibilityHidden(true)
+          Text(item)
+            .dashTextStyle(.bodyMedium)
+            .foregroundStyle(DashTheme.text)
+          Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.minimumHitTarget)
+        .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isEnabled ? .isSelected : [])
+      }
+
+      Text(
+        DashL10n.string(
+          isEnabled
+            ? "Only these preferences are synced. Accounts, credentials, alerts, and cached Cloudflare data stay on this iPhone."
+            : "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.horizontal, 4)
+    }
   }
 }
 
