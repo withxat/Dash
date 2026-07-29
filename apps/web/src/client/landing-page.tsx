@@ -14,12 +14,13 @@ import { SiteShell } from './site-shell'
 const PRIMARY_CTA_HREF = 'https://github.com/withxat/Dash'
 const PRIMARY_CTA_LABEL = 'Read the source on GitHub'
 
-// Real device captures from the shipping app, stored as WebP at native iPhone
-// 17 Pro resolution (a raw capture is ~1.7 MB, far too heavy for the page).
-// Bump the query version when a capture is replaced.
+// Real device captures from the shipping app, stored as WebP at the native
+// iPhone 16 Pro display resolution (a raw capture is ~1.7 MB, far too heavy
+// for the page). Bump the query version when a capture is replaced.
 const SHOT_VERSION = '?v=1'
 const SHOT_WIDTH = 1206
 const SHOT_HEIGHT = 2622
+const IPHONE_16_PRO_FRAME = '/device-frames/iphone-16-pro-desert-titanium.svg?v=1'
 
 interface ScreenshotSpec {
 	alt: string
@@ -211,7 +212,7 @@ function ZoneStage() {
 			    entrance, not a perpetual float. */}
 			<Parallax
 				className="
-					mt-14 flex justify-center px-5
+					mt-14 px-5
 					sm:mt-16 sm:px-8
 				"
 				depth={28}
@@ -342,15 +343,26 @@ function AppScreenshot({
 			${widthClass}
 		`}
 		>
-			<div className="rounded-[2.5rem] bg-kumo-elevated p-2 app-shot-frame">
+			<div className="app-shot-frame">
 				<img
 					alt={screenshot.alt}
-					className="aspect-9/19.5 w-full rounded-4xl object-cover app-shot-image"
+					className="app-shot-screen"
 					fetchPriority={priority ? 'high' : 'auto'}
 					height={SHOT_HEIGHT}
 					loading={priority ? 'eager' : 'lazy'}
 					src={screenshot.src}
 					width={SHOT_WIDTH}
+				/>
+				<img
+					alt=""
+					aria-hidden="true"
+					className="app-shot-bezel"
+					draggable={false}
+					fetchPriority={priority ? 'high' : 'auto'}
+					height="730"
+					loading={priority ? 'eager' : 'lazy'}
+					src={IPHONE_16_PRO_FRAME}
+					width="356"
 				/>
 			</div>
 		</figure>

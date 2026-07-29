@@ -14,7 +14,6 @@ Use Kumo semantic tokens for surfaces, text, status, and controls. Black and whi
 
 - `kumo-canvas`: long-form page canvas
 - `kumo-base`: navigation and primary content surface
-- `kumo-elevated`: iPhone screenshot frame
 - `kumo-recessed`: grouped icon wells and tinted panels
 - `kumo-contrast`: the product stage and the relay section
 - `kumo-brand`: primary actions and active product emphasis
@@ -50,7 +49,7 @@ The page is light only, deliberately. Kumo's tokens are `light-dark()` pairs, bu
 - Calls to action use an interruptible `scale(0.96)` press state over 150ms.
 - Use the same Solar SVG assets generated for the iOS app. Do not reach for a near-miss glyph to fill a slot; a section with no honest icon gets no icon.
 - Use the official Dash App icon for the favicon and every brand lockup.
-- `AppScreenshot` owns screenshot geometry: a 40px outer radius, 32px inner radius, and 8px padding. It never draws a fake interface.
+- `AppScreenshot` owns screenshot geometry. It places the exact 1206x2622 capture below the licensed iPhone 16 Pro bezel in `public/device-frames/`; the bezel owns the titanium shell, black screen border, Dynamic Island, and side controls. It never draws or reconstructs the app interface.
 - One call-to-action label per intent across the whole page, navigation included.
 
 ## 5. Layout principles
@@ -68,9 +67,8 @@ The page is light only, deliberately. Kumo's tokens are `light-dark()` pairs, bu
 ## 6. Depth and elevation
 
 - Establish depth through `canvas`, `base`, `contrast`, and `elevated` surface steps.
-- Use layered transparent shadows for screenshot frames and Kumo's native treatment for controls.
+- Use a silhouette-aware drop shadow on the device composite and Kumo's native treatment for controls.
 - Use borders only for dividers and section boundaries.
-- Real screenshot images receive a 1px inset pure-black outline at 10% opacity.
 - Never combine a visible border and a decorative drop shadow on the same surface.
 - Hairlines inside a `kumo-contrast` band use the `rule-on-contrast` utility, which rides `currentColor`. `kumo-inverse` exists only as a text color, so a border token cannot be used there, and a hardcoded white alpha would be wrong if the band is ever repainted.
 
@@ -106,9 +104,11 @@ Screenshots get **one** scroll-linked entrance and nothing else. No perpetual fl
 
 ## 9. Capturing screenshots
 
-Captures come from the shipping app at 1206x2622 on an iPhone 17 Pro, saved to `public/screens/` and referenced with a `?v=` suffix that is bumped on replacement.
+The published captures are 1206x2622, the native iPhone 16 Pro display resolution. They are saved to `public/screens/` and referenced with a `?v=` suffix that is bumped on replacement.
 
 Store them as WebP, not PNG. A raw simulator capture is about 1.7 MB, which is unacceptable for a hero image; `sharp(src).webp({ quality: 85, effort: 6 })` brings it to roughly 40 to 150 KB with the dithered chart fills still crisp. `sharp` is already a workspace dependency.
+
+The device bezel is a separate, transparent SVG so one cached asset serves every capture and the Sticky Tour can keep swapping only real app pixels. Its attribution and CC BY-SA 4.0 terms are recorded in `THIRD_PARTY_NOTICES.md`. Do not flatten the frame into every WebP or replace it with an unlicensed mockup.
 
 **Demo mode is usable, but only below the feature roots.** Demo grants read scopes only, so every feature *root* screen (Resources, Domains, Workers, Pages, R2, KV) carries a pinned `Read-only` warning and a `Connect your account` button. Published as marketing those say the app cannot write, so those screens are unusable. **Drill-down screens carry no such chrome**: a zone detail, an R2 bucket browser, a Pages project, and a KV key editor are all clean. Watchtower is clean at its root because it has no write controls.
 
@@ -131,7 +131,7 @@ The four captures the page ships are the zone detail, Watchtower charts, the Pag
 ## 12. Agent prompt guide
 
 - "Build a quiet Dash hero with Kumo `bg-kumo-base`, a 12-column desktop grid, a `clamp(56px, 7.5vw, 104px)` semibold headline at `-0.04em`, and one supporting column holding the App icon, one paragraph, and the action row."
-- "Add a portrait `AppScreenshot` using a 40px outer radius, 32px inner radius, 8px padding, and a real 1206x2622 WebP capture."
+- "Add a portrait `AppScreenshot` using the licensed iPhone 16 Pro bezel overlay and a real 1206x2622 WebP capture aligned to its exact screen aperture."
 - "Add a stop to `StickyTour` with a headline, two short paragraphs, and one capture, and state in one sentence what holding the device still communicates at that stop."
 - "Wrap a section in `Stagger` and its children in `StaggerItem` so they enter in reading order."
 - "Review the page at full width and 375px, checking screenshot geometry, long labels, focus visibility, horizontal overflow, and text contrast on every surface the token touches."

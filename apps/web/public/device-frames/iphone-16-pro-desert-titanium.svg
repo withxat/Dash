@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  Adapted from "IPhone 16 Pro Vector.svg" by Rafael Fernandez:
+  https://commons.wikimedia.org/wiki/File:IPhone_16_Pro_Vector.svg
+
+  Licensed under CC BY-SA 4.0:
+  https://creativecommons.org/licenses/by-sa/4.0/
+
+  Changes: isolated the front bezel as a transparent screen overlay, simplified
+  paths and material shading, and added the Camera Control detail.
+-->
+<svg
+	xmlns="http://www.w3.org/2000/svg"
+	xmlns:cc="http://creativecommons.org/ns#"
+	xmlns:dc="http://purl.org/dc/elements/1.1/"
+	xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	width="356"
+	height="730"
+	viewBox="0 0 94.191667 193.14585"
+>
+	<metadata>
+		<rdf:RDF>
+			<cc:Work rdf:about="">
+				<dc:title>iPhone 16 Pro desert titanium front bezel overlay</dc:title>
+				<dc:creator>
+					<cc:Agent>
+						<dc:title>Rafael Fernandez; adapted by Dash contributors</dc:title>
+					</cc:Agent>
+				</dc:creator>
+				<dc:source rdf:resource="https://commons.wikimedia.org/wiki/File:IPhone_16_Pro_Vector.svg" />
+				<cc:license rdf:resource="https://creativecommons.org/licenses/by-sa/4.0/" />
+			</cc:Work>
+		</rdf:RDF>
+	</metadata>
+
+	<defs>
+		<linearGradient id="titanium" x1="4" y1="3" x2="91" y2="190" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#f8eadd" />
+			<stop offset="0.16" stop-color="#b9a898" />
+			<stop offset="0.48" stop-color="#e3cebc" />
+			<stop offset="0.79" stop-color="#9a8879" />
+			<stop offset="1" stop-color="#f0dfcf" />
+		</linearGradient>
+		<linearGradient id="button" x1="0" y1="0" x2="1" y2="0">
+			<stop stop-color="#6a5f56" />
+			<stop offset="0.55" stop-color="#d8c5b4" />
+			<stop offset="1" stop-color="#77695e" />
+		</linearGradient>
+		<radialGradient id="lens" cx="35%" cy="30%" r="70%">
+			<stop stop-color="#425a72" />
+			<stop offset="0.32" stop-color="#12171e" />
+			<stop offset="0.72" stop-color="#0c0e11" />
+			<stop offset="1" stop-color="#060606" />
+		</radialGradient>
+		<mask id="screen-cutout" maskUnits="userSpaceOnUse" x="0" y="0" width="94.191667" height="193.14585">
+			<rect width="94.191667" height="193.14585" fill="#fff" />
+			<rect x="4.1184225" y="3.1293252" width="85.954826" height="186.88719" rx="13.340208" fill="#000" />
+		</mask>
+	</defs>
+
+	<g mask="url(#screen-cutout)">
+		<g fill="url(#button)">
+			<rect x="92.27199" y="62.205079" width="1.85021" height="23.102098" rx="0.22113" />
+			<rect x="0.0657" y="37.478087" width="1.85021" height="8.280706" rx="0.22113" />
+			<rect x="0.0657" y="52.422519" width="1.85021" height="13.916382" rx="0.22113" />
+			<rect x="0.0657" y="71.211156" width="1.85021" height="13.916382" rx="0.22113" />
+			<rect x="92.941667" y="135.75" width="1.15" height="14.45" rx="0.575" />
+		</g>
+
+		<rect x="0.61897266" y="0.11400532" width="92.953682" height="192.91783" rx="15.627288" fill="#73675d" />
+		<rect x="1.1304778" y="0.72266889" width="91.930702" height="191.70049" rx="15.361994" fill="url(#titanium)" />
+
+		<g fill="#3d332c" fill-opacity="0.32">
+			<rect x="1.1304778" y="20.48" width="1.22" height="1.32" />
+			<rect x="91.84118" y="20.48" width="1.22" height="1.32" />
+			<rect x="1.1304778" y="171.32" width="1.22" height="1.32" />
+			<rect x="91.84118" y="171.32" width="1.22" height="1.32" />
+			<rect x="72.38" y="0.72266889" width="1.32" height="1.22" />
+			<rect x="20.48" y="191.20" width="1.32" height="1.22" />
+		</g>
+
+		<rect x="1.893175" y="1.3449166" width="90.405319" height="190.45601" rx="14.837283" fill="#111" />
+		<rect x="3.1338062" y="2.2907555" width="87.924065" height="188.56433" rx="14.174931" fill="#000" />
+		<rect
+			x="1.1304778"
+			y="0.72266889"
+			width="91.930702"
+			height="191.70049"
+			rx="15.361994"
+			fill="none"
+			stroke="#fff"
+			stroke-opacity="0.38"
+			stroke-width="0.22"
+		/>
+	</g>
+
+	<g>
+		<rect x="33.497" y="5.938086" width="27.19771" height="8.0999603" rx="4.0499802" fill="#000" />
+		<circle cx="56.63" cy="9.988" r="2.24" fill="#08090a" />
+		<circle cx="56.63" cy="9.988" r="1.48" fill="url(#lens)" />
+		<circle cx="56.20" cy="9.55" r="0.34" fill="#6074bf" fill-opacity="0.34" />
+	</g>
+</svg>

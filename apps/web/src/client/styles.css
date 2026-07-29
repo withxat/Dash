@@ -63,13 +63,27 @@
 }
 
 @utility app-shot-frame {
-	box-shadow:
-		0 0 0 1px rgb(0 0 0 / 0.08),
-		0 2px 8px -2px rgb(0 0 0 / 0.14),
-		0 20px 48px -24px rgb(0 0 0 / 0.28);
+	position: relative;
+	aspect-ratio: 94.191667 / 193.14585;
+	filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
 }
 
-@utility app-shot-image {
-	outline: 1px solid rgb(0 0 0 / 0.1);
-	outline-offset: -1px;
+@utility app-shot-screen {
+	position: absolute;
+	top: 1.6202%;
+	left: 4.3724%;
+	display: block;
+	width: 91.2552%;
+	height: 96.7596%;
+	object-fit: fill;
+}
+
+@utility app-shot-bezel {
+	position: absolute;
+	inset: 0;
+	display: block;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	user-select: none;
 }
