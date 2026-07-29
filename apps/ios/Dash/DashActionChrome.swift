@@ -33,13 +33,124 @@ struct DashLoadingRing: View {
   }
 }
 
+enum DashActionPhase: Equatable, Sendable {
+  case idle
+  case loading
+  case succeeded
+
+  var isActive: Bool { self != .idle }
+
+  var accessibilityValue: String {
+    switch self {
+    case .idle: ""
+    case .loading: DashL10n.string("Loading")
+    case .succeeded: DashL10n.string("Success")
+    }
+  }
+}
+
+/// Fixed trailing slot shared by every action pill. The ring and Solar's
+/// `ui/Bold/CheckCircle` stay mounted in the same ZStack while opacity, blur,
+/// and scale swap their visibility.
+struct DashActionStatusIcon: View {
+  let phase: DashActionPhase
+  var loadingColor: Color = DashTheme.inverse
+  var successColor: Color? = nil
+  var size: CGFloat = 20
+  var lineWidth: CGFloat = 3
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)?
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var displayedPhase: DashActionPhase = .idle
+  @State private var rendersLayers = false
+  @State private var completionArmed = false
+  @State private var transitionGeneration = 0
+
+  var body: some View {
+    ZStack {
+      if rendersLayers {
+        statusLayer(isVisible: displayedPhase == .loading) {
+          DashLoadingRing(color: loadingColor, size: size, lineWidth: lineWidth)
+        }
+        statusLayer(isVisible: displayedPhase == .succeeded) {
+          SolarIcon(
+            asset: SolarAsset.checkCircleFill,
+            size: size,
+            color: successColor ?? loadingColor
+          )
+        }
+      }
+    }
+    .frame(width: size + 4, height: size + 4)
+    .accessibilityHidden(true)
+    .onChange(of: phase, initial: true) { _, newPhase in
+      transition(to: newPhase)
+    }
+  }
+
+  private func statusLayer<Content: View>(
+    isVisible: Bool,
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    content()
+      .opacity(isVisible ? 1 : 0)
+      .blur(radius: reduceMotion || isVisible ? 0 : 2)
+      .scaleEffect(reduceMotion || isVisible ? 1 : 0.25)
+  }
+
+  private func transition(to newPhase: DashActionPhase) {
+    transitionGeneration &+= 1
+    let generation = transitionGeneration
+    completionArmed = newPhase == .succeeded
+    if newPhase != .idle, !rendersLayers {
+      var mountTransaction = Transaction()
+      mountTransaction.disablesAnimations = true
+      withTransaction(mountTransaction) {
+        rendersLayers = true
+      }
+    }
+    if reduceMotion {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        displayedPhase = newPhase
+        if newPhase == .idle {
+          rendersLayers = false
+        }
+      }
+      completeSuccessIfNeeded()
+      return
+    }
+
+    withAnimation(
+      DashTheme.Motion.iconSwap,
+      completionCriteria: .logicallyComplete
+    ) {
+      displayedPhase = newPhase
+    } completion: {
+      guard transitionGeneration == generation else { return }
+      if newPhase == .idle {
+        rendersLayers = false
+      }
+      completeSuccessIfNeeded()
+    }
+  }
+
+  private func completeSuccessIfNeeded() {
+    guard completionArmed, phase == .succeeded, displayedPhase == .succeeded else { return }
+    completionArmed = false
+    onSuccessPresentationCompleted?()
+  }
+}
+
 struct DashPillButton: View {
   let title: String
   /// Optional leading asset-catalog icon.
   var icon: String?
-  var isLoading = false
-  /// Disabled state with the shared 0.45 dim; loading disables without dimming.
+  var phase: DashActionPhase = .idle
+  /// Disabled state with the shared 0.45 dim; active phases disable without dimming.
   var isEnabled = true
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)?
   let action: () -> Void
 
   var body: some View {
@@ -56,16 +167,19 @@ struct DashPillButton: View {
       .foregroundStyle(DashTheme.inverse)
       .frame(maxWidth: .infinity, minHeight: 52)
       .overlay(alignment: .trailing) {
-        if isLoading {
-          DashLoadingRing()
-            .padding(.trailing, 18)
-        }
+        DashActionStatusIcon(
+          phase: phase,
+          onSuccessPresentationCompleted: onSuccessPresentationCompleted
+        )
+        .padding(.trailing, 18)
       }
       .background(DashTheme.strong, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
-    .disabled(isLoading || !isEnabled)
+    .disabled(phase.isActive || !isEnabled)
     .opacity(isEnabled ? 1 : 0.45)
+    .accessibilityValue(phase.accessibilityValue)
+    .dashTrayDismissDisabled(phase.isActive)
   }
 }
 
@@ -187,6 +301,9 @@ struct DashDangerAction: Identifiable {
   /// A thrown error keeps the confirmation open and surfaces the message
   /// inline; only a clean return dismisses the tray.
   let perform: () async throws -> Void
+  /// Presentation changes that would unmount the confirmation run only after
+  /// the shared loading-to-success swap finishes.
+  let onSuccessPresentationCompleted: @MainActor () -> Void
 
   init(
     id: String? = nil,
@@ -194,6 +311,7 @@ struct DashDangerAction: Identifiable {
     icon: String = SolarAsset.trash,
     message: String,
     confirmTitle: String = "Delete",
+    onSuccessPresentationCompleted: @escaping @MainActor () -> Void = {},
     perform: @escaping () async throws -> Void
   ) {
     self.id = id ?? title
@@ -201,6 +319,7 @@ struct DashDangerAction: Identifiable {
     self.icon = icon
     self.message = message
     self.confirmTitle = confirmTitle
+    self.onSuccessPresentationCompleted = onSuccessPresentationCompleted
     self.perform = perform
   }
 }
@@ -213,7 +332,7 @@ struct DashConfirmableActions: View {
   let actions: [DashDangerAction]
   @Namespace private var morph
   @State private var pending: DashDangerAction?
-  @State private var working = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var errorMessage: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayDismiss) private var dismiss
@@ -293,31 +412,37 @@ struct DashConfirmableActions: View {
           errorMessage = nil
           withAnimation(DashTheme.Motion.morphExit) { pending = nil }
         }
-        .disabled(working)
+        .disabled(actionPhase.isActive)
       } primary: {
         DashActionButton(
           title: DashL10n.ui(action.confirmTitle),
           role: .destructive,
-          isLoading: working,
+          phase: actionPhase,
           holdToConfirm: true,
           morphID: reduceMotion ? nil : action.id,
           morphNamespace: reduceMotion ? nil : morph,
+          onSuccessPresentationCompleted: {
+            guard actionPhase == .succeeded, pending?.id == action.id else { return }
+            actionPhase = .idle
+            dismiss()
+            action.onSuccessPresentationCompleted()
+          },
           action: {
             Task {
-              working = true
+              actionPhase = .loading
               errorMessage = nil
               do {
                 try await action.perform()
-                dismiss()
+                actionPhase = .succeeded
               } catch {
                 withAnimation(DashTheme.Motion.morph) { errorMessage = error.dashActionableMessage }
                 DashDelight.failError()
-                working = false
+                actionPhase = .idle
               }
             }
           }
         )
-        .disabled(working)
+        .disabled(actionPhase.isActive)
       }
     }
   }
@@ -337,12 +462,13 @@ struct DashActionButton: View {
   /// Optional leading asset-catalog icon (e.g. Cloudflare brand mark).
   var icon: String? = nil
   var role: ButtonRole? = nil
-  var isLoading = false
+  var phase: DashActionPhase = .idle
   /// Sustained press with a left-to-right black path-cut; confirms on release.
   var holdToConfirm = false
   /// Optional matched-geometry id so a danger row can morph into this pill.
   var morphID: String? = nil
   var morphNamespace: Namespace.ID? = nil
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   let action: () -> Void
 
   @Environment(AppModel.self) private var model
@@ -396,7 +522,9 @@ struct DashActionButton: View {
         tapButton
       }
     }
-    .disabled(isLoading)
+    .disabled(phase.isActive)
+    .accessibilityValue(phase.accessibilityValue)
+    .dashTrayDismissDisabled(phase.isActive)
     .onDisappear { resetHold(animated: false) }
   }
 
@@ -424,7 +552,7 @@ struct DashActionButton: View {
       .accessibilityAddTraits(.isButton)
       .accessibilityLabel(DashL10n.ui(displayTitle))
       .accessibilityAction(.default) {
-        guard isEnabled, !isLoading else { return }
+        guard isEnabled, phase == .idle else { return }
         DashDelight.warnImpact()
         action()
       }
@@ -456,10 +584,12 @@ struct DashActionButton: View {
     .frame(maxWidth: .infinity, minHeight: 52)
     .clipShape(DashTheme.pillShape)
     .overlay(alignment: .trailing) {
-      if isLoading {
-        DashLoadingRing()
-          .padding(.trailing, 18)
-      }
+      DashActionStatusIcon(
+        phase: phase,
+        loadingColor: labelForeground,
+        onSuccessPresentationCompleted: onSuccessPresentationCompleted
+      )
+      .padding(.trailing, 18)
     }
 
     // Chrome-only emboss so matchedGeometryEffect stays single-instance
@@ -494,7 +624,7 @@ struct DashActionButton: View {
   }
 
   private func beginHoldIfNeeded() {
-    guard holdToConfirm, isEnabled, !isLoading, !isHolding else { return }
+    guard holdToConfirm, isEnabled, phase == .idle, !isHolding else { return }
     isHolding = true
     holdArmed = false
     holdWillCancel = false
@@ -582,7 +712,8 @@ struct DashActionButton: View {
 /// footer control when the tray offers a clear primary verb.
 struct DashTrayPillButton: View {
   let title: String
-  var isLoading = false
+  var phase: DashActionPhase = .idle
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   let action: () -> Void
 
   var body: some View {
@@ -592,16 +723,20 @@ struct DashTrayPillButton: View {
         .foregroundStyle(DashTheme.strong)
         .frame(maxWidth: .infinity, minHeight: 52)
         .overlay(alignment: .trailing) {
-          if isLoading {
-            DashLoadingRing(color: DashTheme.strong)
-              .padding(.trailing, 18)
-          }
+          DashActionStatusIcon(
+            phase: phase,
+            loadingColor: DashTheme.strong,
+            onSuccessPresentationCompleted: onSuccessPresentationCompleted
+          )
+          .padding(.trailing, 18)
         }
         .background(DashTheme.recessed, in: DashTheme.pillShape)
         .dashShadow(.border, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
-    .disabled(isLoading)
+    .disabled(phase.isActive)
+    .accessibilityValue(phase.accessibilityValue)
+    .dashTrayDismissDisabled(phase.isActive)
   }
 }
 

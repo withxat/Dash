@@ -63,6 +63,14 @@ private struct DashTrayPinsFooterKey: EnvironmentKey {
   static let defaultValue = false
 }
 
+struct DashTrayDismissDisabledPreferenceKey: PreferenceKey {
+  static let defaultValue = false
+
+  static func reduce(value: inout Bool, nextValue: () -> Bool) {
+    value = value || nextValue()
+  }
+}
+
 extension EnvironmentValues {
   var dashTrayDismiss: () -> Void {
     get { self[DashTrayDismissKey.self] }
@@ -76,6 +84,10 @@ extension EnvironmentValues {
 }
 
 extension View {
+  func dashTrayDismissDisabled(_ disabled: Bool) -> some View {
+    preference(key: DashTrayDismissDisabledPreferenceKey.self, value: disabled)
+  }
+
   /// Presents a tray. Attach after `.refreshable` in the modifier chain: a tray
   /// attached before it sits inside the refreshable subtree and inherits the
   /// screen's pull-to-refresh into the tray's own scroll view.
@@ -290,6 +302,7 @@ private enum DashTrayMotion {
 /// the standard and hero headers so both variants keep identical geometry.
 private struct DashSheetMenuButtons: View {
   var trailingAction: DashSheetHeaderAction? = nil
+  var isDisabled = false
   let dismiss: () -> Void
 
   var body: some View {
@@ -312,6 +325,8 @@ private struct DashSheetMenuButtons: View {
       }
       DashCloseButton { dismiss() }
     }
+    .disabled(isDisabled)
+    .opacity(isDisabled ? 0.45 : 1)
   }
 }
 
@@ -321,6 +336,7 @@ private struct DashSheetHeader: View {
   var showsGrabBar = false
   var showsMenuButtons = true
   var trailingAction: DashSheetHeaderAction? = nil
+  var menuButtonsDisabled = false
   let dismiss: () -> Void
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AccessibilityFocusState private var titleFocused: Bool
@@ -346,7 +362,11 @@ private struct DashSheetHeader: View {
           .accessibilityFocused($titleFocused)
         Spacer(minLength: 12)
         if showsMenuButtons {
-          DashSheetMenuButtons(trailingAction: trailingAction, dismiss: dismiss)
+          DashSheetMenuButtons(
+            trailingAction: trailingAction,
+            isDisabled: menuButtonsDisabled,
+            dismiss: dismiss
+          )
         }
       }
       .padding(.leading, DashTheme.Sheet.content)
@@ -383,6 +403,7 @@ private struct DashSheetHeroHeader<Hero: View>: View {
   let title: String
   var showsMenuButtons = true
   var trailingAction: DashSheetHeaderAction? = nil
+  var menuButtonsDisabled = false
   let dismiss: () -> Void
   @ViewBuilder var hero: () -> Hero
 
@@ -394,9 +415,13 @@ private struct DashSheetHeroHeader<Hero: View>: View {
       .clipped()
       .overlay(alignment: .topTrailing) {
         if showsMenuButtons {
-          DashSheetMenuButtons(trailingAction: trailingAction, dismiss: dismiss)
-            .padding(.top, DashTheme.Sheet.headerTop)
-            .padding(.trailing, DashTheme.Sheet.content - 6)
+          DashSheetMenuButtons(
+            trailingAction: trailingAction,
+            isDisabled: menuButtonsDisabled,
+            dismiss: dismiss
+          )
+          .padding(.top, DashTheme.Sheet.headerTop)
+          .padding(.trailing, DashTheme.Sheet.content - 6)
         }
       }
       .accessibilityElement(children: .contain)
@@ -427,6 +452,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
   @State private var keyboardHeight: CGFloat = 0
   @State private var headerAction: DashSheetHeaderAction?
   @State private var contentTitle: String?
+  @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
 
@@ -435,9 +461,10 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
       Color.black.opacity(progress * DashTheme.Sheet.scrimOpacity)
         .ignoresSafeArea()
         .contentShape(Rectangle())
-        .onTapGesture { close() }
+        .onTapGesture { requestClose() }
         .accessibilityLabel("Dismiss")
         .accessibilityAddTraits(.isButton)
+        .accessibilityHidden(dismissDisabled)
 
       // We position the card above the keyboard ourselves (padding + an observed
       // height) rather than let SwiftUI's automatic avoidance also push it, which
@@ -453,7 +480,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
           // scrollable body keeps its own vertical scroll.
           trayHeader
             .contentShape(Rectangle())
-            .gesture(dragGesture)
+            .gesture(dragGesture, including: dismissDisabled ? .none : .all)
         } content: {
           content()
         }
@@ -475,6 +502,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
     .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
+    .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
     ) { note in
@@ -503,11 +531,13 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
     if let hero {
       DashSheetHeroHeader(
         title: resolvedTitle, showsMenuButtons: showsMenuButtons,
-        trailingAction: headerAction, dismiss: close, hero: hero)
+        trailingAction: headerAction, menuButtonsDisabled: dismissDisabled,
+        dismiss: requestClose, hero: hero)
     } else {
       DashSheetHeader(
         title: resolvedTitle, showsMenuButtons: showsMenuButtons,
-        trailingAction: headerAction, dismiss: close)
+        trailingAction: headerAction, menuButtonsDisabled: dismissDisabled,
+        dismiss: requestClose)
     }
   }
 
@@ -544,6 +574,11 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
     }
   }
 
+  private func requestClose() {
+    guard !dismissDisabled else { return }
+    close()
+  }
+
   private var dragGesture: some Gesture {
     // Global space: measuring in the header's own (moving) coordinates feeds the
     // offset back into the translation and makes the drag flicker.
@@ -559,7 +594,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
           predictedEndTranslation: value.predictedEndTranslation.height
         ) {
         case .dismiss:
-          close()
+          requestClose()
         case .settle, .settleExpanded:
           if reduceMotion {
             drag = 0
@@ -620,6 +655,7 @@ private struct DashExpandableSheet<Content: View>: View {
   @State private var expanded = true
   @State private var drag: CGFloat = 0
   @State private var contentTitle: String?
+  @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
 
@@ -640,9 +676,10 @@ private struct DashExpandableSheet<Content: View>: View {
       Color.black.opacity(shown ? DashTheme.Sheet.scrimOpacity : 0)
         .ignoresSafeArea()
         .contentShape(Rectangle())
-        .onTapGesture { close() }
+        .onTapGesture { requestClose() }
         .accessibilityLabel("Dismiss")
         .accessibilityAddTraits(.isButton)
+        .accessibilityHidden(dismissDisabled)
 
       GeometryReader { proxy in
         let metrics = metrics(in: proxy)
@@ -658,6 +695,7 @@ private struct DashExpandableSheet<Content: View>: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .environment(\.dashTrayDismiss, close)
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
+    .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .presentationBackground(.clear)
     .dashToastHost()
     .onAppear {
@@ -682,10 +720,11 @@ private struct DashExpandableSheet<Content: View>: View {
     return VStack(spacing: 0) {
       DashSheetHeader(
         title: resolvedTitle, showsGrabBar: true, showsMenuButtons: showsMenuButtons,
-        dismiss: close
+        menuButtonsDisabled: dismissDisabled,
+        dismiss: requestClose
       )
       .contentShape(Rectangle())
-      .gesture(detentGesture(metrics))
+      .gesture(detentGesture(metrics), including: dismissDisabled ? .none : .all)
       // Same body insets as `DashSheetCard` so `.large` edit trays match
       // `.content` Edit shortcuts: horizontal padding, top breath, bottom gap
       // under Done. Card margin still lerps 0→floating on collapse so row
@@ -750,7 +789,7 @@ private struct DashExpandableSheet<Content: View>: View {
           floatingTop: metrics.floatingTop
         ) {
         case .dismiss:
-          close()
+          requestClose()
         case .settleExpanded(let snapExpanded):
           if reduceMotion {
             expanded = snapExpanded
@@ -787,6 +826,11 @@ private struct DashExpandableSheet<Content: View>: View {
         onDismiss()
       }
     }
+  }
+
+  private func requestClose() {
+    guard !dismissDisabled else { return }
+    close()
   }
 }
 

@@ -1226,8 +1226,9 @@ private struct HomeZoneModeAction: View {
   let zones: [CloudflareZone]
   let mode: Mode
   @State private var selectedZoneID: String?
-  @State private var working = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var result: String?
+  @State private var pendingResult: String?
   @State private var error: String?
 
   init(zones: [CloudflareZone], mode: Mode) {
@@ -1241,7 +1242,8 @@ private struct HomeZoneModeAction: View {
       if let zone = zones.first(where: { $0.id == selectedZoneID }) {
         DashFormSheet(
           saveTitle: result == nil ? mode.actionTitle : DashL10n.string("Done"),
-          isSaving: working,
+          actionPhase: actionPhase,
+          onSuccessPresentationCompleted: completeSuccessPresentation,
           onSave: {
             if result == nil {
               Task { await enable(for: zone) }
@@ -1296,34 +1298,48 @@ private struct HomeZoneModeAction: View {
   private func enable(for zone: CloudflareZone) async {
     guard let context = model.accountRequestContext else { return }
     let client = model.client
-    working = true
+    actionPhase = .loading
     error = nil
-    defer { working = false }
     do {
+      let successMessage: String
       switch mode {
       case .development:
         _ = try await client.updateZoneSetting(
           zoneID: zone.id, settingID: "development_mode", value: .string("on"))
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-        result = DashL10n.string("Development Mode is on for \(zone.name).")
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          actionPhase = .idle
+          return
+        }
+        successMessage = DashL10n.string("Development Mode is on for \(zone.name).")
       case .underAttack:
         _ = try await ZoneSecurityLevelOperation.setUnderAttack(
           zoneID: zone.id,
           enabled: true,
           client: client,
           isCurrent: { model.isCurrentAccount(context) })
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-        result = DashL10n.string("Under Attack mode is on for \(zone.name).")
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          actionPhase = .idle
+          return
+        }
+        successMessage = DashL10n.string("Under Attack mode is on for \(zone.name).")
       }
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zone.id))
-      if let result {
-        model.toasts.success(result)
-      }
+      pendingResult = successMessage
+      model.toasts.success(successMessage)
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeSuccessPresentation() {
+    guard actionPhase == .succeeded, let pendingResult else { return }
+    result = pendingResult
+    self.pendingResult = nil
+    actionPhase = .idle
   }
 }
 
@@ -1366,8 +1382,10 @@ private struct HomeR2UploadSheet: View {
   @State private var importsFile = false
   @State private var loading = true
   @State private var uploading = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
   @State private var uploadedMessage: String?
+  @State private var pendingUploadedMessage: String?
   @State private var uploadTask: Task<Void, Never>?
   @State private var uploadGeneration: UInt64 = 0
 
@@ -1390,8 +1408,9 @@ private struct HomeR2UploadSheet: View {
   var body: some View {
     DashFormSheet(
       saveTitle: actionTitle,
-      isSaving: uploading,
-      canSave: !uploading && (uploadedMessage != nil || (!loading && !selectedBucket.isEmpty)),
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeUploadPresentation,
+      canSave: uploadedMessage != nil || (!loading && !selectedBucket.isEmpty),
       onSave: performPrimaryAction
     ) {
       VStack(alignment: .leading, spacing: 14) {
@@ -1546,7 +1565,9 @@ private struct HomeR2UploadSheet: View {
     uploadGeneration &+= 1
     let generation = uploadGeneration
     uploading = true
+    actionPhase = .loading
     error = nil
+    pendingUploadedMessage = nil
     uploadTask = Task { await upload(request, generation: generation) }
   }
 
@@ -1591,10 +1612,12 @@ private struct HomeR2UploadSheet: View {
       onUploaded(request.bucket)
       let message = DashL10n.string(
         "Uploaded \(request.fileURL.lastPathComponent) to \(request.bucket).")
-      uploadedMessage = message
+      pendingUploadedMessage = message
       model.toasts.success(message)
+      actionPhase = .succeeded
     } catch {
       guard isCurrentUpload(generation, context: request.context) else { return }
+      actionPhase = .idle
       self.error = error.dashActionableMessage
       DashDelight.failError()
     }
@@ -1612,7 +1635,18 @@ private struct HomeR2UploadSheet: View {
   private func finishUpload(generation: UInt64) {
     guard uploadGeneration == generation else { return }
     uploadTask = nil
+    if actionPhase != .succeeded {
+      uploading = false
+      actionPhase = .idle
+    }
+  }
+
+  private func completeUploadPresentation() {
+    guard actionPhase == .succeeded, let pendingUploadedMessage else { return }
+    uploadedMessage = pendingUploadedMessage
+    self.pendingUploadedMessage = nil
     uploading = false
+    actionPhase = .idle
   }
 
   private func cancelUpload() {
@@ -1620,6 +1654,8 @@ private struct HomeR2UploadSheet: View {
     uploadTask?.cancel()
     uploadTask = nil
     uploading = false
+    pendingUploadedMessage = nil
+    actionPhase = .idle
   }
 }
 
@@ -1689,14 +1725,16 @@ struct AddDomainSheet: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let onCreated: () -> Void
   @State private var name = ""
-  @State private var creating = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
   @State private var created: CloudflareZone?
+  @State private var pendingCreated: CloudflareZone?
 
   var body: some View {
     DashFormSheet(
       saveTitle: created == nil ? "Add domain" : "Done",
-      isSaving: creating,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeCreatePresentation,
       canSave: created != nil || AddDomainValidation.isPlausibleZoneName(name),
       onSave: {
         if created == nil {
@@ -1775,22 +1813,33 @@ struct AddDomainSheet: View {
     guard let context = model.accountRequestContext else { return }
     let client = model.client
     let normalizedName = AddDomainValidation.normalized(name)
-    creating = true
+    actionPhase = .loading
     error = nil
-    defer { creating = false }
     do {
       let zone = try await client.createZone(
         name: normalizedName, accountID: context.accountID)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Created successfully."))
       onCreated()
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
-        created = zone
-      }
+      pendingCreated = zone
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeCreatePresentation() {
+    guard actionPhase == .succeeded, let pendingCreated else { return }
+    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
+      created = pendingCreated
+    }
+    self.pendingCreated = nil
+    actionPhase = .idle
   }
 }
 

@@ -23,6 +23,8 @@ struct AppRootView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   /// Lags `model.authState` so auth flips can animate the surface swap.
   @State private var stage: AuthenticationState? = .loading
+  /// A visible auth action owns the old surface through its success icon swap.
+  @State private var pendingStage: AuthenticationState?
   @State private var onboardingStep: OnboardingStep = .initial
 
   var body: some View {
@@ -63,18 +65,49 @@ struct AppRootView: View {
       stage = model.authState
     }
     .onChange(of: model.authState) { _, new in
-      // The step only resets on the sign-out edge: after sign-in the fading
-      // login surface keeps rendering the permissions step (with its loading
-      // ring) through the exit, and OnboardingView re-initializes its
-      // visibility state on the next mount anyway.
-      if new == .unauthenticated {
-        onboardingStep = .initial
-      }
-      if reduceMotion {
-        stage = new
+      if holdsCurrentStage(for: new) {
+        pendingStage = new
       } else {
-        withAnimation(.easeOut(duration: 0.25)) { stage = new }
+        present(new)
       }
+    }
+    .onChange(of: model.authenticationActionPhase) { _, phase in
+      if phase == .idle {
+        presentPendingStage(if: .authenticated)
+      }
+    }
+    .onChange(of: model.signOutActionPhase) { _, phase in
+      if phase == .idle {
+        presentPendingStage(if: .unauthenticated)
+      }
+    }
+  }
+
+  private func holdsCurrentStage(for incoming: AuthenticationState) -> Bool {
+    if stage == .unauthenticated, incoming == .authenticated {
+      return model.authenticationActionPhase == .succeeded
+    }
+    if stage == .authenticated, incoming == .unauthenticated {
+      return model.signOutActionPhase == .succeeded
+    }
+    return false
+  }
+
+  private func presentPendingStage(if expected: AuthenticationState) {
+    guard pendingStage == expected else { return }
+    pendingStage = nil
+    present(expected)
+  }
+
+  private func present(_ new: AuthenticationState) {
+    pendingStage = nil
+    if new == .unauthenticated {
+      onboardingStep = .initial
+    }
+    if reduceMotion {
+      stage = new
+    } else {
+      withAnimation(.easeOut(duration: 0.25)) { stage = new }
     }
   }
 }
@@ -234,6 +267,7 @@ private struct OnboardingView: View {
   @State private var welcomeIsVisible = OnboardingStep.initial == .welcome
   @State private var permissionsAreVisible = OnboardingStep.initial == .permissions
   @State private var isChangingStep = false
+  @State private var authenticationActionOwner = UUID()
 
   var body: some View {
     ZStack {
@@ -251,7 +285,9 @@ private struct OnboardingView: View {
             reduceMotion ? DashTheme.Motion.reduced : .easeOut(duration: 0.18),
             value: permissionsAreVisible
           )
-          .allowsHitTesting(permissionsAreVisible && !isChangingStep)
+          .allowsHitTesting(
+            permissionsAreVisible && !isChangingStep && !ownedAuthenticationPhase.isActive
+          )
       }
     }
     .sheet(item: $legalDocument) { document in
@@ -424,14 +460,18 @@ private struct OnboardingView: View {
         DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
           model.enterDemo()
         }
+        .disabled(ownedAuthenticationPhase.isActive)
         .dashReveal(3, shown: revealed)
       } primary: {
         DashPillButton(
           title: primaryButtonTitle,
           icon: step == .permissions ? SolarAsset.cloudflare : nil,
-          isLoading: step == .permissions && model.isAuthenticating,
+          phase: step == .permissions ? ownedAuthenticationPhase : .idle,
           isEnabled: step == .welcome
             || (model.configuration.isConfigured && networkProbe.isReadyForConnect),
+          onSuccessPresentationCompleted: {
+            model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
+          },
           action: primaryButtonAction
         )
         .dashReveal(4, shown: revealed)
@@ -449,13 +489,19 @@ private struct OnboardingView: View {
     }
   }
 
+  private var ownedAuthenticationPhase: DashActionPhase {
+    model.authenticationActionOwner == authenticationActionOwner
+      ? model.authenticationActionPhase
+      : .idle
+  }
+
   private func primaryButtonAction() {
     guard !isChangingStep else { return }
     switch step {
     case .welcome:
       showPermissions()
     case .permissions:
-      model.signIn()
+      model.signIn(presentationOwner: authenticationActionOwner)
     }
   }
 
@@ -831,18 +877,19 @@ private struct OnboardingPermissionRow: View {
 
   @ViewBuilder
   private var trailing: some View {
-    if isBusy {
-      DashLoadingRing(color: DashTheme.strong)
-    } else {
-      switch status {
-      case .allowed:
-        SolarIcon(asset: SolarAsset.checkCircle, size: 22, color: DashTheme.brand)
-      case .denied:
-        SolarIcon(
-          asset: SolarAsset.chevronRight, size: DashTheme.Chevron.row, color: DashTheme.placeholder)
-      case .idle:
-        EmptyView()
-      }
+    if isBusy || status == .allowed {
+      DashActionStatusIcon(
+        phase: isBusy ? .loading : .succeeded,
+        loadingColor: DashTheme.strong,
+        successColor: DashTheme.brand,
+        size: 22
+      )
+    } else if status == .denied {
+      SolarIcon(
+        asset: SolarAsset.chevronRight,
+        size: DashTheme.Chevron.row,
+        color: DashTheme.placeholder
+      )
     }
   }
 }

@@ -14,7 +14,7 @@ struct ZonesView: View {
   @State private var zones: [CloudflareZone] = []
   @State private var error: String?
   @State private var loading = true
-  @State private var loadingMore = false
+  @State private var loadMorePhase: DashActionPhase = .idle
   @State private var showsAddDomain = false
   @State private var pageState = DashPageState()
 
@@ -49,12 +49,13 @@ struct ZonesView: View {
           }
         }
       }
-      if pageState.canLoadMore {
+      if pageState.canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: zones.count,
           total: pageState.totalCount,
           noun: "domains",
-          isLoading: loadingMore
+          phase: loadMorePhase,
+          onSuccessPresentationCompleted: { loadMorePhase = .idle }
         ) { Task { await loadMore() } }
       }
     }
@@ -157,12 +158,15 @@ struct ZonesView: View {
   }
 
   private func loadMore() async {
-    guard let accountID = model.activeAccountID, !loadingMore else { return }
-    loadingMore = true
-    defer { loadingMore = false }
+    guard let accountID = model.activeAccountID, loadMorePhase == .idle else { return }
+    loadMorePhase = .loading
     do {
       let page = try await model.client.listZones(
         accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
+      guard !Task.isCancelled, model.activeAccountID == accountID else {
+        loadMorePhase = .idle
+        return
+      }
       zones += page.items
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
@@ -174,7 +178,10 @@ struct ZonesView: View {
         accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
         replacesCatalog: !pageState.canLoadMore)
       error = nil
+      loadMorePhase = .succeeded
     } catch {
+      loadMorePhase = .idle
+      guard !error.dashIsCancellation, model.activeAccountID == accountID else { return }
       self.error = error.dashActionableMessage
     }
   }
@@ -196,7 +203,7 @@ struct ZoneDetailView: View {
   @State private var draftCardHex: UInt32?
   /// Non-nil while the overlay runs its settle-back exit.
   @State private var cardCustomizeExit: DomainCardCustomizeExit?
-  @State private var activationChecking = false
+  @State private var activationCheckPhase: DashActionPhase = .idle
   @Namespace private var cardCustomizeNamespace
 
   private var isExitingCardCustomize: Bool { cardCustomizeExit != nil }
@@ -610,7 +617,11 @@ struct ZoneDetailView: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if canTriggerActivationCheck {
-          DashPillButton(title: "Check now", isLoading: activationChecking) {
+          DashPillButton(
+            title: "Check now",
+            phase: activationCheckPhase,
+            onSuccessPresentationCompleted: { activationCheckPhase = .idle }
+          ) {
             Task { await triggerActivationCheck() }
           }
         } else {
@@ -623,16 +634,22 @@ struct ZoneDetailView: View {
   }
 
   private func triggerActivationCheck() async {
-    activationChecking = true
+    activationCheckPhase = .loading
     do {
       try await model.client.triggerZoneActivationCheck(zoneID: zoneID)
+      guard !Task.isCancelled else {
+        activationCheckPhase = .idle
+        return
+      }
       model.toasts.success(
         DashL10n.string(
           "Cloudflare is rechecking now — the status usually updates within a few minutes."))
+      activationCheckPhase = .succeeded
     } catch {
+      activationCheckPhase = .idle
+      guard !error.dashIsCancellation else { return }
       model.toasts.error(error.dashActionableMessage)
     }
-    activationChecking = false
   }
 
   /// Registration is a *secondary* fetch inside an already-loaded detail, so it
@@ -1089,7 +1106,7 @@ struct DNSRecordsView: View {
   @State private var selected: DNSRecord?
   @State private var createsRecord = false
   @State private var loading = true
-  @State private var loadingMore = false
+  @State private var loadMorePhase: DashActionPhase = .idle
   @State private var reloading = false
   @State private var activeRequestID: UUID?
   @State private var pageState = DashPageState()
@@ -1157,7 +1174,7 @@ struct DNSRecordsView: View {
           }
         }
       }
-      if pageState.canLoadMore {
+      if pageState.canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: displayedRecords.count,
           total: displayedTotal,
@@ -1166,7 +1183,8 @@ struct DNSRecordsView: View {
             selectedBucket: selectedBucket,
             visibleRecordCount: visibleRecords.count,
             displayedRecordCount: displayedRecords.count),
-          isLoading: loadingMore
+          phase: loadMorePhase,
+          onSuccessPresentationCompleted: { loadMorePhase = .idle }
         ) { Task { await loadMore() } }
       }
     }
@@ -1361,7 +1379,7 @@ struct DNSRecordsView: View {
     let requestID = UUID()
     activeRequestID = requestID
     reloading = true
-    loadingMore = false
+    loadMorePhase = .idle
     defer {
       if activeRequestID == requestID {
         reloading = false
@@ -1414,10 +1432,10 @@ struct DNSRecordsView: View {
   }
 
   private func loadMore() async {
-    guard !loadingMore, !reloading else { return }
+    guard loadMorePhase == .idle, !reloading else { return }
     let requestID = UUID()
     activeRequestID = requestID
-    loadingMore = true
+    loadMorePhase = .loading
     let requestScope = model.activeAccountID.map {
       DeferredDeletionScope(accountID: $0, zoneID: zoneID)
     }
@@ -1425,8 +1443,8 @@ struct DNSRecordsView: View {
       model.deferredDeletions.beginDNSLoad(for: $0)
     }
     defer {
-      if activeRequestID == requestID {
-        loadingMore = false
+      if activeRequestID == requestID, loadMorePhase == .loading {
+        loadMorePhase = .idle
       }
     }
     do {
@@ -1445,6 +1463,7 @@ struct DNSRecordsView: View {
       reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(FeatureCacheKey.dnsRecords(zoneID), records)
       error = nil
+      loadMorePhase = .succeeded
     } catch {
       guard
         activeRequestID == requestID,
@@ -1613,8 +1632,7 @@ struct DNSRecordEditor: View {
   @State private var proxied: Bool
   @State private var ttl: Int
   @State private var error: String?
-  @State private var saving = false
-  @State private var deleting = false
+  @State private var savePhase: DashActionPhase = .idle
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .dns(zoneID))
@@ -1672,13 +1690,13 @@ struct DNSRecordEditor: View {
     DashFormSheet(
       saveTitle: allowsWrites
         ? "Save" : (model.isDemoSession ? "Connect your account" : "Grant access"),
-      isSaving: saving,
+      actionPhase: savePhase,
+      onSuccessPresentationCompleted: completeSavePresentation,
       canSave: allowsWrites ? canSave : true,
       deleteMessage: allowsWrites
         ? record.map {
           DashL10n.string("Permanently delete the \($0.type) record for \($0.name).")
         } : nil,
-      isDeleting: deleting,
       deleteError: error,
       onDelete: allowsWrites ? record.map { rec in { delete(rec) } } : nil,
       deletionPresentation: .deferToGlobalUndo,
@@ -1787,7 +1805,6 @@ struct DNSRecordEditor: View {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
-    saving = true
     error = nil
     let input: DNSRecordInput
     if isSRV {
@@ -1795,7 +1812,6 @@ struct DNSRecordEditor: View {
         let port = Int(portText)
       else {
         error = DashL10n.string("Priority, weight, and port must be numbers.")
-        saving = false
         return
       }
       input = DNSRecordInput(
@@ -1806,7 +1822,6 @@ struct DNSRecordEditor: View {
     } else if isMX {
       guard let priority = Int(priorityText) else {
         error = DashL10n.string("Priority must be a number.")
-        saving = false
         return
       }
       input = DNSRecordInput(
@@ -1814,7 +1829,6 @@ struct DNSRecordEditor: View {
     } else if isCAA {
       guard let flags = Int(caaFlagsText), (0...255).contains(flags) else {
         error = DashL10n.string("Flags must be a number between 0 and 255.")
-        saving = false
         return
       }
       input = DNSRecordInput(
@@ -1827,19 +1841,39 @@ struct DNSRecordEditor: View {
         type: type, name: name, content: content,
         proxied: supportsProxy ? proxied : false, ttl: ttl)
     }
+    guard let context = model.accountRequestContext else { return }
+    savePhase = .loading
     do {
+      let successMessage: String
       if let record {
         _ = try await model.client.updateDNSRecord(
           zoneID: zoneID, recordID: record.id, input: input)
-        model.toasts.success(DashL10n.string("DNS record updated."))
+        successMessage = DashL10n.string("DNS record updated.")
       } else {
         _ = try await model.client.createDNSRecord(zoneID: zoneID, input: input)
-        model.toasts.success(DashL10n.string("DNS record created."))
+        successMessage = DashL10n.string("DNS record created.")
       }
-      saved()
-      dismiss()
-    } catch { self.error = error.dashActionableMessage }
-    saving = false
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        savePhase = .idle
+        return
+      }
+      model.toasts.success(successMessage)
+      savePhase = .succeeded
+    } catch {
+      savePhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func completeSavePresentation() {
+    guard savePhase == .succeeded else {
+      savePhase = .idle
+      return
+    }
+    savePhase = .idle
+    saved()
+    dismiss()
   }
 
   private func delete(_ record: DNSRecord) {

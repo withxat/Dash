@@ -23,7 +23,7 @@ struct WorkerBuildsSection: View {
   @State private var latest: WorkerBuild?
   @State private var unavailable = false
   @State private var loaded = false
-  @State private var cancelling = false
+  @State private var cancelPhase: DashActionPhase = .idle
   @State private var actionError: String?
 
   private var monitorKey: WorkerBuildMonitorKey? {
@@ -81,7 +81,12 @@ struct WorkerBuildsSection: View {
             .lineLimit(1)
         }
         if featureAllowsWrites, let buildUUID = build.buildUUID {
-          DashActionButton(title: "Cancel build", role: .destructive, isLoading: cancelling) {
+          DashActionButton(
+            title: "Cancel build",
+            role: .destructive,
+            phase: cancelPhase,
+            onSuccessPresentationCompleted: completeCancelPresentation
+          ) {
             Task { await cancel(buildUUID: buildUUID) }
           }
         }
@@ -235,23 +240,35 @@ struct WorkerBuildsSection: View {
     guard let key = monitorKey else { return }
     let context = AccountRequestContext(
       accountID: key.accountID, generation: key.accountGeneration)
-    cancelling = true
+    cancelPhase = .loading
     actionError = nil
-    defer {
-      if model.isCurrentAccount(context) { cancelling = false }
-    }
     do {
       try await model.client.cancelWorkerBuild(
         accountID: key.accountID, buildUUID: buildUUID)
-      guard model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        cancelPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Build cancelled."))
-      // Cloudflare's cancel response shape is undocumented, so the new state
-      // comes from a re-read rather than from anything this call returned.
-      await WorkerBuildActivityController.shared.refresh(key: key, client: model.client)
+      cancelPhase = .succeeded
     } catch {
+      cancelPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       actionError = error.dashActionableMessage
       DashDelight.failError()
+    }
+  }
+
+  private func completeCancelPresentation() {
+    guard cancelPhase == .succeeded, let key = monitorKey else {
+      cancelPhase = .idle
+      return
+    }
+    cancelPhase = .idle
+    // Cloudflare's cancel response shape is undocumented, so the new state
+    // comes from a re-read rather than from anything this call returned.
+    Task {
+      await WorkerBuildActivityController.shared.refresh(key: key, client: model.client)
     }
   }
 }

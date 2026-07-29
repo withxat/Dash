@@ -19,7 +19,8 @@ struct DashDetailField {
 struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
   var deleteMessage: String?
-  var isDeleting: Bool
+  var deletePhase: DashActionPhase
+  var onDeleteSuccessPresentationCompleted: (@MainActor () -> Void)?
   /// Failure of the last delete attempt, shown inline while confirming so the
   /// tray stays open instead of pretending success.
   var deleteError: String?
@@ -30,14 +31,16 @@ struct DashDetailTray<Accessory: View>: View {
   init(
     fields: [DashDetailField],
     deleteMessage: String? = nil,
-    isDeleting: Bool = false,
+    deletePhase: DashActionPhase = .idle,
+    onDeleteSuccessPresentationCompleted: (@MainActor () -> Void)? = nil,
     deleteError: String? = nil,
     onDelete: (() -> Void)? = nil,
     @ViewBuilder accessory: () -> Accessory
   ) {
     self.fields = fields
     self.deleteMessage = deleteMessage
-    self.isDeleting = isDeleting
+    self.deletePhase = deletePhase
+    self.onDeleteSuccessPresentationCompleted = onDeleteSuccessPresentationCompleted
     self.deleteError = deleteError
     self.onDelete = onDelete
     self.accessory = accessory()
@@ -49,7 +52,8 @@ struct DashDetailTray<Accessory: View>: View {
     DashConfirmMorph(
       confirming: $confirmingDelete,
       message: deleteMessage,
-      isBusy: isDeleting,
+      actionPhase: deletePhase,
+      onSuccessPresentationCompleted: onDeleteSuccessPresentationCompleted,
       actionTitle: nil,
       confirmingActionTitle: "Delete",
       confirmingActionRole: .destructive,
@@ -97,12 +101,15 @@ extension DashDetailTray where Accessory == EmptyView {
   init(
     fields: [DashDetailField],
     deleteMessage: String? = nil,
-    isDeleting: Bool = false,
+    deletePhase: DashActionPhase = .idle,
+    onDeleteSuccessPresentationCompleted: (@MainActor () -> Void)? = nil,
     deleteError: String? = nil,
     onDelete: (() -> Void)? = nil
   ) {
     self.init(
-      fields: fields, deleteMessage: deleteMessage, isDeleting: isDeleting,
+      fields: fields, deleteMessage: deleteMessage,
+      deletePhase: deletePhase,
+      onDeleteSuccessPresentationCompleted: onDeleteSuccessPresentationCompleted,
       deleteError: deleteError, onDelete: onDelete,
       accessory: { EmptyView() })
   }

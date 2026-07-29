@@ -324,10 +324,10 @@ private struct R2ObjectActionsSheet: View {
   var onMutated: () async -> Void
   @State private var renaming = false
   @State private var newKey = ""
-  @State private var renameBusy = false
+  @State private var renameActionPhase: DashActionPhase = .idle
   @State private var renameError: String?
   @State private var renamePhase: String?
-  @State private var deleting = false
+  @State private var deleteActionPhase: DashActionPhase = .idle
   @State private var deleteError: String?
 
   private var filename: String {
@@ -366,7 +366,8 @@ private struct R2ObjectActionsSheet: View {
       deleteMessage: allowsWrites
         ? DashL10n.string("Permanently deletes \(filename) from \(bucket). This can't be undone.")
         : nil,
-      isDeleting: deleting,
+      deletePhase: deleteActionPhase,
+      onDeleteSuccessPresentationCompleted: completeDeletePresentation,
       deleteError: deleteError,
       onDelete: allowsWrites ? { Task { await performDelete() } } : nil
     ) {
@@ -439,10 +440,11 @@ private struct R2ObjectActionsSheet: View {
   private var renameForm: some View {
     DashFormSheet(
       saveTitle: "Rename",
-      isSaving: renameBusy,
+      actionPhase: renameActionPhase,
+      onSuccessPresentationCompleted: completeRenamePresentation,
       canSave: normalizedKey != nil,
       secondaryActionTitle: DashL10n.string("Back"),
-      secondaryActionEnabled: !renameBusy,
+      secondaryActionEnabled: !renameActionPhase.isActive,
       onSecondaryAction: {
         withAnimation(DashTheme.Motion.morph) { renaming = false }
       },
@@ -470,7 +472,7 @@ private struct R2ObjectActionsSheet: View {
 
   private func performRename() async {
     guard let accountID = model.activeAccountID, let target = normalizedKey else { return }
-    renameBusy = true
+    renameActionPhase = .loading
     renameError = nil
     do {
       renamePhase = "Checking destination…"
@@ -497,29 +499,40 @@ private struct R2ObjectActionsSheet: View {
       try await model.client.deleteR2Object(
         accountID: accountID, bucket: bucket, key: object.key)
       model.toasts.success(DashL10n.string("Renamed to \(target)."))
-      dismiss()
-      await onMutated()
+      renameActionPhase = .succeeded
     } catch {
+      renameActionPhase = .idle
       renameError = error.dashActionableMessage
       DashDelight.failError()
     }
-    renameBusy = false
     renamePhase = nil
+  }
+
+  private func completeRenamePresentation() {
+    guard renameActionPhase == .succeeded else { return }
+    dismiss()
+    Task { await onMutated() }
   }
 
   private func performDelete() async {
     guard let accountID = model.activeAccountID else { return }
-    deleting = true
+    deleteActionPhase = .loading
+    deleteError = nil
     do {
       try await model.client.deleteR2Object(accountID: accountID, bucket: bucket, key: object.key)
       model.toasts.success(DashL10n.string("Deleted \(filename)."))
-      dismiss()
-      await onMutated()
+      deleteActionPhase = .succeeded
     } catch {
+      deleteActionPhase = .idle
       deleteError = error.dashActionableMessage
       DashDelight.failError()
     }
-    deleting = false
+  }
+
+  private func completeDeletePresentation() {
+    guard deleteActionPhase == .succeeded else { return }
+    dismiss()
+    Task { await onMutated() }
   }
 }
 

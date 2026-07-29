@@ -16,7 +16,6 @@ struct ProfileTrayContent: View {
   /// DEBUG-only: dismisses the tray and pushes the Debug playground.
   var openDebug: (() -> Void)? = nil
   @State private var phase: ProfileTrayPhase = .menu
-  @State private var isSigningOut = false
 
   init(
     openProfile: @escaping () -> Void,
@@ -175,18 +174,16 @@ struct ProfileTrayContent: View {
         DashTrayTextButton(title: DashL10n.string("Cancel")) {
           withAnimation(DashTheme.Motion.morph) { phase = .menu }
         }
-        .disabled(isSigningOut)
+        .disabled(model.signOutActionPhase.isActive)
       } primary: {
         DashActionButton(
           title: DashL10n.string("Sign out"),
           role: .destructive,
-          isLoading: isSigningOut
+          phase: model.signOutActionPhase,
+          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
         ) {
           Task {
-            isSigningOut = true
-            await model.signOut()
-            isSigningOut = false
-            dismiss()
+            await model.signOut(presentsCompletion: true)
           }
         }
       }
@@ -907,11 +904,12 @@ enum ProfileAccountRenameAccess {
 /// Switching accounts and signing out stay on the tray menu.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var avatarPickerItem: PhotosPickerItem?
-  @State private var isUpdatingAvatar = false
+  @State private var avatarActionPhase: DashActionPhase = .idle
   @State private var showsRename = false
   @State private var renameText = ""
-  @State private var renaming = false
+  @State private var renameActionPhase: DashActionPhase = .idle
   @State private var renameError: String?
 
   private var canRenameAccount: Bool {
@@ -952,7 +950,7 @@ struct ProfileView: View {
                 .padding(.horizontal, 8)
             }
             .buttonStyle(DashPressButtonStyle())
-            .disabled(isUpdatingAvatar)
+            .disabled(avatarActionPhase.isActive)
           }
         }
         .frame(maxWidth: .infinity)
@@ -1039,7 +1037,8 @@ struct ProfileView: View {
     }
     .dashTray(isPresented: $showsRename, title: DashL10n.string("Rename account")) {
       DashFormSheet(
-        isSaving: renaming,
+        actionPhase: renameActionPhase,
+        onSuccessPresentationCompleted: completeRenamePresentation,
         canSave: !renameText.trimmingCharacters(in: .whitespaces).isEmpty,
         onSave: { Task { await renameAccount() } }
       ) {
@@ -1053,12 +1052,11 @@ struct ProfileView: View {
     }
   }
 
-  @ViewBuilder
+  @MainActor @ViewBuilder
   private var profileAvatar: some View {
     let email = model.user?.email ?? ""
     let userID = model.user?.id
     let hasCustomImage = model.avatars.hasCustomImage(for: userID)
-    let isUpdating = isUpdatingAvatar
 
     if model.isDemoSession {
       UserAvatar(email: email, size: 80)
@@ -1073,14 +1071,23 @@ struct ProfileView: View {
             ZStack {
               Circle().fill(DashTheme.canvas)
               Circle().fill(DashTheme.strong).padding(3)
-              if isUpdating {
-                DashLoadingRing(color: DashTheme.inverse, size: 13, lineWidth: 2)
-              } else {
-                SolarIcon(
-                  asset: hasCustomImage ? SolarAsset.pen : SolarAsset.gallery,
-                  size: 14,
-                  color: DashTheme.inverse)
-              }
+              SolarIcon(
+                asset: hasCustomImage ? SolarAsset.pen : SolarAsset.gallery,
+                size: 14,
+                color: DashTheme.inverse
+              )
+              .opacity(avatarActionPhase == .idle ? 1 : 0)
+              .blur(radius: reduceMotion || avatarActionPhase == .idle ? 0 : 2)
+              .scaleEffect(reduceMotion || avatarActionPhase == .idle ? 1 : 0.25)
+              .animation(reduceMotion ? nil : DashTheme.Motion.iconSwap, value: avatarActionPhase)
+
+              DashActionStatusIcon(
+                phase: avatarActionPhase,
+                loadingColor: DashTheme.inverse,
+                size: 14,
+                lineWidth: 2,
+                onSuccessPresentationCompleted: completeAvatarPresentation
+              )
             }
             .frame(width: 30, height: 30)
             .offset(x: 2, y: 2)
@@ -1088,9 +1095,9 @@ struct ProfileView: View {
           }
       }
       .buttonStyle(DashPressButtonStyle())
-      .disabled(isUpdating || userID == nil)
+      .disabled(avatarActionPhase.isActive || userID == nil)
       .accessibilityLabel(DashL10n.string("Change profile photo"))
-      .accessibilityValue(isUpdating ? DashL10n.string("Updating") : "")
+      .accessibilityValue(avatarActionPhase.accessibilityValue)
     }
   }
 
@@ -1100,11 +1107,8 @@ struct ProfileView: View {
       avatarPickerItem = nil
       return
     }
-    isUpdatingAvatar = true
-    defer {
-      avatarPickerItem = nil
-      isUpdatingAvatar = false
-    }
+    avatarActionPhase = .loading
+    defer { avatarPickerItem = nil }
     do {
       guard let imported = try await item.loadTransferable(type: AvatarPhotoImport.self) else {
         throw CustomAvatarError.invalidImage
@@ -1113,9 +1117,12 @@ struct ProfileView: View {
       try await model.avatars.setCustomImage(imported.image, for: userID)
       try Task.checkCancellation()
       model.toasts.success(DashL10n.string("Saved successfully."))
+      avatarActionPhase = .succeeded
     } catch is CancellationError {
+      avatarActionPhase = .idle
       return
     } catch {
+      avatarActionPhase = .idle
       model.toasts.error(
         DashL10n.string("Dash couldn’t use this photo. Try another image."))
     }
@@ -1124,19 +1131,26 @@ struct ProfileView: View {
   @MainActor
   private func restoreDefaultAvatar() async {
     guard let userID = model.user?.id, !model.isDemoSession else { return }
-    isUpdatingAvatar = true
-    defer { isUpdatingAvatar = false }
+    avatarActionPhase = .loading
     do {
       try await model.avatars.removeCustomImage(
         for: userID, email: model.user?.email ?? "")
       try Task.checkCancellation()
       model.toasts.success(DashL10n.string("Saved successfully."))
+      avatarActionPhase = .succeeded
     } catch is CancellationError {
+      avatarActionPhase = .idle
       return
     } catch {
+      avatarActionPhase = .idle
       model.toasts.error(
         DashL10n.string("Dash couldn’t update your profile photo. Try again."))
     }
+  }
+
+  private func completeAvatarPresentation() {
+    guard avatarActionPhase == .succeeded else { return }
+    avatarActionPhase = .idle
   }
 
   private func renameAccount() async {
@@ -1144,16 +1158,22 @@ struct ProfileView: View {
       model.requestAccess(to: ProfileAccountRenameAccess.requiredScopes)
       return
     }
-    renaming = true
+    renameActionPhase = .loading
     renameError = nil
     do {
       try await model.renameActiveAccount(
         to: renameText.trimmingCharacters(in: .whitespaces))
-      showsRename = false
+      renameActionPhase = .succeeded
     } catch {
+      renameActionPhase = .idle
       renameError = error.dashActionableMessage
     }
-    renaming = false
+  }
+
+  private func completeRenamePresentation() {
+    guard renameActionPhase == .succeeded else { return }
+    showsRename = false
+    renameActionPhase = .idle
   }
 
   private func profileField(label: String, value: String, mono: Bool = false) -> some View {

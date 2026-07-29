@@ -332,7 +332,8 @@ struct PagesDeploymentDetailView: View {
   @State private var error: String?
   @State private var logsError: String?
   @State private var actionError: String?
-  @State private var working = false
+  @State private var retryPhase: DashActionPhase = .idle
+  @State private var rollbackPhase: DashActionPhase = .idle
   @State private var confirmingRollback = false
   @State private var hasPresentedContent = false
   @State private var replacementDeploymentID: String?
@@ -341,6 +342,10 @@ struct PagesDeploymentDetailView: View {
 
   private var monitoredDeploymentID: String {
     replacementDeploymentID ?? deploymentID
+  }
+
+  private var working: Bool {
+    retryPhase.isActive || rollbackPhase.isActive
   }
 
   private var monitorKey: PagesBuildMonitorKey? {
@@ -445,7 +450,8 @@ struct PagesDeploymentDetailView: View {
           VStack(spacing: 10) {
             DashActionButton(
               title: "Retry deployment",
-              isLoading: working && !confirmingRollback
+              phase: retryPhase,
+              onSuccessPresentationCompleted: { retryPhase = .idle }
             ) {
               Task { await retry() }
             }
@@ -455,8 +461,9 @@ struct PagesDeploymentDetailView: View {
               DashActionButton(
                 title: confirmingRollback ? "Hold to confirm" : "Rollback to this",
                 role: .destructive,
-                isLoading: working && confirmingRollback,
-                holdToConfirm: confirmingRollback
+                phase: rollbackPhase,
+                holdToConfirm: confirmingRollback,
+                onSuccessPresentationCompleted: completeRollbackPresentation
               ) {
                 if confirmingRollback {
                   Task { await rollback() }
@@ -621,15 +628,17 @@ struct PagesDeploymentDetailView: View {
     let context = AccountRequestContext(
       accountID: key.accountID,
       generation: key.accountGeneration)
-    working = true
+    retryPhase = .loading
     actionError = nil
-    defer { working = false }
     do {
       let created = try await model.client.retryPagesDeployment(
         accountID: key.accountID,
         projectName: key.projectName,
         deploymentID: key.deploymentID)
-      guard model.isCurrentAccount(context), monitorKey == key else { return }
+      guard model.isCurrentAccount(context), monitorKey == key else {
+        retryPhase = .idle
+        return
+      }
       model.featureCache.remove(
         FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
       model.toasts.success(DashL10n.string("Retry started."))
@@ -647,7 +656,10 @@ struct PagesDeploymentDetailView: View {
           deployment: created,
           key: replacementKey,
           client: model.client)
-        guard model.isCurrentAccount(context), monitorKey == key else { return }
+        guard model.isCurrentAccount(context), monitorKey == key else {
+          retryPhase = .idle
+          return
+        }
         observedKey = replacementKey
         deployment = created
         hasPresentedContent = true
@@ -660,11 +672,22 @@ struct PagesDeploymentDetailView: View {
           deployment: created,
           key: key,
           client: model.client)
-        guard model.isCurrentAccount(context), monitorKey == key else { return }
+        guard model.isCurrentAccount(context), monitorKey == key else {
+          retryPhase = .idle
+          return
+        }
         await refreshManually()
       }
+      guard !Task.isCancelled else {
+        retryPhase = .idle
+        return
+      }
+      retryPhase = .succeeded
     } catch {
-      guard model.isCurrentAccount(context), monitorKey == key else { return }
+      retryPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context), monitorKey == key else {
+        return
+      }
       actionError = error.dashActionableMessage
       DashDelight.failError()
     }
@@ -675,25 +698,36 @@ struct PagesDeploymentDetailView: View {
     let context = AccountRequestContext(
       accountID: key.accountID,
       generation: key.accountGeneration)
-    working = true
+    rollbackPhase = .loading
     actionError = nil
-    defer { working = false }
     do {
       _ = try await model.client.rollbackPagesDeployment(
         accountID: key.accountID,
         projectName: key.projectName,
         deploymentID: key.deploymentID)
-      guard model.isCurrentAccount(context), monitorKey == key else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
+        rollbackPhase = .idle
+        return
+      }
       model.featureCache.remove(
         FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
-      confirmingRollback = false
       model.toasts.success(DashL10n.string("Rolled back successfully."))
-      await refreshManually()
+      rollbackPhase = .succeeded
     } catch {
-      guard model.isCurrentAccount(context), monitorKey == key else { return }
+      rollbackPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context), monitorKey == key else {
+        return
+      }
       actionError = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeRollbackPresentation() {
+    guard rollbackPhase == .succeeded else { return }
+    rollbackPhase = .idle
+    confirmingRollback = false
+    Task { await refreshManually() }
   }
 }
 
@@ -706,7 +740,7 @@ struct PagesDomainsView: View {
   @State private var error: String?
   @State private var addsDomain = false
   @State private var selected: PagesDomain?
-  @State private var deleting = false
+  @State private var deletePhase: DashActionPhase = .idle
   @State private var deleteError: String?
 
   var body: some View {
@@ -787,7 +821,8 @@ struct PagesDomainsView: View {
           deleteMessage: featureAllowsWrites
             ? DashL10n.string("Detach \(domain.name) from \(projectName).")
             : nil,
-          isDeleting: deleting,
+          deletePhase: deletePhase,
+          onDeleteSuccessPresentationCompleted: completeDeletePresentation,
           deleteError: deleteError,
           onDelete: featureAllowsWrites ? { Task { await remove(domain) } } : nil
         )
@@ -817,22 +852,33 @@ struct PagesDomainsView: View {
   }
 
   private func remove(_ domain: PagesDomain) async {
-    guard let accountID = model.activeAccountID else { return }
-    deleting = true
+    guard let context = model.accountRequestContext else { return }
+    deletePhase = .loading
     deleteError = nil
-    defer { deleting = false }
     do {
       try await model.client.deletePagesDomain(
-        accountID: accountID, projectName: projectName, domainName: domain.name)
+        accountID: context.accountID, projectName: projectName, domainName: domain.name)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        deletePhase = .idle
+        return
+      }
       model.featureCache.remove(
-        FeatureCacheKey.pagesDomains(accountID: accountID, name: projectName))
-      selected = nil
+        FeatureCacheKey.pagesDomains(accountID: context.accountID, name: projectName))
       model.toasts.success(DashL10n.string("Deleted successfully."))
-      await load(force: true)
+      deletePhase = .succeeded
     } catch {
+      deletePhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       deleteError = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeDeletePresentation() {
+    guard deletePhase == .succeeded else { return }
+    deletePhase = .idle
+    selected = nil
+    Task { await load(force: true) }
   }
 }
 
@@ -842,7 +888,7 @@ struct PagesAddDomainForm: View {
   let projectName: String
   let onAdded: () async -> Void
   @State private var hostname = ""
-  @State private var saving = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
   private var normalized: String {
@@ -852,7 +898,8 @@ struct PagesAddDomainForm: View {
   var body: some View {
     DashFormSheet(
       saveTitle: "Add domain",
-      isSaving: saving,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeSavePresentation,
       canSave: normalized.contains("."),
       onSave: { Task { await save() } },
       content: {
@@ -877,22 +924,34 @@ struct PagesAddDomainForm: View {
     guard let context = model.accountRequestContext else { return }
     let client = model.client
     let domain = normalized
-    saving = true
-    defer { saving = false }
+    actionPhase = .loading
+    error = nil
     do {
       try await client.addPagesDomain(
         accountID: context.accountID, projectName: projectName, name: domain)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.featureCache.remove(
         FeatureCacheKey.pagesDomains(accountID: context.accountID, name: projectName))
       model.toasts.success(DashL10n.string("Added successfully."))
-      await onAdded()
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      dismiss()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeSavePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    actionPhase = .idle
+    dismiss()
+    Task { await onAdded() }
   }
 }
 

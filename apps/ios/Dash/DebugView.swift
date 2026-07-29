@@ -10,7 +10,7 @@
     @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
     @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
       true
-    @State private var holdDemoWorking = false
+    @State private var holdDemoPhase: DashActionPhase = .idle
     @State private var probeRunning = false
     @State private var probeResult: String?
 
@@ -246,14 +246,19 @@
             DashActionButton(
               title: "Hold to confirm",
               role: .destructive,
-              isLoading: holdDemoWorking,
-              holdToConfirm: true
+              phase: holdDemoPhase,
+              holdToConfirm: true,
+              onSuccessPresentationCompleted: { holdDemoPhase = .idle }
             ) {
-              holdDemoWorking = true
+              holdDemoPhase = .loading
               model.toasts.success("Hold confirmed.")
               Task {
-                try? await Task.sleep(for: .milliseconds(600))
-                holdDemoWorking = false
+                do {
+                  try await Task.sleep(for: .milliseconds(600))
+                  holdDemoPhase = .succeeded
+                } catch {
+                  holdDemoPhase = .idle
+                }
               }
             }
           }

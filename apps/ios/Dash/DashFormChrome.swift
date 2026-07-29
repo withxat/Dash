@@ -19,10 +19,10 @@ enum DashFormDeletionPresentation: Equatable, Sendable {
 /// canonical editor tray.
 struct DashFormSheet<Content: View>: View {
   var saveTitle = "Save"
-  var isSaving = false
+  var actionPhase: DashActionPhase = .idle
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   var canSave = true
   var deleteMessage: String? = nil
-  var isDeleting = false
   /// Failure of the last delete attempt, shown inline while confirming so the
   /// morph stays open instead of pretending success.
   var deleteError: String? = nil
@@ -44,7 +44,8 @@ struct DashFormSheet<Content: View>: View {
     DashConfirmMorph(
       confirming: $confirmingDelete,
       message: deleteMessage,
-      isBusy: confirmingDelete ? isDeleting : isSaving,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: onSuccessPresentationCompleted,
       actionTitle: saveTitle,
       confirmingActionTitle: "Delete",
       actionRole: nil,
@@ -72,7 +73,8 @@ struct DashFormSheet<Content: View>: View {
 struct DashConfirmMorph<Content: View>: View {
   @Binding var confirming: Bool
   var message: String?
-  var isBusy: Bool
+  var actionPhase: DashActionPhase = .idle
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   /// Idle primary action title. `nil` hides the footer button until confirming
   /// (detail trays that only offer header delete).
   var actionTitle: String?
@@ -118,12 +120,14 @@ struct DashConfirmMorph<Content: View>: View {
           DashTrayTextButton(title: DashL10n.string("Cancel")) {
             withAnimation(DashTheme.Motion.morphExit) { confirming = false }
           }
+          .disabled(actionPhase.isActive)
         } primary: {
           DashActionButton(
             title: confirmingActionTitle,
             role: confirmingActionRole,
-            isLoading: isBusy,
+            phase: actionPhase,
             holdToConfirm: true,
+            onSuccessPresentationCompleted: onSuccessPresentationCompleted,
             action: action
           )
           .disabled(!actionEnabled)
@@ -134,10 +138,14 @@ struct DashConfirmMorph<Content: View>: View {
         if let secondaryActionTitle, let secondaryAction {
           DashTrayActionPair {
             DashTrayTextButton(title: secondaryActionTitle, action: secondaryAction)
-              .disabled(!secondaryActionEnabled)
+              .disabled(!secondaryActionEnabled || actionPhase.isActive)
           } primary: {
             DashActionButton(
-              title: actionTitle, role: actionRole, isLoading: isBusy, action: action
+              title: actionTitle,
+              role: actionRole,
+              phase: actionPhase,
+              onSuccessPresentationCompleted: onSuccessPresentationCompleted,
+              action: action
             )
             .disabled(!actionEnabled)
             .opacity(actionEnabled ? 1 : 0.45)
@@ -145,7 +153,11 @@ struct DashConfirmMorph<Content: View>: View {
           .transition(morphTransition)
         } else {
           DashActionButton(
-            title: actionTitle, role: actionRole, isLoading: isBusy, action: action
+            title: actionTitle,
+            role: actionRole,
+            phase: actionPhase,
+            onSuccessPresentationCompleted: onSuccessPresentationCompleted,
+            action: action
           )
           .disabled(!actionEnabled)
           .opacity(actionEnabled ? 1 : 0.45)
@@ -159,7 +171,7 @@ struct DashConfirmMorph<Content: View>: View {
       alignment: .top
     )
     .dashTrayHeaderAction(
-      headerDelete && !confirming
+      headerDelete && !confirming && !actionPhase.isActive
         ? DashSheetHeaderAction(
           id: "delete", icon: SolarAsset.trash,
           accessibilityLabel: DashL10n.string("Delete")

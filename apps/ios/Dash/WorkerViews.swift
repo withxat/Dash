@@ -141,7 +141,8 @@ struct WorkerDetailView: View {
   @State private var deploymentError: String?
   @State private var selectedDeployment: WorkerDeploymentSummary?
   @State private var confirmingActivation = false
-  @State private var activatingDeployment = false
+  @State private var activationPhase: DashActionPhase = .idle
+  @State private var activationContext: AccountRequestContext?
   @State private var activationError: String?
   @State private var domains: [WorkerDomain] = []
   @State private var domainsError: String?
@@ -152,7 +153,7 @@ struct WorkerDetailView: View {
   @State private var routesLoadID = UUID()
   @State private var selectedRoute: WorkerZoneRoute?
   @State private var addsDomain = false
-  @State private var deletingDomain = false
+  @State private var deleteDomainPhase: DashActionPhase = .idle
   @State private var deleteDomainError: String?
   @State private var error: String?
   @State private var loading = true
@@ -313,7 +314,8 @@ struct WorkerDetailView: View {
               "Detaches \(domain.hostname) from \(name). DNS for the hostname is left in place."
             )
             : nil,
-          isDeleting: deletingDomain,
+          deletePhase: deleteDomainPhase,
+          onDeleteSuccessPresentationCompleted: completeDomainDeletionPresentation,
           deleteError: deleteDomainError,
           onDelete: featureAllowsWrites ? { Task { await detachDomain(domain) } } : nil
         )
@@ -428,7 +430,8 @@ struct WorkerDetailView: View {
         DashL10n.string(
           "Switch all traffic to version \($0.prefix(8)). Gradual rollouts are not supported.")
       },
-      isBusy: activatingDeployment,
+      actionPhase: activationPhase,
+      onSuccessPresentationCompleted: completeActivationPresentation,
       actionTitle: canActivate ? "Make active" : nil,
       confirmingActionTitle: "Switch traffic",
       confirmingActionRole: .destructive,
@@ -821,50 +824,78 @@ struct WorkerDetailView: View {
       let versionID = workerPrimaryVersionID(deployment)
     else { return }
     let accountID = context.accountID
-    activatingDeployment = true
+    activationPhase = .loading
+    activationContext = nil
     activationError = nil
-    defer { activatingDeployment = false }
     do {
       _ = try await model.client.createWorkerDeployment(
         accountID: accountID, scriptName: name, versionID: versionID,
         message: "Activated from Dash")
       try Task.checkCancellation()
-      guard model.isCurrentAccount(context) else { return }
+      guard model.isCurrentAccount(context) else {
+        activationPhase = .idle
+        return
+      }
       model.featureCache.remove(
         FeatureCacheKey.workerDeployments(accountID: accountID, name: name))
       invalidateWorkerDetailCache(context)
-      await loadDeployments(context: context, force: true)
-      guard model.isCurrentAccount(context) else { return }
-      confirmingActivation = false
-      selectedDeployment = nil
       model.toasts.success(DashL10n.string("Deployment activated."))
+      activationContext = context
+      activationPhase = .succeeded
     } catch {
+      activationPhase = .idle
+      activationContext = nil
       if error.dashIsCancellation || !model.isCurrentAccount(context) { return }
       activationError = error.dashActionableMessage
       DashDelight.failError()
     }
   }
 
+  private func completeActivationPresentation() {
+    guard activationPhase == .succeeded, let context = activationContext else { return }
+    confirmingActivation = false
+    selectedDeployment = nil
+    activationPhase = .idle
+    activationContext = nil
+    Task {
+      guard model.isCurrentAccount(context) else { return }
+      await loadDeployments(context: context, force: true)
+    }
+  }
+
   private func detachDomain(_ domain: WorkerDomain) async {
     guard let context = model.accountRequestContext else { return }
     let accountID = context.accountID
-    deletingDomain = true
+    deleteDomainPhase = .loading
     deleteDomainError = nil
-    defer { deletingDomain = false }
     do {
       try await model.client.detachWorkerDomain(accountID: accountID, domainID: domain.id)
       try Task.checkCancellation()
-      guard model.isCurrentAccount(context) else { return }
+      guard model.isCurrentAccount(context) else {
+        deleteDomainPhase = .idle
+        return
+      }
       model.featureCache.remove(FeatureCacheKey.workerDomains(accountID: accountID, name: name))
       invalidateWorkerDetailCache(context)
-      selectedDomain = nil
       model.toasts.success(DashL10n.string("Deleted successfully."))
       await loadDomains(context: context, force: true)
+      guard model.isCurrentAccount(context) else {
+        deleteDomainPhase = .idle
+        return
+      }
+      deleteDomainPhase = .succeeded
     } catch {
+      deleteDomainPhase = .idle
       if error.dashIsCancellation || !model.isCurrentAccount(context) { return }
       deleteDomainError = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeDomainDeletionPresentation() {
+    guard deleteDomainPhase == .succeeded else { return }
+    selectedDomain = nil
+    deleteDomainPhase = .idle
   }
 
   private func setSubdomain(_ enabled: Bool) async {
@@ -938,7 +969,7 @@ struct WorkerAddDomainForm: View {
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
   @State private var zonesContext: AccountRequestContext?
-  @State private var saving = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
   private var normalizedHost: String {
@@ -957,7 +988,8 @@ struct WorkerAddDomainForm: View {
   var body: some View {
     DashFormSheet(
       saveTitle: "Add domain",
-      isSaving: saving,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeSuccessPresentation,
       canSave: matchedZone != nil,
       onSave: { Task { await save() } },
       content: {
@@ -1020,14 +1052,17 @@ struct WorkerAddDomainForm: View {
       let zone = matchedZone
     else { return }
     let accountID = context.accountID
-    saving = true
-    defer { saving = false }
+    actionPhase = .loading
+    error = nil
     do {
       try await model.client.attachWorkerDomain(
         accountID: accountID, hostname: normalizedHost, service: service,
         zoneID: zone.id, zoneName: zone.name)
       try Task.checkCancellation()
-      guard model.isCurrentAccount(context) else { return }
+      guard model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.featureCache.remove(
         FeatureCacheKey.workerDomains(accountID: accountID, name: service))
       WorkerDetailCache.invalidate(
@@ -1035,13 +1070,22 @@ struct WorkerAddDomainForm: View {
         accountID: accountID,
         name: service)
       await onAdded()
-      guard model.isCurrentAccount(context) else { return }
+      guard model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Added successfully."))
-      dismiss()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       if error.dashIsCancellation || !model.isCurrentAccount(context) { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeSuccessPresentation() {
+    guard actionPhase == .succeeded else { return }
+    dismiss()
   }
 }
 

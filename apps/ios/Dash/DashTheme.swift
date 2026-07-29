@@ -287,6 +287,14 @@ enum DashTheme {
     // `nil` (instant) vs `reduced` for their reduce-motion branch.
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
+    /// Loading ring ↔ success glyph: mirrors the shared Transitions.dev icon
+    /// swap instead of borrowing the springier tray morph.
+    static let iconSwap = Animation.easeInOut(duration: 0.25)
+    /// Correctness fallback when the initiating button is dismissed before its
+    /// animation completion can report back.
+    @MainActor static var iconSwapFallbackDelay: Duration {
+      UIAccessibility.isReduceMotionEnabled ? .zero : .milliseconds(350)
+    }
 
     /// Reduce-motion fallback: position/scale drop out, a short opacity ease stays.
     static let reduced = Animation.easeOut(duration: 0.12)

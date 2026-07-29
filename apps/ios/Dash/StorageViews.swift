@@ -111,7 +111,7 @@ struct R2BucketView: View {
   @State private var cursor: String?
   @State private var error: String?
   @State private var loading = true
-  @State private var loadingMore = false
+  @State private var loadMorePhase: DashActionPhase = .idle
   @State private var importsFile = false
   @State private var selectedObject: R2Object?
   /// Survives folder/settings pushes (view merely disappears). Cancels in
@@ -238,9 +238,12 @@ struct R2BucketView: View {
           action: featureAllowsWrites ? { importsFile = true } : nil
         )
       }
-      if canLoadMore {
+      if canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
-          loaded: folders.count + objects.count, noun: "items", isLoading: loadingMore
+          loaded: folders.count + objects.count,
+          noun: "items",
+          phase: loadMorePhase,
+          onSuccessPresentationCompleted: { loadMorePhase = .idle }
         ) {
           Task { await loadMore() }
         }
@@ -385,7 +388,7 @@ struct R2BucketView: View {
     cursor = nil
     error = nil
     loading = request.context != nil
-    loadingMore = false
+    loadMorePhase = .idle
     importsFile = false
     selectedObject = nil
     selecting = false
@@ -923,14 +926,14 @@ struct R2BucketView: View {
       let context = request.context,
       canCommit(request),
       canLoadMore,
-      !loadingMore
+      loadMorePhase == .idle
     else { return }
     let id = context.accountID
     let requestedCursor = cursor
-    loadingMore = true
+    loadMorePhase = .loading
     defer {
-      if matchesCurrentRequest(request) {
-        loadingMore = false
+      if matchesCurrentRequest(request), loadMorePhase == .loading {
+        loadMorePhase = .idle
       }
     }
     // The user can hop folders while this request flies; appending the old
@@ -950,6 +953,7 @@ struct R2BucketView: View {
         FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: listedPrefix),
         R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
       error = nil
+      loadMorePhase = .succeeded
     } catch {
       guard canCommit(request), !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
@@ -1353,7 +1357,7 @@ struct KVNamespaceView: View {
   @State private var showsCreateKey = false
   @State private var error: String?
   @State private var loading = true
-  @State private var loadingMore = false
+  @State private var loadMorePhase: DashActionPhase = .idle
   @State private var loadedContext: AccountRequestContext?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
@@ -1397,8 +1401,13 @@ struct KVNamespaceView: View {
           }
         }
       }
-      if canLoadMore {
-        DashLoadMoreFooter(loaded: keys.count, noun: "keys", isLoading: loadingMore) {
+      if canLoadMore || loadMorePhase.isActive {
+        DashLoadMoreFooter(
+          loaded: keys.count,
+          noun: "keys",
+          phase: loadMorePhase,
+          onSuccessPresentationCompleted: { loadMorePhase = .idle }
+        ) {
           Task { await loadMore() }
         }
       }
@@ -1483,13 +1492,17 @@ struct KVNamespaceView: View {
   }
 
   private func loadMore() async {
-    guard let context = model.accountRequestContext, canLoadMore, !loadingMore else { return }
+    guard
+      let context = model.accountRequestContext,
+      canLoadMore,
+      loadMorePhase == .idle
+    else { return }
     let requestedCursor = cursor
     let client = model.client
-    loadingMore = true
+    loadMorePhase = .loading
     defer {
-      if model.isCurrentAccount(context) {
-        loadingMore = false
+      if model.isCurrentAccount(context), loadMorePhase == .loading {
+        loadMorePhase = .idle
       }
     }
     do {
@@ -1503,6 +1516,7 @@ struct KVNamespaceView: View {
           accountID: context.accountID, namespaceID: namespaceID, prefix: ""),
         CursorPageSnapshot(items: keys, cursor: cursor))
       error = nil
+      loadMorePhase = .succeeded
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
@@ -1517,7 +1531,7 @@ struct KVNamespaceView: View {
     cursor = nil
     error = nil
     loading = context != nil
-    loadingMore = false
+    loadMorePhase = .idle
     showsCreateKey = false
   }
 }
@@ -1533,13 +1547,14 @@ struct R2CreateBucketSheet: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   let onCreated: () -> Void
   @State private var name = ""
-  @State private var creating = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
   var body: some View {
     DashFormSheet(
       saveTitle: DashL10n.string("Create bucket"),
-      isSaving: creating,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeCreatePresentation,
       canSave: !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
       onSave: { Task { await create() } },
       content: {
@@ -1558,20 +1573,34 @@ struct R2CreateBucketSheet: View {
   }
 
   private func create() async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return }
-    creating = true
+    actionPhase = .loading
     error = nil
-    defer { creating = false }
     do {
-      _ = try await model.client.createR2Bucket(accountID: accountID, name: trimmed)
+      _ = try await model.client.createR2Bucket(accountID: context.accountID, name: trimmed)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Created successfully."))
-      onCreated()
-      dismiss()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeCreatePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    actionPhase = .idle
+    onCreated()
+    dismiss()
   }
 }
 
@@ -1583,7 +1612,7 @@ struct KVCreateKeySheet: View {
   let onCreated: () -> Void
   @State private var keyName = ""
   @State private var value = ""
-  @State private var creating = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
   @State private var canFormat = false
   @State private var valueFitsDisplayLimit = true
@@ -1592,7 +1621,8 @@ struct KVCreateKeySheet: View {
   var body: some View {
     DashFormSheet(
       saveTitle: DashL10n.string("Create key"),
-      isSaving: creating,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeCreatePresentation,
       canSave: !keyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         && valueFitsWriteLimit,
       onSave: { Task { await create() } },
@@ -1606,7 +1636,7 @@ struct KVCreateKeySheet: View {
             Text(DashL10n.string("Value"))
               .dashTextStyle(.footnoteSemibold)
               .foregroundStyle(DashTheme.subtle)
-            DashKVCodeEditor(text: $value, editable: !creating)
+            DashKVCodeEditor(text: $value, editable: actionPhase == .idle)
               .frame(minHeight: 160)
               .clipShape(
                 RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
@@ -1634,7 +1664,7 @@ struct KVCreateKeySheet: View {
             .disabled(!canFormat)
           }
         }
-        .disabled(creating)
+        .disabled(actionPhase.isActive)
       }
     )
     .task(id: value) {
@@ -1674,25 +1704,33 @@ struct KVCreateKeySheet: View {
     }
     let client = model.client
     let submittedData = Data(value.utf8)
-    creating = true
+    actionPhase = .loading
     error = nil
-    defer {
-      if model.isCurrentAccount(context) {
-        creating = false
-      }
-    }
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: trimmed,
         data: submittedData)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Created successfully."))
-      onCreated()
-      dismiss()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeCreatePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    actionPhase = .idle
+    onCreated()
+    dismiss()
   }
 }
 
@@ -1716,6 +1754,7 @@ struct KVKeyDetailView: View {
   @State private var loaded = false
   @State private var saving = false
   @State private var deleting = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var confirmingDelete = false
   @State private var copied = false
   @State private var loadedContext: AccountRequestContext?
@@ -1730,7 +1769,8 @@ struct KVKeyDetailView: View {
       DashConfirmMorph(
         confirming: $confirmingDelete,
         message: DashL10n.string("Permanently delete the key \(key)."),
-        isBusy: confirmingDelete ? deleting : saving,
+        actionPhase: actionPhase,
+        onSuccessPresentationCompleted: completeActionPresentation,
         actionTitle: footerTitle,
         confirmingActionTitle: "Delete",
         confirmingActionRole: .destructive,
@@ -1881,12 +1921,12 @@ struct KVKeyDetailView: View {
   }
 
   private var footerEnabled: Bool {
-    if confirmingDelete { return ownsCurrentAccount && !deleting }
+    if confirmingDelete { return ownsCurrentAccount }
     switch mode {
     case .viewing:
       return featureAllowsWrites && loaded && displayIssue == nil && ownsCurrentAccount
     case .editing:
-      return loaded && !saving && valueFitsWriteLimit && ownsCurrentAccount
+      return loaded && valueFitsWriteLimit && ownsCurrentAccount
     }
   }
 
@@ -1956,17 +1996,17 @@ struct KVKeyDetailView: View {
     let submittedValue = value
     let submittedData = Data(submittedValue.utf8)
     saving = true
+    actionPhase = .loading
     error = nil
-    defer {
-      if model.isCurrentAccount(context) {
-        saving = false
-      }
-    }
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key,
         data: submittedData)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        saving = false
+        actionPhase = .idle
+        return
+      }
       if KVJSONFormatting.isWithinDisplayLimit(byteCount: submittedData.count) {
         committedValue = submittedValue
         value = submittedValue
@@ -1980,8 +2020,10 @@ struct KVKeyDetailView: View {
       }
       invalidateKeys(context: context)
       model.toasts.success(DashL10n.string("Saved successfully."))
-      withAnimation(DashTheme.Motion.morph) { mode = .viewing }
+      actionPhase = .succeeded
     } catch {
+      saving = false
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
     }
@@ -1993,22 +2035,42 @@ struct KVKeyDetailView: View {
     else { return }
     let client = model.client
     deleting = true
+    actionPhase = .loading
     error = nil
-    defer {
-      if model.isCurrentAccount(context) {
-        deleting = false
-      }
-    }
     do {
       try await client.deleteKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        deleting = false
+        actionPhase = .idle
+        return
+      }
       invalidateKeys(context: context)
       model.toasts.success(DashL10n.string("Deleted successfully."))
-      navigator?.pop()
+      actionPhase = .succeeded
     } catch {
+      deleting = false
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
+    }
+  }
+
+  private func completeActionPresentation() {
+    guard actionPhase == .succeeded else {
+      saving = false
+      deleting = false
+      actionPhase = .idle
+      return
+    }
+    if deleting {
+      deleting = false
+      actionPhase = .idle
+      navigator?.pop()
+    } else {
+      saving = false
+      actionPhase = .idle
+      withAnimation(DashTheme.Motion.morph) { mode = .viewing }
     }
   }
 
@@ -2023,6 +2085,7 @@ struct KVKeyDetailView: View {
     loaded = false
     saving = false
     deleting = false
+    actionPhase = .idle
     confirmingDelete = false
     copied = false
     canFormat = false

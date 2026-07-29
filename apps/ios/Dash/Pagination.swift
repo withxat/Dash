@@ -102,7 +102,8 @@ struct DashLoadMoreFooter: View {
   var total: Int?
   var noun: String = "items"
   var caption: String?
-  let isLoading: Bool
+  let phase: DashActionPhase
+  var onSuccessPresentationCompleted: (@MainActor () -> Void)?
   let action: () -> Void
 
   var body: some View {
@@ -112,7 +113,12 @@ struct DashLoadMoreFooter: View {
           .font(.caption)
           .foregroundStyle(DashTheme.subtle)
       }
-      DashPillButton(title: "Load more", isLoading: isLoading, action: action)
+      DashPillButton(
+        title: "Load more",
+        phase: phase,
+        onSuccessPresentationCompleted: onSuccessPresentationCompleted,
+        action: action
+      )
     }
     .frame(maxWidth: .infinity)
     // Feature lists keep LazyVStack spacing at 0 for virtualized rows; the

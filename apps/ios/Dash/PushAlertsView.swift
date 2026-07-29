@@ -235,9 +235,11 @@ struct PushAlertsView: View {
   @State private var error: String?
   @State private var creatingPolicy = false
   @State private var applyingPreset: String?
+  @State private var presetPhase: DashActionPhase = .idle
   @State private var detail: NotificationPolicy?
-  @State private var toggling = false
-  @State private var deleting = false
+  @State private var togglePhase: DashActionPhase = .idle
+  @State private var pendingPolicyUpdate: NotificationPolicy?
+  @State private var deletePhase: DashActionPhase = .idle
   @State private var deleteError: String?
 
   /// One-tap presets. Every entry is filtered against `available_alerts` before
@@ -358,14 +360,16 @@ struct PushAlertsView: View {
           ],
           deleteMessage: allowsWrites
             ? DashL10n.string("Permanently delete the policy \(policy.title).") : nil,
-          isDeleting: deleting,
+          deletePhase: deletePhase,
+          onDeleteSuccessPresentationCompleted: completeDeletePresentation,
           deleteError: deleteError,
           onDelete: allowsWrites ? { Task { await deletePolicy(policy) } } : nil
         ) {
           if allowsWrites {
             DashActionButton(
               title: policy.enabled == false ? "Enable policy" : "Disable policy",
-              isLoading: toggling
+              phase: togglePhase,
+              onSuccessPresentationCompleted: completeTogglePresentation
             ) {
               Task { await toggle(policy) }
             }
@@ -403,9 +407,11 @@ struct PushAlertsView: View {
     error = nil
     creatingPolicy = false
     applyingPreset = nil
+    presetPhase = .idle
     detail = nil
-    toggling = false
-    deleting = false
+    togglePhase = .idle
+    pendingPolicyUpdate = nil
+    deletePhase = .idle
     deleteError = nil
     hasPresentedContent = false
   }
@@ -426,15 +432,19 @@ struct PushAlertsView: View {
                 showsChevron: false
               )
               if applyingPreset == option.type {
-                DashLoadingRing(color: DashTheme.brand)
-                  .frame(width: 22, height: 22)
-                  .padding(.trailing, 16)
+                DashActionStatusIcon(
+                  phase: presetPhase,
+                  loadingColor: DashTheme.brand,
+                  successColor: DashTheme.brand,
+                  onSuccessPresentationCompleted: completePresetPresentation
+                )
+                .padding(.trailing, 16)
               }
             }
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .dashListCardInset()
-          .disabled(applyingPreset != nil)
+          .disabled(presetPhase.isActive || loading)
         }
       }
     }
@@ -474,11 +484,7 @@ struct PushAlertsView: View {
     guard let context = model.accountRequestContext else { return }
     let accountID = context.accountID
     applyingPreset = type
-    defer {
-      if model.isCurrentAccount(context) {
-        applyingPreset = nil
-      }
-    }
+    presetPhase = .loading
     do {
       _ = try await model.client.createNotificationPolicy(
         accountID: accountID,
@@ -490,14 +496,31 @@ struct PushAlertsView: View {
             NotificationMechanismTarget(id: webhookID)
           ])
         ))
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        presetPhase = .idle
+        applyingPreset = nil
+        return
+      }
       model.toasts.success(DashL10n.string("Created successfully."))
-      await load(force: true)
+      presetPhase = .succeeded
     } catch {
+      presetPhase = .idle
+      applyingPreset = nil
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completePresetPresentation() {
+    guard presetPhase == .succeeded else {
+      presetPhase = .idle
+      applyingPreset = nil
+      return
+    }
+    presetPhase = .idle
+    applyingPreset = nil
+    Task { await load(force: true) }
   }
 
   private func toggle(_ policy: NotificationPolicy) async {
@@ -507,27 +530,38 @@ struct PushAlertsView: View {
     }
     guard let context = model.accountRequestContext else { return }
     let accountID = context.accountID
-    toggling = true
-    defer {
-      if model.isCurrentAccount(context) {
-        toggling = false
-      }
-    }
+    togglePhase = .loading
     do {
       let updated = try await model.client.updateNotificationPolicy(
         accountID: accountID,
         policyID: policy.id,
         input: policy.input(enabled: !(policy.enabled ?? true)))
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      detail = updated
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        if model.isCurrentAccount(context) { togglePhase = .idle }
+        return
+      }
+      pendingPolicyUpdate = updated
       let enabled = updated.enabled ?? true
       model.toasts.success(
         DashL10n.string(enabled ? "Policy enabled." : "Policy disabled."))
-      await load(force: true)
+      togglePhase = .succeeded
     } catch {
+      guard model.isCurrentAccount(context) else { return }
+      togglePhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       model.toasts.error(error.dashActionableMessage)
     }
+  }
+
+  private func completeTogglePresentation() {
+    guard togglePhase == .succeeded, let updated = pendingPolicyUpdate else {
+      togglePhase = .idle
+      return
+    }
+    pendingPolicyUpdate = nil
+    togglePhase = .idle
+    detail = updated
+    Task { await load(force: true) }
   }
 
   private func deletePolicy(_ policy: NotificationPolicy) async {
@@ -537,25 +571,30 @@ struct PushAlertsView: View {
     }
     guard let context = model.accountRequestContext else { return }
     let accountID = context.accountID
-    deleting = true
+    deletePhase = .loading
     deleteError = nil
-    defer {
-      if model.isCurrentAccount(context) {
-        deleting = false
-      }
-    }
     do {
       try await model.client.deleteNotificationPolicy(
         accountID: accountID, policyID: policy.id)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      detail = nil
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        deletePhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Deleted successfully."))
-      await load(force: true)
+      deletePhase = .succeeded
     } catch {
+      deletePhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       deleteError = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeDeletePresentation() {
+    guard deletePhase == .succeeded else { return }
+    deletePhase = .idle
+    detail = nil
+    Task { await load(force: true) }
   }
 }
 
@@ -598,7 +637,7 @@ private struct AlertPolicyCreateForm: View {
   @State private var name = ""
   @State private var selectedType = ""
   @State private var interval: AlertDigestInterval = .everyOccurrence
-  @State private var saving = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var saveError: String?
 
   private var alerts: [AvailableAlert] { groups.flatMap(\.alerts) }
@@ -611,7 +650,8 @@ private struct AlertPolicyCreateForm: View {
     DashFormSheet(
       saveTitle: allowsWrites
         ? "Create" : (model.isDemoSession ? "Connect your account" : "Grant access"),
-      isSaving: saving,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeCreatePresentation,
       canSave: allowsWrites ? !name.isEmpty && !selectedType.isEmpty : true,
       onSave: {
         if allowsWrites {
@@ -730,13 +770,8 @@ private struct AlertPolicyCreateForm: View {
     }
     guard let context = model.accountRequestContext, !selectedType.isEmpty else { return }
     let accountID = context.accountID
-    saving = true
+    actionPhase = .loading
     saveError = nil
-    defer {
-      if model.isCurrentAccount(context) {
-        saving = false
-      }
-    }
     do {
       _ = try await model.client.createNotificationPolicy(
         accountID: accountID,
@@ -749,13 +784,26 @@ private struct AlertPolicyCreateForm: View {
             NotificationMechanismTarget(id: webhookID)
           ])
         ))
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
       model.toasts.success(DashL10n.string("Created successfully."))
-      onCreated()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       saveError = error.dashActionableMessage
       DashDelight.failError()
     }
+  }
+
+  private func completeCreatePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    actionPhase = .idle
+    onCreated()
   }
 }

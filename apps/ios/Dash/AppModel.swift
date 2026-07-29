@@ -203,6 +203,14 @@ final class AppModel {
   }
   var errorMessage: String?
   var isAuthenticating = false
+  private(set) var authenticationActionPhase: DashActionPhase = .idle
+  private(set) var authenticationActionOwner: UUID?
+  private(set) var signOutActionPhase: DashActionPhase = .idle
+  private var grantedScopesPendingPresentation: Set<String>?
+  private var authenticationPresentationFallbackTask: Task<Void, Never>?
+  private var authenticationPresentationGeneration = 0
+  private var signOutPresentationFallbackTask: Task<Void, Never>?
+  private var signOutPresentationGeneration = 0
   var grantedScopes: Set<String>?
   var selectedScopes: Set<String>
   var user: CloudflareUser?
@@ -638,11 +646,20 @@ final class AppModel {
     }
   }
 
-  func signIn() {
-    authorize(scopes: DashAuthorizationScopes.core, preservesExistingSession: false)
+  func signIn(presentationOwner: UUID) {
+    authorize(
+      scopes: DashAuthorizationScopes.core,
+      preservesExistingSession: false,
+      presentsCompletion: true,
+      presentationOwner: presentationOwner
+    )
   }
 
-  func requestAccess(to scopes: Set<String>) {
+  func requestAccess(
+    to scopes: Set<String>,
+    presentsCompletion: Bool = false,
+    presentationOwner: UUID? = nil
+  ) {
     guard !scopes.isEmpty else { return }
     if isDemoSession {
       // The demo is intentionally read-only. A write CTA means "connect my
@@ -661,7 +678,12 @@ final class AppModel {
         granted: grantedScopes,
         requested: scopes)
     else { return }
-    authorize(scopes: requested, preservesExistingSession: true)
+    authorize(
+      scopes: requested,
+      preservesExistingSession: true,
+      presentsCompletion: presentsCompletion,
+      presentationOwner: presentationOwner
+    )
   }
 
   static func demoAccessRequiresConnection(_ scopes: Set<String>) -> Bool {
@@ -695,7 +717,12 @@ final class AppModel {
     return scopes.isSubset(of: grantedScopes)
   }
 
-  private func authorize(scopes: Set<String>, preservesExistingSession: Bool) {
+  private func authorize(
+    scopes: Set<String>,
+    preservesExistingSession: Bool,
+    presentsCompletion: Bool,
+    presentationOwner: UUID?
+  ) {
     guard !isAuthenticating else { return }
     guard configuration.isConfigured else {
       errorMessage = "Add DASH_CLIENT_ID and DASH_REDIRECT_URI to Config/Secrets.xcconfig."
@@ -714,6 +741,10 @@ final class AppModel {
       scopes: requestedScopes.sorted()
     )
     isAuthenticating = true
+    cancelAuthenticationPresentationFallback()
+    authenticationActionPhase = .loading
+    authenticationActionOwner = presentsCompletion ? presentationOwner : nil
+    grantedScopesPendingPresentation = nil
     errorMessage = nil
     let session = ASWebAuthenticationSession(
       url: authorizationURL, callbackURLScheme: configuration.callbackScheme
@@ -722,12 +753,16 @@ final class AppModel {
         guard let self else { return }
         if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
           isAuthenticating = false
+          authenticationActionPhase = .idle
+          authenticationActionOwner = nil
           return
         }
         guard error == nil, let url,
           let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
           isAuthenticating = false
+          authenticationActionPhase = .idle
+          authenticationActionOwner = nil
           errorMessage = error?.localizedDescription ?? "OAuth callback was invalid."
           return
         }
@@ -735,6 +770,8 @@ final class AppModel {
           uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         guard values["state"] == state, let code = values["code"] else {
           isAuthenticating = false
+          authenticationActionPhase = .idle
+          authenticationActionOwner = nil
           errorMessage = values["error_description"] ?? values["error"] ?? "OAuth state mismatch."
           return
         }
@@ -758,6 +795,8 @@ final class AppModel {
           // If the old credential cannot be snapshotted completely, leave it
           // untouched instead of beginning a replacement we cannot roll back.
           isAuthenticating = false
+          authenticationActionPhase = .idle
+          authenticationActionOwner = nil
           errorMessage = error.localizedDescription
           return
         }
@@ -776,24 +815,41 @@ final class AppModel {
             tokens.scope.map { Set($0.split(separator: " ").map(String.init)) }
             ?? requestedScopes
           try await tokenStore.setGrantedScopes(granted)
-          grantedScopes = granted
+          if preservesExistingSession, presentsCompletion {
+            // Keep the initiating permission action mounted through its success
+            // swap; publishing the wider grant first removes that UI.
+            grantedScopesPendingPresentation = granted
+          } else {
+            grantedScopes = granted
+          }
           selectedScopes = granted
           resetAccountScopedWork()
           try await loadIdentity()
           if preservesExistingSession {
             // A legacy grant upgrade stays on the current screen so the user
             // can retry the action that led them to the consent sheet.
-            isAuthenticating = false
+            if presentsCompletion {
+              authenticationActionPhase = .succeeded
+              armAuthenticationPresentationFallback()
+            } else {
+              isAuthenticating = false
+              authenticationActionPhase = .idle
+              authenticationActionOwner = nil
+            }
           } else {
-            // Let the browser sheet finish dismissing first, or the login →
-            // catalog transition plays hidden behind it and sign-in reads as a
-            // hard cut.
+            // AppRoot holds the onboarding surface until the shared success
+            // icon swap reports logical completion. First let the system
+            // browser sheet finish dismissing so that swap remains visible.
             try? await Task.sleep(for: .milliseconds(280))
+            authenticationActionPhase = .succeeded
+            armAuthenticationPresentationFallback()
             authState = .authenticated
-            isAuthenticating = false
           }
         } catch {
           isAuthenticating = false
+          authenticationActionPhase = .idle
+          authenticationActionOwner = nil
+          grantedScopesPendingPresentation = nil
           let restoredPreviousCredential =
             await handleCredentialReplacementFailure(
               replacementPrepared: credentialReplacementPrepared,
@@ -821,9 +877,50 @@ final class AppModel {
       guard let self, self.authSession === session else { return }
       if !session.start() {
         self.isAuthenticating = false
+        self.authenticationActionPhase = .idle
+        self.authenticationActionOwner = nil
         self.errorMessage = "Could not start the sign-in session."
       }
     }
+  }
+
+  func completeAuthenticationActionPresentation(owner: UUID) {
+    guard authenticationActionOwner == owner else { return }
+    finalizeAuthenticationActionPresentation()
+  }
+
+  private func finalizeAuthenticationActionPresentation() {
+    guard authenticationActionPhase == .succeeded else { return }
+    cancelAuthenticationPresentationFallback()
+    authenticationActionPhase = .idle
+    authenticationActionOwner = nil
+    isAuthenticating = false
+    if let grantedScopesPendingPresentation {
+      self.grantedScopesPendingPresentation = nil
+      grantedScopes = grantedScopesPendingPresentation
+    }
+  }
+
+  private func armAuthenticationPresentationFallback() {
+    authenticationPresentationGeneration &+= 1
+    let generation = authenticationPresentationGeneration
+    authenticationPresentationFallbackTask?.cancel()
+    authenticationPresentationFallbackTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: DashTheme.Motion.iconSwapFallbackDelay)
+      guard
+        let self,
+        !Task.isCancelled,
+        self.authenticationPresentationGeneration == generation,
+        self.authenticationActionPhase == .succeeded
+      else { return }
+      self.finalizeAuthenticationActionPresentation()
+    }
+  }
+
+  private func cancelAuthenticationPresentationFallback() {
+    authenticationPresentationGeneration &+= 1
+    authenticationPresentationFallbackTask?.cancel()
+    authenticationPresentationFallbackTask = nil
   }
 
   private func replaceStoredTokens(with tokens: TokenSet) async throws {
@@ -917,7 +1014,7 @@ final class AppModel {
   /// Tears down the demo session: restores the real client and returns to
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
-  private func exitDemo() {
+  private func exitDemo(setsAuthenticationState: Bool = true) {
     deferredDeletions.discardEphemeralCredentialStatePreservingRecovery()
     resetAccountScopedWork()
     isDemoSession = false
@@ -931,6 +1028,7 @@ final class AppModel {
     user = nil
     activeAccountID = nil
     grantedScopes = nil
+    grantedScopesPendingPresentation = nil
     selectedScopes = DashAuthorizationScopes.core
     identityStale = false
     watchtowerUnreadAlertCount = nil
@@ -941,20 +1039,35 @@ final class AppModel {
     toasts.clearAll()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
-    authState = .unauthenticated
+    if setsAuthenticationState {
+      authState = .unauthenticated
+    }
   }
 
-  func signOut() async {
+  func signOut(presentsCompletion: Bool = false) async {
     if isDemoSession {
-      exitDemo()
+      cancelSignOutPresentationFallback()
+      signOutActionPhase = presentsCompletion ? .loading : .idle
+      exitDemo(setsAuthenticationState: !presentsCompletion)
       await Task.yield()
       await R2TemporaryFile.removeAllFiles()
+      if presentsCompletion {
+        signOutActionPhase = .succeeded
+        armSignOutPresentationFallback()
+        authState = .unauthenticated
+      }
       return
     }
     guard !isSigningOut else { return }
+    cancelSignOutPresentationFallback()
     isSigningOut = true
+    signOutActionPhase = presentsCompletion ? .loading : .idle
     defer { isSigningOut = false }
     isAuthenticating = false
+    cancelAuthenticationPresentationFallback()
+    authenticationActionPhase = .idle
+    authenticationActionOwner = nil
+    grantedScopesPendingPresentation = nil
     // This handshake runs before token revocation so an in-flight DELETE never
     // resumes under a replacement credential.
     await deferredDeletions.prepareForCredentialReplacement()
@@ -1020,6 +1133,10 @@ final class AppModel {
     MetricsWidgetPublisher.clear()
     UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
     R2ShareDestination.clear()
+    if presentsCompletion {
+      signOutActionPhase = .succeeded
+      armSignOutPresentationFallback()
+    }
     authState = .unauthenticated
     errorMessage =
       pushCleanupFailureCount == 0
@@ -1029,6 +1146,34 @@ final class AppModel {
     // before removing the session's temporary R2 files.
     await Task.yield()
     await R2TemporaryFile.removeAllFiles()
+  }
+
+  func completeSignOutActionPresentation() {
+    guard signOutActionPhase == .succeeded else { return }
+    cancelSignOutPresentationFallback()
+    signOutActionPhase = .idle
+  }
+
+  private func armSignOutPresentationFallback() {
+    signOutPresentationGeneration &+= 1
+    let generation = signOutPresentationGeneration
+    signOutPresentationFallbackTask?.cancel()
+    signOutPresentationFallbackTask = Task { @MainActor [weak self] in
+      try? await Task.sleep(for: DashTheme.Motion.iconSwapFallbackDelay)
+      guard
+        let self,
+        !Task.isCancelled,
+        self.signOutPresentationGeneration == generation,
+        self.signOutActionPhase == .succeeded
+      else { return }
+      self.completeSignOutActionPresentation()
+    }
+  }
+
+  private func cancelSignOutPresentationFallback() {
+    signOutPresentationGeneration &+= 1
+    signOutPresentationFallbackTask?.cancel()
+    signOutPresentationFallbackTask = nil
   }
 
   func selectAccount(_ account: CloudflareAccount) {

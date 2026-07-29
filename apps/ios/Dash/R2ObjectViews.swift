@@ -370,7 +370,7 @@ struct R2BucketSettingsView: View {
   @State private var togglingManaged = false
   @State private var addsDomain = false
   @State private var selectedDomain: R2CustomDomain?
-  @State private var deletingDomain = false
+  @State private var deleteDomainPhase: DashActionPhase = .idle
   @State private var deleteError: String?
   @State private var showsDeleteBucket = false
 
@@ -411,7 +411,8 @@ struct R2BucketSettingsView: View {
               "Detaches \(domain.domain) from \(bucket). The domain's DNS record is removed; the zone itself is untouched."
             )
             : nil,
-          isDeleting: deletingDomain,
+          deletePhase: deleteDomainPhase,
+          onDeleteSuccessPresentationCompleted: completeDomainDeletionPresentation,
           deleteError: deleteError,
           onDelete: featureAllowsWrites ? { Task { await remove(domain) } } : nil
         )
@@ -453,7 +454,8 @@ struct R2BucketSettingsView: View {
       title: DashL10n.string("Delete bucket"),
       message: DashL10n.string(
         "Permanently deletes \(bucket). The bucket must be empty. This can't be undone."
-      )
+      ),
+      onSuccessPresentationCompleted: completeBucketDeletionPresentation
     ) {
       try await deleteBucket()
     }
@@ -606,26 +608,39 @@ struct R2BucketSettingsView: View {
 
   private func remove(_ domain: R2CustomDomain) async {
     guard let accountID = model.activeAccountID else { return }
-    deletingDomain = true
-    defer { deletingDomain = false }
+    deleteDomainPhase = .loading
+    deleteError = nil
     do {
       try await model.client.deleteR2CustomDomain(
         accountID: accountID, bucket: bucket, domain: domain.domain)
-      selectedDomain = nil
       model.toasts.success(DashL10n.string("Deleted successfully."))
       await load(force: true)
+      deleteDomainPhase = .succeeded
     } catch {
+      deleteDomainPhase = .idle
       deleteError = error.dashActionableMessage
     }
   }
 
+  private func completeDomainDeletionPresentation() {
+    guard deleteDomainPhase == .succeeded else { return }
+    selectedDomain = nil
+    deleteDomainPhase = .idle
+  }
+
   private func deleteBucket() async throws {
-    guard let accountID = model.activeAccountID else { return }
-    try await model.client.deleteR2Bucket(accountID: accountID, name: bucket)
-    model.featureCache.remove(FeatureCacheKey.r2Buckets(accountID))
+    guard let context = model.accountRequestContext else { throw CancellationError() }
+    try await model.client.deleteR2Bucket(accountID: context.accountID, name: bucket)
+    try Task.checkCancellation()
+    guard model.isCurrentAccount(context) else { throw CancellationError() }
+    model.featureCache.remove(FeatureCacheKey.r2Buckets(context.accountID))
     model.featureCache.remove(
-      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
-    model.featureCache.remove(FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucket))
+      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: context.accountID, bucket: bucket))
+    model.featureCache.remove(
+      FeatureCacheKey.r2Domains(accountID: context.accountID, bucket: bucket))
+  }
+
+  private func completeBucketDeletionPresentation() {
     navigator?.path.removeAll { destination in
       switch destination {
       case .r2Bucket(let name, _), .r2BucketSettings(let name):
@@ -680,7 +695,7 @@ private struct R2AddDomainForm: View {
   @State private var hostname = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
-  @State private var saving = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
   private var normalizedHost: String {
@@ -699,7 +714,8 @@ private struct R2AddDomainForm: View {
   var body: some View {
     DashFormSheet(
       saveTitle: "Add domain",
-      isSaving: saving,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeSuccessPresentation,
       canSave: matchedZone != nil,
       onSave: { Task { await save() } },
       content: {
@@ -745,16 +761,22 @@ private struct R2AddDomainForm: View {
 
   private func save() async {
     guard let accountID = model.activeAccountID, let zone = matchedZone else { return }
-    saving = true
-    defer { saving = false }
+    actionPhase = .loading
+    error = nil
     do {
       try await model.client.addR2CustomDomain(
         accountID: accountID, bucket: bucket, domain: normalizedHost, zoneID: zone.id)
       model.toasts.success(DashL10n.string("Added successfully."))
       await onAdded()
-      dismiss()
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func completeSuccessPresentation() {
+    guard actionPhase == .succeeded else { return }
+    dismiss()
   }
 }

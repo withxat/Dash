@@ -221,7 +221,9 @@ struct MainTabView: View {
         featuresNavigator.reset()
         watchtowerNavigator.reset()
         watchtowerCustomization.cancelEditing()
-        showsProfile = false
+        if model.signOutActionPhase == .idle {
+          showsProfile = false
+        }
         showsIgnoreAllAlerts = false
         if let route = routeAfterAccountSwitch {
           routeAfterAccountSwitch = nil

@@ -59,6 +59,7 @@ struct FeatureWriteAccessNotice: View {
   @Environment(AppModel.self) private var model
   let message: String
   let scopes: Set<String>
+  @State private var authenticationActionOwner = UUID()
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -66,11 +67,24 @@ struct FeatureWriteAccessNotice: View {
       DashAuthorizationDisclosure()
       DashPillButton(
         title: model.isDemoSession ? "Connect your account" : "Grant access",
-        isLoading: model.isAuthenticating
+        phase: ownedAuthenticationPhase,
+        onSuccessPresentationCompleted: {
+          model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
+        }
       ) {
-        model.requestAccess(to: scopes)
+        model.requestAccess(
+          to: scopes,
+          presentsCompletion: true,
+          presentationOwner: authenticationActionOwner
+        )
       }
     }
+  }
+
+  private var ownedAuthenticationPhase: DashActionPhase {
+    model.authenticationActionOwner == authenticationActionOwner
+      ? model.authenticationActionPhase
+      : .idle
   }
 }
 
@@ -198,6 +212,7 @@ extension EnvironmentValues {
 private struct FeatureAccessRequiredView: View {
   @Environment(AppModel.self) private var model
   let feature: FeatureID
+  @State private var authenticationActionOwner = UUID()
 
   var body: some View {
     ScrollView {
@@ -223,14 +238,27 @@ private struct FeatureAccessRequiredView: View {
           .fixedSize(horizontal: false, vertical: true)
           DashPillButton(
             title: "Grant access",
-            isLoading: model.isAuthenticating
+            phase: ownedAuthenticationPhase,
+            onSuccessPresentationCompleted: {
+              model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
+            }
           ) {
-            model.requestAccess(to: feature.capability.read)
+            model.requestAccess(
+              to: feature.capability.read,
+              presentsCompletion: true,
+              presentationOwner: authenticationActionOwner
+            )
           }
         }
       }
       .padding(DashTheme.Spacing.section)
     }
     .background(DashTheme.canvas)
+  }
+
+  private var ownedAuthenticationPhase: DashActionPhase {
+    model.authenticationActionOwner == authenticationActionOwner
+      ? model.authenticationActionPhase
+      : .idle
   }
 }

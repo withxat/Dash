@@ -11,7 +11,7 @@ struct CachePurgeView: View {
   @State private var url = ""
   @State private var status: String?
   @State private var failed = false
-  @State private var working = false
+  @State private var actionPhase: DashActionPhase = .idle
   @State private var showsMore = false
 
   private var requiredWriteScopes: Set<String> {
@@ -50,8 +50,9 @@ struct CachePurgeView: View {
               .disabled(!allowsWrites)
               DashPillButton(
                 title: "Purge URL",
-                isLoading: working,
-                isEnabled: allowsWrites && !url.isEmpty
+                phase: actionPhase,
+                isEnabled: allowsWrites && !url.isEmpty,
+                onSuccessPresentationCompleted: { actionPhase = .idle }
               ) {
                 Task { await purge(files: [url]) }
               }
@@ -90,7 +91,7 @@ struct CachePurgeView: View {
             "This removes every cached asset in this domain. Requests may temporarily reach your origin.",
           confirmTitle: "Purge everything"
         ) {
-          await purge(files: nil)
+          try await performPurge(files: nil)
         }
       ]
     )
@@ -101,17 +102,24 @@ struct CachePurgeView: View {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
-    working = true
+    actionPhase = .loading
     do {
-      try await model.client.purgeCache(zoneID: zoneID, files: files)
-      status = DashL10n.string("Cache purged.")
-      failed = false
-      model.toasts.success(DashL10n.string("Cache purged."))
+      try await performPurge(files: files)
+      actionPhase = .succeeded
     } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation else { return }
       status = error.dashActionableMessage
       failed = true
     }
-    working = false
+  }
+
+  private func performPurge(files: [String]?) async throws {
+    try await model.client.purgeCache(zoneID: zoneID, files: files)
+    try Task.checkCancellation()
+    status = DashL10n.string("Cache purged.")
+    failed = false
+    model.toasts.success(DashL10n.string("Cache purged."))
   }
 }
 
