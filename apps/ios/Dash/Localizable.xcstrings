@@ -70,6 +70,17 @@
         }
       }
     },
+    "%@ deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已删除。"
+          }
+        }
+      }
+    },
     "%@ domains" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -131,6 +142,17 @@
         }
       }
     },
+    "%@ record %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 记录 %2$@"
+          }
+        }
+      }
+    },
     "%@ req" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -138,6 +160,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 次请求"
+          }
+        }
+      }
+    },
+    "%@ will be deleted in %lld seconds." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 将在 %2$lld 秒后删除。"
+          }
+        }
+      }
+    },
+    "%@ will be deleted in 1 second." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 将在 1 秒后删除。"
           }
         }
       }
@@ -240,6 +284,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 小时前"
+          }
+        }
+      }
+    },
+    "%lld items deleted, %lld failed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除 %1$lld 项，%2$lld 项失败。"
+          }
+        }
+      }
+    },
+    "%lld items deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除 %lld 项。"
+          }
+        }
+      }
+    },
+    "%lld items will be deleted in %lld seconds." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld 项将在 %2$lld 秒后删除。"
+          }
+        }
+      }
+    },
+    "%lld items will be deleted in 1 second." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 项将在 1 秒后删除。"
           }
         }
       }
@@ -1990,6 +2078,17 @@
         }
       }
     },
+    "Change profile photo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更换头像"
+          }
+        }
+      }
+    },
     "Charts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2062,17 +2161,6 @@
         }
       }
     },
-    "Checking whether Cloudflare completed the deletion…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在确认 Cloudflare 是否已完成删除…"
-          }
-        }
-      }
-    },
     "Checking network access for Cloudflare data…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2080,6 +2168,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在检查 Cloudflare 数据的网络访问…"
+          }
+        }
+      }
+    },
+    "Checking whether Cloudflare completed the deletion…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在确认 Cloudflare 是否已完成删除…"
           }
         }
       }
@@ -3441,6 +3540,17 @@
         }
       }
     },
+    "Custom photos are stored only in Dash on this iPhone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义头像仅保存在这台 iPhone 的 Dash 中。"
+          }
+        }
+      }
+    },
     "Customize" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3503,6 +3613,17 @@
         }
       }
     },
+    "Dash could not confirm the result yet. It will check again in the foreground." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 暂时无法确认结果，将在回到前台后再次检查。"
+          }
+        }
+      }
+    },
     "Dash couldn’t reach Cloudflare. Check your connection and try again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3516,6 +3637,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dash 无法连接 Cloudflare。请检查网络后重试。"
+          }
+        }
+      }
+    },
+    "Dash couldn’t update your profile photo. Try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 无法更新头像，请重试。"
+          }
+        }
+      }
+    },
+    "Dash couldn’t use this photo. Try another image." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 无法使用这张照片，请换一张图片重试。"
           }
         }
       }
@@ -3770,6 +3913,50 @@
         }
       }
     },
+    "Deleting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在删除"
+          }
+        }
+      }
+    },
+    "Deleting %lld items…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在删除 %lld 项…"
+          }
+        }
+      }
+    },
+    "Deleting 1 item…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在删除 1 项…"
+          }
+        }
+      }
+    },
+    "Deletion failed. %@ still exists." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除失败，%@ 仍然存在。"
+          }
+        }
+      }
+    },
     "Deletion failed. The item still exists." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3777,6 +3964,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除失败，该项目仍然存在。"
+          }
+        }
+      }
+    },
+    "Deletion still being confirmed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仍在确认删除"
           }
         }
       }
@@ -5204,6 +5402,7 @@
     },
     "Grant access to %@" : {
       "comment" : "A title for a view that lets the user grant access to a Cloudflare feature. The argument is the name of the feature.",
+      "extractionState" : "stale",
       "isCommentAutoGenerated" : true,
       "localizations" : {
         "zh-Hans" : {
@@ -5597,6 +5796,17 @@
         }
       }
     },
+    "iCloud" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud"
+          }
+        }
+      }
+    },
     "Ignore" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5930,6 +6140,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "继续长按以确认删除。"
+          }
+        }
+      }
+    },
+    "Keep selected Dash preferences in sync across iPhones using your iCloud account." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通过你的 iCloud 账户在多台 iPhone 之间同步选定的 Dash 偏好。"
           }
         }
       }
@@ -7305,6 +7526,17 @@
         }
       }
     },
+    "Only these preferences are synced. Accounts, credentials, alerts, and cached Cloudflare data stay on this iPhone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅同步这些偏好。账户、凭据、提醒和缓存的 Cloudflare 数据会保留在这台 iPhone 上。"
+          }
+        }
+      }
+    },
     "On for all domains" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7835,6 +8067,17 @@
       }
     },
     "Pending Delete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待删除"
+          }
+        }
+      }
+    },
+    "Pending deletion" : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
@@ -8459,6 +8702,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快捷操作"
+          }
+        }
+      }
+    },
+    "Quick actions, Shortcuts, Watchtower charts, and Top glow." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷操作、快捷方式、Watchtower 图表和顶部光晕。"
           }
         }
       }
@@ -9136,6 +9390,28 @@
         }
       }
     },
+    "Retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        }
+      }
+    },
+    "Retry deletion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试删除"
+          }
+        }
+      }
+    },
     "Retry deployment" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9147,13 +9423,24 @@
         }
       }
     },
-    "Retrying deletion…" : {
+    "Retry failed deletions" : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "正在重新删除…"
+            "value" : "重试失败的删除"
+          }
+        }
+      }
+    },
+    "Retry failures" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试失败项"
           }
         }
       }
@@ -9171,6 +9458,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已开始重试"
+          }
+        }
+      }
+    },
+    "Retrying deletion…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在重新删除…"
           }
         }
       }
@@ -9549,6 +9847,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置"
+          }
+        }
+      }
+    },
+    "Settings on this iPhone stay local." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这台 iPhone 上的设置会保留在本地。"
           }
         }
       }
@@ -9967,6 +10276,28 @@
         }
       }
     },
+    "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步已关闭。这些偏好会保留在这台 iPhone 上，iCloud 中现有的副本不会被删除。"
+          }
+        }
+      }
+    },
+    "Sync settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步设置"
+          }
+        }
+      }
+    },
     "Syntax highlighting" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10218,22 +10549,22 @@
         }
       }
     },
-    "This value is not UTF-8 text, so it cannot be viewed or edited. You can still copy or delete it." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此值不是 UTF-8 文本，无法查看或编辑。你仍可复制或删除它。"
-          }
-        }
-      }
-    },
     "This value exceeds Dash's 256 KiB viewer and editor limit. You can still copy or delete it." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "此值超过 Dash 的 256 KiB 查看与编辑上限。你仍可复制或删除它。"
+          }
+        }
+      }
+    },
+    "This value is not UTF-8 text, so it cannot be viewed or edited. You can still copy or delete it." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此值不是 UTF-8 文本，无法查看或编辑。你仍可复制或删除它。"
           }
         }
       }
@@ -10588,6 +10919,72 @@
         }
       }
     },
+    "Undo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销"
+          }
+        }
+      }
+    },
+    "Undo all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "全部撤销"
+          }
+        }
+      }
+    },
+    "Undo all available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以全部撤销。"
+          }
+        }
+      }
+    },
+    "Undo all deletions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销全部删除"
+          }
+        }
+      }
+    },
+    "Undo available." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "可以撤销。"
+          }
+        }
+      }
+    },
+    "Undo deletion" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撤销删除"
+          }
+        }
+      }
+    },
     "Unique visitors" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10879,6 +11276,17 @@
         }
       }
     },
+    "Use default avatar" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用默认头像"
+          }
+        }
+      }
+    },
     "Use lowercase letters, numbers, and hyphens." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11124,6 +11532,17 @@
         }
       }
     },
+    "Watchtower charts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchtower 图表"
+          }
+        }
+      }
+    },
     "Web analytics" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11202,6 +11621,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "今天要做什么？"
+          }
+        }
+      }
+    },
+    "What syncs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "同步内容"
           }
         }
       }
@@ -11444,281 +11874,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "你的每周 Cloudflare 摘要已生成。"
-          }
-        }
-      }
-    },
-    "%@ record %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ 记录 %2$@"
-          }
-        }
-      }
-    },
-    "%@ will be deleted in %lld seconds." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ 将在 %2$lld 秒后删除。"
-          }
-        }
-      }
-    },
-    "%@ deleted." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 已删除。"
-          }
-        }
-      }
-    },
-    "%@ will be deleted in 1 second." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 将在 1 秒后删除。"
-          }
-        }
-      }
-    },
-    "%lld items deleted." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已删除 %lld 项。"
-          }
-        }
-      }
-    },
-    "%lld items deleted, %lld failed." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已删除 %1$lld 项，%2$lld 项失败。"
-          }
-        }
-      }
-    },
-    "%lld items will be deleted in 1 second." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 项将在 1 秒后删除。"
-          }
-        }
-      }
-    },
-    "%lld items will be deleted in %lld seconds." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$lld 项将在 %2$lld 秒后删除。"
-          }
-        }
-      }
-    },
-    "Dash could not confirm the result yet. It will check again in the foreground." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dash 暂时无法确认结果，将在回到前台后再次检查。"
-          }
-        }
-      }
-    },
-    "Deleting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在删除"
-          }
-        }
-      }
-    },
-    "Deleting 1 item…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在删除 1 项…"
-          }
-        }
-      }
-    },
-    "Deleting %lld items…" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "正在删除 %lld 项…"
-          }
-        }
-      }
-    },
-    "Deletion failed. %@ still exists." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除失败，%@ 仍然存在。"
-          }
-        }
-      }
-    },
-    "Deletion still being confirmed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "仍在确认删除"
-          }
-        }
-      }
-    },
-    "Pending deletion" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "待删除"
-          }
-        }
-      }
-    },
-    "Retry" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试"
-          }
-        }
-      }
-    },
-    "Retry deletion" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试删除"
-          }
-        }
-      }
-    },
-    "Retry failed deletions" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试失败的删除"
-          }
-        }
-      }
-    },
-    "Retry failures" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重试失败项"
-          }
-        }
-      }
-    },
-    "Undo" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撤销"
-          }
-        }
-      }
-    },
-    "Undo all" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "全部撤销"
-          }
-        }
-      }
-    },
-    "Undo all available." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可以全部撤销。"
-          }
-        }
-      }
-    },
-    "Undo all deletions" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撤销全部删除"
-          }
-        }
-      }
-    },
-    "Undo available." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "可以撤销。"
-          }
-        }
-      }
-    },
-    "Undo deletion" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "撤销删除"
           }
         }
       }

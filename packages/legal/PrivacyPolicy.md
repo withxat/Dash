@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-Effective July 24, 2026.
+Effective July 29, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. Core account API requests go directly from your device to
@@ -37,9 +37,16 @@ advertising, or tracking.
   removed on completion, cancellation, or failure; abandoned staging
   directories older than one hour are removed the next time the share
   extension opens.
-- **Preferences** (home-screen shortcuts, recently opened resources, pinned
-  zones, the selected account, and Watchtower notification opt-in) are stored
-  locally in the app's own settings storage on your device.
+- **Preferences** are stored locally in the app's own settings storage on your
+  device. **iCloud Sync** is on by default and also stores only your Home quick
+  actions and shortcuts, Watchtower chart layout, and top-glow choice in your
+  iCloud key-value store so those preferences can follow you to another iPhone.
+  Accounts, credentials, account or resource identifiers, alerts, recently
+  opened resources, pinned zones, and cached Cloudflare data are not synced.
+  Turning iCloud Sync off stops Dash from handing new changes to iCloud or
+  applying incoming preferences. A change already queued by Apple's key-value
+  store may finish syncing afterward. Turning sync off does not delete the
+  existing iCloud copy used by another device.
 
 ## The relay worker
 
@@ -72,9 +79,16 @@ URL and your Cloudflare account.
 Other than the bounded registration and rate-limit Cache API entries described
 above, the relay has no KV, Durable Object, or database storage.
 
-## Gravatar avatars
+## Profile avatars
 
-To show a profile picture, Dash requests an avatar from `gravatar.com` using
+You can choose a custom profile photo in Dash. The app processes the photo on
+your device into a small square copy, removes the source metadata, and stores
+the copy only in Dash's local app storage. It is not uploaded to Cloudflare,
+the Dash relay, or an App Group shared with extensions. Choosing **Use default
+avatar** removes that local copy. Signing out keeps this user-scoped preference
+so it is available if the same Cloudflare user signs in again.
+
+When no custom photo is set, Dash requests an avatar from `gravatar.com` using
 an MD5 hash of your Cloudflare account email address. The request carries no
 Cloudflare credentials or cookies; if no Gravatar exists, Dash falls back to
 your initials. Gravatar is operated by Automattic Inc. and has its own
@@ -92,15 +106,17 @@ information you choose to share.
 
 Signing out revokes the OAuth token with Cloudflare, deletes it from your
 Keychain, clears in-memory session data, and removes Dash's R2 temporary files.
-Deleting the app removes locally stored preferences and extension staging
-files. Registration snapshots and IP-based rate-limit counters expire
-automatically within the periods described above. Dash holds no persistent
-server-side copy of your Cloudflare account data.
+Deleting the app removes locally stored preferences, custom profile photos,
+and extension staging files. A synced preference copy can remain in your
+iCloud account so Dash can restore it after reinstalling. Registration
+snapshots and IP-based rate-limit counters expire automatically within the
+periods described above. Dash holds no persistent server-side copy of your
+Cloudflare account data.
 
 ## Changes
 
 If this policy ever changes, the change will be documented here with a new
-effective date, and any new data flow will be opt-in.
+effective date and the controls for any new data flow will be described.
 
 ## Contact
 
