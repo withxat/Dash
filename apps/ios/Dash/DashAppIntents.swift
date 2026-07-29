@@ -3,18 +3,24 @@ import CloudflareAPI
 import Foundation
 import UIKit
 
+/// AppEntity titles are Cloudflare/user data, not catalog keys. Building the
+/// resource at runtime keeps Swift's localization extractor from inventing a
+/// universal `%@` entry while preserving DisplayRepresentation's native API.
+private func dashIntentVerbatim(_ value: String) -> LocalizedStringResource {
+  LocalizedStringResource(stringLiteral: value)
+}
+
 /// Surfaced to Siri, Spotlight, and the Shortcuts app. In-app intents run in
 /// the app process, so they reuse the app's single `CloudflareClient` (via
 /// `@Dependency`) to preserve its single-flight token refresh.
 struct DashIntentError: Error, CustomLocalizedStringResourceConvertible {
-  let message: String
-  var localizedStringResource: LocalizedStringResource { "\(message)" }
+  let localizedStringResource: LocalizedStringResource
 
   static let signedOut = DashIntentError(
-    message: "Open Dash and sign in to your Cloudflare account first.")
+    localizedStringResource: "Open Dash and sign in to your Cloudflare account first.")
 
   static let writeAccessRequired = DashIntentError(
-    message:
+    localizedStringResource:
       "Open Dash → Settings → Shortcuts & Share, grant write access, then run this shortcut again."
   )
 }
@@ -52,7 +58,9 @@ struct ZoneEntity: AppEntity, Identifiable {
   let name: String
 
   static let typeDisplayRepresentation: TypeDisplayRepresentation = "Domain"
-  var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+  var displayRepresentation: DisplayRepresentation {
+    DisplayRepresentation(title: dashIntentVerbatim(name))
+  }
   static let defaultQuery = ZoneEntityQuery()
 
   init(id: String, name: String) {
@@ -397,7 +405,10 @@ struct R2BucketEntity: AppEntity, Identifiable {
 
   static let typeDisplayRepresentation: TypeDisplayRepresentation = "R2 Bucket"
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(name)", subtitle: "\(accountName)")
+    DisplayRepresentation(
+      title: dashIntentVerbatim(name),
+      subtitle: dashIntentVerbatim(accountName)
+    )
   }
   static let defaultQuery = R2BucketEntityQuery()
 
@@ -458,7 +469,7 @@ struct R2BucketEntityQuery: EntityStringQuery {
     try identifiers.map { identifier in
       guard let decoded = R2BucketEntity.decodeIdentifier(identifier) else {
         throw DashIntentError(
-          message:
+          localizedStringResource:
             "This shortcut uses an older unscoped bucket. Edit it and choose the R2 bucket again.")
       }
       let accountName =
@@ -517,13 +528,14 @@ struct UploadToR2Intent: AppIntent {
     let remembered = R2ShareDestination.destination(accountID: accountID)
     if let bucket, bucket.accountID != accountID {
       throw DashIntentError(
-        message:
+        localizedStringResource:
           "This shortcut targets \(bucket.accountName). Switch to that account in Dash or choose a bucket from the active account."
       )
     }
     guard let bucketName = bucket?.name ?? remembered?.bucket else {
       throw DashIntentError(
-        message: "Pick a bucket — Dash has no remembered R2 destination for this account yet.")
+        localizedStringResource:
+          "Pick a bucket — Dash has no remembered R2 destination for this account yet.")
     }
     let accountName = bucket?.accountName ?? model.activeAccount?.name ?? "Account \(accountID)"
     let rawFolder =
@@ -536,7 +548,8 @@ struct UploadToR2Intent: AppIntent {
         dialog: "Upload \(file.filename) to \(bucketName) in \(accountName)?"))
     guard model.isCurrentAccount(context) else {
       throw DashIntentError(
-        message: "The active account changed before the upload started. Run the shortcut again.")
+        localizedStringResource:
+          "The active account changed before the upload started. Run the shortcut again.")
     }
 
     let inputFileURL = file.fileURL
@@ -551,10 +564,11 @@ struct UploadToR2Intent: AppIntent {
     let ownedTemporaryFile: R2TemporaryFile?
     if let fileURL = inputFileURL {
       guard let size = try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
-        throw DashIntentError(message: "Dash can't read \(file.filename).")
+        throw DashIntentError(localizedStringResource: "Dash can't read \(file.filename).")
       }
       guard size <= R2Media.transferSizeLimit else {
-        throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
+        throw DashIntentError(
+          localizedStringResource: "\(file.filename) is over the 100 MB upload limit.")
       }
       uploadURL = fileURL
       ownedTemporaryFile = nil
@@ -564,7 +578,8 @@ struct UploadToR2Intent: AppIntent {
       // stays zero-copy.
       let data = file.data
       guard data.count <= R2Media.transferSizeLimit else {
-        throw DashIntentError(message: "\(file.filename) is over the 100 MB upload limit.")
+        throw DashIntentError(
+          localizedStringResource: "\(file.filename) is over the 100 MB upload limit.")
       }
       let temporaryFile = R2TemporaryFile.make(
         purpose: "r2-intent-upload", filename: file.filename)
@@ -576,13 +591,16 @@ struct UploadToR2Intent: AppIntent {
 
     guard model.isCurrentAccount(context) else {
       throw DashIntentError(
-        message: "The active account changed before the upload started. Run the shortcut again.")
+        localizedStringResource:
+          "The active account changed before the upload started. Run the shortcut again.")
     }
     try await model.client.putR2Object(
       accountID: accountID, bucket: bucketName, key: key, fileURL: uploadURL,
       contentType: file.type?.preferredMIMEType ?? R2Media.mimeType(forKey: key))
     guard model.isCurrentAccount(context) else {
-      throw DashIntentError(message: "The active account changed before the upload finished.")
+      throw DashIntentError(
+        localizedStringResource:
+          "The active account changed before the upload finished.")
     }
     model.featureCache.remove(
       prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucketName))
@@ -618,7 +636,7 @@ struct UploadToR2Intent: AppIntent {
 
 struct OpenWatchtowerIntent: AppIntent {
   static let title: LocalizedStringResource = "Open Watchtower"
-  static let description = IntentDescription("Open Dash to the Watchtower health screen.")
+  static let description = IntentDescription("Open the Watchtower tab in Dash.")
   static let openAppWhenRun = true
 
   @Dependency private var model: AppModel

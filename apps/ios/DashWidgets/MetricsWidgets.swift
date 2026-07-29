@@ -4,6 +4,13 @@ import SwiftDitherKit
 import SwiftUI
 import WidgetKit
 
+/// AppEntity titles are account/domain data, not catalog keys. Constructing the
+/// resource at runtime prevents the compiler from inventing a universal `%@`
+/// localization entry for values that must be shown verbatim.
+private func widgetIntentVerbatim(_ value: String) -> LocalizedStringResource {
+  LocalizedStringResource(stringLiteral: value)
+}
+
 // MARK: - Configuration values
 
 extension MetricsWidgetRange: AppEnum {
@@ -67,7 +74,7 @@ struct MetricsWidgetAccountEntity: AppEntity, Identifiable {
   static let defaultQuery = MetricsWidgetAccountEntityQuery()
 
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(name)")
+    DisplayRepresentation(title: widgetIntentVerbatim(name))
   }
 
   init(id: String, name: String) {
@@ -98,7 +105,10 @@ struct MetricsWidgetDomainEntity: AppEntity, Identifiable {
   static let defaultQuery = MetricsWidgetDomainEntityQuery()
 
   var displayRepresentation: DisplayRepresentation {
-    DisplayRepresentation(title: "\(name)", subtitle: "\(accountName)")
+    DisplayRepresentation(
+      title: widgetIntentVerbatim(name),
+      subtitle: widgetIntentVerbatim(accountName)
+    )
   }
 
   init(
