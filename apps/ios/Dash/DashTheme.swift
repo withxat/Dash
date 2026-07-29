@@ -375,13 +375,31 @@ enum DashTheme {
   static let elevated = adaptive(light: 0xF8F8F8, dark: 0x060606)
   /// `color-kumo-recessed`
   static let recessed = adaptive(light: 0xF2F2F2, dark: 0x0B0B0B)
-  /// Home Domains card — `color-kumo-tint`.
-  static let homeDomainsSurface = adaptive(light: 0xF5F5F5, dark: 0x262626)
-  /// Header band across a bordered list group — `color-kumo-tint` / elevated
-  /// dark step so the band stays visible above the card fill.
-  static let listGroupHeaderSurface = adaptive(light: 0xF5F5F5, dark: 0x333333)
+  /// Home Domains card.
+  ///
+  /// The light value tracks `listGroupHeaderSurface` on purpose, not by
+  /// derivation: Domains, Shortcuts, and Recently used are three sibling
+  /// groups stacked on one screen, and their outer plates have to be one
+  /// tone. The two tokens stay separate because this one also fills the
+  /// expanded zone rows and backs the avatar-overlap ring — move that value
+  /// and look at this one in the same pass.
+  static let homeDomainsSurface = adaptive(light: 0xEDEDED, dark: 0x262626)
+  /// Header band across a two-tone list group — elevated dark step so the band
+  /// stays visible above the card fill.
+  ///
+  /// The light value is deliberately off the neutral ramp, between
+  /// `color-kumo-tint` and `color-kumo-fill`, because it does two jobs at once
+  /// in `DashTwoToneListGroup`: it fills the header band *and* it is the 2pt
+  /// border showing through around the rows card. Tint (`#F5F5F5`) left a 4%
+  /// edge nobody could see; fill (`#E5E5E5`) drew the edge but turned the band
+  /// into a heavy grey block. Do not "correct" this back onto the ramp without
+  /// looking at both at once.
+  static let listGroupHeaderSurface = adaptive(light: 0xEDEDED, dark: 0x333333)
   /// Home's cards (Shortcuts / Recently used / quick actions) — `color-kumo-base`
-  /// in light; `color-kumo-tint` in dark so the hairline ring still separates.
+  /// in light; `color-kumo-tint` in dark. These groups carry no ring, so this
+  /// fill is the only thing that separates the rows from the header band above
+  /// them — it has to stay a step away from `listGroupHeaderSurface` in both
+  /// appearances.
   static let homeCardSurface = adaptive(light: 0xFFFFFF, dark: 0x262626)
   /// Quiet glyph on a quick-action tile — `text-kumo-inactive`.
   static let homeCardGlyph = adaptive(light: 0xD4D4D4, dark: 0x525252)

@@ -798,7 +798,7 @@ private struct HomeShortcutsSection: View {
   let edit: () -> Void
 
   var body: some View {
-    DashBorderedListGroup(
+    DashTwoToneListGroup(
       title: DashL10n.string("Shortcuts"),
       actionTitle: "Edit",
       actionIcon: SolarAsset.pen,
@@ -1839,11 +1839,12 @@ private struct HomeDomainsSection: View {
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
+    // Unstroked, like the Shortcuts and Recently used groups below it: the
+    // tint fill alone marks the card off from the workspace canvas.
     .background(
       DashTheme.homeDomainsSurface,
       in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
     )
-    .dashShadow(.border)
   }
 
   private var header: some View {
@@ -2171,7 +2172,7 @@ private struct HomeRecentsSection: View {
   let onReopen: (RecentResource) -> Void
 
   var body: some View {
-    DashBorderedListGroup(title: "Recently used") {
+    DashTwoToneListGroup(title: "Recently used") {
       ForEach(recents) { resource in
         DashListGroupLink(
           value: resource.destination,

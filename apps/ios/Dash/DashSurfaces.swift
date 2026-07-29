@@ -769,15 +769,19 @@ struct DashListGroupHeader: View {
   }
 }
 
-/// Two-tone bordered group (the short-lived `WatchtowerListGroup` framing):
-/// the title rides an elevated plate, and the rows sit in their own rounded,
-/// ring-edged card seated flush inside it — the inner card's top ring is the
-/// hairline under the header, so its rounded corners peek out of the band.
-/// The inner card overhangs the plate's clip by 1pt on the sides and bottom,
-/// trimming its ring there so the plate's own ring edges the group. Reserved
-/// for Home's Shortcuts and Recently used cards; plain `DashListGroup` stays
-/// bandless.
-struct DashBorderedListGroup<Content: View>: View {
+/// Two-tone group (the short-lived `WatchtowerListGroup` framing): the title
+/// rides an elevated plate, and the rows sit in their own rounded card inset
+/// 2pt inside it.
+///
+/// Nothing is stroked. That 2pt of plate showing along the card's sides and
+/// bottom *is* the border — the same band colour that runs behind the header,
+/// so the frame closes on all four sides instead of being a ring painted over
+/// the group. Fill does the work a `strokeBorder` used to: light gets a tint
+/// band around a white card, dark a lighter band around the tint card.
+///
+/// Reserved for Home's Shortcuts and Recently used cards; plain
+/// `DashListGroup` stays bandless.
+struct DashTwoToneListGroup<Content: View>: View {
   let title: String
   var actionTitle: String?
   var actionIcon: String?
@@ -808,17 +812,19 @@ struct DashBorderedListGroup<Content: View>: View {
       .padding(.vertical, 12)
 
       VStack(alignment: .leading, spacing: 0) { content }
-        .padding(.horizontal, 16)
+        // 14 + the 2pt inset below = rows land on the header title's 16.
+        .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(DashTheme.homeCardSurface)
-        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-        .dashShadow(.border)
-        .padding(.horizontal, -1)
-        .padding(.bottom, -1)
+        // Concentric with the plate: one radius step per point of inset.
+        .clipShape(
+          RoundedRectangle(cornerRadius: DashTheme.Radius.card - 2, style: .continuous)
+        )
+        .padding(.horizontal, 2)
+        .padding(.bottom, 2)
     }
     .background(DashTheme.listGroupHeaderSurface)
     .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
-    .dashShadow(.border)
   }
 }
 
