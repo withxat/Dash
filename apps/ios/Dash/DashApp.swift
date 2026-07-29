@@ -65,8 +65,13 @@ struct DashApp: App {
     scrollEdgeAppearance.titleTextAttributes = inlineTitleAttributes
     scrollEdgeAppearance.shadowColor = .clear
 
-    // Default background keeps the system blur material, so scrolled content
-    // frosts through the inline-title bar instead of hitting a flat canvas.
+    // Default background keeps the system blur material. Not for Dash's own
+    // screens — those hide the toolbar background outright and paint their own
+    // frost (`dashHeaderScrim`) so it can fade out instead of ending on an
+    // edge. This one is for the bars Dash does not own: the QuickLook preview
+    // (`R2ObjectPreview`) runs a real `UINavigationController` with no
+    // appearance of its own and inherits this proxy, and its system chrome is
+    // deliberately left stock. Strip the background here and that bar loses it.
     let standardAppearance = UINavigationBarAppearance()
     standardAppearance.configureWithDefaultBackground()
     standardAppearance.largeTitleTextAttributes = largeTitleAttributes

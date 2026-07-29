@@ -209,8 +209,22 @@ enum DashHeaderScrimMetrics {
   /// Floor for the safe-area top inset, in case a screen reports one without
   /// its navigation bar. Never a substitute for the measured inset.
   static let minimumTop: CGFloat = 44
-  /// Soft tail below the bar. The frost eases out across it instead of stopping.
-  static let fade: CGFloat = 44
+  /// Tail below the safe-area top edge. Deliberately short: the falloff does
+  /// the work, not extra length — the band should not read as a tall slab.
+  static let tail: CGFloat = 32
+  /// How much of the measured top inset holds full strength — about the status
+  /// bar. Everything below it is falloff, so the title sits inside the ramp
+  /// instead of on the edge of a plateau. Most of the band is ramp.
+  static let solidShare: CGFloat = 0.48
+  /// Extents of the stacked blur layers, as a share of the band height.
+  ///
+  /// Each layer samples what is already composited beneath it, so their radii
+  /// compound: the top of the band is blurred three times over, the bottom
+  /// once, and the count falls off in between. That is a real variable-radius
+  /// blur. One material at fading alpha is NOT — it cross-fades sharp content
+  /// with blurred content, which reads as a ghost rather than a blur, and is
+  /// the reason a single masked layer never looks like the system's.
+  static let blurLayers: [CGFloat] = [1, 0.72, 0.5]
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
   /// finger — it crosses this line and then plays its own entrance, so a nudge
   /// or a rubber-band settle never leaves a half-painted header on screen.
@@ -230,18 +244,37 @@ enum DashHeaderScrimRules {
       : distance > DashHeaderScrimMetrics.enter
   }
 
-  /// Mask ramp for the band: solid down to `solidFraction`, then an ease-out
-  /// tail that reaches fully clear at the bottom. Deliberately not a linear
-  /// ramp to a hard stop — the whole point is that no edge lands on content.
-  static func maskStops(solidFraction: CGFloat) -> [(opacity: CGFloat, location: CGFloat)] {
-    let solid = min(max(solidFraction, 0), 1)
-    let tail = 1 - solid
-    let ease: [(CGFloat, CGFloat)] = [
-      (1, 0), (0.94, 0.18), (0.78, 0.36), (0.52, 0.56), (0.24, 0.76), (0.06, 0.9), (0, 1),
-    ]
+  /// Resolution of the falloff. Enough stops that the linear interpolation
+  /// between them reads as a curve rather than a chain of facets.
+  static let rampSteps = 8
+
+  /// Mask for one blur layer: full strength down to `solidFraction`, then a
+  /// smoothstep falloff reaching fully clear at `extent`, and nothing below.
+  ///
+  /// Smoothstep on purpose — it leaves the plateau and arrives at zero with
+  /// zero slope, so neither end of the falloff shows a corner. A linear ramp
+  /// puts a visible crease at both.
+  static func maskStops(
+    solidFraction: CGFloat,
+    extent: CGFloat = 1
+  ) -> [(opacity: CGFloat, location: CGFloat)] {
+    let end = min(max(extent, 0), 1)
+    let solid = min(max(solidFraction, 0), end)
     var stops: [(opacity: CGFloat, location: CGFloat)] = [(opacity: 1, location: 0)]
-    for step in ease {
-      stops.append((opacity: step.0, location: solid + tail * step.1))
+    if solid > 0 {
+      stops.append((opacity: 1, location: solid))
+    }
+    let ramp = end - solid
+    if ramp > 0 {
+      for step in 1...rampSteps {
+        let t = CGFloat(step) / CGFloat(rampSteps)
+        stops.append((opacity: 1 - t * t * (3 - 2 * t), location: solid + ramp * t))
+      }
+    } else {
+      stops.append((opacity: 0, location: end))
+    }
+    if end < 1 {
+      stops.append((opacity: 0, location: 1))
     }
     return stops
   }
@@ -321,11 +354,11 @@ struct DashHeaderScrim: View {
       // live backdrop filter sitting over the screen.
       if scroll.isFrosted {
         // The reader sits in the content's safe area, whose top inset already
-        // covers the status bar and the navigation bar. The band is that inset
-        // solid, plus the eased tail below it.
+        // covers the status bar and the navigation bar. Only the status-bar
+        // share of it holds full strength; the rest of the band is falloff.
         let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
-        let height = top + DashHeaderScrimMetrics.fade
-        band(solidFraction: top / height)
+        let height = top + DashHeaderScrimMetrics.tail
+        band(solidFraction: top * DashHeaderScrimMetrics.solidShare / height)
           .frame(width: proxy.size.width, height: height)
           .offset(y: -top)
           .transition(.opacity)
@@ -335,29 +368,37 @@ struct DashHeaderScrim: View {
     .accessibilityHidden(true)
   }
 
+  /// The thinnest material there is, stacked: this band has to read as blur,
+  /// not as a painted plate — `.bar` and `.regular` carry so much tint that the
+  /// canvas stops showing through, and one layer cannot vary its radius.
+  ///
+  /// Reduce Transparency drops to a single flat canvas layer. Stacking there
+  /// would just pile up opacity, and there is no blur to grade anyway.
+  @ViewBuilder
   private func band(solidFraction: CGFloat) -> some View {
-    frost.mask {
-      LinearGradient(
-        stops: DashHeaderScrimRules.maskStops(solidFraction: solidFraction).map {
-          Gradient.Stop(color: .white.opacity($0.opacity), location: $0.location)
-        },
-        startPoint: .top,
-        endPoint: .bottom
-      )
+    if reduceTransparency {
+      DashTheme.canvas
+        .mask { ramp(solidFraction: solidFraction, extent: 1) }
+    } else {
+      ZStack {
+        ForEach(DashHeaderScrimMetrics.blurLayers, id: \.self) { extent in
+          Rectangle()
+            .fill(Material.ultraThin)
+            .mask { ramp(solidFraction: solidFraction, extent: extent) }
+        }
+      }
     }
   }
 
-  /// The thinnest material there is: this band should read as blur, not as a
-  /// painted plate — `.bar` and `.regular` carry so much tint that the canvas
-  /// stops showing through. Reduce Transparency swaps in the flat canvas, where
-  /// the same gradient still keeps the lower edge off the content.
-  @ViewBuilder
-  private var frost: some View {
-    if reduceTransparency {
-      DashTheme.canvas
-    } else {
-      Rectangle().fill(Material.ultraThin)
-    }
+  private func ramp(solidFraction: CGFloat, extent: CGFloat) -> LinearGradient {
+    LinearGradient(
+      stops:
+        DashHeaderScrimRules
+        .maskStops(solidFraction: solidFraction, extent: extent)
+        .map { Gradient.Stop(color: .white.opacity($0.opacity), location: $0.location) },
+      startPoint: .top,
+      endPoint: .bottom
+    )
   }
 }
 

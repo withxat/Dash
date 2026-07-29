@@ -1659,8 +1659,23 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!state.isFrosted)
 }
 
-/// The band is solid across the bar and then eases to fully clear — a hard stop
-/// at the bottom is exactly the edge this gradient exists to avoid.
+/// A stacked layer stops early: it must reach fully clear at its own extent
+/// and stay there, or it paints a step across the layer underneath it.
+@Test func headerFrostLayerClearsAtItsOwnExtent() {
+  let stops = DashHeaderScrimRules.maskStops(solidFraction: 0.2, extent: 0.5)
+  #expect(stops.first?.opacity == 1)
+  #expect(stops.contains { $0.opacity == 1 && $0.location == 0.2 })
+  #expect(stops.contains { $0.opacity == 0 && $0.location == 0.5 })
+  #expect(stops.last?.location == 1)
+  #expect(stops.last?.opacity == 0)
+  // A layer whose plateau already fills its extent still has to close out.
+  let degenerate = DashHeaderScrimRules.maskStops(solidFraction: 0.9, extent: 0.4)
+  #expect(degenerate.last?.opacity == 0)
+  #expect(degenerate.last?.location == 1)
+}
+
+/// The band is solid across the status bar and then eases to fully clear — a
+/// hard stop at the bottom is exactly the edge this gradient exists to avoid.
 @Test func headerFrostFadesOutInsteadOfEndingOnAnEdge() {
   let stops = DashHeaderScrimRules.maskStops(solidFraction: 0.5)
   #expect(stops.first?.opacity == 1)
