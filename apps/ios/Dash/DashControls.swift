@@ -545,6 +545,12 @@ struct DashSectionHeader: View {
   let title: String
   /// Optional content glyph seated before the title.
   var icon: String?
+  /// Optional metadata capsule seated after the title, vertically centred on
+  /// it — a section's freshness, never a status. Pre-localized like `title`.
+  var badge: String?
+  /// What VoiceOver reads for `badge`, which is usually a bare fragment
+  /// ("3 minutes ago") that means nothing without its subject.
+  var badgeAccessibilityLabel: String?
   /// Optional trailing control — `DashListGroupHeader`'s icon action at the
   /// section ramp, so an editable section reads the same at both scales.
   var actionIcon: String?
@@ -554,12 +560,16 @@ struct DashSectionHeader: View {
   init(
     _ title: String,
     icon: String? = nil,
+    badge: String? = nil,
+    badgeAccessibilityLabel: String? = nil,
     actionIcon: String? = nil,
     actionLabel: String? = nil,
     action: (() -> Void)? = nil
   ) {
     self.title = title
     self.icon = icon
+    self.badge = badge
+    self.badgeAccessibilityLabel = badgeAccessibilityLabel
     self.actionIcon = actionIcon
     self.actionLabel = actionLabel
     self.action = action
@@ -574,6 +584,11 @@ struct DashSectionHeader: View {
         .dashTextStyle(.sectionTitle)
         .foregroundStyle(DashTheme.strong)
         .textCase(nil)
+        .layoutPriority(1)
+      if let badge {
+        DashMetaBadge(badge)
+          .accessibilityLabel(badgeAccessibilityLabel ?? badge)
+      }
       Spacer(minLength: 0)
       if let action, let actionIcon {
         Button(action: action) {

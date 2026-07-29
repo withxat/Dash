@@ -571,15 +571,18 @@ enum WatchtowerAnalyticsChartModel {
     let fetchedAt: Date
   }
 
-  static func updatedTitle(fetchedAt: Date?, loading: Bool, now: Date = .now) -> String {
-    guard let fetchedAt else {
-      return loading ? DashL10n.ui("Updating…") : DashL10n.ui("Overview")
-    }
-    let formatter = RelativeDateTimeFormatter()
-    formatter.locale = DashL10n.activeLocale
-    formatter.unitsStyle = .full
-    let when = formatter.localizedString(for: fetchedAt, relativeTo: now)
-    return DashL10n.string("Updated \(when)")
+  /// Freshness for the Charts section-header badge, as a bare relative
+  /// fragment ("3 minutes ago"). `nil` before the first snapshot lands: the
+  /// skeleton and the pull-to-refresh spinner already say "loading", so this
+  /// never carries a second loading label of its own.
+  static func updatedBadge(fetchedAt: Date?, now: Date = .now) -> String? {
+    guard let fetchedAt else { return nil }
+    return watchtowerRelativeTime(fetchedAt, relativeTo: now)
+  }
+
+  /// The badge alone is a fragment; VoiceOver needs its subject back.
+  static func updatedAccessibilityLabel(_ badge: String) -> String {
+    DashL10n.string("Updated \(badge)")
   }
 
   static func chartPoints(from points: [AccountAnalyticsPoint]) -> [(
@@ -794,8 +797,6 @@ final class WatchtowerTrafficState {
   var overview: AccountAnalyticsOverview? { snapshot?.overview }
   var fetchedAt: Date? { snapshot?.fetchedAt }
   var isLoadingCurrent: Bool { loadingRanges.contains(range) }
-  /// Warm refresh — content stays on screen while ranges reload.
-  var isRefreshing: Bool { !loadingRanges.isEmpty && overview != nil }
   var currentError: String? { errorByRange[range] }
 
   func load(model: AppModel, force: Bool = false) async {
@@ -995,14 +996,10 @@ struct WatchtowerTrafficView: View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
         if !isEditing {
-          VStack(alignment: .leading, spacing: 8) {
-            refreshHeader
-              .padding(.horizontal, 4)
-            DashTextTabs(
-              items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
-              selection: $state.range
-            )
-          }
+          DashTextTabs(
+            items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+            selection: $state.range
+          )
           .transition(.opacity)
         }
 
@@ -1279,35 +1276,6 @@ struct WatchtowerTrafficView: View {
         removalSequence.finishReflow(metric)
       }
     }
-  }
-
-  /// Resources-style group title: relative “Updated …” on the leading edge. No
-  /// Refresh control — pull-to-refresh owns reloading this screen, and a failed
-  /// range still offers Try again inside its own card.
-  private var refreshHeader: some View {
-    TimelineView(.periodic(from: .now, by: 60)) { context in
-      HStack(spacing: 12) {
-        Text(refreshTitle(relativeTo: context.date))
-          .dashTextStyle(.supportingMedium)
-          .foregroundStyle(DashTheme.listGroupTitle)
-          .lineLimit(1)
-          .minimumScaleFactor(0.85)
-        Spacer(minLength: 0)
-        if state.isRefreshing {
-          DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
-            .accessibilityLabel(DashL10n.ui("Refreshing"))
-        }
-      }
-      .frame(minHeight: 20)
-      .accessibilityElement(children: .combine)
-    }
-  }
-
-  private func refreshTitle(relativeTo now: Date) -> String {
-    WatchtowerAnalyticsChartModel.updatedTitle(
-      fetchedAt: state.fetchedAt,
-      loading: state.isLoadingCurrent && state.overview == nil,
-      now: now)
   }
 
   private func statusCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {

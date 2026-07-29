@@ -1051,6 +1051,29 @@ enum StatusToken: String, CaseIterable, Sendable {
   }
 }
 
+/// A small neutral capsule for secondary metadata seated beside a title — a
+/// license identifier, a section's freshness. Tone-free on purpose: anything
+/// that reports *state* is a `StatusBadge`, whose shape and tone come from a
+/// `StatusToken` rather than from its wording.
+struct DashMetaBadge: View {
+  let text: String
+
+  init(_ text: String) {
+    self.text = text
+  }
+
+  var body: some View {
+    Text(text)
+      .dashTextStyle(.captionSemibold)
+      .foregroundStyle(DashTheme.subtle)
+      .lineLimit(1)
+      .minimumScaleFactor(0.85)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 3)
+      .background(DashTheme.metaBadgeSurface, in: Capsule())
+  }
+}
+
 struct StatusBadge: View {
   let token: StatusToken
 

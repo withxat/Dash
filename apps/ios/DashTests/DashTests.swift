@@ -1221,21 +1221,25 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(defaults.string(forKey: WatchtowerAnalyticsCardLayout.key) == "webTraffic")
 }
 
-@Test func watchtowerAnalyticsUpdatedTitleUsesRelativeTime() {
+@Test func watchtowerAnalyticsUpdatedBadgeUsesRelativeTime() {
   let previousLocale = DashL10n.localeOverrideForTesting
   DashL10n.localeOverrideForTesting = Locale(identifier: "en")
   defer { DashL10n.localeOverrideForTesting = previousLocale }
 
-  #expect(WatchtowerAnalyticsChartModel.updatedTitle(fetchedAt: nil, loading: true) == "Updating…")
-  #expect(WatchtowerAnalyticsChartModel.updatedTitle(fetchedAt: nil, loading: false) == "Overview")
+  // No snapshot yet: the skeleton and the pull-to-refresh spinner are the only
+  // loading signals, so the header shows no badge at all.
+  #expect(WatchtowerAnalyticsChartModel.updatedBadge(fetchedAt: nil) == nil)
 
   let now = Date()
-  let title = WatchtowerAnalyticsChartModel.updatedTitle(
+  let badge = WatchtowerAnalyticsChartModel.updatedBadge(
     fetchedAt: now.addingTimeInterval(-180),
-    loading: false,
     now: now)
-  #expect(title.hasPrefix("Updated "))
-  #expect(title.contains("minute") || title.contains("seconds"))
+  #expect(badge?.contains("minute") == true || badge?.contains("seconds") == true)
+  // The capsule carries the bare fragment; only VoiceOver gets the subject.
+  #expect(badge?.hasPrefix("Updated") == false)
+  #expect(
+    WatchtowerAnalyticsChartModel.updatedAccessibilityLabel("3 minutes ago")
+      == "Updated 3 minutes ago")
 }
 
 @Test func watchtowerAnalyticsChartPointsParseHourAndDayStamps() {

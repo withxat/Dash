@@ -403,6 +403,10 @@ enum DashTheme {
   static let homeCardSurface = adaptive(light: 0xFFFFFF, dark: 0x262626)
   /// Quiet glyph on a quick-action tile — `text-kumo-inactive`.
   static let homeCardGlyph = adaptive(light: 0xD4D4D4, dark: 0x525252)
+  /// Neutral capsule behind a small metadata badge (`DashMetaBadge`) — a
+  /// license identifier, a section's freshness. It carries no tone on purpose;
+  /// anything reporting state belongs to `StatusBadge` and its tinted fills.
+  static let metaBadgeSurface = adaptive(light: 0xF5F5F5, dark: 0x262626)
   /// Floating tab bar — `color-kumo-control`.
   static let tabBarSurface = adaptive(light: 0xFFFFFF, dark: 0x18181B)
   /// `color-kumo-tint` / control dark — soft fills behind controls.

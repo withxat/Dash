@@ -11090,6 +11090,17 @@
         }
       }
     },
+    "Updated %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@更新"
+          }
+        }
+      }
+    },
     "Updating" : {
       "extractionState" : "stale",
       "localizations" : {

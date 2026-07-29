@@ -102,14 +102,8 @@ struct WatchtowerView: View {
   private var chartsSection: some View {
     VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
       if !customization.isEditing {
-        DashSectionHeader(
-          DashL10n.string("Charts"),
-          icon: SolarAsset.Content.chartSquare,
-          actionIcon: SolarAsset.pen,
-          actionLabel: DashL10n.string("Edit charts"),
-          action: beginCustomization
-        )
-        .transition(.opacity)
+        chartsHeader
+          .transition(.opacity)
       }
       WatchtowerTrafficView(
         state: trafficState,
@@ -118,6 +112,28 @@ struct WatchtowerView: View {
         isEditing: customization.isEditing,
         editorControlsVisible: editorControlsVisible,
         usesPlaceholderCharts: customization.isEditing
+      )
+    }
+  }
+
+  /// Freshness rides the section title as a badge rather than its own line:
+  /// pull-to-refresh owns reloading this screen, so the charts need neither a
+  /// Refresh control nor an inline spinner repeating what the pull already
+  /// shows. The timeline only re-reads the relative wording.
+  private var chartsHeader: some View {
+    TimelineView(.periodic(from: .now, by: 60)) { context in
+      let badge = WatchtowerAnalyticsChartModel.updatedBadge(
+        fetchedAt: trafficState.fetchedAt,
+        now: context.date)
+      DashSectionHeader(
+        DashL10n.string("Charts"),
+        icon: SolarAsset.Content.chartSquare,
+        badge: badge,
+        badgeAccessibilityLabel: badge.map(
+          WatchtowerAnalyticsChartModel.updatedAccessibilityLabel),
+        actionIcon: SolarAsset.pen,
+        actionLabel: DashL10n.string("Edit charts"),
+        action: beginCustomization
       )
     }
   }

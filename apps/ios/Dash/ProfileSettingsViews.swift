@@ -862,12 +862,7 @@ private struct OpenSourceLicenseBadge: View {
   let license: String
 
   var body: some View {
-    Text(license)
-      .dashTextStyle(.captionSemibold)
-      .foregroundStyle(DashTheme.subtle)
-      .padding(.horizontal, 8)
-      .padding(.vertical, 3)
-      .background(DashTheme.Sheet.shortcutItem, in: Capsule())
+    DashMetaBadge(license)
       .fixedSize()
   }
 }
