@@ -417,7 +417,7 @@ private struct DashRevealModifier: ViewModifier {
       .animation(
         reduceMotion
           ? nil
-          : .timingCurve(0.22, 1, 0.36, 1, duration: 0.5)
+          : DashTheme.Motion.textReveal
             .delay(Double(max(index, 0)) * stagger),
         value: shown
       )
@@ -460,6 +460,28 @@ extension View {
     modifier(
       DashContentRevealModifier(
         index: index, ready: ready, stagger: DashRevealCadence.section)
+    )
+  }
+
+  /// Leaves a staggered reveal as one quiet 200ms fade. The outgoing view
+  /// keeps its resting geometry and sharpness, so removal never reads as the
+  /// entrance playing backwards. Reduced Motion removes the transition.
+  func dashFailureRemovalTransition() -> some View {
+    modifier(DashFailureRemovalTransitionModifier())
+  }
+}
+
+private struct DashFailureRemovalTransitionModifier: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    content.transition(
+      reduceMotion
+        ? .identity
+        : .asymmetric(
+          insertion: .identity,
+          removal: .opacity.animation(DashTheme.Motion.failureDismiss)
+        )
     )
   }
 }

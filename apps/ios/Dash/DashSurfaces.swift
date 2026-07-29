@@ -623,6 +623,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
             DashListSkeleton()
           case .fullScreenError(let message):
             ErrorStateView(message: message, retry: retry)
+              .dashFailureRemovalTransition()
           case .content(let banner, let refreshing):
             if refreshing {
               HStack(spacing: DashTheme.Spacing.compact) {
@@ -881,34 +882,50 @@ struct DashInfoGroup<Content: View>: View {
   var retry: (() -> Void)?
   @ViewBuilder var content: () -> Content
 
+  private var showsContent: Bool {
+    if case .content = phase { return true }
+    return false
+  }
+
+  private var failureMessage: String? {
+    if case .failed(let message) = phase { return message }
+    return nil
+  }
+
   var body: some View {
     DashTwoToneListGroup(title: title) {
-      switch phase {
-      case .content:
-        content()
-          .transition(.opacity)
-      case .loading:
-        DashInfoRowPlaceholders(rows: placeholderRows)
-          .transition(.opacity)
-      case .failed(let message):
-        // The placeholders are frozen chrome from here on — hit testing and
-        // VoiceOver both belong to the message, so nothing announces “Loading”
-        // after a failure. The `ZStack` takes whichever of the two is taller,
-        // so a long message grows the section instead of being clipped.
-        ZStack {
-          DashInfoRowPlaceholders(rows: placeholderRows)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-
-          DashSectionFailureVeil(
-            message: message,
-            covers: CGFloat(max(placeholderRows, 1)) * DashTheme.Layout.minimumHitTarget,
-            retry: retry)
+      ZStack {
+        Group {
+          if showsContent {
+            // `content()` may be a multi-row ViewBuilder product; keep it in
+            // one stack so the ZStack treats the rows as a single layer.
+            VStack(alignment: .leading, spacing: 0) {
+              content()
+            }
+            .transition(.opacity)
+          } else {
+            DashInfoRowPlaceholders(rows: placeholderRows)
+              .allowsHitTesting(false)
+              .accessibilityHidden(failureMessage != nil)
+              .transition(.opacity)
+          }
         }
-        .transition(.opacity)
+        .animation(DashTheme.Motion.content, value: showsContent)
+
+        if let failureMessage {
+          // The placeholders are frozen chrome from here on — hit testing and
+          // VoiceOver both belong to the message, so nothing announces
+          // “Loading” after a failure. The ZStack takes whichever layer is
+          // taller, so a long message grows the section instead of clipping.
+          DashSectionFailureVeil(
+            message: failureMessage,
+            covers: CGFloat(max(placeholderRows, 1)) * DashTheme.Layout.minimumHitTarget,
+            retry: retry
+          )
+          .dashFailureRemovalTransition()
+        }
       }
     }
-    .animation(DashTheme.Motion.content, value: phase)
   }
 }
 
@@ -1050,17 +1067,20 @@ private struct DashSectionFailureVeil: View {
   var body: some View {
     VStack(spacing: DashTheme.Spacing.compact) {
       SolarIcon(asset: SolarAsset.Content.danger, size: 22, color: DashTheme.subtle)
+        .dashContentReveal()
       Text(DashL10n.ui(message))
         .dashTextStyle(.footnote)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
+        .dashContentReveal()
       if let retry {
         Button(DashL10n.string("Try again"), action: retry)
           .dashTextStyle(.supportingSemibold)
           .foregroundStyle(DashTheme.brand)
           .buttonStyle(DashPressButtonStyle())
           .dashCompactHitTarget()
+          .dashContentReveal(1)
       }
     }
     .padding(.vertical, DashTheme.Spacing.card)
@@ -1497,8 +1517,7 @@ extension View {
   /// structure the user was already reading vanished and one icon owned the
   /// screen. Here the skeleton holds its ground, a canvas wash climbs out of the
   /// bottom edge — solid under the copy, gone by the top, so the fade band *is*
-  /// the placeholder dissolving — and the copy reveals bottom-first so it rises
-  /// with the wash instead of against it.
+  /// the placeholder dissolving — and the copy reveals headline-first over it.
   ///
   /// The skeleton is frozen chrome from here on: hit testing and VoiceOver both
   /// belong to the copy, so nothing announces “Loading” after a failure.
@@ -1616,7 +1635,6 @@ private struct DashColdFailureWash: View {
     }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
-    .dashSectionContentReveal()
   }
 }
 
@@ -1627,27 +1645,28 @@ private struct DashColdFailureCopy: View {
   let action: () -> Void
 
   var body: some View {
-    // Reveal indices run bottom-first: the action leads and the mark lands last,
-    // so the copy climbs in the wash's direction.
+    // Headline first, then supporting copy and action at 40ms intervals.
+    // The mark shares the headline's first beat; removal belongs to the
+    // container's independent 200ms fade and never reverses this reveal.
     VStack(spacing: DashTheme.Spacing.comfortable) {
       SolarIcon(asset: SolarAsset.Content.danger, size: 34, color: DashTheme.strong)
         .frame(width: 72, height: 72)
         .background(DashTheme.recessed, in: Circle())
-        .dashSectionContentReveal(3)
+        .dashContentReveal()
       Text(DashL10n.ui(title))
         .dashTextStyle(.emptyTitle)
         .foregroundStyle(DashTheme.strong)
         .multilineTextAlignment(.center)
-        .dashSectionContentReveal(2)
+        .dashContentReveal()
       Text(DashL10n.ui(message))
         .dashTextStyle(.supporting)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
-        .dashSectionContentReveal(1)
+        .dashContentReveal(1)
       DashSecondaryPillButton(title: actionTitle, action: action)
         .padding(.top, 6)
-        .dashSectionContentReveal()
+        .dashContentReveal(2)
     }
     .frame(maxWidth: 440)
     .padding(DashTheme.Spacing.panel)

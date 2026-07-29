@@ -1878,6 +1878,7 @@ private struct HomeDomainsSection: View {
           lockedRecovery
         } else if let error, zones.isEmpty {
           failureRecovery(message: error)
+            .dashFailureRemovalTransition()
         } else if zones.isEmpty, !isLoading {
           emptyDomains
         } else if isExpanded {
@@ -2040,12 +2041,15 @@ private struct HomeDomainsSection: View {
     let presentation = DashFailurePresentation.from(message: message)
     return VStack(alignment: .leading, spacing: 10) {
       DashNotice(kind: .error, message: presentation.message)
+        .dashContentReveal()
       if presentation.action == .grantAccess {
         DashAuthorizationDisclosure()
+          .dashContentReveal(1)
       }
       DashSecondaryPillButton(title: presentation.action.title) {
         performFailureAction(presentation.action)
       }
+      .dashContentReveal(presentation.action == .grantAccess ? 2 : 1)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .padding(.vertical, 16)

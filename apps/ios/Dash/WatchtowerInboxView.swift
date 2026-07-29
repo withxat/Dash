@@ -107,11 +107,15 @@ struct WatchtowerInboxView: View {
             kind: .warning,
             message: DashL10n.string("Cloudflare alert history needs notifications access.")
           )
+          .dashContentReveal()
+          .dashFailureRemovalTransition()
         } else if state.alertsStatus == .error {
           DashNotice(
             kind: .error,
             message: DashL10n.string("Couldn’t load Cloudflare alert history. Pull to refresh.")
           )
+          .dashContentReveal()
+          .dashFailureRemovalTransition()
         }
 
         filteredContent

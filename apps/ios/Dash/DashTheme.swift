@@ -290,6 +290,11 @@ enum DashTheme {
     /// Loading ring ↔ success glyph: mirrors the shared Transitions.dev icon
     /// swap instead of borrowing the springier tray morph.
     static let iconSwap = Animation.easeInOut(duration: 0.25)
+    /// Staggered text entrance: Transitions.dev's 12pt / 3pt-blur reveal.
+    static let textReveal = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.5)
+    /// Failure-reveal exit is deliberately independent: one quiet, synchronous
+    /// CSS `ease` fade with no stagger, offset, or blur played backwards.
+    static let failureDismiss = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.2)
     /// Correctness fallback when the initiating button is dismissed before its
     /// animation completion can report back.
     @MainActor static var iconSwapFallbackDelay: Duration {

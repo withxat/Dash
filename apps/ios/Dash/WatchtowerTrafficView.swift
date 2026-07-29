@@ -1037,6 +1037,7 @@ struct WatchtowerTrafficView: View {
             ) {
               Task { await state.retry(model: model) }
             }
+            .dashFailureRemovalTransition()
         } else if let overview = state.overview, let snapshot = state.snapshot {
           if customization.visibleMetrics.isEmpty {
             statusCard {
