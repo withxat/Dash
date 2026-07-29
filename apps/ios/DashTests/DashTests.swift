@@ -1572,6 +1572,71 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashCanvasPlateRules.isSystemPlate(UIColor(white: 1, alpha: 0.5)))
 }
 
+/// The header frost is off at rest and fully in after a short scroll — the band
+/// has to be there by the time the first row slides under the status bar.
+@Test func headerFrostRampsInOverTheFirstScrolledPoints() {
+  #expect(DashHeaderScrimRules.progress(distance: -40) == 0)
+  #expect(DashHeaderScrimRules.progress(distance: 0) == 0)
+  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp / 2) == 0.5)
+  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp) == 1)
+  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp * 4) == 1)
+}
+
+/// Every tab page stays mounted and a push leaves its root mounted underneath,
+/// so several screens report at once: the frost follows the deepest push on the
+/// selected tab, never a background tab's scroll position.
+@Test func headerFrostFollowsTheDeepestScreenOnTheActiveTab() {
+  let entries: [Int: DashHeaderScrollEntry] = [
+    1: DashHeaderScrollEntry(isTabActive: true, depth: 0, progress: 1),
+    2: DashHeaderScrollEntry(isTabActive: true, depth: 1, progress: 0),
+    3: DashHeaderScrollEntry(isTabActive: false, depth: 4, progress: 1),
+  ]
+  #expect(DashHeaderScrimRules.frontmost(of: entries) == 2)
+  #expect(DashHeaderScrimRules.frontmost(of: entries.filter { $0.key == 3 }) == nil)
+  #expect(DashHeaderScrimRules.frontmost(of: [Int: DashHeaderScrollEntry]()) == nil)
+}
+
+/// Popping back must hand the frost to the screen underneath at *its* scroll
+/// position, and an empty registry must clear the band instead of stranding it.
+@Test @MainActor func headerFrostReturnsToTheScreenUnderneathOnPop() {
+  let root = NSObject()
+  let pushed = NSObject()
+  let state = DashHeaderScrollState()
+
+  state.report(
+    DashHeaderScrollEntry(isTabActive: true, depth: 0, progress: 1),
+    from: ObjectIdentifier(root))
+  #expect(state.progress == 1)
+
+  state.report(
+    DashHeaderScrollEntry(isTabActive: true, depth: 1, progress: 0),
+    from: ObjectIdentifier(pushed))
+  #expect(state.progress == 0)
+
+  state.withdraw(ObjectIdentifier(pushed))
+  #expect(state.progress == 1)
+
+  state.withdraw(ObjectIdentifier(root))
+  #expect(state.progress == 0)
+}
+
+/// The band is solid across the bar and then eases to fully clear — a hard stop
+/// at the bottom is exactly the edge this gradient exists to avoid.
+@Test func headerFrostFadesOutInsteadOfEndingOnAnEdge() {
+  let stops = DashHeaderScrimRules.maskStops(solidFraction: 0.5)
+  #expect(stops.first?.opacity == 1)
+  #expect(stops.first?.location == 0)
+  #expect(stops.last?.opacity == 0)
+  #expect(stops.last?.location == 1)
+  // Solid all the way through the bar, then never brightening again.
+  #expect(stops.contains { $0.opacity == 1 && $0.location == 0.5 })
+  #expect(
+    stops.indices.dropFirst().allSatisfy { index in
+      stops[index].opacity <= stops[index - 1].opacity
+        && stops[index].location >= stops[index - 1].location
+    })
+}
+
 @Test func navigationDimmingScrubberPreservesContentBearingContainer() {
   #expect(
     NavigationTransitionChromeRules.shouldHideDimmingView(

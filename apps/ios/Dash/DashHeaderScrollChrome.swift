@@ -165,15 +165,24 @@ extension View {
       .modifier(DashScrollEdgeEffectsHidden())
       // Punches the UIKit scroll/hosting/navigation plates clear so the
       // workspace canvas + wash behind the pager are what the root shows.
-      .background { DashScrollViewConfigurator(fill: .clear) }
+      // The probe feeds this screen's scroll position to the shared header
+      // frost (`DashHeaderScrim`), which is floated by `MainTabView`.
+      .background {
+        DashScrollViewConfigurator(fill: .clear)
+        DashHeaderScrollProbe()
+      }
   }
 
   /// Canvas scroll chrome for pushed feature/detail screens. Tab roots use
   /// `dashCatalogScreen`; destinations need the same edge-pocket kill so iOS
-  /// 26 doesn't leave a white slab under the (now hidden) dock.
+  /// 26 doesn't leave a white slab under the (now hidden) dock — and the same
+  /// header-frost probe, so a pushed screen frosts its bar exactly like a root.
   func dashDetailCanvasChrome() -> some View {
     modifier(DashScrollEdgeEffectsHidden())
-      .background { DashScrollViewConfigurator(fill: .canvas) }
+      .background {
+        DashScrollViewConfigurator(fill: .canvas)
+        DashHeaderScrollProbe()
+      }
   }
 
 }
@@ -187,6 +196,303 @@ struct DashScrollEdgeEffectsHidden: ViewModifier {
     } else {
       content
     }
+  }
+}
+
+// MARK: - Header scrim
+
+/// Geometry of the shared header frost. The band is pinned to the physical top
+/// edge: solid across the status bar and the inline nav bar, then eased to
+/// nothing, so its lower edge never draws a line across the content.
+enum DashHeaderScrimMetrics {
+  /// Inline navigation-bar height — the slot the avatar and detail titles sit in.
+  static let bar: CGFloat = 44
+  /// Soft tail below the bar. The frost eases out across it instead of stopping.
+  static let fade: CGFloat = 44
+  /// How far past the status bar the frost stays fully opaque: far enough to
+  /// carry a pushed screen's title and the avatar, short enough that the ease
+  /// owns most of the band.
+  static let solid: CGFloat = 24
+  /// Scroll distance over which the frost ramps 0 → 1 — short enough that the
+  /// band has arrived by the time the first row has slid under the bar.
+  static let ramp: CGFloat = 28
+}
+
+/// One screen's claim on the header frost.
+struct DashHeaderScrollEntry: Equatable {
+  /// False for the two tab pages that stay mounted but aren't selected.
+  var isTabActive: Bool
+  /// Index in the tab's navigation stack — 0 for the root, 1+ for a push.
+  var depth: Int
+  /// 0…1 frost strength for this screen's own scroll position.
+  var progress: CGFloat
+}
+
+enum DashHeaderScrimRules {
+  /// Frost strength for a scroll `distance` past the resting offset. Quantized
+  /// so a per-frame probe only re-renders the band when a step actually changes.
+  static func progress(
+    distance: CGFloat,
+    ramp: CGFloat = DashHeaderScrimMetrics.ramp
+  ) -> CGFloat {
+    guard ramp > 0 else { return distance > 0 ? 1 : 0 }
+    let raw = min(1, max(0, distance / ramp))
+    return (raw * 50).rounded() / 50
+  }
+
+  /// The screen the frost follows: the deepest push on the selected tab. Every
+  /// page stays mounted (the pager needs neighbours renderable) and a push
+  /// leaves its root mounted underneath, so several screens report at once.
+  static func frontmost<Key: Hashable & Comparable>(
+    of entries: [Key: DashHeaderScrollEntry]
+  ) -> Key? {
+    entries
+      .filter { $0.value.isTabActive }
+      .max { ($0.value.depth, $0.key) < ($1.value.depth, $1.key) }?
+      .key
+  }
+
+  /// Mask ramp for the band: solid down to `solidFraction`, then an ease-out
+  /// tail that reaches fully clear at the bottom. Deliberately not a linear
+  /// ramp to a hard stop — the whole point is that no edge lands on content.
+  static func maskStops(solidFraction: CGFloat) -> [(opacity: CGFloat, location: CGFloat)] {
+    let solid = min(max(solidFraction, 0), 1)
+    let tail = 1 - solid
+    let ease: [(CGFloat, CGFloat)] = [
+      (1, 0), (0.94, 0.18), (0.78, 0.36), (0.52, 0.56), (0.24, 0.76), (0.06, 0.9), (0, 1),
+    ]
+    var stops: [(opacity: CGFloat, location: CGFloat)] = [(opacity: 1, location: 0)]
+    for step in ease {
+      stops.append((opacity: step.0, location: solid + tail * step.1))
+    }
+    return stops
+  }
+}
+
+/// Frost strength for whichever screen is in front, written per scroll frame by
+/// `DashHeaderScrollProbe` and read ONLY by `DashHeaderScrim`.
+///
+/// `MainTabView.body` must never read `progress`. Per-frame values landing in
+/// the tab container's own `@State` re-apply the `NavigationStack` path
+/// mid-push, UIKit cancels the running transition, and the pushed screen's
+/// content is left permanently unmounted.
+@MainActor
+@Observable
+final class DashHeaderScrollState {
+  /// 0…1 — drives the band's opacity.
+  private(set) var progress: CGFloat = 0
+
+  @ObservationIgnored private var entries: [ObjectIdentifier: DashHeaderScrollEntry] = [:]
+  @ObservationIgnored private var owner: ObjectIdentifier?
+
+  func report(_ entry: DashHeaderScrollEntry, from token: ObjectIdentifier) {
+    guard entries[token] != entry else { return }
+    entries[token] = entry
+    resolve()
+  }
+
+  func withdraw(_ token: ObjectIdentifier) {
+    guard entries.removeValue(forKey: token) != nil else { return }
+    resolve()
+  }
+
+  private func resolve() {
+    let next = DashHeaderScrimRules.frontmost(of: entries)
+    let value = next.flatMap { entries[$0]?.progress } ?? 0
+    let handover = next != owner
+    owner = next
+    guard value != progress else { return }
+    // Scrolling tracks the finger, so those steps land instantly. A handover
+    // (push, pop, tab switch) jumps between two screens' scroll positions —
+    // ease that or the band snaps on mid-transition.
+    if handover {
+      withAnimation(DashTheme.Motion.settle) { progress = value }
+    } else {
+      progress = value
+    }
+  }
+}
+
+/// The workspace's header frost. ONE instance, floated by `MainTabView` above
+/// the pager — shared chrome of the same kind as `DashWorkspaceTopWash` and the
+/// profile avatar. It fades in with the frontmost screen's scroll so a scrolled
+/// screen gets a readable bar, and fades out downward so nothing draws a line
+/// across the content.
+///
+/// Do not copy it into a page: a page cannot paint the status bar (the pager
+/// clips it), and three bands would ride their pages on a tab swipe.
+struct DashHeaderScrim: View {
+  @Environment(DashHeaderScrollState.self) private var scroll: DashHeaderScrollState?
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  var body: some View {
+    GeometryReader { proxy in
+      let progress = scroll?.progress ?? 0
+      // Mounted only while it shows something: a `Material` at zero opacity is
+      // still a live backdrop filter over every screen in the app.
+      if progress > 0 {
+        let inset = proxy.safeAreaInsets.top
+        let height = inset + DashHeaderScrimMetrics.bar + DashHeaderScrimMetrics.fade
+        band(solidFraction: (inset + DashHeaderScrimMetrics.solid) / height)
+          .frame(width: proxy.size.width, height: height)
+          // The reader lays out inside the safe area; the band belongs to the
+          // physical top edge, status bar included.
+          .offset(y: -inset)
+          .opacity(progress)
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  private func band(solidFraction: CGFloat) -> some View {
+    frost.mask {
+      LinearGradient(
+        stops: DashHeaderScrimRules.maskStops(solidFraction: solidFraction).map {
+          Gradient.Stop(color: .white.opacity($0.opacity), location: $0.location)
+        },
+        startPoint: .top,
+        endPoint: .bottom
+      )
+    }
+  }
+
+  /// `Material.bar` is the system's own bar frost. Reduce Transparency swaps it
+  /// for the flat canvas so the gradient still hides the seam without a blur.
+  @ViewBuilder
+  private var frost: some View {
+    if reduceTransparency {
+      DashTheme.canvas
+    } else {
+      Rectangle().fill(Material.bar)
+    }
+  }
+}
+
+/// Reports the enclosing screen's scroll position to `DashHeaderScrollState`.
+/// Installed by `dashCatalogScreen()` / `dashDetailCanvasChrome()`, so every
+/// tab root and every pushed destination feeds the shared header frost without
+/// a single feature screen knowing it exists.
+struct DashHeaderScrollProbe: UIViewRepresentable {
+  @Environment(DashHeaderScrollState.self) private var state: DashHeaderScrollState?
+  @Environment(\.dashTabActive) private var isTabActive
+
+  func makeUIView(context: Context) -> DashHeaderScrollProbeView {
+    DashHeaderScrollProbeView()
+  }
+
+  func updateUIView(_ uiView: DashHeaderScrollProbeView, context: Context) {
+    uiView.configure(state: state, isTabActive: isTabActive)
+  }
+
+  static func dismantleUIView(_ uiView: DashHeaderScrollProbeView, coordinator: ()) {
+    uiView.tearDown()
+  }
+}
+
+/// KVO on the screen's own scroll view — not a SwiftUI preference. Global-frame
+/// probes bubbling through the pager re-evaluate the tab container on every
+/// scrolled frame, which cancels a running push; an observation writing into an
+/// `@Observable` store re-renders only the band that reads it.
+final class DashHeaderScrollProbeView: UIView {
+  private weak var state: DashHeaderScrollState?
+  private var isTabActive = true
+  private var depth = 0
+  private weak var scrollView: UIScrollView?
+  private var offsetObservation: NSKeyValueObservation?
+
+  private var token: ObjectIdentifier { ObjectIdentifier(self) }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    isHidden = true
+    backgroundColor = .clear
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError() }
+
+  func configure(state: DashHeaderScrollState?, isTabActive: Bool) {
+    if self.state !== state {
+      self.state?.withdraw(token)
+      self.state = state
+    }
+    self.isTabActive = isTabActive
+    attachIfNeeded()
+    report()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    guard window != nil else { return }
+    attachIfNeeded()
+    report()
+  }
+
+  override func willMove(toWindow newWindow: UIWindow?) {
+    // A pop detaches the screen's view: drop the claim so the screen underneath
+    // takes the frost back instead of leaving a stale band over the canvas.
+    if newWindow == nil { detach() }
+    super.willMove(toWindow: newWindow)
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // The scroll view and the stack index both settle a beat after the screen
+    // mounts — re-resolve on every layout pass instead of guessing a delay.
+    attachIfNeeded()
+    report()
+  }
+
+  func tearDown() {
+    detach()
+    state = nil
+  }
+
+  private func detach() {
+    offsetObservation = nil
+    scrollView = nil
+    state?.withdraw(token)
+  }
+
+  private func attachIfNeeded() {
+    guard let window else { return }
+    depth = Self.navigationDepth(from: self)
+    if let scrollView, scrollView.window === window, offsetObservation != nil { return }
+    offsetObservation = nil
+    guard let scroll = DashScreenScrollLocator.contentScrollView(from: self) else {
+      scrollView = nil
+      return
+    }
+    scrollView = scroll
+    offsetObservation = scroll.observe(\.contentOffset) { [weak self] _, _ in
+      MainActor.assumeIsolated { self?.report() }
+    }
+  }
+
+  /// A screen with no scroll view still claims the frost at zero: otherwise a
+  /// pushed screen that cannot scroll would inherit the band its root left on.
+  private func report() {
+    guard let state, window != nil else { return }
+    var progress: CGFloat = 0
+    if let scrollView, scrollView.window != nil {
+      let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+      progress = DashHeaderScrimRules.progress(distance: distance)
+    }
+    state.report(
+      DashHeaderScrollEntry(isTabActive: isTabActive, depth: depth, progress: progress),
+      from: token)
+  }
+
+  /// Index of this screen's view controller in its navigation stack: 0 for a
+  /// tab root, 1+ for a push.
+  private static func navigationDepth(from view: UIView) -> Int {
+    guard
+      let controller = DashScreenScrollLocator.enclosingViewController(from: view),
+      let stack = controller.navigationController
+    else { return 0 }
+    return stack.viewControllers.firstIndex(of: controller) ?? stack.viewControllers.count
   }
 }
 
@@ -403,6 +709,65 @@ private struct DashScrollDismissesKeyboard: ViewModifier {
 /// itself near-white / near-black — so those two bands cover both the system
 /// default and a plate an earlier pass already painted. Anything in between is
 /// somebody's real surface and stays.
+/// Finds the UIKit pieces of "this screen" from any view planted inside it.
+/// Shared so the canvas fill, the header-frost probe, and R2's two-finger
+/// multi-select all agree on which view controller and which scroll view a
+/// screen owns — a pushed destination and its tab root must never resolve to
+/// each other's.
+@MainActor
+enum DashScreenScrollLocator {
+  /// Nearest non-container view controller hosting `view`. `UINavigationController`
+  /// and `UITabBarController` are skipped so each content screen resolves itself.
+  static func enclosingViewController(from view: UIView) -> UIViewController? {
+    var node: UIView? = view
+    while let current = node {
+      var responder: UIResponder? = current
+      while let next = responder {
+        if let controller = next as? UIViewController,
+          !(controller is UINavigationController),
+          !(controller is UITabBarController),
+          let root = controller.viewIfLoaded,
+          current === root || current.isDescendant(of: root)
+        {
+          return controller
+        }
+        responder = next.next
+      }
+      node = current.superview
+    }
+    return nil
+  }
+
+  /// Root view of that content view controller.
+  static func enclosingContentView(from view: UIView) -> UIView? {
+    enclosingViewController(from: view)?.viewIfLoaded
+  }
+
+  /// The screen's primary scroll view: the outermost scroll inside its content
+  /// view that is neither the three-tab pager nor a small nested region (tray
+  /// bodies, the Domains viewport, a build log) — those sit deeper and shorter.
+  static func contentScrollView(
+    from view: UIView,
+    minimumHeight: CGFloat = 80
+  ) -> UIScrollView? {
+    let root = enclosingContentView(from: view) ?? view.superview ?? view
+    var found: UIScrollView?
+    func walk(_ node: UIView) {
+      guard found == nil else { return }
+      if let scroll = node as? UIScrollView,
+        !DashScrollViewConfigurator.isTabPager(scroll),
+        scroll.bounds.height > minimumHeight
+      {
+        found = scroll
+        return
+      }
+      for child in node.subviews { walk(child) }
+    }
+    walk(root)
+    return found
+  }
+}
+
 enum DashCanvasPlateRules {
   static func isSystemPlate(_ color: UIColor?) -> Bool {
     guard let color else { return false }
@@ -469,35 +834,12 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
     }
 
     // Scope fill to this content VC only (root or pushed destination).
-    let screen = enclosingContentView(from: view) ?? view.superview ?? view
+    let screen = DashScreenScrollLocator.enclosingContentView(from: view) ?? view.superview ?? view
     // UIKit's slide animates the VC's view — paint it so the plate is opaque
     // (canvas) or wash-through (clear) for the whole transition, not only
     // after SwiftUI commits its `.background`.
     screen.backgroundColor = fill == .clear ? .clear : canvasFill
     apply(in: screen, fill: fill)
-  }
-
-  /// Nearest non-container view controller that hosts `view`. Skips
-  /// `UINavigationController` so a pushed destination and the tab root each
-  /// configure only their own plate.
-  private static func enclosingContentView(from view: UIView) -> UIView? {
-    var node: UIView? = view
-    while let current = node {
-      var responder: UIResponder? = current
-      while let next = responder {
-        if let viewController = next as? UIViewController,
-          !(viewController is UINavigationController),
-          !(viewController is UITabBarController),
-          let root = viewController.viewIfLoaded,
-          current === root || current.isDescendant(of: root)
-        {
-          return root
-        }
-        responder = next.next
-      }
-      node = current.superview
-    }
-    return nil
   }
 
   /// Same geometry heuristic as `TabPagerScrollLock` — shared so Home's page

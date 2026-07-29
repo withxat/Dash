@@ -1207,41 +1207,7 @@ private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
     }
 
     private static func contentScrollView(from view: UIView) -> UIScrollView? {
-      let root = enclosingContentView(from: view) ?? view.superview ?? view
-      var found: UIScrollView?
-      func walk(_ node: UIView) {
-        guard found == nil else { return }
-        if let scroll = node as? UIScrollView,
-          !DashScrollViewConfigurator.isTabPager(scroll),
-          scroll.bounds.height > 80
-        {
-          found = scroll
-          return
-        }
-        for child in node.subviews { walk(child) }
-      }
-      walk(root)
-      return found
-    }
-
-    private static func enclosingContentView(from view: UIView) -> UIView? {
-      var node: UIView? = view
-      while let current = node {
-        var responder: UIResponder? = current
-        while let next = responder {
-          if let viewController = next as? UIViewController,
-            !(viewController is UINavigationController),
-            !(viewController is UITabBarController),
-            let root = viewController.viewIfLoaded,
-            current === root || current.isDescendant(of: root)
-          {
-            return root
-          }
-          responder = next.next
-        }
-        node = current.superview
-      }
-      return nil
+      DashScreenScrollLocator.contentScrollView(from: view)
     }
   }
 }
