@@ -295,6 +295,13 @@ struct DashCard<Content: View>: View {
 ///
 /// Use for metric tiles and chart cards only. Keep ordinary content cards on
 /// `DashCard` so the rest of the app stays an opaque recessed system.
+///
+/// This is one half of a deliberate split, so a titled block of section content
+/// has exactly one right answer: **a chart or a metric is a glass card with its
+/// own `footnoteSemibold` heading inside; read-only label/value fields are a
+/// `DashInfoGroup`** on the two-tone band. Do not move chart cards onto the
+/// band — Watchtower's reorderable metric cards could not follow, and the
+/// analytics screens would end up split across two frames.
 struct DashGlassCard<Content: View>: View {
   private let content: Content
 
@@ -779,8 +786,8 @@ struct DashListGroupHeader: View {
 /// the group. Fill does the work a `strokeBorder` used to: light gets a tint
 /// band around a white card, dark a lighter band around the tint card.
 ///
-/// Reserved for Home's Shortcuts and Recently used cards; plain
-/// `DashListGroup` stays bandless.
+/// Home's Shortcuts and Recently used cards and every pushed screen's info
+/// group (`DashInfoGroup`); plain `DashListGroup` stays bandless.
 struct DashTwoToneListGroup<Content: View>: View {
   let title: String
   var actionTitle: String?
@@ -825,6 +832,245 @@ struct DashTwoToneListGroup<Content: View>: View {
     }
     .background(DashTheme.listGroupHeaderSurface)
     .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+  }
+}
+
+// MARK: - Info groups
+
+/// Load state of one *section* inside an already-loaded detail screen — the
+/// “section cold” slot the list contract leaves open (`DashListPhase` still owns
+/// the screen's primary payload, and there is still no fifth full-screen
+/// spinner).
+///
+/// A section that fetches on its own has four outcomes, not two, and the two
+/// that used to be conflated are the ones that bite: a lookup that comes back
+/// *empty* is a settled answer the call site may legitimately hide, while a
+/// lookup that *failed* must stay on screen and say so. Deciding that with a
+/// bare optional is what let the zone registration card fail silently.
+enum DashSectionPhase: Equatable {
+  case loading
+  case content
+  case failed(String)
+}
+
+/// A titled group of read-only information rows, in the same two-tone frame as
+/// Home's Shortcuts and Recently used: title on the header band, rows in the
+/// card below it.
+///
+/// This is the shared home for the label/value blocks that pushed screens used
+/// to hand-roll — a `DashCard` with a `footnoteSemibold` heading *inside* it,
+/// one per screen, each with slightly different insets and no relationship to
+/// the group headers around it.
+///
+/// It also owns the section's load states, because reserving the space is the
+/// whole point: `.loading` paints placeholder rows the arriving data lands on
+/// instead of shoving the rest of the screen down when it appears, and
+/// `.failed` veils the message over those same placeholders rather than
+/// swapping them out (see `DashSectionFailureVeil`).
+///
+/// Rows go in an eager stack like `DashListGroup`'s — info groups are bounded
+/// (a handful of fields, two name servers). Never put an unbounded `ForEach`
+/// in one.
+struct DashInfoGroup<Content: View>: View {
+  let title: String
+  var phase: DashSectionPhase = .content
+  /// How many placeholder rows the cold and failed states paint. Set it to the
+  /// number of fields the section usually settles on, so the swap is a
+  /// cross-dissolve in place rather than a reflow.
+  var placeholderRows: Int = 3
+  var retry: (() -> Void)?
+  @ViewBuilder var content: () -> Content
+
+  var body: some View {
+    DashTwoToneListGroup(title: title) {
+      switch phase {
+      case .content:
+        content()
+          .transition(.opacity)
+      case .loading:
+        DashInfoRowPlaceholders(rows: placeholderRows)
+          .transition(.opacity)
+      case .failed(let message):
+        // The placeholders are frozen chrome from here on — hit testing and
+        // VoiceOver both belong to the message, so nothing announces “Loading”
+        // after a failure. The `ZStack` takes whichever of the two is taller,
+        // so a long message grows the section instead of being clipped.
+        ZStack {
+          DashInfoRowPlaceholders(rows: placeholderRows)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+
+          DashSectionFailureVeil(
+            message: message,
+            covers: CGFloat(max(placeholderRows, 1)) * DashTheme.Layout.minimumHitTarget,
+            retry: retry)
+        }
+        .transition(.opacity)
+      }
+    }
+    .animation(DashTheme.Motion.content, value: phase)
+  }
+}
+
+/// One label/value pair inside a `DashInfoGroup`. Label leading, value trailing
+/// — the phone-native spec-sheet row; at accessibility sizes (and for
+/// label-less rows such as name servers) the pair goes leading-aligned so
+/// neither side truncates.
+///
+/// The trailing slot also takes an `accessory`, so a field whose value is a
+/// badge or a link stays one of these rows instead of forking into a bespoke
+/// `HStack` — a status shown as text beside a status shown as a capsule is how
+/// two renderings of the same token start to disagree.
+///
+/// Labels are Dash's own copy and localize here, matching `DashDetailTray`'s
+/// field rows. Values are Cloudflare's data — hostnames, registrars, dates
+/// already formatted by the call site — and stay verbatim.
+struct DashInfoRow<Accessory: View>: View {
+  let label: String?
+  let value: String?
+  var mono = false
+  @ViewBuilder let accessory: () -> Accessory
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  init(
+    _ label: String? = nil,
+    value: String? = nil,
+    mono: Bool = false,
+    @ViewBuilder accessory: @escaping () -> Accessory
+  ) {
+    self.label = label
+    self.value = value
+    self.mono = mono
+    self.accessory = accessory
+  }
+
+  private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
+
+  var body: some View {
+    Group {
+      if let label, !isAccessibilitySize {
+        // Centered rather than baseline-aligned: the trailing slot may hold a
+        // badge, and a capsule has no text baseline to hang off.
+        HStack(spacing: 12) {
+          labelText(label)
+          Spacer(minLength: 0)
+          trailing(.trailing)
+        }
+      } else {
+        VStack(alignment: .leading, spacing: 4) {
+          if let label { labelText(label) }
+          trailing(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }
+    // Row height floor shared with `DashListRow` (and with
+    // `DashInfoRowPlaceholders`), so an info group keeps the same rhythm as the
+    // Home cards it borrows its frame from.
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .accessibilityElement(children: .combine)
+  }
+
+  private func labelText(_ label: String) -> some View {
+    Text(DashL10n.ui(label))
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .lineLimit(isAccessibilitySize ? nil : 1)
+      .layoutPriority(0)
+  }
+
+  private func trailing(_ alignment: TextAlignment) -> some View {
+    HStack(spacing: 8) {
+      if let value {
+        Text(value)
+          .dashTextStyle(mono ? .code : .supporting)
+          .foregroundStyle(DashTheme.text)
+          .multilineTextAlignment(alignment)
+          .textSelection(.enabled)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+      accessory()
+    }
+    .layoutPriority(1)
+  }
+}
+
+extension DashInfoRow where Accessory == EmptyView {
+  init(_ label: String? = nil, value: String, mono: Bool = false) {
+    self.init(label, value: value, mono: mono, accessory: { EmptyView() })
+  }
+}
+
+/// The shape an info group's data will take, painted while it loads. Bar
+/// heights and the row floor match `DashInfoRow` so the arriving values land
+/// where the placeholder was.
+private struct DashInfoRowPlaceholders: View {
+  let rows: Int
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(0..<max(rows, 1), id: \.self) { index in
+        HStack(spacing: 12) {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.55))
+            .frame(width: 64, height: 12)
+          Spacer(minLength: 0)
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.4))
+            .frame(width: index.isMultiple(of: 2) ? 132 : 100, height: 12)
+        }
+        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
+/// Section-scale counterpart to `dashColdFailure`: the placeholder rows keep
+/// their ground and the message lands on a veil over them.
+///
+/// The veil is the card's own fill at 80%, so it dissolves into the surface it
+/// covers and the placeholder still reads faintly through — the section shows
+/// the shape a successful retry will fill, and the failure costs the screen no
+/// layout shift. The copy is compact on purpose: `DashColdFailureCopy`'s 72pt
+/// mark and title are sized for a screenful of skeleton and would tower over a
+/// four-row group.
+private struct DashSectionFailureVeil: View {
+  let message: String
+  /// Height of the placeholder block this veil has to cover. `.background` is
+  /// layout-neutral, so overhanging the fill by that much in both directions
+  /// veils the whole section whichever of the two ends up taller — the copy
+  /// never has to stretch to fill it. The enclosing card clips the overhang, so
+  /// it can never reach the header band.
+  let covers: CGFloat
+  let retry: (() -> Void)?
+
+  var body: some View {
+    VStack(spacing: DashTheme.Spacing.compact) {
+      SolarIcon(asset: SolarAsset.Content.danger, size: 22, color: DashTheme.subtle)
+      Text(DashL10n.ui(message))
+        .dashTextStyle(.footnote)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+      if let retry {
+        Button(DashL10n.string("Try again"), action: retry)
+          .dashTextStyle(.supportingSemibold)
+          .foregroundStyle(DashTheme.brand)
+          .buttonStyle(DashPressButtonStyle())
+          .dashCompactHitTarget()
+      }
+    }
+    .padding(.vertical, DashTheme.Spacing.card)
+    .frame(maxWidth: .infinity)
+    .background {
+      DashTheme.homeCardSurface
+        .opacity(0.8)
+        .padding(.vertical, -covers)
+    }
+    .accessibilityElement(children: .contain)
   }
 }
 

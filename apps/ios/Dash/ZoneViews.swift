@@ -254,6 +254,10 @@ struct ZoneDetailView: View {
   }
 
   @State private var rdap: RdapRegistration?
+  /// Starts cold, not settled: a lookup always follows the zone load, so the
+  /// section paints placeholder rows from the first frame the zone is on screen
+  /// instead of inserting a card under the hero when the answer arrives.
+  @State private var rdapPhase: DashSectionPhase = .loading
 
   private let tools: [ZoneTool] = [
     ZoneTool(
@@ -286,14 +290,16 @@ struct ZoneDetailView: View {
     ) {
       if let zone = displayedZone {
         zoneHero(zone)
+        if let servers = zone.nameServers, !servers.isEmpty {
+          nameserversGroup(servers)
+            .dashSectionBoundary()
+        }
+        // Stays under the name servers: the activation copy points at them.
         if needsActivation(zone) {
           activationCard(zone)
             .dashSectionBoundary()
         }
-        if let rdap {
-          rdapCard(rdap)
-            .dashSectionBoundary()
-        }
+        registrationGroup()
         primaryActions()
           .dashSectionBoundary()
       }
@@ -453,23 +459,42 @@ struct ZoneDetailView: View {
   private func loadRdap(for zone: CloudflareZone, force: Bool) async {
     let key = FeatureCacheKey.zoneRdap(zoneID)
     if !force, let cached: RdapRegistration = model.featureCache.get(key) {
-      rdap = cached
+      settleRdap(cached, phase: .content)
       await scheduleExpiryReminder(cached, zoneName: zone.name)
       return
     }
     do {
-      if let registration = try await RdapClient.lookup(
-        domain: zone.name, relayBaseURL: model.configuration.pushBaseURL
-      ) {
-        rdap = registration
+      let registration = try await RdapClient.lookup(
+        domain: zone.name, relayBaseURL: model.configuration.pushBaseURL)
+      // A `nil` answer is settled, not failed — privacy redaction, subdomain
+      // zones, and TLDs with no RDAP/WHOIS record all land here, and the card
+      // stays hidden as it always has.
+      settleRdap(registration, phase: .content)
+      if let registration {
         model.featureCache.set(key, registration)
         await scheduleExpiryReminder(registration, zoneName: zone.name)
-      } else {
-        rdap = nil
       }
     } catch {
-      rdap = nil
+      // `.task` identity changes cancel this lookup; that is not a failure the
+      // user should see veiled over the section.
+      guard !error.dashIsCancellation, !Task.isCancelled else { return }
+      // A thrown lookup used to be indistinguishable from an empty one: the
+      // card simply never appeared and nothing said why.
+      settleRdap(nil, phase: .failed(error.dashActionableMessage))
     }
+  }
+
+  private func settleRdap(_ registration: RdapRegistration?, phase: DashSectionPhase) {
+    withAnimation(DashTheme.Motion.content) {
+      rdap = registration
+      rdapPhase = phase
+    }
+  }
+
+  private func retryRdap() async {
+    guard let zone = displayedZone else { return }
+    withAnimation(DashTheme.Motion.content) { rdapPhase = .loading }
+    await loadRdap(for: zone, force: true)
   }
 
   /// Rides along with the registration card's own lookup — no extra request, and
@@ -506,52 +531,42 @@ struct ZoneDetailView: View {
   private func zoneHero(_ zone: CloudflareZone) -> some View {
     let status = (zone.status ?? "unknown").capitalized
     let plan = zone.plan?.name
-    // Nameserver count stays off the tile — the nameserver plate below owns that.
-    return VStack(alignment: .leading, spacing: 12) {
-      DomainCardFace(
-        name: zone.name,
-        status: status,
-        seed: zone.name,
-        fillHex: displayedCardFillHex,
-        plan: plan,
-        aspectRatio: DomainCardFace.detailAspectRatio
-      )
-      .overlay(alignment: .bottomTrailing) {
-        if !showsCustomizeOverlay {
-          DomainCardCustomizeButton {
-            beginCardCustomize()
-          }
-          .accessibilityValue(DomainCardColors.formatHex(cardFillHex))
-          .padding(12)
+    // Nameserver count stays off the tile — the Nameservers group below owns that.
+    return DomainCardFace(
+      name: zone.name,
+      status: status,
+      seed: zone.name,
+      fillHex: displayedCardFillHex,
+      plan: plan,
+      aspectRatio: DomainCardFace.detailAspectRatio
+    )
+    .overlay(alignment: .bottomTrailing) {
+      if !showsCustomizeOverlay {
+        DomainCardCustomizeButton {
+          beginCardCustomize()
         }
+        .accessibilityValue(DomainCardColors.formatHex(cardFillHex))
+        .padding(12)
       }
-      .matchedGeometryEffect(
-        id: Self.cardMorphID,
-        in: cardCustomizeNamespace,
-        properties: .frame,
-        isSource: !isCustomizingCard
-      )
-      .opacity(isCustomizingCard ? 0 : 1)
-      .allowsHitTesting(!showsCustomizeOverlay)
-      .frame(maxWidth: .infinity)
-      .accessibilityHidden(showsCustomizeOverlay)
+    }
+    .matchedGeometryEffect(
+      id: Self.cardMorphID,
+      in: cardCustomizeNamespace,
+      properties: .frame,
+      isSource: !isCustomizingCard
+    )
+    .opacity(isCustomizingCard ? 0 : 1)
+    .allowsHitTesting(!showsCustomizeOverlay)
+    .frame(maxWidth: .infinity)
+    .accessibilityHidden(showsCustomizeOverlay)
+  }
 
-      if let servers = zone.nameServers, !servers.isEmpty {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Nameservers")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          ForEach(servers, id: \.self) {
-            Text($0).dashTextStyle(.code)
-          }
-        }
-        .padding(DashTheme.Spacing.card)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-          DashTheme.recessed,
-          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        )
-        .dashShadow(.border)
+  /// Cloudflare assigns two, so this stays bounded and can live in
+  /// `DashInfoGroup`'s eager stack.
+  private func nameserversGroup(_ servers: [String]) -> some View {
+    DashInfoGroup(title: "Nameservers") {
+      ForEach(servers, id: \.self) { server in
+        DashInfoRow(value: server, mono: true)
       }
     }
   }
@@ -628,41 +643,38 @@ struct ZoneDetailView: View {
     activationChecking = false
   }
 
-  private func rdapCard(_ registration: RdapRegistration) -> some View {
-    DashCard {
-      VStack(alignment: .leading, spacing: 10) {
-        Text("Registration")
-          .dashTextStyle(.footnoteSemibold)
-          .foregroundStyle(DashTheme.subtle)
-        if let registrar = registration.registrar {
-          rdapRow("Registrar", registrar)
-        }
-        if let expires = registration.expiresOn {
-          rdapRow("Expires", rdapDateLabel(expires))
-        }
-        if let registered = registration.registeredOn {
-          rdapRow("Registered", rdapDateLabel(registered))
-        }
-        if let status = registration.status.first {
-          rdapRow("Status", rdapStatusLabel(status))
+  /// Registration is a *secondary* fetch inside an already-loaded detail, so it
+  /// carries its own phase: placeholders while the relay answers, the fields
+  /// when it does, the failure veiled over those same placeholders when it
+  /// doesn't. Only a settled-empty lookup drops the section entirely — an
+  /// answer of “no public record” is not worth a permanent card.
+  @ViewBuilder
+  private func registrationGroup() -> some View {
+    if rdapPhase != .content || rdap != nil {
+      DashInfoGroup(
+        title: "Registration",
+        phase: rdapPhase,
+        // The four fields below, so the arriving values land on the
+        // placeholder instead of growing the section.
+        placeholderRows: 4,
+        retry: { Task { await retryRdap() } }
+      ) {
+        if let registration = rdap {
+          if let registrar = registration.registrar {
+            DashInfoRow("Registrar", value: registrar)
+          }
+          if let expires = registration.expiresOn {
+            DashInfoRow("Expires", value: rdapDateLabel(expires))
+          }
+          if let registered = registration.registeredOn {
+            DashInfoRow("Registered", value: rdapDateLabel(registered))
+          }
+          if let status = registration.status.first {
+            DashInfoRow("Status", value: rdapStatusLabel(status))
+          }
         }
       }
-    }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel("Registration info from RDAP")
-  }
-
-  private func rdapRow(_ label: LocalizedStringKey, _ value: String) -> some View {
-    HStack(alignment: .firstTextBaseline, spacing: 12) {
-      Text(label)
-        .dashTextStyle(.caption)
-        .foregroundStyle(DashTheme.subtle)
-        .frame(width: 88, alignment: .leading)
-      Text(value)
-        .dashTextStyle(.footnote)
-        .foregroundStyle(DashTheme.text)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .textSelection(.enabled)
+      .dashSectionBoundary()
     }
   }
 }
@@ -1201,7 +1213,9 @@ struct DNSRecordsView: View {
     selectedBucket: DNSChartModel.Bucket?,
     displayedRecordCount: Int
   ) -> some View {
-    DashCard {
+    // Chart cards stay on the glass surface, not the info-group band — see the
+    // surface split on `DashGlassCard`.
+    DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
         Text("Record types")
           .dashTextStyle(.footnoteSemibold)

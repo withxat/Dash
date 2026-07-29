@@ -791,18 +791,8 @@ struct AboutView: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 8)
 
-        DashCard {
-          VStack(alignment: .leading, spacing: 4) {
-            Text("Version")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Text(versionText)
-              .dashTextStyle(.supporting)
-              .foregroundStyle(DashTheme.text)
-              .textSelection(.enabled)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.vertical, 12)
+        DashInfoGroup(title: "Version") {
+          DashInfoRow(value: versionText)
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)

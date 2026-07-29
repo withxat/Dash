@@ -873,7 +873,8 @@ struct WAFEventsView: View {
       retry: { Task { await load(force: true) } }
     ) {
       if let summary {
-        DashCard {
+        // A metric tile — the surface `DashGlassCard` exists for.
+        DashGlassCard {
           VStack(alignment: .leading, spacing: 8) {
             Text("Last \(summary.hours) hours")
               .dashTextStyle(.footnoteSemibold)
@@ -951,13 +952,11 @@ struct WAFEventsView: View {
     totalBlocked: Int
   ) -> some View {
     let points = WAFGlobeModel.points(from: countries)
+    // One heading, not two: the card inside this group used to carry its own
+    // “Blocks by country” title, saying what the group header already says.
     return DashListGroup(title: "Top countries") {
-      DashCard {
+      DashGlassCard {
         VStack(alignment: .leading, spacing: 12) {
-          Text("Blocks by country")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-
           DotGlobeView(
             camera: $globeCamera,
             style: GlobeStyle(

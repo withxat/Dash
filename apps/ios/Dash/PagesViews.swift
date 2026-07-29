@@ -193,7 +193,9 @@ struct PagesProjectDetailView: View {
   }
 
   private var buildOutcomesCard: some View {
-    DashCard {
+    // Chart cards stay on the glass surface, not the info-group band — see the
+    // surface split on `DashGlassCard`.
+    DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
         Text("Build outcomes")
           .dashTextStyle(.footnoteSemibold)
@@ -358,7 +360,8 @@ struct PagesDeploymentDetailView: View {
       retry: { Task { await refreshManually() } }
     ) {
       if let deployment {
-        deploymentCard(deployment)
+        deploymentGroup(deployment)
+        stagesGroup(deployment)
         if let actionError {
           DashNotice(kind: .error, message: actionError)
             .dashItemBoundary()
@@ -383,39 +386,54 @@ struct PagesDeploymentDetailView: View {
     }
   }
 
-  private func deploymentCard(_ deployment: PagesDeployment) -> some View {
-    DashCard {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack {
-          Text(pagesDeploymentTitle(deployment))
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-          Spacer(minLength: 0)
-          StatusBadge(
-            StatusToken(
-              pagesStatus: deployment.latestStage?.status,
-              isSkipped: deployment.isSkipped == true))
-        }
-        Text(pagesDeploymentSubtitle(deployment))
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
-        if let urlString = deployment.url, let link = URL(string: urlString) {
+  /// The commit message is the screen's `detailHeader` title, so it is not
+  /// repeated here. What the old summary card ran together into one “env ·
+  /// status · when” caption is split back into its own fields, and the status
+  /// appears once — as the badge — instead of as a badge *and* a word in that
+  /// caption.
+  private func deploymentGroup(_ deployment: PagesDeployment) -> some View {
+    DashInfoGroup(title: "Deployment") {
+      if let environment = deployment.environment {
+        DashInfoRow("Environment", value: DashL10n.ui(environment.capitalized))
+      }
+      DashInfoRow("Status") {
+        StatusBadge(
+          StatusToken(
+            pagesStatus: deployment.latestStage?.status,
+            isSkipped: deployment.isSkipped == true))
+      }
+      if let created = deployment.createdOn {
+        DashInfoRow("Created", value: pagesRelativeDate(created))
+      }
+      if let urlString = deployment.url, let link = URL(string: urlString) {
+        DashInfoRow("URL") {
           Link(urlString, destination: link)
             .dashTextStyle(.code)
             .foregroundStyle(DashTheme.brand)
+            .multilineTextAlignment(.trailing)
             .lineLimit(2)
         }
-        if let stages = deployment.stages, !stages.isEmpty {
-          VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
-              Text("\(stage.name ?? "stage") · \((stage.status ?? "—").capitalized)")
-                .dashTextStyle(.caption)
-                .foregroundStyle(DashTheme.rowSubtitle)
-            }
-          }
+      }
+    }
+  }
+
+  /// Cloudflare runs a fixed set of build stages, so this stays bounded.
+  ///
+  /// Deliberately *not* `StatusToken(pagesStatus:)`: that maps `idle` to “In
+  /// progress”, which is right for the deployment's latest stage — the pipeline
+  /// is sitting on it — and wrong for every stage after it, which is also
+  /// `idle` and has not started. A per-stage status is its own vocabulary.
+  @ViewBuilder
+  private func stagesGroup(_ deployment: PagesDeployment) -> some View {
+    if let stages = deployment.stages, !stages.isEmpty {
+      DashInfoGroup(title: "Stages") {
+        ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
+          DashInfoRow(
+            pagesStageLabel(stage.name),
+            value: pagesStageStatusLabel(stage.status))
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .dashSectionBoundary()
     }
   }
 
@@ -908,6 +926,23 @@ private func pagesDeploymentTitle(_ deployment: PagesDeployment) -> String {
   }
   if let branch = deployment.branch { return branch }
   return deployment.shortID ?? String(deployment.id.prefix(8))
+}
+
+/// Cloudflare names build stages in snake_case (`clone_repo`). Fold that into
+/// one English source form so a single catalog key localizes it; unknown stage
+/// names pass through `DashL10n.ui` unchanged.
+private func pagesStageLabel(_ name: String?) -> String {
+  guard let name, !name.isEmpty else { return DashL10n.string("Stage") }
+  return name.replacingOccurrences(of: "_", with: " ").capitalized
+}
+
+/// A stage's own status vocabulary — `idle` here means “has not started”, not
+/// the “In progress” `StatusToken` reads it as for a deployment's latest stage.
+/// Same shape as `rdapStatusLabel`: keep Cloudflare's English token, capitalize
+/// it into one catalog key, and localize at this last render step.
+private func pagesStageStatusLabel(_ status: String?) -> String {
+  guard let status, !status.isEmpty else { return "—" }
+  return DashL10n.ui(status.replacingOccurrences(of: "_", with: " ").capitalized)
 }
 
 @MainActor

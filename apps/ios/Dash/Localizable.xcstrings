@@ -5137,6 +5137,17 @@
         }
       }
     },
+    "Failure" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "失败"
+          }
+        }
+      }
+    },
     "File-type icons" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5769,6 +5780,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iCloud"
+          }
+        }
+      }
+    },
+    "Idle" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "等待中"
           }
         }
       }
@@ -10042,6 +10064,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SSL"
+          }
+        }
+      }
+    },
+    "Stage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "阶段"
+          }
+        }
+      }
+    },
+    "Stages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建阶段"
           }
         }
       }
