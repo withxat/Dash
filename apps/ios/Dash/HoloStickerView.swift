@@ -54,7 +54,7 @@ final class HoloMotionManager: ObservableObject {
     self.isMotionAvailable = motionManager.isDeviceMotionAvailable
   }
 
-  deinit {
+  isolated deinit {
     timer?.invalidate()
     motionManager.stopDeviceMotionUpdates()
   }

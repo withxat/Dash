@@ -113,6 +113,7 @@
 		B0000000000000000000015D /* DashSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015D /* DashSurfaces.swift */; };
 		B0000000000000000000015E /* DashControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015E /* DashControls.swift */; };
 		B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015F /* DashHeaderScrollChrome.swift */; };
+		B000000000000000000001B9 /* DashVariableBlur.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B9 /* DashVariableBlur.swift */; };
 		B00000000000000000000160 /* DashFormChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000160 /* DashFormChrome.swift */; };
 		B00000000000000000000161 /* DashActionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000161 /* DashActionChrome.swift */; };
 		B00000000000000000000162 /* R2TransferSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000162 /* R2TransferSupport.swift */; };
@@ -263,6 +264,7 @@
 		F0000000000000000000015D /* DashSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSurfaces.swift; sourceTree = "<group>"; };
 		F0000000000000000000015E /* DashControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashControls.swift; sourceTree = "<group>"; };
 		F0000000000000000000015F /* DashHeaderScrollChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashHeaderScrollChrome.swift; sourceTree = "<group>"; };
+		F000000000000000000001B9 /* DashVariableBlur.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashVariableBlur.swift; sourceTree = "<group>"; };
 		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000162 /* R2TransferSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferSupport.swift; sourceTree = "<group>"; };
@@ -412,6 +414,7 @@
 				F00000000000000000000034 /* SolarIcons.swift */,
 				F00000000000000000000035 /* DashChrome.swift */,
 				F0000000000000000000015F /* DashHeaderScrollChrome.swift */,
+				F000000000000000000001B9 /* DashVariableBlur.swift */,
 				F00000000000000000000160 /* DashFormChrome.swift */,
 				F00000000000000000000161 /* DashActionChrome.swift */,
 				F00000000000000000000163 /* MetricsWidgetSnapshot.swift */,
@@ -841,6 +844,7 @@
 				B00000000000000000000018 /* SolarIcons.swift in Sources */,
 				B00000000000000000000019 /* DashChrome.swift in Sources */,
 				B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */,
+				B000000000000000000001B9 /* DashVariableBlur.swift in Sources */,
 				B00000000000000000000160 /* DashFormChrome.swift in Sources */,
 				B00000000000000000000161 /* DashActionChrome.swift in Sources */,
 				B000000000000000000001A0 /* MetricsWidgetSnapshot.swift in Sources */,

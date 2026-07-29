@@ -472,6 +472,12 @@ extension View {
 }
 
 private struct DetailHeaderModifier: ViewModifier {
+  /// Leaves a stable trailing region for the widest shared toolbar group
+  /// (two 44pt actions plus their gap) on a compact portrait iPhone. The
+  /// toolbar can still propose less space when a text action or large Dynamic
+  /// Type needs it.
+  private static let maximumPrincipalWidth: CGFloat = 160
+
   let icon: DetailIcon
   let title: String
   var tint: Color?
@@ -494,11 +500,14 @@ private struct DetailHeaderModifier: ViewModifier {
         ToolbarItem(placement: .principal) {
           HStack(spacing: 6) {
             DetailIconView(icon: icon, tint: resolvedTint)
+              .layoutPriority(1)
             Text(displayedTitle)
               .dashTextStyle(.sectionTitle)
               .foregroundStyle(DashTheme.strong)
               .lineLimit(1)
+              .truncationMode(.tail)
           }
+          .frame(maxWidth: Self.maximumPrincipalWidth)
         }
         // Root principals are a clear 1×1 prop (no glass). A real title + icon
         // principal gets iOS 26's shared Liquid Glass plate — a gray capsule

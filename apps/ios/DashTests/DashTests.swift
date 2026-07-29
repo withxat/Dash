@@ -1633,6 +1633,68 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashHeaderScrimRules.isScrolled(distance: -40, wasScrolled: true))
 }
 
+/// Keep the reference implementation's deliberately restrained blur and tint
+/// tuning in one shared contract, so the SwiftUI wrapper cannot quietly drift
+/// back toward the taller, heavier material slab this replaced.
+@Test func headerVariableBlurKeepsReferenceTuning() {
+  #expect(DashHeaderScrimMetrics.maxBlurRadius == 5)
+  #expect(DashHeaderScrimMetrics.startOffset == 0)
+  #expect(DashHeaderScrimMetrics.tail == 64)
+  #expect(DashHeaderScrimMetrics.tintOpacityTop == 0.7)
+  #expect(DashHeaderScrimMetrics.tintOpacityMiddle == 0.5)
+  #expect(DashHeaderScrimMetrics.tintMiddleY == 90)
+}
+
+/// Values crossing into the UIKit bridge are bounded before the private filter
+/// sees them. Positive radii survive unchanged; negative radii and mask offsets
+/// beyond Core Image's normalized range are clamped to safe values.
+@Test func variableBlurConfigurationClampsUnsafeValues() {
+  let nominal = DashVariableBlurConfiguration(maxBlurRadius: 5, startOffset: 0.48)
+  #expect(nominal.resolvedMaxBlurRadius == 5)
+  #expect(nominal.resolvedStartOffset == 0.48)
+
+  let belowRange = DashVariableBlurConfiguration(maxBlurRadius: -5, startOffset: -2)
+  #expect(belowRange.resolvedMaxBlurRadius == 0)
+  #expect(belowRange.resolvedStartOffset == -1)
+
+  let aboveRange = DashVariableBlurConfiguration(maxBlurRadius: 12, startOffset: 2)
+  #expect(aboveRange.resolvedMaxBlurRadius == 12)
+  #expect(aboveRange.resolvedStartOffset == 1)
+
+  let nonFinite = DashVariableBlurConfiguration(
+    maxBlurRadius: .infinity,
+    startOffset: .nan
+  )
+  #expect(nonFinite.resolvedMaxBlurRadius == 0)
+  #expect(nonFinite.resolvedStartOffset == 0)
+}
+
+/// The private filter contract is opt-in: future OS majors and filters missing
+/// any required input stay on the public Material renderer before KVC is used.
+@Test func variableBlurRejectsUnknownPrivateFilterContracts() {
+  #expect(!DashVariableBlurCompatibility.supports(osMajorVersion: 16))
+  #expect(DashVariableBlurCompatibility.supports(osMajorVersion: 17))
+  #expect(DashVariableBlurCompatibility.supports(osMajorVersion: 26))
+  #expect(!DashVariableBlurCompatibility.supports(osMajorVersion: 27))
+
+  let required = Array(DashVariableBlurCompatibility.requiredInputKeys)
+  #expect(DashVariableBlurCompatibility.supports(inputKeys: required + ["inputDither"]))
+  for key in required {
+    #expect(
+      !DashVariableBlurCompatibility.supports(
+        inputKeys: required.filter { $0 != key }
+      )
+    )
+  }
+}
+
+/// This is a smoke test, not an availability assertion: CI and future iOS
+/// versions may legitimately report either answer when the private filter is
+/// absent. Evaluating the support probe must remain safe in both environments.
+@Test @MainActor func variableBlurSupportProbeDoesNotRequirePrivateAPI() {
+  let _: Bool = DashVariableBlurSupport.isAvailable
+}
+
 /// The store carries the hysteresis: it is asked with a raw scroll distance and
 /// remembers what it answered, so a screen parked between the two thresholds
 /// keeps whatever it already had. A screen with no scroll view clears outright.

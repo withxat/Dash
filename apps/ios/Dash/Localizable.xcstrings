@@ -8400,6 +8400,23 @@
         }
       }
     },
+    "Progressive header blur" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Progressive header blur"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "渐进式页眉模糊"
+          }
+        }
+      }
+    },
     "Provisioning" : {
       "extractionState" : "stale",
       "localizations" : {

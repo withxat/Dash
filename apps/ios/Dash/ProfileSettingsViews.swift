@@ -849,7 +849,7 @@ private struct OpenSourceCredit: Identifiable {
 
   var id: String { name }
 
-  /// Swift packages that ship in the app binary (direct and transitive).
+  /// Libraries and vendored source that ship in the app binary.
   static let libraries: [OpenSourceCredit] = [
     OpenSourceCredit(
       name: "CodeEditor", purpose: "Code and JSON editing", author: "ZeeZide",
@@ -857,6 +857,9 @@ private struct OpenSourceCredit: Identifiable {
     OpenSourceCredit(
       name: "Highlightr", purpose: "Syntax highlighting", author: "Juan Pablo Illanes",
       license: "MIT", url: URL(string: "https://github.com/raspu/Highlightr")!),
+    OpenSourceCredit(
+      name: "VariableBlur", purpose: "Progressive header blur", author: "Nikita Starshinov",
+      license: "MIT", url: URL(string: "https://github.com/nikstar/VariableBlur")!),
   ]
 
   /// Icon artwork Dash renders. Solar ships under CC BY 4.0, which requires

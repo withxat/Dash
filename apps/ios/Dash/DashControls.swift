@@ -638,7 +638,7 @@ struct DashToolbarActionGroup<Content: View>: View {
 /// Navigation-bar icon action. Forces a circle on iOS 26 Liquid Glass
 /// (system default is a capsule whenever the label isn't treated as square).
 struct DashToolbarIconButton: View {
-  enum Variant {
+  enum Variant: Equatable {
     case standard
     case confirmation
   }
@@ -648,11 +648,15 @@ struct DashToolbarIconButton: View {
   var variant: Variant = .standard
   let action: () -> Void
 
+  private var confirmationGlyph: some View {
+    DashToolbarActionIcon(asset: asset, color: .white)
+  }
+
   @ViewBuilder
   private var label: some View {
     switch variant {
     case .confirmation:
-      DashToolbarActionIcon(asset: asset, color: .white)
+      confirmationGlyph
         .frame(
           width: AvatarHeaderMetrics.barSize,
           height: AvatarHeaderMetrics.barSize
@@ -681,10 +685,24 @@ struct DashToolbarIconButton: View {
   }
 
   var body: some View {
-    Button(action: action) {
-      label
+    Group {
+      if #available(iOS 26.0, *), variant == .confirmation {
+        // In a toolbar, borderedProminent is the system's tinted Liquid Glass
+        // confirmation treatment. Let it own sizing, contrast, and interaction
+        // while retaining Dash's Solar glyph.
+        Button(action: action) {
+          confirmationGlyph
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .tint(DashTheme.brand)
+      } else {
+        Button(action: action) {
+          label
+        }
+        .buttonStyle(DashPressButtonStyle())
+      }
     }
-    .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(DashL10n.ui(accessibilityLabel))
   }
 }
