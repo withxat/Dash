@@ -744,12 +744,18 @@ struct LocalizationTests {
 @Test func destinationFeatureMappingCoversDirectRoutes() {
   #expect(featureID(for: .zone("z1")) == .zones)
   #expect(featureID(for: .dns("z1")) == .zones)
+  #expect(featureID(for: .zoneEmailRouting("z1")) == .zones)
   #expect(featureID(for: .worker("api")) == .workers)
+  #expect(featureID(for: .tunnel("t1")) == .tunnels)
   #expect(featureID(for: .r2Bucket("media", prefix: "")) == .r2)
   #expect(featureID(for: .kvNamespace("ns")) == .kv)
   #expect(featureID(for: .kvKey(namespaceID: "ns", key: "flag")) == .kv)
   #expect(featureID(for: .profile) == nil)
   #expect(featureID(for: .settingsAccounts) == nil)
+  #expect(featureID(for: .filesMount) == nil)
+  #expect(featureID(for: .emailAddresses) == nil)
+  #expect(featureID(for: .registrarDomains) == nil)
+  #expect(featureID(for: .registrarDomain("example.com")) == nil)
 }
 
 /// Operational destinations keep reads and mutations explicit so Demo and
@@ -774,6 +780,27 @@ struct LocalizationTests {
   #expect(writeScopes(for: .pushAlerts) == ["notifications.write"])
   #expect(writeScopes(for: .profile) == ["account-settings.write"])
   #expect(requiredScopes(for: .settingsAccounts).isEmpty)
+  #expect(readScopes(for: .filesMount).isEmpty)
+  #expect(writeScopes(for: .filesMount).isEmpty)
+  #expect(
+    readScopes(for: .zoneEmailRouting("z1"))
+      == [
+        "zone.read", "dns.read", "zone-settings.read",
+        "email-routing-rule.read", "email-routing-address.read",
+      ])
+  #expect(
+    writeScopes(for: .zoneEmailRouting("z1"))
+      == ["zone-settings.write", "email-routing-rule.write"])
+  #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
+  #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
+  #expect(readScopes(for: .registrarDomains) == ["registrar-domains.read"])
+  #expect(writeScopes(for: .registrarDomains).isEmpty)
+  #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
+  #expect(
+    writeScopes(for: .registrarDomain("example.com"))
+      == ["registrar-domains.admin"])
+  #expect(readScopes(for: .tunnel("t1")) == ["argotunnel.read", "access.read"])
+  #expect(writeScopes(for: .tunnel("t1")).isEmpty)
   // Each is absent from the feature the destination maps to.
   #expect(!FeatureID.zones.capability.all.contains("dns.write"))
   #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
