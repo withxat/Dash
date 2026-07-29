@@ -1,4 +1,5 @@
 import CloudflareAPI
+import CoreText
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -83,6 +84,28 @@ enum OnboardingBrandIcon {
   static let cornerFactor: CGFloat = 0.2237
 }
 
+enum OnboardingBrandTypography {
+  static let launchIconSize: CGFloat = 88
+  static let launchMagnification = launchIconSize / OnboardingBrandIcon.size
+
+  /// The splash lays the wordmark out large, then scales it onto the welcome
+  /// header. SF's optical-size metrics are not linear, so a fresh 28pt layout
+  /// is wider and flashes open at hand-off. Pin both copies to the splash's
+  /// optical size while leaving their actual point sizes unchanged.
+  static func wordmarkFont(baseSize: CGFloat, renderMagnification: CGFloat) -> UIFont {
+    let pointSize = baseSize * renderMagnification
+    let opticalSize = baseSize * launchMagnification
+    let source = UIFont.systemFont(ofSize: pointSize, weight: .bold)
+    let opticalSizeKey = UIFontDescriptor.AttributeName(
+      rawValue: kCTFontOpticalSizeAttribute as String
+    )
+    let descriptor = source.fontDescriptor.addingAttributes([
+      opticalSizeKey: NSNumber(value: Double(opticalSize))
+    ])
+    return UIFont(descriptor: descriptor, size: pointSize)
+  }
+}
+
 /// The `[icon] Dash` brand lockup. One definition serves both the welcome
 /// header and the launch splash overlay so the splash morph hands off onto
 /// identical metrics — the overlay renders it magnified (icon at launch-logo
@@ -118,7 +141,7 @@ struct OnboardingBrandLockup: View {
   @ViewBuilder
   private var wordmark: some View {
     let text = Text("Dash")
-      .onboardingHeadlineFont(magnification)
+      .onboardingWordmarkFont(magnification)
       .foregroundStyle(DashTheme.strong)
       // Lay out at ideal width: the magnified overlay copy must never
       // truncate — `brandingScale` contracts the rendered group instead.
@@ -590,12 +613,32 @@ extension View {
     modifier(OnboardingHeadlineFont(magnification: magnification))
   }
 
+  fileprivate func onboardingWordmarkFont(_ magnification: CGFloat = 1) -> some View {
+    modifier(OnboardingWordmarkFont(magnification: magnification))
+  }
+
   /// Hero slogan (56pt base, relative to `.largeTitle`) — keeps the brand
   /// moment large at default sizes while tracking content-size changes.
   /// Pass a larger `base` for the lead line ("Cloudflare,") when it should
   /// sit above the tagline.
   fileprivate func onboardingSloganFont(_ base: CGFloat = 56) -> some View {
     modifier(OnboardingSloganFont(base: base))
+  }
+}
+
+private struct OnboardingWordmarkFont: ViewModifier {
+  var magnification: CGFloat = 1
+  @ScaledMetric(relativeTo: .title) private var baseSize: CGFloat = 28
+
+  func body(content: Content) -> some View {
+    content.font(
+      Font(
+        OnboardingBrandTypography.wordmarkFont(
+          baseSize: baseSize,
+          renderMagnification: magnification
+        )
+      )
+    )
   }
 }
 

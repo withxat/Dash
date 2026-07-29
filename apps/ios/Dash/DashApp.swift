@@ -149,11 +149,11 @@ private struct RootWithSplash: View {
   /// full proportion during landing.
   private static let brandWordmarkScale: CGFloat = 0.8
   private static let landDuration: TimeInterval = 0.6
-  private static let holdingIconSize: CGFloat = 88
+  private static let holdingIconSize = OnboardingBrandTypography.launchIconSize
   /// The overlay lockup lays out at launch-logo size and scales *down* onto
   /// the welcome header — supersampled, so the wordmark stays crisp through
   /// the whole morph.
-  private static let magnification = holdingIconSize / OnboardingBrandIcon.size
+  private static let magnification = OnboardingBrandTypography.launchMagnification
 
   private var appLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)

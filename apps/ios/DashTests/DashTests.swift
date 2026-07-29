@@ -1,9 +1,47 @@
 import CloudflareAPI
+import CoreText
 import SwiftUI
 import Testing
 import UIKit
 
 @testable import Dash
+
+@Test @MainActor func onboardingWordmarkKeepsLaunchOpticalSpacingAtRest() {
+  let magnification = OnboardingBrandTypography.launchMagnification
+
+  for baseSize in [CGFloat(28), 34, 56] {
+    let restingFont = OnboardingBrandTypography.wordmarkFont(
+      baseSize: baseSize,
+      renderMagnification: 1
+    )
+    let launchFont = OnboardingBrandTypography.wordmarkFont(
+      baseSize: baseSize,
+      renderMagnification: magnification
+    )
+    let restingLine = CTLineCreateWithAttributedString(
+      NSAttributedString(string: "Dash", attributes: [.font: restingFont])
+    )
+    let launchLine = CTLineCreateWithAttributedString(
+      NSAttributedString(string: "Dash", attributes: [.font: launchFont])
+    )
+
+    for characterIndex in 0..<4 {
+      let restingOrigin = CTLineGetOffsetForStringIndex(
+        restingLine,
+        characterIndex,
+        nil
+      )
+      let normalizedLaunchOrigin =
+        CTLineGetOffsetForStringIndex(launchLine, characterIndex, nil) / magnification
+      #expect(abs(restingOrigin - normalizedLaunchOrigin) < 0.001)
+    }
+
+    let restingWidth = CTLineGetTypographicBounds(restingLine, nil, nil, nil)
+    let normalizedLaunchWidth =
+      CTLineGetTypographicBounds(launchLine, nil, nil, nil) / magnification
+    #expect(abs(restingWidth - normalizedLaunchWidth) < 0.001)
+  }
+}
 
 @Test func configurationRejectsUnexpandedBuildSettings() {
   #expect(
