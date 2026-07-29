@@ -1397,23 +1397,6 @@
         }
       }
     },
-    "Async image loading" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Async image loading"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "异步图片加载"
-          }
-        }
-      }
-    },
     "At most every 5 minutes" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2911,23 +2894,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "备注"
-          }
-        }
-      }
-    },
-    "CommonMark parser" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CommonMark parser"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "CommonMark 解析器"
           }
         }
       }
@@ -6654,23 +6620,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "全部标为已读"
-          }
-        }
-      }
-    },
-    "Markdown rendering" : {
-      "extractionState" : "stale",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Markdown rendering"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Markdown 渲染"
           }
         }
       }

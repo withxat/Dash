@@ -58,7 +58,6 @@
 		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
 		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
 		B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000112 /* DashAuthorizationScopes.swift */; };
-		B00000000000000000000113 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000003 /* MarkdownUI */; };
 		B00000000000000000000142 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000E /* CodeEditor */; };
 		B00000000000000000000143 /* KVJSONFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000142 /* KVJSONFormatting.swift */; };
 		B00000000000000000000114 /* DashWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000114 /* DashWorkspace.swift */; };
@@ -299,7 +298,6 @@
 				B00000000000000000000014 /* CloudflareAPI in Frameworks */,
 				B00000000000000000000117 /* GradientAvatars in Frameworks */,
 				B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */,
-				B00000000000000000000113 /* MarkdownUI in Frameworks */,
 				B00000000000000000000115 /* SwiftDitherKit in Frameworks */,
 				B00000000000000000000163 /* SwiftGlobeKit in Frameworks */,
 				B00000000000000000000142 /* CodeEditor in Frameworks */,
@@ -575,7 +573,6 @@
 				P00000000000000000000001 /* CloudflareAPI */,
 				P00000000000000000000008 /* GradientAvatars */,
 				P0000000000000000000000A /* BlossomColorPickerCore */,
-				P00000000000000000000003 /* MarkdownUI */,
 				P00000000000000000000006 /* SwiftDitherKit */,
 				P00000000000000000000010 /* SwiftGlobeKit */,
 				P0000000000000000000000E /* CodeEditor */,
@@ -727,7 +724,6 @@
 				P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */,
 				P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */,
 				P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */,
-				P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */,
 			);
 			productRefGroup = A00000000000000000000014 /* Products */;
@@ -1360,14 +1356,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.4.1;
-			};
-		};
 		P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/ZeeZide/CodeEditor.git";
@@ -1383,11 +1371,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
 			productName = CloudflareAPI;
-		};
-		P00000000000000000000003 /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = P00000000000000000000004 /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
-			productName = MarkdownUI;
 		};
 		P00000000000000000000006 /* SwiftDitherKit */ = {
 			isa = XCSwiftPackageProductDependency;

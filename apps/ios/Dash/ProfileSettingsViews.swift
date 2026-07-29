@@ -829,20 +829,11 @@ private struct OpenSourceCredit: Identifiable {
   /// Swift packages that ship in the app binary (direct and transitive).
   static let libraries: [OpenSourceCredit] = [
     OpenSourceCredit(
-      name: "MarkdownUI", purpose: "Markdown rendering", author: "Guille Gonzalez",
-      license: "MIT", url: URL(string: "https://github.com/gonzalezreal/swift-markdown-ui")!),
-    OpenSourceCredit(
       name: "CodeEditor", purpose: "Code and JSON editing", author: "ZeeZide",
       license: "MIT", url: URL(string: "https://github.com/ZeeZide/CodeEditor")!),
     OpenSourceCredit(
       name: "Highlightr", purpose: "Syntax highlighting", author: "Juan Pablo Illanes",
       license: "MIT", url: URL(string: "https://github.com/raspu/Highlightr")!),
-    OpenSourceCredit(
-      name: "NetworkImage", purpose: "Async image loading", author: "Guille Gonzalez",
-      license: "MIT", url: URL(string: "https://github.com/gonzalezreal/NetworkImage")!),
-    OpenSourceCredit(
-      name: "swift-cmark", purpose: "CommonMark parser", author: "Swift project",
-      license: "BSD-2-Clause", url: URL(string: "https://github.com/swiftlang/swift-cmark")!),
   ]
 
   /// Icon artwork Dash renders. Solar ships under CC BY 4.0, which requires
