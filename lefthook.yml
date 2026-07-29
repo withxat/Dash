@@ -1,5 +1,7 @@
 pre-commit:
-  parallel: true
+  # swift-format rewrites source files in place, so running it beside Xcode can
+  # make the compiler observe a partially replaced file.
+  parallel: false
   jobs:
     - name: lint & format
       glob: '**/*.{swift,js,ts,jsx,tsx,astro,htm,html,json,yml,yaml,toml,css,pcss,postcss,less,scss,md,xml,svg,gql,graphql}'
