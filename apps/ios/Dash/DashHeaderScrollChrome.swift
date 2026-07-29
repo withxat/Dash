@@ -36,12 +36,14 @@ struct HeaderProfileButton: View {
       .buttonStyle(.glass)
       .buttonBorderShape(.circle)
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     } else {
       Button(action: action) {
         HeaderProfileAvatar(email: email)
       }
       .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     }
   }
 }
@@ -202,28 +204,37 @@ struct DashScrollEdgeEffectsHidden: ViewModifier {
 
 // MARK: - Header scrim
 
-/// Geometry of the header frost. The band is pinned to the physical top edge:
-/// solid across the status bar and the navigation bar, then eased to nothing,
-/// so its lower edge never draws a line across the content.
+/// Geometry of the header frost. The band is pinned to the physical top edge
+/// and extends just beyond the navigation bar so both its radius and tint can
+/// ease to nothing before the lower edge reaches scrolling content.
+///
+/// Radius, tail, and tint tuning follow dominikmartn/ProgressiveBlurHeader:
+/// https://github.com/dominikmartn/ProgressiveBlurHeader
 enum DashHeaderScrimMetrics {
   /// Floor for the safe-area top inset, in case a screen reports one without
   /// its navigation bar. Never a substitute for the measured inset.
   static let minimumTop: CGFloat = 44
-  /// Tail below the safe-area top edge. Deliberately short: the falloff does
-  /// the work, not extra length — the band should not read as a tall slab.
-  static let tail: CGFloat = 32
-  /// How much of the measured top inset holds full strength — about the status
-  /// bar. Everything below it is falloff, so the title sits inside the ramp
-  /// instead of on the edge of a plateau. Most of the band is ramp.
+  /// ProgressiveBlurHeader's fade length: long enough for the real radius
+  /// gradient to disappear without reading as a hard horizontal edge.
+  static let tail: CGFloat = 64
+  /// The upstream VariableBlur default is deliberately subtle. More radius
+  /// makes text smear well below the bar instead of merely separating it.
+  static let maxBlurRadius: CGFloat = 5
+  static let startOffset: CGFloat = 0
+  /// Adaptive tint over the variable backdrop, matching the reference
+  /// component's top and header-center strengths.
+  static let tintOpacityTop = 0.7
+  static let tintOpacityMiddle = 0.5
+  static let tintMiddleY: CGFloat = 90
+  /// How much of the measured top inset the public Material fallback holds at
+  /// full strength — about the status bar. The variable filter owns its own
+  /// continuous radius mask.
   static let solidShare: CGFloat = 0.48
-  /// Extents of the stacked blur layers, as a share of the band height.
+  /// Public-API fallback extents, as a share of the band height.
   ///
   /// Each layer samples what is already composited beneath it, so their radii
-  /// compound: the top of the band is blurred three times over, the bottom
-  /// once, and the count falls off in between. That is a real variable-radius
-  /// blur. One material at fading alpha is NOT — it cross-fades sharp content
-  /// with blurred content, which reads as a ghost rather than a blur, and is
-  /// the reason a single masked layer never looks like the system's.
+  /// compound. This remains available when the vendored variable-blur filter
+  /// cannot be constructed on a future OS.
   static let blurLayers: [CGFloat] = [1, 0.72, 0.5]
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
   /// finger — it crosses this line and then plays its own entrance, so a nudge
@@ -336,9 +347,9 @@ struct DashHeaderScrimModifier: ViewModifier {
   }
 }
 
-/// The screen's header frost: `.ultraThinMaterial` masked with a top-to-bottom
-/// ramp, solid across the status bar and the navigation bar and then eased to
-/// fully clear, so the lower edge never lands as a line on the content.
+/// The screen's header frost: a variable-radius backdrop blur, strongest at
+/// the physical top edge and eased to fully clear below the navigation bar so
+/// its lower edge never lands as a line on the content.
 ///
 /// It lives inside the page on purpose. UIKit draws the navigation bar above
 /// the hosted content, so a band placed here passes under the title and the
@@ -347,47 +358,80 @@ struct DashHeaderScrimModifier: ViewModifier {
 struct DashHeaderScrim: View {
   let scroll: DashHeaderScrollState
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     GeometryReader { proxy in
-      // Mounted only while it shows: a `Material` at zero opacity is still a
-      // live backdrop filter sitting over the screen.
+      // Mounted only while it shows: even an invisible backdrop filter still
+      // participates in compositing.
       if scroll.isFrosted {
         // The reader sits in the content's safe area, whose top inset already
-        // covers the status bar and the navigation bar. Only the status-bar
-        // share of it holds full strength; the rest of the band is falloff.
+        // covers the status bar and navigation bar. The tail gives both the
+        // variable filter and the public fallback room to disappear.
         let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
         let height = top + DashHeaderScrimMetrics.tail
-        band(solidFraction: top * DashHeaderScrimMetrics.solidShare / height)
-          .frame(width: proxy.size.width, height: height)
-          .offset(y: -top)
-          .transition(.opacity)
+        band(
+          solidFraction: top * DashHeaderScrimMetrics.solidShare / height,
+          height: height
+        )
+        .frame(width: proxy.size.width, height: height)
+        .offset(y: -top)
+        .transition(.opacity)
       }
     }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
 
-  /// The thinnest material there is, stacked: this band has to read as blur,
-  /// not as a painted plate — `.bar` and `.regular` carry so much tint that the
-  /// canvas stops showing through, and one layer cannot vary its radius.
+  /// VariableBlur supplies a real radius gradient. It stays isolated inside
+  /// the existing per-screen band so the navigation bar remains crisp and no
+  /// backdrop filter can leak across a push or tab swipe.
   ///
-  /// Reduce Transparency drops to a single flat canvas layer. Stacking there
-  /// would just pile up opacity, and there is no blur to grade anyway.
+  /// Reduce Transparency drops to a flat canvas layer. If the private filter
+  /// is absent on a future OS, retain the previous public Material stack.
   @ViewBuilder
-  private func band(solidFraction: CGFloat) -> some View {
+  private func band(solidFraction: CGFloat, height: CGFloat) -> some View {
     if reduceTransparency {
       DashTheme.canvas
         .mask { ramp(solidFraction: solidFraction, extent: 1) }
-    } else {
+    } else if DashVariableBlurSupport.isAvailable {
       ZStack {
-        ForEach(DashHeaderScrimMetrics.blurLayers, id: \.self) { extent in
-          Rectangle()
-            .fill(Material.ultraThin)
-            .mask { ramp(solidFraction: solidFraction, extent: extent) }
-        }
+        DashVariableBlurView(
+          maxBlurRadius: DashHeaderScrimMetrics.maxBlurRadius,
+          startOffset: DashHeaderScrimMetrics.startOffset
+        )
+        tintRamp(height: height)
+      }
+    } else {
+      materialFallback(solidFraction: solidFraction)
+    }
+  }
+
+  private func materialFallback(solidFraction: CGFloat) -> some View {
+    ZStack {
+      ForEach(DashHeaderScrimMetrics.blurLayers, id: \.self) { extent in
+        Rectangle()
+          .fill(Material.ultraThin)
+          .mask { ramp(solidFraction: solidFraction, extent: extent) }
       }
     }
+  }
+
+  private func tintRamp(height: CGFloat) -> LinearGradient {
+    let middle = min(max(DashHeaderScrimMetrics.tintMiddleY / height, 0), 1)
+    let tint: Color = colorScheme == .dark ? .black : .white
+    return LinearGradient(
+      stops: [
+        Gradient.Stop(color: tint.opacity(DashHeaderScrimMetrics.tintOpacityTop), location: 0),
+        Gradient.Stop(
+          color: tint.opacity(DashHeaderScrimMetrics.tintOpacityMiddle),
+          location: middle
+        ),
+        Gradient.Stop(color: tint.opacity(0), location: 1),
+      ],
+      startPoint: .top,
+      endPoint: .bottom
+    )
   }
 
   private func ramp(solidFraction: CGFloat, extent: CGFloat) -> LinearGradient {

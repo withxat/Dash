@@ -53,6 +53,7 @@ struct FeatureDescriptor: Hashable, Sendable {
 enum Destination: Hashable {
   case profile
   case settings
+  case settingsAccounts
   case about
   /// Settings → Open source: third-party libraries and icon sets Dash ships.
   case openSource

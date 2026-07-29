@@ -792,6 +792,7 @@ private struct DomainCardCustomizeButton: View {
         } label: {
           Text(DashL10n.string("Customize"))
             .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.glassActionForeground)
         }
         .buttonStyle(.glass)
       } else if reduceTransparency {

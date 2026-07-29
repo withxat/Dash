@@ -4,7 +4,7 @@
   import UIKit
 
   /// DEBUG-only playground for toast, haptics, and hold-to-confirm. Opened from
-  /// the profile tray — never shipped in Release.
+  /// Settings — never shipped in Release.
   struct DebugView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
@@ -13,11 +13,13 @@
     @State private var holdDemoPhase: DashActionPhase = .idle
     @State private var probeRunning = false
     @State private var probeResult: String?
+    @ObservedObject private var holoMotion = HoloMotionManager.shared
 
     var body: some View {
       ScrollView {
         LazyVStack(spacing: DashTheme.Spacing.section) {
           sessionSection
+          holoSection
           webAnalyticsProbeSection
           toastSection
           hapticsSection
@@ -60,6 +62,100 @@
             }
           }
         }
+      }
+    }
+
+    // MARK: - Holo stickers
+
+    private var holoSection: some View {
+      DashListGroup(title: "Holo stickers") {
+        dashListCard {
+          VStack(spacing: 16) {
+            HoloStickerView(
+              motion: holoMotion,
+              shape: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            ) {
+              Image("LoginAppIcon")
+                .resizable()
+                .scaledToFit()
+            }
+            .frame(width: 76, height: 76)
+            .dashShadow(
+              .raised,
+              in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
+
+            VStack(spacing: 14) {
+              holoSlider(
+                title: "Gradient sensitivity",
+                value: $holoMotion.gradientSensitivity,
+                range: 40...320,
+                step: 10,
+                valueText: "\(Int(holoMotion.gradientSensitivity)) pt/rad"
+              )
+              holoSlider(
+                title: "Sparkle maximum",
+                value: $holoMotion.sparkleMaximumOpacity,
+                range: 0...0.7,
+                step: 0.05,
+                valueText: holoMotion.sparkleMaximumOpacity.formatted(
+                  .number.precision(.fractionLength(2)))
+              )
+              holoSlider(
+                title: "Reset threshold",
+                value: $holoMotion.resetThreshold,
+                range: 0.005...0.08,
+                step: 0.005,
+                valueText: holoMotion.resetThreshold.formatted(
+                  .number.precision(.fractionLength(3)))
+              )
+              holoSlider(
+                title: "Update frequency",
+                value: $holoMotion.updateFrequency,
+                range: 5...30,
+                step: 1,
+                valueText: "\(Int(holoMotion.updateFrequency)) Hz"
+              )
+            }
+
+            Button {
+              holoMotion.resetReference()
+            } label: {
+              Text(verbatim: "Reset reference")
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.brand)
+                .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+            }
+            .buttonStyle(DashPressButtonStyle())
+          }
+          .padding(.horizontal, 16)
+          .padding(.vertical, 14)
+          .frame(maxWidth: .infinity)
+          .dashListCardInset()
+        }
+      }
+    }
+
+    private func holoSlider(
+      title: String,
+      value: Binding<Double>,
+      range: ClosedRange<Double>,
+      step: Double,
+      valueText: String
+    ) -> some View {
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+          Text(verbatim: title)
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.text)
+          Spacer(minLength: 8)
+          Text(verbatim: valueText)
+            .dashTextStyle(.code)
+            .foregroundStyle(DashTheme.subtle)
+        }
+        Slider(value: value, in: range, step: step)
+          .accessibilityLabel(Text(verbatim: title))
+          .accessibilityValue(Text(verbatim: valueText))
       }
     }
 

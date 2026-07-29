@@ -59,11 +59,24 @@ struct QuickLookPreview: UIViewControllerRepresentable {
     fileprivate func attach(to preview: DashQLPreviewController) {
       preview.previewingURL = url
       if preview.dashDone == nil {
-        preview.dashDone = UIBarButtonItem(
-          barButtonSystemItem: .done,
-          target: self,
-          action: #selector(done)
-        )
+        let doneItem: UIBarButtonItem
+        if let image = UIImage(named: SolarAsset.unread)?.withRenderingMode(.alwaysTemplate) {
+          if #available(iOS 26.0, *) {
+            doneItem = UIBarButtonItem(
+              image: image, style: .prominent, target: self, action: #selector(done))
+          } else {
+            doneItem = UIBarButtonItem(
+              image: image, style: .done, target: self, action: #selector(done))
+          }
+        } else {
+          doneItem = UIBarButtonItem(
+            barButtonSystemItem: .done,
+            target: self,
+            action: #selector(done)
+          )
+        }
+        doneItem.accessibilityLabel = DashL10n.string("Done")
+        preview.dashDone = doneItem
       }
       if preview.dashMore == nil {
         let more = UIBarButtonItem(

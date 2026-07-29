@@ -92,9 +92,8 @@ struct FeatureWriteAccessNotice: View {
 /// Maps a push destination to the catalog feature that owns its write scopes.
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
-  case .profile, .settings, .about, .openSource, .auditLogs, .pushAlerts, .filesMount,
-    .watchtowerInbox,
-    .emailAddresses, .registrarDomains, .registrarDomain:
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
+    .filesMount, .watchtowerInbox, .emailAddresses, .registrarDomains, .registrarDomain:
     nil
   #if DEBUG
     case .debug: nil
@@ -121,7 +120,8 @@ func featureID(for destination: Destination) -> FeatureID? {
 /// include them. See DashAuthorizationScopes.initialReadOnly.
 func readScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .profile, .settings, .about, .openSource, .filesMount, .watchtowerInbox:
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .filesMount,
+    .watchtowerInbox:
     []
   #if DEBUG
     case .debug:
@@ -164,8 +164,8 @@ func readScopes(for destination: Destination) -> Set<String> {
 /// destination without enabling write controls owned by a sibling screen.
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .settings, .about, .openSource, .auditLogs, .filesMount, .watchtowerInbox, .zoneAnalytics,
-    .zoneWebAnalytics:
+  case .settings, .settingsAccounts, .about, .openSource, .auditLogs, .filesMount,
+    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics:
     []
   #if DEBUG
     case .debug:
