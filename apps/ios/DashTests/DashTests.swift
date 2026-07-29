@@ -721,6 +721,7 @@ struct LocalizationTests {
   #expect(featureID(for: .kvNamespace("ns")) == .kv)
   #expect(featureID(for: .kvKey(namespaceID: "ns", key: "flag")) == .kv)
   #expect(featureID(for: .profile) == nil)
+  #expect(featureID(for: .settingsAccounts) == nil)
 }
 
 /// Operational destinations keep reads and mutations explicit so Demo and
@@ -744,6 +745,7 @@ struct LocalizationTests {
   #expect(writeScopes(for: .zoneWAF("z1")) == ["zone-settings.write"])
   #expect(writeScopes(for: .pushAlerts) == ["notifications.write"])
   #expect(writeScopes(for: .profile) == ["account-settings.write"])
+  #expect(requiredScopes(for: .settingsAccounts).isEmpty)
   // Each is absent from the feature the destination maps to.
   #expect(!FeatureID.zones.capability.all.contains("dns.write"))
   #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
@@ -1389,16 +1391,6 @@ private let watchtowerDropFrames: [CGRect] = [
 
 @Test func trayDragRubberBandsAboveExpandedDetent() {
   #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
-}
-
-@Test func profileTrayPhaseTitlesFollowFocus() {
-  let previousLocale = DashL10n.localeOverrideForTesting
-  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
-  defer { DashL10n.localeOverrideForTesting = previousLocale }
-
-  #expect(ProfileTrayPhase.menu.title == "Profile")
-  #expect(ProfileTrayPhase.accounts.title == "Switch account")
-  #expect(ProfileTrayPhase.signOut.title == "Sign out")
 }
 
 @Test func accountRenameRequiresItsWriteScope() {

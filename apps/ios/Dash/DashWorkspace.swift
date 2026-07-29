@@ -399,6 +399,7 @@ struct DestinationRoutedContent: View {
       switch destination {
       case .profile: ProfileView()
       case .settings: SettingsView()
+      case .settingsAccounts: SettingsAccountsView()
       case .about: AboutView()
       case .openSource: OpenSourceView()
       #if DEBUG

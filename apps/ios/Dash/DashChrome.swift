@@ -199,7 +199,7 @@ extension View {
     preference(key: DashSheetHeaderActionKey.self, value: action)
   }
 
-  /// Overrides the tray chrome title for the current step (e.g. Profile → Sign out).
+  /// Overrides the tray chrome title for the current step of a multi-step flow.
   func dashTrayTitle(_ title: String?) -> some View {
     preference(key: DashTrayTitleKey.self, value: title)
   }

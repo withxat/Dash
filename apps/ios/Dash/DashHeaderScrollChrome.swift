@@ -36,12 +36,14 @@ struct HeaderProfileButton: View {
       .buttonStyle(.glass)
       .buttonBorderShape(.circle)
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     } else {
       Button(action: action) {
         HeaderProfileAvatar(email: email)
       }
       .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     }
   }
 }
