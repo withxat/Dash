@@ -30,6 +30,7 @@ enum SolarAsset {
     static let key = "SolarKeyFill"
     static let lock = "SolarLockKeyholeFill"
     static let pinList = "SolarPinListFill"
+    static let routing = "SolarRoutingFill"
     static let search = "SolarMagnifierFill"
     static let shieldCheck = "SolarShieldCheckFill"
     static let settings = "SolarSettingsMinimalisticFill"
@@ -40,7 +41,7 @@ enum SolarAsset {
     static let all: Set<String> = [
       addCircle, bolt, box, boxMinimalistic, chart, chartSquare, checkCircle,
       clock, cloud, code, codeCircle, danger, file, folder, globe, globus,
-      graph, inbox, key, lock, pinList, search, settings, shieldCheck, slider,
+      graph, inbox, key, lock, pinList, routing, search, settings, shieldCheck, slider,
       upload, user,
     ]
   }

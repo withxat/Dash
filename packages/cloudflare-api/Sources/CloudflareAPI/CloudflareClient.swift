@@ -578,12 +578,14 @@ public actor CloudflareClient {
   }
   public func listR2Objects(
     accountID: String, bucket: String, cursor: String? = nil, prefix: String? = nil,
-    delimiter: String? = nil
+    delimiter: String? = nil, startAfter: String? = nil, perPage: Int = 100
   ) async throws -> R2ObjectPage {
+    let pageSize = min(max(perPage, 1), R2Limits.listMaximumPerPage)
     let data = try await raw(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects",
       query: [
-        "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "per_page": "100",
+        "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "start_after": startAfter,
+        "per_page": String(pageSize),
       ])
     let envelope = try JSONDecoder().decode(APIEnvelope<[LossyElement<R2Object>]>.self, from: data)
     guard envelope.success else {
@@ -606,15 +608,25 @@ public actor CloudflareClient {
   }
 
   /// File-backed upload for object bodies that should not be copied into
-  /// `URLRequest.httpBody`. The response body remains bounded Cloudflare API
-  /// metadata and is discarded.
+  /// `URLRequest.httpBody`. The response body is bounded Cloudflare API
+  /// metadata and is decoded when Cloudflare returns it.
+  @discardableResult
   public func putR2Object(
     accountID: String, bucket: String, key: String, fileURL: URL, contentType: String?
-  ) async throws {
+  ) async throws -> R2Object? {
+    let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+    if let fileSize = values.fileSize,
+      Int64(fileSize) > R2Limits.restUploadMaximumBytes
+    {
+      throw CloudflareTransferError.exceedsLimit(
+        limit: R2Limits.restUploadMaximumBytes, actual: Int64(fileSize))
+    }
     let url = requestURL(
       path: "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
-    _ = try await uploadResponse(
+    let response = try await uploadResponse(
       url: url, method: "PUT", fileURL: fileURL, contentType: contentType)
+    return try decodeR2ObjectUploadResponse(
+      response.0, requestedKey: key, contentType: contentType)
   }
 
   public func deleteR2Object(accountID: String, bucket: String, key: String) async throws {
@@ -933,11 +945,6 @@ public actor CloudflareClient {
   }
   public func listLoadBalancerPools(accountID: String) async throws -> [LoadBalancerPool] {
     try await list("/accounts/\(accountID)/load_balancers/pools").items
-  }
-  public func getRegistrarRegistration(accountID: String, domainName: String) async throws
-    -> RegistrarRegistration
-  {
-    try await request("/accounts/\(accountID)/registrar/registrations/\(domainName)")
   }
   public func listResources(path: String, query: [String: String?] = [:]) async throws -> Page<
     GenericResource
@@ -1382,7 +1389,7 @@ public actor CloudflareClient {
     )
   }
 
-  private func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
+  func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
     _ path: String, method: String = "GET", query: [String: String?] = [:],
     body: Body? = Optional<String>.none
   ) async throws -> Value {
@@ -1397,7 +1404,7 @@ public actor CloudflareClient {
     return envelope.result
   }
 
-  private func list<Value: Decodable & Sendable>(_ path: String, query: [String: String?] = [:])
+  func list<Value: Decodable & Sendable>(_ path: String, query: [String: String?] = [:])
     async throws -> Page<Value>
   {
     let data = try await raw(path, query: query)
@@ -1415,7 +1422,7 @@ public actor CloudflareClient {
   /// Only the string identity is required — demanding `CloudflareResource`
   /// would shut out payloads like a notification policy, whose `name` is
   /// optional, and push them back onto the single-page path.
-  private func listAllPages<Value: Decodable & Sendable & Identifiable>(
+  func listAllPages<Value: Decodable & Sendable & Identifiable>(
     _ path: String, query: [String: String?] = [:], perPage: Int
   ) async throws -> [Value] where Value.ID == String {
     var pageNumber = 1
@@ -1450,7 +1457,7 @@ public actor CloudflareClient {
     return items
   }
 
-  private func raw(
+  func raw(
     _ path: String, method: String = "GET", query: [String: String?] = [:], data: Data? = nil,
     contentType: String? = nil, rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> Data {
@@ -1459,7 +1466,7 @@ public actor CloudflareClient {
       contentType: contentType, rateLimitAttempt: rateLimitAttempt, refreshed: refreshed)
   }
 
-  private func raw(
+  func raw(
     url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   )
@@ -1483,7 +1490,7 @@ public actor CloudflareClient {
     return max(0, seconds)
   }
 
-  private func requestURL(path: String, query: [String: String?] = [:]) -> URL {
+  func requestURL(path: String, query: [String: String?] = [:]) -> URL {
     var components = URLComponents(
       url: apiBase.appending(path: path), resolvingAgainstBaseURL: false)!
     components.queryItems = query.compactMap { key, value in
@@ -1528,7 +1535,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func rawResponse(
+  func rawResponse(
     url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
@@ -1566,7 +1573,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func uploadResponse(
+  func uploadResponse(
     url: URL, method: String, fileURL: URL, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
@@ -1605,7 +1612,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func downloadResponse(
+  func downloadResponse(
     url: URL, method: String, destination: URL, maximumBytes: Int64?,
     rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> URL {
@@ -1718,28 +1725,56 @@ public actor CloudflareClient {
     // assignment below, so concurrent 401s (e.g. Watchtower's fan-out) all join
     // one refresh instead of each POSTing the rotating refresh token in
     // parallel. The keychain read moves inside the task for the same reason.
+    //
+    // That single-flight is per client *instance* and cannot see another
+    // process. `withExclusiveRefreshAccess` is what extends it across the
+    // processes that share one keychain credential; both layers stay, they
+    // solve different halves of the same race.
     let task = Task<TokenSet?, Error> {
-      let accessToken = try await store.getAccessToken()
-      guard let refreshToken = try await store.getRefreshToken() else { return nil }
-      do {
-        let tokens = try await OAuth.refresh(
-          clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
-        let installed = try await store.replaceTokens(
-          tokens,
-          ifCurrentAccessToken: accessToken,
-          refreshToken: refreshToken)
-        if installed { return tokens }
-        return try await Self.currentTokens(in: store)
-      } catch let error as CloudflareAPIError where error.isInvalidGrant {
-        // The refresh token is expired or revoked and can never be renewed.
-        // Clear only the credential that started this request. A completed
-        // OAuth replacement must survive a late invalid_grant from the old
-        // refresh token.
-        let cleared =
-          (try? await store.clearTokens(
+      // Snapshot before the lock. Anything different on the other side of it
+      // was written by whoever we were waiting for.
+      let observedAccessToken = try await store.getAccessToken()
+      return try await store.withExclusiveRefreshAccess { isExclusive in
+        let accessToken = try await store.getAccessToken()
+        if accessToken != nil, accessToken != observedAccessToken {
+          // Another process rotated while we waited. Cloudflare has already
+          // consumed the refresh token we were about to spend, so POSTing it
+          // would fail and cost us the credential we can see right now.
+          return try await Self.currentTokens(in: store)
+        }
+        guard isExclusive else {
+          // Another process still owns the rotating token. Proceeding without
+          // the lock can consume it first, then let the lock holder clear the
+          // credential after its late invalid_grant. Surface transient
+          // contention so the caller can retry after the winner writes back.
+          throw CloudflareAPIError.transport(
+            "Token refresh is already in progress. Please retry.")
+        }
+        guard let refreshToken = try await store.getRefreshToken() else { return nil }
+        do {
+          let tokens = try await OAuth.refresh(
+            clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
+          let installed = try await store.replaceTokens(
+            tokens,
             ifCurrentAccessToken: accessToken,
-            refreshToken: refreshToken)) == true
-        return cleared ? nil : try await Self.currentTokens(in: store)
+            refreshToken: refreshToken)
+          if installed { return tokens }
+          return try await Self.currentTokens(in: store)
+        } catch let error as CloudflareAPIError where error.isInvalidGrant {
+          // The refresh token is expired or revoked and can never be renewed.
+          // The credential must still be the one we spent; a completed OAuth
+          // replacement must survive a late invalid_grant from the old token.
+          // Reaching this branch also proves we hold the cross-process lock:
+          // the non-exclusive path fails closed before it can POST.
+          guard try await store.getAccessToken() == accessToken else {
+            return try await Self.currentTokens(in: store)
+          }
+          let cleared =
+            (try? await store.clearTokens(
+              ifCurrentAccessToken: accessToken,
+              refreshToken: refreshToken)) == true
+          return cleared ? nil : try await Self.currentTokens(in: store)
+        }
       }
     }
     refreshTask = task

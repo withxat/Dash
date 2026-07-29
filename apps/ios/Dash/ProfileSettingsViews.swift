@@ -170,6 +170,17 @@ struct ProfileTrayContent: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
 
+      Text(
+        DashL10n.string(
+          "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+
       DashTrayActionPair {
         DashTrayTextButton(title: DashL10n.string("Cancel")) {
           withAnimation(DashTheme.Motion.morph) { phase = .menu }
@@ -1014,6 +1025,14 @@ struct ProfileView: View {
 
         DashListGroup(title: "Account") {
           dashListCard {
+            DashListGroupLink(value: .registrarDomains) {
+              DashListRow(
+                title: DashL10n.string("Registered domains"),
+                subtitle: DashL10n.string("Domains you bought on Cloudflare"),
+                icon: SolarAsset.Content.globus
+              )
+            }
+            .dashListCardInset()
             DashListGroupLink(value: .auditLogs) {
               DashListRow(
                 title: DashL10n.string("Audit log"),

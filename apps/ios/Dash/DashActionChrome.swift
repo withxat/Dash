@@ -779,6 +779,17 @@ extension Error {
   var dashIsCancellation: Bool {
     self is CancellationError || (self as? URLError)?.code == .cancelled
   }
+
+  /// Structural absence for optional Cloudflare surfaces. Keep this exact:
+  /// transport and server failures must remain visible, while a 403/404 may
+  /// mean the account has not provisioned that resource.
+  var dashIsResourceAbsent: Bool {
+    guard
+      let apiError = self as? CloudflareAPIError,
+      case .request(let status, _) = apiError
+    else { return false }
+    return status == 403 || status == 404
+  }
 }
 
 /// Maps Cloudflare / transport failures to a primary recovery action.

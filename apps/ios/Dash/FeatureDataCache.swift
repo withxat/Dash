@@ -7,6 +7,9 @@ enum FeatureCacheKey {
   static func zones(_ accountID: String) -> String { "zones:\(accountID)" }
   static func zone(_ zoneID: String) -> String { "zone:\(zoneID)" }
   static func dnsRecords(_ zoneID: String) -> String { "dns:\(zoneID)" }
+  static func emailRouting(_ zoneID: String) -> String { "emailRouting:\(zoneID)" }
+  static func emailRoutingDNS(_ zoneID: String) -> String { "emailRoutingDNS:\(zoneID)" }
+  static func emailAddresses(_ accountID: String) -> String { "emailAddresses:\(accountID)" }
   static func workers(_ accountID: String) -> String { "workers:\(accountID)" }
   static func workersAccountSubdomain(_ accountID: String) -> String {
     "workersAccountSubdomain:\(accountID)"
@@ -56,6 +59,31 @@ enum FeatureCacheKey {
   }
   static func zoneRdap(_ zoneID: String) -> String { "zoneRdap:\(zoneID)" }
   static func auditLogs(_ accountID: String) -> String { "auditLogs:\(accountID)" }
+  static func registrarDomains(_ accountID: String) -> String {
+    "registrarDomains:\(accountID)"
+  }
+  static func registrarDomain(accountID: String, domain: String) -> String {
+    "registrarDomain:\(accountID):\(domain)"
+  }
+  static func tunnels(_ accountID: String) -> String { "tunnels:\(accountID)" }
+  static func tunnel(accountID: String, tunnelID: String) -> String {
+    "tunnel:\(accountID):\(tunnelID)"
+  }
+  static func tunnelConnectors(accountID: String, tunnelID: String) -> String {
+    "tunnelConnectors:\(accountID):\(tunnelID)"
+  }
+  static func tunnelConfiguration(accountID: String, tunnelID: String) -> String {
+    "tunnelConfiguration:\(accountID):\(tunnelID)"
+  }
+  static func tunnelRoutes(accountID: String, tunnelID: String) -> String {
+    "tunnelRoutes:\(accountID):\(tunnelID)"
+  }
+  static func tunnelVirtualNetworks(_ accountID: String) -> String {
+    "tunnelVirtualNetworks:\(accountID)"
+  }
+  static func accessApplications(_ accountID: String) -> String {
+    "accessApplications:\(accountID)"
+  }
   static func r2Buckets(_ accountID: String) -> String { "r2:\(accountID)" }
   static func r2Objects(accountID: String, bucket: String, prefix: String) -> String {
     "r2:\(accountID):\(bucket):\(prefix)"

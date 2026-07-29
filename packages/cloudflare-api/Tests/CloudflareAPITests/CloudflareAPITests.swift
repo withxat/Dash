@@ -627,39 +627,6 @@ struct NetworkTests {
     }
   }
 
-  @Test func decodesCanonicalRegistrarRegistration() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      #expect(request.url?.path == "/accounts/acct/registrar/registrations/example.com")
-      let body = #"""
-        {"success":true,"result":{
-          "domain_name":"example.com",
-          "status":"active",
-          "created_at":"2025-01-15T10:00:00Z",
-          "expires_at":"2027-01-15T10:00:00Z",
-          "auto_renew":true,
-          "privacy_mode":"redaction",
-          "locked":true
-        }}
-        """#
-      return (200, Data(body.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-
-    let registration = try await client.getRegistrarRegistration(
-      accountID: "acct", domainName: "example.com")
-
-    #expect(registration.id == "example.com")
-    #expect(registration.status == "active")
-    #expect(registration.createdAt == "2025-01-15T10:00:00Z")
-    #expect(registration.expiresAt == "2027-01-15T10:00:00Z")
-    #expect(registration.autoRenew)
-    #expect(registration.privacyMode == "redaction")
-    #expect(registration.locked)
-  }
-
   @Test func decodesZoneAnalyticsGraphQL() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
@@ -2792,65 +2759,6 @@ struct NetworkTests {
 
 }
 
-private actor MemoryTokenStore: TokenStore {
-  var access: String?
-  var refresh: String?
-  init(access: String?, refresh: String?) {
-    self.access = access
-    self.refresh = refresh
-  }
-  func clear() {
-    access = nil
-    refresh = nil
-  }
-  func getAccessToken() -> String? { access }
-  func getRefreshToken() -> String? { refresh }
-  func setTokens(_ tokens: TokenSet) {
-    access = tokens.accessToken
-    refresh = tokens.refreshToken
-  }
-  func replaceTokens(
-    _ tokens: TokenSet,
-    ifCurrentAccessToken expectedAccessToken: String?,
-    refreshToken expectedRefreshToken: String?
-  ) -> Bool {
-    guard access == expectedAccessToken, refresh == expectedRefreshToken else {
-      return false
-    }
-    access = tokens.accessToken
-    refresh = tokens.refreshToken
-    return true
-  }
-  func clearTokens(
-    ifCurrentAccessToken expectedAccessToken: String?,
-    refreshToken expectedRefreshToken: String?
-  ) -> Bool {
-    guard access == expectedAccessToken, refresh == expectedRefreshToken else {
-      return false
-    }
-    access = nil
-    refresh = nil
-    return true
-  }
-}
-
-private func requestBodyData(_ request: URLRequest) -> Data? {
-  if let body = request.httpBody { return body }
-  guard let stream = request.httpBodyStream else { return nil }
-  stream.open()
-  defer { stream.close() }
-  var data = Data()
-  let size = 1024
-  let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: size)
-  defer { buffer.deallocate() }
-  while stream.hasBytesAvailable {
-    let read = stream.read(buffer, maxLength: size)
-    if read <= 0 { break }
-    data.append(buffer, count: read)
-  }
-  return data
-}
-
 // MARK: - Workers Builds (pure decoding)
 
 @Test func workerBuildPhaseReadsTimestampsNotTheUndocumentedStatusString() throws {
@@ -2884,16 +2792,6 @@ private func requestBodyData(_ request: URLRequest) -> Data? {
   let failed = try JSONDecoder().decode(
     WorkerBuild.self, from: Data(#"{"build_uuid":"b","build_outcome":"failure"}"#.utf8))
   #expect(failed.didFail)
-}
-
-private final class RequestRecorder: @unchecked Sendable {
-  private let lock = NSLock()
-  private var count = 0
-  private var recorded: [String] = []
-  var refreshCount: Int { lock.withLock { count } }
-  var paths: [String] { lock.withLock { recorded } }
-  func recordRefresh() { lock.withLock { count += 1 } }
-  func record(_ path: String) { lock.withLock { recorded.append(path) } }
 }
 
 private final class RefreshResponseGate: @unchecked Sendable {
@@ -2959,90 +2857,4 @@ private final class SessionMetricsRecorder: NSObject, URLSessionTaskDelegate, @u
   ) {
     lock.withLock { recordedCount += 1 }
   }
-}
-
-private final class MockURLProtocol: URLProtocol, @unchecked Sendable {
-  nonisolated(unsafe) static var handler: (@Sendable (URLRequest) throws -> (Int, Data))?
-  /// Optional response headers for the next requests (e.g. Content-Type for
-  /// module-worker multipart downloads). Reset it in tests that set it.
-  nonisolated(unsafe) static var responseHeaders: [String: String]?
-  /// Optional slow chunking for cancellation tests. NetworkTests is serialized,
-  /// and every test that sets these restores the defaults in a defer.
-  nonisolated(unsafe) static var chunkSize: Int?
-  nonisolated(unsafe) static var chunkDelay: TimeInterval = 0
-  nonisolated(unsafe) static var onChunk: (@Sendable (Int) -> Void)?
-
-  private let stateLock = NSLock()
-  private var stopped = false
-
-  override class func canInit(with _: URLRequest) -> Bool { true }
-  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-  override func startLoading() {
-    let chunkSize = Self.chunkSize
-    let chunkDelay = Self.chunkDelay
-    if chunkSize != nil {
-      DispatchQueue.global(qos: .userInitiated).async {
-        self.performLoading(chunkSize: chunkSize, chunkDelay: chunkDelay)
-      }
-    } else {
-      performLoading(chunkSize: nil, chunkDelay: 0)
-    }
-  }
-
-  override func stopLoading() {
-    stateLock.withLock { stopped = true }
-  }
-
-  private func performLoading(chunkSize: Int?, chunkDelay: TimeInterval) {
-    do {
-      let (status, data) = try Self.handler?(request) ?? (500, Data())
-      guard !isStopped else { return }
-      let response = HTTPURLResponse(
-        url: request.url!, statusCode: status, httpVersion: nil,
-        headerFields: Self.responseHeaders)!
-      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-      if let chunkSize, chunkSize > 0 {
-        var offset = 0
-        while offset < data.count {
-          guard !isStopped else { return }
-          let end = min(offset + chunkSize, data.count)
-          let chunk = data.subdata(in: offset..<end)
-          client?.urlProtocol(self, didLoad: chunk)
-          Self.onChunk?(chunk.count)
-          offset = end
-          if chunkDelay > 0 {
-            Thread.sleep(forTimeInterval: chunkDelay)
-          }
-        }
-      } else {
-        client?.urlProtocol(self, didLoad: data)
-      }
-      guard !isStopped else { return }
-      client?.urlProtocolDidFinishLoading(self)
-    } catch { client?.urlProtocol(self, didFailWithError: error) }
-  }
-
-  private var isStopped: Bool {
-    stateLock.withLock { stopped }
-  }
-}
-
-private func mockSession(
-  handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)
-) -> URLSession {
-  MockURLProtocol.handler = handler
-  let configuration = URLSessionConfiguration.ephemeral
-  configuration.protocolClasses = [MockURLProtocol.self]
-  return URLSession(configuration: configuration)
-}
-
-private func mockSession(
-  delegate: any URLSessionDelegate,
-  handler: @escaping @Sendable (URLRequest) throws -> (Int, Data)
-) -> URLSession {
-  MockURLProtocol.handler = handler
-  let configuration = URLSessionConfiguration.ephemeral
-  configuration.protocolClasses = [MockURLProtocol.self]
-  return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
 }

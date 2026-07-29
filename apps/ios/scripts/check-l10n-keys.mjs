@@ -8,8 +8,9 @@
 // one case where a miss is always a bug.
 //
 // Scope and limits, on purpose:
-//   * Only apps/ios/Dash. Localizable.xcstrings belongs to the Dash target, so
-//     DashWidgets / DashShare literals are not measured against it.
+//   * The app plus DashFileProvider. Both compile user-facing literals and
+//     carry Localizable.xcstrings; the other extensions keep their existing
+//     runtime-focused localization coverage.
 //   * Only non-interpolated literals. `DashL10n.string("Saved \(name)")` keys on
 //     "Saved %@", and inferring the right format specifier per interpolation is
 //     guesswork — those stay the runtime `strictLookup` assertion's job.
@@ -17,7 +18,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = new URL("../../..", import.meta.url).pathname;
-const SOURCE_DIR = join(ROOT, "apps/ios/Dash");
+const SOURCE_DIRS = [
+  join(ROOT, "apps/ios/Dash"),
+  join(ROOT, "apps/ios/DashFileProvider"),
+];
 const CATALOG = join(ROOT, "apps/ios/Dash/Localizable.xcstrings");
 
 /**
@@ -50,7 +54,7 @@ function unescape(literal) {
 const catalogKeys = new Set(Object.keys(JSON.parse(readFileSync(CATALOG, "utf8")).strings));
 const missing = new Map();
 
-for (const file of swiftFiles(SOURCE_DIR)) {
+for (const file of SOURCE_DIRS.flatMap(swiftFiles)) {
   const source = readFileSync(file, "utf8");
   for (const call of CALLS) {
     for (const match of source.matchAll(call)) {

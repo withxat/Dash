@@ -210,11 +210,37 @@ public protocol TokenStore: Sendable {
     ifCurrentAccessToken expectedAccessToken: String?,
     refreshToken expectedRefreshToken: String?
   ) async throws -> Bool
+  /// Runs `body` while holding this credential's refresh lock.
+  ///
+  /// Cloudflare rotates the refresh token on use, so two *processes* that share
+  /// one credential — the app, the share extension, a File Provider — must not
+  /// both POST it. `CloudflareClient`'s single-flight is per client instance and
+  /// cannot see another process at all; this is the seam that can.
+  ///
+  /// `isExclusive` reports whether exclusivity was actually obtained. A store
+  /// that is not shared across processes always reports `true`: it is the only
+  /// writer. A shared store reports `false` when it cannot prove exclusivity.
+  /// The body must then fail closed without POSTing the rotating token; a
+  /// compare-and-swap cannot repair the race if this caller consumes the token
+  /// before the actual lock holder does.
+  func withExclusiveRefreshAccess<T: Sendable>(
+    _ body: @Sendable (_ isExclusive: Bool) async throws -> T
+  ) async throws -> T
 }
 
 extension TokenStore {
   public func getGrantedScopes() async throws -> Set<String>? { nil }
   public func setGrantedScopes(_: Set<String>) async throws {}
+
+  /// A store with no cross-process sharing needs no coordination: the caller is
+  /// the only writer, so the body runs straight away and is exclusive by
+  /// construction. Keeps every existing conformer — the demo store, the test
+  /// doubles — source-compatible, and keeps this package dependency-free.
+  public func withExclusiveRefreshAccess<T: Sendable>(
+    _ body: @Sendable (_ isExclusive: Bool) async throws -> T
+  ) async throws -> T {
+    try await body(true)
+  }
 
   /// Stores that cannot provide an atomic compare-and-swap still get a
   /// fail-closed default. Credential stores used by the app override this so
@@ -1692,27 +1718,6 @@ public struct LoadBalancerPool: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let enabled: Bool?
-}
-
-/// Canonical registration state returned by `/registrar/registrations/{domain}`.
-public struct RegistrarRegistration: Codable, Hashable, Identifiable, Sendable {
-  public var id: String { domainName }
-  public let domainName: String
-  public let status: String
-  public let createdAt: String?
-  public let expiresAt: String?
-  public let autoRenew: Bool
-  public let privacyMode: String
-  public let locked: Bool
-
-  enum CodingKeys: String, CodingKey {
-    case status, locked
-    case domainName = "domain_name"
-    case createdAt = "created_at"
-    case expiresAt = "expires_at"
-    case autoRenew = "auto_renew"
-    case privacyMode = "privacy_mode"
-  }
 }
 
 public struct GenericResource: CloudflareResource, Hashable {

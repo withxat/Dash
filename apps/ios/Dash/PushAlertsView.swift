@@ -101,6 +101,16 @@ struct PushAlertsSettingsCard: View {
               )
             }
           }
+
+          DashListGroupDivider()
+
+          DashListGroupLink(value: .filesMount) {
+            DashListRow(
+              title: DashL10n.string("Files"),
+              subtitle: DashL10n.string("Show R2 buckets in the Files app"),
+              icon: SolarAsset.Content.folder
+            )
+          }
         }
         .dashListCardInset()
       }

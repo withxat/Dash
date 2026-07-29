@@ -98,6 +98,17 @@
         }
       }
     },
+    "%@ expires %@. Auto-renew is off." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 将于 %2$@ 到期，自动续费已关闭。"
+          }
+        }
+      }
+    },
     "%@ expires %@. Renew it with your registrar." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -210,6 +221,17 @@
         }
       }
     },
+    "%lld addresses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个地址"
+          }
+        }
+      }
+    },
     "%lld alerts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -217,6 +239,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 条提醒"
+          }
+        }
+      }
+    },
+    "%lld connectors" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个连接器"
           }
         }
       }
@@ -379,6 +412,17 @@
         }
       }
     },
+    "%lld unverified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个未验证"
+          }
+        }
+      }
+    },
     "%lld values" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -420,6 +464,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 条提醒"
+          }
+        }
+      }
+    },
+    "1 connector" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1 个连接器"
           }
         }
       }
@@ -592,6 +647,17 @@
         }
       }
     },
+    "A Cloudflare Tunnel connects a machine on your own network to Cloudflare without opening a port. Create one with cloudflared or the Zero Trust dashboard — Dash shows its health, hostnames, and routes here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare Tunnel 无需开放端口，即可将本地网络中的机器连接到 Cloudflare。请使用 cloudflared 或 Zero Trust 控制台创建；Dash 会在这里显示运行状况、主机名和路由。"
+          }
+        }
+      }
+    },
     "A dithered analytics trend for one domain." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -633,6 +699,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iPhone 原生 Cloudflare 客户端"
+          }
+        }
+      }
+    },
+    "A route can only forward to a verified destination address. Add one, then open the confirmation email Cloudflare sends." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由只能转发到已验证的收件地址。请先添加一个，然后打开 Cloudflare 发来的确认邮件。"
           }
         }
       }
@@ -687,6 +764,17 @@
         }
       }
     },
+    "Access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access 保护"
+          }
+        }
+      }
+    },
     "Account" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -694,6 +782,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "账户"
+          }
+        }
+      }
+    },
+    "Accounts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户"
+          }
+        }
+      }
+    },
+    "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“文件”中挂载的所有 R2 位置及其已下载副本也会从这台 iPhone 移除。"
           }
         }
       }
@@ -849,6 +959,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加图表以重新构建此视图。"
+          }
+        }
+      }
+    },
+    "Add a custom address to start forwarding mail." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加一个自定义地址，即可开始转发邮件。"
+          }
+        }
+      }
+    },
+    "Add a destination address" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加收件地址"
           }
         }
       }
@@ -1028,6 +1160,17 @@
         }
       }
     },
+    "Add the inbox you want mail forwarded to. Cloudflare emails it a confirmation link." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加用于接收转发邮件的收件箱。Cloudflare 会向该地址发送确认邮件。"
+          }
+        }
+      }
+    },
     "Add your first domain to put it on Cloudflare." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1035,6 +1178,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加第一个域名以接入 Cloudflare。"
+          }
+        }
+      }
+    },
+    "Added" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加时间"
+          }
+        }
+      }
+    },
+    "Added %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加于 %@"
           }
         }
       }
@@ -1052,6 +1217,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加成功"
+          }
+        }
+      }
+    },
+    "Address" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址"
+          }
+        }
+      }
+    },
+    "Addresses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "地址列表"
           }
         }
       }
@@ -1285,6 +1472,17 @@
         }
       }
     },
+    "An SPF record already exists on this domain and will be replaced: %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名已存在 SPF 记录，将被替换：%@"
+          }
+        }
+      }
+    },
     "Analytics" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1321,6 +1519,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "和"
+          }
+        }
+      }
+    },
+    "Another registrar can start a transfer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他注册商可以发起转移。"
+          }
+        }
+      }
+    },
+    "Another registrar can’t start a transfer." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他注册商无法发起转移。"
           }
         }
       }
@@ -1536,6 +1756,39 @@
         }
       }
     },
+    "Auto-renew" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动续费"
+          }
+        }
+      }
+    },
+    "Auto-renew, transfer lock, WHOIS privacy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动续费、转移锁定、WHOIS 隐私保护"
+          }
+        }
+      }
+    },
+    "Automatic" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动"
+          }
+        }
+      }
+    },
     "Available" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1667,6 +1920,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拦截、国家/地区、Under Attack"
+          }
+        }
+      }
+    },
+    "Buckets appear read-only in Files until you authorize write access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在你授权写入权限之前，存储桶在“文件”中将显示为只读。"
           }
         }
       }
@@ -1985,6 +2249,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已取消"
+          }
+        }
+      }
+    },
+    "Catch-all" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "兜底转发"
           }
         }
       }
@@ -2498,6 +2773,17 @@
         }
       }
     },
+    "Cloudflare limits uploads from Dash to 300 MB." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 将 Dash 的上传大小限制为 300 MB。"
+          }
+        }
+      }
+    },
     "Cloudflare alert history needs notifications access." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2640,6 +2926,50 @@
         }
       }
     },
+    "Cloudflare didn’t return the DNS records for this domain. Turn on email routing from the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 未返回此域名的 DNS 记录。请前往 Cloudflare 控制台开启邮件路由。"
+          }
+        }
+      }
+    },
+    "Cloudflare didn’t return this account’s registered domains." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 未返回此账户的已注册域名。"
+          }
+        }
+      }
+    },
+    "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 会向该地址发送确认链接。在链接被打开前，路由到它的邮件都会被丢弃。"
+          }
+        }
+      }
+    },
+    "Cloudflare has no registration for this domain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 没有此域名的注册记录。"
+          }
+        }
+      }
+    },
     "Cloudflare history" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2735,6 +3065,17 @@
         }
       }
     },
+    "Cloudflare renews this domain before it expires." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 会在此域名到期前自动续费。"
+          }
+        }
+      }
+    },
     "Cloudflare returned a response Dash couldn’t read. Try again." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2770,6 +3111,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloudflare 显示此域名在最近 24 小时内没有请求。"
+          }
+        }
+      }
+    },
+    "Cloudflare sent a verification email to %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 已向 %@ 发送验证邮件。"
           }
         }
       }
@@ -2909,6 +3261,28 @@
         }
       }
     },
+    "Configuration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置"
+          }
+        }
+      }
+    },
+    "Configuration file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置文件"
+          }
+        }
+      }
+    },
     "Confirm" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3004,6 +3378,50 @@
         }
       }
     },
+    "Connected since" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接开始时间"
+          }
+        }
+      }
+    },
+    "Connectors" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接器"
+          }
+        }
+      }
+    },
+    "Connectors, hostnames, and private routes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接器、主机名和专用路由"
+          }
+        }
+      }
+    },
+    "Contact" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "联系人"
+          }
+        }
+      }
+    },
     "Content" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3049,6 +3467,17 @@
         }
       }
     },
+    "Copy hostname" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制主机名"
+          }
+        }
+      }
+    },
     "Copy public URL" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3066,6 +3495,28 @@
         }
       }
     },
+    "Copy service" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制服务地址"
+          }
+        }
+      }
+    },
+    "Copy tunnel ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制隧道 ID"
+          }
+        }
+      }
+    },
     "Could not register with the push relay (HTTP %lld)." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3073,6 +3524,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无法注册推送中继（HTTP %lld）。"
+          }
+        }
+      }
+    },
+    "Couldn't update the Files mount." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法更新“文件”挂载。"
           }
         }
       }
@@ -3484,6 +3946,17 @@
         }
       }
     },
+    "Custom configuration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义配置"
+          }
+        }
+      }
+    },
     "Custom domain" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3879,6 +4352,17 @@
         }
       }
     },
+    "Deletes this route. Mail sent to %@ stops being forwarded." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此路由。发往 %@ 的邮件将不再被转发。"
+          }
+        }
+      }
+    },
     "Deleting" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3967,6 +4451,17 @@
         }
       }
     },
+    "Deliver mail sent to user+tag@example.com through the route for user@example.com." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发往 user+tag@example.com 的邮件将通过 user@example.com 的路由投递。"
+          }
+        }
+      }
+    },
     "Delivers through your Dash webhook. Alert text is forwarded via dash.xat.sh to this iPhone." : {
       "comment" : "A description of how the alert policy will be delivered.",
       "isCommentAutoGenerated" : true,
@@ -3975,6 +4470,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通过 Dash webhook 送达。提醒文本经 dash.xat.sh 转发到此 iPhone。"
+          }
+        }
+      }
+    },
+    "Delivery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "投递方式"
           }
         }
       }
@@ -4162,6 +4668,17 @@
         }
       }
     },
+    "Destination addresses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "收件地址"
+          }
+        }
+      }
+    },
     "Destination folder" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4330,6 +4847,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已停用"
+          }
+        }
+      }
+    },
+    "Disconnected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "断开时间"
           }
         }
       }
@@ -4596,6 +5124,28 @@
         }
       }
     },
+    "Domains you bought on Cloudflare" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Cloudflare 购买的域名"
+          }
+        }
+      }
+    },
+    "Domains you buy from Cloudflare Registrar appear here. Registration itself happens on the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Cloudflare Registrar 购买的域名会显示在这里。注册操作需在 Cloudflare 控制台完成。"
+          }
+        }
+      }
+    },
     "Domains, Custom domains for this project" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4696,6 +5246,17 @@
         }
       }
     },
+    "Down" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已断开"
+          }
+        }
+      }
+    },
     "Download" : {
       "comment" : "A button to download a file.",
       "isCommentAutoGenerated" : true,
@@ -4721,6 +5282,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在下载…"
+          }
+        }
+      }
+    },
+    "Downloads the whole file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载整个文件"
+          }
+        }
+      }
+    },
+    "Drop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "丢弃"
+          }
+        }
+      }
+    },
+    "Drops" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "丢弃"
           }
         }
       }
@@ -4798,6 +5392,17 @@
         }
       }
     },
+    "Email" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮箱"
+          }
+        }
+      }
+    },
     "Email i@xat.sh" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4805,6 +5410,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "发送邮件至 i@xat.sh"
+          }
+        }
+      }
+    },
+    "Email routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件路由"
+          }
+        }
+      }
+    },
+    "Email routing is off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件路由未开启"
+          }
+        }
+      }
+    },
+    "Email routing manages this record. Editing or deleting it would stop mail delivery for this domain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此记录由邮件路由管理。编辑或删除后，发往此域名的邮件将无法送达。"
           }
         }
       }
@@ -5077,6 +5715,17 @@
         }
       }
     },
+    "Everything else" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其余全部"
+          }
+        }
+      }
+    },
     "Expand chart" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5088,6 +5737,17 @@
         }
       }
     },
+    "Expired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已过期"
+          }
+        }
+      }
+    },
     "Expires" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5095,6 +5755,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "到期"
+          }
+        }
+      }
+    },
+    "Expires %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 到期"
           }
         }
       }
@@ -5116,6 +5787,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "会永久暴露源站 IP"
+          }
+        }
+      }
+    },
+    "External changes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "外部更改"
           }
         }
       }
@@ -5144,6 +5826,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "失败"
+          }
+        }
+      }
+    },
+    "Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件"
+          }
+        }
+      }
+    },
+    "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“文件”未能从这台 iPhone 移除所有已下载副本。请重新打开 Dash 后重试。"
+          }
+        }
+      }
+    },
+    "Files couldn't remove all downloaded copies from this iPhone. Try signing out again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“文件”未能从这台 iPhone 移除所有已下载副本。请再次尝试退出登录。"
           }
         }
       }
@@ -5183,6 +5898,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已结束"
+          }
+        }
+      }
+    },
+    "Fix DNS records" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "修复 DNS 记录"
           }
         }
       }
@@ -5296,6 +6022,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "通过 dash.xat.sh 将 Cloudflare 通知策略转发到这台 iPhone。"
+          }
+        }
+      }
+    },
+    "Forward mail sent to addresses at this domain to an inbox you already use. Cloudflare adds the MX and SPF records for you." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将发往此域名各地址的邮件转发到常用收件箱。Cloudflare 会自动添加 MX 和 SPF 记录。"
+          }
+        }
+      }
+    },
+    "Forward mail to an inbox you already use" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转发到常用收件箱"
+          }
+        }
+      }
+    },
+    "Forwards to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转发到 %@"
           }
         }
       }
@@ -5669,6 +6428,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "主机名"
+          }
+        }
+      }
+    },
+    "Hostname copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "主机名已复制。"
           }
         }
       }
@@ -6316,6 +7086,17 @@
         }
       }
     },
+    "Last connected %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上次连接 %@"
+          }
+        }
+      }
+    },
     "Latest · %@" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6546,6 +7327,17 @@
         }
       }
     },
+    "Location" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所在地"
+          }
+        }
+      }
+    },
     "Locked" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6591,6 +7383,17 @@
         }
       }
     },
+    "Mail forwarded to an unverified address is dropped. Open the confirmation email Cloudflare sent to it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转发到未验证地址的邮件会被丢弃。请打开 Cloudflare 发送到该地址的确认邮件。"
+          }
+        }
+      }
+    },
     "Mail server" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6613,6 +7416,39 @@
         }
       }
     },
+    "Manage addresses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理地址"
+          }
+        }
+      }
+    },
+    "Manage registration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理注册信息"
+          }
+        }
+      }
+    },
+    "Managed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "托管"
+          }
+        }
+      }
+    },
     "Managed by" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -6620,6 +7456,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "管理方式"
+          }
+        }
+      }
+    },
+    "Managed on" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "管理位置"
           }
         }
       }
@@ -6697,6 +7544,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "最低 TLS 版本"
+          }
+        }
+      }
+    },
+    "Maximum download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大下载大小"
+          }
+        }
+      }
+    },
+    "Maximum upload" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最大上传大小"
+          }
+        }
+      }
+    },
+    "Misconfigured" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置有误"
           }
         }
       }
@@ -6926,6 +7806,17 @@
         }
       }
     },
+    "Networks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "网络"
+          }
+        }
+      }
+    },
     "New bucket" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6950,6 +7841,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建 DNS 记录"
+          }
+        }
+      }
+    },
+    "New route" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新建路由"
           }
         }
       }
@@ -7101,6 +8003,17 @@
         }
       }
     },
+    "No destination addresses" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无收件地址"
+          }
+        }
+      }
+    },
     "No DNS records" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7235,6 +8148,17 @@
         }
       }
     },
+    "No registered domains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有已注册的域名"
+          }
+        }
+      }
+    },
     "No resources" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7252,6 +8176,17 @@
         }
       }
     },
+    "No routes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无路由"
+          }
+        }
+      }
+    },
     "No traffic yet" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7259,6 +8194,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂无流量"
+          }
+        }
+      }
+    },
+    "No tunnels yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有隧道"
           }
         }
       }
@@ -7319,6 +8265,17 @@
         }
       }
     },
+    "Not available in Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“文件”中不可用"
+          }
+        }
+      }
+    },
     "Not selected" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7343,6 +8300,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未设置"
+          }
+        }
+      }
+    },
+    "Note" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示"
           }
         }
       }
@@ -7556,6 +8524,17 @@
         }
       }
     },
+    "Open email routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开邮件路由"
+          }
+        }
+      }
+    },
     "Open in Cloudflare" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7563,6 +8542,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 Cloudflare 中打开"
+          }
+        }
+      }
+    },
+    "Open in Safari" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Safari 中打开"
           }
         }
       }
@@ -7624,6 +8614,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开源"
+          }
+        }
+      }
+    },
+    "Open Tunnel docs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查看隧道文档"
           }
         }
       }
@@ -7772,6 +8773,17 @@
         }
       }
     },
+    "Organization" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "组织"
+          }
+        }
+      }
+    },
     "Origin errors" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7812,6 +8824,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "结果"
+          }
+        }
+      }
+    },
+    "Over Dash's 100 MB preview limit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过 Dash 的 100 MB 预览限制"
+          }
+        }
+      }
+    },
+    "Over Dash's 100 MB preview limit — open in Files" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "超过 Dash 的 100 MB 预览限制——可在“文件”中打开"
           }
         }
       }
@@ -7981,6 +9015,17 @@
         }
       }
     },
+    "Path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路径"
+          }
+        }
+      }
+    },
     "Pattern" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8038,6 +9083,17 @@
       }
     },
     "Pending Delete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "待删除"
+          }
+        }
+      }
+    },
+    "Pending delete" : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
@@ -8215,6 +9271,17 @@
         }
       }
     },
+    "Plus addressing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加号地址"
+          }
+        }
+      }
+    },
     "Point the domain's name servers at" : {
       "comment" : "A label displayed above a list of name servers.",
       "isCommentAutoGenerated" : true,
@@ -8317,6 +9384,17 @@
         }
       }
     },
+    "Previews" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "预览"
+          }
+        }
+      }
+    },
     "Priority" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8330,6 +9408,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "优先级"
+          }
+        }
+      }
+    },
+    "Priority %lld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先级 %lld"
           }
         }
       }
@@ -8367,6 +9456,28 @@
         }
       }
     },
+    "Private network" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "专用网络"
+          }
+        }
+      }
+    },
+    "Private networks" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "专用网络"
+          }
+        }
+      }
+    },
     "Pro Website" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8396,6 +9507,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "个人资料"
+          }
+        }
+      }
+    },
+    "Protected" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已保护"
           }
         }
       }
@@ -8435,6 +9557,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "公共访问与自定义域名"
+          }
+        }
+      }
+    },
+    "Public hostnames" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "公共主机名"
           }
         }
       }
@@ -8836,6 +9969,17 @@
         }
       }
     },
+    "Read-only — grant Email Routing write access to change routes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为只读。授予邮件路由写入权限后即可修改路由。"
+          }
+        }
+      }
+    },
     "Read-only — grant notification write access to change this policy." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8869,6 +10013,17 @@
         }
       }
     },
+    "Read-only — grant Registrar access to change these settings." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为只读。授予 Registrar 权限后即可修改这些设置。"
+          }
+        }
+      }
+    },
     "Read-only — grant write access to make changes." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8898,6 +10053,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只读 — 授予区域设置写入权限后才能进行更改。"
+          }
+        }
+      }
+    },
+    "Ready" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "就绪"
           }
         }
       }
@@ -9041,6 +10207,39 @@
         }
       }
     },
+    "Records Cloudflare will add" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 将添加的记录"
+          }
+        }
+      }
+    },
+    "Redacted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已隐去"
+          }
+        }
+      }
+    },
+    "Redemption" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "赎回期"
+          }
+        }
+      }
+    },
     "Redemption Period" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9070,6 +10269,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "注册"
+          }
+        }
+      }
+    },
+    "Registered domains" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已注册域名"
+          }
+        }
+      }
+    },
+    "Registrant" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注册人"
           }
         }
       }
@@ -9114,6 +10335,28 @@
         }
       }
     },
+    "Registry status" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注册局状态"
+          }
+        }
+      }
+    },
+    "Re-enter the folder to see objects added or deleted from Wrangler, the dashboard, or another device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新进入文件夹后，才会显示 Wrangler、控制台或其他设备新增或删除的对象。"
+          }
+        }
+      }
+    },
     "Release to cancel" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9127,6 +10370,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "松开以取消"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "移除"
           }
         }
       }
@@ -9150,6 +10404,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理单个缓存资源，不影响域名其余部分。"
+          }
+        }
+      }
+    },
+    "Removes the MX and SPF records Cloudflare added to %@. Mail sent to addresses at this domain will bounce until you point MX records at another provider. Your routes and destination addresses are kept." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将移除 Cloudflare 为 %@ 添加的 MX 和 SPF 记录。在将 MX 记录指向其他服务商之前，发往此域名的邮件都会被退回。现有路由和收件地址会保留。"
+          }
+        }
+      }
+    },
+    "Removing a destination address isn't available in Dash. Use the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 暂不支持删除收件地址，请前往 Cloudflare 控制台操作。"
           }
         }
       }
@@ -9193,6 +10469,17 @@
         }
       }
     },
+    "Rename & move" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名与移动"
+          }
+        }
+      }
+    },
     "Rename account" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9200,6 +10487,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重命名账户"
+          }
+        }
+      }
+    },
+    "Renew it yourself or you lose the domain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要手动续费，否则会失去该域名。"
           }
         }
       }
@@ -9222,6 +10520,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "禁止续费"
+          }
+        }
+      }
+    },
+    "Renewals, transfers, and contact changes happen on the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "续费、转移和联系人修改需要在 Cloudflare 控制台完成。"
           }
         }
       }
@@ -9528,6 +10837,28 @@
         }
       }
     },
+    "Routes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路由"
+          }
+        }
+      }
+    },
+    "routes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "条路由"
+          }
+        }
+      }
+    },
     "Save" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9711,6 +11042,17 @@
         }
       }
     },
+    "Send verification email" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送验证邮件"
+          }
+        }
+      }
+    },
     "Sending…" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9788,6 +11130,28 @@
         }
       }
     },
+    "Service" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务"
+          }
+        }
+      }
+    },
+    "Service copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "服务地址已复制。"
+          }
+        }
+      }
+    },
     "Set Under Attack Mode" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -9801,6 +11165,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "设置 Under Attack 模式"
+          }
+        }
+      }
+    },
+    "Set up email routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置邮件路由"
           }
         }
       }
@@ -9857,6 +11232,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "快捷方式与共享扩展写入权限"
+          }
+        }
+      }
+    },
+    "Show R2 buckets in the Files app" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在“文件”App 中显示 R2 存储桶"
           }
         }
       }
@@ -9942,6 +11328,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已显示 %lld / %lld %@"
+          }
+        }
+      }
+    },
+    "Showing %lld of %lld." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已显示 %1$lld 项，共 %2$lld 项。"
           }
         }
       }
@@ -10057,6 +11454,17 @@
         }
       }
     },
+    "Some DNS records Email routing needs are missing. Mail may not be delivered." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件路由所需的部分 DNS 记录缺失，邮件可能无法送达。"
+          }
+        }
+      }
+    },
     "SSL" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10145,6 +11553,17 @@
         }
       }
     },
+    "Started %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动于 %@"
+          }
+        }
+      }
+    },
     "Status" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10219,6 +11638,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "成功"
+          }
+        }
+      }
+    },
+    "Suspended" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已暂停"
           }
         }
       }
@@ -10446,6 +11876,17 @@
         }
       }
     },
+    "The Files location and its downloaded files will be removed from this iPhone." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个“文件”位置及其已下载文件将从这台 iPhone 移除。"
+          }
+        }
+      }
+    },
     "The origin for %@ is returning errors." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10453,6 +11894,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 的源站正在返回错误。"
+          }
+        }
+      }
+    },
+    "The origin machine" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "源站设备"
           }
         }
       }
@@ -10475,6 +11927,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此存储桶暂无对象。"
+          }
+        }
+      }
+    },
+    "This catch-all uses a configuration Dash doesn't edit yet. Change it in the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此兜底路由使用了 Dash 暂不支持编辑的配置，请前往 Cloudflare 控制台修改。"
           }
         }
       }
@@ -10503,6 +11966,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此构建未包含该文档。"
+          }
+        }
+      }
+    },
+    "This domain already delivers mail through %@. Turning on email routing replaces those MX records — mail stops reaching that provider immediately." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名目前通过 %@ 接收邮件。开启邮件路由会替换现有 MX 记录，邮件将立即停止送达该服务商。"
           }
         }
       }
@@ -10538,6 +12012,50 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "将清除此域名下的所有缓存资源，请求可能会暂时直达源站。"
+          }
+        }
+      }
+    },
+    "This route is managed by a Worker. Change it where the Worker is configured." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此路由由 Worker 管理，请前往该 Worker 的配置中修改。"
+          }
+        }
+      }
+    },
+    "This route is managed by a Worker's wrangler.jsonc. Changing it here would be overwritten on the next deploy." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此路由由 Worker 的 wrangler.jsonc 管理，在这里修改会在下次部署时被覆盖。"
+          }
+        }
+      }
+    },
+    "This route uses a configuration Dash doesn't edit yet. Change it in the Cloudflare dashboard." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此路由使用了 Dash 暂不支持编辑的配置，请前往 Cloudflare 控制台修改。"
+          }
+        }
+      }
+    },
+    "This tunnel’s ingress rules live in cloudflared’s local configuration file. Cloudflare does not store them, so they cannot be shown here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该隧道的入口规则保存在 cloudflared 的本地配置文件中。Cloudflare 不存储这些规则，因此无法在此处显示。"
           }
         }
       }
@@ -10711,6 +12229,17 @@
         }
       }
     },
+    "Transfer lock" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "转移锁定"
+          }
+        }
+      }
+    },
     "Transfer Period" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10761,6 +12290,17 @@
         }
       }
     },
+    "Tunnel" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隧道"
+          }
+        }
+      }
+    },
     "Tunnel health" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10768,6 +12308,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tunnel 健康度"
+          }
+        }
+      }
+    },
+    "Tunnel ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隧道 ID"
+          }
+        }
+      }
+    },
+    "Tunnel ID copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隧道 ID 已复制。"
+          }
+        }
+      }
+    },
+    "Tunnel ID, %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "隧道 ID，%@"
           }
         }
       }
@@ -10785,6 +12358,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隧道"
+          }
+        }
+      }
+    },
+    "Turn off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        }
+      }
+    },
+    "Turn off email routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭邮件路由"
+          }
+        }
+      }
+    },
+    "Turn on email routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启邮件路由"
           }
         }
       }
@@ -11050,6 +12656,17 @@
         }
       }
     },
+    "Unlocked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已解锁"
+          }
+        }
+      }
+    },
     "Unpin domain" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -11068,6 +12685,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "未读"
+          }
+        }
+      }
+    },
+    "Unverified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未验证"
           }
         }
       }
@@ -11302,6 +12930,17 @@
         }
       }
     },
+    "Use the catch-all control below the routes list for every other address." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "其他所有地址请使用路由列表下方的兜底转发设置。"
+          }
+        }
+      }
+    },
     "Use this connection to load your Cloudflare account and resource data." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11363,6 +13002,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "超过 256 KiB 的值仍可保存，但保存后无法在 Dash 中查看或编辑。"
+          }
+        }
+      }
+    },
+    "Verified" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已验证"
           }
         }
       }
@@ -11629,6 +13279,17 @@
         }
       }
     },
+    "What happens to mail sent to any other address at this domain." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发往此域名其他任意地址的邮件将如何处理。"
+          }
+        }
+      }
+    },
     "What syncs" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11636,6 +13297,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "同步内容"
+          }
+        }
+      }
+    },
+    "WHOIS privacy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WHOIS 隐私保护"
           }
         }
       }
@@ -11671,6 +13343,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Worker"
+          }
+        }
+      }
+    },
+    "Worker · %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "由 Worker %@ 处理"
           }
         }
       }

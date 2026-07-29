@@ -323,12 +323,16 @@ struct LocalizationTests {
     defer { DashL10n.localeOverrideForTesting = previousLocale }
 
     #expect(StatusBadge.accessibilityText(for: .readOnly) == "Status, Read-only")
+    #expect(StatusBadge.accessibilityText(for: .verified) == "Status, Verified")
     #expect(StatusToken.current.presentation == .quiet)
     #expect(StatusToken.failed.presentation == .capsule)
     #expect(StatusToken.locked.presentation == .capsule)
     #expect(
       DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
         == "Warning: Coverage limited")
+    #expect(
+      DashNotice.accessibilityText(kind: .info, message: "Managed automatically")
+        == "Note: Managed automatically")
     #expect(DashTheme.Spacing.scrollBottomInset == 80)
     #expect(DashTheme.Layout.minimumHitTarget == 44)
   }
@@ -348,6 +352,22 @@ struct LocalizationTests {
   #expect(StatusToken(pagesStatus: "canceled") == .canceled)
   #expect(StatusToken(pagesStatus: nil, isSkipped: true) == .skipped)
   #expect(StatusToken(pagesStatus: "teleporting") == .unknown)
+}
+
+@Test func registrarAndTunnelStatusTokensMatchCloudflareVocabulary() {
+  #expect(StatusToken(registrarStatus: "active") == .registered)
+  #expect(StatusToken(registrarStatus: "registration_pending") == .registrationPending)
+  #expect(StatusToken(registrarStatus: "expired") == .expired)
+  #expect(StatusToken(registrarStatus: "suspended") == .suspended)
+  #expect(StatusToken(registrarStatus: "redemption_period") == .redemptionPeriod)
+  #expect(StatusToken(registrarStatus: "pending_delete") == .pendingDelete)
+  #expect(StatusToken(registrarStatus: "teleporting") == .unknown)
+
+  #expect(StatusToken(tunnelStatus: "healthy") == .healthy)
+  #expect(StatusToken(tunnelStatus: "degraded") == .degraded)
+  #expect(StatusToken(tunnelStatus: "down") == .down)
+  #expect(StatusToken(tunnelStatus: "inactive") == .inactive)
+  #expect(StatusToken(tunnelStatus: "teleporting") == .unknown)
 }
 
 @Test func pushBaseURLStripsPathFromRedirectURI() {
@@ -377,7 +397,7 @@ struct LocalizationTests {
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 5)
+  #expect(FeatureID.allCases.count == 6)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -398,17 +418,21 @@ struct LocalizationTests {
 @Test func everyFeatureIsBrowsableWithTheReadOnlyProfile() {
   #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
   for feature in FeatureID.allCases {
-    #expect(
-      feature.capability.accessLevel(grantedScopes: DashAuthorizationScopes.initialReadOnly)
-        == .readOnly)
+    let access = feature.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly)
+    if feature.capability.write.isEmpty {
+      #expect(access == .full)
+    } else {
+      #expect(access == .readOnly)
+    }
   }
 }
 
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 15)
-  #expect(DashAuthorizationScopes.core.count == 26)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 20)
+  #expect(DashAuthorizationScopes.core.count == 34)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -437,9 +461,13 @@ struct LocalizationTests {
   #expect(!AppModel.demoAccessRequiresConnection(["dns.read"]))
   #expect(AppModel.demoAccessRequiresConnection(["dns.write"]))
   for feature in FeatureID.allCases {
-    #expect(
-      feature.capability.accessLevel(grantedScopes: AppModel.demoGrantedScopes)
-        == .readOnly)
+    let access = feature.capability.accessLevel(
+      grantedScopes: AppModel.demoGrantedScopes)
+    if feature.capability.write.isEmpty {
+      #expect(access == .full)
+    } else {
+      #expect(access == .readOnly)
+    }
   }
 }
 
@@ -1312,6 +1340,7 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(FeatureVisualIdentity.tone(for: .pages) == .info)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)
   #expect(FeatureVisualIdentity.tone(for: .kv) == .warning)
+  #expect(FeatureVisualIdentity.tone(for: .tunnels) == .violet)
 
   // Each catalog feature keeps a distinct tone — Resources rows should not
   // share a color within Compute / Storage just because they share a section.

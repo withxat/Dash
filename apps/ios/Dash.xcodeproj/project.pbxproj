@@ -127,6 +127,27 @@
 		B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B5 /* DeferredDeletionTests.swift */; };
 		B000000000000000000001B6 /* ICloudPreferencesSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B6 /* ICloudPreferencesSync.swift */; };
 		B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */; };
+		B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B8 /* EmailRoutingViews.swift */; };
+		B000000000000000000001B9 /* EmailAddressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B9 /* EmailAddressViews.swift */; };
+		B000000000000000000001BA /* RegistrarViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BA /* RegistrarViews.swift */; };
+		B000000000000000000001BB /* TunnelViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BB /* TunnelViews.swift */; };
+		B000000000000000000001BC /* FilesMountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BC /* FilesMountView.swift */; };
+		B000000000000000000001BD /* FileProviderDomains.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BD /* FileProviderDomains.swift */; };
+		B000000000000000000001BE /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BE /* FileProviderExtension.swift */; };
+		B000000000000000000001BF /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
+		B000000000000000000001C0 /* R2FileProviderItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001C0 /* R2FileProviderItem.swift */; };
+		B000000000000000000001C1 /* R2Enumerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001C1 /* R2Enumerator.swift */; };
+		B000000000000000000001C2 /* FileProviderErrorMapping.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001C2 /* FileProviderErrorMapping.swift */; };
+		B000000000000000000001C3 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
+		B000000000000000000001C4 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000002 /* AppConfiguration.swift */; };
+		B000000000000000000001C5 /* R2ShareDestination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000117 /* R2ShareDestination.swift */; };
+		B000000000000000000001C6 /* R2TransferSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000162 /* R2TransferSupport.swift */; };
+		B000000000000000000001C7 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
+		B000000000000000000001C8 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001C5 /* PrivacyInfo.xcprivacy */; };
+		B000000000000000000001C9 /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000012 /* CloudflareAPI */; };
+		B000000000000000000001CA /* DashFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000026 /* DashFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B000000000000000000001CB /* FileProviderDomainsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CB /* FileProviderDomainsTests.swift */; };
+		B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -158,6 +179,13 @@
 			remoteGlobalIDString = A00000000000000000000007;
 			remoteInfo = DashNotificationService;
 		};
+		C00000000000000000000032 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000008;
+			remoteInfo = DashFileProvider;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -170,6 +198,7 @@
 				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
 				B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */,
 				B00000000000000000000184 /* DashNotificationService.appex in Embed Foundation Extensions */,
+				B000000000000000000001CA /* DashFileProvider.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -204,6 +233,7 @@
 		F00000000000000000000023 /* DashWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000024 /* DashShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000025 /* DashNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000026 /* DashFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000180 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
 		F00000000000000000000181 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F00000000000000000000182 /* DashNotificationService.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashNotificationService.entitlements; sourceTree = "<group>"; };
@@ -273,6 +303,21 @@
 		F000000000000000000001B5 /* DeferredDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B6 /* ICloudPreferencesSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSync.swift; sourceTree = "<group>"; };
 		F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSyncTests.swift; sourceTree = "<group>"; };
+		F000000000000000000001B8 /* EmailRoutingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailRoutingViews.swift; sourceTree = "<group>"; };
+		F000000000000000000001B9 /* EmailAddressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAddressViews.swift; sourceTree = "<group>"; };
+		F000000000000000000001BA /* RegistrarViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrarViews.swift; sourceTree = "<group>"; };
+		F000000000000000000001BB /* TunnelViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelViews.swift; sourceTree = "<group>"; };
+		F000000000000000000001BC /* FilesMountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesMountView.swift; sourceTree = "<group>"; };
+		F000000000000000000001BD /* FileProviderDomains.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderDomains.swift; sourceTree = "<group>"; };
+		F000000000000000000001BE /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
+		F000000000000000000001BF /* R2ItemIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ItemIdentifier.swift; sourceTree = "<group>"; };
+		F000000000000000000001C0 /* R2FileProviderItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2FileProviderItem.swift; sourceTree = "<group>"; };
+		F000000000000000000001C1 /* R2Enumerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2Enumerator.swift; sourceTree = "<group>"; };
+		F000000000000000000001C2 /* FileProviderErrorMapping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderErrorMapping.swift; sourceTree = "<group>"; };
+		F000000000000000000001C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F000000000000000000001C4 /* DashFileProvider.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashFileProvider.entitlements; sourceTree = "<group>"; };
+		F000000000000000000001C5 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F000000000000000000001CB /* FileProviderDomainsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderDomainsTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
@@ -341,6 +386,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B000000000000000000001C9 /* CloudflareAPI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -361,6 +414,7 @@
 				A00000000000000000000017 /* DashWidgets */,
 				A00000000000000000000019 /* DashShare */,
 				A00000000000000000000020 /* DashNotificationService */,
+				A00000000000000000000021 /* DashFileProvider */,
 				A00000000000000000000014 /* Products */,
 				A00000000000000000000015 /* Frameworks */,
 				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
@@ -394,6 +448,12 @@
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000015A /* ZoneViews.swift */,
+				F000000000000000000001B8 /* EmailRoutingViews.swift */,
+				F000000000000000000001B9 /* EmailAddressViews.swift */,
+				F000000000000000000001BA /* RegistrarViews.swift */,
+				F000000000000000000001BB /* TunnelViews.swift */,
+				F000000000000000000001BC /* FilesMountView.swift */,
+				F000000000000000000001BD /* FileProviderDomains.swift */,
 				F0000000000000000000015B /* WorkerViews.swift */,
 				F0000000000000000000015C /* ZoneOperationsViews.swift */,
 				F00000000000000000000151 /* WorkerDetailModel.swift */,
@@ -465,6 +525,7 @@
 				F000000000000000000001B4 /* WorkerBuildActivityTests.swift */,
 				F000000000000000000001B5 /* DeferredDeletionTests.swift */,
 				F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */,
+				F000000000000000000001CB /* FileProviderDomainsTests.swift */,
 			);
 			path = DashTests;
 			sourceTree = "<group>";
@@ -486,6 +547,7 @@
 				F00000000000000000000023 /* DashWidgets.appex */,
 				F00000000000000000000024 /* DashShare.appex */,
 				F00000000000000000000025 /* DashNotificationService.appex */,
+				F00000000000000000000026 /* DashFileProvider.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -549,6 +611,21 @@
 			path = DashNotificationService;
 			sourceTree = "<group>";
 		};
+		A00000000000000000000021 /* DashFileProvider */ = {
+			isa = PBXGroup;
+			children = (
+				F000000000000000000001BE /* FileProviderExtension.swift */,
+				F000000000000000000001BF /* R2ItemIdentifier.swift */,
+				F000000000000000000001C0 /* R2FileProviderItem.swift */,
+				F000000000000000000001C1 /* R2Enumerator.swift */,
+				F000000000000000000001C2 /* FileProviderErrorMapping.swift */,
+				F000000000000000000001C3 /* Info.plist */,
+				F000000000000000000001C4 /* DashFileProvider.entitlements */,
+				F000000000000000000001C5 /* PrivacyInfo.xcprivacy */,
+			);
+			path = DashFileProvider;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -567,6 +644,7 @@
 				C00000000000000000000014 /* PBXTargetDependency */,
 				C00000000000000000000016 /* PBXTargetDependency */,
 				C00000000000000000000030 /* PBXTargetDependency */,
+				C00000000000000000000033 /* PBXTargetDependency */,
 			);
 			name = Dash;
 			packageProductDependencies = (
@@ -674,6 +752,26 @@
 			productReference = F00000000000000000000025 /* DashNotificationService.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A00000000000000000000008 /* DashFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000008 /* Build configuration list for PBXNativeTarget "DashFileProvider" */;
+			buildPhases = (
+				D00000000000000000000033 /* Sources */,
+				D00000000000000000000034 /* Frameworks */,
+				D00000000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashFileProvider;
+			packageProductDependencies = (
+				P00000000000000000000012 /* CloudflareAPI */,
+			);
+			productName = DashFileProvider;
+			productReference = F00000000000000000000026 /* DashFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -706,6 +804,9 @@
 					A00000000000000000000006 = {
 						CreatedOnToolsVersion = 26.4;
 					};
+					A00000000000000000000008 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */;
@@ -734,6 +835,7 @@
 				A00000000000000000000005 /* DashWidgets */,
 				A00000000000000000000006 /* DashShare */,
 				A00000000000000000000007 /* DashNotificationService */,
+				A00000000000000000000008 /* DashFileProvider */,
 				A00000000000000000000003 /* DashTests */,
 				A00000000000000000000004 /* DashUITests */,
 			);
@@ -794,6 +896,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000035 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B000000000000000000001C7 /* Localizable.xcstrings in Resources */,
+				B000000000000000000001C8 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -823,6 +934,12 @@
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000015A /* ZoneViews.swift in Sources */,
+				B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */,
+				B000000000000000000001B9 /* EmailAddressViews.swift in Sources */,
+				B000000000000000000001BA /* RegistrarViews.swift in Sources */,
+				B000000000000000000001BB /* TunnelViews.swift in Sources */,
+				B000000000000000000001BC /* FilesMountView.swift in Sources */,
+				B000000000000000000001BD /* FileProviderDomains.swift in Sources */,
 				B0000000000000000000015B /* WorkerViews.swift in Sources */,
 				B0000000000000000000015C /* ZoneOperationsViews.swift in Sources */,
 				B00000000000000000000151 /* WorkerDetailModel.swift in Sources */,
@@ -890,6 +1007,8 @@
 				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
 				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
 				B00000000000000000000176 /* AlertRoutingTests.swift in Sources */,
+				B000000000000000000001CB /* FileProviderDomainsTests.swift in Sources */,
+				B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */,
 				B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */,
 				B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */,
 				B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */,
@@ -937,6 +1056,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B000000000000000000001BE /* FileProviderExtension.swift in Sources */,
+				B000000000000000000001BF /* R2ItemIdentifier.swift in Sources */,
+				B000000000000000000001C0 /* R2FileProviderItem.swift in Sources */,
+				B000000000000000000001C1 /* R2Enumerator.swift in Sources */,
+				B000000000000000000001C2 /* FileProviderErrorMapping.swift in Sources */,
+				B000000000000000000001C3 /* KeychainTokenStore.swift in Sources */,
+				B000000000000000000001C4 /* AppConfiguration.swift in Sources */,
+				B000000000000000000001C5 /* R2ShareDestination.swift in Sources */,
+				B000000000000000000001C6 /* R2TransferSupport.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -964,6 +1099,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000007 /* DashNotificationService */;
 			targetProxy = C00000000000000000000031 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000033 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000008 /* DashFileProvider */;
+			targetProxy = C00000000000000000000032 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1264,6 +1404,62 @@
 			};
 			name = Release;
 		};
+		E00000000000000000000081 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = DashFileProvider/DashFileProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DASH_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)sh.xat.dash.app";
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashFileProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LM_SKIP_METADATA_EXTRACTION = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.file-provider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E00000000000000000000082 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = DashFileProvider/DashFileProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				DASH_KEYCHAIN_ACCESS_GROUP = "$(AppIdentifierPrefix)sh.xat.dash.app";
+				DEVELOPMENT_TEAM = UH4FQTHMG2;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashFileProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LM_SKIP_METADATA_EXTRACTION = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.file-provider;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1326,6 +1522,15 @@
 			buildConfigurations = (
 				E00000000000000000000071 /* Debug */,
 				E00000000000000000000072 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000008 /* Build configuration list for PBXNativeTarget "DashFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000081 /* Debug */,
+				E00000000000000000000082 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -1406,6 +1611,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */;
 			productName = SwiftDitherKit;
+		};
+		P00000000000000000000012 /* CloudflareAPI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
+			productName = CloudflareAPI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
