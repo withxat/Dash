@@ -85,13 +85,15 @@ struct DestinationStackHost<Root: View>: View {
             // so canvas shows through. Without this, push restores the system
             // material and the header reads as a gray slab.
             .toolbarBackground(.hidden, for: .navigationBar)
-            // Same scroll-edge / fill treatment as catalog roots, and re-enable
-            // scrolling after the tab pager locks horizontal paging on push.
-            .dashDetailCanvasChrome()
             // Full-bleed opaque plate for the UIKit slide: a content-sized
             // `.background` leaves clear bands where the previous screen shows
             // through mid-push.
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Same scroll-edge / fill treatment as catalog roots, and re-enable
+            // scrolling after the tab pager locks horizontal paging on push.
+            // After the frame, so the header frost's overlay spans the screen
+            // even when a destination's own content doesn't fill it.
+            .dashDetailCanvasChrome()
             .background(DashTheme.canvas.ignoresSafeArea())
         }
     }

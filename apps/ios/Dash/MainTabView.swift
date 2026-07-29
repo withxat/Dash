@@ -20,11 +20,6 @@ struct MainTabView: View {
   @State private var featuresNavigator = DestinationNavigator()
   @State private var watchtowerNavigator = DestinationNavigator()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
-  /// Scroll position of whichever screen is in front, feeding the header frost.
-  /// Read ONLY by `DashHeaderScrim` — never by this view's `body`: these values
-  /// change every scrolled frame, and re-evaluating the tab container mid-push
-  /// cancels the UIKit transition.
-  @State private var headerScroll = DashHeaderScrollState()
   @State private var showsProfile = false
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
@@ -324,14 +319,6 @@ struct MainTabView: View {
       .animation(nil, value: featuresNavigator.depth)
       .animation(nil, value: watchtowerNavigator.depth)
 
-      // ONE shared header frost above the pager, below the avatar. Tab roots
-      // and pushed screens keep a fully transparent bar; this band fades in
-      // with the frontmost screen's scroll so rows passing under the status bar
-      // stay legible, and fades out downward so its lower edge never draws a
-      // line across the content. Same rule as the wash: it belongs to the
-      // workspace, not to a page.
-      DashHeaderScrim()
-
       // ONE shared avatar above the pager (so it doesn't slide on tab swipes,
       // and stays a true circle — toolbar items get height-clamped). It sits
       // over the leading slot of the roots' titleless nav bars and fades on
@@ -401,8 +388,6 @@ struct MainTabView: View {
       }
       .ignoresSafeArea()
     }
-    // Every screen's frost probe writes here; `DashHeaderScrim` reads it.
-    .environment(headerScroll)
     .dashToastHost()
   }
 

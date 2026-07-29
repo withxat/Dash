@@ -1633,41 +1633,29 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashHeaderScrimRules.isScrolled(distance: -40, wasScrolled: true))
 }
 
-/// Every tab page stays mounted and a push leaves its root mounted underneath,
-/// so several screens report at once: the frost follows the deepest push on the
-/// selected tab, never a background tab's scroll position.
-@Test func headerFrostFollowsTheDeepestScreenOnTheActiveTab() {
-  let entries: [Int: DashHeaderScrollEntry] = [
-    1: DashHeaderScrollEntry(isTabActive: true, depth: 0, isScrolled: true),
-    2: DashHeaderScrollEntry(isTabActive: true, depth: 1, isScrolled: false),
-    3: DashHeaderScrollEntry(isTabActive: false, depth: 4, isScrolled: true),
-  ]
-  #expect(DashHeaderScrimRules.frontmost(of: entries) == 2)
-  #expect(DashHeaderScrimRules.frontmost(of: entries.filter { $0.key == 3 }) == nil)
-  #expect(DashHeaderScrimRules.frontmost(of: [Int: DashHeaderScrollEntry]()) == nil)
-}
-
-/// Popping back must hand the frost to the screen underneath at *its* scroll
-/// position, and an empty registry must clear the band instead of stranding it.
-@Test @MainActor func headerFrostReturnsToTheScreenUnderneathOnPop() {
-  let root = NSObject()
-  let pushed = NSObject()
+/// The store carries the hysteresis: it is asked with a raw scroll distance and
+/// remembers what it answered, so a screen parked between the two thresholds
+/// keeps whatever it already had. A screen with no scroll view clears outright.
+@Test @MainActor func headerFrostStateRemembersWhatItAnswered() {
   let state = DashHeaderScrollState()
-
-  state.report(
-    DashHeaderScrollEntry(isTabActive: true, depth: 0, isScrolled: true),
-    from: ObjectIdentifier(root))
-  #expect(state.isFrosted)
-
-  state.report(
-    DashHeaderScrollEntry(isTabActive: true, depth: 1, isScrolled: false),
-    from: ObjectIdentifier(pushed))
   #expect(!state.isFrosted)
 
-  state.withdraw(ObjectIdentifier(pushed))
+  state.report(distance: DashHeaderScrimMetrics.enter)
+  #expect(!state.isFrosted)
+
+  state.report(distance: DashHeaderScrimMetrics.enter + 1)
   #expect(state.isFrosted)
 
-  state.withdraw(ObjectIdentifier(root))
+  // Between the thresholds: holds.
+  state.report(distance: DashHeaderScrimMetrics.exit + 1)
+  #expect(state.isFrosted)
+
+  state.report(distance: 0)
+  #expect(!state.isFrosted)
+
+  state.report(distance: DashHeaderScrimMetrics.enter + 1)
+  #expect(state.isFrosted)
+  state.clear()
   #expect(!state.isFrosted)
 }
 

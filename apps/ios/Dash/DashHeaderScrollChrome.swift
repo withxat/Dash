@@ -165,26 +165,27 @@ extension View {
       .modifier(DashScrollEdgeEffectsHidden())
       // Punches the UIKit scroll/hosting/navigation plates clear so the
       // workspace canvas + wash behind the pager are what the root shows.
-      // The probe feeds this screen's scroll position to the shared header
-      // frost (`DashHeaderScrim`), which is floated by `MainTabView`.
-      .background {
-        DashScrollViewConfigurator(fill: .clear)
-        DashHeaderScrollProbe()
-      }
+      .background { DashScrollViewConfigurator(fill: .clear) }
+      .dashHeaderScrim()
   }
 
   /// Canvas scroll chrome for pushed feature/detail screens. Tab roots use
   /// `dashCatalogScreen`; destinations need the same edge-pocket kill so iOS
   /// 26 doesn't leave a white slab under the (now hidden) dock — and the same
-  /// header-frost probe, so a pushed screen frosts its bar exactly like a root.
+  /// header frost, so a pushed screen frosts its bar exactly like a root.
   func dashDetailCanvasChrome() -> some View {
     modifier(DashScrollEdgeEffectsHidden())
-      .background {
-        DashScrollViewConfigurator(fill: .canvas)
-        DashHeaderScrollProbe()
-      }
+      .background { DashScrollViewConfigurator(fill: .canvas) }
+      .dashHeaderScrim()
   }
 
+  /// The header frost, as a layer INSIDE the screen: above the scrolling
+  /// content, below the navigation bar. That z-order is the whole point — the
+  /// bar's title and back control have to stay crisp on top of the blur, and
+  /// nothing outside the page can be layered underneath UIKit's bar.
+  func dashHeaderScrim() -> some View {
+    modifier(DashHeaderScrimModifier())
+  }
 }
 
 /// iOS 26 paints a white “scroll edge pocket” above floating chrome; kill it
@@ -201,18 +202,15 @@ struct DashScrollEdgeEffectsHidden: ViewModifier {
 
 // MARK: - Header scrim
 
-/// Geometry of the shared header frost. The band is pinned to the physical top
-/// edge: solid across the status bar and the inline nav bar, then eased to
-/// nothing, so its lower edge never draws a line across the content.
+/// Geometry of the header frost. The band is pinned to the physical top edge:
+/// solid across the status bar and the navigation bar, then eased to nothing,
+/// so its lower edge never draws a line across the content.
 enum DashHeaderScrimMetrics {
-  /// Inline navigation-bar height — the slot the avatar and detail titles sit in.
-  static let bar: CGFloat = 44
+  /// Floor for the safe-area top inset, in case a screen reports one without
+  /// its navigation bar. Never a substitute for the measured inset.
+  static let minimumTop: CGFloat = 44
   /// Soft tail below the bar. The frost eases out across it instead of stopping.
   static let fade: CGFloat = 44
-  /// How far past the status bar the frost stays fully opaque: far enough to
-  /// carry a pushed screen's title and the avatar, short enough that the ease
-  /// owns most of the band.
-  static let solid: CGFloat = 24
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
   /// finger — it crosses this line and then plays its own entrance, so a nudge
   /// or a rubber-band settle never leaves a half-painted header on screen.
@@ -220,16 +218,6 @@ enum DashHeaderScrimMetrics {
   /// The shallower depth it leaves at. Two thresholds, not one: a single line
   /// makes the band chatter on and off while a finger rests on it.
   static let exit: CGFloat = 6
-}
-
-/// One screen's claim on the header frost.
-struct DashHeaderScrollEntry: Equatable {
-  /// False for the two tab pages that stay mounted but aren't selected.
-  var isTabActive: Bool
-  /// Index in the tab's navigation stack — 0 for the root, 1+ for a push.
-  var depth: Int
-  /// Whether this screen is scrolled far enough to want the frost.
-  var isScrolled: Bool
 }
 
 enum DashHeaderScrimRules {
@@ -240,18 +228,6 @@ enum DashHeaderScrimRules {
     wasScrolled
       ? distance > DashHeaderScrimMetrics.exit
       : distance > DashHeaderScrimMetrics.enter
-  }
-
-  /// The screen the frost follows: the deepest push on the selected tab. Every
-  /// page stays mounted (the pager needs neighbours renderable) and a push
-  /// leaves its root mounted underneath, so several screens report at once.
-  static func frontmost<Key: Hashable & Comparable>(
-    of entries: [Key: DashHeaderScrollEntry]
-  ) -> Key? {
-    entries
-      .filter { $0.value.isTabActive }
-      .max { ($0.value.depth, $0.key) < ($1.value.depth, $1.key) }?
-      .key
   }
 
   /// Mask ramp for the band: solid down to `solidFraction`, then an ease-out
@@ -271,36 +247,31 @@ enum DashHeaderScrimRules {
   }
 }
 
-/// Whether the frontmost screen wants the header frost, written by
-/// `DashHeaderScrollProbe` and read ONLY by `DashHeaderScrim`.
+/// Whether this screen wants its header frosted. Written by
+/// `DashHeaderScrollProbe`, read ONLY by `DashHeaderScrim`.
 ///
-/// `MainTabView.body` must never read `isFrosted`. Values written from a scroll
-/// callback into the tab container's own `@State` re-apply the
-/// `NavigationStack` path mid-push, UIKit cancels the running transition, and
-/// the pushed screen's content is left permanently unmounted.
+/// One per screen, and deliberately not the screen's own `@State` value: the
+/// probe reports from a scroll callback, and a scroll-driven value the screen
+/// body reads re-applies the `NavigationStack` path mid-push — UIKit cancels
+/// the running transition and the pushed screen never mounts its content.
 @MainActor
 @Observable
 final class DashHeaderScrollState {
   /// Mounts and unmounts the band. A flip, never a scrubbed value: the frost
-  /// plays its own entrance instead of tracking the finger.
+  /// plays its own entrance instead of tracking the finger. It doubles as the
+  /// hysteresis memory — what the screen wanted last time it was asked.
   private(set) var isFrosted = false
 
-  @ObservationIgnored private var entries: [ObjectIdentifier: DashHeaderScrollEntry] = [:]
-
-  func report(_ entry: DashHeaderScrollEntry, from token: ObjectIdentifier) {
-    guard entries[token] != entry else { return }
-    entries[token] = entry
-    resolve()
+  func report(distance: CGFloat) {
+    apply(DashHeaderScrimRules.isScrolled(distance: distance, wasScrolled: isFrosted))
   }
 
-  func withdraw(_ token: ObjectIdentifier) {
-    guard entries.removeValue(forKey: token) != nil else { return }
-    resolve()
+  /// A screen with no scroll view of its own never frosts.
+  func clear() {
+    apply(false)
   }
 
-  private func resolve() {
-    let owner = DashHeaderScrimRules.frontmost(of: entries)
-    let value = owner.flatMap { entries[$0]?.isScrolled } ?? false
+  private func apply(_ value: Bool) {
     guard value != isFrosted else { return }
     withAnimation(Self.transition(entering: value)) { isFrosted = value }
   }
@@ -314,30 +285,49 @@ final class DashHeaderScrollState {
   }
 }
 
-/// The workspace's header frost. ONE instance, floated by `MainTabView` above
-/// the pager — shared chrome of the same kind as `DashWorkspaceTopWash` and the
-/// profile avatar. It fades in with the frontmost screen's scroll so a scrolled
-/// screen gets a readable bar, and fades out downward so nothing draws a line
-/// across the content.
+/// Installs the frost on one screen: the band as an overlay (above content,
+/// below the bar), the probe that drives it, and the clip lift that lets the
+/// band reach the status bar.
+struct DashHeaderScrimModifier: ViewModifier {
+  @State private var scroll = DashHeaderScrollState()
+
+  func body(content: Content) -> some View {
+    content
+      .overlay(alignment: .top) { DashHeaderScrim(scroll: scroll) }
+      .background {
+        DashHeaderScrollProbe(scroll: scroll)
+        // The band draws above its own layout box to cover the status bar;
+        // SwiftUI's hosting wrappers shear it there unless they are unclipped.
+        DashScreenClipLift()
+      }
+  }
+}
+
+/// The screen's header frost: `.ultraThinMaterial` masked with a top-to-bottom
+/// ramp, solid across the status bar and the navigation bar and then eased to
+/// fully clear, so the lower edge never lands as a line on the content.
 ///
-/// Do not copy it into a page: a page cannot paint the status bar (the pager
-/// clips it), and three bands would ride their pages on a tab swipe.
+/// It lives inside the page on purpose. UIKit draws the navigation bar above
+/// the hosted content, so a band placed here passes under the title and the
+/// back control and leaves them crisp — a band floated over the pager (where
+/// the profile avatar lives) would sit on top of them instead.
 struct DashHeaderScrim: View {
-  @Environment(DashHeaderScrollState.self) private var scroll: DashHeaderScrollState?
+  let scroll: DashHeaderScrollState
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   var body: some View {
     GeometryReader { proxy in
       // Mounted only while it shows: a `Material` at zero opacity is still a
-      // live backdrop filter sitting over every screen in the app.
-      if scroll?.isFrosted == true {
-        let inset = proxy.safeAreaInsets.top
-        let height = inset + DashHeaderScrimMetrics.bar + DashHeaderScrimMetrics.fade
-        band(solidFraction: (inset + DashHeaderScrimMetrics.solid) / height)
+      // live backdrop filter sitting over the screen.
+      if scroll.isFrosted {
+        // The reader sits in the content's safe area, whose top inset already
+        // covers the status bar and the navigation bar. The band is that inset
+        // solid, plus the eased tail below it.
+        let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
+        let height = top + DashHeaderScrimMetrics.fade
+        band(solidFraction: top / height)
           .frame(width: proxy.size.width, height: height)
-          // The reader lays out inside the safe area; the band belongs to the
-          // physical top edge, status bar included.
-          .offset(y: -inset)
+          .offset(y: -top)
           .transition(.opacity)
       }
     }
@@ -371,27 +361,6 @@ struct DashHeaderScrim: View {
   }
 }
 
-/// Reports the enclosing screen's scroll position to `DashHeaderScrollState`.
-/// Installed by `dashCatalogScreen()` / `dashDetailCanvasChrome()`, so every
-/// tab root and every pushed destination feeds the shared header frost without
-/// a single feature screen knowing it exists.
-struct DashHeaderScrollProbe: UIViewRepresentable {
-  @Environment(DashHeaderScrollState.self) private var state: DashHeaderScrollState?
-  @Environment(\.dashTabActive) private var isTabActive
-
-  func makeUIView(context: Context) -> DashHeaderScrollProbeView {
-    DashHeaderScrollProbeView()
-  }
-
-  func updateUIView(_ uiView: DashHeaderScrollProbeView, context: Context) {
-    uiView.configure(state: state, isTabActive: isTabActive)
-  }
-
-  static func dismantleUIView(_ uiView: DashHeaderScrollProbeView, coordinator: ()) {
-    uiView.tearDown()
-  }
-}
-
 /// Re-resolution window after a screen mounts, in milliseconds from the mount.
 /// Same shape as `TabPagerLockRetrySchedule`, stretched: a pushed screen's
 /// scroll view can arrive well after the transition starts.
@@ -399,20 +368,34 @@ enum DashHeaderScrollProbeSchedule {
   static let offsetsMS: [Int64] = [0, 32, 120, 320, 700]
 }
 
+/// Reports this screen's scroll position to its `DashHeaderScrollState`.
+/// Installed by `dashHeaderScrim()`, so every tab root and every pushed
+/// destination feeds its own frost without a feature screen knowing it exists.
+struct DashHeaderScrollProbe: UIViewRepresentable {
+  let scroll: DashHeaderScrollState
+
+  func makeUIView(context: Context) -> DashHeaderScrollProbeView {
+    DashHeaderScrollProbeView()
+  }
+
+  func updateUIView(_ uiView: DashHeaderScrollProbeView, context: Context) {
+    uiView.configure(scroll: scroll)
+  }
+
+  static func dismantleUIView(_ uiView: DashHeaderScrollProbeView, coordinator: ()) {
+    uiView.tearDown()
+  }
+}
+
 /// KVO on the screen's own scroll view — not a SwiftUI preference. Global-frame
-/// probes bubbling through the pager re-evaluate the tab container on every
+/// probes bubbling up through the pager re-evaluate the tab container on every
 /// scrolled frame, which cancels a running push; an observation writing into an
 /// `@Observable` store re-renders only the band that reads it.
 final class DashHeaderScrollProbeView: UIView {
-  private weak var state: DashHeaderScrollState?
-  private var isTabActive = true
-  private var depth = 0
-  private var wasScrolled = false
+  private weak var scroll: DashHeaderScrollState?
   private weak var scrollView: UIScrollView?
   private var offsetObservation: NSKeyValueObservation?
   private var retryTask: Task<Void, Never>?
-
-  private var token: ObjectIdentifier { ObjectIdentifier(self) }
 
   override init(frame: CGRect) {
     super.init(frame: frame)
@@ -424,12 +407,8 @@ final class DashHeaderScrollProbeView: UIView {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
 
-  func configure(state: DashHeaderScrollState?, isTabActive: Bool) {
-    if self.state !== state {
-      self.state?.withdraw(token)
-      self.state = state
-    }
-    self.isTabActive = isTabActive
+  func configure(scroll: DashHeaderScrollState) {
+    self.scroll = scroll
     attachIfNeeded()
     report()
     scheduleAttachRetries()
@@ -444,23 +423,19 @@ final class DashHeaderScrollProbeView: UIView {
   }
 
   override func willMove(toWindow newWindow: UIWindow?) {
-    // A pop detaches the screen's view: drop the claim so the screen underneath
-    // takes the frost back instead of leaving a stale band over the canvas.
     if newWindow == nil { detach() }
     super.willMove(toWindow: newWindow)
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    // The scroll view and the stack index both settle a beat after the screen
-    // mounts — re-resolve on every layout pass instead of guessing a delay.
     attachIfNeeded()
     report()
   }
 
   func tearDown() {
     detach()
-    state = nil
+    scroll = nil
   }
 
   private func detach() {
@@ -468,8 +443,6 @@ final class DashHeaderScrollProbeView: UIView {
     retryTask = nil
     offsetObservation = nil
     scrollView = nil
-    wasScrolled = false
-    state?.withdraw(token)
   }
 
   /// A screen's scroll view is rarely laid out by the time its chrome mounts —
@@ -504,7 +477,6 @@ final class DashHeaderScrollProbeView: UIView {
 
   private func attachIfNeeded() {
     guard let window else { return }
-    depth = Self.navigationDepth(from: self)
     if let scrollView, scrollView.window === window, offsetObservation != nil { return }
     offsetObservation = nil
     guard let scroll = DashScreenScrollLocator.contentScrollView(from: self) else {
@@ -517,29 +489,80 @@ final class DashHeaderScrollProbeView: UIView {
     }
   }
 
-  /// A screen with no scroll view still claims the frost, unfrosted: otherwise
-  /// a pushed screen that cannot scroll would inherit the band its root left on.
   private func report() {
-    guard let state, window != nil else { return }
-    var isScrolled = false
-    if let scrollView, scrollView.window != nil {
-      let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-      isScrolled = DashHeaderScrimRules.isScrolled(distance: distance, wasScrolled: wasScrolled)
+    guard let scroll, window != nil else { return }
+    guard let scrollView, scrollView.window != nil else {
+      scroll.clear()
+      return
     }
-    wasScrolled = isScrolled
-    state.report(
-      DashHeaderScrollEntry(isTabActive: isTabActive, depth: depth, isScrolled: isScrolled),
-      from: token)
+    scroll.report(
+      distance: scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+  }
+}
+
+/// Unclips SwiftUI's hosting wrappers between this view and its screen's view
+/// controller, so a layer inside the page can paint into the status-bar band.
+/// The content view controller itself and every navigation / page transition
+/// ancestor above it stay clipped — unclipping those lets one screen's chrome
+/// spill over an incoming push.
+struct DashScreenClipLift: UIViewRepresentable {
+  func makeUIView(context: Context) -> DashScreenClipLiftView {
+    DashScreenClipLiftView()
   }
 
-  /// Index of this screen's view controller in its navigation stack: 0 for a
-  /// tab root, 1+ for a push.
-  private static func navigationDepth(from view: UIView) -> Int {
-    guard
-      let controller = DashScreenScrollLocator.enclosingViewController(from: view),
-      let stack = controller.navigationController
-    else { return 0 }
-    return stack.viewControllers.firstIndex(of: controller) ?? stack.viewControllers.count
+  func updateUIView(_ uiView: DashScreenClipLiftView, context: Context) {
+    uiView.scheduleLift()
+  }
+}
+
+final class DashScreenClipLiftView: UIView {
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    isUserInteractionEnabled = false
+    backgroundColor = .clear
+    isHidden = true
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { scheduleLift() }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    DashScreenClipScope.lift(from: self)
+  }
+
+  func scheduleLift() {
+    DispatchQueue.main.async { [weak self] in
+      self?.lift()
+      // SwiftUI rebuilds often re-enable clipping; one follow-up pass catches that.
+      DispatchQueue.main.async { [weak self] in
+        self?.lift()
+      }
+    }
+  }
+
+  private func lift() {
+    DashScreenClipScope.lift(from: self)
+  }
+}
+
+/// Testable boundary for the UIKit mutation above.
+@MainActor
+enum DashScreenClipScope {
+  static func lift(from view: UIView) {
+    guard let contentRoot = DashScreenScrollLocator.enclosingContentView(from: view) else {
+      return
+    }
+    var node = view.superview
+    while let current = node, current !== contentRoot {
+      current.clipsToBounds = false
+      node = current.superview
+    }
   }
 }
 
@@ -763,8 +786,10 @@ private struct DashScrollDismissesKeyboard: ViewModifier {
 /// each other's.
 @MainActor
 enum DashScreenScrollLocator {
-  /// Nearest non-container view controller hosting `view`. `UINavigationController`
-  /// and `UITabBarController` are skipped so each content screen resolves itself.
+  /// Nearest non-container view controller hosting `view`. Navigation, tab and
+  /// page containers are skipped so each content screen resolves itself — the
+  /// page container especially: its root view holds all three tab pages, and a
+  /// screen that resolved to it would search its neighbours' content.
   static func enclosingViewController(from view: UIView) -> UIViewController? {
     var node: UIView? = view
     while let current = node {
@@ -773,6 +798,7 @@ enum DashScreenScrollLocator {
         if let controller = next as? UIViewController,
           !(controller is UINavigationController),
           !(controller is UITabBarController),
+          !(controller is UIPageViewController),
           let root = controller.viewIfLoaded,
           current === root || current.isDescendant(of: root)
         {
