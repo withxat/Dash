@@ -919,7 +919,7 @@ final class AppModel {
       clientID: configuration.clientID, tokenStore: tokenStore, session: authenticatedSession)
     client = authenticatedClient
     deferredDeletionExecutor.replaceClient(authenticatedClient)
-    avatars.clear()
+    avatars.clearMemory()
     Task { await r2Thumbnails.clear() }
     accounts = []
     user = nil
@@ -992,7 +992,7 @@ final class AppModel {
     }
     try? await tokenStore.clear()
     deferredDeletions.discardCredentialState()
-    avatars.clear()
+    avatars.clearMemory()
     await r2Thumbnails.clear()
     accounts = []
     user = nil

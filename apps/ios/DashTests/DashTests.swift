@@ -33,6 +33,145 @@ import UIKit
   #expect(Set(rawValues).count == rawValues.count)
 }
 
+@Test @MainActor func customAvatarFilesAreNormalizedPersistentAndUserScoped() async throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("dash-avatar-tests-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+
+  let sourceA = root.appendingPathComponent("source-a.png")
+  let sourceB = root.appendingPathComponent("source-b.png")
+  try avatarTestImageData(size: CGSize(width: 1_200, height: 800), color: .systemBlue)
+    .write(to: sourceA)
+  try avatarTestImageData(size: CGSize(width: 700, height: 900), color: .systemOrange)
+    .write(to: sourceB)
+
+  let avatarDirectory = root.appendingPathComponent("avatars", isDirectory: true)
+  let store = CustomAvatarFileStore(directoryURL: avatarDirectory)
+  let savedA = try await store.saveImage(from: sourceA, for: "user-a")
+  let imageA = try #require(UIImage(data: savedA)?.cgImage)
+  #expect(imageA.width == CustomAvatarFileStore.maximumPixelSize)
+  #expect(imageA.height == CustomAvatarFileStore.maximumPixelSize)
+
+  let missingB = await store.loadImage(for: "user-b")
+  #expect(missingB == .missing)
+  let savedB = try await store.saveImage(from: sourceB, for: "user-b")
+  #expect(savedA != savedB)
+
+  let reloadedStore = CustomAvatarFileStore(directoryURL: avatarDirectory)
+  let reloadedA = await reloadedStore.loadImage(for: "user-a")
+  let reloadedB = await reloadedStore.loadImage(for: "user-b")
+  #expect(reloadedA == .loaded(savedA))
+  #expect(reloadedB == .loaded(savedB))
+
+  let unavailableStore = CustomAvatarFileStore(
+    directoryURL: avatarDirectory,
+    dataReader: { _ in throw CocoaError(.fileReadNoPermission) })
+  let temporarilyUnavailable = await unavailableStore.loadImage(for: "user-a")
+  let stillStoredA = await reloadedStore.loadImage(for: "user-a")
+  #expect(temporarilyUnavailable == .unavailable)
+  #expect(stillStoredA == .loaded(savedA))
+
+  try await reloadedStore.removeImage(for: "user-a")
+  let removedA = await reloadedStore.loadImage(for: "user-a")
+  let retainedB = await reloadedStore.loadImage(for: "user-b")
+  #expect(removedA == .missing)
+  #expect(retainedB == .loaded(savedB))
+}
+
+@Test @MainActor func invalidCustomAvatarDoesNotReplaceTheStoredPhoto() async throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("dash-avatar-tests-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+
+  let validSource = root.appendingPathComponent("valid.png")
+  let invalidSource = root.appendingPathComponent("invalid.data")
+  try avatarTestImageData(size: CGSize(width: 640, height: 480), color: .systemPurple)
+    .write(to: validSource)
+  try Data("not an image".utf8).write(to: invalidSource)
+
+  let store = CustomAvatarFileStore(
+    directoryURL: root.appendingPathComponent("avatars", isDirectory: true))
+  let original = try await store.saveImage(from: validSource, for: "user-a")
+  do {
+    try await store.saveImage(from: invalidSource, for: "user-a")
+    Issue.record("An invalid image should be rejected.")
+  } catch {
+    #expect(error as? CustomAvatarError == .invalidImage)
+  }
+  let retained = await store.loadImage(for: "user-a")
+  #expect(retained == .loaded(original))
+}
+
+@Test @MainActor func customAvatarIsNotStoredWhenBackupExclusionFails() async throws {
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("dash-avatar-tests-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+
+  let store = CustomAvatarFileStore(
+    directoryURL: root.appendingPathComponent("avatars", isDirectory: true),
+    backupExcluder: { _ in throw CocoaError(.fileWriteNoPermission) })
+  let source = root.appendingPathComponent("source.png")
+  try avatarTestImageData(size: CGSize(width: 256, height: 256), color: .systemTeal)
+    .write(to: source)
+
+  do {
+    try await store.saveImage(from: source, for: "user-a")
+    Issue.record("A photo must not be stored when backup exclusion cannot be guaranteed.")
+  } catch {
+    #expect(error as? CustomAvatarError == .backupExclusionFailed)
+  }
+  #expect(await store.loadImage(for: "user-a") == .missing)
+}
+
+@Test @MainActor func backupExclusionFailureDoesNotReplaceAnExistingCustomAvatar()
+  async throws
+{
+  let root = FileManager.default.temporaryDirectory
+    .appendingPathComponent("dash-avatar-tests-\(UUID().uuidString)", isDirectory: true)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+
+  let avatarDirectory = root.appendingPathComponent("avatars", isDirectory: true)
+  let oldSource = root.appendingPathComponent("old.png")
+  let newSource = root.appendingPathComponent("new.png")
+  try avatarTestImageData(size: CGSize(width: 300, height: 300), color: .systemIndigo)
+    .write(to: oldSource)
+  try avatarTestImageData(size: CGSize(width: 300, height: 300), color: .systemPink)
+    .write(to: newSource)
+
+  let originalStore = CustomAvatarFileStore(directoryURL: avatarDirectory)
+  let original = try await originalStore.saveImage(from: oldSource, for: "user-a")
+  let failingStore = CustomAvatarFileStore(
+    directoryURL: avatarDirectory,
+    backupExcluder: { url in
+      if url != avatarDirectory {
+        throw CocoaError(.fileWriteNoPermission)
+      }
+    })
+
+  do {
+    try await failingStore.saveImage(from: newSource, for: "user-a")
+    Issue.record("A replacement must fail when its backup exclusion cannot be guaranteed.")
+  } catch {
+    #expect(error as? CustomAvatarError == .backupExclusionFailed)
+  }
+  #expect(await originalStore.loadImage(for: "user-a") == .loaded(original))
+}
+
+@MainActor
+private func avatarTestImageData(size: CGSize, color: UIColor) -> Data {
+  let format = UIGraphicsImageRendererFormat()
+  format.opaque = true
+  format.scale = 1
+  return UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+    context.cgContext.setFillColor(color.cgColor)
+    context.cgContext.fill(CGRect(origin: .zero, size: size))
+  }
+}
+
 /// Everything that pins `DashL10n.localeOverrideForTesting`. The pin is
 /// process-global and Swift Testing runs cases in parallel by default, so these
 /// have to be serialized or they read each other's locale.

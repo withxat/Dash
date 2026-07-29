@@ -1,6 +1,9 @@
 import CloudflareAPI
+import CoreTransferable
+import PhotosUI
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import UserNotifications
 
 struct ProfileTrayContent: View {
@@ -852,6 +855,8 @@ enum ProfileAccountRenameAccess {
 /// Switching accounts and signing out stay on the tray menu.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
+  @State private var avatarPickerItem: PhotosPickerItem?
+  @State private var isUpdatingAvatar = false
   @State private var showsRename = false
   @State private var renameText = ""
   @State private var renaming = false
@@ -865,8 +870,8 @@ struct ProfileView: View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         VStack(spacing: 12) {
-          UserAvatar(email: model.user?.email ?? "", size: 80)
-          VStack(spacing: 2) {
+          profileAvatar
+          VStack(spacing: 4) {
             Text(model.profileTitle)
               .dashTextStyle(.sheetTitle)
               .foregroundStyle(DashTheme.strong)
@@ -875,6 +880,27 @@ struct ProfileView: View {
                 .dashTextStyle(.supporting)
                 .foregroundStyle(DashTheme.subtle)
             }
+            if !model.isDemoSession {
+              Text(DashL10n.string("Custom photos are stored only in Dash on this iPhone."))
+                .dashTextStyle(.footnote)
+                .foregroundStyle(DashTheme.placeholder)
+                .padding(.top, 2)
+            }
+          }
+          if !model.isDemoSession,
+            model.avatars.hasCustomImage(for: model.user?.id)
+          {
+            Button {
+              Task { await restoreDefaultAvatar() }
+            } label: {
+              Text(DashL10n.string("Use default avatar"))
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.brand)
+                .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+                .padding(.horizontal, 8)
+            }
+            .buttonStyle(DashPressButtonStyle())
+            .disabled(isUpdatingAvatar)
           }
         }
         .frame(maxWidth: .infinity)
@@ -955,6 +981,10 @@ struct ProfileView: View {
     }
     .background(DashTheme.canvas)
     .detailHeader(icon: .solar(SolarAsset.Content.user), title: "Profile")
+    .task(id: avatarPickerItem) {
+      guard let avatarPickerItem else { return }
+      await importAvatar(from: avatarPickerItem)
+    }
     .dashTray(isPresented: $showsRename, title: DashL10n.string("Rename account")) {
       DashFormSheet(
         isSaving: renaming,
@@ -968,6 +998,92 @@ struct ProfileView: View {
           DashFormField(label: DashL10n.string("Name"), text: $renameText)
         }
       }
+    }
+  }
+
+  @ViewBuilder
+  private var profileAvatar: some View {
+    let email = model.user?.email ?? ""
+    let userID = model.user?.id
+    let hasCustomImage = model.avatars.hasCustomImage(for: userID)
+    let isUpdating = isUpdatingAvatar
+
+    if model.isDemoSession {
+      UserAvatar(email: email, size: 80)
+    } else {
+      PhotosPicker(
+        selection: $avatarPickerItem,
+        matching: .images,
+        preferredItemEncoding: .compatible
+      ) {
+        UserAvatar(email: email, size: 80)
+          .overlay(alignment: .bottomTrailing) {
+            ZStack {
+              Circle().fill(DashTheme.canvas)
+              Circle().fill(DashTheme.strong).padding(3)
+              if isUpdating {
+                DashLoadingRing(color: DashTheme.inverse, size: 13, lineWidth: 2)
+              } else {
+                SolarIcon(
+                  asset: hasCustomImage ? SolarAsset.pen : SolarAsset.gallery,
+                  size: 14,
+                  color: DashTheme.inverse)
+              }
+            }
+            .frame(width: 30, height: 30)
+            .offset(x: 2, y: 2)
+            .accessibilityHidden(true)
+          }
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .disabled(isUpdating || userID == nil)
+      .accessibilityLabel(DashL10n.string("Change profile photo"))
+      .accessibilityValue(isUpdating ? DashL10n.string("Updating") : "")
+    }
+  }
+
+  @MainActor
+  private func importAvatar(from item: PhotosPickerItem) async {
+    guard let userID = model.user?.id, !model.isDemoSession else {
+      avatarPickerItem = nil
+      return
+    }
+    isUpdatingAvatar = true
+    defer {
+      avatarPickerItem = nil
+      isUpdatingAvatar = false
+    }
+    do {
+      guard let imported = try await item.loadTransferable(type: AvatarPhotoImport.self) else {
+        throw CustomAvatarError.invalidImage
+      }
+      try Task.checkCancellation()
+      try await model.avatars.setCustomImage(imported.image, for: userID)
+      try Task.checkCancellation()
+      model.toasts.success(DashL10n.string("Saved successfully."))
+    } catch is CancellationError {
+      return
+    } catch {
+      model.toasts.error(
+        DashL10n.string("Dash couldn’t use this photo. Try another image."))
+    }
+  }
+
+  @MainActor
+  private func restoreDefaultAvatar() async {
+    guard let userID = model.user?.id, !model.isDemoSession else { return }
+    isUpdatingAvatar = true
+    defer { isUpdatingAvatar = false }
+    do {
+      try await model.avatars.removeCustomImage(
+        for: userID, email: model.user?.email ?? "")
+      try Task.checkCancellation()
+      model.toasts.success(DashL10n.string("Saved successfully."))
+    } catch is CancellationError {
+      return
+    } catch {
+      model.toasts.error(
+        DashL10n.string("Dash couldn’t update your profile photo. Try again."))
     }
   }
 
@@ -1013,5 +1129,16 @@ struct ProfileView: View {
     let plain = ISO8601DateFormatter()
     guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
     return date.formatted(date: .abbreviated, time: .omitted)
+  }
+}
+
+private struct AvatarPhotoImport: Transferable {
+  let image: CustomAvatarFileStore.PreparedImage
+
+  static var transferRepresentation: some TransferRepresentation {
+    FileRepresentation(importedContentType: .image) { received in
+      let image = try CustomAvatarFileStore.prepareImage(from: received.file)
+      return AvatarPhotoImport(image: image)
+    }
   }
 }
