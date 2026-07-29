@@ -1614,14 +1614,23 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashCanvasPlateRules.isSystemPlate(UIColor(white: 1, alpha: 0.5)))
 }
 
-/// The header frost is off at rest and fully in after a short scroll — the band
-/// has to be there by the time the first row slides under the status bar.
-@Test func headerFrostRampsInOverTheFirstScrolledPoints() {
-  #expect(DashHeaderScrimRules.progress(distance: -40) == 0)
-  #expect(DashHeaderScrimRules.progress(distance: 0) == 0)
-  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp / 2) == 0.5)
-  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp) == 1)
-  #expect(DashHeaderScrimRules.progress(distance: DashHeaderScrimMetrics.ramp * 4) == 1)
+/// The frost is a threshold, not a scrub: it arms once content has genuinely
+/// gone under the bar, and disarms only back at the top. Between the two lines
+/// it holds whatever it already was, so resting a finger there can't chatter it.
+@Test func headerFrostArmsAndDisarmsOnSeparateThresholds() {
+  let enter = DashHeaderScrimMetrics.enter
+  let exit = DashHeaderScrimMetrics.exit
+  #expect(enter > exit)
+
+  #expect(!DashHeaderScrimRules.isScrolled(distance: -40, wasScrolled: false))
+  #expect(!DashHeaderScrimRules.isScrolled(distance: enter, wasScrolled: false))
+  #expect(DashHeaderScrimRules.isScrolled(distance: enter + 1, wasScrolled: false))
+
+  // Armed, and still armed inside the dead band between the thresholds.
+  #expect(DashHeaderScrimRules.isScrolled(distance: enter - 1, wasScrolled: true))
+  #expect(DashHeaderScrimRules.isScrolled(distance: exit + 1, wasScrolled: true))
+  #expect(!DashHeaderScrimRules.isScrolled(distance: exit, wasScrolled: true))
+  #expect(!DashHeaderScrimRules.isScrolled(distance: -40, wasScrolled: true))
 }
 
 /// Every tab page stays mounted and a push leaves its root mounted underneath,
@@ -1629,9 +1638,9 @@ private let watchtowerDropFrames: [CGRect] = [
 /// selected tab, never a background tab's scroll position.
 @Test func headerFrostFollowsTheDeepestScreenOnTheActiveTab() {
   let entries: [Int: DashHeaderScrollEntry] = [
-    1: DashHeaderScrollEntry(isTabActive: true, depth: 0, progress: 1),
-    2: DashHeaderScrollEntry(isTabActive: true, depth: 1, progress: 0),
-    3: DashHeaderScrollEntry(isTabActive: false, depth: 4, progress: 1),
+    1: DashHeaderScrollEntry(isTabActive: true, depth: 0, isScrolled: true),
+    2: DashHeaderScrollEntry(isTabActive: true, depth: 1, isScrolled: false),
+    3: DashHeaderScrollEntry(isTabActive: false, depth: 4, isScrolled: true),
   ]
   #expect(DashHeaderScrimRules.frontmost(of: entries) == 2)
   #expect(DashHeaderScrimRules.frontmost(of: entries.filter { $0.key == 3 }) == nil)
@@ -1646,20 +1655,20 @@ private let watchtowerDropFrames: [CGRect] = [
   let state = DashHeaderScrollState()
 
   state.report(
-    DashHeaderScrollEntry(isTabActive: true, depth: 0, progress: 1),
+    DashHeaderScrollEntry(isTabActive: true, depth: 0, isScrolled: true),
     from: ObjectIdentifier(root))
-  #expect(state.progress == 1)
+  #expect(state.isFrosted)
 
   state.report(
-    DashHeaderScrollEntry(isTabActive: true, depth: 1, progress: 0),
+    DashHeaderScrollEntry(isTabActive: true, depth: 1, isScrolled: false),
     from: ObjectIdentifier(pushed))
-  #expect(state.progress == 0)
+  #expect(!state.isFrosted)
 
   state.withdraw(ObjectIdentifier(pushed))
-  #expect(state.progress == 1)
+  #expect(state.isFrosted)
 
   state.withdraw(ObjectIdentifier(root))
-  #expect(state.progress == 0)
+  #expect(!state.isFrosted)
 }
 
 /// The band is solid across the bar and then eases to fully clear — a hard stop

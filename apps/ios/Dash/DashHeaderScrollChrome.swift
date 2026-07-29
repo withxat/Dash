@@ -213,9 +213,13 @@ enum DashHeaderScrimMetrics {
   /// carry a pushed screen's title and the avatar, short enough that the ease
   /// owns most of the band.
   static let solid: CGFloat = 24
-  /// Scroll distance over which the frost ramps 0 → 1 — short enough that the
-  /// band has arrived by the time the first row has slid under the bar.
-  static let ramp: CGFloat = 28
+  /// Scroll depth that brings the frost in. The band is not scrubbed by the
+  /// finger — it crosses this line and then plays its own entrance, so a nudge
+  /// or a rubber-band settle never leaves a half-painted header on screen.
+  static let enter: CGFloat = 20
+  /// The shallower depth it leaves at. Two thresholds, not one: a single line
+  /// makes the band chatter on and off while a finger rests on it.
+  static let exit: CGFloat = 6
 }
 
 /// One screen's claim on the header frost.
@@ -224,20 +228,18 @@ struct DashHeaderScrollEntry: Equatable {
   var isTabActive: Bool
   /// Index in the tab's navigation stack — 0 for the root, 1+ for a push.
   var depth: Int
-  /// 0…1 frost strength for this screen's own scroll position.
-  var progress: CGFloat
+  /// Whether this screen is scrolled far enough to want the frost.
+  var isScrolled: Bool
 }
 
 enum DashHeaderScrimRules {
-  /// Frost strength for a scroll `distance` past the resting offset. Quantized
-  /// so a per-frame probe only re-renders the band when a step actually changes.
-  static func progress(
-    distance: CGFloat,
-    ramp: CGFloat = DashHeaderScrimMetrics.ramp
-  ) -> CGFloat {
-    guard ramp > 0 else { return distance > 0 ? 1 : 0 }
-    let raw = min(1, max(0, distance / ramp))
-    return (raw * 50).rounded() / 50
+  /// Whether a screen at this scroll `distance` wants the frost, given what it
+  /// wanted a frame ago. The hysteresis is the point: crossing `enter` arms it,
+  /// and only falling back under `exit` disarms it.
+  static func isScrolled(distance: CGFloat, wasScrolled: Bool) -> Bool {
+    wasScrolled
+      ? distance > DashHeaderScrimMetrics.exit
+      : distance > DashHeaderScrimMetrics.enter
   }
 
   /// The screen the frost follows: the deepest push on the selected tab. Every
@@ -269,21 +271,21 @@ enum DashHeaderScrimRules {
   }
 }
 
-/// Frost strength for whichever screen is in front, written per scroll frame by
+/// Whether the frontmost screen wants the header frost, written by
 /// `DashHeaderScrollProbe` and read ONLY by `DashHeaderScrim`.
 ///
-/// `MainTabView.body` must never read `progress`. Per-frame values landing in
-/// the tab container's own `@State` re-apply the `NavigationStack` path
-/// mid-push, UIKit cancels the running transition, and the pushed screen's
-/// content is left permanently unmounted.
+/// `MainTabView.body` must never read `isFrosted`. Values written from a scroll
+/// callback into the tab container's own `@State` re-apply the
+/// `NavigationStack` path mid-push, UIKit cancels the running transition, and
+/// the pushed screen's content is left permanently unmounted.
 @MainActor
 @Observable
 final class DashHeaderScrollState {
-  /// 0…1 — drives the band's opacity.
-  private(set) var progress: CGFloat = 0
+  /// Mounts and unmounts the band. A flip, never a scrubbed value: the frost
+  /// plays its own entrance instead of tracking the finger.
+  private(set) var isFrosted = false
 
   @ObservationIgnored private var entries: [ObjectIdentifier: DashHeaderScrollEntry] = [:]
-  @ObservationIgnored private var owner: ObjectIdentifier?
 
   func report(_ entry: DashHeaderScrollEntry, from token: ObjectIdentifier) {
     guard entries[token] != entry else { return }
@@ -297,19 +299,18 @@ final class DashHeaderScrollState {
   }
 
   private func resolve() {
-    let next = DashHeaderScrimRules.frontmost(of: entries)
-    let value = next.flatMap { entries[$0]?.progress } ?? 0
-    let handover = next != owner
-    owner = next
-    guard value != progress else { return }
-    // Scrolling tracks the finger, so those steps land instantly. A handover
-    // (push, pop, tab switch) jumps between two screens' scroll positions —
-    // ease that or the band snaps on mid-transition.
-    if handover {
-      withAnimation(DashTheme.Motion.settle) { progress = value }
-    } else {
-      progress = value
-    }
+    let owner = DashHeaderScrimRules.frontmost(of: entries)
+    let value = owner.flatMap { entries[$0]?.isScrolled } ?? false
+    guard value != isFrosted else { return }
+    withAnimation(Self.transition(entering: value)) { isFrosted = value }
+  }
+
+  /// Slow in, fast out — the frost arrives like any other floating surface and
+  /// leaves quicker, so scrolling back to the top never feels like the header
+  /// is trailing the finger.
+  private static func transition(entering: Bool) -> Animation {
+    guard !UIAccessibility.isReduceMotionEnabled else { return DashTheme.Motion.reduced }
+    return entering ? DashTheme.Motion.present : DashTheme.Motion.dismiss
   }
 }
 
@@ -327,10 +328,9 @@ struct DashHeaderScrim: View {
 
   var body: some View {
     GeometryReader { proxy in
-      let progress = scroll?.progress ?? 0
-      // Mounted only while it shows something: a `Material` at zero opacity is
-      // still a live backdrop filter over every screen in the app.
-      if progress > 0 {
+      // Mounted only while it shows: a `Material` at zero opacity is still a
+      // live backdrop filter sitting over every screen in the app.
+      if scroll?.isFrosted == true {
         let inset = proxy.safeAreaInsets.top
         let height = inset + DashHeaderScrimMetrics.bar + DashHeaderScrimMetrics.fade
         band(solidFraction: (inset + DashHeaderScrimMetrics.solid) / height)
@@ -338,7 +338,7 @@ struct DashHeaderScrim: View {
           // The reader lays out inside the safe area; the band belongs to the
           // physical top edge, status bar included.
           .offset(y: -inset)
-          .opacity(progress)
+          .transition(.opacity)
       }
     }
     .allowsHitTesting(false)
@@ -357,14 +357,16 @@ struct DashHeaderScrim: View {
     }
   }
 
-  /// `Material.bar` is the system's own bar frost. Reduce Transparency swaps it
-  /// for the flat canvas so the gradient still hides the seam without a blur.
+  /// The thinnest material there is: this band should read as blur, not as a
+  /// painted plate — `.bar` and `.regular` carry so much tint that the canvas
+  /// stops showing through. Reduce Transparency swaps in the flat canvas, where
+  /// the same gradient still keeps the lower edge off the content.
   @ViewBuilder
   private var frost: some View {
     if reduceTransparency {
       DashTheme.canvas
     } else {
-      Rectangle().fill(Material.bar)
+      Rectangle().fill(Material.ultraThin)
     }
   }
 }
@@ -390,6 +392,13 @@ struct DashHeaderScrollProbe: UIViewRepresentable {
   }
 }
 
+/// Re-resolution window after a screen mounts, in milliseconds from the mount.
+/// Same shape as `TabPagerLockRetrySchedule`, stretched: a pushed screen's
+/// scroll view can arrive well after the transition starts.
+enum DashHeaderScrollProbeSchedule {
+  static let offsetsMS: [Int64] = [0, 32, 120, 320, 700]
+}
+
 /// KVO on the screen's own scroll view — not a SwiftUI preference. Global-frame
 /// probes bubbling through the pager re-evaluate the tab container on every
 /// scrolled frame, which cancels a running push; an observation writing into an
@@ -398,8 +407,10 @@ final class DashHeaderScrollProbeView: UIView {
   private weak var state: DashHeaderScrollState?
   private var isTabActive = true
   private var depth = 0
+  private var wasScrolled = false
   private weak var scrollView: UIScrollView?
   private var offsetObservation: NSKeyValueObservation?
+  private var retryTask: Task<Void, Never>?
 
   private var token: ObjectIdentifier { ObjectIdentifier(self) }
 
@@ -421,6 +432,7 @@ final class DashHeaderScrollProbeView: UIView {
     self.isTabActive = isTabActive
     attachIfNeeded()
     report()
+    scheduleAttachRetries()
   }
 
   override func didMoveToWindow() {
@@ -428,6 +440,7 @@ final class DashHeaderScrollProbeView: UIView {
     guard window != nil else { return }
     attachIfNeeded()
     report()
+    scheduleAttachRetries()
   }
 
   override func willMove(toWindow newWindow: UIWindow?) {
@@ -451,9 +464,42 @@ final class DashHeaderScrollProbeView: UIView {
   }
 
   private func detach() {
+    retryTask?.cancel()
+    retryTask = nil
     offsetObservation = nil
     scrollView = nil
+    wasScrolled = false
     state?.withdraw(token)
+  }
+
+  /// A screen's scroll view is rarely laid out by the time its chrome mounts —
+  /// on a push it appears a few frames into the transition. `layoutSubviews`
+  /// alone fires too early and may never fire again, which is how a screen ends
+  /// up permanently without a frost. Re-resolve across a short window instead.
+  private func scheduleAttachRetries() {
+    retryTask?.cancel()
+    guard window != nil else {
+      retryTask = nil
+      return
+    }
+    retryTask = Task { @MainActor [weak self] in
+      var previousMS: Int64 = 0
+      for offsetMS in DashHeaderScrollProbeSchedule.offsetsMS {
+        let delayMS = offsetMS - previousMS
+        previousMS = offsetMS
+        if delayMS > 0 {
+          do {
+            try await Task.sleep(for: .milliseconds(delayMS))
+          } catch {
+            return
+          }
+        }
+        guard !Task.isCancelled, let self, self.window != nil else { return }
+        self.attachIfNeeded()
+        self.report()
+      }
+      self?.retryTask = nil
+    }
   }
 
   private func attachIfNeeded() {
@@ -471,17 +517,18 @@ final class DashHeaderScrollProbeView: UIView {
     }
   }
 
-  /// A screen with no scroll view still claims the frost at zero: otherwise a
-  /// pushed screen that cannot scroll would inherit the band its root left on.
+  /// A screen with no scroll view still claims the frost, unfrosted: otherwise
+  /// a pushed screen that cannot scroll would inherit the band its root left on.
   private func report() {
     guard let state, window != nil else { return }
-    var progress: CGFloat = 0
+    var isScrolled = false
     if let scrollView, scrollView.window != nil {
       let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-      progress = DashHeaderScrimRules.progress(distance: distance)
+      isScrolled = DashHeaderScrimRules.isScrolled(distance: distance, wasScrolled: wasScrolled)
     }
+    wasScrolled = isScrolled
     state.report(
-      DashHeaderScrollEntry(isTabActive: isTabActive, depth: depth, progress: progress),
+      DashHeaderScrollEntry(isTabActive: isTabActive, depth: depth, isScrolled: isScrolled),
       from: token)
   }
 
@@ -743,28 +790,34 @@ enum DashScreenScrollLocator {
     enclosingViewController(from: view)?.viewIfLoaded
   }
 
-  /// The screen's primary scroll view: the outermost scroll inside its content
-  /// view that is neither the three-tab pager nor a small nested region (tray
-  /// bodies, the Domains viewport, a build log) — those sit deeper and shorter.
+  /// The screen's primary scroll view: the tallest outermost scroll inside its
+  /// content view that is not the three-tab pager. Nested regions (tray bodies,
+  /// the Domains viewport, a build log) are height-capped and lose; the walk
+  /// stops at each scroll rather than descending, so a page scroll's own
+  /// children never compete with it.
+  ///
+  /// Tallest, not first-found: a screen with header chrome (`DashFeatureList`'s
+  /// `header:`) puts that chrome ahead of the page scroll in subview order, and
+  /// picking by document order would hand the screen to whatever the chrome
+  /// happens to contain.
   static func contentScrollView(
     from view: UIView,
     minimumHeight: CGFloat = 80
   ) -> UIScrollView? {
     let root = enclosingContentView(from: view) ?? view.superview ?? view
-    var found: UIScrollView?
+    var best: UIScrollView?
     func walk(_ node: UIView) {
-      guard found == nil else { return }
       if let scroll = node as? UIScrollView,
         !DashScrollViewConfigurator.isTabPager(scroll),
         scroll.bounds.height > minimumHeight
       {
-        found = scroll
+        if scroll.bounds.height > (best?.bounds.height ?? 0) { best = scroll }
         return
       }
       for child in node.subviews { walk(child) }
     }
     walk(root)
-    return found
+    return best
   }
 }
 
