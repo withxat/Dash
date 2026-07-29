@@ -2429,6 +2429,7 @@
       }
     },
     "Change" : {
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2439,7 +2440,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "更改"
+            "value" : "变化"
           }
         }
       }
@@ -4936,8 +4937,14 @@
       }
     },
     "Details" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -7129,6 +7136,23 @@
         }
       }
     },
+    "Loaded records" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loaded records"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已加载记录"
+          }
+        }
+      }
+    },
     "Loading" : {
       "localizations" : {
         "zh-Hans" : {
@@ -9064,6 +9088,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "待删除"
+          }
+        }
+      }
+    },
+    "Percent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Percent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "百分比"
           }
         }
       }
@@ -11338,6 +11379,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已显示 %1$lld 项，共 %2$lld 项。"
+          }
+        }
+      }
+    },
+    "Shows chart details" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shows chart details"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示图表详情"
           }
         }
       }

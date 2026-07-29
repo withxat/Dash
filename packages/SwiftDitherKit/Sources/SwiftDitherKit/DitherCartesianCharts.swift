@@ -73,6 +73,7 @@ public struct DitherAreaChart: View {
   let defaultSelectedSeriesID: String?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectionChange: ((String?) -> Void)?
+  let onTap: (() -> Void)?
 
   /// Creates an area chart.
   ///
@@ -86,6 +87,8 @@ public struct DitherAreaChart: View {
   ///   - defaultSelectedSeriesID: The initial selection when `selection` is omitted.
   ///   - onHoverChange: Called with the datum index under the pointer, or `nil`.
   ///   - onSelectionChange: Called when the selected series ID changes.
+  ///   - onTap: Replaces direct plot-series selection for a plain tap. The
+  ///     legend remains selectable and hold-to-scrub is unchanged.
   public init(
     data: [DitherDatum],
     series: [DitherSeries],
@@ -95,7 +98,8 @@ public struct DitherAreaChart: View {
     selection: Binding<String?>? = nil,
     defaultSelectedSeriesID: String? = nil,
     onHoverChange: ((Int?) -> Void)? = nil,
-    onSelectionChange: ((String?) -> Void)? = nil
+    onSelectionChange: ((String?) -> Void)? = nil,
+    onTap: (() -> Void)? = nil
   ) {
     self.data = data
     self.series = series
@@ -106,6 +110,7 @@ public struct DitherAreaChart: View {
     self.defaultSelectedSeriesID = defaultSelectedSeriesID
     self.onHoverChange = onHoverChange
     self.onSelectionChange = onSelectionChange
+    self.onTap = onTap
   }
 
   public var body: some View {
@@ -119,7 +124,8 @@ public struct DitherAreaChart: View {
       selection: selection,
       defaultSelectedSeriesID: defaultSelectedSeriesID,
       onHoverChange: onHoverChange,
-      onSelectionChange: onSelectionChange
+      onSelectionChange: onSelectionChange,
+      onTap: onTap
     )
   }
 }
@@ -135,6 +141,7 @@ public struct DitherLineChart: View {
   let defaultSelectedSeriesID: String?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectionChange: ((String?) -> Void)?
+  let onTap: (() -> Void)?
 
   /// Creates a line chart.
   ///
@@ -148,6 +155,8 @@ public struct DitherLineChart: View {
   ///   - defaultSelectedSeriesID: The initial selection when `selection` is omitted.
   ///   - onHoverChange: Called with the datum index under the pointer, or `nil`.
   ///   - onSelectionChange: Called when the selected series ID changes.
+  ///   - onTap: Replaces direct plot-series selection for a plain tap. The
+  ///     legend remains selectable and hold-to-scrub is unchanged.
   public init(
     data: [DitherDatum],
     series: [DitherSeries],
@@ -157,7 +166,8 @@ public struct DitherLineChart: View {
     selection: Binding<String?>? = nil,
     defaultSelectedSeriesID: String? = nil,
     onHoverChange: ((Int?) -> Void)? = nil,
-    onSelectionChange: ((String?) -> Void)? = nil
+    onSelectionChange: ((String?) -> Void)? = nil,
+    onTap: (() -> Void)? = nil
   ) {
     self.data = data
     self.series = series
@@ -168,6 +178,7 @@ public struct DitherLineChart: View {
     self.defaultSelectedSeriesID = defaultSelectedSeriesID
     self.onHoverChange = onHoverChange
     self.onSelectionChange = onSelectionChange
+    self.onTap = onTap
   }
 
   public var body: some View {
@@ -181,7 +192,8 @@ public struct DitherLineChart: View {
       selection: selection,
       defaultSelectedSeriesID: defaultSelectedSeriesID,
       onHoverChange: onHoverChange,
-      onSelectionChange: onSelectionChange
+      onSelectionChange: onSelectionChange,
+      onTap: onTap
     )
   }
 }
@@ -196,6 +208,7 @@ public struct DitherBarChart: View {
   let defaultSelectedSeriesID: String?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectionChange: ((String?) -> Void)?
+  let onTap: (() -> Void)?
 
   /// Creates a bar chart.
   ///
@@ -208,6 +221,8 @@ public struct DitherBarChart: View {
   ///   - defaultSelectedSeriesID: The initial selection when `selection` is omitted.
   ///   - onHoverChange: Called with the datum index under the pointer, or `nil`.
   ///   - onSelectionChange: Called when the selected series ID changes.
+  ///   - onTap: Replaces direct plot-series selection for a plain tap. The
+  ///     legend remains selectable and hold-to-scrub is unchanged.
   public init(
     data: [DitherDatum],
     series: [DitherSeries],
@@ -216,7 +231,8 @@ public struct DitherBarChart: View {
     selection: Binding<String?>? = nil,
     defaultSelectedSeriesID: String? = nil,
     onHoverChange: ((Int?) -> Void)? = nil,
-    onSelectionChange: ((String?) -> Void)? = nil
+    onSelectionChange: ((String?) -> Void)? = nil,
+    onTap: (() -> Void)? = nil
   ) {
     self.data = data
     self.series = series
@@ -226,6 +242,7 @@ public struct DitherBarChart: View {
     self.defaultSelectedSeriesID = defaultSelectedSeriesID
     self.onHoverChange = onHoverChange
     self.onSelectionChange = onSelectionChange
+    self.onTap = onTap
   }
 
   public var body: some View {
@@ -239,7 +256,8 @@ public struct DitherBarChart: View {
       selection: selection,
       defaultSelectedSeriesID: defaultSelectedSeriesID,
       onHoverChange: onHoverChange,
-      onSelectionChange: onSelectionChange
+      onSelectionChange: onSelectionChange,
+      onTap: onTap
     )
   }
 }
@@ -305,7 +323,8 @@ public struct DitherSparkline: View {
       selection: nil,
       defaultSelectedSeriesID: nil,
       onHoverChange: nil,
-      onSelectionChange: nil
+      onSelectionChange: nil,
+      onTap: nil
     )
   }
 }
@@ -324,6 +343,7 @@ private struct DitherCartesianChart: View {
   let selection: Binding<String?>?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectionChange: ((String?) -> Void)?
+  let onTap: (() -> Void)?
 
   init(
     kind: DitherChartKind,
@@ -335,7 +355,8 @@ private struct DitherCartesianChart: View {
     selection: Binding<String?>?,
     defaultSelectedSeriesID: String?,
     onHoverChange: ((Int?) -> Void)?,
-    onSelectionChange: ((String?) -> Void)?
+    onSelectionChange: ((String?) -> Void)?,
+    onTap: (() -> Void)?
   ) {
     self.kind = kind
     self.data = data
@@ -346,6 +367,7 @@ private struct DitherCartesianChart: View {
     self.selection = selection
     self.onHoverChange = onHoverChange
     self.onSelectionChange = onSelectionChange
+    self.onTap = onTap
     _hoverIndex = State(initialValue: nil)
     _selectedSeriesID = State(
       initialValue: selection == nil ? defaultSelectedSeriesID : selection?.wrappedValue
@@ -364,7 +386,8 @@ private struct DitherCartesianChart: View {
         selectedSeriesID: effectiveSelection,
         hoverIndex: $hoverIndex,
         onHoverChange: onHoverChange,
-        onSelectSeries: selectSeries(id:)
+        onSelectSeries: selectSeries(id:),
+        onTap: onTap
       )
       if options.showsLegend, !series.isEmpty {
         DitherLegend(
@@ -451,6 +474,7 @@ private struct DitherCartesianPlot: View {
   @Binding var hoverIndex: Int?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectSeries: (String) -> Void
+  let onTap: (() -> Void)?
 
   /// Measured bubble size; positioning falls back to a short single-series guess
   /// until the first preference pass lands.
@@ -520,7 +544,8 @@ private struct DitherCartesianPlot: View {
             plotSize: plotRect.size,
             hoverIndex: $hoverIndex,
             onHoverChange: onHoverChange,
-            onSelectSeries: onSelectSeries
+            onSelectSeries: onSelectSeries,
+            onTap: onTap
           )
           .frame(width: plotRect.width, height: plotRect.height)
           .position(x: plotRect.midX, y: plotRect.midY)
@@ -637,6 +662,7 @@ private struct DitherCartesianInteractionLayer: View {
   @Binding var hoverIndex: Int?
   let onHoverChange: ((Int?) -> Void)?
   let onSelectSeries: (String) -> Void
+  let onTap: (() -> Void)?
 
   var body: some View {
     #if os(tvOS)
@@ -654,6 +680,10 @@ private struct DitherCartesianInteractionLayer: View {
           }
         },
         onTap: { point in
+          if let onTap {
+            onTap()
+            return
+          }
           if let seriesID = DitherSelectionHitTester.seriesID(
             at: point,
             kind: kind,

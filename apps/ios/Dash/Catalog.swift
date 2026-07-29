@@ -85,6 +85,8 @@ enum Destination: Hashable {
   case registrarDomains
   /// One Cloudflare Registrar domain, keyed on its FQDN.
   case registrarDomain(String)
+  /// Render-ready snapshot of the chart the user tapped; never refetches.
+  case chartDetail(DashChartDetail)
   case worker(String)
   /// One Cloudflare Tunnel, keyed on its immutable id.
   case tunnel(String)

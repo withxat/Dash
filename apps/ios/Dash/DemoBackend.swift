@@ -728,7 +728,8 @@ final class DemoBackend: URLProtocol {
       return Reply(json: DemoWorld.workerAnalytics(scale: scale))
     }
     if query.contains("httpRequests1hGroups") {
-      return Reply(json: DemoWorld.zoneAnalyticsHourly(scale: scale))
+      let hours = max((limit(in: query) ?? 25) - 1, 1)
+      return Reply(json: DemoWorld.zoneAnalyticsHourly(hours: hours, scale: scale))
     }
     if query.contains("httpRequests1dGroups") {
       // The daily chart asks for 7 or 30 days through `limit:`; honor it so the
@@ -1570,14 +1571,26 @@ private enum DemoWorld {
     return base + Int(Double(swing) * (0.5 + 0.5 * sin(phase - .pi / 2)))
   }
 
-  static func zoneAnalyticsHourly(scale: Double) -> String {
-    let rows = (0..<24).map { hour -> String in
-      let requests = scaled(wave(hour, base: 620, swing: 1400), scale)
-      return
-        #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? scaledOrZero(3, scale) : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 82 / 100),"cachedBytes":\#(requests * 11800 * 74 / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
+  static func zoneAnalyticsHourly(hours: Int = 24, scale: Double) -> String {
+    let count = max(hours, 1)
+    func rows(previous: Bool) -> [String] {
+      (0..<count).map { hour -> String in
+        let rawRequests = wave(hour, base: 620, swing: 1400)
+        let requests = scaled(previous ? rawRequests * 84 / 100 : rawRequests, scale)
+        let hoursAgo = (previous ? count * 2 - 1 : count - 1) - hour
+        return
+          #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: hoursAgo))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? scaledOrZero(previous ? 2 : 3, scale) : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * (previous ? 76 : 82) / 100),"cachedBytes":\#(requests * 11800 * (previous ? 68 : 74) / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
+      }
     }
-    return
-      #"{"data":{"viewer":{"zones":[{"httpRequests1hGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let current = rows(previous: false).joined(separator: ",")
+    let previous = rows(previous: true).joined(separator: ",")
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current)],
+        "previous":[\#(previous)],
+        "httpRequests1hGroups":[\#(current)]
+      }]}},"errors":null}
+      """#
   }
 
   static func zoneRequestsHourly(scale: Double) -> String {
@@ -1591,13 +1604,25 @@ private enum DemoWorld {
   }
 
   static func zoneAnalyticsDaily(days: Int = 7, scale: Double) -> String {
-    let rows = (0..<max(days, 1)).map { day -> String in
-      let requests = scaled(18_500 + wave(day, base: 0, swing: 9000), scale)
-      return
-        #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: day))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(scaledOrZero(day % 3 == 0 ? 14 : 2, scale)),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 79 / 100),"cachedBytes":\#(requests * 11800 * 71 / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
+    let count = max(days, 1)
+    func rows(previous: Bool) -> [String] {
+      (0..<count).map { day -> String in
+        let rawRequests = 18_500 + wave(day, base: 0, swing: 9000)
+        let requests = scaled(previous ? rawRequests * 88 / 100 : rawRequests, scale)
+        let daysAgo = (previous ? count + 1 : 1) + day
+        return
+          #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: daysAgo))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(scaledOrZero(day % 3 == 0 ? (previous ? 10 : 14) : 2, scale)),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * (previous ? 73 : 79) / 100),"cachedBytes":\#(requests * 11800 * (previous ? 65 : 71) / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
+      }
     }
-    return
-      #"{"data":{"viewer":{"zones":[{"httpRequests1dGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let current = rows(previous: false).joined(separator: ",")
+    let previous = rows(previous: true).joined(separator: ",")
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current)],
+        "previous":[\#(previous)],
+        "httpRequests1dGroups":[\#(current)]
+      }]}},"errors":null}
+      """#
   }
 
   static func rumPageviews(days: Int, scale: Double) -> String {
@@ -1617,32 +1642,56 @@ private enum DemoWorld {
       // demo chart with a zero row reads as a broken fetch, not as low traffic.
       let views = max(2, scaled(640 + wave(day, base: 0, swing: 420), scale))
       return
-        #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+        #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
     }
-    let performance = (0..<count).map { day -> String in
+    let performanceValues = (0..<count).map { day -> Int in
       // Latency is not volume: a quiet account is not a faster one.
-      let p50 = 680 + wave(day, base: 0, swing: 260)
-      return
-        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+      680 + wave(day, base: 0, swing: 260)
     }
+    let performance = performanceValues.enumerated().map { day, p50 -> String in
+      return
+        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
+    }
+    let window = max(count / 2, 1)
+    let currentP50 =
+      performanceValues.suffix(window).reduce(0, +) / min(window, performanceValues.count)
+    let previousValues = performanceValues.prefix(max(performanceValues.count - window, 0))
+    let previousP50 =
+      previousValues.isEmpty
+      ? currentP50
+      : previousValues.reduce(0, +) / previousValues.count
     return #"""
       {"data":{"viewer":{"accounts":[{
         "pageload":[\#(pageload.joined(separator: ","))],
-        "performance":[\#(performance.joined(separator: ","))]
+        "performance":[\#(performance.joined(separator: ","))],
+        "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(currentP50)}}],
+        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}]
       }]}},"errors":null}
       """#
   }
 
   static func workerAnalytics(scale: Double) -> String {
-    let rows = (0..<12).map { slot -> String in
+    let samples = (0..<12).map { slot -> (json: String, requests: Int, errors: Int) in
       let requests = scaled(wave(slot, base: 80, swing: 160), scale)
       let errors = slot == 7 ? scaledOrZero(3, scale) : 0
       let cpu = Double(wave(slot, base: 640, swing: 420)) + (slot == 7 ? 380.0 : 0.0)
-      return
-        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#
+      return (
+        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#,
+        requests,
+        errors
+      )
     }
-    return
-      #"{"data":{"viewer":{"accounts":[{"workersInvocationsAdaptive":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let currentRequests = samples.reduce(0) { $0 + $1.requests }
+    let currentErrors = samples.reduce(0) { $0 + $1.errors }
+    let previousRequests = currentRequests * 81 / 100
+    let previousErrors = max(0, currentErrors - 1)
+    return #"""
+      {"data":{"viewer":{"accounts":[{
+        "currentTotals":[{"sum":{"requests":\#(currentRequests),"errors":\#(currentErrors)},"quantiles":{"cpuTimeP50":1040.0}}],
+        "previousTotals":[{"sum":{"requests":\#(previousRequests),"errors":\#(previousErrors)},"quantiles":{"cpuTimeP50":870.0}}],
+        "workersInvocationsAdaptive":[\#(samples.map(\.json).joined(separator: ","))]
+      }]}},"errors":null}
+      """#
   }
 
   /// Account overview + series for Watchtower's 24h / 7d / 30d ranges.
@@ -1674,10 +1723,18 @@ private enum DemoWorld {
           "sum":{"requests":\#(webRequests),"bytes":\#(bytes)},
           "ratio":{"cachedRequests":0.62,"encryptedRequests":0.97,"encryptedBytes":0.94,"status4xx":0.018}
         }],
+        "previousOverview":[{
+          "sum":{"requests":\#(scaled(11_240, scale)),"bytes":\#(scaled(46_350_000, scale))},
+          "ratio":{"cachedRequests":0.57,"encryptedRequests":0.95,"encryptedBytes":0.91,"status4xx":0.024}
+        }],
         "httpSeries":[\#(httpSeries.joined(separator: ","))],
         "workers":[{
           "sum":{"requests":\#(scaled(4820, scale)),"errors":\#(scaledOrZero(12, scale))},
           "quantiles":{"cpuTimeP90":1260.0}
+        }],
+        "previousWorkers":[{
+          "sum":{"requests":\#(scaled(4310, scale)),"errors":\#(scaledOrZero(19, scale))},
+          "quantiles":{"cpuTimeP90":1490.0}
         }],
         "workerSeries":[\#(workerSeries.joined(separator: ","))]
       }]}},"errors":null}

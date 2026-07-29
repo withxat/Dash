@@ -422,6 +422,7 @@ struct DestinationRoutedContent: View {
       case .emailAddresses: EmailDestinationAddressesView()
       case .registrarDomains: RegistrarDomainsView()
       case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
+      case .chartDetail(let detail): DashChartDetailView(detail: detail)
       case .worker(let name): WorkerDetailView(name: name)
       case .tunnel(let id): TunnelDetailView(tunnelID: id)
       case .pagesProject(let name): PagesProjectDetailView(projectName: name)

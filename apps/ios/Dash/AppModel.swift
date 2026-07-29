@@ -548,7 +548,9 @@ final class AppModel {
               """.utf8))
           {
             for zone in visible {
-              featureCache.set(FeatureCacheKey.zoneAnalyticsHourly(zone.id), traffic)
+              featureCache.set(
+                FeatureCacheKey.zoneAnalyticsHourly(zone.id),
+                AnalyticsPeriodComparison(current: traffic, previous: traffic))
               featureCache.set(FeatureCacheKey.zoneRequestsHourly(zone.id), traffic)
             }
           }

@@ -1359,9 +1359,23 @@ struct DNSRecordsView: View {
     // surface split on `DashGlassCard`.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Record types")
-          .dashTextStyle(.footnoteSemibold)
-          .foregroundStyle(DashTheme.subtle)
+        DestinationLink(
+          destination: .chartDetail(
+            recordTypesDetail(
+              buckets: buckets,
+              slices: slices,
+              displayedRecordCount: displayedRecordCount))
+        ) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Record types")
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 4)
+            DashChartDisclosure(trend: nil)
+          }
+          .contentShape(Rectangle())
+        }
+        .accessibilityHint("Shows chart details")
         DitherPieChart(
           slices: slices,
           innerRadiusRatio: 0.62,
@@ -1389,6 +1403,27 @@ struct DNSRecordsView: View {
           displayedRecordCount: displayedRecordCount)
       }
     }
+  }
+
+  private func recordTypesDetail(
+    buckets: [DNSChartModel.Bucket],
+    slices: [DitherSlice],
+    displayedRecordCount: Int
+  ) -> DashChartDetail {
+    DashChartDetail(
+      title: "Record types",
+      rangeLabel: "Loaded records",
+      summaryValue: displayedRecordCount.formatted(
+        .number.locale(DashL10n.activeLocale)),
+      trend: nil,
+      categoryAxisLabel: "Record type",
+      valueAxisLabel: "Records",
+      axisValueFormat: .number(maximumFractionDigits: 0),
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      accessibilitySummary: DNSChartModel.chartAccessibilitySummary(buckets: buckets),
+      content: .pie(slices: slices),
+      featureID: .zones,
+      readScopes: ["zone.read", "dns.read"])
   }
 
   @ViewBuilder

@@ -11,12 +11,27 @@ extension CloudflareClient {
     hours: Int = 24,
     granularity: AccountAnalyticsGranularity = .hour
   ) async throws -> AccountAnalyticsSnapshot {
+    try await accountAnalytics(
+      accountID: accountID,
+      hours: hours,
+      granularity: granularity,
+      includesPrevious: true)
+  }
+
+  private func accountAnalytics(
+    accountID: String,
+    hours: Int,
+    granularity: AccountAnalyticsGranularity,
+    includesPrevious: Bool
+  ) async throws -> AccountAnalyticsSnapshot {
     let window = max(hours, 1)
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     formatter.timeZone = TimeZone(identifier: "UTC")
     let until = Date()
     let since = until.addingTimeInterval(-TimeInterval(window) * 3600)
+    let previousSince = since.addingTimeInterval(-TimeInterval(window) * 3600)
+    let previousSinceStamp = formatter.string(from: previousSince)
     let sinceStamp = formatter.string(from: since)
     let untilStamp = formatter.string(from: until)
     let seriesLimit = granularity.seriesLimit(hours: window)
@@ -33,37 +48,81 @@ extension CloudflareClient {
       httpDimension = "date"
       workerDimension = "date"
     }
+    let previousHTTPQuery =
+      includesPrevious
+      ? """
+      previousOverview: httpRequestsOverviewAdaptiveGroups(limit: 1, filter: { \
+      datetimeMinute_geq: "\(previousSinceStamp)", \
+      datetimeMinute_lt: "\(sinceStamp)" \
+      }) { sum { requests bytes } ratio { \
+      cachedRequests encryptedRequests encryptedBytes status4xx \
+      } }
+      """
+      : ""
+    let previousWorkersQuery =
+      includesPrevious
+      ? """
+      previousWorkers: workersInvocationsAdaptive(limit: 1, filter: { \
+      datetime_geq: "\(previousSinceStamp)", \
+      datetime_lt: "\(sinceStamp)" \
+      }) { sum { requests errors } quantiles { cpuTimeP90 } }
+      """
+      : ""
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
       overview: httpRequestsOverviewAdaptiveGroups(limit: 1, filter: { \
       datetimeMinute_geq: "\(sinceStamp)", \
-      datetimeMinute_leq: "\(untilStamp)" \
+      datetimeMinute_lt: "\(untilStamp)" \
       }) { sum { requests bytes } ratio { \
       cachedRequests encryptedRequests encryptedBytes status4xx \
       } } \
+      \(previousHTTPQuery) \
       httpSeries: httpRequestsOverviewAdaptiveGroups( \
       limit: \(seriesLimit), orderBy: [\(orderBy)], filter: { \
       datetimeMinute_geq: "\(sinceStamp)", \
-      datetimeMinute_leq: "\(untilStamp)" \
+      datetimeMinute_lt: "\(untilStamp)" \
       }) { sum { requests bytes } ratio { \
       cachedRequests encryptedRequests encryptedBytes status4xx \
       } dimensions { \(httpDimension) } } \
       workers: workersInvocationsAdaptive(limit: 1, filter: { \
       datetime_geq: "\(sinceStamp)", \
-      datetime_leq: "\(untilStamp)" \
+      datetime_lt: "\(untilStamp)" \
       }) { sum { requests errors } quantiles { cpuTimeP90 } } \
+      \(previousWorkersQuery) \
       workerSeries: workersInvocationsAdaptive( \
       limit: \(seriesLimit), orderBy: [\(orderBy)], filter: { \
       datetime_geq: "\(sinceStamp)", \
-      datetime_leq: "\(untilStamp)" \
+      datetime_lt: "\(untilStamp)" \
       }) { sum { requests errors } quantiles { cpuTimeP90 } \
       dimensions { \(workerDimension) } } \
       } } }
       """
-    let response = try await graphQLRaw(try JSONEncoder().encode(["query": query]))
+    let payload = try JSONEncoder().encode(["query": query])
+    let response: Data
+    do {
+      response = try await graphQLRaw(payload)
+    } catch let error as CloudflareAPIError {
+      guard
+        includesPrevious,
+        case .request(let status, _) = error,
+        status == 400
+      else { throw error }
+      return try await accountAnalytics(
+        accountID: accountID,
+        hours: hours,
+        granularity: granularity,
+        includesPrevious: false)
+    }
     let envelope = try JSONDecoder().decode(
       GraphQLEnvelope<AccountAnalyticsData>.self, from: response)
     if let error = envelope.errors?.first {
+      if includesPrevious, error.semanticStatusCode == 400 {
+        return try await accountAnalytics(
+          accountID: accountID,
+          hours: hours,
+          granularity: granularity,
+          includesPrevious: false)
+      }
       throw CloudflareAPIError.request(
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
@@ -71,21 +130,37 @@ extension CloudflareClient {
     let account = envelope.data?.viewer.accounts.first
     let http = account?.overview.first
     let workers = account?.workers.first
-    let requests = http?.sum.requests ?? 0
-    let bytes = http?.sum.bytes ?? 0
-    let encryptedRate = http?.ratio?.encryptedBytes ?? 0
-    let overview = AccountAnalyticsOverview(
-      webRequests: requests,
-      bytes: bytes,
-      cacheRate: http?.ratio?.cachedRequests ?? 0,
-      clientErrorRate: http?.ratio?.status4xx ?? 0,
-      encryptedRequestRate: http?.ratio?.encryptedRequests ?? 0,
-      encryptedBytes: Int64((Double(bytes) * encryptedRate).rounded()),
-      workerInvocations: workers?.sum.requests ?? 0,
-      workerErrors: workers?.sum.errors ?? 0,
-      cpuTimeP90Us: workers?.quantiles?.cpuTimeP90 ?? 0,
-      hours: window
-    )
+    func makeOverview(
+      http: AccountAnalyticsData.HTTPTotals?,
+      workers: AccountAnalyticsData.WorkerTotals?
+    ) -> AccountAnalyticsOverview {
+      let requests = http?.sum.requests ?? 0
+      let bytes = http?.sum.bytes ?? 0
+      let encryptedRate = http?.ratio?.encryptedBytes ?? 0
+      return AccountAnalyticsOverview(
+        webRequests: requests,
+        bytes: bytes,
+        cacheRate: http?.ratio?.cachedRequests ?? 0,
+        clientErrorRate: http?.ratio?.status4xx ?? 0,
+        encryptedRequestRate: http?.ratio?.encryptedRequests ?? 0,
+        encryptedBytes: Int64((Double(bytes) * encryptedRate).rounded()),
+        workerInvocations: workers?.sum.requests ?? 0,
+        workerErrors: workers?.sum.errors ?? 0,
+        cpuTimeP90Us: workers?.quantiles?.cpuTimeP90 ?? 0,
+        hours: window
+      )
+    }
+    let overview = makeOverview(http: http, workers: workers)
+    let previousOverview: AccountAnalyticsOverview?
+    if let previousHTTPRows = account?.previousOverview,
+      let previousWorkerRows = account?.previousWorkers
+    {
+      previousOverview = makeOverview(
+        http: previousHTTPRows.first,
+        workers: previousWorkerRows.first)
+    } else {
+      previousOverview = nil
+    }
     let httpPoints = (account?.httpSeries ?? []).compactMap { row -> AccountAnalyticsPoint? in
       guard let stamp = row.dimensions.datetimeHour ?? row.dimensions.date else { return nil }
       let pointBytes = row.sum.bytes
@@ -112,6 +187,7 @@ extension CloudflareClient {
     }
     return AccountAnalyticsSnapshot(
       overview: overview,
+      previousOverview: previousOverview,
       httpPoints: httpPoints,
       workerPoints: workerPoints,
       fetchedAt: .now)
@@ -146,8 +222,10 @@ private struct AccountAnalyticsData: Decodable, Sendable {
   struct Viewer: Decodable, Sendable { let accounts: [Account] }
   struct Account: Decodable, Sendable {
     let overview: [HTTPTotals]
+    let previousOverview: [HTTPTotals]?
     let httpSeries: [HTTPSeries]
     let workers: [WorkerTotals]
+    let previousWorkers: [WorkerTotals]?
     let workerSeries: [WorkerSeries]
   }
 

@@ -77,6 +77,51 @@ enum WatchtowerAnalyticsMetric: String, CaseIterable, Identifiable, Hashable, Se
     case .cacheRate, .clientRequestErrors, .encryptedRequestsRate: "Percent"
     }
   }
+
+  var trendPolarity: DashChartTrend.Polarity {
+    switch self {
+    case .workerErrors, .cpuTime, .clientRequestErrors:
+      .lowerIsBetter
+    case .cacheRate, .encryptedRequestsRate:
+      .higherIsBetter
+    case .workerInvocations, .webTraffic, .totalBandwidth, .encryptedBandwidth:
+      .neutral
+    }
+  }
+
+  var axisValueFormat: DashChartValueFormat {
+    switch self {
+    case .workerInvocations, .workerErrors, .webTraffic:
+      .compact
+    case .cpuTime:
+      .milliseconds(maximumFractionDigits: 2)
+    case .totalBandwidth, .encryptedBandwidth:
+      .byteCount
+    case .cacheRate, .clientRequestErrors, .encryptedRequestsRate:
+      .percent(maximumFractionDigits: 1)
+    }
+  }
+
+  var tableValueFormat: DashChartValueFormat {
+    switch self {
+    case .workerInvocations, .workerErrors, .webTraffic:
+      .number(maximumFractionDigits: 0)
+    default:
+      axisValueFormat
+    }
+  }
+
+  /// Watchtower's compact cards historically plot rates on a 0...100 scale.
+  /// The shared detail formatter follows Foundation's percentage convention
+  /// where `1 == 100%`, so normalize only the detail snapshot.
+  func detailValue(_ plottedValue: Double) -> Double {
+    switch self {
+    case .cacheRate, .clientRequestErrors, .encryptedRequestsRate:
+      plottedValue / 100
+    default:
+      plottedValue
+    }
+  }
 }
 
 extension [WatchtowerAnalyticsMetric] {
@@ -556,9 +601,13 @@ final class WatchtowerMetricDragVisualState {
 enum WatchtowerAnalyticsChartModel {
   struct MetricSnapshot: Hashable, Sendable {
     static let empty = MetricSnapshot(
-      expandedData: [], collapsedData: [], collapsedValueCeiling: nil)
+      expandedData: [], tableLabels: [], collapsedData: [], collapsedValueCeiling: nil)
 
     let expandedData: [DitherDatum]
+    /// Full date/time labels aligned one-to-one with `expandedData`. Axis
+    /// labels intentionally stay terse, but a seven-day table cannot repeat
+    /// the same 24 hour labels without their dates.
+    let tableLabels: [String]
     let collapsedData: [DitherDatum]
     let collapsedValueCeiling: Double?
 
@@ -567,6 +616,7 @@ enum WatchtowerAnalyticsChartModel {
 
   struct Snapshot: Hashable, Sendable {
     let overview: AccountAnalyticsOverview
+    let previousOverview: AccountAnalyticsOverview?
     let charts: [WatchtowerAnalyticsMetric: MetricSnapshot]
     let fetchedAt: Date
   }
@@ -623,6 +673,7 @@ enum WatchtowerAnalyticsChartModel {
             label: point.label,
             values: [metric.seriesKey: value])
         },
+        tableLabels: points.map { $0.tableLabel },
         collapsedData: zip(points, collapsed.values).map { point, value in
           DitherDatum(
             id: point.id,
@@ -634,6 +685,7 @@ enum WatchtowerAnalyticsChartModel {
 
     return Snapshot(
       overview: snapshot.overview,
+      previousOverview: snapshot.previousOverview,
       charts: charts,
       fetchedAt: snapshot.fetchedAt)
   }
@@ -685,7 +737,7 @@ enum WatchtowerAnalyticsChartModel {
     _ points: [(date: Date, point: AccountAnalyticsPoint)],
     range: AnalyticsRange,
     locale: Locale
-  ) -> [(id: String, label: String, point: AccountAnalyticsPoint)] {
+  ) -> [(id: String, label: String, tableLabel: String, point: AccountAnalyticsPoint)] {
     var occurrences: [String: Int] = [:]
     return points.map { date, point in
       let occurrence = occurrences[point.datetime, default: 0]
@@ -694,6 +746,7 @@ enum WatchtowerAnalyticsChartModel {
       return (
         id: id,
         label: chartLabel(date, range: range, locale: locale),
+        tableLabel: detailLabel(date, range: range, locale: locale),
         point: point
       )
     }
@@ -704,6 +757,15 @@ enum WatchtowerAnalyticsChartModel {
       return date.formatted(.dateTime.month(.abbreviated).day().locale(locale))
     }
     return date.formatted(.dateTime.hour().locale(locale))
+  }
+
+  private static func detailLabel(_ date: Date, range: AnalyticsRange, locale: Locale) -> String {
+    if range == .month {
+      return date.formatted(
+        .dateTime.year().month(.abbreviated).day().locale(locale))
+    }
+    return date.formatted(
+      .dateTime.month(.abbreviated).day().hour().locale(locale))
   }
 
   static func seriesValue(_ point: AccountAnalyticsPoint, metric: WatchtowerAnalyticsMetric)
@@ -1200,6 +1262,7 @@ struct WatchtowerTrafficView: View {
     WatchtowerMetricChartCard(
       metric: metric,
       overview: overview,
+      previousOverview: snapshot.previousOverview,
       // The card retains this value through its two-stage visual handoff, then
       // unmounts the Dither view while editing. Arrays remain copy-on-write.
       chart: snapshot.charts[metric] ?? .empty,
@@ -2316,8 +2379,10 @@ private struct WatchtowerMetricChartCard: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.destinationNavigator) private var navigator
   let metric: WatchtowerAnalyticsMetric
   let overview: AccountAnalyticsOverview
+  var previousOverview: AccountAnalyticsOverview? = nil
   let chart: WatchtowerAnalyticsChartModel.MetricSnapshot
   let range: AnalyticsRange
   let isExpanded: Bool
@@ -2331,6 +2396,49 @@ private struct WatchtowerMetricChartCard: View {
 
   private var total: (text: String, numeric: Double) {
     WatchtowerAnalyticsChartModel.totalValue(overview, metric: metric)
+  }
+
+  private var trend: DashChartTrend? {
+    guard let previousOverview else { return nil }
+    return DashChartTrend(
+      current: total.numeric,
+      previous: WatchtowerAnalyticsChartModel.totalValue(
+        previousOverview,
+        metric: metric
+      ).numeric,
+      polarity: metric.trendPolarity)
+  }
+
+  private var detail: DashChartDetail? {
+    guard !chart.isEmpty, chart.expandedData.count == chart.tableLabels.count else {
+      return nil
+    }
+    let points = zip(chart.expandedData, chart.tableLabels).map { datum, tableLabel in
+      DashChartDataPoint(
+        datum: DitherDatum(
+          id: datum.id,
+          label: datum.label,
+          values: [
+            metric.seriesKey: metric.detailValue(datum[metric.seriesKey])
+          ]),
+        tableLabel: tableLabel)
+    }
+    return DashChartDetail(
+      title: metric.title,
+      rangeLabel: range.totalsHeading,
+      summaryValue: total.text,
+      trend: trend,
+      categoryAxisLabel: range == .month ? "Day" : "Hour",
+      valueAxisLabel: metric.valueAxisLabel,
+      axisValueFormat: metric.axisValueFormat,
+      tableValueFormat: metric.tableValueFormat,
+      accessibilitySummary: WatchtowerAnalyticsChartModel.accessibilitySummary(
+        metric: metric,
+        rangeLabel: DashL10n.ui(range.totalsHeading),
+        value: total.text),
+      content: .area(points: points, series: chartSeries),
+      featureID: nil,
+      readScopes: DashAuthorizationScopes.accountAnalytics)
   }
 
   private var chartAccessibility: DitherAccessibility {
@@ -2398,7 +2506,20 @@ private struct WatchtowerMetricChartCard: View {
     .onDisappear { onScrubChange(false) }
   }
 
+  @ViewBuilder
   private var header: some View {
+    if let detail, !showsEditingControls {
+      DestinationLink(destination: .chartDetail(detail)) {
+        headerContent(detail: detail)
+      }
+      .accessibilityHint("Shows chart details")
+      .accessibilityIdentifier("watchtower-chart-detail-\(metric.rawValue)")
+    } else {
+      headerContent(detail: nil)
+    }
+  }
+
+  private func headerContent(detail: DashChartDetail?) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(DashL10n.ui(metric.title))
         .dashTextStyle(.footnoteSemibold)
@@ -2413,15 +2534,21 @@ private struct WatchtowerMetricChartCard: View {
           renderingMode == .placeholder
             ? WatchtowerMetricDragLayout.titleTrailingClearance
             : 0)
-      Text(total.text)
-        .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
-        .monospacedDigit()
-        .foregroundStyle(DashTheme.strong)
-        .lineLimit(1)
-        .minimumScaleFactor(0.7)
-        .contentTransition(
-          reduceMotion ? .opacity : .numericText(value: total.numeric)
-        )
+      HStack(alignment: .firstTextBaseline, spacing: 8) {
+        Text(total.text)
+          .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
+          .monospacedDigit()
+          .foregroundStyle(DashTheme.strong)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+          .contentTransition(
+            reduceMotion ? .opacity : .numericText(value: total.numeric)
+          )
+        Spacer(minLength: 4)
+        if let detail {
+          DashChartDisclosure(trend: detail.trend)
+        }
+      }
       if isExpanded {
         // Reserve the footnote line on every expanded card so CPU Time (the one
         // metric with a "p90" footnote) doesn't sit a row taller than the rest.
@@ -2466,6 +2593,17 @@ private struct WatchtowerMetricChartCard: View {
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
+        .overlay {
+          if detail != nil, !showsEditingControls {
+            Button(action: openDetail) {
+              Color.clear
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityLabel(DashL10n.ui(metric.title))
+            .accessibilityHint("Shows chart details")
+          }
+        }
     }
   }
 
@@ -2489,10 +2627,16 @@ private struct WatchtowerMetricChartCard: View {
           accessibility: chartAccessibility),
         highlighted: selectedSeriesID != nil,
         selection: $selectedSeriesID,
-        onHoverChange: { index in onScrubChange(index != nil) }
+        onHoverChange: { index in onScrubChange(index != nil) },
+        onTap: detail == nil ? nil : openDetail
       )
       .frame(height: expandedHeight)
     }
+  }
+
+  private func openDetail() {
+    guard let detail else { return }
+    navigator?.push(.chartDetail(detail))
   }
 
   @ViewBuilder

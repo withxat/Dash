@@ -649,6 +649,103 @@ struct NetworkTests {
     #expect(days.first?.cachedBytes == 65536)
   }
 
+  @Test func zoneAnalyticsComparisonMapsBothAliasedWindows() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("current: httpRequests1dGroups"))
+      #expect(query.contains("previous: httpRequests1dGroups"))
+      #expect(query.contains("date_lt:"))
+      #expect(!query.contains("date_leq:"))
+      let response = #"""
+        {"data":{"viewer":{"zones":[{
+        "current":[{
+          "dimensions":{"date":"2026-07-28"},
+          "sum":{"requests":220,"pageViews":90,"threats":3,"bytes":22000,"cachedRequests":180,"cachedBytes":17000},
+          "uniq":{"uniques":44}
+        }],
+        "previous":[{
+          "dimensions":{"date":"2026-07-21"},
+          "sum":{"requests":180,"pageViews":72,"threats":5,"bytes":18000,"cachedRequests":130,"cachedBytes":12000},
+          "uniq":{"uniques":36}
+        }]
+        }]}},"errors":null}
+        """#
+      return (200, Data(response.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let comparison = try await client.zoneAnalyticsComparison(zoneID: "zone", days: 7)
+
+    #expect(comparison.current.map(\.requests) == [220])
+    #expect(comparison.previous?.map(\.requests) == [180])
+    #expect(comparison.current.first?.cachedRequests == 180)
+    #expect(comparison.previous?.first?.uniques == 36)
+  }
+
+  @Test func zoneAnalyticsDailyWindowsUseAdjacentCompleteUTCDays() throws {
+    let parser = ISO8601DateFormatter()
+    let now = try #require(parser.date(from: "2026-07-29T12:34:56Z"))
+
+    let bounds = CloudflareClient.zoneAnalyticsDailyBounds(days: 7, now: now)
+
+    #expect(bounds.previousStart == "2026-07-15")
+    #expect(bounds.currentStart == "2026-07-22")
+    #expect(bounds.end == "2026-07-29")
+  }
+
+  @Test func zoneAnalyticsComparisonKeepsCurrentDataWhenOlderWindowIsUnavailable()
+    async throws
+  {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      recorder.record(query)
+      if query.contains("previous: httpRequests1dGroups") {
+        return (
+          200,
+          Data(
+            #"""
+            {"data":null,"errors":[{"message":"requested data is older than this plan allows"}]}
+            """#.utf8)
+        )
+      }
+      #expect(query.contains("httpRequests1dGroups"))
+      #expect(!query.contains("previous:"))
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"zones":[{"httpRequests1dGroups":[{
+            "dimensions":{"date":"2026-07-28"},
+            "sum":{"requests":220,"pageViews":90,"threats":3,"bytes":22000},
+            "uniq":{"uniques":44}
+          }]}]}},"errors":null}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client",
+      tokenStore: store,
+      apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let comparison = try await client.zoneAnalyticsComparison(zoneID: "zone", days: 30)
+
+    #expect(comparison.current.map(\.requests) == [220])
+    #expect(comparison.previous == nil)
+    #expect(recorder.paths.count == 2)
+  }
+
   @Test func webAnalyticsSitesMapToZonesThroughTheirRuleset() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
@@ -756,13 +853,74 @@ struct NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let days = try await client.webAnalyticsMetrics(accountID: "acct", siteTag: "site-1", days: 7)
+    let result = try await client.webAnalyticsMetrics(
+      accountID: "acct", siteTag: "site-1", days: 7)
 
-    #expect(days.map(\.pageviews) == [46, 51])
-    #expect(days.map(\.visits) == [20, 25])
-    #expect(days.first?.pageLoadTimeP50Ms == 812)  // 812.4 rounded to nearest ms
-    #expect(days.last?.pageLoadTimeP50Ms == nil)  // no performance row for 07-23
+    #expect(result.days.map(\.pageviews) == [46, 51])
+    #expect(result.days.map(\.visits) == [20, 25])
+    #expect(result.days.first?.pageLoadTimeP50Ms == 812)  // 812.4 rounded to nearest ms
+    #expect(result.days.last?.pageLoadTimeP50Ms == nil)  // no performance row for 07-23
+    // Older fixtures have no ungrouped aliases. They still decode, but cannot
+    // truthfully provide a whole-window page-load trend.
+    #expect(result.currentPageLoadTimeP50Ms == nil)
+    #expect(result.previousPageLoadTimeP50Ms == nil)
     #expect(recorder.paths.first?.contains("/graphql") == true)
+  }
+
+  @Test func webAnalyticsMetricsUsesCompleteEqualUTCWindowsAndWholeWindowP50s() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      if let body = requestBodyData(request) {
+        recorder.record(String(decoding: body, as: UTF8.self))
+      }
+      let body = #"""
+        {"data":{"viewer":{"accounts":[{
+        "pageload":[],
+        "performance":[],
+        "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":731.6}}],
+        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":845.2}}]
+        }]}},"errors":null}
+        """#
+      return (200, Data(body.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let result = try await client.webAnalyticsMetrics(
+      accountID: "acct", siteTag: "site-1", days: 7)
+
+    #expect(result.currentPageLoadTimeP50Ms == 732)
+    #expect(result.previousPageLoadTimeP50Ms == 845)
+    let body = try #require(recorder.paths.first)
+    let request = try JSONDecoder().decode([String: String].self, from: Data(body.utf8))
+    let query = try #require(request["query"])
+    #expect(query.contains("currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
+    #expect(query.contains("previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
+
+    let regex = try NSRegularExpression(
+      pattern: #"datetime_(?:geq|lt): "([^"]+)""#)
+    let range = NSRange(query.startIndex..<query.endIndex, in: query)
+    let timestamps = regex.matches(in: query, range: range).compactMap { match -> Date? in
+      guard let valueRange = Range(match.range(at: 1), in: query) else { return nil }
+      return ISO8601DateFormatter().date(from: String(query[valueRange]))
+    }
+    #expect(timestamps.count == 8)
+    let boundaries = Array(Set(timestamps)).sorted()
+    #expect(boundaries.count == 3)
+    let previousStart = try #require(boundaries.first)
+    let currentStart = try #require(boundaries.dropFirst().first)
+    let end = try #require(boundaries.last)
+    #expect(end.timeIntervalSince(currentStart) == 7 * 86400)
+    #expect(currentStart.timeIntervalSince(previousStart) == 7 * 86400)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC")!
+    #expect(
+      timestamps.allSatisfy {
+        let parts = calendar.dateComponents([.hour, .minute, .second], from: $0)
+        return parts.hour == 0 && parts.minute == 0 && parts.second == 0
+      })
   }
 
   @Test func zoneAnalyticsToleratesMissingUniquesAndCacheFields() async throws {
@@ -807,6 +965,43 @@ struct NetworkTests {
     #expect(points.last?.bytes == 4096)
     #expect(points.map(\.uniques) == [3, 7])
     #expect(recorder.paths.first?.contains("/graphql") == true)
+  }
+
+  @Test func hourlyZoneAnalyticsComparisonMapsBothAliasedWindows() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("current: httpRequests1hGroups"))
+      #expect(query.contains("previous: httpRequests1hGroups"))
+      #expect(query.contains("datetime_lt:"))
+      #expect(!query.contains("datetime_leq:"))
+      let response = #"""
+        {"data":{"viewer":{"zones":[{
+        "current":[{
+          "dimensions":{"datetime":"2026-07-28T10:00:00Z"},
+          "sum":{"requests":40,"pageViews":16,"threats":1,"bytes":4096}
+        }],
+        "previous":[{
+          "dimensions":{"datetime":"2026-07-27T10:00:00Z"},
+          "sum":{"requests":30,"pageViews":12,"threats":0,"bytes":3072}
+        }]
+        }]}},"errors":null}
+        """#
+      return (200, Data(response.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let comparison = try await client.zoneAnalyticsHourlyComparison(zoneID: "zone", hours: 24)
+
+    #expect(comparison.current.map(\.requests) == [40])
+    #expect(comparison.previous?.map(\.requests) == [30])
+    #expect(comparison.current.first?.datetime == "2026-07-28T10:00:00Z")
+    #expect(comparison.previous?.first?.datetime == "2026-07-27T10:00:00Z")
   }
 
   @Test func decodesFreePlanHourlyZoneRequests() async throws {
@@ -894,6 +1089,109 @@ struct NetworkTests {
     #expect(snapshot.httpPoints.first?.encryptedBytes == 800)
     #expect(snapshot.workerPoints.map(\.errors) == [1, 2])
     #expect(snapshot.workerPoints.map(\.cpuTimeP90Us) == [1200, 1600])
+    #expect(snapshot.previousOverview == nil)
+  }
+
+  @Test func accountAnalyticsMapsPreviousOverviewFromSameQuery() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("previousOverview: httpRequestsOverviewAdaptiveGroups"))
+      #expect(query.contains("previousWorkers: workersInvocationsAdaptive"))
+      #expect(query.contains("datetimeMinute_lt:"))
+      #expect(query.contains("datetime_lt:"))
+      #expect(!query.contains("datetimeMinute_leq:"))
+      #expect(!query.contains("datetime_leq:"))
+      let response = #"""
+        {"data":{"viewer":{"accounts":[{
+        "overview":[{
+          "sum":{"requests":500,"bytes":10000},
+          "ratio":{"cachedRequests":0.5,"encryptedRequests":0.9,"encryptedBytes":0.8,"status4xx":0.02}
+        }],
+        "previousOverview":[{
+          "sum":{"requests":400,"bytes":8000},
+          "ratio":{"cachedRequests":0.4,"encryptedRequests":0.85,"encryptedBytes":0.75,"status4xx":0.03}
+        }],
+        "httpSeries":[],
+        "workers":[{"sum":{"requests":100,"errors":2},"quantiles":{"cpuTimeP90":1200.0}}],
+        "previousWorkers":[{"sum":{"requests":80,"errors":4},"quantiles":{"cpuTimeP90":1500.0}}],
+        "workerSeries":[]
+        }]}},"errors":null}
+        """#
+      return (200, Data(response.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let snapshot = try await client.accountAnalytics(accountID: "acct", hours: 24)
+    let previous = try #require(snapshot.previousOverview)
+
+    #expect(snapshot.overview.webRequests == 500)
+    #expect(previous.webRequests == 400)
+    #expect(previous.bytes == 8000)
+    #expect(previous.encryptedBytes == 6000)
+    #expect(previous.workerInvocations == 80)
+    #expect(previous.workerErrors == 4)
+    #expect(previous.cpuTimeP90Us == 1500)
+    #expect(previous.hours == 24)
+  }
+
+  @Test func accountAnalyticsKeepsCurrentSnapshotWhenPreviousWindowExceedsRetention()
+    async throws
+  {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      recorder.record(query)
+      if query.contains("previousOverview:") {
+        return (
+          200,
+          Data(
+            #"""
+            {"data":null,"errors":[{"message":"cannot request data older than 2592000s"}]}
+            """#.utf8)
+        )
+      }
+      #expect(!query.contains("previousWorkers:"))
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"accounts":[{
+            "overview":[{
+              "sum":{"requests":500,"bytes":10000},
+              "ratio":{"cachedRequests":0.5,"encryptedRequests":0.9,"encryptedBytes":0.8,"status4xx":0.02}
+            }],
+            "httpSeries":[],
+            "workers":[{"sum":{"requests":100,"errors":2},"quantiles":{"cpuTimeP90":1200.0}}],
+            "workerSeries":[]
+          }]}},"errors":null}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client",
+      tokenStore: store,
+      apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let snapshot = try await client.accountAnalytics(
+      accountID: "acct",
+      hours: 720,
+      granularity: .day)
+
+    #expect(snapshot.overview.webRequests == 500)
+    #expect(snapshot.overview.workerInvocations == 100)
+    #expect(snapshot.previousOverview == nil)
+    #expect(recorder.paths.count == 2)
   }
 
   @Test func accountAnalyticsSurfacesGraphQLAuthorizationErrors() async throws {
@@ -911,6 +1209,53 @@ struct NetworkTests {
     } catch let error as CloudflareAPIError {
       #expect(error.isForbidden)
     }
+  }
+
+  @Test func workerAnalyticsUsesWindowTotalsAndPreviousFullWindowMedian() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(
+        JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("currentTotals: workersInvocationsAdaptive"))
+      #expect(query.contains("previousTotals: workersInvocationsAdaptive"))
+      #expect(query.contains("workersInvocationsAdaptive(limit: 2500"))
+      #expect(query.contains("datetime_lt:"))
+      #expect(!query.contains("datetime_leq:"))
+      let response = #"""
+        {"data":{"viewer":{"accounts":[{
+        "currentTotals":[{
+          "sum":{"requests":999,"errors":7},
+          "quantiles":{"cpuTimeP50":1234.0}
+        }],
+        "previousTotals":[{
+          "sum":{"requests":800,"errors":9},
+          "quantiles":{"cpuTimeP50":987.0}
+        }],
+        "workersInvocationsAdaptive":[
+          {"sum":{"requests":90,"errors":0},"quantiles":{"cpuTimeP50":800.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"success"}},
+          {"sum":{"requests":10,"errors":2},"quantiles":{"cpuTimeP50":2000.0},"dimensions":{"datetimeFiveMinutes":"2026-07-22T10:00:00Z","status":"error"}}
+        ]
+        }]}},"errors":null}
+        """#
+      return (200, Data(response.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let payload = try await client.workerAnalytics(
+      accountID: "acct", scriptName: "worker", hours: 24)
+
+    #expect(payload.requests == 999)
+    #expect(payload.errors == 7)
+    #expect(payload.cpuTimeP50Us == 1234)
+    #expect(payload.previousRequests == 800)
+    #expect(payload.previousErrors == 9)
+    #expect(payload.previousCPUTimeP50Us == 987)
+    #expect(payload.points.first?.requests == 100)
+    #expect(payload.points.first?.errors == 2)
   }
 
   @Test func workerAnalyticsWeightsBucketCPUByRowRequests() async throws {
@@ -943,6 +1288,9 @@ struct NetworkTests {
     #expect(abs(payload.cpuTimeP50Us - (800.0 + 2000.0 + 600.0) / 3) < 0.0001)
     #expect(payload.requests == 150)
     #expect(payload.errors == 10)
+    #expect(payload.previousRequests == nil)
+    #expect(payload.previousErrors == nil)
+    #expect(payload.previousCPUTimeP50Us == nil)
   }
 
   @Test func workerAnalyticsBucketCPUSurvivesMissingQuantilesAndZeroWeight() async throws {

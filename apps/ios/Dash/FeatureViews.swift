@@ -98,6 +98,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   #if DEBUG
     case .debug: nil
   #endif
+  case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
   case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings,
     .zoneEmailRouting:
@@ -154,6 +155,8 @@ func readScopes(for destination: Destination) -> Set<String> {
     DashAuthorizationScopes.zoneAnalytics.union(["zone-settings.read"])
   case .zoneWebAnalytics:
     DashAuthorizationScopes.webAnalytics
+  case .chartDetail(let detail):
+    detail.readScopes
   case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,
     .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
@@ -165,7 +168,7 @@ func readScopes(for destination: Destination) -> Set<String> {
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
   case .settings, .settingsAccounts, .about, .openSource, .auditLogs, .filesMount,
-    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics:
+    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   #if DEBUG
     case .debug:
