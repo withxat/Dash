@@ -2628,10 +2628,15 @@ private struct WatchtowerMetricChartCard: View {
         highlighted: selectedSeriesID != nil,
         selection: $selectedSeriesID,
         onHoverChange: { index in onScrubChange(index != nil) },
-        onTap: detail == nil ? nil : openDetail
+        onTap: detailTapAction
       )
       .frame(height: expandedHeight)
     }
+  }
+
+  private var detailTapAction: (() -> Void)? {
+    guard detail != nil else { return nil }
+    return { openDetail() }
   }
 
   private func openDetail() {
