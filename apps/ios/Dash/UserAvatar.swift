@@ -17,11 +17,6 @@ enum Gravatar {
     return URL(string: "https://www.gravatar.com/avatar/\(hash)?s=\(size)&d=404")
   }
 
-  static func initial(for email: String) -> String {
-    let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let first = trimmed.first else { return "?" }
-    return String(first).uppercased()
-  }
 }
 
 enum CustomAvatarError: Error, Equatable, Sendable {
@@ -479,6 +474,17 @@ enum AvatarHeaderMetrics {
   static let titleSize: CGFloat = 34
 }
 
+/// The profile circle, in three layers: a locally chosen photo, then Gravatar,
+/// then initials.
+///
+/// The first two are keyed to the **person** — the photo by Cloudflare user id,
+/// Gravatar by the email's hash — because that is what they are. The initials
+/// fallback is keyed to the **active account** instead, so switching accounts
+/// visibly changes it: one user can own several accounts, every other profile
+/// surface already names the active one (`AppModel.profileTitle`), and the
+/// header button has always announced it to VoiceOver. A person with a photo
+/// still sees the same photo everywhere — the letter is the only layer with a
+/// free slot to say which account you are in.
 struct UserAvatar: View {
   @Environment(AppModel.self) private var model
   let email: String
@@ -512,10 +518,24 @@ struct UserAvatar: View {
     Circle()
       .fill(DashTheme.accent)
       .overlay {
-        Text(Gravatar.initial(for: email))
+        Text(Self.initial(for: initialSubject))
           .font(.system(size: size * 0.4, weight: .bold))
           .foregroundStyle(DashTheme.inverse)
       }
+  }
+
+  /// The active account's name, or the email while identity is still loading
+  /// and there is no account to name yet.
+  private var initialSubject: String {
+    let name =
+      model.activeAccount?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return name.isEmpty ? email : name
+  }
+
+  private static func initial(for subject: String) -> String {
+    let trimmed = subject.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let first = trimmed.first else { return "?" }
+    return String(first).uppercased()
   }
 }
 
