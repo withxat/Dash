@@ -3,6 +3,26 @@ import Testing
 
 @testable import Dash
 
+@Test func metricsWidgetTrendMatchesCollapsedWatchtowerZeroFloor() {
+  let mixed = CollapsedDitherTrendSeries(values: [0, 50, 0, 100])
+  let collapsedMixed = WatchtowerAnalyticsChartModel.collapsedSeriesValues([0, 50, 0, 100])
+  #expect(mixed.values == [10, 50, 10, 100])
+  #expect(mixed.valueCeiling == nil)
+  #expect(mixed.values == collapsedMixed.values)
+  #expect(mixed.valueCeiling == collapsedMixed.valueCeiling)
+
+  let quiet = CollapsedDitherTrendSeries(values: [0, 0, 0])
+  let collapsedQuiet = WatchtowerAnalyticsChartModel.collapsedSeriesValues([0, 0, 0])
+  #expect(quiet.values == [0.1, 0.1, 0.1])
+  #expect(quiet.valueCeiling == 1)
+  #expect(quiet.values == collapsedQuiet.values)
+  #expect(quiet.valueCeiling == collapsedQuiet.valueCeiling)
+
+  let empty = CollapsedDitherTrendSeries(values: [])
+  #expect(empty.values.isEmpty)
+  #expect(empty.valueCeiling == 1)
+}
+
 @Test func metricsWidgetStoreScopesLookupsAndDeepLinksByAccount() throws {
   let accountA = MetricsWidgetAccount(id: "account-a", name: "Account A")
   let accountB = MetricsWidgetAccount(id: "account-b", name: "Account B")

@@ -725,14 +725,8 @@ enum WatchtowerAnalyticsChartModel {
   static func collapsedSeriesValues(_ values: [Double]) -> (
     values: [Double], valueCeiling: Double?
   ) {
-    let peak = values.max() ?? 0
-    if peak > 0 {
-      let floor = peak * 0.1
-      return (values.map { max($0, floor) }, nil)
-    }
-    let syntheticPeak = 1.0
-    let floor = syntheticPeak * 0.1
-    return (values.map { _ in floor }, syntheticPeak)
+    let trend = CollapsedDitherTrendSeries(values: values)
+    return (trend.values, trend.valueCeiling)
   }
 
   static func totalValue(

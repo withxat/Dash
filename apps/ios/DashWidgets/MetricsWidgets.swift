@@ -561,6 +561,8 @@ struct DomainMetricsWidget: Widget {
 // MARK: - Presentation
 
 private struct MetricsWidgetView: View {
+  private static let chartSeriesID = "value"
+
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.widgetFamily) private var family
@@ -575,37 +577,46 @@ private struct MetricsWidgetView: View {
         smallLayout
       }
     }
-    .padding(14)
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .accessibilityElement(children: .combine)
   }
 
   private var smallLayout: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      heading
-      scope
-      total
+    VStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: 4) {
+        heading
+        scope
+        total
+        freshness
+      }
+      .padding(.horizontal, 14)
+      .padding(.top, 14)
       Spacer(minLength: 2)
       chart
+        .frame(maxWidth: .infinity)
         .frame(height: 42)
-      freshness
     }
   }
 
   private var mediumLayout: some View {
-    VStack(alignment: .leading, spacing: 7) {
-      heading
-      HStack(alignment: .bottom, spacing: 14) {
-        VStack(alignment: .leading, spacing: 4) {
-          scope
-          total
-          Spacer(minLength: 0)
+    VStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: 7) {
+        heading
+        HStack(alignment: .bottom, spacing: 14) {
+          VStack(alignment: .leading, spacing: 4) {
+            scope
+            total
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          freshness
         }
-        .frame(maxWidth: 126, maxHeight: .infinity, alignment: .leading)
-        chart
-          .frame(maxWidth: .infinity)
-          .frame(height: 72)
       }
-      freshness
+      .padding(.horizontal, 14)
+      .padding(.top, 14)
+      Spacer(minLength: 2)
+      chart
+        .frame(maxWidth: .infinity)
+        .frame(height: 72)
     }
   }
 
@@ -644,16 +655,37 @@ private struct MetricsWidgetView: View {
 
   @ViewBuilder
   private var chart: some View {
-    if entry.presentation.availability == .available, !trendValues.isEmpty {
-      DitherSparkline(
-        values: trendValues,
-        color: entry.presentation.color.ditherColor(
-          colorScheme: colorScheme,
-          increasedContrast: colorSchemeContrast == .increased),
-        variant: .gradient,
+    let trend = CollapsedDitherTrendSeries(values: entry.presentation.values)
+    if entry.presentation.availability == .available, !trend.values.isEmpty {
+      DitherAreaChart(
+        data: trend.values.enumerated().map { index, value in
+          DitherDatum(
+            id: "sample-\(index)",
+            label: "\(index + 1)",
+            values: [Self.chartSeriesID: value])
+        },
+        series: [
+          DitherSeries(
+            id: Self.chartSeriesID,
+            label: entry.presentation.title,
+            color: entry.presentation.color.ditherColor(
+              colorScheme: colorScheme,
+              increasedContrast: colorSchemeContrast == .increased),
+            variant: .gradient)
+        ],
+        options: DitherCartesianOptions(
+          stacking: .overlaid,
+          margins: .sparkline,
+          bloom: .off,
+          animate: false,
+          interactive: false,
+          showsAxes: false,
+          showsLegend: false,
+          showsTooltip: false,
+          valueFormat: .compact,
+          valueCeiling: trend.valueCeiling),
         highlighted: false,
-        bloom: .off,
-        animate: false
+        selection: nil
       )
       .ditherRenderingMode(.immediate)
       .opacity(entry.presentation.isStale(at: entry.date) ? 0.58 : 1)
@@ -663,7 +695,8 @@ private struct MetricsWidgetView: View {
       Text("No data in this range")
         .font(.caption)
         .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
   }
 
@@ -677,13 +710,6 @@ private struct MetricsWidgetView: View {
       )
       .lineLimit(1)
       .minimumScaleFactor(0.8)
-  }
-
-  private var trendValues: [Double] {
-    entry.presentation.values.compactMap { value in
-      guard value.isFinite else { return nil }
-      return max(0, value)
-    }
   }
 
   private var freshnessText: String {

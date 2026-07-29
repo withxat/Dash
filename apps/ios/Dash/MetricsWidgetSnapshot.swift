@@ -121,6 +121,30 @@ struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
   }
 }
 
+/// Render-ready values that mirror the collapsed Watchtower sparkline: zero
+/// samples keep a short 10% band, while an all-zero series uses a synthetic
+/// ceiling so that band does not scale up to the full chart height.
+struct CollapsedDitherTrendSeries: Hashable, Sendable {
+  let values: [Double]
+  let valueCeiling: Double?
+
+  init(values: [Double]) {
+    let sanitized = values.compactMap { value -> Double? in
+      guard value.isFinite else { return nil }
+      return max(0, value)
+    }
+    let peak = sanitized.max() ?? 0
+    if peak > 0 {
+      let floor = peak * 0.1
+      self.values = sanitized.map { max($0, floor) }
+      valueCeiling = nil
+    } else {
+      self.values = sanitized.map { _ in 0.1 }
+      valueCeiling = 1
+    }
+  }
+}
+
 struct MetricsWidgetAccount: Codable, Hashable, Identifiable, Sendable {
   var id: String
   var name: String
