@@ -12,10 +12,11 @@ enum DashFormDeletionPresentation: Equatable, Sendable {
   case deferToGlobalUndo
 }
 
-/// A form tray with exactly one action button. When a delete is supplied, a
-/// circular header button morphs the form — in place — into a confirmation whose
-/// single button is the destructive one; the Save button becomes Confirm rather
-/// than a second button appearing. This is the canonical editor tray.
+/// A form tray with one primary action and, when needed, one reversible text
+/// action immediately above it. When a delete is supplied, a circular header
+/// button morphs the form — in place — into a confirmation whose Save button
+/// becomes Confirm rather than a second primary button appearing. This is the
+/// canonical editor tray.
 struct DashFormSheet<Content: View>: View {
   var saveTitle = "Save"
   var isSaving = false
@@ -27,6 +28,9 @@ struct DashFormSheet<Content: View>: View {
   var deleteError: String? = nil
   var onDelete: (() -> Void)? = nil
   var deletionPresentation: DashFormDeletionPresentation = .confirmThenExecute
+  var secondaryActionTitle: String? = nil
+  var secondaryActionEnabled = true
+  var onSecondaryAction: (() -> Void)? = nil
   let onSave: () -> Void
   @ViewBuilder let content: Content
   @State private var confirmingDelete = false
@@ -46,6 +50,9 @@ struct DashFormSheet<Content: View>: View {
       actionRole: nil,
       confirmingActionRole: .destructive,
       actionEnabled: confirmingDelete || canSave,
+      secondaryActionTitle: secondaryActionTitle,
+      secondaryActionEnabled: secondaryActionEnabled,
+      secondaryAction: onSecondaryAction,
       errorMessage: confirmingDelete ? deleteError : nil,
       action: { confirmingDelete ? onDelete?() : onSave() },
       headerDelete: hasDelete,
@@ -73,6 +80,10 @@ struct DashConfirmMorph<Content: View>: View {
   var actionRole: ButtonRole? = nil
   var confirmingActionRole: ButtonRole? = .destructive
   var actionEnabled: Bool = true
+  /// Optional reversible action paired with the idle primary action.
+  var secondaryActionTitle: String? = nil
+  var secondaryActionEnabled = true
+  var secondaryAction: (() -> Void)? = nil
   var errorMessage: String? = nil
   var action: () -> Void
   var headerDelete = false
@@ -103,34 +114,43 @@ struct DashConfirmMorph<Content: View>: View {
       }
 
       if confirming {
-        Button {
-          withAnimation(DashTheme.Motion.morphExit) { confirming = false }
-        } label: {
-          Text(DashL10n.string("Cancel"))
-            .dashTextStyle(.buttonMedium)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, minHeight: 44)
+        DashTrayActionPair {
+          DashTrayTextButton(title: DashL10n.string("Cancel")) {
+            withAnimation(DashTheme.Motion.morphExit) { confirming = false }
+          }
+        } primary: {
+          DashActionButton(
+            title: confirmingActionTitle,
+            role: confirmingActionRole,
+            isLoading: isBusy,
+            holdToConfirm: true,
+            action: action
+          )
+          .disabled(!actionEnabled)
+          .opacity(actionEnabled ? 1 : 0.45)
         }
-        .buttonStyle(DashPressButtonStyle())
-        .transition(morphTransition)
-
-        DashActionButton(
-          title: confirmingActionTitle,
-          role: confirmingActionRole,
-          isLoading: isBusy,
-          holdToConfirm: true,
-          action: action
-        )
-        .disabled(!actionEnabled)
-        .opacity(actionEnabled ? 1 : 0.45)
         .transition(morphTransition)
       } else if let actionTitle {
-        DashActionButton(
-          title: actionTitle, role: actionRole, isLoading: isBusy, action: action
-        )
-        .disabled(!actionEnabled)
-        .opacity(actionEnabled ? 1 : 0.45)
-        .transition(morphTransition)
+        if let secondaryActionTitle, let secondaryAction {
+          DashTrayActionPair {
+            DashTrayTextButton(title: secondaryActionTitle, action: secondaryAction)
+              .disabled(!secondaryActionEnabled)
+          } primary: {
+            DashActionButton(
+              title: actionTitle, role: actionRole, isLoading: isBusy, action: action
+            )
+            .disabled(!actionEnabled)
+            .opacity(actionEnabled ? 1 : 0.45)
+          }
+          .transition(morphTransition)
+        } else {
+          DashActionButton(
+            title: actionTitle, role: actionRole, isLoading: isBusy, action: action
+          )
+          .disabled(!actionEnabled)
+          .opacity(actionEnabled ? 1 : 0.45)
+          .transition(morphTransition)
+        }
       }
     }
     .frame(

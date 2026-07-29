@@ -94,6 +94,46 @@ struct DashSecondaryPillButton: View {
   }
 }
 
+/// The full-width text-only secondary action used above a tray's primary pill.
+/// Surfaces that deliberately mirror that hierarchy (such as onboarding) reuse
+/// this control so typography and hit-target metrics cannot drift.
+struct DashTrayTextButton: View {
+  let title: String
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      Text(title)
+        .dashTextStyle(.buttonMedium)
+        .foregroundStyle(DashTheme.subtle)
+        .frame(maxWidth: .infinity, minHeight: 44)
+    }
+    .buttonStyle(DashPressButtonStyle())
+  }
+}
+
+/// The canonical vertical relationship between a tray's secondary text action
+/// and its primary pill. Keep the compact pair inside the wider section rhythm.
+struct DashTrayActionPair<Secondary: View, Primary: View>: View {
+  private let secondary: Secondary
+  private let primary: Primary
+
+  init(
+    @ViewBuilder secondary: () -> Secondary,
+    @ViewBuilder primary: () -> Primary
+  ) {
+    self.secondary = secondary()
+    self.primary = primary()
+  }
+
+  var body: some View {
+    VStack(spacing: 4) {
+      secondary
+      primary
+    }
+  }
+}
+
 // MARK: - Danger confirmation morph
 
 private struct DashBlurModifier: ViewModifier, Animatable {
@@ -248,19 +288,13 @@ struct DashConfirmableActions: View {
         DashNotice(kind: .error, message: errorMessage)
       }
 
-      VStack(spacing: 4) {
-        Button {
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Cancel")) {
           errorMessage = nil
           withAnimation(DashTheme.Motion.morphExit) { pending = nil }
-        } label: {
-          Text(DashL10n.string("Cancel"))
-            .dashTextStyle(.buttonMedium)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(DashPressButtonStyle())
         .disabled(working)
-
+      } primary: {
         DashActionButton(
           title: DashL10n.ui(action.confirmTitle),
           role: .destructive,

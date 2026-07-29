@@ -128,15 +128,9 @@ struct ProfileTrayContent: View {
         }
       }
 
-      Button {
+      DashTrayTextButton(title: DashL10n.string("Back")) {
         withAnimation(DashTheme.Motion.morph) { phase = .menu }
-      } label: {
-        Text(DashL10n.string("Back"))
-          .dashTextStyle(.buttonMedium)
-          .foregroundStyle(DashTheme.subtle)
-          .frame(maxWidth: .infinity, minHeight: 44)
       }
-      .buttonStyle(DashPressButtonStyle())
     }
   }
 
@@ -154,17 +148,11 @@ struct ProfileTrayContent: View {
       .frame(maxWidth: .infinity)
       .padding(.top, 4)
 
-      VStack(spacing: 4) {
-        Button {
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Cancel")) {
           withAnimation(DashTheme.Motion.morph) { phase = .accounts }
-        } label: {
-          Text(DashL10n.string("Cancel"))
-            .dashTextStyle(.buttonMedium)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(DashPressButtonStyle())
-
+      } primary: {
         DashActionButton(title: DashL10n.string("Switch account")) {
           model.selectAccount(account)
           dismiss()
@@ -183,18 +171,12 @@ struct ProfileTrayContent: View {
         .frame(maxWidth: .infinity)
         .padding(.top, 4)
 
-      VStack(spacing: 4) {
-        Button {
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Cancel")) {
           withAnimation(DashTheme.Motion.morph) { phase = .menu }
-        } label: {
-          Text(DashL10n.string("Cancel"))
-            .dashTextStyle(.buttonMedium)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, minHeight: 44)
         }
-        .buttonStyle(DashPressButtonStyle())
         .disabled(isSigningOut)
-
+      } primary: {
         DashActionButton(
           title: DashL10n.string("Sign out"),
           role: .destructive,

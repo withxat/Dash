@@ -441,6 +441,11 @@ private struct R2ObjectActionsSheet: View {
       saveTitle: "Rename",
       isSaving: renameBusy,
       canSave: normalizedKey != nil,
+      secondaryActionTitle: DashL10n.string("Back"),
+      secondaryActionEnabled: !renameBusy,
+      onSecondaryAction: {
+        withAnimation(DashTheme.Motion.morph) { renaming = false }
+      },
       onSave: { Task { await performRename() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
@@ -458,16 +463,6 @@ private struct R2ObjectActionsSheet: View {
           if let renameError {
             DashNotice(kind: .error, message: renameError)
           }
-          Button {
-            withAnimation(DashTheme.Motion.morph) { renaming = false }
-          } label: {
-            Text("Back")
-              .dashTextStyle(.buttonMedium)
-              .foregroundStyle(DashTheme.subtle)
-              .frame(maxWidth: .infinity, minHeight: 44)
-          }
-          .buttonStyle(DashPressButtonStyle())
-          .disabled(renameBusy)
         }
       }
     )

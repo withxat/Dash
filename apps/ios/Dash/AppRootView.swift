@@ -420,25 +420,22 @@ private struct OnboardingView: View {
 
       // App Review's path past the OAuth wall (and anyone's no-account tour):
       // a read-only session served from in-app fixtures by DemoBackend.
-      Button {
-        model.enterDemo()
-      } label: {
-        Text("Explore the demo")
-          .dashTextStyle(.supportingMedium)
-          .foregroundStyle(DashTheme.subtle)
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
+          model.enterDemo()
+        }
+        .dashReveal(3, shown: revealed)
+      } primary: {
+        DashPillButton(
+          title: primaryButtonTitle,
+          icon: step == .permissions ? SolarAsset.cloudflare : nil,
+          isLoading: step == .permissions && model.isAuthenticating,
+          isEnabled: step == .welcome
+            || (model.configuration.isConfigured && networkProbe.isReadyForConnect),
+          action: primaryButtonAction
+        )
+        .dashReveal(4, shown: revealed)
       }
-      .buttonStyle(DashPressButtonStyle())
-      .dashReveal(3, shown: revealed)
-
-      DashPillButton(
-        title: primaryButtonTitle,
-        icon: step == .permissions ? SolarAsset.cloudflare : nil,
-        isLoading: step == .permissions && model.isAuthenticating,
-        isEnabled: step == .welcome
-          || (model.configuration.isConfigured && networkProbe.isReadyForConnect),
-        action: primaryButtonAction
-      )
-      .dashReveal(4, shown: revealed)
 
       legalCaption
         .dashReveal(5, shown: revealed)
