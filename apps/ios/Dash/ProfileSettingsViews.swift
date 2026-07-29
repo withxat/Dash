@@ -1057,6 +1057,8 @@ struct ProfileView: View {
     let email = model.user?.email ?? ""
     let userID = model.user?.id
     let hasCustomImage = model.avatars.hasCustomImage(for: userID)
+    let avatarPhase = avatarActionPhase
+    let usesReducedMotion = reduceMotion
 
     if model.isDemoSession {
       UserAvatar(email: email, size: 80)
@@ -1076,13 +1078,13 @@ struct ProfileView: View {
                 size: 14,
                 color: DashTheme.inverse
               )
-              .opacity(avatarActionPhase == .idle ? 1 : 0)
-              .blur(radius: reduceMotion || avatarActionPhase == .idle ? 0 : 2)
-              .scaleEffect(reduceMotion || avatarActionPhase == .idle ? 1 : 0.25)
-              .animation(reduceMotion ? nil : DashTheme.Motion.iconSwap, value: avatarActionPhase)
+              .opacity(avatarPhase == .idle ? 1 : 0)
+              .blur(radius: usesReducedMotion || avatarPhase == .idle ? 0 : 2)
+              .scaleEffect(usesReducedMotion || avatarPhase == .idle ? 1 : 0.25)
+              .animation(usesReducedMotion ? nil : DashTheme.Motion.iconSwap, value: avatarPhase)
 
               DashActionStatusIcon(
-                phase: avatarActionPhase,
+                phase: avatarPhase,
                 loadingColor: DashTheme.inverse,
                 size: 14,
                 lineWidth: 2,
@@ -1095,9 +1097,9 @@ struct ProfileView: View {
           }
       }
       .buttonStyle(DashPressButtonStyle())
-      .disabled(avatarActionPhase.isActive || userID == nil)
+      .disabled(avatarPhase.isActive || userID == nil)
       .accessibilityLabel(DashL10n.string("Change profile photo"))
-      .accessibilityValue(avatarActionPhase.accessibilityValue)
+      .accessibilityValue(avatarPhase.accessibilityValue)
     }
   }
 
