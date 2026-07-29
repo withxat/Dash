@@ -727,6 +727,8 @@ private struct LanguagePickerTray: View {
 /// About screen (Settings → About): the app icon over the app name, tagline,
 /// and version.
 struct AboutView: View {
+  @ObservedObject private var holoMotion = HoloMotionManager.shared
+
   private var versionText: String {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "—"
@@ -738,24 +740,7 @@ struct AboutView: View {
     ScrollView {
       VStack(spacing: DashTheme.Spacing.section) {
         VStack(spacing: 16) {
-          Image("LoginAppIcon")
-            .resizable()
-            .scaledToFit()
-            .frame(width: 96, height: 96)
-            .clipShape(RoundedRectangle(cornerRadius: 96 * 0.2237, style: .continuous))
-            // The warm halo that used to lift the icon's spot off the canvas.
-            .background {
-              RadialGradient(
-                colors: [DashTheme.wash.opacity(0.55), DashTheme.wash.opacity(0)],
-                center: .center,
-                startRadius: 8,
-                endRadius: 300
-              )
-              .frame(width: 600, height: 600)
-              .allowsHitTesting(false)
-              .accessibilityHidden(true)
-            }
-            .accessibilityHidden(true)
+          AboutHoloStickerWall(motion: holoMotion)
 
           VStack(spacing: 4) {
             Text("Dash")
@@ -779,6 +764,75 @@ struct AboutView: View {
     }
     .background(DashTheme.canvas)
     .detailHeader(icon: .solar(SolarAsset.Content.cloud), title: "About")
+  }
+}
+
+private struct AboutHoloStickerWall: View {
+  @ObservedObject var motion: HoloMotionManager
+
+  var body: some View {
+    ZStack {
+      RadialGradient(
+        colors: [DashTheme.wash.opacity(0.42), DashTheme.wash.opacity(0)],
+        center: .center,
+        startRadius: 8,
+        endRadius: 210
+      )
+      .frame(width: 420, height: 260)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
+
+      HoloStickerView(motion: motion, shape: Circle()) {
+        Circle()
+          .fill(DashTheme.elevated)
+          .overlay {
+            SolarIcon(asset: SolarAsset.cloudflare, size: 30, color: DashTheme.accent)
+          }
+      }
+      .frame(width: 66, height: 66)
+      .dashShadow(.raised, in: Circle())
+      .rotationEffect(.degrees(-9))
+      .offset(x: -82, y: 20)
+      .accessibilityHidden(true)
+
+      HoloStickerView(
+        motion: motion,
+        shape: RoundedRectangle(cornerRadius: 104 * 0.2237, style: .continuous)
+      ) {
+        Image("LoginAppIcon")
+          .resizable()
+          .scaledToFit()
+      }
+      .frame(width: 104, height: 104)
+      .dashShadow(
+        .raised,
+        in: RoundedRectangle(cornerRadius: 104 * 0.2237, style: .continuous)
+      )
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Dash")
+      .zIndex(1)
+
+      HoloStickerView(
+        motion: motion,
+        shape: RoundedRectangle(cornerRadius: 18, style: .continuous)
+      ) {
+        RoundedRectangle(cornerRadius: 18, style: .continuous)
+          .fill(DashTheme.strong)
+          .overlay {
+            SolarIcon(asset: SolarAsset.Content.code, size: 30, color: DashTheme.inverse)
+          }
+      }
+      .frame(width: 66, height: 66)
+      .dashShadow(
+        .raised,
+        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+      )
+      .rotationEffect(.degrees(10))
+      .offset(x: 82, y: 22)
+      .accessibilityHidden(true)
+    }
+    .frame(maxWidth: .infinity)
+    .frame(height: 134)
   }
 }
 

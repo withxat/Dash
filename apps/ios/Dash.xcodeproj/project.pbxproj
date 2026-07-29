@@ -127,6 +127,7 @@
 		B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B5 /* DeferredDeletionTests.swift */; };
 		B000000000000000000001B6 /* ICloudPreferencesSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B6 /* ICloudPreferencesSync.swift */; };
 		B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */; };
+		B000000000000000000001B8 /* HoloStickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B8 /* HoloStickerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -184,6 +185,7 @@
 		F00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F0000000000000000000012B /* DemoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBackend.swift; sourceTree = "<group>"; };
 		F00000000000000000000005 /* DashTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
+		F000000000000000000001B8 /* HoloStickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoloStickerView.swift; sourceTree = "<group>"; };
 		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
 		F00000000000000000000008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -379,6 +381,7 @@
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000150 /* PerformanceDiagnostics.swift */,
 				F00000000000000000000005 /* DashTheme.swift */,
+				F000000000000000000001B8 /* HoloStickerView.swift */,
 				F0000000000000000000015D /* DashSurfaces.swift */,
 				F0000000000000000000015E /* DashControls.swift */,
 				F00000000000000000000006 /* Catalog.swift */,
@@ -809,6 +812,7 @@
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
 				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
+				B000000000000000000001B8 /* HoloStickerView.swift in Sources */,
 				B0000000000000000000015D /* DashSurfaces.swift in Sources */,
 				B0000000000000000000015E /* DashControls.swift in Sources */,
 				B00000000000000000000006 /* Catalog.swift in Sources */,
