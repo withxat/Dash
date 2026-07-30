@@ -493,7 +493,7 @@ struct LocalizationTests {
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 7)
+  #expect(FeatureID.allCases.count == 8)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -841,7 +841,8 @@ struct LocalizationTests {
 @Test func destinationFeatureMappingCoversDirectRoutes() {
   #expect(featureID(for: .zone("z1")) == .zones)
   #expect(featureID(for: .dns("z1")) == .zones)
-  #expect(featureID(for: .zoneEmailRouting("z1")) == .zones)
+  #expect(featureID(for: .zoneDNSAnalytics("z1")) == .zones)
+  #expect(featureID(for: .zoneEmailRouting("z1")) == .emailRouting)
   #expect(featureID(for: .worker("api")) == .workers)
   #expect(featureID(for: .tunnel("t1")) == .tunnels)
   #expect(featureID(for: .r2Bucket("media", prefix: "")) == .r2)
@@ -850,7 +851,7 @@ struct LocalizationTests {
   #expect(featureID(for: .profile) == nil)
   #expect(featureID(for: .settingsAccounts) == nil)
   #expect(featureID(for: .filesMount) == nil)
-  #expect(featureID(for: .emailAddresses) == nil)
+  #expect(featureID(for: .emailAddresses) == .emailRouting)
   #expect(featureID(for: .registrarDomain("example.com")) == .registrar)
 }
 
@@ -1469,6 +1470,7 @@ private let watchtowerDropFrames: [CGRect] = [
 @Test func featureVisualIdentityMapsStableTonesPerFeature() {
   #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
   #expect(FeatureVisualIdentity.tone(for: .registrar) == .teal)
+  #expect(FeatureVisualIdentity.tone(for: .emailRouting) == .danger)
   #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
   #expect(FeatureVisualIdentity.tone(for: .pages) == .info)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)

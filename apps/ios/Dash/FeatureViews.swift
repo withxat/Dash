@@ -35,6 +35,7 @@ struct FeatureRouterContent: View {
       switch feature {
       case .zones: ZonesView()
       case .registrar: RegistrarDomainsView()
+      case .emailRouting: EmailRoutingDomainsView()
       case .workers: WorkersView()
       case .pages: PagesProjectsView()
       case .r2: R2BucketsView()
@@ -94,16 +95,18 @@ struct FeatureWriteAccessNotice: View {
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
   case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
-    .filesMount, .watchtowerInbox, .emailAddresses:
+    .filesMount, .watchtowerInbox:
     nil
   #if DEBUG
     case .debug: nil
   #endif
   case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
-  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings,
-    .zoneEmailRouting:
+  case .zone, .dns, .cache, .zoneAnalytics, .zoneDNSAnalytics, .zoneWebAnalytics, .zoneWAF,
+    .zoneSettings:
     .zones
+  case .zoneEmailRouting, .emailAddresses:
+    .emailRouting
   case .registrarDomain: .registrar
   case .worker: .workers
   case .tunnel: .tunnels
@@ -149,7 +152,7 @@ func readScopes(for destination: Destination) -> Set<String> {
     ["email-routing-address.read"]
   case .tunnel:
     ["argotunnel.read", "access.read"]
-  case .zoneAnalytics:
+  case .zoneAnalytics, .zoneDNSAnalytics:
     DashAuthorizationScopes.zoneAnalytics
   case .zoneWAF:
     DashAuthorizationScopes.zoneAnalytics.union(["zone-settings.read"])
@@ -168,7 +171,7 @@ func readScopes(for destination: Destination) -> Set<String> {
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
   case .settings, .settingsAccounts, .about, .openSource, .auditLogs, .filesMount,
-    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
+    .watchtowerInbox, .zoneAnalytics, .zoneDNSAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   #if DEBUG
     case .debug:

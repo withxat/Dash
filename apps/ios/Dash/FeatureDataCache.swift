@@ -48,8 +48,23 @@ enum FeatureCacheKey {
     "zoneAnalytics:\(zoneID):\(days)"
   }
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
+  static func zoneDNSAnalytics(_ zoneID: String, days: Int) -> String {
+    "zoneDNSAnalytics:\(zoneID):\(days)"
+  }
+  static func zoneDNSAnalyticsHourly(_ zoneID: String) -> String {
+    "zoneDNSAnalyticsHourly:\(zoneID)"
+  }
   static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
   static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
+  static func emailRoutingAnalytics(_ zoneID: String) -> String {
+    "emailRoutingAnalytics:\(zoneID)"
+  }
+  static func r2BucketAnalytics(_ accountID: String, bucket: String) -> String {
+    "r2BucketAnalytics:\(accountID):\(bucket)"
+  }
+  static func kvNamespaceAnalytics(_ accountID: String, namespaceID: String) -> String {
+    "kvNamespaceAnalytics:\(accountID):\(namespaceID)"
+  }
   static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
   static func webAnalyticsPageviews(_ siteTag: String, days: Int) -> String {
     "rumPageviews:\(siteTag):\(days)"

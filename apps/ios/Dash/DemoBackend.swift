@@ -745,8 +745,30 @@ final class DemoBackend: URLProtocol {
     if query.contains("rumPageloadEventsAdaptiveGroups") {
       return Reply(json: DemoWorld.rumPageviews(days: limit(in: query) ?? 7, scale: scale))
     }
-    if query.contains("firewallEventsAdaptiveGroups") {
+    if query.contains("firewallEventsAdaptiveByTimeGroups")
+      || query.contains("firewallEventsAdaptive")
+    {
       return Reply(json: DemoWorld.firewallEvents(scale: scale))
+    }
+    if query.contains("dnsAnalyticsAdaptiveGroups") {
+      let hours = query.contains("datetimeHour")
+      if hours {
+        return Reply(
+          json: DemoWorld.dnsAnalyticsHourly(
+            hours: max((limit(in: query) ?? 25) - 1, 1), scale: scale))
+      }
+      return Reply(json: DemoWorld.dnsAnalyticsDaily(days: limit(in: query) ?? 7, scale: scale))
+    }
+    if query.contains("emailRoutingAdaptiveGroups") {
+      return Reply(json: DemoWorld.emailRoutingAnalytics(scale: scale))
+    }
+    if query.contains("r2OperationsAdaptiveGroups") {
+      return Reply(
+        json: DemoWorld.storageOperationsAnalytics(days: limit(in: query) ?? 7, scale: scale))
+    }
+    if query.contains("kvOperationsAdaptiveGroups") {
+      return Reply(
+        json: DemoWorld.storageOperationsAnalytics(days: limit(in: query) ?? 7, scale: scale))
     }
     return Reply(json: #"{"data":null,"errors":null}"#)
   }
@@ -1660,12 +1682,108 @@ private enum DemoWorld {
       previousValues.isEmpty
       ? currentP50
       : previousValues.reduce(0, +) / previousValues.count
+    // Web Vitals arrive in microseconds for LCP / INP; CLS is unitless.
+    let vitals = (0..<count).map { day -> String in
+      let lcp = (1_800_000 + wave(day, base: 0, swing: 400_000))
+      let inp = (120_000 + wave(day, base: 0, swing: 40_000))
+      let cls = String(format: "%.3f", 0.08 + Double(wave(day, base: 0, swing: 6)) / 100)
+      return
+        #"{"quantiles":{"largestContentfulPaintP75":\#(lcp),"interactionToNextPaintP75":\#(inp),"cumulativeLayoutShiftP75":\#(cls)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
+    }
     return #"""
       {"data":{"viewer":{"accounts":[{
         "pageload":[\#(pageload.joined(separator: ","))],
         "performance":[\#(performance.joined(separator: ","))],
+        "vitals":[\#(vitals.joined(separator: ","))],
         "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(currentP50)}}],
-        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}]
+        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}],
+        "currentVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2100000,"interactionToNextPaintP75":140000,"cumulativeLayoutShiftP75":0.09}}],
+        "previousVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2300000,"interactionToNextPaintP75":160000,"cumulativeLayoutShiftP75":0.11}}]
+      }]}},"errors":null}
+      """#
+  }
+
+  static func dnsAnalyticsHourly(hours: Int, scale: Double) -> String {
+    let count = max(hours, 1)
+    let current = (0..<count).map { hour -> String in
+      let queries = max(1, scaled(120 + wave(hour, base: 0, swing: 80), scale))
+      return
+        #"{"count":\#(queries),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count - hour))"}}"#
+    }
+    let previous = (0..<count).map { hour -> String in
+      let queries = max(1, scaled(90 + wave(hour, base: 1, swing: 60), scale))
+      return
+        #"{"count":\#(queries),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count * 2 - hour))"}}"#
+    }
+    let types = [
+      #"{"count":\#(max(1, scaled(40, scale))),"dimensions":{"queryType":"A"}}"#,
+      #"{"count":\#(max(1, scaled(22, scale))),"dimensions":{"queryType":"AAAA"}}"#,
+      #"{"count":\#(max(1, scaled(12, scale))),"dimensions":{"queryType":"MX"}}"#,
+    ]
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current.joined(separator: ","))],
+        "previous":[\#(previous.joined(separator: ","))],
+        "queryTypes":[\#(types.joined(separator: ","))]
+      }]}},"errors":null}
+      """#
+  }
+
+  static func dnsAnalyticsDaily(days: Int, scale: Double) -> String {
+    let count = max(days, 1)
+    let current = (0..<count).map { day -> String in
+      let queries = max(1, scaled(2_400 + wave(day, base: 0, swing: 900), scale))
+      return
+        #"{"count":\#(queries),"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
+    }
+    let previous = (0..<count).map { day -> String in
+      let queries = max(1, scaled(1_800 + wave(day, base: 2, swing: 700), scale))
+      return
+        #"{"count":\#(queries),"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count * 2 - day))"}}"#
+    }
+    let types = [
+      #"{"count":\#(max(1, scaled(900, scale))),"dimensions":{"queryType":"A"}}"#,
+      #"{"count":\#(max(1, scaled(420, scale))),"dimensions":{"queryType":"AAAA"}}"#,
+      #"{"count":\#(max(1, scaled(180, scale))),"dimensions":{"queryType":"TXT"}}"#,
+    ]
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current.joined(separator: ","))],
+        "previous":[\#(previous.joined(separator: ","))],
+        "queryTypes":[\#(types.joined(separator: ","))]
+      }]}},"errors":null}
+      """#
+  }
+
+  static func emailRoutingAnalytics(scale: Double) -> String {
+    let series = (0..<24).map { hour -> String in
+      let count = max(0, scaled(wave(hour, base: 2, swing: 8), scale))
+      return
+        #"{"count":\#(count),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"}}"#
+    }
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "emailRoutingAdaptiveGroups":[\#(series.joined(separator: ","))]
+      }]}},"errors":null}
+      """#
+  }
+
+  static func storageOperationsAnalytics(days: Int, scale: Double) -> String {
+    let count = max(days, 1)
+    let current = (0..<count).map { day -> String in
+      let requests = max(1, scaled(180 + wave(day, base: 0, swing: 120), scale))
+      return
+        #"{"sum":{"requests":\#(requests)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
+    }
+    let previous = (0..<count).map { day -> String in
+      let requests = max(1, scaled(140 + wave(day, base: 1, swing: 90), scale))
+      return
+        #"{"sum":{"requests":\#(requests)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count * 2 - day))"}}"#
+    }
+    return #"""
+      {"data":{"viewer":{"accounts":[{
+        "current":[\#(current.joined(separator: ","))],
+        "previous":[\#(previous.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }
@@ -1741,22 +1859,32 @@ private enum DemoWorld {
       """#
   }
 
+  /// WAF summary fixture: hourly ByTimeGroups totals plus Adaptive samples for
+  /// country / rule tops. Counts stay small so the demo payload stays light.
   static func firewallEvents(scale: Double) -> String {
-    #"""
-    {"data":{"viewer":{"zones":[{
-      "blocked":[{"count":\#(scaled(152, scale))}],
-      "byCountry":[
-        {"count":\#(scaled(64, scale)),"dimensions":{"clientCountryName":"US"}},
-        {"count":\#(scaled(38, scale)),"dimensions":{"clientCountryName":"CN"}},
-        {"count":\#(scaled(21, scale)),"dimensions":{"clientCountryName":"RU"}},
-        {"count":\#(scaled(12, scale)),"dimensions":{"clientCountryName":"BR"}}
-      ],
-      "byRule":[
-        {"count":\#(scaled(98, scale)),"dimensions":{"ruleId":"rate-limit-login"}},
-        {"count":\#(scaled(54, scale)),"dimensions":{"ruleId":"block-bad-bots"}}
-      ]
-    }]}},"errors":null}
-    """#
+    let us = max(scaled(8, scale), 1)
+    let cn = max(scaled(5, scale), 1)
+    let ru = max(scaled(3, scale), 1)
+    let br = max(scaled(2, scale), 1)
+    var events: [String] = []
+    events += Array(
+      repeating: #"{"clientCountryName":"US","ruleId":"rate-limit-login"}"#, count: us)
+    events += Array(repeating: #"{"clientCountryName":"CN","ruleId":"block-bad-bots"}"#, count: cn)
+    events += Array(
+      repeating: #"{"clientCountryName":"RU","ruleId":"rate-limit-login"}"#, count: ru)
+    events += Array(repeating: #"{"clientCountryName":"BR","ruleId":"block-bad-bots"}"#, count: br)
+    let total = us + cn + ru + br
+    let series = (0..<24).reversed().map { hour -> String in
+      let count = hour == 0 ? total : max(total / 8, 1)
+      return
+        #"{"count":\#(count),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: hour))"}}"#
+    }
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "byTime":[\#(series.joined(separator: ","))],
+        "samples":[\#(events.joined(separator: ","))]
+      }]}},"errors":null}
+      """#
   }
 }
 

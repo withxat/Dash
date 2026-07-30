@@ -411,6 +411,7 @@ struct DestinationRoutedContent: View {
       case .dns(let id): DNSRecordsView(zoneID: id)
       case .cache(let id): CachePurgeView(zoneID: id)
       case .zoneAnalytics(let id): ZoneAnalyticsView(zoneID: id)
+      case .zoneDNSAnalytics(let id): DNSAnalyticsView(zoneID: id)
       case .zoneWebAnalytics(let id): WebAnalyticsView(zoneID: id)
       case .zoneWAF(let id): WAFEventsView(zoneID: id)
       case .zoneSettings(let id): ZoneSettingsView(zoneID: id)

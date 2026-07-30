@@ -1292,10 +1292,20 @@ public actor CloudflareClient {
       performance: rumPerformanceEventsAdaptiveGroups(limit: \(span), \
       filter: \(dailyFilter), orderBy: [date_ASC]) { \
       quantiles { pageLoadTimeP50 } dimensions { date } } \
+      vitals: rumWebVitalsEventsAdaptiveGroups(limit: \(span), \
+      filter: \(dailyFilter), orderBy: [date_ASC]) { \
+      quantiles { largestContentfulPaintP75 interactionToNextPaintP75 \
+      cumulativeLayoutShiftP75 } dimensions { date } } \
       currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
       filter: \(currentFilter)) { quantiles { pageLoadTimeP50 } } \
       previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
-      filter: \(previousFilter)) { quantiles { pageLoadTimeP50 } } } } }
+      filter: \(previousFilter)) { quantiles { pageLoadTimeP50 } } \
+      currentVitalsTotals: rumWebVitalsEventsAdaptiveGroups(limit: 1, \
+      filter: \(currentFilter)) { quantiles { largestContentfulPaintP75 \
+      interactionToNextPaintP75 cumulativeLayoutShiftP75 } } \
+      previousVitalsTotals: rumWebVitalsEventsAdaptiveGroups(limit: 1, \
+      filter: \(previousFilter)) { quantiles { largestContentfulPaintP75 \
+      interactionToNextPaintP75 cumulativeLayoutShiftP75 } } } } }
       """
     let response = try await graphQL(query: query)
     let envelope = try JSONDecoder().decode(
@@ -1314,17 +1324,33 @@ public actor CloudflareClient {
         p50ByDate[group.dimensions.date] = Int(p50.rounded())
       }
     }
-    let days = account.pageload.map { group in
-      RUMDailyMetrics(
+    var vitalsByDate: [String: RUMMetricsData.VitalsQuantiles] = [:]
+    for group in account.vitals ?? [] {
+      vitalsByDate[group.dimensions.date] = group.quantiles
+    }
+    let days = account.pageload.map { group -> RUMDailyMetrics in
+      let vitals = vitalsByDate[group.dimensions.date]
+      return RUMDailyMetrics(
         date: group.dimensions.date,
         pageviews: group.count,
         visits: group.sum.visits,
-        pageLoadTimeP50Ms: p50ByDate[group.dimensions.date])
+        pageLoadTimeP50Ms: p50ByDate[group.dimensions.date],
+        lcpP75Ms: vitals?.lcpP75Ms,
+        inpP75Ms: vitals?.inpP75Ms,
+        clsP75: vitals?.clsP75)
     }
+    let currentVitals = account.currentVitalsTotals?.first?.quantiles
+    let previousVitals = account.previousVitalsTotals?.first?.quantiles
     return RUMMetricsComparison(
       days: days,
       currentPageLoadTimeP50Ms: account.currentPerformanceTotals?.first?.roundedP50,
-      previousPageLoadTimeP50Ms: account.previousPerformanceTotals?.first?.roundedP50)
+      previousPageLoadTimeP50Ms: account.previousPerformanceTotals?.first?.roundedP50,
+      currentLcpP75Ms: currentVitals?.lcpP75Ms,
+      previousLcpP75Ms: previousVitals?.lcpP75Ms,
+      currentInpP75Ms: currentVitals?.inpP75Ms,
+      previousInpP75Ms: previousVitals?.inpP75Ms,
+      currentClsP75: currentVitals?.clsP75,
+      previousClsP75: previousVitals?.clsP75)
   }
 
   /// The single-site detail uses complete UTC days so a partial today never
@@ -1407,52 +1433,121 @@ public actor CloudflareClient {
       previous: zone?.previous.map(map))
   }
 
-  /// Blocked firewall events for the last `hours`, grouped by country and rule.
-  /// Uses `firewallEventsAdaptiveGroups` — requires `analytics.read`.
+  /// Blocked firewall events for the last `hours`, with hourly series plus
+  /// country / rule tops. Requires `analytics.read`.
+  ///
+  /// Totals and the time series come from Free-enabled
+  /// `firewallEventsAdaptiveByTimeGroups`. Top countries / rules still need
+  /// dimensions that ByTimeGroups does not expose on Free, so a bounded
+  /// `firewallEventsAdaptive` sample fills those lists. Extended
+  /// `firewallEventsAdaptiveGroups` stays unused — it is disabled on Free.
   public func firewallEventsSummary(zoneID: String, hours: Int = 24) async throws
     -> FirewallEventsSummary
   {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
-    let sinceText = formatter.string(from: since)
-    let untilText = formatter.string(from: until)
+    let window = max(hours, 1)
+    let bounds = Self.firewallEventsTimeBounds(hours: window)
+    // Security Events caps the page at 10_000; stay under that so the request
+    // itself does not fail for page size while still covering a busy hour of
+    // Bot Fight Mode samples.
+    let pageLimit = 2500
+    let filter =
+      "{datetime_geq: \"\(bounds.since)\", datetime_leq: \"\(bounds.until)\", action: \"block\"}"
     let query = """
       { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
-      blocked: firewallEventsAdaptiveGroups(limit: 1, \
-      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}) { count } \
-      byCountry: firewallEventsAdaptiveGroups(limit: 8, \
-      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}, \
-      orderBy: [count_DESC]) { count dimensions { clientCountryName } } \
-      byRule: firewallEventsAdaptiveGroups(limit: 8, \
-      filter: {datetime_geq: "\(sinceText)", datetime_leq: "\(untilText)", action: "block"}, \
-      orderBy: [count_DESC]) { count dimensions { ruleId } } } } }
+      byTime: firewallEventsAdaptiveByTimeGroups(limit: \(window + 1), \
+      filter: \(filter), orderBy: [datetimeHour_ASC]) { \
+      count dimensions { datetimeHour } } \
+      samples: firewallEventsAdaptive(limit: \(pageLimit), \
+      filter: \(filter), orderBy: [datetime_DESC]) { \
+      clientCountryName ruleId } } } }
       """
     let payload = try JSONEncoder().encode(["query": query])
     let response = try await graphQLRaw(payload)
     let envelope = try JSONDecoder().decode(
-      GraphQLEnvelope<FirewallEventsData>.self, from: response)
+      GraphQLEnvelope<FirewallEventsSummaryData>.self, from: response)
     if let error = envelope.errors?.first {
       throw CloudflareAPIError.request(
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
     }
     let zone = envelope.data?.viewer.zones.first
-    let blocked = zone?.blocked.first?.count ?? 0
-    let countries =
-      (zone?.byCountry ?? []).compactMap { row -> FirewallEventsBucket? in
-        guard let label = row.dimensions.clientCountryName, !label.isEmpty else { return nil }
-        return FirewallEventsBucket(label: label, count: row.count)
-      }
-    let rules =
-      (zone?.byRule ?? []).compactMap { row -> FirewallEventsBucket? in
-        guard let label = row.dimensions.ruleId, !label.isEmpty else { return nil }
-        return FirewallEventsBucket(label: label, count: row.count)
-      }
+    let series = (zone?.byTime ?? []).map {
+      FirewallEventsSeriesPoint(datetime: $0.dimensions.datetimeHour, count: $0.count)
+    }
+    let blocked = series.reduce(0) { $0 + $1.count }
+    let tops = Self.firewallAdaptiveTopBuckets(zone?.samples ?? [])
     return FirewallEventsSummary(
-      hours: hours, blocked: blocked, countries: countries, rules: rules)
+      hours: window,
+      blocked: blocked,
+      series: series,
+      countries: tops.countries,
+      rules: tops.rules)
+  }
+
+  static func firewallEventsTimeBounds(
+    hours: Int, now: Date = Date()
+  ) -> (since: String, until: String) {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    let until = now
+    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    return (formatter.string(from: since), formatter.string(from: until))
+  }
+
+  /// Client-side rollup over sampled Security Events rows for country / rule
+  /// tops. The blocked total prefers ByTimeGroups; this helper only ranks
+  /// dimensions and keeps a sample-count fallback when series is empty.
+  static func summarizeFirewallAdaptiveEvents(
+    _ events: [FirewallAdaptiveEvent],
+    hours: Int,
+    countryLimit: Int = 8,
+    ruleLimit: Int = 8
+  ) -> FirewallEventsSummary {
+    let tops = firewallAdaptiveTopBuckets(
+      events, countryLimit: countryLimit, ruleLimit: ruleLimit)
+    return FirewallEventsSummary(
+      hours: hours,
+      blocked: events.count,
+      series: [],
+      countries: tops.countries,
+      rules: tops.rules)
+  }
+
+  static func firewallAdaptiveTopBuckets(
+    _ events: [FirewallAdaptiveEvent],
+    countryLimit: Int = 8,
+    ruleLimit: Int = 8
+  ) -> (countries: [FirewallEventsBucket], rules: [FirewallEventsBucket]) {
+    var countries: [String: Int] = [:]
+    var rules: [String: Int] = [:]
+    for event in events {
+      if let country = event.clientCountryName?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !country.isEmpty
+      {
+        countries[country, default: 0] += 1
+      }
+      if let rule = event.ruleId?.trimmingCharacters(in: .whitespacesAndNewlines), !rule.isEmpty {
+        rules[rule, default: 0] += 1
+      }
+    }
+    return (
+      countries: topFirewallBuckets(countries, limit: countryLimit),
+      rules: topFirewallBuckets(rules, limit: ruleLimit)
+    )
+  }
+
+  private static func topFirewallBuckets(_ counts: [String: Int], limit: Int)
+    -> [FirewallEventsBucket]
+  {
+    counts
+      .map { FirewallEventsBucket(label: $0.key, count: $0.value) }
+      .sorted {
+        if $0.count != $1.count { return $0.count > $1.count }
+        return $0.label < $1.label
+      }
+      .prefix(max(limit, 0))
+      .map { $0 }
   }
 
   /// Hourly request counts from the adaptive HTTP Traffic dataset available to
@@ -2054,8 +2149,11 @@ private struct RUMMetricsData: Decodable, Sendable {
   struct Account: Decodable, Sendable {
     let pageload: [PageloadGroup]
     let performance: [PerformanceGroup]
+    let vitals: [VitalsGroup]?
     let currentPerformanceTotals: [PerformanceTotalGroup]?
     let previousPerformanceTotals: [PerformanceTotalGroup]?
+    let currentVitalsTotals: [VitalsTotalGroup]?
+    let previousVitalsTotals: [VitalsTotalGroup]?
   }
   struct DateDimension: Decodable, Sendable { let date: String }
   struct PageloadGroup: Decodable, Sendable {
@@ -2077,6 +2175,32 @@ private struct RUMMetricsData: Decodable, Sendable {
     var roundedP50: Int? {
       quantiles.pageLoadTimeP50.map { Int($0.rounded()) }
     }
+  }
+  /// Cloudflare returns LCP / INP in microseconds and CLS unitless. Values
+  /// below zero mean "no sample for this group".
+  struct VitalsQuantiles: Decodable, Sendable {
+    let largestContentfulPaintP75: Double?
+    let interactionToNextPaintP75: Double?
+    let cumulativeLayoutShiftP75: Double?
+
+    var lcpP75Ms: Double? { positiveMs(fromMicroseconds: largestContentfulPaintP75) }
+    var inpP75Ms: Double? { positiveMs(fromMicroseconds: interactionToNextPaintP75) }
+    var clsP75: Double? {
+      guard let value = cumulativeLayoutShiftP75, value >= 0 else { return nil }
+      return value
+    }
+
+    private func positiveMs(fromMicroseconds value: Double?) -> Double? {
+      guard let value, value >= 0 else { return nil }
+      return value / 1000
+    }
+  }
+  struct VitalsGroup: Decodable, Sendable {
+    let quantiles: VitalsQuantiles
+    let dimensions: DateDimension
+  }
+  struct VitalsTotalGroup: Decodable, Sendable {
+    let quantiles: VitalsQuantiles
   }
 }
 private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
@@ -2119,23 +2243,28 @@ private struct ZoneRequestsHourlyData: Decodable, Sendable {
   }
 }
 
-private struct FirewallEventsData: Decodable, Sendable {
+private struct FirewallEventsSummaryData: Decodable, Sendable {
   let viewer: Viewer
 
   struct Viewer: Decodable, Sendable { let zones: [Zone] }
   struct Zone: Decodable, Sendable {
-    let blocked: [CountRow]
-    let byCountry: [DimensionRow]
-    let byRule: [DimensionRow]
+    let byTime: [ByTimeGroup]?
+    let samples: [FirewallAdaptiveEvent]?
   }
-  struct CountRow: Decodable, Sendable { let count: Int }
-  struct DimensionRow: Decodable, Sendable {
+  struct ByTimeGroup: Decodable, Sendable {
     let count: Int
     let dimensions: Dimensions
-    struct Dimensions: Decodable, Sendable {
-      let clientCountryName: String?
-      let ruleId: String?
-    }
+    struct Dimensions: Decodable, Sendable { let datetimeHour: String }
+  }
+}
+
+struct FirewallAdaptiveEvent: Decodable, Hashable, Sendable {
+  let clientCountryName: String?
+  let ruleId: String?
+
+  init(clientCountryName: String? = nil, ruleId: String? = nil) {
+    self.clientCountryName = clientCountryName
+    self.ruleId = ruleId
   }
 }
 

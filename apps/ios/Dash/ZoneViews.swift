@@ -3,6 +3,7 @@ import CloudflareAPI
 import GradientAvatars
 import SwiftDitherKit
 import SwiftUI
+import UIKit
 
 struct ZonesView: View {
   static let pageSize = 50
@@ -276,12 +277,16 @@ struct ZoneDetailView: View {
       title: "DNS", icon: SolarAsset.Content.globus, route: Destination.dns,
       blurb: "Records and proxy status"),
     ZoneTool(
+      title: "DNS analytics", icon: SolarAsset.Content.chart,
+      route: Destination.zoneDNSAnalytics,
+      blurb: "Query volume over time"),
+    ZoneTool(
       title: "HTTP traffic", icon: SolarAsset.Content.chart, route: Destination.zoneAnalytics,
       blurb: "Requests, visitors, and bandwidth"),
     ZoneTool(
       title: "Web analytics", icon: SolarAsset.Content.graph,
       route: Destination.zoneWebAnalytics,
-      blurb: "Page views reported by real browsers"),
+      blurb: "Page views and Core Web Vitals"),
     ZoneTool(
       title: "WAF", icon: SolarAsset.Content.shieldCheck, route: Destination.zoneWAF,
       blurb: "Blocks, countries, Under Attack"),
@@ -318,6 +323,8 @@ struct ZoneDetailView: View {
           activationCard(zone)
             .dashSectionBoundary()
         }
+        identifiersGroup
+          .dashSectionBoundary()
         registrationGroup()
         primaryActions()
           .dashSectionBoundary()
@@ -586,11 +593,15 @@ struct ZoneDetailView: View {
       in: recentsRaw)
   }
 
-  /// Domain hero face plus the Quick actions row group — registration is a
+  /// Domain hero face, copyable IDs, and Quick actions — registration is a
   /// secondary fetch that reserves its own placeholders once the zone lands.
   private var zoneDetailSkeleton: some View {
     VStack(alignment: .leading, spacing: 0) {
       DashHeroCardPlaceholder(aspectRatio: DomainCardFace.detailAspectRatio)
+      DashInfoGroup(title: "Identifiers", phase: .loading, placeholderRows: 2) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
       DashListGroup(title: "Quick actions") {
         DashListRowPlaceholders(rows: tools.count)
       }
@@ -598,6 +609,49 @@ struct ZoneDetailView: View {
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading")
+  }
+
+  /// Zone and account IDs for GraphQL / API probes. Tap a row to copy — same
+  /// surface pattern as Tunnel detail's Tunnel ID row.
+  private var identifiersGroup: some View {
+    DashInfoGroup(title: "Identifiers") {
+      zoneIDRow
+      if let accountID = model.activeAccountID, !accountID.isEmpty {
+        accountIDRow(accountID)
+      }
+    }
+  }
+
+  private var zoneIDRow: some View {
+    Button(action: copyZoneID) {
+      DashInfoRow("Zone ID", value: zoneID, mono: true)
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityLabel(DashL10n.string("Zone ID, \(zoneID)"))
+    .accessibilityAction(named: DashL10n.string("Copy zone ID")) { copyZoneID() }
+  }
+
+  private func accountIDRow(_ accountID: String) -> some View {
+    Button {
+      copyAccountID(accountID)
+    } label: {
+      DashInfoRow("Account ID", value: accountID, mono: true)
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityLabel(DashL10n.string("Account ID, \(accountID)"))
+    .accessibilityAction(named: DashL10n.string("Copy account ID")) {
+      copyAccountID(accountID)
+    }
+  }
+
+  private func copyZoneID() {
+    UIPasteboard.general.string = zoneID
+    model.toasts.success(DashL10n.string("Zone ID copied."))
+  }
+
+  private func copyAccountID(_ accountID: String) {
+    UIPasteboard.general.string = accountID
+    model.toasts.success(DashL10n.string("Account ID copied."))
   }
 
   private func zoneHero(_ zone: CloudflareZone) -> some View {

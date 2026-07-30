@@ -898,6 +898,8 @@ struct NetworkTests {
     let query = try #require(request["query"])
     #expect(query.contains("currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
     #expect(query.contains("previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
+    #expect(query.contains("vitals: rumWebVitalsEventsAdaptiveGroups"))
+    #expect(query.contains("currentVitalsTotals: rumWebVitalsEventsAdaptiveGroups"))
 
     let regex = try NSRegularExpression(
       pattern: #"datetime_(?:geq|lt): "([^"]+)""#)
@@ -906,7 +908,9 @@ struct NetworkTests {
       guard let valueRange = Range(match.range(at: 1), in: query) else { return nil }
       return ISO8601DateFormatter().date(from: String(query[valueRange]))
     }
-    #expect(timestamps.count == 8)
+    // Daily window is reused for pageload / performance / vitals; current and
+    // previous windows each appear on performance + vitals totals.
+    #expect(timestamps.count == 14)
     let boundaries = Array(Set(timestamps)).sorted()
     #expect(boundaries.count == 3)
     let previousStart = try #require(boundaries.first)
@@ -2680,20 +2684,32 @@ struct NetworkTests {
     #expect(registration.nameservers.count == 2)
   }
 
-  @Test func firewallEventsSummaryDecodesAliasedGroups() async throws {
+  @Test func firewallEventsSummaryUsesByTimeGroupsAndAdaptiveTops() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in
       #expect(request.url?.path.hasSuffix("/graphql") == true)
+      let body = try #require(requestBodyData(request))
+      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("firewallEventsAdaptiveByTimeGroups"))
+      #expect(query.contains("samples: firewallEventsAdaptive("))
+      #expect(!query.contains("firewallEventsAdaptiveGroups"))
+      #expect(query.contains("action: \"block\""))
       return (
         200,
         Data(
           #"""
           {"data":{"viewer":{"zones":[{
-            "blocked":[{"count":42}],
-            "byCountry":[{"count":30,"dimensions":{"clientCountryName":"US"}},
-                         {"count":12,"dimensions":{"clientCountryName":"CN"}}],
-            "byRule":[{"count":40,"dimensions":{"ruleId":"rule-1"}}]
-          }]}}}
+            "byTime":[
+              {"count":10,"dimensions":{"datetimeHour":"2026-07-30T10:00:00Z"}},
+              {"count":5,"dimensions":{"datetimeHour":"2026-07-30T11:00:00Z"}}
+            ],
+            "samples":[
+              {"clientCountryName":"US","ruleId":"bot_fight_mode"},
+              {"clientCountryName":"US","ruleId":"bot_fight_mode"},
+              {"clientCountryName":"CN","ruleId":"rule-1"}
+            ]
+          }]}},"errors":null}
           """#.utf8)
       )
     }
@@ -2701,9 +2717,87 @@ struct NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
     let summary = try await client.firewallEventsSummary(zoneID: "zone", hours: 24)
-    #expect(summary.blocked == 42)
+    #expect(summary.blocked == 15)
+    #expect(summary.series.map(\.count) == [10, 5])
     #expect(summary.countries.map(\.label) == ["US", "CN"])
-    #expect(summary.rules.first?.label == "rule-1")
+    #expect(summary.countries.map(\.count) == [2, 1])
+    #expect(summary.rules.map(\.label) == ["bot_fight_mode", "rule-1"])
+  }
+
+  @Test func summarizeFirewallAdaptiveEventsRanksStableTies() {
+    let summary = CloudflareClient.summarizeFirewallAdaptiveEvents(
+      [
+        FirewallAdaptiveEvent(clientCountryName: "DE", ruleId: "b"),
+        FirewallAdaptiveEvent(clientCountryName: "FR", ruleId: "a"),
+        FirewallAdaptiveEvent(clientCountryName: "DE", ruleId: "a"),
+        FirewallAdaptiveEvent(clientCountryName: "  ", ruleId: nil),
+        FirewallAdaptiveEvent(clientCountryName: nil, ruleId: "  "),
+      ],
+      hours: 24,
+      countryLimit: 8,
+      ruleLimit: 8)
+    #expect(summary.blocked == 5)
+    #expect(summary.countries.map(\.label) == ["DE", "FR"])
+    #expect(summary.countries.map(\.count) == [2, 1])
+    #expect(summary.rules.map(\.label) == ["a", "b"])
+    #expect(summary.rules.map(\.count) == [2, 1])
+  }
+
+  @Test func dnsAnalyticsHourlyComparisonAggregatesQueries() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("dnsAnalyticsAdaptiveGroups"))
+      #expect(query.contains("queryType"))
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"zones":[{
+            "current":[{"count":10,"dimensions":{"datetimeHour":"2026-07-30T10:00:00Z"}}],
+            "previous":[{"count":4,"dimensions":{"datetimeHour":"2026-07-29T10:00:00Z"}}],
+            "queryTypes":[{"count":7,"dimensions":{"queryType":"A"}}]
+          }]}},"errors":null}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let summary = try await client.dnsAnalyticsHourlyComparison(zoneID: "zone", hours: 24)
+    #expect(summary.totalQueries == 10)
+    #expect(summary.previousTotalQueries == 4)
+    #expect(summary.queryTypes.map(\.label) == ["A"])
+  }
+
+  @Test func r2BucketAnalyticsSumsOperations() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("r2OperationsAdaptiveGroups"))
+      #expect(query.contains("bucketName: \"media\""))
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"accounts":[{
+            "current":[{"sum":{"requests":12},"dimensions":{"date":"2026-07-29"}}],
+            "previous":[{"sum":{"requests":5},"dimensions":{"date":"2026-07-22"}}]
+          }]}},"errors":null}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let summary = try await client.r2BucketAnalytics(
+      accountID: "acct", bucketName: "media", days: 7)
+    #expect(summary.totalRequests == 12)
+    #expect(summary.previousTotalRequests == 5)
   }
 
   @Test func listAndAttachWorkerDomains() async throws {

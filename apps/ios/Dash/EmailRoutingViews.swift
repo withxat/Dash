@@ -1,5 +1,141 @@
 import CloudflareAPI
+import SwiftDitherKit
 import SwiftUI
+
+// MARK: - Resources index
+
+/// Catalog entry for `FeatureID.emailRouting`: every zone on the account, with
+/// routing status when the settings call answers. Row push opens the existing
+/// per-zone Email Routing screen.
+struct EmailRoutingDomainsView: View {
+  @Environment(AppModel.self) private var model
+  @State private var zones: [CloudflareZone] = []
+  @State private var statusByZoneID: [String: StatusToken] = [:]
+  @State private var loading = true
+  @State private var error: String?
+  @State private var loadedContext: AccountRequestContext?
+
+  var body: some View {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: !zones.isEmpty,
+      retry: { Task { await load(force: true) } }
+    ) {
+      if zones.isEmpty {
+        DashEmptyState(
+          icon: SolarAsset.Content.inbox,
+          title: "No domains yet",
+          message: "Add a domain to Cloudflare first, then set up Email Routing here."
+        )
+      } else {
+        DashListGroupHeader(title: DashL10n.string("Domains"))
+          .padding(.horizontal, 4)
+          .padding(.bottom, 8)
+        dashListCard {
+          dashListCardRows(items: zones) { zone in
+            DashListGroupLink(value: .zoneEmailRouting(zone.id)) {
+              DashListRow(
+                title: zone.name,
+                subtitle: nil,
+                avatarSeed: zone.name
+              ) {
+                if let token = statusByZoneID[zone.id], token != .disabled {
+                  StatusBadge(token)
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    .refreshable { await load(force: true) }
+    .task(id: model.accountRequestContext) { await load() }
+  }
+
+  private func load(force: Bool = false) async {
+    guard let context = model.accountRequestContext else {
+      loadedContext = nil
+      zones = []
+      statusByZoneID = [:]
+      loading = false
+      error = nil
+      return
+    }
+    if loadedContext != context {
+      loadedContext = context
+      zones = []
+      statusByZoneID = [:]
+    }
+    let key = FeatureCacheKey.zones(context.accountID)
+    if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
+      zones = cached
+      loading = false
+      error = nil
+      await loadStatuses(for: cached, force: force)
+      return
+    }
+    if zones.isEmpty { loading = true }
+    error = nil
+    do {
+      var collected: [CloudflareZone] = []
+      var pageNumber = 1
+      while true {
+        let page = try await model.client.listZones(
+          accountID: context.accountID, page: pageNumber, perPage: 50)
+        collected.append(contentsOf: page.items)
+        let hasMore: Bool
+        if let info = page.resultInfo,
+          let pageNum = info.page,
+          let perPage = info.perPage,
+          let total = info.totalCount
+        {
+          hasMore = pageNum * perPage < total
+        } else {
+          hasMore = page.items.count >= 50
+        }
+        guard hasMore else { break }
+        pageNumber += 1
+        if pageNumber > 40 { break }
+      }
+      zones = collected
+      model.featureCache.storeZones(collected, accountID: context.accountID)
+      await loadStatuses(for: collected, force: force)
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      self.error = error.dashActionableMessage
+    }
+    loading = false
+  }
+
+  private func loadStatuses(for zones: [CloudflareZone], force: Bool) async {
+    let client = model.client
+    let cache = model.featureCache
+    var next: [String: StatusToken] = statusByZoneID
+    await withTaskGroup(of: (String, StatusToken?).self) { group in
+      for zone in zones {
+        let zoneID = zone.id
+        let key = FeatureCacheKey.emailRouting(zoneID)
+        if !force, let cached: EmailRoutingSnapshot = cache.get(key) {
+          next[zoneID] = EmailRoutingStatusMapping.token(for: cached.settings)
+          continue
+        }
+        group.addTask {
+          do {
+            let settings = try await client.getEmailRoutingSettings(zoneID: zoneID)
+            return (zoneID, EmailRoutingStatusMapping.token(for: settings))
+          } catch {
+            return (zoneID, nil)
+          }
+        }
+      }
+      for await (zoneID, token) in group {
+        if let token { next[zoneID] = token }
+      }
+    }
+    statusByZoneID = next
+  }
+}
 
 // MARK: - Cached payload
 
@@ -45,6 +181,8 @@ struct EmailRoutingView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   let zoneID: String
 
   @State private var settings: EmailRoutingSettings?
@@ -70,6 +208,8 @@ struct EmailRoutingView: View {
   @State private var subaddressingUpdating = false
   @State private var catchAllUpdating = false
   @State private var loadedContext: AccountRequestContext?
+  @State private var analytics: EmailRoutingAnalyticsSummary?
+  @State private var analyticsFailed = false
 
   var body: some View {
     DashFeatureList(
@@ -89,7 +229,7 @@ struct EmailRoutingView: View {
     .detailHeader(
       icon: .solar(SolarAsset.Content.inbox),
       title: "Email routing",
-      tint: FeatureVisualIdentity.heroColor(for: .zones)
+      tint: FeatureVisualIdentity.heroColor(for: .emailRouting)
     )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
@@ -184,6 +324,10 @@ struct EmailRoutingView: View {
     }
     statusGroup(settings)
       .dashSectionBoundary(!featureAllowsWrites)
+    if let analytics, !analytics.isEmpty {
+      emailRoutingAnalyticsSection(analytics)
+        .dashSectionBoundary()
+    }
     routesSection
     catchAllSection
     addressesSection
@@ -192,6 +336,61 @@ struct EmailRoutingView: View {
     }
     if featureAllowsWrites {
       turnOffRow
+    }
+  }
+
+  /// Volume from `emailRoutingAdaptiveGroups`. Hidden when empty or the
+  /// analytics call failed (403 / plan) — same spirit as Workers Builds.
+  private func emailRoutingAnalyticsSection(_ summary: EmailRoutingAnalyticsSummary) -> some View {
+    let seriesData = summary.series.compactMap { point -> DitherDatum? in
+      let parser = ISO8601DateFormatter()
+      parser.formatOptions = [.withInternetDateTime]
+      guard let date = parser.date(from: point.datetime) else { return nil }
+      return DitherDatum(
+        id: date.ISO8601Format(),
+        label: date.formatted(.dateTime.hour().locale(DashL10n.activeLocale)),
+        values: ["mail": Double(point.count)])
+    }
+    let collapsed = CollapsedDitherTrendSeries(values: seriesData.map { $0.values["mail"] ?? 0 })
+    let sparkData = zip(seriesData, collapsed.values).map { point, value in
+      DitherDatum(id: point.id, label: point.label, values: ["mail": value])
+    }
+    return DashSurfaceStack {
+      DashGlassCard {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Last \(summary.hours) hours")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Text(summary.total.formatted())
+            .dashTextStyle(.sectionTitle)
+            .foregroundStyle(DashTheme.text)
+            .monospacedDigit()
+          Text("Processed messages")
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.subtle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if !sparkData.isEmpty {
+        DashCollapsedChartCard(
+          title: "Email volume",
+          summaryValue: summary.total.formatted(.number.locale(DashL10n.activeLocale)),
+          data: sparkData,
+          series: [
+            DitherSeries(
+              id: "mail",
+              label: DashL10n.ui("Messages"),
+              color: DashTheme.DitherChart.negative(
+                colorScheme: colorScheme,
+                contrast: colorSchemeContrast),
+              variant: .gradient)
+          ],
+          valueCeiling: collapsed.valueCeiling,
+          accessibilitySummary: DashL10n.string(
+            "Email Routing volume over the last \(summary.hours) hours. Total \(summary.total.formatted())."
+          )
+        )
+      }
     }
   }
 
@@ -264,7 +463,7 @@ struct EmailRoutingView: View {
             title: routeTitle(rule),
             subtitle: routeSubtitle(rule),
             icon: SolarAsset.Content.inbox,
-            iconColor: FeatureVisualIdentity.catalogColor(for: .zones),
+            iconColor: FeatureVisualIdentity.catalogColor(for: .emailRouting),
             showsChevron: false
           ) {
             if let token = routeBadge(rule) {
@@ -469,7 +668,7 @@ struct EmailRoutingView: View {
           title: DashL10n.string("Manage addresses"),
           subtitle: addressesSubtitle,
           icon: SolarAsset.Content.user,
-          iconColor: FeatureVisualIdentity.catalogColor(for: .zones)
+          iconColor: FeatureVisualIdentity.catalogColor(for: .emailRouting)
         ) {
           if unverifiedAddressCount > 0 {
             StatusBadge(.unverified)
@@ -582,6 +781,8 @@ struct EmailRoutingView: View {
       rules = []
       catchAll = nil
       addresses = nil
+      analytics = nil
+      analyticsFailed = false
       pageState.reset()
       loading = true
       loadMorePhase = .idle
@@ -602,6 +803,7 @@ struct EmailRoutingView: View {
       loading = false
       error = nil
       await loadAddresses(force: false, context: context)
+      await loadAnalytics(force: false)
       return
     }
 
@@ -688,7 +890,30 @@ struct EmailRoutingView: View {
         key,
         EmailRoutingSnapshot(settings: current, rules: fetchedRules, catchAll: catchAll))
     }
+    await loadAnalytics(force: force)
     loading = false
+  }
+
+  private func loadAnalytics(force: Bool) async {
+    let key = FeatureCacheKey.emailRoutingAnalytics(zoneID)
+    if !force, let cached: EmailRoutingAnalyticsSummary = model.featureCache.get(key) {
+      analytics = cached
+      analyticsFailed = false
+      return
+    }
+    do {
+      let fetched = try await model.client.emailRoutingAnalytics(zoneID: zoneID, hours: 24)
+      analytics = fetched.isEmpty ? nil : fetched
+      analyticsFailed = false
+      if !fetched.isEmpty {
+        model.featureCache.set(key, fetched)
+      }
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      // Hide the section; never surface analytics failure over the routes UI.
+      analytics = nil
+      analyticsFailed = true
+    }
   }
 
   private func apply(_ snapshot: EmailRoutingSnapshot) {

@@ -54,7 +54,7 @@ struct EmailDestinationAddressesView: View {
     .detailHeader(
       icon: .solar(SolarAsset.Content.user),
       title: "Destination addresses",
-      tint: FeatureVisualIdentity.heroColor(for: .zones)
+      tint: FeatureVisualIdentity.heroColor(for: .emailRouting)
     )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
@@ -107,7 +107,7 @@ struct EmailDestinationAddressesView: View {
             subtitle: Self.addedSubtitle(address),
             icon: SolarAsset.Content.user,
             iconColor: address.isVerified
-              ? FeatureVisualIdentity.catalogColor(for: .zones) : DashTheme.iconMuted,
+              ? FeatureVisualIdentity.catalogColor(for: .emailRouting) : DashTheme.iconMuted,
             showsChevron: false
           ) {
             StatusBadge(address.isVerified ? .verified : .unverified)

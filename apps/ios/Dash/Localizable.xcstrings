@@ -164,6 +164,23 @@
         }
       }
     },
+    "%@ queries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ queries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 次查询"
+          }
+        }
+      }
+    },
     "%@ record %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -964,6 +981,40 @@
         }
       }
     },
+    "Account ID copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account ID copied."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制账户 ID。"
+          }
+        }
+      }
+    },
+    "Account ID, %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account ID, %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户 ID，%@"
+          }
+        }
+      }
+    },
     "Account Metric" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1245,6 +1296,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请先添加域名，再清除缓存。"
+          }
+        }
+      }
+    },
+    "Add a domain to Cloudflare first, then set up Email Routing here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add a domain to Cloudflare first, then set up Email Routing here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先把域名添加到 Cloudflare，再在这里设置 Email Routing。"
           }
         }
       }
@@ -1961,6 +2029,23 @@
         }
       }
     },
+    "Blocked requests over the last %lld hours. Total %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked requests over the last %lld hours. Total %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去 %lld 小时内的拦截请求。共 %@。"
+          }
+        }
+      }
+    },
     "Blocks" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2203,6 +2288,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "字节"
+          }
+        }
+      }
+    },
+    "CLS" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CLS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CLS"
+          }
+        }
+      }
+    },
+    "CLS p75" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CLS p75"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CLS p75"
           }
         }
       }
@@ -3628,6 +3747,23 @@
         }
       }
     },
+    "Copy account ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy account ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制账户 ID"
+          }
+        }
+      }
+    },
     "Copy hostname" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3674,6 +3810,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制隧道 ID"
+          }
+        }
+      }
+    },
+    "Copy zone ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy zone ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 Zone ID"
           }
         }
       }
@@ -4165,6 +4318,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "DNS"
+          }
+        }
+      }
+    },
+    "DNS analytics" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS analytics"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS 分析"
+          }
+        }
+      }
+    },
+    "DNS queries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS queries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS 查询"
+          }
+        }
+      }
+    },
+    "DNS queries chart for %@. Total %@ queries." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DNS queries chart for %@. Total %@ queries."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 的 DNS 查询图表。共 %@ 次查询。"
           }
         }
       }
@@ -5630,6 +5834,40 @@
         }
       }
     },
+    "Email Routing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email Routing"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email Routing"
+          }
+        }
+      }
+    },
+    "Email Routing volume over the last %lld hours. Total %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email Routing volume over the last %lld hours. Total %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去 %lld 小时的 Email Routing 量。共 %@。"
+          }
+        }
+      }
+    },
     "Email i@xat.sh" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5670,6 +5908,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此记录由邮件路由管理。编辑或删除后，发往此域名的邮件将无法送达。"
+          }
+        }
+      }
+    },
+    "Email volume" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Email volume"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件量"
           }
         }
       }
@@ -6240,6 +6495,23 @@
         }
       }
     },
+    "Forward domain mail to inboxes you already use" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Forward domain mail to inboxes you already use"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "把域名邮件转发到你已有的收件箱"
+          }
+        }
+      }
+    },
     "Forward mail sent to addresses at this domain to an inbox you already use. Cloudflare adds the MX and SPF records for you." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6718,6 +6990,23 @@
         }
       }
     },
+    "INP p75" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "INP p75"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "INP p75"
+          }
+        }
+      }
+    },
     "ISO" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6748,6 +7037,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "图标"
+          }
+        }
+      }
+    },
+    "Identifiers" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifiers"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标识符"
           }
         }
       }
@@ -7142,12 +7448,46 @@
         }
       }
     },
+    "LCP p75" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LCP p75"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LCP p75"
+          }
+        }
+      }
+    },
     "Language" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "语言"
+          }
+        }
+      }
+    },
+    "Last %lld days" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last %lld days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去 %lld 天"
           }
         }
       }
@@ -7581,6 +7921,23 @@
         }
       }
     },
+    "Messages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件"
+          }
+        }
+      }
+    },
     "Metric" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7875,6 +8232,23 @@
         }
       }
     },
+    "No DNS queries yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No DNS queries yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无 DNS 查询"
+          }
+        }
+      }
+    },
     "No DNS records" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8073,6 +8447,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "暂无可绘制的域名"
+          }
+        }
+      }
+    },
+    "No domains yet" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No domains yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "还没有域名"
           }
         }
       }
@@ -8747,6 +9138,23 @@
         }
       }
     },
+    "Operations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Operations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "操作"
+          }
+        }
+      }
+    },
     "Or drag with two fingers on the list" : {
       "localizations" : {
         "zh-Hans" : {
@@ -8882,6 +9290,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "页面浏览量"
+          }
+        }
+      }
+    },
+    "Page views and Core Web Vitals" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Page views and Core Web Vitals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面浏览量与 Core Web Vitals"
           }
         }
       }
@@ -9490,6 +9915,23 @@
         }
       }
     },
+    "Processed messages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processed messages"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已处理邮件"
+          }
+        }
+      }
+    },
     "Production" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9814,6 +10256,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "推送工作正常。"
+          }
+        }
+      }
+    },
+    "Queries" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queries"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询"
+          }
+        }
+      }
+    },
+    "Query types" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Query types"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询类型"
+          }
+        }
+      }
+    },
+    "Query volume for this domain will appear here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Query volume for this domain will appear here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名的查询量会显示在这里。"
+          }
+        }
+      }
+    },
+    "Query volume over time" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Query volume over time"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询量随时间变化"
           }
         }
       }
@@ -11631,6 +12141,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "存储与数据"
+          }
+        }
+      }
+    },
+    "Storage operations over the last %lld days. Total %@." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage operations over the last %lld days. Total %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过去 %lld 天的存储操作。共 %@。"
           }
         }
       }
@@ -13748,6 +14275,57 @@
         }
       }
     },
+    "Zone ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone ID"
+          }
+        }
+      }
+    },
+    "Zone ID copied." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone ID copied."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制 Zone ID。"
+          }
+        }
+      }
+    },
+    "Zone ID, %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone ID, %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zone ID，%@"
+          }
+        }
+      }
+    },
     "Zone search for “%@”" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -14123,6 +14701,7 @@
         }
       }
     }
+
   },
   "version" : "1.1"
 }

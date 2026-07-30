@@ -8,6 +8,7 @@ enum DashAuthorizationScopes {
   static let coreFeatures: Set<FeatureID> = [
     .zones,
     .registrar,
+    .emailRouting,
     .workers,
     .pages,
     .r2,

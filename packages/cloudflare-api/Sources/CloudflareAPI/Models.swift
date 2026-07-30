@@ -553,12 +553,23 @@ public struct RUMDailyMetrics: Codable, Hashable, Sendable {
   public let pageviews: Int
   public let visits: Int
   public let pageLoadTimeP50Ms: Int?
+  /// Core Web Vitals p75 for the day. LCP / INP are milliseconds; CLS is the
+  /// unitless shift score. Absent when the vitals dataset has no samples.
+  public let lcpP75Ms: Double?
+  public let inpP75Ms: Double?
+  public let clsP75: Double?
 
-  public init(date: String, pageviews: Int, visits: Int, pageLoadTimeP50Ms: Int?) {
+  public init(
+    date: String, pageviews: Int, visits: Int, pageLoadTimeP50Ms: Int?,
+    lcpP75Ms: Double? = nil, inpP75Ms: Double? = nil, clsP75: Double? = nil
+  ) {
     self.date = date
     self.pageviews = pageviews
     self.visits = visits
     self.pageLoadTimeP50Ms = pageLoadTimeP50Ms
+    self.lcpP75Ms = lcpP75Ms
+    self.inpP75Ms = inpP75Ms
+    self.clsP75 = clsP75
   }
 }
 
@@ -566,36 +577,74 @@ public struct RUMDailyMetrics: Codable, Hashable, Sendable {
 /// buckets for both windows so charts can draw the current period. The two
 /// optional totals are the exact whole-window medians returned by Cloudflare;
 /// they remain `nil` when an older fixture or compatible backend omits the
-/// ungrouped performance aliases.
+/// ungrouped performance aliases. Whole-window Web Vitals p75s follow the same
+/// pattern from `rumWebVitalsEventsAdaptiveGroups`.
 public struct RUMMetricsComparison: Codable, Hashable, Sendable {
   public let days: [RUMDailyMetrics]
   public let currentPageLoadTimeP50Ms: Int?
   public let previousPageLoadTimeP50Ms: Int?
+  public let currentLcpP75Ms: Double?
+  public let previousLcpP75Ms: Double?
+  public let currentInpP75Ms: Double?
+  public let previousInpP75Ms: Double?
+  public let currentClsP75: Double?
+  public let previousClsP75: Double?
 
   public init(
     days: [RUMDailyMetrics],
     currentPageLoadTimeP50Ms: Int? = nil,
-    previousPageLoadTimeP50Ms: Int? = nil
+    previousPageLoadTimeP50Ms: Int? = nil,
+    currentLcpP75Ms: Double? = nil,
+    previousLcpP75Ms: Double? = nil,
+    currentInpP75Ms: Double? = nil,
+    previousInpP75Ms: Double? = nil,
+    currentClsP75: Double? = nil,
+    previousClsP75: Double? = nil
   ) {
     self.days = days
     self.currentPageLoadTimeP50Ms = currentPageLoadTimeP50Ms
     self.previousPageLoadTimeP50Ms = previousPageLoadTimeP50Ms
+    self.currentLcpP75Ms = currentLcpP75Ms
+    self.previousLcpP75Ms = previousLcpP75Ms
+    self.currentInpP75Ms = currentInpP75Ms
+    self.previousInpP75Ms = previousInpP75Ms
+    self.currentClsP75 = currentClsP75
+    self.previousClsP75 = previousClsP75
+  }
+}
+
+/// One hourly blocked-count bucket from `firewallEventsAdaptiveByTimeGroups`.
+public struct FirewallEventsSeriesPoint: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { datetime }
+  public let datetime: String
+  public let count: Int
+
+  public init(datetime: String, count: Int) {
+    self.datetime = datetime
+    self.count = count
   }
 }
 
 /// Aggregated firewall / WAF activity for a zone over a short window.
+///
+/// `blocked` and `series` come from Free-friendly
+/// `firewallEventsAdaptiveByTimeGroups`. Country / rule tops are rolled up from
+/// a bounded `firewallEventsAdaptive` sample (Groups stays plan-gated).
 public struct FirewallEventsSummary: Codable, Hashable, Sendable {
   public let hours: Int
   public let blocked: Int
+  public let series: [FirewallEventsSeriesPoint]
   public let countries: [FirewallEventsBucket]
   public let rules: [FirewallEventsBucket]
 
   public init(
-    hours: Int, blocked: Int, countries: [FirewallEventsBucket] = [],
+    hours: Int, blocked: Int, series: [FirewallEventsSeriesPoint] = [],
+    countries: [FirewallEventsBucket] = [],
     rules: [FirewallEventsBucket] = []
   ) {
     self.hours = hours
     self.blocked = blocked
+    self.series = series
     self.countries = countries
     self.rules = rules
   }

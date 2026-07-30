@@ -31,17 +31,25 @@ struct WebAnalyticsMetric: Hashable, Sendable {
   }
 }
 
-/// The three figures Cloudflare's Web Analytics dashboard leads with.
+/// Headline Web Analytics figures plus optional Core Web Vitals p75s.
 struct WebAnalyticsMetricsSnapshot: Hashable, Sendable {
   static let empty = WebAnalyticsMetricsSnapshot(
-    pageLoadTimeMs: .zero, visits: .zero, pageViews: .zero, hasData: false)
+    pageLoadTimeMs: .zero, visits: .zero, pageViews: .zero,
+    lcpP75Ms: .zero, inpP75Ms: .zero, clsP75: .zero, hasData: false)
 
   let pageLoadTimeMs: WebAnalyticsMetric
   let visits: WebAnalyticsMetric
   let pageViews: WebAnalyticsMetric
+  let lcpP75Ms: WebAnalyticsMetric
+  let inpP75Ms: WebAnalyticsMetric
+  let clsP75: WebAnalyticsMetric
   let hasData: Bool
 
   var isEmpty: Bool { !hasData }
+  var hasWebVitals: Bool {
+    lcpP75Ms.current > 0 || inpP75Ms.current > 0 || clsP75.current > 0
+      || !lcpP75Ms.points.isEmpty || !inpP75Ms.points.isEmpty || !clsP75.points.isEmpty
+  }
 }
 
 private struct WebAnalyticsDay {
@@ -49,6 +57,9 @@ private struct WebAnalyticsDay {
   let pageviews: Int
   let visits: Int
   let pageLoadTimeP50Ms: Int?
+  let lcpP75Ms: Double?
+  let inpP75Ms: Double?
+  let clsP75: Double?
 }
 
 /// Pure parsing + summaries, unit-tested away from the view.
@@ -83,7 +94,8 @@ enum WebAnalyticsChartModel {
       guard let date = parser.date(from: day.date) else { return nil }
       return WebAnalyticsDay(
         date: date, pageviews: day.pageviews, visits: day.visits,
-        pageLoadTimeP50Ms: day.pageLoadTimeP50Ms)
+        pageLoadTimeP50Ms: day.pageLoadTimeP50Ms,
+        lcpP75Ms: day.lcpP75Ms, inpP75Ms: day.inpP75Ms, clsP75: day.clsP75)
     }
 
     let step = max(window, 1)
@@ -132,10 +144,35 @@ enum WebAnalyticsChartModel {
         }
       })
 
+    func vital(
+      currentTotal: Double?,
+      previousTotal: Double?,
+      daily: @escaping (WebAnalyticsDay) -> Double?
+    ) -> WebAnalyticsMetric {
+      WebAnalyticsMetric(
+        current: currentTotal ?? 0,
+        previous: previousTotal,
+        points: current.compactMap { day in
+          daily(day).map { WebAnalyticsSeriesPoint(date: day.date, value: $0) }
+        })
+    }
+
     return WebAnalyticsMetricsSnapshot(
       pageLoadTimeMs: pageLoad,
       visits: visits,
       pageViews: pageViews,
+      lcpP75Ms: vital(
+        currentTotal: comparison.currentLcpP75Ms,
+        previousTotal: comparison.previousLcpP75Ms,
+        daily: \.lcpP75Ms),
+      inpP75Ms: vital(
+        currentTotal: comparison.currentInpP75Ms,
+        previousTotal: comparison.previousInpP75Ms,
+        daily: \.inpP75Ms),
+      clsP75: vital(
+        currentTotal: comparison.currentClsP75,
+        previousTotal: comparison.previousClsP75,
+        daily: \.clsP75),
       hasData: pageViews.current > 0 || visits.current > 0)
   }
 
@@ -243,6 +280,41 @@ struct WebAnalyticsView: View {
             valueAxisLabel: "Page views",
             axisValueFormat: .compact,
             tableValueFormat: .number(maximumFractionDigits: 0))
+          if snapshot.hasWebVitals {
+            metricCard(
+              title: "LCP p75",
+              detailTitle: "LCP p75",
+              metric: snapshot.lcpP75Ms,
+              color: DashTheme.DitherChart.warning(
+                colorScheme: colorScheme, contrast: colorSchemeContrast),
+              trendPolarity: .lowerIsBetter,
+              value: durationString(snapshot.lcpP75Ms.current),
+              valueAxisLabel: "Milliseconds",
+              axisValueFormat: .milliseconds(maximumFractionDigits: 0),
+              tableValueFormat: .milliseconds(maximumFractionDigits: 0))
+            metricCard(
+              title: "INP p75",
+              detailTitle: "INP p75",
+              metric: snapshot.inpP75Ms,
+              color: DashTheme.DitherChart.accentPurple(
+                colorScheme: colorScheme, contrast: colorSchemeContrast),
+              trendPolarity: .lowerIsBetter,
+              value: durationString(snapshot.inpP75Ms.current),
+              valueAxisLabel: "Milliseconds",
+              axisValueFormat: .milliseconds(maximumFractionDigits: 0),
+              tableValueFormat: .milliseconds(maximumFractionDigits: 0))
+            metricCard(
+              title: "CLS p75",
+              detailTitle: "CLS p75",
+              metric: snapshot.clsP75,
+              color: DashTheme.DitherChart.accentTeal(
+                colorScheme: colorScheme, contrast: colorSchemeContrast),
+              trendPolarity: .lowerIsBetter,
+              value: clsString(snapshot.clsP75.current),
+              valueAxisLabel: "CLS",
+              axisValueFormat: .number(maximumFractionDigits: 3),
+              tableValueFormat: .number(maximumFractionDigits: 3))
+          }
         }
       }
     }
@@ -303,6 +375,9 @@ struct WebAnalyticsView: View {
         switch detailTitle {
         case "Page load time": durationString(snap.pageLoadTimeMs.current)
         case "Visits": countString(snap.visits.current)
+        case "LCP p75": durationString(snap.lcpP75Ms.current)
+        case "INP p75": durationString(snap.inpP75Ms.current)
+        case "CLS p75": clsString(snap.clsP75.current)
         default: countString(snap.pageViews.current)
         }
       },
@@ -349,8 +424,16 @@ struct WebAnalyticsView: View {
     switch detailTitle {
     case "Page load time": \.pageLoadTimeMs
     case "Visits": \.visits
+    case "LCP p75": \.lcpP75Ms
+    case "INP p75": \.inpP75Ms
+    case "CLS p75": \.clsP75
     default: \.pageViews
     }
+  }
+
+  private func clsString(_ value: Double) -> String {
+    value.formatted(
+      .number.precision(.fractionLength(0...3)).locale(DashL10n.activeLocale))
   }
 
   private func webChartDetail(

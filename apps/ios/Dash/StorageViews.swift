@@ -1,8 +1,89 @@
 import CloudflareAPI
 import CodeEditor
+import SwiftDitherKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+
+/// Inline operations sparkline for R2 bucket roots and KV namespaces.
+struct StorageMetricsSection: View {
+  let summary: StorageAnalyticsSummary
+  let feature: FeatureID
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+
+  private var seriesColor: DitherColor {
+    switch feature {
+    case .r2:
+      DashTheme.DitherChart.brand(colorScheme: colorScheme, contrast: colorSchemeContrast)
+    case .kv:
+      DashTheme.DitherChart.warning(colorScheme: colorScheme, contrast: colorSchemeContrast)
+    default:
+      DashTheme.DitherChart.brand(colorScheme: colorScheme, contrast: colorSchemeContrast)
+    }
+  }
+
+  var body: some View {
+    let dayParser = DateFormatter()
+    dayParser.dateFormat = "yyyy-MM-dd"
+    dayParser.locale = Locale(identifier: "en_US_POSIX")
+    dayParser.timeZone = TimeZone(identifier: "UTC")
+    let seriesData = summary.points.compactMap { point -> DitherDatum? in
+      guard let date = dayParser.date(from: point.date) else { return nil }
+      return DitherDatum(
+        id: date.ISO8601Format(),
+        label: date.formatted(
+          .dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale)),
+        values: ["requests": Double(point.requests)])
+    }
+    let collapsed = CollapsedDitherTrendSeries(
+      values: seriesData.map { $0.values["requests"] ?? 0 })
+    let sparkData = zip(seriesData, collapsed.values).map { point, value in
+      DitherDatum(id: point.id, label: point.label, values: ["requests": value])
+    }
+    return DashSurfaceStack {
+      DashGlassCard {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Last \(summary.days) days")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Text(summary.totalRequests.formatted())
+            .dashTextStyle(.sectionTitle)
+            .foregroundStyle(DashTheme.text)
+            .monospacedDigit()
+          Text("Operations")
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.subtle)
+          DashChartTrendLabel(
+            trend: DashChartTrend(
+              current: Double(summary.totalRequests),
+              previous: summary.previousTotalRequests.map(Double.init),
+              polarity: .neutral))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      if !sparkData.isEmpty {
+        DashCollapsedChartCard(
+          title: "Operations",
+          summaryValue: summary.totalRequests.formatted(
+            .number.locale(DashL10n.activeLocale)),
+          data: sparkData,
+          series: [
+            DitherSeries(
+              id: "requests",
+              label: DashL10n.ui("Operations"),
+              color: seriesColor,
+              variant: .gradient)
+          ],
+          valueCeiling: collapsed.valueCeiling,
+          accessibilitySummary: DashL10n.string(
+            "Storage operations over the last \(summary.days) days. Total \(summary.totalRequests.formatted())."
+          )
+        )
+      }
+    }
+  }
+}
 
 struct R2BucketsView: View {
   @Environment(AppModel.self) private var model
@@ -146,6 +227,7 @@ struct R2BucketView: View {
   /// Once a two-finger pan starts, keep adding or removing based on the first
   /// row under the fingers (UITableView multiselect behavior).
   @State private var paintAdds: Bool?
+  @State private var analytics: StorageAnalyticsSummary?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
@@ -188,6 +270,10 @@ struct R2BucketView: View {
           uploadProgressCard(uploadingFileName)
         }
         .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if folderPrefix.isEmpty, let analytics, !analytics.isEmpty {
+        StorageMetricsSection(summary: analytics, feature: .r2)
+          .padding(.bottom, DashTheme.Spacing.itemGap)
       }
       // Folders and objects are sibling LazyVStack children — never one
       // dashListCard wrapping both. A shared card would make Content a
@@ -839,6 +925,7 @@ struct R2BucketView: View {
       if cursor == nil { selectedKeys.formIntersection(objects.map(\.key)) }
       error = nil
       loading = false
+      await loadR2Analytics(force: force, for: request)
       return
     }
     do {
@@ -867,6 +954,29 @@ struct R2BucketView: View {
       self.error = error.dashActionableMessage
     }
     if canCommit(request) { loading = false }
+    await loadR2Analytics(force: force, for: request)
+  }
+
+  private func loadR2Analytics(force: Bool, for request: R2BucketRequestIdentity) async {
+    guard folderPrefix.isEmpty, let context = request.context, canCommit(request) else {
+      analytics = nil
+      return
+    }
+    let key = FeatureCacheKey.r2BucketAnalytics(context.accountID, bucket: bucket)
+    if !force, let cached: StorageAnalyticsSummary = model.featureCache.get(key) {
+      analytics = cached.isEmpty ? nil : cached
+      return
+    }
+    do {
+      let fetched = try await model.client.r2BucketAnalytics(
+        accountID: context.accountID, bucketName: bucket, days: 7)
+      guard canCommit(request) else { return }
+      analytics = fetched.isEmpty ? nil : fetched
+      if !fetched.isEmpty { model.featureCache.set(key, fetched) }
+    } catch {
+      guard canCommit(request), !error.dashIsCancellation else { return }
+      analytics = nil
+    }
   }
 
   private func loadMore() async {
@@ -1314,6 +1424,7 @@ struct KVNamespaceView: View {
   @State private var loading = true
   @State private var loadMorePhase: DashActionPhase = .idle
   @State private var loadedContext: AccountRequestContext?
+  @State private var analytics: StorageAnalyticsSummary?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
 
@@ -1334,6 +1445,10 @@ struct KVNamespaceView: View {
       hasContent: !keys.isEmpty,
       retry: { Task { await load() } }
     ) {
+      if let analytics, !analytics.isEmpty {
+        StorageMetricsSection(summary: analytics, feature: .kv)
+          .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
       if keys.isEmpty {
         DashEmptyState(
           icon: SolarAsset.Content.key,
@@ -1428,6 +1543,7 @@ struct KVNamespaceView: View {
       cursor = cached.cursor
       error = nil
       loading = false
+      await loadKVAnalytics(force: force, context: context)
       return
     }
     let client = model.client
@@ -1444,6 +1560,25 @@ struct KVNamespaceView: View {
       self.error = error.dashActionableMessage
     }
     if model.isCurrentAccount(context) { loading = false }
+    await loadKVAnalytics(force: force, context: context)
+  }
+
+  private func loadKVAnalytics(force: Bool, context: AccountRequestContext) async {
+    let key = FeatureCacheKey.kvNamespaceAnalytics(context.accountID, namespaceID: namespaceID)
+    if !force, let cached: StorageAnalyticsSummary = model.featureCache.get(key) {
+      analytics = cached.isEmpty ? nil : cached
+      return
+    }
+    do {
+      let fetched = try await model.client.kvNamespaceAnalytics(
+        accountID: context.accountID, namespaceID: namespaceID, days: 7)
+      guard model.isCurrentAccount(context) else { return }
+      analytics = fetched.isEmpty ? nil : fetched
+      if !fetched.isEmpty { model.featureCache.set(key, fetched) }
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      analytics = nil
+    }
   }
 
   private func loadMore() async {
@@ -1485,6 +1620,7 @@ struct KVNamespaceView: View {
     keys = []
     cursor = nil
     error = nil
+    analytics = nil
     loading = context != nil
     loadMorePhase = .idle
     showsCreateKey = false

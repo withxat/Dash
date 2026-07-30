@@ -35,6 +35,7 @@
 		B0000000000000000000001A /* FeatureDataCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000036 /* FeatureDataCache.swift */; };
 		B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000038 /* ZoneAnalyticsView.swift */; };
 		B00000000000000000000149 /* WebAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000148 /* WebAnalyticsView.swift */; };
+		B000000000000000000001F3 /* DNSAnalyticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F3 /* DNSAnalyticsView.swift */; };
 		B0000000000000000000001D /* DashDetailTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000039 /* DashDetailTray.swift */; };
 		B00000000000000000000024 /* LoginGrain.metal in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000040 /* LoginGrain.metal */; };
 		B00000000000000000000101 /* Pagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000101 /* Pagination.swift */; };
@@ -253,6 +254,7 @@
 		F00000000000000000000036 /* FeatureDataCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureDataCache.swift; sourceTree = "<group>"; };
 		F00000000000000000000038 /* ZoneAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAnalyticsView.swift; sourceTree = "<group>"; };
 		F00000000000000000000148 /* WebAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebAnalyticsView.swift; sourceTree = "<group>"; };
+		F000000000000000000001F3 /* DNSAnalyticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DNSAnalyticsView.swift; sourceTree = "<group>"; };
 		F00000000000000000000039 /* DashDetailTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDetailTray.swift; sourceTree = "<group>"; };
 		F00000000000000000000040 /* LoginGrain.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = LoginGrain.metal; sourceTree = "<group>"; };
 		F00000000000000000000101 /* Pagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Pagination.swift; sourceTree = "<group>"; };
@@ -454,6 +456,7 @@
 				F00000000000000000000009 /* FeatureCatalogView.swift */,
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
 				F00000000000000000000148 /* WebAnalyticsView.swift */,
+				F000000000000000000001F3 /* DNSAnalyticsView.swift */,
 				F00000000000000000000039 /* DashDetailTray.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
@@ -947,6 +950,7 @@
 				B00000000000000000000009 /* FeatureCatalogView.swift in Sources */,
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
 				B00000000000000000000149 /* WebAnalyticsView.swift in Sources */,
+				B000000000000000000001F3 /* DNSAnalyticsView.swift in Sources */,
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B000000000000000000001CF /* ChartDetailView.swift in Sources */,

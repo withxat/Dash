@@ -481,6 +481,35 @@ enum WAFChartModel {
       "Blocked requests by country. \(name) leads with \(topCount) of \(totalCount) blocks."
     )
   }
+
+  /// Ascending hourly blocked counts for the sparkline. Drops unparseable stamps.
+  static func seriesData(
+    _ series: [FirewallEventsSeriesPoint],
+    locale: Locale = DashL10n.activeLocale
+  ) -> [DitherDatum] {
+    let parser = ISO8601DateFormatter()
+    parser.formatOptions = [.withInternetDateTime]
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let labelStyle = Date.FormatStyle.dateTime.hour().locale(locale)
+    return series.compactMap { point -> (Date, Int)? in
+      guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
+      else { return nil }
+      return (date, point.count)
+    }
+    .sorted { $0.0 < $1.0 }
+    .map { date, count in
+      DitherDatum(
+        id: date.ISO8601Format(),
+        label: date.formatted(labelStyle),
+        values: ["blocked": Double(count)])
+    }
+  }
+
+  static func seriesAccessibilitySummary(blocked: Int, hours: Int) -> String {
+    DashL10n.string(
+      "Blocked requests over the last \(hours) hours. Total \(blocked.formatted()).")
+  }
 }
 
 /// Render-ready country data for the WAF globe. Keeping the count alongside the
@@ -844,6 +873,7 @@ struct WAFEventsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let zoneID: String
   @State private var selectedCountryCode: String?
@@ -901,6 +931,35 @@ struct WAFEventsView: View {
               .foregroundStyle(DashTheme.subtle)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        let seriesData = WAFChartModel.seriesData(summary.series)
+        if !seriesData.isEmpty {
+          let collapsed = CollapsedDitherTrendSeries(
+            values: seriesData.map { $0.values["blocked"] ?? 0 })
+          let sparkData = zip(seriesData, collapsed.values).map { point, value in
+            DitherDatum(
+              id: point.id,
+              label: point.label,
+              values: ["blocked": value])
+          }
+          DashCollapsedChartCard(
+            title: "Blocked requests",
+            summaryValue: summary.blocked.formatted(.number.locale(DashL10n.activeLocale)),
+            data: sparkData,
+            series: [
+              DitherSeries(
+                id: "blocked",
+                label: DashL10n.ui("Blocked requests"),
+                color: DashTheme.DitherChart.warning(
+                  colorScheme: colorScheme,
+                  contrast: colorSchemeContrast),
+                variant: .gradient)
+            ],
+            valueCeiling: collapsed.valueCeiling,
+            accessibilitySummary: WAFChartModel.seriesAccessibilitySummary(
+              blocked: summary.blocked, hours: summary.hours)
+          )
+          .dashItemBoundary()
         }
       }
       if securityAvailable {

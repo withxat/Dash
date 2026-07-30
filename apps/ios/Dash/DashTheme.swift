@@ -507,8 +507,8 @@ enum DashTheme {
   static let separator = Color(
     uiColor: UIColor { traits in
       traits.userInterfaceStyle == .dark
-        ? UIColor.white.withAlphaComponent(0.10)
-        : UIColor.black.withAlphaComponent(0.12)
+        ? UIColor.white.withAlphaComponent(0.06)
+        : UIColor.black.withAlphaComponent(0.08)
     })
   /// Alias of `separator` — kept for older stroke call sites.
   static var line: Color { separator }
@@ -796,6 +796,7 @@ enum FeatureVisualIdentity {
     switch feature {
     case .zones: .success
     case .registrar: .teal
+    case .emailRouting: .danger
     case .workers: .brand
     case .pages: .info
     case .r2: .accent

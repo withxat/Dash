@@ -1,7 +1,7 @@
 import Foundation
 
 enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case zones, registrar, workers, pages, r2, kv, tunnels
+  case zones, registrar, emailRouting, workers, pages, r2, kv, tunnels
 
   var id: String { rawValue }
   var title: String {
@@ -66,6 +66,8 @@ enum Destination: Hashable {
   case dns(String)
   case cache(String)
   case zoneAnalytics(String)
+  /// DNS query volume from `dnsAnalyticsAdaptiveGroups` — not the DNS records list.
+  case zoneDNSAnalytics(String)
   /// Beacon-reported Web Analytics (RUM) — a different measurement from
   /// `zoneAnalytics`, which is what the edge saw.
   case zoneWebAnalytics(String)
@@ -117,6 +119,13 @@ enum FeatureCatalog {
       .registrar, "Registered domains", "Domains you bought on Cloudflare",
       "checkmark.seal", "SolarGlobusFill", "SolarGlobusOutline", "Domains & DNS",
       read: ["registrar-domains.read"]),
+    // Email Routing browses beside Domains: pick a zone, then manage routes.
+    // `write` stays empty on the index — mutations live on the per-zone screen
+    // and destination-address destinations (same pattern as Registrar).
+    feature(
+      .emailRouting, "Email Routing", "Forward domain mail to inboxes you already use",
+      "tray", "SolarInboxFill", "SolarInboxOutline", "Domains & DNS",
+      read: ["zone.read", "email-routing-rule.read"]),
     // Compute
     feature(
       .workers, "Workers", "Deployments, domains, and analytics",
