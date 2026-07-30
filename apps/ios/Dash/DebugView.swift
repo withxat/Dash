@@ -4,7 +4,7 @@
   import UIKit
 
   /// DEBUG-only playground for toast, haptics, and hold-to-confirm. Opened from
-  /// the profile tray — never shipped in Release.
+  /// Settings — never shipped in Release.
   struct DebugView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true

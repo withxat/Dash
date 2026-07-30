@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import VariableBlur
 
 // MARK: - Root chrome
 
@@ -36,12 +37,14 @@ struct HeaderProfileButton: View {
       .buttonStyle(.glass)
       .buttonBorderShape(.circle)
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     } else {
       Button(action: action) {
         HeaderProfileAvatar(email: email)
       }
       .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel("Profile, \(accountLabel)")
+      .accessibilityIdentifier("header-profile-button")
     }
   }
 }
@@ -203,40 +206,23 @@ struct DashScrollEdgeEffectsHidden: ViewModifier {
 // MARK: - Header scrim
 
 /// Geometry of the header frost. The band is pinned to the physical top edge
-/// and extends just beyond the navigation bar so both its radius and tint can
-/// ease to nothing before the lower edge reaches scrolling content.
-///
-/// Radius, tail, and tint tuning follow dominikmartn/ProgressiveBlurHeader:
-/// https://github.com/dominikmartn/ProgressiveBlurHeader
+/// and extends beyond the navigation bar so the progressive blur and tint can
+/// ease to nothing before their lower edge reaches scrolling content.
 enum DashHeaderScrimMetrics {
   /// Floor for the safe-area top inset, in case a screen reports one without
   /// its navigation bar. Never a substitute for the measured inset.
   static let minimumTop: CGFloat = 44
-  /// ProgressiveBlurHeader's fade length: long enough for the real radius
-  /// gradient to disappear without reading as a hard horizontal edge.
+  /// ProgressiveBlurHeader's fade length.
   static let tail: CGFloat = 64
-  /// The upstream VariableBlur default is deliberately subtle. More radius
-  /// makes text smear well below the bar instead of merely separating it.
+  /// ProgressiveBlurHeader's restrained optical tuning.
   static let maxBlurRadius: CGFloat = 5
   static let startOffset: CGFloat = 0
-  /// Adaptive tint over the variable backdrop, matching the reference
-  /// component's top and header-center strengths.
   static let tintOpacityTop = 0.7
   static let tintOpacityMiddle = 0.5
   static let tintMiddleY: CGFloat = 90
-  /// How much of the measured top inset the public Material fallback holds at
-  /// full strength — about the status bar. The variable filter owns its own
-  /// continuous radius mask.
-  static let solidShare: CGFloat = 0.48
-  /// Public-API fallback extents, as a share of the band height.
-  ///
-  /// Each layer samples what is already composited beneath it, so their radii
-  /// compound. This remains available when the vendored variable-blur filter
-  /// cannot be constructed on a future OS.
-  static let blurLayers: [CGFloat] = [1, 0.72, 0.5]
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
-  /// finger — it crosses this line and then plays its own entrance, so a nudge
-  /// or a rubber-band settle never leaves a half-painted header on screen.
+  /// finger — it crosses this line and mounts at full strength, so a nudge or
+  /// rubber-band settle never leaves a half-painted header on screen.
   static let enter: CGFloat = 20
   /// The shallower depth it leaves at. Two thresholds, not one: a single line
   /// makes the band chatter on and off while a finger rests on it.
@@ -257,7 +243,7 @@ enum DashHeaderScrimRules {
   /// between them reads as a curve rather than a chain of facets.
   static let rampSteps = 8
 
-  /// Mask for one blur layer: full strength down to `solidFraction`, then a
+  /// Accessibility-canvas mask: full strength down to `solidFraction`, then a
   /// smoothstep falloff reaching fully clear at `extent`, and nothing below.
   ///
   /// Smoothstep on purpose — it leaves the plateau and arrives at zero with
@@ -299,9 +285,9 @@ enum DashHeaderScrimRules {
 @MainActor
 @Observable
 final class DashHeaderScrollState {
-  /// Mounts and unmounts the band. A flip, never a scrubbed value: the frost
-  /// plays its own entrance instead of tracking the finger. It doubles as the
-  /// hysteresis memory — what the screen wanted last time it was asked.
+  /// Mounts and unmounts the band immediately. It is a flip, never a scrubbed
+  /// or animated value, and doubles as the hysteresis memory — what the screen
+  /// wanted last time it was asked.
   private(set) var isFrosted = false
 
   func report(distance: CGFloat) {
@@ -315,15 +301,7 @@ final class DashHeaderScrollState {
 
   private func apply(_ value: Bool) {
     guard value != isFrosted else { return }
-    withAnimation(Self.transition(entering: value)) { isFrosted = value }
-  }
-
-  /// Slow in, fast out — the frost arrives like any other floating surface and
-  /// leaves quicker, so scrolling back to the top never feels like the header
-  /// is trailing the finger.
-  private static func transition(entering: Bool) -> Animation {
-    guard !UIAccessibility.isReduceMotionEnabled else { return DashTheme.Motion.reduced }
-    return entering ? DashTheme.Motion.present : DashTheme.Motion.dismiss
+    isFrosted = value
   }
 }
 
@@ -345,9 +323,9 @@ struct DashHeaderScrimModifier: ViewModifier {
   }
 }
 
-/// The screen's header frost: a variable-radius backdrop blur, strongest at
-/// the physical top edge and eased to fully clear below the navigation bar so
-/// its lower edge never lands as a line on the content.
+/// The screen's header frost: a variable-radius backdrop strongest at the
+/// physical top edge, with an adaptive tint eased to fully clear below the
+/// navigation bar so its lower edge never lands as a line on the content.
 ///
 /// It lives inside the page on purpose. UIKit draws the navigation bar above
 /// the hosted content, so a band placed here passes under the title and the
@@ -364,53 +342,45 @@ struct DashHeaderScrim: View {
       // participates in compositing.
       if scroll.isFrosted {
         // The reader sits in the content's safe area, whose top inset already
-        // covers the status bar and navigation bar. The tail gives both the
-        // variable filter and the public fallback room to disappear.
+        // covers the status bar and navigation bar. The tail gives the blur and
+        // tint room to disappear.
         let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
         let height = top + DashHeaderScrimMetrics.tail
         band(
-          solidFraction: top * DashHeaderScrimMetrics.solidShare / height,
+          opaqueSolidFraction: top / height,
           height: height
         )
         .frame(width: proxy.size.width, height: height)
         .offset(y: -top)
-        .transition(.opacity)
+        .transition(.identity)
       }
     }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
 
-  /// VariableBlur supplies a real radius gradient. It stays isolated inside
-  /// the existing per-screen band so the navigation bar remains crisp and no
-  /// backdrop filter can leak across a push or tab swipe.
+  /// The optical path follows ProgressiveBlurHeader: one variable-radius
+  /// backdrop plus an adaptive white/black tint ramp.
   ///
-  /// Reduce Transparency drops to a flat canvas layer. If the private filter
-  /// is absent on a future OS, retain the previous public Material stack.
+  /// Reduce Transparency drops to one flat canvas layer. Its plateau spans the
+  /// complete measured top inset, keeping the status and navigation regions
+  /// opaque before the same smooth tail begins.
   @ViewBuilder
-  private func band(solidFraction: CGFloat, height: CGFloat) -> some View {
+  private func band(
+    opaqueSolidFraction: CGFloat,
+    height: CGFloat
+  ) -> some View {
     if reduceTransparency {
       DashTheme.canvas
-        .mask { ramp(solidFraction: solidFraction, extent: 1) }
-    } else if DashVariableBlurSupport.isAvailable {
+        .mask { ramp(solidFraction: opaqueSolidFraction, extent: 1) }
+    } else {
       ZStack {
-        DashVariableBlurView(
+        VariableBlurView(
           maxBlurRadius: DashHeaderScrimMetrics.maxBlurRadius,
+          direction: .blurredTopClearBottom,
           startOffset: DashHeaderScrimMetrics.startOffset
         )
         tintRamp(height: height)
-      }
-    } else {
-      materialFallback(solidFraction: solidFraction)
-    }
-  }
-
-  private func materialFallback(solidFraction: CGFloat) -> some View {
-    ZStack {
-      ForEach(DashHeaderScrimMetrics.blurLayers, id: \.self) { extent in
-        Rectangle()
-          .fill(Material.ultraThin)
-          .mask { ramp(solidFraction: solidFraction, extent: extent) }
       }
     }
   }

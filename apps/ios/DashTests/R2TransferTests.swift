@@ -82,51 +82,6 @@ private func r2Object(
   #expect(R2Media.versionToken(for: tagged) == "etag:version-1")
 }
 
-@Test func r2ObjectConsistencyRequiresMatchingStrongETagAndUploadedTime() throws {
-  let expected = try r2Object(etag: #""abc123""#)
-
-  #expect(
-    R2ObjectConsistency.sameVersion(
-      try r2Object(size: 999, etag: "abc123"), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(etag: "changed"), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(etag: "abc123", uploaded: "later"), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(etag: "abc123", uploaded: nil), as: expected))
-}
-
-@Test func r2ObjectConsistencyTreatsWeakETagsAsMetadataFallback() throws {
-  let expected = try r2Object(etag: #"W/"abc123""#)
-
-  #expect(
-    R2ObjectConsistency.sameVersion(
-      try r2Object(etag: #"W/"abc123""#), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(size: 999, etag: #"W/"abc123""#), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(etag: #"W/"abc123""#, uploaded: "later"), as: expected))
-}
-
-@Test func r2ObjectConsistencyFallsBackOnlyToCompleteMetadata() throws {
-  let expected = try r2Object(etag: nil)
-
-  #expect(
-    R2ObjectConsistency.sameVersion(
-      try r2Object(etag: nil), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(size: 43, etag: nil), as: expected))
-  #expect(
-    !R2ObjectConsistency.sameVersion(
-      try r2Object(etag: nil, uploaded: nil), as: expected))
-}
-
 @Test func r2BucketRequestIdentityChangesWithAccountGenerationAndLocation() {
   let original = R2BucketRequestIdentity(
     context: AccountRequestContext(accountID: "account-a", generation: 1),

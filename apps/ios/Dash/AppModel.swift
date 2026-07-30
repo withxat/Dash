@@ -169,6 +169,7 @@ final class AppModel {
   /// True while the read-only demo session is active (App Review's path past
   /// the OAuth wall). Sign-out becomes a lightweight demo exit.
   private(set) var isDemoSession = false
+  private(set) var isEnteringDemo = false
   let featureCache = FeatureDataCache()
   let avatars = AvatarStore()
   let r2Thumbnails = R2ThumbnailStore()
@@ -180,6 +181,7 @@ final class AppModel {
     didSet {
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
       syncNotificationAccountAuthorization()
+      scheduleFileProviderDomainReconciliation()
     }
   }
   // Mirrored into App Group defaults so the share extension knows which
@@ -198,6 +200,8 @@ final class AppModel {
       if authState == .unauthenticated {
         MetricsWidgetPublisher.clear()
         clearWatchtowerWidgetSnapshot()
+      } else if authState == .authenticated {
+        scheduleFileProviderDomainReconciliation()
       }
     }
   }
@@ -238,6 +242,8 @@ final class AppModel {
 
   private var authSession: ASWebAuthenticationSession?
   private var pushReconcileTask: Task<Void, Never>?
+  private var fileProviderReconcileTask: Task<Void, Never>?
+  private var fileProviderReconcileGeneration: UInt64 = 0
   private var systemBadgeTask: Task<Void, Never>?
   private var systemBadgeGeneration: UInt64 = 0
   private var isRetryingIdentity = false
@@ -298,6 +304,22 @@ final class AppModel {
     return AccountRequestContext(accountID: activeAccountID, generation: accountGeneration)
   }
 
+  var canModifyFileProviderDomains: Bool {
+    authState == .authenticated && !isDemoSession && !isAuthenticating && !isSigningOut
+  }
+
+  nonisolated static func shouldReconcileFileProviderDomains(
+    authState: AuthenticationState,
+    identityStale: Bool,
+    isDemoSession: Bool,
+    isSigningOut: Bool
+  ) -> Bool {
+    authState == .authenticated
+      && !identityStale
+      && !isDemoSession
+      && !isSigningOut
+  }
+
   func isCurrentAccount(_ context: AccountRequestContext) -> Bool {
     activeAccountID == context.accountID && accountGeneration == context.generation
   }
@@ -337,11 +359,98 @@ final class AppModel {
   private func resetAccountScopedWork() {
     pushReconcileTask?.cancel()
     pushReconcileTask = nil
+    fileProviderReconcileGeneration &+= 1
+    fileProviderReconcileTask?.cancel()
+    fileProviderReconcileTask = nil
     accountGeneration &+= 1
     featureCache.clear()
     PagesBuildActivityController.shared.invalidateSession()
     WorkerBuildActivityController.shared.invalidateSession()
     watchtowerUnreadAlertCount = nil
+  }
+
+  /// Reconcile only after authenticated identity has supplied the complete
+  /// account set. Mounting remains an explicit user choice; this background
+  /// pass only removes domains whose account no longer exists.
+  private func scheduleFileProviderDomainReconciliation() {
+    guard
+      Self.shouldReconcileFileProviderDomains(
+        authState: authState,
+        identityStale: identityStale,
+        isDemoSession: isDemoSession,
+        isSigningOut: isSigningOut
+      )
+    else { return }
+    fileProviderReconcileGeneration &+= 1
+    let reconciliationGeneration = fileProviderReconcileGeneration
+    let accountSnapshot = accounts
+    fileProviderReconcileTask?.cancel()
+    fileProviderReconcileTask = Task { @MainActor [weak self] in
+      do {
+        guard let self else { return }
+        try Task.checkCancellation()
+        let mountedAccountIDs = try await FileProviderDomains.mountedAccountIDs()
+        var preservedAccountIDs = Set(accountSnapshot.map(\.id))
+        let missingMountedAccountIDs = mountedAccountIDs.subtracting(preservedAccountIDs)
+
+        // Account lists decode lossily so one newly malformed row cannot take
+        // a File Provider domain and its downloaded replica down with it.
+        // Only a direct 403/404 proves that the current credential no longer
+        // owns a mounted account; every transient or decoding failure keeps it.
+        for accountID in missingMountedAccountIDs.sorted() {
+          try Task.checkCancellation()
+          do {
+            _ = try await self.client.getAccount(accountID)
+            preservedAccountIDs.insert(accountID)
+          } catch is CancellationError {
+            throw CancellationError()
+          } catch let error as CloudflareAPIError {
+            if case .request(let status, _) = error, status == 403 || status == 404 {
+              continue
+            }
+            preservedAccountIDs.insert(accountID)
+          } catch {
+            preservedAccountIDs.insert(accountID)
+          }
+        }
+
+        try Task.checkCancellation()
+        _ = try await FileProviderDomains.reconcile(
+          accounts: accountSnapshot,
+          preservingAccountIDs: preservedAccountIDs)
+      } catch {
+        // Domain state is re-read whenever the settings page opens and on the
+        // next lifecycle reconciliation. A background failure must not turn a
+        // healthy authenticated session into a global app error.
+      }
+      guard
+        let self,
+        self.fileProviderReconcileGeneration == reconciliationGeneration
+      else { return }
+      self.fileProviderReconcileTask = nil
+    }
+  }
+
+  /// Returns only after live system state proves that every local replica is
+  /// gone. A failure leaves the mirror intact so the app never claims cleanup
+  /// succeeded while Files still holds downloaded account data.
+  private func removeAllFileProviderDomains() async -> Bool {
+    for _ in 0..<2 {
+      do {
+        let remainingAccountIDs = try await FileProviderDomains.removeAllDomains()
+        guard remainingAccountIDs.isEmpty else { continue }
+        FileProviderDomains.clearMirror()
+        return true
+      } catch {
+        if let remainingAccountIDs = try? await FileProviderDomains.mountedAccountIDs(),
+          remainingAccountIDs.isEmpty
+        {
+          FileProviderDomains.clearMirror()
+          return true
+        }
+      }
+    }
+    return false
   }
 
   private func clearWatchtowerWidgetSnapshot() {
@@ -439,7 +548,9 @@ final class AppModel {
               """.utf8))
           {
             for zone in visible {
-              featureCache.set(FeatureCacheKey.zoneAnalyticsHourly(zone.id), traffic)
+              featureCache.set(
+                FeatureCacheKey.zoneAnalyticsHourly(zone.id),
+                AnalyticsPeriodComparison(current: traffic, previous: traffic))
               featureCache.set(FeatureCacheKey.zoneRequestsHourly(zone.id), traffic)
             }
           }
@@ -595,6 +706,12 @@ final class AppModel {
 
     do {
       guard try await tokenStore.getAccessToken() != nil else {
+        let removedFileProviderDomains = await removeAllFileProviderDomains()
+        if !removedFileProviderDomains {
+          errorMessage = DashL10n.string(
+            "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+          )
+        }
         deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
         authState = .unauthenticated
         return
@@ -615,6 +732,13 @@ final class AppModel {
     } catch {
       let outcome = Self.authOutcome(afterIdentityError: error)
       identityStale = outcome.stale
+      if outcome.state == .unauthenticated,
+        !(await removeAllFileProviderDomains())
+      {
+        errorMessage = DashL10n.string(
+          "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+        )
+      }
       authState = outcome.state
     }
   }
@@ -639,6 +763,7 @@ final class AppModel {
     do {
       try await loadIdentity()
       identityStale = false
+      scheduleFileProviderDomainReconciliation()
     } catch {
       if (error as? CloudflareAPIError)?.isUnauthorized == true {
         await signOut()
@@ -647,6 +772,7 @@ final class AppModel {
   }
 
   func signIn(presentationOwner: UUID) {
+    guard !isEnteringDemo else { return }
     authorize(
       scopes: DashAuthorizationScopes.core,
       preservesExistingSession: false,
@@ -665,8 +791,9 @@ final class AppModel {
       // The demo is intentionally read-only. A write CTA means "connect my
       // account", never "replace the demo client's token in place".
       guard Self.demoAccessRequiresConnection(scopes) else { return }
-      exitDemo()
-      Task {
+      Task { @MainActor [weak self] in
+        guard let self else { return }
+        await exitDemo()
         await Task.yield()
         await R2TemporaryFile.removeAllFiles()
       }
@@ -723,7 +850,7 @@ final class AppModel {
     presentsCompletion: Bool,
     presentationOwner: UUID?
   ) {
-    guard !isAuthenticating else { return }
+    guard !isAuthenticating, !isEnteringDemo else { return }
     guard configuration.isConfigured else {
       errorMessage = "Add DASH_CLIENT_ID and DASH_REDIRECT_URI to Config/Secrets.xcconfig."
       return
@@ -846,7 +973,6 @@ final class AppModel {
             authState = .authenticated
           }
         } catch {
-          isAuthenticating = false
           authenticationActionPhase = .idle
           authenticationActionOwner = nil
           grantedScopesPendingPresentation = nil
@@ -860,8 +986,17 @@ final class AppModel {
               previousAccountIDs: previousAccountIDs)
           errorMessage = error.localizedDescription
           if !preservesExistingSession || !restoredPreviousCredential {
+            if !(await removeAllFileProviderDomains()) {
+              errorMessage = [
+                error.localizedDescription,
+                DashL10n.string(
+                  "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+                ),
+              ].joined(separator: "\n")
+            }
             authState = .unauthenticated
           }
+          isAuthenticating = false
         }
       }
     }
@@ -992,29 +1127,69 @@ final class AppModel {
   /// entirely by `DemoBackend`, then runs the normal identity path so the
   /// demo exercises the same code as a real sign-in.
   func enterDemo() {
-    guard authState == .unauthenticated, !isDemoSession else { return }
-    toasts.clearAll()
-    resetAccountScopedWork()
-    pendingLegacyNotificationRoute = nil
-    isDemoSession = true
-    errorMessage = nil
-    let demoClient = CloudflareClient(
-      clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
-    client = demoClient
-    deferredDeletionExecutor.replaceClient(demoClient)
-    grantedScopes = Self.demoGrantedScopes
-    Task { [weak self] in
+    guard
+      authState == .unauthenticated,
+      !isDemoSession,
+      !isEnteringDemo,
+      !isAuthenticating
+    else { return }
+    isEnteringDemo = true
+    Task { @MainActor [weak self] in
       guard let self else { return }
-      try? await loadIdentity()
-      guard isDemoSession else { return }
-      authState = .authenticated
+      defer { self.isEnteringDemo = false }
+
+      // A failed automatic credential cleanup can leave a known real-account
+      // domain mounted while onboarding is visible. Demo must never coexist
+      // with that replica: its in-process backend cannot serve the extension,
+      // and downloaded real-account data would remain visible in Files.
+      if !FileProviderDomains.mirroredAccountIDs().isEmpty,
+        !(await self.removeAllFileProviderDomains())
+      {
+        let message = DashL10n.string(
+          "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+        )
+        self.errorMessage = message
+        self.toasts.error(message)
+        return
+      }
+
+      guard
+        self.authState == .unauthenticated,
+        !self.isDemoSession,
+        !self.isAuthenticating
+      else { return }
+      self.toasts.clearAll()
+      self.resetAccountScopedWork()
+      self.pendingLegacyNotificationRoute = nil
+      self.isDemoSession = true
+      self.errorMessage = nil
+      let demoClient = CloudflareClient(
+        clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
+      self.client = demoClient
+      self.deferredDeletionExecutor.replaceClient(demoClient)
+      self.grantedScopes = Self.demoGrantedScopes
+
+      do {
+        try await self.loadIdentity()
+        guard self.isDemoSession else { return }
+        self.authState = .authenticated
+      } catch {
+        guard self.isDemoSession else { return }
+        await self.exitDemo()
+        self.errorMessage = error.localizedDescription
+        self.toasts.error(error.localizedDescription)
+      }
     }
   }
 
   /// Tears down the demo session: restores the real client and returns to
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
-  private func exitDemo(setsAuthenticationState: Bool = true) {
+  private func exitDemo(setsAuthenticationState: Bool = true) async {
+    let pendingFileProviderReconcile = fileProviderReconcileTask
+    fileProviderReconcileTask?.cancel()
+    await pendingFileProviderReconcile?.value
+    _ = await removeAllFileProviderDomains()
     deferredDeletions.discardEphemeralCredentialStatePreservingRecovery()
     resetAccountScopedWork()
     isDemoSession = false
@@ -1048,7 +1223,7 @@ final class AppModel {
     if isDemoSession {
       cancelSignOutPresentationFallback()
       signOutActionPhase = presentsCompletion ? .loading : .idle
-      exitDemo(setsAuthenticationState: !presentsCompletion)
+      await exitDemo(setsAuthenticationState: !presentsCompletion)
       await Task.yield()
       await R2TemporaryFile.removeAllFiles()
       if presentsCompletion {
@@ -1068,6 +1243,26 @@ final class AppModel {
     authenticationActionPhase = .idle
     authenticationActionOwner = nil
     grantedScopesPendingPresentation = nil
+
+    // Removing a replicated domain is the only sign-out cleanup that owns
+    // downloaded account data on this device. Do it before mutating any other
+    // session state so a system IPC failure leaves Dash truthfully signed in
+    // and lets the user retry instead of creating a half-signed-out replica.
+    fileProviderReconcileGeneration &+= 1
+    let pendingFileProviderReconcile = fileProviderReconcileTask
+    fileProviderReconcileTask?.cancel()
+    fileProviderReconcileTask = nil
+    await pendingFileProviderReconcile?.value
+    guard await removeAllFileProviderDomains() else {
+      signOutActionPhase = .idle
+      let message = DashL10n.string(
+        "Files couldn't remove all downloaded copies from this iPhone. Try signing out again."
+      )
+      errorMessage = message
+      toasts.error(message)
+      return
+    }
+
     // This handshake runs before token revocation so an in-flight DELETE never
     // resumes under a replacement credential.
     await deferredDeletions.prepareForCredentialReplacement()
@@ -1138,10 +1333,13 @@ final class AppModel {
       armSignOutPresentationFallback()
     }
     authState = .unauthenticated
-    errorMessage =
-      pushCleanupFailureCount == 0
-      ? nil
-      : "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
+    var cleanupMessages: [String] = []
+    if pushCleanupFailureCount > 0 {
+      cleanupMessages.append(
+        "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
+      )
+    }
+    errorMessage = cleanupMessages.isEmpty ? nil : cleanupMessages.joined(separator: "\n")
     // Let SwiftUI tear down account-scoped views and cancel their transfers
     // before removing the session's temporary R2 files.
     await Task.yield()
@@ -1185,6 +1383,10 @@ final class AppModel {
     toasts.clearAll()
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
+    // Domains are account-scoped, not active-account-scoped. Reconciliation
+    // only subtracts accounts that no longer exist and never unmounts the
+    // other authenticated accounts when this selection changes.
+    scheduleFileProviderDomainReconciliation()
   }
 
   /// Drops caches that embed already-resolved copy so Settings → Language can

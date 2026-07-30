@@ -180,6 +180,75 @@ final class DemoBackend: URLProtocol {
         return ok(DemoWorld.zoneSettings)
       case "workers"? where rest.count >= 2 && rest[1] == "routes":
         return ok("[\(DemoWorld.workerRoutes(zoneID: zone.id).joined(separator: ","))]")
+      case "email"? where rest.count >= 2 && rest[1] == "routing":
+        let emailRest = Array(rest.dropFirst(2))
+        switch emailRest.first {
+        case nil:
+          switch zone.id {
+          case "zone-example":
+            return ok(
+              #"""
+              {"id":"email-zone-example","name":"example.com","enabled":true,"status":"ready","created":"2026-02-12T09:00:00Z","modified":"2026-07-26T08:30:00Z","skip_wizard":false,"support_subaddress":true,"tag":"demo-email-ready"}
+              """#)
+          case "zone-docs":
+            return ok(
+              #"""
+              {"id":"email-zone-docs","name":"docs.example.com","enabled":true,"status":"misconfigured","created":"2026-03-04T10:15:00Z","modified":"2026-07-25T17:20:00Z","skip_wizard":false,"support_subaddress":false,"tag":"demo-email-misconfigured"}
+              """#)
+          default:
+            return ok(
+              #"""
+              {"id":"email-\#(zone.id)","name":"\#(zone.name)","enabled":false,"status":"unconfigured","created":null,"modified":null,"skip_wizard":false,"support_subaddress":false,"tag":null}
+              """#)
+          }
+
+        case "dns"?:
+          if zone.id == "zone-docs" {
+            return ok(
+              #"""
+              {"record":[
+                {"type":"MX","name":"docs.example.com","content":"route1.mx.cloudflare.net","ttl":1,"priority":10},
+                {"type":"MX","name":"docs.example.com","content":"route2.mx.cloudflare.net","ttl":1,"priority":20}
+              ],"errors":[
+                {"code":"missing_dns_record","missing":{"type":"TXT","name":"docs.example.com","content":"v=spf1 include:_spf.mx.cloudflare.net ~all","ttl":1}}
+              ]}
+              """#)
+          }
+          return ok(
+            #"""
+            {"record":[
+              {"type":"MX","name":"example.com","content":"route1.mx.cloudflare.net","ttl":1,"priority":10},
+              {"type":"MX","name":"example.com","content":"route2.mx.cloudflare.net","ttl":1,"priority":20},
+              {"type":"TXT","name":"example.com","content":"v=spf1 include:_spf.mx.cloudflare.net ~all","ttl":1}
+            ],"errors":[]}
+            """#)
+
+        case "rules"? where emailRest.count >= 2 && emailRest[1] == "catch_all":
+          return ok(
+            #"""
+            {"id":"catch-all-\#(zone.id)","tag":"demo-catch-all","name":"Catch all","enabled":true,"source":"dashboard","matchers":[{"type":"all"}],"actions":[{"type":"drop"}]}
+            """#)
+
+        case "rules"?:
+          let rules =
+            zone.id == "zone-example"
+            ? [
+              #"""
+              {"id":"route-disabled","tag":"demo-route-disabled","name":"Support","enabled":false,"priority":10,"source":"dashboard","matchers":[{"type":"literal","field":"to","value":"support@example.com"}],"actions":[{"type":"forward","value":["support@example.net"]}]}
+              """#,
+              #"""
+              {"id":"route-unverified","tag":"demo-route-unverified","name":"Billing","enabled":true,"priority":20,"source":"dashboard","matchers":[{"type":"literal","field":"to","value":"billing@example.com"}],"actions":[{"type":"forward","value":["pending@example.net"]}]}
+              """#,
+            ] : []
+          return ok(
+            "[\(rules.joined(separator: ","))]",
+            info:
+              #"{"page":1,"per_page":50,"count":\#(rules.count),"total_count":\#(rules.count),"total_pages":1}"#
+          )
+
+        default:
+          return ok("[]")
+        }
       default:
         return ok("[]")
       }
@@ -230,6 +299,245 @@ final class DemoBackend: URLProtocol {
       return ok(DemoWorld.auditLogs(accountID: account.id))
     case "logs"? where rest.count >= 2 && rest[1] == "audit":
       return ok(DemoWorld.auditLogs(accountID: account.id))
+    case "cfd_tunnel"?:
+      let tunnelRest = Array(rest.dropFirst())
+      let remoteTunnel =
+        #"""
+        {"id":"tunnel-demo-remote","account_tag":"demo-account","name":"production-edge","created_at":"2026-01-10T08:00:00Z","deleted_at":null,"conns_active_at":"2026-07-29T06:30:00Z","conns_inactive_at":null,"status":"healthy","tun_type":"cfd_tunnel","config_src":"cloudflare","remote_config":true,"connections":[{"id":"connection-sin","client_id":"connector-singapore","client_version":"2026.7.1","colo_name":"SIN","opened_at":"2026-07-29T06:30:00Z","origin_ip":"203.0.113.10","uuid":"connection-sin","is_pending_reconnect":false},{"id":"connection-nrt","client_id":"connector-tokyo","client_version":"2026.7.1","colo_name":"NRT","opened_at":"2026-07-29T06:31:00Z","origin_ip":"203.0.113.11","uuid":"connection-nrt","is_pending_reconnect":false}]}
+        """#
+      let localTunnel =
+        #"""
+        {"id":"tunnel-demo-local","account_tag":"demo-account","name":"lab-origin","created_at":"2025-11-03T12:00:00Z","deleted_at":null,"conns_active_at":null,"conns_inactive_at":"2026-07-27T19:20:00Z","status":"inactive","tun_type":"cfd_tunnel","config_src":"local","remote_config":false,"connections":[]}
+        """#
+
+      switch tunnelRest.first {
+      case nil:
+        let rows = account.id == DemoBackend.accountID ? [remoteTunnel, localTunnel] : []
+        return ok(
+          "[\(rows.joined(separator: ","))]",
+          info:
+            #"{"page":1,"per_page":50,"count":\#(rows.count),"total_count":\#(rows.count),"total_pages":1}"#
+        )
+
+      case let tunnelID? where tunnelRest.count >= 2 && tunnelRest[1] == "connections":
+        guard account.id == DemoBackend.accountID else {
+          return ok(
+            "[]",
+            info: #"{"page":1,"per_page":50,"count":0,"total_count":0,"total_pages":1}"#)
+        }
+        let connectors: [String]
+        if tunnelID == "tunnel-demo-remote" {
+          connectors = [
+            #"""
+            {"id":"connector-singapore","arch":"arm64","version":"2026.7.1","run_at":"2026-07-29T06:30:00Z","config_version":12,"features":["quic"],"conns":[{"id":"connection-sin","client_id":"connector-singapore","client_version":"2026.7.1","colo_name":"SIN","opened_at":"2026-07-29T06:30:00Z","origin_ip":"203.0.113.10","uuid":"connection-sin","is_pending_reconnect":false}]}
+            """#,
+            #"""
+            {"id":"connector-tokyo","arch":"amd64","version":"2026.7.1","run_at":"2026-07-29T06:31:00Z","config_version":12,"features":["quic"],"conns":[{"id":"connection-nrt","client_id":"connector-tokyo","client_version":"2026.7.1","colo_name":"NRT","opened_at":"2026-07-29T06:31:00Z","origin_ip":"203.0.113.11","uuid":"connection-nrt","is_pending_reconnect":false}]}
+            """#,
+          ]
+        } else {
+          connectors = []
+        }
+        return ok(
+          "[\(connectors.joined(separator: ","))]",
+          info:
+            #"{"page":1,"per_page":50,"count":\#(connectors.count),"total_count":\#(connectors.count),"total_pages":1}"#
+        )
+
+      case let tunnelID? where tunnelRest.count >= 2 && tunnelRest[1] == "configurations":
+        guard account.id == DemoBackend.accountID else {
+          return Reply(
+            status: 404,
+            json:
+              #"{"success":false,"errors":[{"code":1001,"message":"Tunnel configuration not found."}],"messages":[],"result":null}"#
+          )
+        }
+        if tunnelID == "tunnel-demo-remote" {
+          return ok(
+            #"""
+            {"tunnel_id":"tunnel-demo-remote","account_id":"demo-account","source":"cloudflare","created_at":"2026-07-24T10:00:00Z","version":12,"config":{"ingress":[{"hostname":"app.example.com","path":null,"service":"http://localhost:3000","originRequest":{"access":{"required":true,"teamName":"dash-demo","audTag":["demo-aud-app"]}}},{"hostname":"api.example.com","path":"/v1/*","service":"http://localhost:8787","originRequest":null},{"hostname":"ssh.example.com","path":null,"service":"ssh://localhost:22","originRequest":null},{"hostname":null,"path":null,"service":"http_status:404","originRequest":null}],"originRequest":{"access":{"required":false,"teamName":null,"audTag":[]}}}}
+            """#)
+        }
+        if tunnelID == "tunnel-demo-local" {
+          return ok(
+            #"""
+            {"tunnel_id":"tunnel-demo-local","account_id":"demo-account","source":"local","created_at":"2025-11-03T12:00:00Z","version":1,"config":null}
+            """#)
+        }
+        return Reply(
+          status: 404,
+          json:
+            #"{"success":false,"errors":[{"code":1001,"message":"Tunnel configuration not found."}],"messages":[],"result":null}"#
+        )
+
+      case let tunnelID? where tunnelRest.count == 1:
+        guard account.id == DemoBackend.accountID else {
+          return Reply(
+            status: 404,
+            json:
+              #"{"success":false,"errors":[{"code":1001,"message":"Tunnel not found."}],"messages":[],"result":null}"#
+          )
+        }
+        if tunnelID == "tunnel-demo-remote" { return ok(remoteTunnel) }
+        if tunnelID == "tunnel-demo-local" { return ok(localTunnel) }
+        return Reply(
+          status: 404,
+          json:
+            #"{"success":false,"errors":[{"code":1001,"message":"Tunnel not found."}],"messages":[],"result":null}"#
+        )
+
+      default:
+        return ok("[]")
+      }
+    case "teamnet"?:
+      let teamnetRest = Array(rest.dropFirst())
+      switch teamnetRest.first {
+      case "routes"?:
+        let includeRoute =
+          account.id == DemoBackend.accountID
+          && (query("tunnel_id") == nil || query("tunnel_id") == "tunnel-demo-remote")
+        let routes =
+          includeRoute
+          ? [
+            #"""
+            {"id":"route-demo-private","network":"10.42.0.0/16","tunnel_id":"tunnel-demo-remote","tunnel_name":"production-edge","comment":"Production private network","created_at":"2026-04-18T09:00:00Z","deleted_at":null,"virtual_network_id":"vnet-demo-default"}
+            """#
+          ] : []
+        return ok(
+          "[\(routes.joined(separator: ","))]",
+          info:
+            #"{"page":1,"per_page":50,"count":\#(routes.count),"total_count":\#(routes.count),"total_pages":1}"#
+        )
+
+      case "virtual_networks"?:
+        let networks =
+          account.id == DemoBackend.accountID
+          ? [
+            #"""
+            {"id":"vnet-demo-default","name":"Default","comment":"Default Zero Trust network","created_at":"2026-01-10T08:00:00Z","deleted_at":null,"is_default_network":true}
+            """#
+          ] : []
+        return ok(
+          "[\(networks.joined(separator: ","))]",
+          info:
+            #"{"page":1,"per_page":50,"count":\#(networks.count),"total_count":\#(networks.count),"total_pages":1}"#
+        )
+
+      default:
+        return ok("[]")
+      }
+    case "access"? where rest.count >= 2 && rest[1] == "apps":
+      let applications =
+        account.id == DemoBackend.accountID
+        ? [
+          #"""
+          {"id":"access-app-demo","name":"Demo app","domain":"app.example.com","type":"self_hosted","aud":"demo-aud-app","destinations":[{"type":"public","uri":"https://app.example.com"}]}
+          """#
+        ] : []
+      return ok(
+        "[\(applications.joined(separator: ","))]",
+        info:
+          #"{"page":1,"per_page":50,"count":\#(applications.count),"total_count":\#(applications.count),"total_pages":1}"#
+      )
+    case "registrar"?:
+      let registrarRest = Array(rest.dropFirst())
+      let registrations = [
+        #"""
+        {"domain_name":"example.com","status":"active","created_at":"2024-04-18T10:00:00Z","expires_at":"2027-04-18T10:00:00Z","auto_renew":true,"privacy_mode":"redaction","locked":true}
+        """#,
+        #"""
+        {"domain_name":"acme-labs.dev","status":"registration_pending","created_at":"2026-07-27T14:30:00Z","expires_at":"2027-07-27T14:30:00Z","auto_renew":false,"privacy_mode":"redaction","locked":true}
+        """#,
+      ]
+      let legacyDomains = [
+        #"""
+        {"id":"example.com","available":false,"can_register":false,"created_at":"2024-04-18T10:00:00Z","current_registrar":"Cloudflare, Inc.","expires_at":"2027-04-18T10:00:00Z","locked":true,"updated_at":"2026-07-20T08:00:00Z","registry_statuses":"clientTransferProhibited,clientUpdateProhibited","supported_tld":true,"registrant_contact":{"id":"contact-example","first_name":"Demo","last_name":"Explorer","organization":"Example Labs","address":"123 Demo Street","city":"Singapore","state":"Singapore","zip":"018956","country":"SG","phone":"+65.60000000","email":"owner@example.com"},"transfer_in":null}
+        """#,
+        #"""
+        {"id":"acme-labs.dev","available":false,"can_register":false,"created_at":"2026-07-27T14:30:00Z","current_registrar":"Cloudflare, Inc.","expires_at":"2027-07-27T14:30:00Z","locked":true,"updated_at":"2026-07-27T14:30:00Z","registry_statuses":"pendingCreate","supported_tld":true,"registrant_contact":{"id":"contact-acme","first_name":"Avery","last_name":"Chen","organization":"Acme Labs","city":"Singapore","country":"SG","email":"domains@acme-labs.dev"},"transfer_in":null}
+        """#,
+      ]
+
+      switch registrarRest.first {
+      case "registrations"?:
+        if registrarRest.count == 1 {
+          let rows = account.id == DemoBackend.accountID ? registrations : []
+          return ok(
+            "[\(rows.joined(separator: ","))]",
+            info:
+              #"{"count":\#(rows.count),"per_page":50,"total_count":\#(rows.count),"cursor":""}"#
+          )
+        }
+        guard account.id == DemoBackend.accountID else {
+          return Reply(
+            status: 404,
+            json:
+              #"{"success":false,"errors":[{"code":1001,"message":"Registration not found."}],"messages":[],"result":null}"#
+          )
+        }
+        let domain = registrarRest[1].lowercased()
+        if domain == "example.com" { return ok(registrations[0]) }
+        if domain == "acme-labs.dev" { return ok(registrations[1]) }
+        return Reply(
+          status: 404,
+          json:
+            #"{"success":false,"errors":[{"code":1001,"message":"Registration not found."}],"messages":[],"result":null}"#
+        )
+
+      case "domains"?:
+        if registrarRest.count == 1 {
+          let rows = account.id == DemoBackend.accountID ? legacyDomains : []
+          return ok(
+            "[\(rows.joined(separator: ","))]",
+            info:
+              #"{"page":1,"per_page":50,"count":\#(rows.count),"total_count":\#(rows.count),"total_pages":1}"#
+          )
+        }
+        guard account.id == DemoBackend.accountID else {
+          return Reply(
+            status: 404,
+            json:
+              #"{"success":false,"errors":[{"code":1001,"message":"Registrar domain not found."}],"messages":[],"result":null}"#
+          )
+        }
+        let domain = registrarRest[1].lowercased()
+        if domain == "example.com" { return ok(legacyDomains[0]) }
+        if domain == "acme-labs.dev" { return ok(legacyDomains[1]) }
+        return Reply(
+          status: 404,
+          json:
+            #"{"success":false,"errors":[{"code":1001,"message":"Registrar domain not found."}],"messages":[],"result":null}"#
+        )
+
+      default:
+        return ok("[]")
+      }
+    case "email"?
+    where rest.count >= 3 && rest[1] == "routing" && rest[2] == "addresses":
+      let addresses: [String]
+      if account.id != DemoBackend.accountID {
+        addresses = []
+      } else if query("verified") == "false" {
+        addresses = [
+          #"""
+          {"id":"email-address-pending","tag":"demo-address-pending","email":"pending@example.net","verified":null,"created":"2026-07-24T12:00:00Z","modified":"2026-07-24T12:00:00Z"}
+          """#
+        ]
+      } else {
+        addresses = [
+          #"""
+          {"id":"email-address-support","tag":"demo-address-support","email":"support@example.net","verified":"2026-02-12T09:30:00Z","created":"2026-02-12T09:10:00Z","modified":"2026-02-12T09:30:00Z"}
+          """#,
+          #"""
+          {"id":"email-address-owner","tag":"demo-address-owner","email":"owner@example.com","verified":"2026-03-04T11:00:00Z","created":"2026-03-04T10:45:00Z","modified":"2026-03-04T11:00:00Z"}
+          """#,
+        ]
+      }
+      return ok(
+        "[\(addresses.joined(separator: ","))]",
+        info:
+          #"{"page":1,"per_page":50,"count":\#(addresses.count),"total_count":\#(addresses.count),"total_pages":1}"#
+      )
     default:
       return ok("[]")
     }
@@ -420,7 +728,8 @@ final class DemoBackend: URLProtocol {
       return Reply(json: DemoWorld.workerAnalytics(scale: scale))
     }
     if query.contains("httpRequests1hGroups") {
-      return Reply(json: DemoWorld.zoneAnalyticsHourly(scale: scale))
+      let hours = max((limit(in: query) ?? 25) - 1, 1)
+      return Reply(json: DemoWorld.zoneAnalyticsHourly(hours: hours, scale: scale))
     }
     if query.contains("httpRequests1dGroups") {
       // The daily chart asks for 7 or 30 days through `limit:`; honor it so the
@@ -1262,14 +1571,26 @@ private enum DemoWorld {
     return base + Int(Double(swing) * (0.5 + 0.5 * sin(phase - .pi / 2)))
   }
 
-  static func zoneAnalyticsHourly(scale: Double) -> String {
-    let rows = (0..<24).map { hour -> String in
-      let requests = scaled(wave(hour, base: 620, swing: 1400), scale)
-      return
-        #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? scaledOrZero(3, scale) : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 82 / 100),"cachedBytes":\#(requests * 11800 * 74 / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
+  static func zoneAnalyticsHourly(hours: Int = 24, scale: Double) -> String {
+    let count = max(hours, 1)
+    func rows(previous: Bool) -> [String] {
+      (0..<count).map { hour -> String in
+        let rawRequests = wave(hour, base: 620, swing: 1400)
+        let requests = scaled(previous ? rawRequests * 84 / 100 : rawRequests, scale)
+        let hoursAgo = (previous ? count * 2 - 1 : count - 1) - hour
+        return
+          #"{"dimensions":{"datetime":"\#(DemoClock.isoHour(hoursAgo: hoursAgo))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(hour % 7 == 0 ? scaledOrZero(previous ? 2 : 3, scale) : 0),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * (previous ? 76 : 82) / 100),"cachedBytes":\#(requests * 11800 * (previous ? 68 : 74) / 100)},"uniq":{"uniques":\#(requests / 7)}}"#
+      }
     }
-    return
-      #"{"data":{"viewer":{"zones":[{"httpRequests1hGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let current = rows(previous: false).joined(separator: ",")
+    let previous = rows(previous: true).joined(separator: ",")
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current)],
+        "previous":[\#(previous)],
+        "httpRequests1hGroups":[\#(current)]
+      }]}},"errors":null}
+      """#
   }
 
   static func zoneRequestsHourly(scale: Double) -> String {
@@ -1283,13 +1604,25 @@ private enum DemoWorld {
   }
 
   static func zoneAnalyticsDaily(days: Int = 7, scale: Double) -> String {
-    let rows = (0..<max(days, 1)).map { day -> String in
-      let requests = scaled(18_500 + wave(day, base: 0, swing: 9000), scale)
-      return
-        #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: day))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(scaledOrZero(day % 3 == 0 ? 14 : 2, scale)),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * 79 / 100),"cachedBytes":\#(requests * 11800 * 71 / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
+    let count = max(days, 1)
+    func rows(previous: Bool) -> [String] {
+      (0..<count).map { day -> String in
+        let rawRequests = 18_500 + wave(day, base: 0, swing: 9000)
+        let requests = scaled(previous ? rawRequests * 88 / 100 : rawRequests, scale)
+        let daysAgo = (previous ? count + 1 : 1) + day
+        return
+          #"{"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: daysAgo))"},"sum":{"requests":\#(requests),"pageViews":\#(requests * 3 / 5),"threats":\#(scaledOrZero(day % 3 == 0 ? (previous ? 10 : 14) : 2, scale)),"bytes":\#(requests * 11800),"cachedRequests":\#(requests * (previous ? 73 : 79) / 100),"cachedBytes":\#(requests * 11800 * (previous ? 65 : 71) / 100)},"uniq":{"uniques":\#(requests / 9)}}"#
+      }
     }
-    return
-      #"{"data":{"viewer":{"zones":[{"httpRequests1dGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let current = rows(previous: false).joined(separator: ",")
+    let previous = rows(previous: true).joined(separator: ",")
+    return #"""
+      {"data":{"viewer":{"zones":[{
+        "current":[\#(current)],
+        "previous":[\#(previous)],
+        "httpRequests1dGroups":[\#(current)]
+      }]}},"errors":null}
+      """#
   }
 
   static func rumPageviews(days: Int, scale: Double) -> String {
@@ -1309,32 +1642,56 @@ private enum DemoWorld {
       // demo chart with a zero row reads as a broken fetch, not as low traffic.
       let views = max(2, scaled(640 + wave(day, base: 0, swing: 420), scale))
       return
-        #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+        #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
     }
-    let performance = (0..<count).map { day -> String in
+    let performanceValues = (0..<count).map { day -> Int in
       // Latency is not volume: a quiet account is not a faster one.
-      let p50 = 680 + wave(day, base: 0, swing: 260)
-      return
-        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - day))"}}"#
+      680 + wave(day, base: 0, swing: 260)
     }
+    let performance = performanceValues.enumerated().map { day, p50 -> String in
+      return
+        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
+    }
+    let window = max(count / 2, 1)
+    let currentP50 =
+      performanceValues.suffix(window).reduce(0, +) / min(window, performanceValues.count)
+    let previousValues = performanceValues.prefix(max(performanceValues.count - window, 0))
+    let previousP50 =
+      previousValues.isEmpty
+      ? currentP50
+      : previousValues.reduce(0, +) / previousValues.count
     return #"""
       {"data":{"viewer":{"accounts":[{
         "pageload":[\#(pageload.joined(separator: ","))],
-        "performance":[\#(performance.joined(separator: ","))]
+        "performance":[\#(performance.joined(separator: ","))],
+        "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(currentP50)}}],
+        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}]
       }]}},"errors":null}
       """#
   }
 
   static func workerAnalytics(scale: Double) -> String {
-    let rows = (0..<12).map { slot -> String in
+    let samples = (0..<12).map { slot -> (json: String, requests: Int, errors: Int) in
       let requests = scaled(wave(slot, base: 80, swing: 160), scale)
       let errors = slot == 7 ? scaledOrZero(3, scale) : 0
       let cpu = Double(wave(slot, base: 640, swing: 420)) + (slot == 7 ? 380.0 : 0.0)
-      return
-        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#
+      return (
+        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#,
+        requests,
+        errors
+      )
     }
-    return
-      #"{"data":{"viewer":{"accounts":[{"workersInvocationsAdaptive":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
+    let currentRequests = samples.reduce(0) { $0 + $1.requests }
+    let currentErrors = samples.reduce(0) { $0 + $1.errors }
+    let previousRequests = currentRequests * 81 / 100
+    let previousErrors = max(0, currentErrors - 1)
+    return #"""
+      {"data":{"viewer":{"accounts":[{
+        "currentTotals":[{"sum":{"requests":\#(currentRequests),"errors":\#(currentErrors)},"quantiles":{"cpuTimeP50":1040.0}}],
+        "previousTotals":[{"sum":{"requests":\#(previousRequests),"errors":\#(previousErrors)},"quantiles":{"cpuTimeP50":870.0}}],
+        "workersInvocationsAdaptive":[\#(samples.map(\.json).joined(separator: ","))]
+      }]}},"errors":null}
+      """#
   }
 
   /// Account overview + series for Watchtower's 24h / 7d / 30d ranges.
@@ -1366,10 +1723,18 @@ private enum DemoWorld {
           "sum":{"requests":\#(webRequests),"bytes":\#(bytes)},
           "ratio":{"cachedRequests":0.62,"encryptedRequests":0.97,"encryptedBytes":0.94,"status4xx":0.018}
         }],
+        "previousOverview":[{
+          "sum":{"requests":\#(scaled(11_240, scale)),"bytes":\#(scaled(46_350_000, scale))},
+          "ratio":{"cachedRequests":0.57,"encryptedRequests":0.95,"encryptedBytes":0.91,"status4xx":0.024}
+        }],
         "httpSeries":[\#(httpSeries.joined(separator: ","))],
         "workers":[{
           "sum":{"requests":\#(scaled(4820, scale)),"errors":\#(scaledOrZero(12, scale))},
           "quantiles":{"cpuTimeP90":1260.0}
+        }],
+        "previousWorkers":[{
+          "sum":{"requests":\#(scaled(4310, scale)),"errors":\#(scaledOrZero(19, scale))},
+          "quantiles":{"cpuTimeP90":1490.0}
         }],
         "workerSeries":[\#(workerSeries.joined(separator: ","))]
       }]}},"errors":null}

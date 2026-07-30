@@ -323,12 +323,16 @@ struct LocalizationTests {
     defer { DashL10n.localeOverrideForTesting = previousLocale }
 
     #expect(StatusBadge.accessibilityText(for: .readOnly) == "Status, Read-only")
+    #expect(StatusBadge.accessibilityText(for: .verified) == "Status, Verified")
     #expect(StatusToken.current.presentation == .quiet)
     #expect(StatusToken.failed.presentation == .capsule)
     #expect(StatusToken.locked.presentation == .capsule)
     #expect(
       DashNotice.accessibilityText(kind: .warning, message: "Coverage limited")
         == "Warning: Coverage limited")
+    #expect(
+      DashNotice.accessibilityText(kind: .info, message: "Managed automatically")
+        == "Note: Managed automatically")
     #expect(DashTheme.Spacing.scrollBottomInset == 80)
     #expect(DashTheme.Layout.minimumHitTarget == 44)
   }
@@ -348,6 +352,22 @@ struct LocalizationTests {
   #expect(StatusToken(pagesStatus: "canceled") == .canceled)
   #expect(StatusToken(pagesStatus: nil, isSkipped: true) == .skipped)
   #expect(StatusToken(pagesStatus: "teleporting") == .unknown)
+}
+
+@Test func registrarAndTunnelStatusTokensMatchCloudflareVocabulary() {
+  #expect(StatusToken(registrarStatus: "active") == .registered)
+  #expect(StatusToken(registrarStatus: "registration_pending") == .registrationPending)
+  #expect(StatusToken(registrarStatus: "expired") == .expired)
+  #expect(StatusToken(registrarStatus: "suspended") == .suspended)
+  #expect(StatusToken(registrarStatus: "redemption_period") == .redemptionPeriod)
+  #expect(StatusToken(registrarStatus: "pending_delete") == .pendingDelete)
+  #expect(StatusToken(registrarStatus: "teleporting") == .unknown)
+
+  #expect(StatusToken(tunnelStatus: "healthy") == .healthy)
+  #expect(StatusToken(tunnelStatus: "degraded") == .degraded)
+  #expect(StatusToken(tunnelStatus: "down") == .down)
+  #expect(StatusToken(tunnelStatus: "inactive") == .inactive)
+  #expect(StatusToken(tunnelStatus: "teleporting") == .unknown)
 }
 
 @Test func pushBaseURLStripsPathFromRedirectURI() {
@@ -377,7 +397,7 @@ struct LocalizationTests {
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 5)
+  #expect(FeatureID.allCases.count == 6)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -398,17 +418,21 @@ struct LocalizationTests {
 @Test func everyFeatureIsBrowsableWithTheReadOnlyProfile() {
   #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
   for feature in FeatureID.allCases {
-    #expect(
-      feature.capability.accessLevel(grantedScopes: DashAuthorizationScopes.initialReadOnly)
-        == .readOnly)
+    let access = feature.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly)
+    if feature.capability.write.isEmpty {
+      #expect(access == .full)
+    } else {
+      #expect(access == .readOnly)
+    }
   }
 }
 
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 15)
-  #expect(DashAuthorizationScopes.core.count == 26)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 20)
+  #expect(DashAuthorizationScopes.core.count == 34)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -437,9 +461,13 @@ struct LocalizationTests {
   #expect(!AppModel.demoAccessRequiresConnection(["dns.read"]))
   #expect(AppModel.demoAccessRequiresConnection(["dns.write"]))
   for feature in FeatureID.allCases {
-    #expect(
-      feature.capability.accessLevel(grantedScopes: AppModel.demoGrantedScopes)
-        == .readOnly)
+    let access = feature.capability.accessLevel(
+      grantedScopes: AppModel.demoGrantedScopes)
+    if feature.capability.write.isEmpty {
+      #expect(access == .full)
+    } else {
+      #expect(access == .readOnly)
+    }
   }
 }
 
@@ -716,11 +744,18 @@ struct LocalizationTests {
 @Test func destinationFeatureMappingCoversDirectRoutes() {
   #expect(featureID(for: .zone("z1")) == .zones)
   #expect(featureID(for: .dns("z1")) == .zones)
+  #expect(featureID(for: .zoneEmailRouting("z1")) == .zones)
   #expect(featureID(for: .worker("api")) == .workers)
+  #expect(featureID(for: .tunnel("t1")) == .tunnels)
   #expect(featureID(for: .r2Bucket("media", prefix: "")) == .r2)
   #expect(featureID(for: .kvNamespace("ns")) == .kv)
   #expect(featureID(for: .kvKey(namespaceID: "ns", key: "flag")) == .kv)
   #expect(featureID(for: .profile) == nil)
+  #expect(featureID(for: .settingsAccounts) == nil)
+  #expect(featureID(for: .filesMount) == nil)
+  #expect(featureID(for: .emailAddresses) == nil)
+  #expect(featureID(for: .registrarDomains) == nil)
+  #expect(featureID(for: .registrarDomain("example.com")) == nil)
 }
 
 /// Operational destinations keep reads and mutations explicit so Demo and
@@ -744,6 +779,28 @@ struct LocalizationTests {
   #expect(writeScopes(for: .zoneWAF("z1")) == ["zone-settings.write"])
   #expect(writeScopes(for: .pushAlerts) == ["notifications.write"])
   #expect(writeScopes(for: .profile) == ["account-settings.write"])
+  #expect(requiredScopes(for: .settingsAccounts).isEmpty)
+  #expect(readScopes(for: .filesMount).isEmpty)
+  #expect(writeScopes(for: .filesMount).isEmpty)
+  #expect(
+    readScopes(for: .zoneEmailRouting("z1"))
+      == [
+        "zone.read", "dns.read", "zone-settings.read",
+        "email-routing-rule.read", "email-routing-address.read",
+      ])
+  #expect(
+    writeScopes(for: .zoneEmailRouting("z1"))
+      == ["zone-settings.write", "email-routing-rule.write"])
+  #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
+  #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
+  #expect(readScopes(for: .registrarDomains) == ["registrar-domains.read"])
+  #expect(writeScopes(for: .registrarDomains).isEmpty)
+  #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
+  #expect(
+    writeScopes(for: .registrarDomain("example.com"))
+      == ["registrar-domains.admin"])
+  #expect(readScopes(for: .tunnel("t1")) == ["argotunnel.read", "access.read"])
+  #expect(writeScopes(for: .tunnel("t1")).isEmpty)
   // Each is absent from the feature the destination maps to.
   #expect(!FeatureID.zones.capability.all.contains("dns.write"))
   #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
@@ -1312,6 +1369,7 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(FeatureVisualIdentity.tone(for: .pages) == .info)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)
   #expect(FeatureVisualIdentity.tone(for: .kv) == .warning)
+  #expect(FeatureVisualIdentity.tone(for: .tunnels) == .violet)
 
   // Each catalog feature keeps a distinct tone — Resources rows should not
   // share a color within Compute / Storage just because they share a section.
@@ -1389,16 +1447,6 @@ private let watchtowerDropFrames: [CGRect] = [
 
 @Test func trayDragRubberBandsAboveExpandedDetent() {
   #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
-}
-
-@Test func profileTrayPhaseTitlesFollowFocus() {
-  let previousLocale = DashL10n.localeOverrideForTesting
-  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
-  defer { DashL10n.localeOverrideForTesting = previousLocale }
-
-  #expect(ProfileTrayPhase.menu.title == "Profile")
-  #expect(ProfileTrayPhase.accounts.title == "Switch account")
-  #expect(ProfileTrayPhase.signOut.title == "Sign out")
 }
 
 @Test func accountRenameRequiresItsWriteScope() {
@@ -1643,56 +1691,6 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashHeaderScrimMetrics.tintOpacityTop == 0.7)
   #expect(DashHeaderScrimMetrics.tintOpacityMiddle == 0.5)
   #expect(DashHeaderScrimMetrics.tintMiddleY == 90)
-}
-
-/// Values crossing into the UIKit bridge are bounded before the private filter
-/// sees them. Positive radii survive unchanged; negative radii and mask offsets
-/// beyond Core Image's normalized range are clamped to safe values.
-@Test func variableBlurConfigurationClampsUnsafeValues() {
-  let nominal = DashVariableBlurConfiguration(maxBlurRadius: 5, startOffset: 0.48)
-  #expect(nominal.resolvedMaxBlurRadius == 5)
-  #expect(nominal.resolvedStartOffset == 0.48)
-
-  let belowRange = DashVariableBlurConfiguration(maxBlurRadius: -5, startOffset: -2)
-  #expect(belowRange.resolvedMaxBlurRadius == 0)
-  #expect(belowRange.resolvedStartOffset == -1)
-
-  let aboveRange = DashVariableBlurConfiguration(maxBlurRadius: 12, startOffset: 2)
-  #expect(aboveRange.resolvedMaxBlurRadius == 12)
-  #expect(aboveRange.resolvedStartOffset == 1)
-
-  let nonFinite = DashVariableBlurConfiguration(
-    maxBlurRadius: .infinity,
-    startOffset: .nan
-  )
-  #expect(nonFinite.resolvedMaxBlurRadius == 0)
-  #expect(nonFinite.resolvedStartOffset == 0)
-}
-
-/// The private filter contract is opt-in: future OS majors and filters missing
-/// any required input stay on the public Material renderer before KVC is used.
-@Test func variableBlurRejectsUnknownPrivateFilterContracts() {
-  #expect(!DashVariableBlurCompatibility.supports(osMajorVersion: 16))
-  #expect(DashVariableBlurCompatibility.supports(osMajorVersion: 17))
-  #expect(DashVariableBlurCompatibility.supports(osMajorVersion: 26))
-  #expect(!DashVariableBlurCompatibility.supports(osMajorVersion: 27))
-
-  let required = Array(DashVariableBlurCompatibility.requiredInputKeys)
-  #expect(DashVariableBlurCompatibility.supports(inputKeys: required + ["inputDither"]))
-  for key in required {
-    #expect(
-      !DashVariableBlurCompatibility.supports(
-        inputKeys: required.filter { $0 != key }
-      )
-    )
-  }
-}
-
-/// This is a smoke test, not an availability assertion: CI and future iOS
-/// versions may legitimately report either answer when the private filter is
-/// absent. Evaluating the support probe must remain safe in both environments.
-@Test @MainActor func variableBlurSupportProbeDoesNotRequirePrivateAPI() {
-  let _: Bool = DashVariableBlurSupport.isAvailable
 }
 
 /// The store carries the hysteresis: it is asked with a raw scroll distance and

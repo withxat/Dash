@@ -83,7 +83,17 @@ struct WorkerAnalyticsChartPoint: Identifiable, Hashable {
 }
 
 /// Which chart the worker metrics card shows below the stat tiles.
-private enum WorkerMetricsTab: Hashable { case requests, cpu }
+private enum WorkerMetricsTab: Hashable {
+  case requests
+  case cpu
+
+  var detailTitle: String {
+    switch self {
+    case .requests: "Requests"
+    case .cpu: "CPU Time"
+    }
+  }
+}
 
 /// Pure conversion + accessibility strings, so date parsing and the µs → ms
 /// conversion are unit-tested away from the view. `points(from:)` returns
@@ -129,6 +139,7 @@ struct WorkerDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @AppStorage(RecentResources.key) private var recentsRaw = ""
@@ -572,11 +583,23 @@ struct WorkerDetailView: View {
           DashTextTabs(
             items: [("Requests", WorkerMetricsTab.requests), ("CPU", .cpu)],
             selection: $metricsTab)
+          let detail = workerChartDetail(summary, points: chartPoints)
+          DestinationLink(destination: .chartDetail(detail)) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+              Text(DashL10n.ui(detail.title))
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              Spacer(minLength: 4)
+              DashChartDisclosure(trend: detail.trend)
+            }
+            .contentShape(Rectangle())
+          }
+          .accessibilityHint("Shows chart details")
           switch metricsTab {
           case .requests:
             workerRequestsChart(summary, points: chartPoints)
           case .cpu:
-            workerCPUChart(chartPoints)
+            workerCPUChart(summary, points: chartPoints)
           }
         }
       }
@@ -589,6 +612,70 @@ struct WorkerDetailView: View {
     _ summary: WorkerAnalyticsPayload, points: [WorkerAnalyticsChartPoint]
   ) -> some View {
     let showsErrors = summary.errors > 0
+    return DitherAreaChart(
+      data: workerDitherData(points),
+      series: workerRequestSeries(showsErrors: showsErrors),
+      options: DashTheme.DitherChart.options(
+        showsLegend: showsErrors,
+        accessibility: DitherAccessibility(
+          title: DashL10n.ui("Worker requests"),
+          summary: WorkerAnalyticsChartModel.requestsAccessibilitySummary(
+            requests: summary.requests,
+            errors: summary.errors),
+          categoryAxisLabel: DashL10n.ui("Time"),
+          valueAxisLabel: DashL10n.ui("Events"))),
+      highlighted: selectedMetricSeriesID != nil,
+      selection: $selectedMetricSeriesID,
+      onTap: {
+        navigator?.push(.chartDetail(workerChartDetail(summary, points: points)))
+      }
+    )
+    .frame(
+      height: DashTheme.DitherChart.height(
+        dynamicTypeSize: dynamicTypeSize,
+        showsLegend: showsErrors))
+  }
+
+  private func workerCPUChart(
+    _ summary: WorkerAnalyticsPayload,
+    points: [WorkerAnalyticsChartPoint]
+  ) -> some View {
+    DitherLineChart(
+      data: workerDitherData(points),
+      series: workerCPUSeries,
+      options: DashTheme.DitherChart.options(
+        showsLegend: false,
+        accessibility: DitherAccessibility(
+          title: DashL10n.ui("Worker CPU time"),
+          summary: WorkerAnalyticsChartModel.cpuAccessibilitySummary(points: points),
+          categoryAxisLabel: DashL10n.ui("Time"),
+          valueAxisLabel: DashL10n.ui("Milliseconds"))),
+      highlighted: selectedMetricSeriesID != nil,
+      selection: $selectedMetricSeriesID,
+      onTap: {
+        navigator?.push(.chartDetail(workerChartDetail(summary, points: points)))
+      }
+    )
+    .frame(
+      height: DashTheme.DitherChart.height(
+        dynamicTypeSize: dynamicTypeSize,
+        showsLegend: false))
+  }
+
+  private func workerDitherData(_ points: [WorkerAnalyticsChartPoint]) -> [DitherDatum] {
+    points.map { point in
+      DitherDatum(
+        id: point.date.ISO8601Format(),
+        label: point.date.formatted(workerChartAxisFormat),
+        values: [
+          "requests": Double(point.requests),
+          "errors": Double(point.errors),
+          "cpu": point.cpuTimeP50Ms,
+        ])
+    }
+  }
+
+  private func workerRequestSeries(showsErrors: Bool) -> [DitherSeries] {
     var series = [
       DitherSeries(
         id: "requests",
@@ -608,65 +695,75 @@ struct WorkerDetailView: View {
             contrast: colorSchemeContrast),
           variant: .hatched))
     }
-    return DitherAreaChart(
-      data: workerDitherData(points),
-      series: series,
-      options: DashTheme.DitherChart.options(
-        showsLegend: showsErrors,
-        accessibility: DitherAccessibility(
-          title: DashL10n.ui("Worker requests"),
-          summary: WorkerAnalyticsChartModel.requestsAccessibilitySummary(
-            requests: summary.requests,
-            errors: summary.errors),
-          categoryAxisLabel: DashL10n.ui("Time"),
-          valueAxisLabel: DashL10n.ui("Events"))),
-      highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID
-    )
-    .frame(
-      height: DashTheme.DitherChart.height(
-        dynamicTypeSize: dynamicTypeSize,
-        showsLegend: showsErrors))
+    return series
   }
 
-  private func workerCPUChart(_ points: [WorkerAnalyticsChartPoint]) -> some View {
-    DitherLineChart(
-      data: workerDitherData(points),
-      series: [
-        DitherSeries(
-          id: "cpu",
-          label: DashL10n.ui("CPU p50"),
-          color: DashTheme.DitherChart.accentPurple(
-            colorScheme: colorScheme,
-            contrast: colorSchemeContrast),
-          variant: .gradient)
-      ],
-      options: DashTheme.DitherChart.options(
-        showsLegend: false,
-        accessibility: DitherAccessibility(
-          title: DashL10n.ui("Worker CPU time"),
-          summary: WorkerAnalyticsChartModel.cpuAccessibilitySummary(points: points),
-          categoryAxisLabel: DashL10n.ui("Time"),
-          valueAxisLabel: DashL10n.ui("Milliseconds"))),
-      highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID
-    )
-    .frame(
-      height: DashTheme.DitherChart.height(
-        dynamicTypeSize: dynamicTypeSize,
-        showsLegend: false))
+  private var workerCPUSeries: [DitherSeries] {
+    [
+      DitherSeries(
+        id: "cpu",
+        label: DashL10n.ui("CPU p50"),
+        color: DashTheme.DitherChart.accentPurple(
+          colorScheme: colorScheme,
+          contrast: colorSchemeContrast),
+        variant: .gradient)
+    ]
   }
 
-  private func workerDitherData(_ points: [WorkerAnalyticsChartPoint]) -> [DitherDatum] {
-    points.map { point in
-      DitherDatum(
-        id: point.date.ISO8601Format(),
-        label: point.date.formatted(workerChartAxisFormat),
-        values: [
-          "requests": Double(point.requests),
-          "errors": Double(point.errors),
-          "cpu": point.cpuTimeP50Ms,
-        ])
+  private func workerChartDetail(
+    _ summary: WorkerAnalyticsPayload,
+    points: [WorkerAnalyticsChartPoint]
+  ) -> DashChartDetail {
+    let data = workerDitherData(points)
+    let detailPoints = zip(data, points).map { datum, point in
+      DashChartDataPoint(
+        datum: datum,
+        tableLabel: point.date.formatted(
+          .dateTime.month(.abbreviated).day().hour().minute()
+            .locale(DashL10n.activeLocale)))
+    }
+    switch metricsTab {
+    case .requests:
+      let showsErrors = summary.errors > 0
+      return DashChartDetail(
+        title: metricsTab.detailTitle,
+        rangeLabel: "Last 24 hours",
+        summaryValue: summary.requests.formatted(
+          .number.locale(DashL10n.activeLocale)),
+        trend: DashChartTrend(
+          current: Double(summary.requests),
+          previous: summary.previousRequests.map(Double.init),
+          polarity: .neutral),
+        categoryAxisLabel: "Time",
+        valueAxisLabel: "Events",
+        axisValueFormat: .compact,
+        tableValueFormat: .number(maximumFractionDigits: 0),
+        accessibilitySummary: WorkerAnalyticsChartModel.requestsAccessibilitySummary(
+          requests: summary.requests,
+          errors: summary.errors),
+        content: .area(
+          points: detailPoints,
+          series: workerRequestSeries(showsErrors: showsErrors)),
+        featureID: .workers,
+        readScopes: FeatureID.workers.capability.read)
+    case .cpu:
+      return DashChartDetail(
+        title: metricsTab.detailTitle,
+        rangeLabel: "Last 24 hours",
+        summaryValue: String(format: "%.1f ms", summary.cpuTimeP50Us / 1000),
+        trend: DashChartTrend(
+          current: summary.cpuTimeP50Us,
+          previous: summary.previousCPUTimeP50Us,
+          polarity: .lowerIsBetter),
+        categoryAxisLabel: "Time",
+        valueAxisLabel: "Milliseconds",
+        axisValueFormat: .milliseconds(maximumFractionDigits: 1),
+        tableValueFormat: .milliseconds(maximumFractionDigits: 2),
+        accessibilitySummary: WorkerAnalyticsChartModel.cpuAccessibilitySummary(
+          points: points),
+        content: .line(points: detailPoints, series: workerCPUSeries),
+        featureID: .workers,
+        readScopes: FeatureID.workers.capability.read)
     }
   }
 

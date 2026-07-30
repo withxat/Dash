@@ -6,226 +6,254 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
-struct ProfileTrayContent: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  /// Dismisses the tray and pushes the Profile page onto the active tab.
-  let openProfile: () -> Void
-  let openSettings: () -> Void
-  /// DEBUG-only: dismisses the tray and pushes the Debug playground.
-  var openDebug: (() -> Void)? = nil
-  @State private var phase: ProfileTrayPhase = .menu
+private enum SettingsListMetrics {
+  static let iconSize: CGFloat = 28
+  static let iconColumn: CGFloat = 40
+  static let featuredLeading: CGFloat = 56
+  static let rowSpacing: CGFloat = 16
+}
+
+/// Flat Settings row: white canvas, a bare outline glyph, and a divider that
+/// begins at the text column. It intentionally does not reuse `DashListRow`,
+/// whose tinted icon halo belongs to feature/resource lists.
+struct SettingsPlainRow<Accessory: View>: View {
+  let title: String
+  var subtitle: String?
+  let icon: String
+  var iconColor = DashTheme.iconMuted
+  var textColor = DashTheme.text
+  var trailing: String?
+  var trailingIcon: String?
+  var showsChevron = false
+  private let hasAccessory: Bool
+  @ViewBuilder let accessory: () -> Accessory
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var usesStackedLayout: Bool { dynamicTypeSize.isAccessibilitySize }
 
   init(
-    openProfile: @escaping () -> Void,
-    openSettings: @escaping () -> Void,
-    openDebug: (() -> Void)? = nil
+    title: String,
+    subtitle: String? = nil,
+    icon: String,
+    iconColor: Color = DashTheme.iconMuted,
+    textColor: Color = DashTheme.text,
+    trailing: String? = nil,
+    trailingIcon: String? = nil,
+    showsChevron: Bool = false,
+    hasAccessory: Bool = true,
+    @ViewBuilder accessory: @escaping () -> Accessory
   ) {
-    self.openProfile = openProfile
-    self.openSettings = openSettings
-    self.openDebug = openDebug
+    self.title = title
+    self.subtitle = subtitle
+    self.icon = icon
+    self.iconColor = iconColor
+    self.textColor = textColor
+    self.trailing = trailing
+    self.trailingIcon = trailingIcon
+    self.showsChevron = showsChevron
+    self.hasAccessory = hasAccessory
+    self.accessory = accessory
   }
 
   var body: some View {
-    ZStack {
-      switch phase {
-      case .menu:
-        menu
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      case .accounts:
-        accountList
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      case .switchAccount(let account):
-        accountSwitchConfirmation(account)
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      case .signOut:
-        signOutConfirmation
-          .transition(reduceMotion ? .opacity : .dashMorph)
+    HStack(alignment: usesStackedLayout ? .top : .center, spacing: SettingsListMetrics.rowSpacing) {
+      SolarIcon(asset: icon, size: SettingsListMetrics.iconSize, color: iconColor)
+        .frame(width: SettingsListMetrics.iconColumn, height: SettingsListMetrics.iconColumn)
+
+      if usesStackedLayout {
+        VStack(alignment: .leading, spacing: 8) {
+          label
+          if hasTrailingContent {
+            trailingContent
+          }
+        }
+      } else {
+        label
+        Spacer(minLength: 12)
+        trailingContent
       }
     }
-    .dashTrayTitle(phase.title)
+    .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.vertical, 13)
+    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
   }
 
-  private var menu: some View {
-    VStack(spacing: 20) {
-      HStack(spacing: 16) {
-        UserAvatar(email: model.user?.email ?? "", size: 56)
-        VStack(alignment: .leading, spacing: 4) {
-          Text(model.profileTitle)
-            .dashTextStyle(.bodySemibold)
-          if let email = model.user?.email, email != model.profileTitle {
-            Text(email)
-              .dashTextStyle(.supporting)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          if let account = model.activeAccount, account.name != model.profileTitle {
-            Text(account.name)
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.placeholder)
-          }
-        }
-        Spacer(minLength: 0)
-      }
+  private var hasTrailingContent: Bool {
+    hasAccessory || trailing != nil || trailingIcon != nil || showsChevron
+  }
 
-      VStack(spacing: 10) {
-        menuRow(
-          title: DashL10n.string("Profile"), icon: SolarAsset.user, action: openProfile)
-        menuRow(
-          title: DashL10n.string("Settings"), icon: SolarAsset.settings, action: openSettings)
-        #if DEBUG
-          if let openDebug {
-            menuRow(title: "Debug", icon: SolarAsset.code, action: openDebug)
-          }
-        #endif
-        if model.accounts.count > 1 {
-          menuRow(title: DashL10n.string("Switch account"), icon: SolarAsset.users) {
-            withAnimation(DashTheme.Motion.morph) { phase = .accounts }
-          }
-        }
-
-        menuRow(
-          title: DashL10n.string("Sign out"), icon: SolarAsset.danger, tint: DashTheme.danger
-        ) {
-          withAnimation(DashTheme.Motion.morph) { phase = .signOut }
-        }
+  private var label: some View {
+    VStack(alignment: .leading, spacing: 3) {
+      Text(title)
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(textColor)
+        .lineLimit(usesStackedLayout ? nil : 2)
+      if let subtitle {
+        Text(subtitle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  private var accountList: some View {
-    VStack(spacing: 16) {
-      VStack(spacing: 10) {
-        ForEach(model.accounts) { account in
-          Button {
-            if account.id == model.activeAccountID {
-              dismiss()
-              return
-            }
-            withAnimation(DashTheme.Motion.morph) { phase = .switchAccount(account) }
-          } label: {
-            HStack(spacing: 12) {
-              Text(account.name)
-                .dashTextStyle(.bodyMedium)
-                .foregroundStyle(DashTheme.text)
-                .lineLimit(1)
-              Spacer(minLength: 0)
-              SolarIcon(
-                asset: account.id == model.activeAccountID
-                  ? SolarAsset.checkCircleFill : SolarAsset.circle,
-                size: 22,
-                color: account.id == model.activeAccountID
-                  ? DashTheme.brand : DashTheme.placeholder)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityAddTraits(account.id == model.activeAccountID ? .isSelected : [])
-        }
-      }
-
-      DashTrayTextButton(title: DashL10n.string("Back")) {
-        withAnimation(DashTheme.Motion.morph) { phase = .menu }
-      }
-    }
-  }
-
-  private func accountSwitchConfirmation(_ account: CloudflareAccount) -> some View {
-    VStack(spacing: 16) {
-      Text(
-        DashL10n.string(
-          "Switch to \(account.name)? Cached data and open screens for the current account will reset."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.top, 4)
-
-      DashTrayActionPair {
-        DashTrayTextButton(title: DashL10n.string("Cancel")) {
-          withAnimation(DashTheme.Motion.morph) { phase = .accounts }
-        }
-      } primary: {
-        DashActionButton(title: DashL10n.string("Switch account")) {
-          model.selectAccount(account)
-          dismiss()
-        }
-      }
-    }
-  }
-
-  private var signOutConfirmation: some View {
-    VStack(spacing: 16) {
-      Text(DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."))
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-
-      DashTrayActionPair {
-        DashTrayTextButton(title: DashL10n.string("Cancel")) {
-          withAnimation(DashTheme.Motion.morph) { phase = .menu }
-        }
-        .disabled(model.signOutActionPhase.isActive)
-      } primary: {
-        DashActionButton(
-          title: DashL10n.string("Sign out"),
-          role: .destructive,
-          phase: model.signOutActionPhase,
-          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-        ) {
-          Task {
-            await model.signOut(presentsCompletion: true)
-          }
-        }
-      }
-    }
-  }
-
-  private func menuRow(
-    title: String, icon: String, tint: Color = DashTheme.iconMuted,
-    action: @escaping () -> Void
-  ) -> some View {
-    Button(action: action) {
-      HStack(spacing: 12) {
-        SolarIcon(asset: icon, size: 22, color: tint)
-        Text(title)
+  private var trailingContent: some View {
+    HStack(spacing: 8) {
+      accessory()
+      if let trailing {
+        Text(trailing)
           .dashTextStyle(.bodyMedium)
-          .foregroundStyle(tint == DashTheme.danger ? DashTheme.danger : DashTheme.text)
-          .lineLimit(1)
-        Spacer(minLength: 0)
-        SolarIcon(
-          asset: SolarAsset.chevronRight, size: DashTheme.Chevron.row, color: DashTheme.placeholder)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.trailing)
+          .lineLimit(usesStackedLayout ? nil : 1)
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 14)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+      if let trailingIcon {
+        SolarIcon(asset: trailingIcon, size: 20, color: DashTheme.placeholder)
+      } else if showsChevron {
+        SolarIcon(
+          asset: SolarAsset.chevronRight,
+          size: DashTheme.Chevron.row,
+          color: DashTheme.placeholder
+        )
+      }
     }
-    .buttonStyle(DashSurfaceButtonStyle())
+    .frame(
+      maxWidth: usesStackedLayout ? .infinity : nil,
+      alignment: usesStackedLayout ? .trailing : .leading
+    )
   }
 }
 
-enum ProfileTrayPhase: Equatable, Sendable {
-  case menu
-  case accounts
-  case switchAccount(CloudflareAccount)
-  case signOut
+extension SettingsPlainRow where Accessory == EmptyView {
+  init(
+    title: String,
+    subtitle: String? = nil,
+    icon: String,
+    iconColor: Color = DashTheme.iconMuted,
+    textColor: Color = DashTheme.text,
+    trailing: String? = nil,
+    trailingIcon: String? = nil,
+    showsChevron: Bool = false
+  ) {
+    self.init(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      iconColor: iconColor,
+      textColor: textColor,
+      trailing: trailing,
+      trailingIcon: trailingIcon,
+      showsChevron: showsChevron,
+      hasAccessory: false,
+      accessory: { EmptyView() }
+    )
+  }
+}
 
-  var title: String {
-    switch self {
-    case .menu: DashL10n.string("Profile")
-    case .accounts, .switchAccount: DashL10n.string("Switch account")
-    case .signOut: DashL10n.string("Sign out")
+struct SettingsPlainToggleRow: View {
+  let title: String
+  var subtitle: String?
+  let icon: String
+  @Binding var isOn: Bool
+  var isEnabled = true
+  var isLoading = false
+
+  var body: some View {
+    Button {
+      isOn.toggle()
+    } label: {
+      SettingsPlainRow(title: title, subtitle: subtitle, icon: icon) {
+        DashSwitch(isOn: isOn)
+          .opacity(isLoading ? 0.72 : 1)
+      }
     }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .disabled(!isEnabled || isLoading)
+    .opacity(isEnabled ? 1 : 0.55)
+    .accessibilityElement(children: .combine)
+    .accessibilityValue(DashL10n.string(isOn ? "On" : "Off"))
+    .accessibilityAddTraits(.isToggle)
+  }
+}
+
+struct SettingsPlainDivider: View {
+  var featured = false
+
+  var body: some View {
+    Divider()
+      .overlay(DashTheme.hairline)
+      .padding(
+        .leading,
+        DashTheme.Spacing.screen
+          + (featured ? SettingsListMetrics.featuredLeading : SettingsListMetrics.iconColumn)
+          + SettingsListMetrics.rowSpacing
+      )
+      .padding(.trailing, DashTheme.Spacing.screen)
+  }
+}
+
+struct SettingsPlainSection<Content: View>: View {
+  let title: String
+  @ViewBuilder let content: () -> Content
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(DashL10n.ui(title).uppercased())
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.placeholder)
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .accessibilityAddTraits(.isHeader)
+
+      VStack(alignment: .leading, spacing: 0) {
+        content()
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+  }
+}
+
+private struct SettingsFeaturedRow<Leading: View>: View {
+  let title: String
+  let subtitle: String?
+  @ViewBuilder let leading: () -> Leading
+
+  var body: some View {
+    HStack(spacing: SettingsListMetrics.rowSpacing) {
+      leading()
+        .frame(
+          width: SettingsListMetrics.featuredLeading,
+          height: SettingsListMetrics.featuredLeading
+        )
+        .accessibilityHidden(true)
+
+      VStack(alignment: .leading, spacing: 4) {
+        Text(title)
+          .dashTextStyle(.sectionTitle)
+          .foregroundStyle(DashTheme.strong)
+          .fixedSize(horizontal: false, vertical: true)
+        if let subtitle {
+          Text(subtitle)
+            .dashTextStyle(.supporting)
+            .foregroundStyle(DashTheme.rowSubtitle)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      SolarIcon(
+        asset: SolarAsset.chevronRight,
+        size: DashTheme.Chevron.row,
+        color: DashTheme.placeholder
+      )
+    }
+    .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.vertical, 14)
+    .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
   }
 }
 
@@ -276,6 +304,7 @@ struct SettingsView: View {
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceWashPicker = false
   @State private var showsICloudSyncDetails = false
+  @State private var showsSignOutConfirmation = false
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
@@ -290,99 +319,140 @@ struct SettingsView: View {
     return DashAuthorizationScopes.shortcutsAndShareWrites.isSubset(of: grantedScopes)
   }
 
+  private var profileSubtitle: String? {
+    if let email = model.user?.email, email != model.profileTitle {
+      return email
+    }
+    return DashL10n.string("Profile")
+  }
+
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: DashTheme.Spacing.section) {
-        DashListGroup(title: "General") {
-          dashListCard {
-            Button {
-              showsLanguagePicker = true
-            } label: {
-              DashListRow(
-                title: DashL10n.string("Language"),
-                subtitle: DashL10n.string("App display language"),
-                icon: SolarAsset.Content.globus,
-                trailing: selectedLanguage.displayName
-              )
+      LazyVStack(spacing: DashTheme.Spacing.panel) {
+        VStack(spacing: 0) {
+          DashListGroupLink(value: .profile) {
+            SettingsFeaturedRow(
+              title: model.profileTitle,
+              subtitle: profileSubtitle
+            ) {
+              UserAvatar(email: model.user?.email ?? "", size: 56)
             }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityHint(DashL10n.string("Choose English, Simplified Chinese, or System"))
-            .dashListCardInset()
           }
+          .accessibilityIdentifier("settings-profile-row")
+          .accessibilityHint(DashL10n.string("Profile"))
 
-          DashToggleRow(
+          if model.accounts.count > 1 {
+            SettingsPlainDivider(featured: true)
+
+            DashListGroupLink(value: .settingsAccounts) {
+              SettingsFeaturedRow(
+                title: DashL10n.string("Switch account"),
+                subtitle: model.activeAccount?.name
+              ) {
+                SolarIcon(
+                  asset: SolarAsset.users,
+                  size: 38,
+                  color: DashTheme.iconMuted
+                )
+              }
+            }
+            .accessibilityIdentifier("settings-switch-account")
+          }
+        }
+
+        SettingsPlainSection(title: "General") {
+          Button {
+            showsLanguagePicker = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Language"),
+              subtitle: DashL10n.string("App display language"),
+              icon: SolarAsset.globus,
+              trailing: selectedLanguage.displayName,
+              trailingIcon: SolarAsset.menuDots
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityHint(DashL10n.string("Choose English, Simplified Chinese, or System"))
+
+          SettingsPlainDivider()
+
+          SettingsPlainToggleRow(
             title: DashL10n.string("Haptic feedback"),
             subtitle: DashL10n.string("Vibrate on button presses, selections, and confirmations."),
+            icon: SolarAsset.boltCircle,
             isOn: $hapticsEnabled
           )
           .onChange(of: hapticsEnabled) { _, enabled in
             if enabled { DashDelight.lightImpact() }
           }
 
-          DashToggleRow(
+          SettingsPlainDivider()
+
+          SettingsPlainToggleRow(
             title: DashL10n.string("Hold to confirm"),
             subtitle: DashL10n.string(
               "Require a long press to confirm deletes and other irreversible actions."
             ),
+            icon: SolarAsset.lock,
             isOn: $holdToConfirmEnabled
           )
         }
 
-        DashListGroup(title: "Appearance") {
-          dashListCard {
-            Button {
-              showsWorkspaceWashPicker = true
-            } label: {
-              DashListRow(
-                title: DashL10n.string("Top glow"),
-                subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
-                icon: SolarAsset.Content.slider,
-                iconColor: DashTheme.workspaceWash(for: selectedWorkspaceWash),
-                trailing: selectedWorkspaceWash.displayName
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityIdentifier("workspace-wash-color")
-            .dashListCardInset()
+        SettingsPlainSection(title: "Appearance") {
+          Button {
+            showsWorkspaceWashPicker = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Top glow"),
+              subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
+              icon: SolarAsset.slider,
+              trailing: selectedWorkspaceWash.displayName,
+              trailingIcon: SolarAsset.menuDots
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("workspace-wash-color")
         }
 
-        DashListGroup(title: "iCloud") {
-          DashToggleRow(
+        SettingsPlainSection(title: "iCloud") {
+          SettingsPlainToggleRow(
             title: DashL10n.string("Sync settings"),
             subtitle: DashL10n.string(
               iCloudSyncEnabled
                 ? "Keep selected Dash preferences in sync across iPhones using your iCloud account."
                 : "Settings on this iPhone stay local."
             ),
+            icon: SolarAsset.cloud,
             isOn: $iCloudSyncEnabled
           )
           .accessibilityIdentifier("icloud-settings-sync")
 
-          dashListCard {
-            Button {
-              showsICloudSyncDetails = true
-            } label: {
-              DashListRow(
-                title: DashL10n.string("What syncs"),
-                subtitle: DashL10n.string(
-                  "Quick actions, Shortcuts, Watchtower charts, and Top glow."
-                ),
-                icon: SolarAsset.Content.cloud
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityIdentifier("icloud-settings-details")
-            .dashListCardInset()
+          SettingsPlainDivider()
+
+          Button {
+            showsICloudSyncDetails = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("What syncs"),
+              subtitle: DashL10n.string(
+                "Quick actions, Shortcuts, Watchtower charts, and Top glow."
+              ),
+              icon: SolarAsset.file,
+              showsChevron: true
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("icloud-settings-details")
         }
 
-        DashListGroup(title: "Watchtower") {
-          DashToggleRow(
+        SettingsPlainSection(title: "Watchtower") {
+          SettingsPlainToggleRow(
             title: DashL10n.string("Notifications"),
             subtitle: DashL10n.string(
               "Cloudflare delivers an alert here when one of your notification policies fires."
             ),
+            icon: SolarAsset.inbox,
             isOn: $watchtowerNotifications
           )
           .onChange(of: watchtowerNotifications) { _, enabled in
@@ -407,121 +477,142 @@ struct SettingsView: View {
               kind: .warning,
               message: DashL10n.string(
                 "Notifications are turned off in iOS Settings. Enable them for Dash to get alerts."
-              ))
+              )
+            )
+            .padding(.horizontal, DashTheme.Spacing.screen)
+            .padding(.bottom, 8)
           }
         }
 
         PushAlertsSettingsCard()
 
-        DashListGroup(title: "Shortcuts") {
-          dashListCard {
-            DashListRow(
-              title: DashL10n.string("Siri & Shortcuts"),
-              subtitle: DashL10n.string(
-                "Purge Cache, Under Attack, Development Mode, Upload to R2, and Open Watchtower."
-              ),
-              icon: SolarAsset.Content.bolt
-            )
-            .dashListCardInset()
-            .accessibilityHint(
-              DashL10n.string("Available in the Shortcuts app when Dash is signed in"))
-          }
+        SettingsPlainSection(title: "Shortcuts") {
+          SettingsPlainRow(
+            title: DashL10n.string("Siri & Shortcuts"),
+            subtitle: DashL10n.string(
+              "Purge Cache, Under Attack, Development Mode, Upload to R2, and Open Watchtower."
+            ),
+            icon: SolarAsset.bolt
+          )
+          .accessibilityHint(
+            DashL10n.string("Available in the Shortcuts app when Dash is signed in"))
 
-          dashListCard {
-            if hasShortcutsAndShareWriteAccess {
-              DashListRow(
+          SettingsPlainDivider()
+
+          if hasShortcutsAndShareWriteAccess {
+            SettingsPlainRow(
+              title: DashL10n.string("Shortcuts & Share write access"),
+              subtitle: DashL10n.string(
+                "Purge Cache, domain security modes, and R2 uploads are authorized."
+              ),
+              icon: SolarAsset.shieldCheck,
+              trailing: DashL10n.string("Granted")
+            )
+          } else {
+            Button {
+              model.requestAccess(to: DashAuthorizationScopes.shortcutsAndShareWrites)
+            } label: {
+              SettingsPlainRow(
                 title: DashL10n.string("Shortcuts & Share write access"),
                 subtitle: DashL10n.string(
-                  "Purge Cache, domain security modes, and R2 uploads are authorized."
+                  "Dash requests all permissions used by its current features in one authorization."
                 ),
-                icon: SolarAsset.Content.shieldCheck,
-                trailing: DashL10n.string("Granted")
+                icon: SolarAsset.shieldCheck,
+                trailing: model.isAuthenticating
+                  ? DashL10n.string("Opening…") : DashL10n.string("Grant"),
+                showsChevron: true
               )
-              .dashListCardInset()
-            } else {
-              Button {
-                model.requestAccess(to: DashAuthorizationScopes.shortcutsAndShareWrites)
-              } label: {
-                DashListRow(
-                  title: DashL10n.string("Shortcuts & Share write access"),
-                  subtitle: DashL10n.string(
-                    "Dash requests all permissions used by its current features in one authorization."
-                  ),
-                  icon: SolarAsset.Content.shieldCheck,
-                  trailing: model.isAuthenticating
-                    ? DashL10n.string("Opening…") : DashL10n.string("Grant")
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              .disabled(model.isAuthenticating)
-              .accessibilityHint(
-                DashL10n.string("Opens Cloudflare to review the requested permissions")
-              )
-              .dashListCardInset()
             }
-          }
-        }
-
-        DashListGroup(title: "Help & legal") {
-          dashListCard {
-            externalRow(
-              title: DashL10n.string("Send feedback"),
-              subtitle: DashL10n.string("Email i@xat.sh"),
-              icon: SolarAsset.inbox,
-              destination: DashHelpLink.feedback,
-              accessibilityHint: DashL10n.string("Opens your email app")
-            )
-
-            DashListGroupDivider()
-
-            externalRow(
-              title: DashL10n.string("Privacy Policy"),
-              subtitle: DashL10n.string("How Dash handles account and device data"),
-              icon: SolarAsset.Content.shieldCheck,
-              destination: DashHelpLink.privacy,
-              accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
-            )
-
-            DashListGroupDivider()
-
-            externalRow(
-              title: DashL10n.string("Terms of Use"),
-              subtitle: DashL10n.string("Independent client and operation responsibilities"),
-              icon: SolarAsset.Content.file,
-              destination: DashHelpLink.terms,
-              accessibilityHint: DashL10n.string("Opens the terms on dash.xat.sh")
+            .buttonStyle(DashSurfaceButtonStyle())
+            .disabled(model.isAuthenticating)
+            .accessibilityHint(
+              DashL10n.string("Opens Cloudflare to review the requested permissions")
             )
           }
         }
 
-        DashListGroup(title: "About") {
-          dashListCard {
-            DashListGroupLink(value: .about) {
-              DashListRow(
-                title: DashL10n.string("About Dash"),
-                subtitle: DashL10n.string("Version and app details"),
-                icon: SolarAsset.Content.cloud
-              )
-            }
-            .dashListCardInset()
+        SettingsPlainSection(title: "Help & legal") {
+          externalRow(
+            title: DashL10n.string("Send feedback"),
+            subtitle: DashL10n.string("Email i@xat.sh"),
+            icon: SolarAsset.inbox,
+            destination: DashHelpLink.feedback,
+            accessibilityHint: DashL10n.string("Opens your email app")
+          )
+
+          SettingsPlainDivider()
+
+          externalRow(
+            title: DashL10n.string("Privacy Policy"),
+            subtitle: DashL10n.string("How Dash handles account and device data"),
+            icon: SolarAsset.shieldCheck,
+            destination: DashHelpLink.privacy,
+            accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
+          )
+
+          SettingsPlainDivider()
+
+          externalRow(
+            title: DashL10n.string("Terms of Use"),
+            subtitle: DashL10n.string("Independent client and operation responsibilities"),
+            icon: SolarAsset.file,
+            destination: DashHelpLink.terms,
+            accessibilityHint: DashL10n.string("Opens the terms on dash.xat.sh")
+          )
+        }
+
+        SettingsPlainSection(title: "About") {
+          DashListGroupLink(value: .about) {
+            SettingsPlainRow(
+              title: DashL10n.string("About Dash"),
+              subtitle: DashL10n.string("Version and app details"),
+              icon: SolarAsset.userCircle,
+              showsChevron: true
+            )
           }
 
-          dashListCard {
-            DashListGroupLink(value: .openSource) {
-              DashListRow(
-                title: DashL10n.string("Open source"),
-                subtitle: DashL10n.string("Libraries and icons that power Dash"),
-                icon: SolarAsset.Content.code
+          SettingsPlainDivider()
+
+          DashListGroupLink(value: .openSource) {
+            SettingsPlainRow(
+              title: DashL10n.string("Open source"),
+              subtitle: DashL10n.string("Libraries and icons that power Dash"),
+              icon: SolarAsset.code,
+              showsChevron: true
+            )
+          }
+
+          #if DEBUG
+            SettingsPlainDivider()
+
+            DashListGroupLink(value: .debug) {
+              SettingsPlainRow(
+                title: "Debug",
+                icon: SolarAsset.codeCircle,
+                showsChevron: true
               )
             }
-            .dashListCardInset()
+          #endif
+        }
+
+        SettingsPlainSection(title: "Account") {
+          Button {
+            showsSignOutConfirmation = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Sign out"),
+              icon: SolarAsset.danger,
+              iconColor: DashTheme.danger,
+              textColor: DashTheme.danger
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("settings-sign-out")
         }
       }
-      .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.vertical, DashTheme.Spacing.section)
     }
-    .background(DashTheme.canvas)
+    .background(DashTheme.canvas.ignoresSafeArea())
     .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
     .dashTray(
       isPresented: $showsLanguagePicker,
@@ -541,6 +632,12 @@ struct SettingsView: View {
     ) {
       ICloudSyncDetailsTray(isEnabled: iCloudSyncEnabled)
     }
+    .dashTray(
+      isPresented: $showsSignOutConfirmation,
+      title: DashL10n.string("Sign out")
+    ) {
+      SignOutConfirmationContent()
+    }
     .onChange(of: iCloudSyncEnabled) { _, enabled in
       ICloudPreferencesSync.shared.setEnabled(enabled)
     }
@@ -559,15 +656,144 @@ struct SettingsView: View {
     Button {
       openURL(destination)
     } label: {
-      DashListRow(
+      SettingsPlainRow(
         title: title,
         subtitle: subtitle,
-        icon: icon
+        icon: icon,
+        showsChevron: true
       )
     }
     .buttonStyle(DashSurfaceButtonStyle())
     .accessibilityHint(accessibilityHint)
-    .dashListCardInset()
+  }
+}
+
+struct SettingsAccountsView: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dismiss) private var dismiss
+  @State private var pendingAccount: CloudflareAccount?
+
+  var body: some View {
+    ScrollView {
+      LazyVStack(spacing: 0) {
+        ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
+          if index > 0 {
+            SettingsPlainDivider()
+          }
+
+          Button {
+            guard account.id != model.activeAccountID else {
+              dismiss()
+              return
+            }
+            pendingAccount = account
+          } label: {
+            SettingsPlainRow(
+              title: account.name,
+              subtitle: account.id == model.activeAccountID
+                ? DashL10n.string("Active account") : nil,
+              icon: SolarAsset.users
+            ) {
+              SolarIcon(
+                asset: account.id == model.activeAccountID
+                  ? SolarAsset.checkCircleFill : SolarAsset.circle,
+                size: 22,
+                color: account.id == model.activeAccountID
+                  ? DashTheme.brand : DashTheme.placeholder
+              )
+            }
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityAddTraits(account.id == model.activeAccountID ? .isSelected : [])
+        }
+      }
+      .padding(.vertical, DashTheme.Spacing.section)
+    }
+    .background(DashTheme.canvas.ignoresSafeArea())
+    .detailHeader(icon: .solar(SolarAsset.Content.user), title: "Switch account")
+    .dashTray(
+      item: $pendingAccount,
+      title: { _ in DashL10n.string("Switch account") },
+      content: { account in
+        AccountSwitchConfirmationContent(account: account) {
+          pendingAccount = nil
+        }
+      }
+    )
+  }
+}
+
+private struct AccountSwitchConfirmationContent: View {
+  @Environment(AppModel.self) private var model
+  let account: CloudflareAccount
+  let cancel: () -> Void
+
+  var body: some View {
+    VStack(spacing: 16) {
+      Text(
+        DashL10n.string(
+          "Switch to \(account.name)? Cached data and open screens for the current account will reset."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.top, 4)
+
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Cancel"), action: cancel)
+      } primary: {
+        DashActionButton(title: DashL10n.string("Switch account")) {
+          model.selectAccount(account)
+        }
+      }
+    }
+  }
+}
+
+private struct SignOutConfirmationContent: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 16) {
+      Text(DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."))
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+
+      Text(
+        DashL10n.string(
+          "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+
+      DashTrayActionPair {
+        DashTrayTextButton(title: DashL10n.string("Cancel"), action: dismiss)
+          .disabled(model.signOutActionPhase.isActive)
+      } primary: {
+        DashActionButton(
+          title: DashL10n.string("Sign out"),
+          role: .destructive,
+          phase: model.signOutActionPhase,
+          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+        ) {
+          Task {
+            await model.signOut(presentsCompletion: true)
+          }
+        }
+      }
+    }
   }
 }
 
@@ -956,9 +1182,9 @@ enum ProfileAccountRenameAccess {
   }
 }
 
-/// The standalone Profile page, pushed from the avatar tray's Profile row:
+/// The standalone Profile page, pushed from the Settings hub's identity row:
 /// identity, user id and registration date, and the active account's details.
-/// Switching accounts and signing out stay on the tray menu.
+/// Account switching and sign-out stay one level up in Settings.
 struct ProfileView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1071,6 +1297,14 @@ struct ProfileView: View {
 
         DashListGroup(title: "Account") {
           dashListCard {
+            DashListGroupLink(value: .registrarDomains) {
+              DashListRow(
+                title: DashL10n.string("Registered domains"),
+                subtitle: DashL10n.string("Domains you bought on Cloudflare"),
+                icon: SolarAsset.Content.globus
+              )
+            }
+            .dashListCardInset()
             DashListGroupLink(value: .auditLogs) {
               DashListRow(
                 title: DashL10n.string("Audit log"),

@@ -1,7 +1,7 @@
 import Foundation
 
 enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case zones, workers, pages, r2, kv
+  case zones, workers, pages, r2, kv, tunnels
 
   var id: String { rawValue }
   var title: String {
@@ -53,6 +53,7 @@ struct FeatureDescriptor: Hashable, Sendable {
 enum Destination: Hashable {
   case profile
   case settings
+  case settingsAccounts
   case about
   /// Settings → Open source: third-party libraries and icon sets Dash ships.
   case openSource
@@ -70,11 +71,25 @@ enum Destination: Hashable {
   case zoneWebAnalytics(String)
   case zoneWAF(String)
   case zoneSettings(String)
+  /// Email Routing for one zone: routes, catch-all, and plus addressing.
+  case zoneEmailRouting(String)
   case auditLogs
   case pushAlerts
+  /// Settings → Files: one opt-in R2 File Provider domain per Cloudflare account.
+  case filesMount
   /// Watchtower notification inbox (Cloudflare history + Dash detections).
   case watchtowerInbox
+  /// Account-level Email Routing destination addresses.
+  case emailAddresses
+  /// Cloudflare Registrar, reached from Profile → Account.
+  case registrarDomains
+  /// One Cloudflare Registrar domain, keyed on its FQDN.
+  case registrarDomain(String)
+  /// Render-ready snapshot of the chart the user tapped; never refetches.
+  case chartDetail(DashChartDetail)
   case worker(String)
+  /// One Cloudflare Tunnel, keyed on its immutable id.
+  case tunnel(String)
   case pagesProject(String)
   case pagesDeployment(project: String, deploymentID: String)
   case pagesDomains(String)
@@ -113,6 +128,11 @@ enum FeatureCatalog {
       .kv, "KV", "Namespaces, keys, and values", "list.bullet.rectangle",
       "SolarKeyMinimalisticFill", "SolarKeyMinimalisticOutline", "Storage & Data",
       read: ["workers-kv-storage.read"], write: ["workers-kv-storage.write"]),
+    // Networks
+    feature(
+      .tunnels, "Tunnels", "Connectors, hostnames, and private routes",
+      "point.3.connected.trianglepath.dotted", "SolarRoutingFill", "SolarRoutingOutline",
+      "Networks", read: ["argotunnel.read"], write: []),
   ]
 
   private static let byID = Dictionary(uniqueKeysWithValues: descriptors.map { ($0.id, $0) })

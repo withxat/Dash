@@ -253,9 +253,7 @@ struct R2ObjectRow: View {
     Button(action: action) {
       DashListRow(
         title: title,
-        subtitle: object.size.map {
-          ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file)
-        },
+        subtitle: objectSubtitle,
         icon: FileTypeIcon.asset(forKey: object.key),
         iconColor: DashTheme.iconMuted,
         thumbnail: thumbnail,
@@ -306,11 +304,25 @@ struct R2ObjectRow: View {
     }
   }
 
+  private var objectSubtitle: String? {
+    guard let size = object.size else { return nil }
+    let formattedSize = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+    guard size > R2Media.transferSizeLimit else { return formattedSize }
+    let hasMountedAccount =
+      model.activeAccountID.map {
+        FileProviderDomains.mirroredAccountIDs().contains($0)
+      } ?? false
+    let limitCopy =
+      hasMountedAccount
+      ? DashL10n.string("Over Dash's 100 MB preview limit — open in Files")
+      : DashL10n.string("Over Dash's 100 MB preview limit")
+    return "\(formattedSize) · \(limitCopy)"
+  }
+
   private var objectAccessibilityLabel: String {
     var parts = [title]
-    if let size = object.size {
-      parts.append(
-        ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
+    if let objectSubtitle {
+      parts.append(objectSubtitle)
     }
     if selecting { parts.append(selected ? "Selected" : "Not selected") }
     return parts.joined(separator: ", ")

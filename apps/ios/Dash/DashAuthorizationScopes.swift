@@ -11,18 +11,20 @@ enum DashAuthorizationScopes {
     .pages,
     .r2,
     .kv,
+    .tunnels,
   ]
 
   /// Read scopes used by nested screens that are not represented by a
   /// standalone FeatureID. These keep the Demo's read-only profile able to load
   /// every catalog surface without mutation permission.
   ///
-  /// Watchtower's client-side health checks are gone, and with them the reasons
-  /// to ask for `argotunnel.read`, `load-balancing-monitors-and-pools.read`,
-  /// `registrar-domains.read`, `healthcheck.read` and
-  /// `ssl-and-certificates.read`. Do not add a scope back without a screen that
-  /// calls the endpoint — the sign-in sheet is the user's only view of what Dash
-  /// can reach.
+  /// Tunnels list/detail calls `argotunnel.read`; its positive Protected badge
+  /// calls `access.read`; Registrar list/detail calls
+  /// `registrar-domains.read`. Email Routing rules and destination addresses
+  /// call their matching read scopes. The removed load-balancing, health-check,
+  /// and SSL scopes remain absent because no current screen calls them. Do not
+  /// add a scope without a screen that calls the endpoint — the sign-in sheet
+  /// is the user's only view of what Dash can reach.
   ///
   /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
   /// lives only in a feature's capability disappears from the OAuth request
@@ -35,6 +37,10 @@ enum DashAuthorizationScopes {
     "notifications.read",
     "account-analytics.read",
     "analytics.read",
+    "email-routing-rule.read",
+    "email-routing-address.read",
+    "registrar-domains.read",
+    "access.read",
   ]
 
   /// Mutating operations that are not represented by a FeatureID. They remain
@@ -45,6 +51,9 @@ enum DashAuthorizationScopes {
     "dns.write",
     "cache.purge",
     "notifications.write",
+    "email-routing-rule.write",
+    "email-routing-address.write",
+    "registrar-domains.admin",
   ]
 
   /// Mutations exposed outside Dash's normal feature screens. App Intents and

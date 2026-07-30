@@ -19,6 +19,7 @@ enum DashRouteAccountResolution: Equatable, Sendable {
 ///   dash://pages/<name>[/domains|/deployments/<id>]
 ///   dash://r2/<name>
 ///   dash://kv/<id>
+///   dash://registrar/<domain>
 ///
 /// Any route may be bound to a Cloudflare account with
 /// `?account=<account-id>`. Unscoped links remain valid for backwards
@@ -41,6 +42,8 @@ enum DashRoute: Hashable, Sendable {
   case pagesDomains(String)
   case r2(String)
   case kv(String)
+  /// One Cloudflare Registrar domain, keyed on the FQDN.
+  case registrarDomain(String)
   indirect case scoped(accountID: String, route: DashRoute)
 
   static func parse(_ url: URL) -> DashRoute? {
@@ -105,6 +108,9 @@ enum DashRoute: Hashable, Sendable {
     case "kv":
       guard let id = segments.first else { return nil }
       return .kv(id)
+    case "registrar":
+      guard let domain = segments.first, domain.contains(".") else { return nil }
+      return .registrarDomain(domain.lowercased())
     default:
       return nil
     }
@@ -168,6 +174,7 @@ enum DashRoute: Hashable, Sendable {
     case .pagesDomains(let name): .pagesDomains(name)
     case .r2(let name): .r2Bucket(name, prefix: "")
     case .kv(let id): .kvNamespace(id)
+    case .registrarDomain(let domain): .registrarDomain(domain)
     case .scoped(_, let route): route.destination
     }
   }

@@ -203,9 +203,17 @@ struct PagesProjectDetailView: View {
     // surface split on `DashGlassCard`.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Build outcomes")
-          .dashTextStyle(.footnoteSemibold)
-          .foregroundStyle(DashTheme.subtle)
+        DestinationLink(destination: .chartDetail(buildOutcomesDetail)) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Build outcomes")
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 4)
+            DashChartDisclosure(trend: nil)
+          }
+          .contentShape(Rectangle())
+        }
+        .accessibilityHint("Shows chart details")
         DitherPieChart(
           slices: outcomeSlices,
           innerRadiusRatio: 0.62,
@@ -227,6 +235,24 @@ struct PagesProjectDetailView: View {
         filterStrip
       }
     }
+  }
+
+  private var buildOutcomesDetail: DashChartDetail {
+    DashChartDetail(
+      title: "Build outcomes",
+      rangeLabel: "Deployments",
+      summaryValue: deployments.count.formatted(
+        .number.locale(DashL10n.activeLocale)),
+      trend: nil,
+      categoryAxisLabel: "Outcome",
+      valueAxisLabel: "Deployments",
+      axisValueFormat: .number(maximumFractionDigits: 0),
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      accessibilitySummary: PagesDeploymentChartModel.chartAccessibilitySummary(
+        buckets: PagesDeploymentChartModel.buckets(deployments)),
+      content: .pie(slices: outcomeSlices),
+      featureID: .pages,
+      readScopes: FeatureID.pages.capability.read)
   }
 
   @ViewBuilder

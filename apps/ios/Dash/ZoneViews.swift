@@ -262,6 +262,10 @@ struct ZoneDetailView: View {
   }
 
   @State private var rdap: RdapRegistration?
+  /// The account's own Cloudflare Registrar record for this domain, when there
+  /// is one. First-party data beats RDAP: it is current, never redacted, and it
+  /// is the only source that knows whether auto-renew is on.
+  @State private var registrarRegistration: RegistrarDomainSummary?
   /// Starts cold, not settled: a lookup always follows the zone load, so the
   /// section paints placeholder rows from the first frame the zone is on screen
   /// instead of inserting a card under the hero when the answer arrives.
@@ -284,6 +288,10 @@ struct ZoneDetailView: View {
     ZoneTool(
       title: "Cache", icon: SolarAsset.Content.bolt, route: Destination.cache,
       blurb: "Purge by URL or everything"),
+    ZoneTool(
+      title: "Email routing", icon: SolarAsset.Content.inbox,
+      route: Destination.zoneEmailRouting,
+      blurb: "Forward mail to an inbox you already use"),
     ZoneTool(
       title: "Settings", icon: SolarAsset.Content.settings, route: Destination.zoneSettings,
       blurb: "Under Attack, SSL, and dev mode"),
@@ -440,14 +448,14 @@ struct ZoneDetailView: View {
       error = nil
       recordRecent(cached)
       if !force {
-        await loadRdap(for: cached, force: false)
+        await loadRegistration(for: cached, force: false)
         return
       }
     } else if !force, let cached: CloudflareZone = model.featureCache.get(key) {
       zone = cached
       error = nil
       recordRecent(cached)
-      await loadRdap(for: cached, force: false)
+      await loadRegistration(for: cached, force: false)
       return
     }
     do {
@@ -456,7 +464,7 @@ struct ZoneDetailView: View {
       model.featureCache.set(key, fetched)
       error = nil
       recordRecent(fetched)
-      await loadRdap(for: fetched, force: true)
+      await loadRegistration(for: fetched, force: true)
     } catch {
       guard !error.dashIsCancellation else { return }
       // The displayed zone stays on screen; a failed refresh surfaces the
@@ -465,11 +473,47 @@ struct ZoneDetailView: View {
     }
   }
 
+  /// Registration precedence, in order: (1) no `registrar-domains.read` grant →
+  /// RDAP unchanged; (2) the account's registrar index, fetched once per session
+  /// and shared with `RegistrarDomainsView` through one cache key; (3) matched
+  /// on the zone's own name by **exact equality** — a registrar-owned
+  /// `example.com` says nothing about a `blog.example.com` zone's record;
+  /// (4) a hit renders first-party and RDAP is never called; (5) a miss falls
+  /// through to RDAP, unchanged; (6) a failed index falls through too, and only
+  /// if RDAP *also* fails does the section go `.failed`, carrying the RDAP
+  /// message since that was the last thing actually asked; (7) a 403 is treated
+  /// as a miss and cached as a negative marker. A missing scope must affect only
+  /// its own feature — it must never turn this card red.
+  private func loadRegistration(for zone: CloudflareZone, force: Bool) async {
+    if let registration = await RegistrarZoneRegistration.firstParty(
+      forZoneNamed: zone.name, model: model)
+    {
+      settleRegistrar(registration)
+      await scheduleExpiryReminder(
+        domain: registration.name,
+        expiresOn: registration.expiresOn,
+        renewal: registration.renewal)
+      return
+    }
+    await loadRdap(for: zone, force: force)
+  }
+
+  private func settleRegistrar(_ registration: RegistrarDomainSummary) {
+    withAnimation(DashTheme.Motion.content) {
+      registrarRegistration = registration
+      rdap = nil
+      rdapPhase = .content
+    }
+  }
+
   private func loadRdap(for zone: CloudflareZone, force: Bool) async {
     let key = FeatureCacheKey.zoneRdap(zoneID)
     if !force, let cached: RdapRegistration = model.featureCache.get(key) {
       settleRdap(cached, phase: .content)
-      await scheduleExpiryReminder(cached, zoneName: zone.name)
+      await scheduleExpiryReminder(
+        domain: zone.name,
+        expiresOn: cached.expiresOn.flatMap(ExpiryReminders.date(fromISO8601:)),
+        renewal: .thirdParty)
       return
     }
     do {
@@ -481,7 +525,10 @@ struct ZoneDetailView: View {
       settleRdap(registration, phase: .content)
       if let registration {
         model.featureCache.set(key, registration)
-        await scheduleExpiryReminder(registration, zoneName: zone.name)
+        await scheduleExpiryReminder(
+          domain: zone.name,
+          expiresOn: registration.expiresOn.flatMap(ExpiryReminders.date(fromISO8601:)),
+          renewal: .thirdParty)
       }
     } catch {
       // `.task` identity changes cancel this lookup; that is not a failure the
@@ -495,37 +542,38 @@ struct ZoneDetailView: View {
 
   private func settleRdap(_ registration: RdapRegistration?, phase: DashSectionPhase) {
     withAnimation(DashTheme.Motion.content) {
+      registrarRegistration = nil
       rdap = registration
       rdapPhase = phase
     }
   }
 
-  private func retryRdap() async {
+  private func retryRegistration() async {
     guard let zone = displayedZone else { return }
     withAnimation(DashTheme.Motion.content) { rdapPhase = .loading }
-    await loadRdap(for: zone, force: true)
+    await loadRegistration(for: zone, force: true)
   }
 
   /// Rides along with the registration card's own lookup — no extra request, and
   /// the reminder is refreshed every time the user opens the domain, so a
   /// renewal moves the schedule the next time they visit.
+  ///
+  /// Keyed on the domain name rather than the zone id, and routed through the
+  /// same helper the registrar screen calls, so the two screens describe one
+  /// deadline instead of double-booking it. `renewal` is what keeps a
+  /// self-renewing Cloudflare registration from getting a countdown at all.
   private func scheduleExpiryReminder(
-    _ registration: RdapRegistration,
-    zoneName: String
+    domain: String,
+    expiresOn: Date?,
+    renewal: ExpiryReminders.Renewal
   ) async {
-    guard !model.isDemoSession,
-      let accountID = model.activeAccountID,
-      let raw = registration.expiresOn,
-      let expiresOn = ExpiryReminders.date(fromISO8601: raw)
-    else { return }
-    await ExpiryReminders.schedule(
-      ExpiryReminders.plans(
-        subject: .domain,
-        displayName: zoneName,
-        accountID: accountID,
-        resourceID: zoneID,
-        expiresOn: expiresOn,
-        route: WatchtowerNotifier.zoneRoute(zoneID: zoneID, accountID: accountID)))
+    guard !model.isDemoSession, let accountID = model.activeAccountID else { return }
+    await ExpiryReminders.applyDomainReminder(
+      domain: domain,
+      accountID: accountID,
+      expiresOn: expiresOn,
+      renewal: renewal,
+      route: WatchtowerNotifier.zoneRoute(zoneID: zoneID, accountID: accountID))
   }
 
   /// The zone's name only exists after a load, so recency is recorded here
@@ -653,22 +701,27 @@ struct ZoneDetailView: View {
   }
 
   /// Registration is a *secondary* fetch inside an already-loaded detail, so it
-  /// carries its own phase: placeholders while the relay answers, the fields
-  /// when it does, the failure veiled over those same placeholders when it
+  /// carries its own phase: placeholders while the lookup runs, the fields when
+  /// it answers, the failure veiled over those same placeholders when it
   /// doesn't. Only a settled-empty lookup drops the section entirely — an
   /// answer of “no public record” is not worth a permanent card.
+  ///
+  /// Both paths share one frame and one placeholder count, so the section never
+  /// changes shape depending on which source answered.
   @ViewBuilder
   private func registrationGroup() -> some View {
-    if rdapPhase != .content || rdap != nil {
+    if registrarRegistration != nil || rdapPhase != .content || rdap != nil {
       DashInfoGroup(
         title: "Registration",
         phase: rdapPhase,
         // The four fields below, so the arriving values land on the
         // placeholder instead of growing the section.
         placeholderRows: 4,
-        retry: { Task { await retryRdap() } }
+        retry: { Task { await retryRegistration() } }
       ) {
-        if let registration = rdap {
+        if let registration = registrarRegistration {
+          RegistrarRegistrationRows(summary: registration)
+        } else if let registration = rdap {
           if let registrar = registration.registrar {
             DashInfoRow("Registrar", value: registrar)
           }
@@ -684,6 +737,13 @@ struct ZoneDetailView: View {
         }
       }
       .dashSectionBoundary()
+      // First-party path only. A domain registered elsewhere has no
+      // `/registrar/registrations` record, so a link that is always there would
+      // push a screen that 404s.
+      if let registration = registrarRegistration {
+        RegistrarManageLink(domain: registration.name)
+          .dashItemBoundary()
+      }
     }
   }
 }
@@ -716,22 +776,6 @@ private func rdapDateLabel(_ value: String) -> String {
     return day.string(from: date)
   }
   return String(value.prefix(10))
-}
-
-/// RDAP sends spaced statuses ("client transfer prohibited"); the WHOIS
-/// fallback sends EPP camelCase ("clientTransferProhibited"). Fold both into
-/// one English source form so a single catalog key localizes them.
-private func rdapStatusLabel(_ raw: String) -> String {
-  var spaced = raw.replacingOccurrences(of: "_", with: " ")
-  if !spaced.contains(" ") {
-    var split = ""
-    for character in spaced {
-      if character.isUppercase, !split.isEmpty { split.append(" ") }
-      split.append(character)
-    }
-    spaced = split
-  }
-  return DashL10n.ui(spaced.lowercased().capitalized)
 }
 
 /// Native glass control on the detail hero card — opens the color picker.
@@ -1105,6 +1149,12 @@ struct DNSRecordsView: View {
   let zoneID: String
   @State private var records: [DNSRecord] = []
   @State private var selected: DNSRecord?
+  /// Email Routing's apex MX / SPF records are locked by Cloudflare. See
+  /// `EmailRoutingDNSGuard`: the Managed badge is decoration and vanishes
+  /// silently on a failed plan fetch, while the edit gate remains independent
+  /// of that plan.
+  @State private var emailRoutingGuard = EmailRoutingDNSGuard()
+  @State private var lockedRecord: DNSRecord?
   @State private var createsRecord = false
   @State private var loading = true
   @State private var loadMorePhase: DashActionPhase = .idle
@@ -1157,7 +1207,11 @@ struct DNSRecordsView: View {
         dashListCard {
           dashListCardRows(items: visibleRecords) { record in
             Button {
-              selected = record
+              if emailRoutingGuard.isLocked(record) {
+                lockedRecord = record
+              } else {
+                selected = record
+              }
             } label: {
               DashListRow(
                 title: record.name,
@@ -1167,7 +1221,9 @@ struct DNSRecordsView: View {
                 // Proxied keeps the orange cloud; unproxied inherits the
                 // zones catalog green.
                 iconColor: record.proxied == true ? DashTheme.accent : nil
-              )
+              ) {
+                if emailRoutingGuard.isManaged(record) { StatusBadge(.managed) }
+              }
             }
             .buttonStyle(DashSurfaceButtonStyle())
             .accessibilityIdentifier("dns-record-\(record.id)")
@@ -1211,11 +1267,71 @@ struct DNSRecordsView: View {
         }
       }
     )
+    .dashTray(
+      item: $lockedRecord,
+      title: { _ in "DNS record" },
+      content: { record in
+        DashDetailTray(
+          fields: [
+            DashDetailField(label: "Type", value: record.type),
+            DashDetailField(label: "Name", value: record.name, mono: true),
+            DashDetailField(label: "Content", value: record.content, mono: true),
+          ]
+        ) {
+          VStack(alignment: .leading, spacing: 12) {
+            DashNotice(
+              kind: .info,
+              message:
+                "Email routing manages this record. Editing or deleting it would stop mail delivery for this domain."
+            )
+            DestinationLink(
+              destination: .zoneEmailRouting(zoneID),
+              onNavigate: { lockedRecord = nil }
+            ) {
+              DashListRow(
+                title: DashL10n.string("Open email routing"),
+                icon: SolarAsset.Content.inbox)
+            }
+          }
+        }
+      }
+    )
     .dashTray(isPresented: $createsRecord, title: "New DNS record") {
       DNSRecordEditor(zoneID: zoneID, record: nil) {
         model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
         Task { await load(force: true) }
       }
+    }
+    .task(id: model.accountRequestContext) {
+      // A failed lookup restores the pre-Email-Routing behavior: no badge and
+      // an editable row. The gate becomes a positive claim only after settings
+      // say routing is enabled.
+      emailRoutingGuard = EmailRoutingDNSGuard()
+      guard let context = model.accountRequestContext else { return }
+      let key = FeatureCacheKey.emailRouting(zoneID)
+      var settings: EmailRoutingSettings? =
+        (model.featureCache.get(key) as EmailRoutingSnapshot?)?.settings
+      if settings == nil {
+        settings = try? await model.client.getEmailRoutingSettings(zoneID: zoneID)
+      }
+      guard model.isCurrentAccount(context), !Task.isCancelled, let settings, settings.enabled
+      else { return }
+      var next = EmailRoutingDNSGuard(
+        isEnabled: true, apex: settings.name.lowercased(), plan: nil)
+      // The edit gate needs only the positive settings answer. Arm it before
+      // the decorative plan lookup so a slow or failed plan cannot briefly
+      // reopen Cloudflare-managed records for editing.
+      emailRoutingGuard = next
+      let planKey = FeatureCacheKey.emailRoutingDNS(zoneID)
+      if let cached: EmailRoutingDNSPlan = model.featureCache.get(planKey) {
+        next.plan = cached
+      } else if let fetched = try? await model.client.getEmailRoutingDNSPlan(zoneID: zoneID) {
+        guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+        model.featureCache.set(planKey, fetched)
+        next.plan = fetched
+      }
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+      emailRoutingGuard = next
     }
     .task(id: deferredDeletionRefreshGeneration) {
       // The first mounted DNS view that wins this forced load writes the
@@ -1243,9 +1359,23 @@ struct DNSRecordsView: View {
     // surface split on `DashGlassCard`.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Record types")
-          .dashTextStyle(.footnoteSemibold)
-          .foregroundStyle(DashTheme.subtle)
+        DestinationLink(
+          destination: .chartDetail(
+            recordTypesDetail(
+              buckets: buckets,
+              slices: slices,
+              displayedRecordCount: displayedRecordCount))
+        ) {
+          HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Record types")
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 4)
+            DashChartDisclosure(trend: nil)
+          }
+          .contentShape(Rectangle())
+        }
+        .accessibilityHint("Shows chart details")
         DitherPieChart(
           slices: slices,
           innerRadiusRatio: 0.62,
@@ -1273,6 +1403,27 @@ struct DNSRecordsView: View {
           displayedRecordCount: displayedRecordCount)
       }
     }
+  }
+
+  private func recordTypesDetail(
+    buckets: [DNSChartModel.Bucket],
+    slices: [DitherSlice],
+    displayedRecordCount: Int
+  ) -> DashChartDetail {
+    DashChartDetail(
+      title: "Record types",
+      rangeLabel: "Loaded records",
+      summaryValue: displayedRecordCount.formatted(
+        .number.locale(DashL10n.activeLocale)),
+      trend: nil,
+      categoryAxisLabel: "Record type",
+      valueAxisLabel: "Records",
+      axisValueFormat: .number(maximumFractionDigits: 0),
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      accessibilitySummary: DNSChartModel.chartAccessibilitySummary(buckets: buckets),
+      content: .pie(slices: slices),
+      featureID: .zones,
+      readScopes: ["zone.read", "dns.read"])
   }
 
   @ViewBuilder

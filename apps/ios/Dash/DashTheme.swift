@@ -487,6 +487,8 @@ enum DashTheme {
   /// and rare accents — not catalog decoration.
   static let brand = adaptive(
     light: 0x056DFF, dark: 0x045EDE, highLight: 0x1447E6, highDark: 0x51A2FF)
+  static let violet = adaptive(
+    light: 0x8E51FF, dark: 0x8E51FF, highLight: 0x6E11B0, highDark: 0xC4B4FF)
   /// Interactive text on Liquid Glass. Keep the regular brand blue in light
   /// mode, but lift dark appearances so small labels stay legible when the
   /// material samples and darkens pigmented content beneath it.
@@ -728,6 +730,7 @@ enum FeatureVisualTone: Hashable, Sendable {
   case accent
   case danger
   case info
+  case violet
 
   var muted: Color {
     switch self {
@@ -738,6 +741,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .accent: DashTheme.accent.opacity(0.9)
     case .danger: DashTheme.danger.opacity(0.85)
     case .info: DashTheme.info.opacity(0.85)
+    case .violet: DashTheme.violet.opacity(0.85)
     }
   }
 
@@ -750,6 +754,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .accent: DashTheme.accent
     case .danger: DashTheme.danger
     case .info: DashTheme.info
+    case .violet: DashTheme.violet
     }
   }
 
@@ -762,6 +767,7 @@ enum FeatureVisualIdentity {
     case "Domains & DNS": .success
     case "Compute": .brand
     case "Storage & Data": .accent
+    case "Networks": .violet
     default: .soft
     }
   }
@@ -774,6 +780,7 @@ enum FeatureVisualIdentity {
     case .pages: .info
     case .r2: .accent
     case .kv: .warning
+    case .tunnels: .violet
     }
   }
 

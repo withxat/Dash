@@ -578,12 +578,14 @@ public actor CloudflareClient {
   }
   public func listR2Objects(
     accountID: String, bucket: String, cursor: String? = nil, prefix: String? = nil,
-    delimiter: String? = nil
+    delimiter: String? = nil, startAfter: String? = nil, perPage: Int = 100
   ) async throws -> R2ObjectPage {
+    let pageSize = min(max(perPage, 1), R2Limits.listMaximumPerPage)
     let data = try await raw(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/objects",
       query: [
-        "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "per_page": "100",
+        "cursor": cursor, "prefix": prefix, "delimiter": delimiter, "start_after": startAfter,
+        "per_page": String(pageSize),
       ])
     let envelope = try JSONDecoder().decode(APIEnvelope<[LossyElement<R2Object>]>.self, from: data)
     guard envelope.success else {
@@ -606,15 +608,25 @@ public actor CloudflareClient {
   }
 
   /// File-backed upload for object bodies that should not be copied into
-  /// `URLRequest.httpBody`. The response body remains bounded Cloudflare API
-  /// metadata and is discarded.
+  /// `URLRequest.httpBody`. The response body is bounded Cloudflare API
+  /// metadata and is decoded when Cloudflare returns it.
+  @discardableResult
   public func putR2Object(
     accountID: String, bucket: String, key: String, fileURL: URL, contentType: String?
-  ) async throws {
+  ) async throws -> R2Object? {
+    let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+    if let fileSize = values.fileSize,
+      Int64(fileSize) > R2Limits.restUploadMaximumBytes
+    {
+      throw CloudflareTransferError.exceedsLimit(
+        limit: R2Limits.restUploadMaximumBytes, actual: Int64(fileSize))
+    }
     let url = requestURL(
       path: "/accounts/\(accountID)/r2/buckets/\(bucket)/objects/\(key)")
-    _ = try await uploadResponse(
+    let response = try await uploadResponse(
       url: url, method: "PUT", fileURL: fileURL, contentType: contentType)
+    return try decodeR2ObjectUploadResponse(
+      response.0, requestedKey: key, contentType: contentType)
   }
 
   public func deleteR2Object(accountID: String, bucket: String, key: String) async throws {
@@ -861,14 +873,29 @@ public actor CloudflareClient {
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     formatter.timeZone = TimeZone(identifier: "UTC")
     let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let window = max(hours, 1)
+    let since = until.addingTimeInterval(-TimeInterval(window) * 3600)
+    let previousSince = since.addingTimeInterval(-TimeInterval(window) * 3600)
+    let untilStamp = formatter.string(from: until)
+    let sinceStamp = formatter.string(from: since)
+    let previousSinceStamp = formatter.string(from: previousSince)
     let escaped = scriptName.replacingOccurrences(of: "\"", with: "\\\"")
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
+      currentTotals: workersInvocationsAdaptive(limit: 1, filter: { \
+      scriptName: "\(escaped)", \
+      datetime_geq: "\(sinceStamp)", \
+      datetime_lt: "\(untilStamp)" \
+      }) { sum { requests errors } quantiles { cpuTimeP50 } } \
+      previousTotals: workersInvocationsAdaptive(limit: 1, filter: { \
+      scriptName: "\(escaped)", \
+      datetime_geq: "\(previousSinceStamp)", \
+      datetime_lt: "\(sinceStamp)" \
+      }) { sum { requests errors } quantiles { cpuTimeP50 } } \
       workersInvocationsAdaptive(limit: 2500, orderBy: [datetimeFiveMinutes_ASC], filter: { \
       scriptName: "\(escaped)", \
-      datetime_geq: "\(formatter.string(from: since))", \
-      datetime_leq: "\(formatter.string(from: until))" \
+      datetime_geq: "\(sinceStamp)", \
+      datetime_lt: "\(untilStamp)" \
       }) { sum { requests errors } quantiles { cpuTimeP50 } \
       dimensions { datetimeFiveMinutes status } } } } }
       """
@@ -881,9 +908,10 @@ public actor CloudflareClient {
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
     }
-    let rows = envelope.data?.viewer.accounts.first?.workersInvocationsAdaptive ?? []
-    var requests = 0
-    var errors = 0
+    let account = envelope.data?.viewer.accounts.first
+    let rows = account?.workersInvocationsAdaptive ?? []
+    var aggregatedRequests = 0
+    var aggregatedErrors = 0
     var cpuSamples: [Double] = []
     var byBucket:
       [String: (
@@ -893,8 +921,8 @@ public actor CloudflareClient {
     for row in rows {
       let req = row.sum.requests
       let err = row.sum.errors
-      requests += req
-      errors += err
+      aggregatedRequests += req
+      aggregatedErrors += err
       if let cpu = row.quantiles?.cpuTimeP50 { cpuSamples.append(cpu) }
       let key = row.dimensions.datetimeFiveMinutes ?? row.dimensions.datetime ?? "unknown"
       var bucket = byBucket[key] ?? (0, 0, 0, 0, 0, 0)
@@ -921,11 +949,40 @@ public actor CloudflareClient {
       return WorkerAnalyticsBucket(
         datetime: key, requests: bucket.requests, errors: bucket.errors, cpuTimeP50Us: cpu)
     }
+    let fallbackCPU =
+      cpuSamples.isEmpty ? 0 : cpuSamples.reduce(0, +) / Double(cpuSamples.count)
+    let requests: Int
+    let errors: Int
+    let cpuTimeP50Us: Double
+    if let currentTotals = account?.currentTotals {
+      requests = currentTotals.first?.sum.requests ?? 0
+      errors = currentTotals.first?.sum.errors ?? 0
+      cpuTimeP50Us = currentTotals.first?.quantiles?.cpuTimeP50 ?? 0
+    } else {
+      requests = aggregatedRequests
+      errors = aggregatedErrors
+      cpuTimeP50Us = fallbackCPU
+    }
+    let previousRequests: Int?
+    let previousErrors: Int?
+    let previousCPUTimeP50Us: Double?
+    if let previousTotals = account?.previousTotals {
+      previousRequests = previousTotals.first?.sum.requests ?? 0
+      previousErrors = previousTotals.first?.sum.errors ?? 0
+      previousCPUTimeP50Us = previousTotals.first?.quantiles?.cpuTimeP50 ?? 0
+    } else {
+      previousRequests = nil
+      previousErrors = nil
+      previousCPUTimeP50Us = nil
+    }
     return WorkerAnalyticsPayload(
       requests: requests,
       errors: errors,
-      cpuTimeP50Us: cpuSamples.isEmpty ? 0 : cpuSamples.reduce(0, +) / Double(cpuSamples.count),
-      points: points
+      cpuTimeP50Us: cpuTimeP50Us,
+      points: points,
+      previousRequests: previousRequests,
+      previousErrors: previousErrors,
+      previousCPUTimeP50Us: previousCPUTimeP50Us
     )
   }
   public func listRumSites(accountID: String) async throws -> [RumSite] {
@@ -933,11 +990,6 @@ public actor CloudflareClient {
   }
   public func listLoadBalancerPools(accountID: String) async throws -> [LoadBalancerPool] {
     try await list("/accounts/\(accountID)/load_balancers/pools").items
-  }
-  public func getRegistrarRegistration(accountID: String, domainName: String) async throws
-    -> RegistrarRegistration
-  {
-    try await request("/accounts/\(accountID)/registrar/registrations/\(domainName)")
   }
   public func listResources(path: String, query: [String: String?] = [:]) async throws -> Page<
     GenericResource
@@ -1016,17 +1068,12 @@ public actor CloudflareClient {
   /// Daily HTTP request totals for a zone via the GraphQL Analytics API —
   /// the REST zone-analytics endpoints no longer exist.
   public func zoneAnalytics(zoneID: String, days: Int = 7) async throws -> [ZoneAnalyticsDay] {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "yyyy-MM-dd"
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(max(days - 1, 0)) * 86400)
+    let bounds = Self.zoneAnalyticsDailyBounds(days: days)
     let query = """
       { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
-      httpRequests1dGroups(limit: \(days), \
-      filter: {date_geq: "\(formatter.string(from: since))", \
-      date_leq: "\(formatter.string(from: until))"}, orderBy: [date_DESC]) { \
+      httpRequests1dGroups(limit: \(bounds.window), \
+      filter: {date_geq: "\(bounds.currentStart)", \
+      date_lt: "\(bounds.end)"}, orderBy: [date_DESC]) { \
       dimensions { date } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
       uniq { uniques } } } } }
       """
@@ -1039,11 +1086,105 @@ public actor CloudflareClient {
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
     }
-    return (envelope.data?.viewer.zones.first?.httpRequests1dGroups ?? []).map {
+    let rows =
+      envelope.data?.viewer.zones.first?.httpRequests1dGroups
+      ?? envelope.data?.viewer.zones.first?.current
+      ?? []
+    return mapZoneAnalyticsDays(rows)
+  }
+
+  /// Daily HTTP totals for the selected window and its immediately preceding
+  /// equal window. Both series normally arrive in one GraphQL request. If the
+  /// account's retention limit rejects only the older window, the current
+  /// window remains available and the comparison is omitted.
+  public func zoneAnalyticsComparison(zoneID: String, days: Int = 7) async throws
+    -> AnalyticsPeriodComparison<ZoneAnalyticsDay>
+  {
+    let bounds = Self.zoneAnalyticsDailyBounds(days: days)
+    let query = """
+      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
+      current: httpRequests1dGroups(limit: \(bounds.window), \
+      filter: {date_geq: "\(bounds.currentStart)", \
+      date_lt: "\(bounds.end)"}, orderBy: [date_DESC]) { \
+      dimensions { date } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
+      uniq { uniques } } \
+      previous: httpRequests1dGroups(limit: \(bounds.window), \
+      filter: {date_geq: "\(bounds.previousStart)", \
+      date_lt: "\(bounds.currentStart)"}, orderBy: [date_DESC]) { \
+      dimensions { date } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
+      uniq { uniques } } } } }
+      """
+    let payload = try JSONEncoder().encode(["query": query])
+    let response: Data
+    do {
+      response = try await graphQLRaw(payload)
+    } catch let error as CloudflareAPIError {
+      guard case .request(let status, _) = error, status == 400 else { throw error }
+      return AnalyticsPeriodComparison(
+        current: try await zoneAnalytics(zoneID: zoneID, days: days),
+        previous: nil)
+    }
+    let envelope = try JSONDecoder().decode(
+      GraphQLEnvelope<ZoneAnalyticsData>.self, from: response)
+    if envelope.errors?.first != nil {
+      if let currentRows = envelope.data?.viewer.zones.first?.current {
+        return AnalyticsPeriodComparison(
+          current: mapZoneAnalyticsDays(currentRows),
+          previous: nil)
+      }
+      // Some GraphQL validation failures null the whole aliased document
+      // before execution. Retry only the current window so an unavailable
+      // older comparison cannot blank an otherwise readable chart.
+      return AnalyticsPeriodComparison(
+        current: try await zoneAnalytics(zoneID: zoneID, days: days),
+        previous: nil)
+    }
+    let zone = envelope.data?.viewer.zones.first
+    let currentRows = zone?.current ?? zone?.httpRequests1dGroups ?? []
+    return AnalyticsPeriodComparison(
+      current: mapZoneAnalyticsDays(currentRows),
+      previous: zone?.previous.map(mapZoneAnalyticsDays))
+  }
+
+  static func zoneAnalyticsDailyBounds(days: Int, now: Date = Date()) -> (
+    window: Int,
+    previousStart: String,
+    currentStart: String,
+    end: String
+  ) {
+    let window = max(days, 1)
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(identifier: "UTC")
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
+    // Daily groups cannot represent a partial day. Compare the last complete
+    // UTC days with the equally long block immediately before them.
+    let end = calendar.startOfDay(for: now)
+    let currentStart = calendar.date(byAdding: .day, value: -window, to: end)!
+    let previousStart = calendar.date(byAdding: .day, value: -window, to: currentStart)!
+    return (
+      window,
+      formatter.string(from: previousStart),
+      formatter.string(from: currentStart),
+      formatter.string(from: end)
+    )
+  }
+
+  private func mapZoneAnalyticsDays(
+    _ rows: [ZoneAnalyticsData.Group]
+  ) -> [ZoneAnalyticsDay] {
+    rows.map {
       ZoneAnalyticsDay(
-        date: $0.dimensions.date, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
-        threats: $0.sum.threats, bytes: $0.sum.bytes, uniques: $0.uniq?.uniques ?? 0,
-        cachedRequests: $0.sum.cachedRequests ?? 0, cachedBytes: $0.sum.cachedBytes ?? 0)
+        date: $0.dimensions.date,
+        requests: $0.sum.requests,
+        pageViews: $0.sum.pageViews,
+        threats: $0.sum.threats,
+        bytes: $0.sum.bytes,
+        uniques: $0.uniq?.uniques ?? 0,
+        cachedRequests: $0.sum.cachedRequests ?? 0,
+        cachedBytes: $0.sum.cachedBytes ?? 0)
     }
   }
 
@@ -1107,18 +1248,19 @@ public actor CloudflareClient {
     }
   }
 
-  /// Daily Web Analytics metrics for one RUM site — page views, visits, and the
-  /// median page-load time (ms) — the three figures the Web Analytics dashboard
-  /// shows. Page views and visits come from `rumPageloadEventsAdaptiveGroups`;
+  /// Web Analytics metrics for one RUM site — page views, visits, and median
+  /// page-load time (ms) — the three figures the Web Analytics dashboard shows.
+  /// Page views and visits come from `rumPageloadEventsAdaptiveGroups`;
   /// page-load time lives on the separate `rumPerformanceEventsAdaptiveGroups`
-  /// dataset (only it carries the timing quantiles), joined here by date.
+  /// dataset (only it carries the timing quantiles).
   ///
   /// Both datasets are account-scoped, so the account is selected by `accountTag`
-  /// and the site by `siteTag`. The window is `days * 2` so callers can split it
-  /// into the current window and the immediately preceding one for a
-  /// period-over-period comparison. Ascending by date.
+  /// and the site by `siteTag`. Daily buckets span two adjacent complete UTC-day
+  /// windows and are ascending by date. Two ungrouped aliases return the exact
+  /// whole-window page-load medians for a period-over-period comparison without
+  /// another HTTP request.
   public func webAnalyticsMetrics(accountID: String, siteTag: String, days: Int = 7) async throws
-    -> [RUMDailyMetrics]
+    -> RUMMetricsComparison
   {
     let window = max(days, 1)
     let span = window * 2
@@ -1126,18 +1268,30 @@ public actor CloudflareClient {
     formatter.formatOptions = [.withInternetDateTime]
     formatter.timeZone = TimeZone(identifier: "UTC")
     let bounds = webAnalyticsComparisonWindow(days: window)
-    let filter =
+    let dailyFilter =
       "{siteTag: \"\(siteTag)\", "
       + "datetime_geq: \"\(formatter.string(from: bounds.previousStart))\", "
       + "datetime_lt: \"\(formatter.string(from: bounds.end))\"}"
+    let currentFilter =
+      "{siteTag: \"\(siteTag)\", "
+      + "datetime_geq: \"\(formatter.string(from: bounds.currentStart))\", "
+      + "datetime_lt: \"\(formatter.string(from: bounds.end))\"}"
+    let previousFilter =
+      "{siteTag: \"\(siteTag)\", "
+      + "datetime_geq: \"\(formatter.string(from: bounds.previousStart))\", "
+      + "datetime_lt: \"\(formatter.string(from: bounds.currentStart))\"}"
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
       pageload: rumPageloadEventsAdaptiveGroups(limit: \(span), \
-      filter: \(filter), orderBy: [date_ASC]) { \
+      filter: \(dailyFilter), orderBy: [date_ASC]) { \
       count sum { visits } dimensions { date } } \
       performance: rumPerformanceEventsAdaptiveGroups(limit: \(span), \
-      filter: \(filter), orderBy: [date_ASC]) { \
-      quantiles { pageLoadTimeP50 } dimensions { date } } } } }
+      filter: \(dailyFilter), orderBy: [date_ASC]) { \
+      quantiles { pageLoadTimeP50 } dimensions { date } } \
+      currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
+      filter: \(currentFilter)) { quantiles { pageLoadTimeP50 } } \
+      previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
+      filter: \(previousFilter)) { quantiles { pageLoadTimeP50 } } } } }
       """
     let response = try await graphQL(query: query)
     let envelope = try JSONDecoder().decode(
@@ -1147,37 +1301,44 @@ public actor CloudflareClient {
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
     }
-    guard let account = envelope.data?.viewer.accounts.first else { return [] }
+    guard let account = envelope.data?.viewer.accounts.first else {
+      return RUMMetricsComparison(days: [])
+    }
     var p50ByDate: [String: Int] = [:]
     for group in account.performance {
       if let p50 = group.quantiles.pageLoadTimeP50 {
         p50ByDate[group.dimensions.date] = Int(p50.rounded())
       }
     }
-    return account.pageload.map { group in
+    let days = account.pageload.map { group in
       RUMDailyMetrics(
         date: group.dimensions.date,
         pageviews: group.count,
         visits: group.sum.visits,
         pageLoadTimeP50Ms: p50ByDate[group.dimensions.date])
     }
+    return RUMMetricsComparison(
+      days: days,
+      currentPageLoadTimeP50Ms: account.currentPerformanceTotals?.first?.roundedP50,
+      previousPageLoadTimeP50Ms: account.previousPerformanceTotals?.first?.roundedP50)
   }
 
-  /// The single-site detail splits daily buckets at UTC midnight so its current
-  /// and immediately preceding comparison windows stay aligned. The current
-  /// period includes today, so its final day is naturally partial.
+  /// The single-site detail uses complete UTC days so a partial today never
+  /// makes the current period look artificially lower than its comparison.
   private func webAnalyticsComparisonWindow(days: Int, now: Date = Date()) -> (
     previousStart: Date, currentStart: Date, end: Date
   ) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
     let window = max(days, 1)
-    let currentStart = calendar.startOfDay(for: now)
-      .addingTimeInterval(-TimeInterval(window - 1) * 86400)
+    let end = calendar.startOfDay(for: now)
+    let currentStart = calendar.date(byAdding: .day, value: -window, to: end) ?? end
+    let previousStart =
+      calendar.date(byAdding: .day, value: -window, to: currentStart) ?? currentStart
     return (
-      previousStart: currentStart.addingTimeInterval(-TimeInterval(window) * 86400),
+      previousStart: previousStart,
       currentStart: currentStart,
-      end: now
+      end: end
     )
   }
 
@@ -1186,16 +1347,34 @@ public actor CloudflareClient {
   public func zoneAnalyticsHourly(zoneID: String, hours: Int = 24) async throws
     -> [ZoneAnalyticsPoint]
   {
+    try await zoneAnalyticsHourlyComparison(zoneID: zoneID, hours: hours).current
+  }
+
+  /// Hourly HTTP totals for adjacent equal windows, returned ascending within
+  /// each period and fetched through two aliases in one GraphQL document.
+  public func zoneAnalyticsHourlyComparison(zoneID: String, hours: Int = 24) async throws
+    -> AnalyticsPeriodComparison<ZoneAnalyticsPoint>
+  {
+    let window = max(hours, 1)
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     formatter.timeZone = TimeZone(identifier: "UTC")
-    let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(max(hours, 1)) * 3600)
+    let end = Date()
+    let currentStart = end.addingTimeInterval(-TimeInterval(window) * 3600)
+    let previousStart = currentStart.addingTimeInterval(-TimeInterval(window) * 3600)
+    let endStamp = formatter.string(from: end)
+    let currentStartStamp = formatter.string(from: currentStart)
+    let previousStartStamp = formatter.string(from: previousStart)
     let query = """
       { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
-      httpRequests1hGroups(limit: \(hours + 1), \
-      filter: {datetime_geq: "\(formatter.string(from: since))", \
-      datetime_leq: "\(formatter.string(from: until))"}, orderBy: [datetime_ASC]) { \
+      current: httpRequests1hGroups(limit: \(window + 1), \
+      filter: {datetime_geq: "\(currentStartStamp)", \
+      datetime_lt: "\(endStamp)"}, orderBy: [datetime_ASC]) { \
+      dimensions { datetime } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
+      uniq { uniques } } \
+      previous: httpRequests1hGroups(limit: \(window + 1), \
+      filter: {datetime_geq: "\(previousStartStamp)", \
+      datetime_lt: "\(currentStartStamp)"}, orderBy: [datetime_ASC]) { \
       dimensions { datetime } sum { requests pageViews threats bytes cachedRequests cachedBytes } \
       uniq { uniques } } } } }
       """
@@ -1208,12 +1387,20 @@ public actor CloudflareClient {
         status: error.semanticStatusCode,
         errors: [APIErrorItem(code: 0, message: error.message)])
     }
-    return (envelope.data?.viewer.zones.first?.httpRequests1hGroups ?? []).map {
-      ZoneAnalyticsPoint(
-        datetime: $0.dimensions.datetime, requests: $0.sum.requests, pageViews: $0.sum.pageViews,
-        threats: $0.sum.threats, bytes: $0.sum.bytes, uniques: $0.uniq?.uniques ?? 0,
-        cachedRequests: $0.sum.cachedRequests ?? 0, cachedBytes: $0.sum.cachedBytes ?? 0)
+    let zone = envelope.data?.viewer.zones.first
+    let currentRows = zone?.current ?? zone?.httpRequests1hGroups ?? []
+    func map(_ rows: [ZoneAnalyticsHourlyData.Group]) -> [ZoneAnalyticsPoint] {
+      rows.map {
+        ZoneAnalyticsPoint(
+          datetime: $0.dimensions.datetime, requests: $0.sum.requests,
+          pageViews: $0.sum.pageViews,
+          threats: $0.sum.threats, bytes: $0.sum.bytes, uniques: $0.uniq?.uniques ?? 0,
+          cachedRequests: $0.sum.cachedRequests ?? 0, cachedBytes: $0.sum.cachedBytes ?? 0)
+      }
     }
+    return AnalyticsPeriodComparison(
+      current: map(currentRows),
+      previous: zone?.previous.map(map))
   }
 
   /// Blocked firewall events for the last `hours`, grouped by country and rule.
@@ -1382,7 +1569,7 @@ public actor CloudflareClient {
     )
   }
 
-  private func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
+  func request<Value: Decodable & Sendable, Body: Encodable & Sendable>(
     _ path: String, method: String = "GET", query: [String: String?] = [:],
     body: Body? = Optional<String>.none
   ) async throws -> Value {
@@ -1397,7 +1584,7 @@ public actor CloudflareClient {
     return envelope.result
   }
 
-  private func list<Value: Decodable & Sendable>(_ path: String, query: [String: String?] = [:])
+  func list<Value: Decodable & Sendable>(_ path: String, query: [String: String?] = [:])
     async throws -> Page<Value>
   {
     let data = try await raw(path, query: query)
@@ -1415,7 +1602,7 @@ public actor CloudflareClient {
   /// Only the string identity is required — demanding `CloudflareResource`
   /// would shut out payloads like a notification policy, whose `name` is
   /// optional, and push them back onto the single-page path.
-  private func listAllPages<Value: Decodable & Sendable & Identifiable>(
+  func listAllPages<Value: Decodable & Sendable & Identifiable>(
     _ path: String, query: [String: String?] = [:], perPage: Int
   ) async throws -> [Value] where Value.ID == String {
     var pageNumber = 1
@@ -1450,7 +1637,7 @@ public actor CloudflareClient {
     return items
   }
 
-  private func raw(
+  func raw(
     _ path: String, method: String = "GET", query: [String: String?] = [:], data: Data? = nil,
     contentType: String? = nil, rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> Data {
@@ -1459,7 +1646,7 @@ public actor CloudflareClient {
       contentType: contentType, rateLimitAttempt: rateLimitAttempt, refreshed: refreshed)
   }
 
-  private func raw(
+  func raw(
     url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   )
@@ -1483,7 +1670,7 @@ public actor CloudflareClient {
     return max(0, seconds)
   }
 
-  private func requestURL(path: String, query: [String: String?] = [:]) -> URL {
+  func requestURL(path: String, query: [String: String?] = [:]) -> URL {
     var components = URLComponents(
       url: apiBase.appending(path: path), resolvingAgainstBaseURL: false)!
     components.queryItems = query.compactMap { key, value in
@@ -1528,7 +1715,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func rawResponse(
+  func rawResponse(
     url: URL, method: String, data: Data?, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
@@ -1566,7 +1753,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func uploadResponse(
+  func uploadResponse(
     url: URL, method: String, fileURL: URL, contentType: String?, rateLimitAttempt: Int = 0,
     refreshed: Bool = false
   ) async throws -> (Data, HTTPURLResponse) {
@@ -1605,7 +1792,7 @@ public actor CloudflareClient {
     }
   }
 
-  private func downloadResponse(
+  func downloadResponse(
     url: URL, method: String, destination: URL, maximumBytes: Int64?,
     rateLimitAttempt: Int = 0, refreshed: Bool = false
   ) async throws -> URL {
@@ -1718,28 +1905,56 @@ public actor CloudflareClient {
     // assignment below, so concurrent 401s (e.g. Watchtower's fan-out) all join
     // one refresh instead of each POSTing the rotating refresh token in
     // parallel. The keychain read moves inside the task for the same reason.
+    //
+    // That single-flight is per client *instance* and cannot see another
+    // process. `withExclusiveRefreshAccess` is what extends it across the
+    // processes that share one keychain credential; both layers stay, they
+    // solve different halves of the same race.
     let task = Task<TokenSet?, Error> {
-      let accessToken = try await store.getAccessToken()
-      guard let refreshToken = try await store.getRefreshToken() else { return nil }
-      do {
-        let tokens = try await OAuth.refresh(
-          clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
-        let installed = try await store.replaceTokens(
-          tokens,
-          ifCurrentAccessToken: accessToken,
-          refreshToken: refreshToken)
-        if installed { return tokens }
-        return try await Self.currentTokens(in: store)
-      } catch let error as CloudflareAPIError where error.isInvalidGrant {
-        // The refresh token is expired or revoked and can never be renewed.
-        // Clear only the credential that started this request. A completed
-        // OAuth replacement must survive a late invalid_grant from the old
-        // refresh token.
-        let cleared =
-          (try? await store.clearTokens(
+      // Snapshot before the lock. Anything different on the other side of it
+      // was written by whoever we were waiting for.
+      let observedAccessToken = try await store.getAccessToken()
+      return try await store.withExclusiveRefreshAccess { isExclusive in
+        let accessToken = try await store.getAccessToken()
+        if accessToken != nil, accessToken != observedAccessToken {
+          // Another process rotated while we waited. Cloudflare has already
+          // consumed the refresh token we were about to spend, so POSTing it
+          // would fail and cost us the credential we can see right now.
+          return try await Self.currentTokens(in: store)
+        }
+        guard isExclusive else {
+          // Another process still owns the rotating token. Proceeding without
+          // the lock can consume it first, then let the lock holder clear the
+          // credential after its late invalid_grant. Surface transient
+          // contention so the caller can retry after the winner writes back.
+          throw CloudflareAPIError.transport(
+            "Token refresh is already in progress. Please retry.")
+        }
+        guard let refreshToken = try await store.getRefreshToken() else { return nil }
+        do {
+          let tokens = try await OAuth.refresh(
+            clientID: clientID, refreshToken: refreshToken, session: session, tokenURL: tokenURL)
+          let installed = try await store.replaceTokens(
+            tokens,
             ifCurrentAccessToken: accessToken,
-            refreshToken: refreshToken)) == true
-        return cleared ? nil : try await Self.currentTokens(in: store)
+            refreshToken: refreshToken)
+          if installed { return tokens }
+          return try await Self.currentTokens(in: store)
+        } catch let error as CloudflareAPIError where error.isInvalidGrant {
+          // The refresh token is expired or revoked and can never be renewed.
+          // The credential must still be the one we spent; a completed OAuth
+          // replacement must survive a late invalid_grant from the old token.
+          // Reaching this branch also proves we hold the cross-process lock:
+          // the non-exclusive path fails closed before it can POST.
+          guard try await store.getAccessToken() == accessToken else {
+            return try await Self.currentTokens(in: store)
+          }
+          let cleared =
+            (try? await store.clearTokens(
+              ifCurrentAccessToken: accessToken,
+              refreshToken: refreshToken)) == true
+          return cleared ? nil : try await Self.currentTokens(in: store)
+        }
       }
     }
     refreshTask = task
@@ -1792,7 +2007,12 @@ private struct ZoneAnalyticsData: Decodable, Sendable {
   let viewer: Viewer
 
   struct Viewer: Decodable, Sendable { let zones: [Zone] }
-  struct Zone: Decodable, Sendable { let httpRequests1dGroups: [Group] }
+  struct Zone: Decodable, Sendable {
+    let current: [Group]?
+    let previous: [Group]?
+    /// Legacy unaliased response key retained for older fixtures and mocks.
+    let httpRequests1dGroups: [Group]?
+  }
   struct Group: Decodable, Sendable {
     let dimensions: Dimensions
     let sum: Sum
@@ -1830,6 +2050,8 @@ private struct RUMMetricsData: Decodable, Sendable {
   struct Account: Decodable, Sendable {
     let pageload: [PageloadGroup]
     let performance: [PerformanceGroup]
+    let currentPerformanceTotals: [PerformanceTotalGroup]?
+    let previousPerformanceTotals: [PerformanceTotalGroup]?
   }
   struct DateDimension: Decodable, Sendable { let date: String }
   struct PageloadGroup: Decodable, Sendable {
@@ -1845,12 +2067,24 @@ private struct RUMMetricsData: Decodable, Sendable {
 
     struct Quantiles: Decodable, Sendable { let pageLoadTimeP50: Double? }
   }
+  struct PerformanceTotalGroup: Decodable, Sendable {
+    let quantiles: PerformanceGroup.Quantiles
+
+    var roundedP50: Int? {
+      quantiles.pageLoadTimeP50.map { Int($0.rounded()) }
+    }
+  }
 }
 private struct ZoneAnalyticsHourlyData: Decodable, Sendable {
   let viewer: Viewer
 
   struct Viewer: Decodable, Sendable { let zones: [Zone] }
-  struct Zone: Decodable, Sendable { let httpRequests1hGroups: [Group] }
+  struct Zone: Decodable, Sendable {
+    let current: [Group]?
+    let previous: [Group]?
+    /// Legacy unaliased response key retained for older fixtures and mocks.
+    let httpRequests1hGroups: [Group]?
+  }
   struct Group: Decodable, Sendable {
     let dimensions: Dimensions
     let sum: Sum
@@ -1906,20 +2140,26 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
 
   struct Viewer: Decodable, Sendable { let accounts: [Account] }
   struct Account: Decodable, Sendable {
+    let currentTotals: [Totals]?
+    let previousTotals: [Totals]?
     let workersInvocationsAdaptive: [Row]
+  }
+  struct Sum: Decodable, Sendable {
+    let requests: Int
+    let errors: Int
+  }
+  struct Quantiles: Decodable, Sendable {
+    let cpuTimeP50: Double?
+  }
+  struct Totals: Decodable, Sendable {
+    let sum: Sum
+    let quantiles: Quantiles?
   }
   struct Row: Decodable, Sendable {
     let sum: Sum
     let quantiles: Quantiles?
     let dimensions: Dimensions
 
-    struct Sum: Decodable, Sendable {
-      let requests: Int
-      let errors: Int
-    }
-    struct Quantiles: Decodable, Sendable {
-      let cpuTimeP50: Double?
-    }
     struct Dimensions: Decodable, Sendable {
       let datetimeFiveMinutes: String?
       let datetime: String?

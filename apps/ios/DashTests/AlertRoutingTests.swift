@@ -298,6 +298,10 @@ private func policy(
     calendar: calendar)
   #expect(plans.count == 1)
   #expect(plans[0].identifier.hasSuffix(".1"))
+  // Rescheduling still withdraws the complete old set, including the 30- and
+  // 7-day identifiers whose new fire dates are already past.
+  #expect(plans[0].resourceIdentifiers.count == ExpiryReminders.leadDays.count)
+  #expect(plans[0].resourceIdentifiers.contains { $0.hasSuffix(".30") })
 }
 
 @Test func expiredDomainsScheduleNothing() {
@@ -324,6 +328,25 @@ private func policy(
   let b = ExpiryReminders.identifier(
     subject: .domain, accountID: "acc-2", resourceID: "z1", leadDays: 7)
   #expect(a != b)
+}
+
+@Test func registrarRemindersRequireAnActiveManualRenewal() {
+  #expect(
+    ExpiryReminders.renewal(registrarStatus: "active", autoRenew: false)
+      == .registrarManual)
+  #expect(
+    ExpiryReminders.renewal(registrarStatus: "active", autoRenew: true)
+      == .registrarNoDeadline)
+  #expect(
+    ExpiryReminders.renewal(registrarStatus: "redemption_period", autoRenew: false)
+      == .registrarNoDeadline)
+  #expect(
+    ExpiryReminders.renewal(registrarStatus: nil, autoRenew: false)
+      == .registrarNoDeadline)
+}
+
+@Test func domainReminderIdentityUsesTheNormalizedDomainName() {
+  #expect(ExpiryReminders.resourceID(forDomain: " Example.COM ") == "example.com")
 }
 
 @Test func expiryDatesParseWithAndWithoutFractionalSeconds() {

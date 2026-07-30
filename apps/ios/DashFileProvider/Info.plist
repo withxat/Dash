@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>DASHClientID</key>
+	<string>$(DASH_CLIENT_ID)</string>
+	<key>DashKeychainAccessGroup</key>
+	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.fileprovider-nonui</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).FileProviderExtension</string>
+		<key>NSExtensionFileProviderDocumentGroup</key>
+		<string>group.sh.xat.dash.app</string>
+		<key>NSExtensionFileProviderSupportsEnumeration</key>
+		<true/>
+		<key>NSExtensionFileProviderDownloadPipelineDepth</key>
+		<integer>2</integer>
+		<key>NSExtensionFileProviderUploadPipelineDepth</key>
+		<integer>1</integer>
+	</dict>
+</dict>
+</plist>

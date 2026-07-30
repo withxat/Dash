@@ -210,11 +210,37 @@ public protocol TokenStore: Sendable {
     ifCurrentAccessToken expectedAccessToken: String?,
     refreshToken expectedRefreshToken: String?
   ) async throws -> Bool
+  /// Runs `body` while holding this credential's refresh lock.
+  ///
+  /// Cloudflare rotates the refresh token on use, so two *processes* that share
+  /// one credential — the app, the share extension, a File Provider — must not
+  /// both POST it. `CloudflareClient`'s single-flight is per client instance and
+  /// cannot see another process at all; this is the seam that can.
+  ///
+  /// `isExclusive` reports whether exclusivity was actually obtained. A store
+  /// that is not shared across processes always reports `true`: it is the only
+  /// writer. A shared store reports `false` when it cannot prove exclusivity.
+  /// The body must then fail closed without POSTing the rotating token; a
+  /// compare-and-swap cannot repair the race if this caller consumes the token
+  /// before the actual lock holder does.
+  func withExclusiveRefreshAccess<T: Sendable>(
+    _ body: @Sendable (_ isExclusive: Bool) async throws -> T
+  ) async throws -> T
 }
 
 extension TokenStore {
   public func getGrantedScopes() async throws -> Set<String>? { nil }
   public func setGrantedScopes(_: Set<String>) async throws {}
+
+  /// A store with no cross-process sharing needs no coordination: the caller is
+  /// the only writer, so the body runs straight away and is exclusive by
+  /// construction. Keeps every existing conformer — the demo store, the test
+  /// doubles — source-compatible, and keeps this package dependency-free.
+  public func withExclusiveRefreshAccess<T: Sendable>(
+    _ body: @Sendable (_ isExclusive: Bool) async throws -> T
+  ) async throws -> T {
+    try await body(true)
+  }
 
   /// Stores that cannot provide an atomic compare-and-swap still get a
   /// fail-closed default. Credential stores used by the app override this so
@@ -342,6 +368,20 @@ public struct ZonePlan: Codable, Hashable, Sendable {
   enum CodingKeys: String, CodingKey {
     case id, name
     case legacyId = "legacy_id"
+  }
+}
+
+/// Matching buckets for a selected analytics window and the immediately
+/// preceding window of the same length.
+public struct AnalyticsPeriodComparison<Element: Hashable & Sendable>: Hashable, Sendable {
+  public var current: [Element]
+  /// Nil when the account can read the selected window but its plan's
+  /// retention boundary does not reach the preceding window.
+  public var previous: [Element]?
+
+  public init(current: [Element], previous: [Element]? = nil) {
+    self.current = current
+    self.previous = previous
   }
 }
 
@@ -519,6 +559,27 @@ public struct RUMDailyMetrics: Codable, Hashable, Sendable {
     self.pageviews = pageviews
     self.visits = visits
     self.pageLoadTimeP50Ms = pageLoadTimeP50Ms
+  }
+}
+
+/// Two adjacent complete-day Web Analytics windows. `days` contains the daily
+/// buckets for both windows so charts can draw the current period. The two
+/// optional totals are the exact whole-window medians returned by Cloudflare;
+/// they remain `nil` when an older fixture or compatible backend omits the
+/// ungrouped performance aliases.
+public struct RUMMetricsComparison: Codable, Hashable, Sendable {
+  public let days: [RUMDailyMetrics]
+  public let currentPageLoadTimeP50Ms: Int?
+  public let previousPageLoadTimeP50Ms: Int?
+
+  public init(
+    days: [RUMDailyMetrics],
+    currentPageLoadTimeP50Ms: Int? = nil,
+    previousPageLoadTimeP50Ms: Int? = nil
+  ) {
+    self.days = days
+    self.currentPageLoadTimeP50Ms = currentPageLoadTimeP50Ms
+    self.previousPageLoadTimeP50Ms = previousPageLoadTimeP50Ms
   }
 }
 
@@ -1564,12 +1625,26 @@ public struct WorkerAnalyticsPayload: Hashable, Sendable {
   public var errors: Int
   public var cpuTimeP50Us: Double
   public var points: [WorkerAnalyticsBucket]
+  public var previousRequests: Int?
+  public var previousErrors: Int?
+  public var previousCPUTimeP50Us: Double?
 
-  public init(requests: Int, errors: Int, cpuTimeP50Us: Double, points: [WorkerAnalyticsBucket]) {
+  public init(
+    requests: Int,
+    errors: Int,
+    cpuTimeP50Us: Double,
+    points: [WorkerAnalyticsBucket],
+    previousRequests: Int? = nil,
+    previousErrors: Int? = nil,
+    previousCPUTimeP50Us: Double? = nil
+  ) {
     self.requests = requests
     self.errors = errors
     self.cpuTimeP50Us = cpuTimeP50Us
     self.points = points
+    self.previousRequests = previousRequests
+    self.previousErrors = previousErrors
+    self.previousCPUTimeP50Us = previousCPUTimeP50Us
   }
 }
 
@@ -1655,6 +1730,7 @@ public struct AccountAnalyticsPoint: Hashable, Sendable, Identifiable {
 /// Totals plus HTTP / Workers time series for one Watchtower range.
 public struct AccountAnalyticsSnapshot: Hashable, Sendable {
   public var overview: AccountAnalyticsOverview
+  public var previousOverview: AccountAnalyticsOverview?
   public var httpPoints: [AccountAnalyticsPoint]
   public var workerPoints: [AccountAnalyticsPoint]
   /// Wall-clock time the snapshot was fetched; used for “Updated …” chrome.
@@ -1662,11 +1738,13 @@ public struct AccountAnalyticsSnapshot: Hashable, Sendable {
 
   public init(
     overview: AccountAnalyticsOverview,
+    previousOverview: AccountAnalyticsOverview? = nil,
     httpPoints: [AccountAnalyticsPoint],
     workerPoints: [AccountAnalyticsPoint],
     fetchedAt: Date = .now
   ) {
     self.overview = overview
+    self.previousOverview = previousOverview
     self.httpPoints = httpPoints
     self.workerPoints = workerPoints
     self.fetchedAt = fetchedAt
@@ -1692,27 +1770,6 @@ public struct LoadBalancerPool: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let enabled: Bool?
-}
-
-/// Canonical registration state returned by `/registrar/registrations/{domain}`.
-public struct RegistrarRegistration: Codable, Hashable, Identifiable, Sendable {
-  public var id: String { domainName }
-  public let domainName: String
-  public let status: String
-  public let createdAt: String?
-  public let expiresAt: String?
-  public let autoRenew: Bool
-  public let privacyMode: String
-  public let locked: Bool
-
-  enum CodingKeys: String, CodingKey {
-    case status, locked
-    case domainName = "domain_name"
-    case createdAt = "created_at"
-    case expiresAt = "expires_at"
-    case autoRenew = "auto_renew"
-    case privacyMode = "privacy_mode"
-  }
 }
 
 public struct GenericResource: CloudflareResource, Hashable {

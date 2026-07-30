@@ -4,12 +4,12 @@ import UniformTypeIdentifiers
 
 // MARK: - Media detection
 
-/// What Dash is willing to fetch and decode from a bucket, and how large a
-/// body a phone-side object copy may transfer.
+/// What Dash is willing to fetch and decode from a bucket, and how large an
+/// on-device object transfer may be.
 enum R2Media {
-  /// On-device ceiling shared by uploads, previews, rename, and move. Object
-  /// transfers are file-backed, but Dash still bounds disk, network, and the
-  /// time a foreground operation can occupy.
+  /// On-device ceiling shared by uploads and previews. Object transfers are
+  /// file-backed, but Dash still bounds disk, network, and the time a
+  /// foreground operation can occupy.
   static let transferSizeLimit = 100 * 1024 * 1024
   static let transferSizeLimitBytes = Int64(transferSizeLimit)
 
@@ -64,7 +64,7 @@ enum R2Media {
 
 /// Caller-owned scratch location for one R2 operation. Every purpose lives
 /// under Dash's single temporary root so launch cleanup covers previews,
-/// thumbnails, moves, intents, and exports after a crash or force quit.
+/// thumbnails, intents, and exports after a crash or force quit.
 struct R2TemporaryFile: Hashable, Sendable {
   let directoryURL: URL
   let fileURL: URL
@@ -176,98 +176,5 @@ struct R2TemporaryFile: Hashable, Sendable {
     await Task.detached(priority: .utility) {
       try? FileManager.default.removeItem(at: root)
     }.value
-  }
-}
-
-// MARK: - Copy/move consistency
-
-enum R2ObjectConsistencyError: LocalizedError {
-  case destinationExists(String)
-  case sourceMissing(String)
-  case sourceChanged(String)
-
-  var errorDescription: String? {
-    switch self {
-    case .destinationExists(let key):
-      DashL10n.string("An object already exists at \(key).")
-    case .sourceMissing(let key):
-      DashL10n.string("\(key) no longer exists. Refresh and try again.")
-    case .sourceChanged(let key):
-      DashL10n.string("\(key) changed during the move. The original was kept.")
-    }
-  }
-}
-
-/// The R2 control API exposes no conditional object PUT/DELETE headers. These
-/// guards fail closed around the copy and before deletion, reducing accidental
-/// overwrite/data-loss risk. They cannot make the multi-request move atomic if
-/// another client mutates either key inside the final check/use window.
-enum R2ObjectConsistency {
-  static func sameVersion(_ current: R2Object, as expected: R2Object) -> Bool {
-    guard current.key == expected.key else { return false }
-    guard let currentUploaded = current.uploaded, let expectedUploaded = expected.uploaded else {
-      return false
-    }
-    if let currentETag = normalizedStrongETag(current.etag),
-      let expectedETag = normalizedStrongETag(expected.etag)
-    {
-      return currentETag == expectedETag && currentUploaded == expectedUploaded
-    }
-    guard let currentSize = current.size, let expectedSize = expected.size else { return false }
-    return currentSize == expectedSize && currentUploaded == expectedUploaded
-  }
-
-  static func requireAbsent(
-    client: CloudflareClient, accountID: String, bucket: String, key: String
-  ) async throws {
-    if try await exactObject(client: client, accountID: accountID, bucket: bucket, key: key)
-      != nil
-    {
-      throw R2ObjectConsistencyError.destinationExists(key)
-    }
-  }
-
-  static func requireUnchanged(
-    _ expected: R2Object, client: CloudflareClient, accountID: String, bucket: String
-  ) async throws {
-    guard
-      let current = try await exactObject(
-        client: client, accountID: accountID, bucket: bucket, key: expected.key)
-    else {
-      throw R2ObjectConsistencyError.sourceMissing(expected.key)
-    }
-    guard sameVersion(current, as: expected) else {
-      throw R2ObjectConsistencyError.sourceChanged(expected.key)
-    }
-  }
-
-  private static func normalizedStrongETag(_ value: String?) -> String? {
-    guard var value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty
-    else { return nil }
-    // A weak validator only promises semantic equivalence, not byte identity,
-    // so it cannot authorize deleting the source side of a move.
-    guard !value.uppercased().hasPrefix("W/") else { return nil }
-    if value.count >= 2, value.hasPrefix("\""), value.hasSuffix("\"") {
-      value.removeFirst()
-      value.removeLast()
-    }
-    return value.isEmpty ? nil : value
-  }
-
-  private static func exactObject(
-    client: CloudflareClient, accountID: String, bucket: String, key: String
-  ) async throws -> R2Object? {
-    var cursor: String?
-    var seenCursors = Set<String>()
-    repeat {
-      try Task.checkCancellation()
-      let page = try await client.listR2Objects(
-        accountID: accountID, bucket: bucket, cursor: cursor, prefix: key)
-      if let exact = page.objects.first(where: { $0.key == key }) { return exact }
-      guard page.isTruncated, let next = page.cursor, !next.isEmpty,
-        seenCursors.insert(next).inserted
-      else { return nil }
-      cursor = next
-    } while true
   }
 }

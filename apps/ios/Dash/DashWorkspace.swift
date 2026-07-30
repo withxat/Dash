@@ -399,6 +399,7 @@ struct DestinationRoutedContent: View {
       switch destination {
       case .profile: ProfileView()
       case .settings: SettingsView()
+      case .settingsAccounts: SettingsAccountsView()
       case .about: AboutView()
       case .openSource: OpenSourceView()
       #if DEBUG
@@ -413,10 +414,17 @@ struct DestinationRoutedContent: View {
       case .zoneWebAnalytics(let id): WebAnalyticsView(zoneID: id)
       case .zoneWAF(let id): WAFEventsView(zoneID: id)
       case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
+      case .zoneEmailRouting(let id): EmailRoutingView(zoneID: id)
       case .auditLogs: AuditLogView()
       case .pushAlerts: PushAlertsView()
+      case .filesMount: FilesMountView()
       case .watchtowerInbox: WatchtowerInboxView()
+      case .emailAddresses: EmailDestinationAddressesView()
+      case .registrarDomains: RegistrarDomainsView()
+      case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
+      case .chartDetail(let detail): DashChartDetailView(detail: detail)
       case .worker(let name): WorkerDetailView(name: name)
+      case .tunnel(let id): TunnelDetailView(tunnelID: id)
       case .pagesProject(let name): PagesProjectDetailView(projectName: name)
       case .pagesDeployment(let project, let deploymentID):
         PagesDeploymentDetailView(projectName: project, deploymentID: deploymentID)

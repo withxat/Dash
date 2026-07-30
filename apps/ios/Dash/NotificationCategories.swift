@@ -169,8 +169,8 @@ extension DashRoute {
       id
     case .scoped(_, let route):
       route.zoneID
-    case .feature, .kv, .pagesDeployment, .pagesDomains, .pagesProject, .r2, .settings, .watchtower,
-      .worker:
+    case .feature, .kv, .pagesDeployment, .pagesDomains, .pagesProject, .r2, .registrarDomain,
+      .settings, .watchtower, .worker:
       nil
     }
   }

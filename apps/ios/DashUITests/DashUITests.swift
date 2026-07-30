@@ -455,17 +455,16 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    let profile = app.buttons.matching(
-      NSPredicate(format: "label BEGINSWITH %@", "Profile,")
-    ).firstMatch
+    let profile = app.buttons["header-profile-button"]
     XCTAssertTrue(profile.waitForExistence(timeout: 5))
     profile.tap()
 
-    let settings = app.buttons["Settings"]
-    XCTAssertTrue(settings.waitForExistence(timeout: 5))
-    settings.tap()
+    XCTAssertTrue(app.buttons["settings-profile-row"].waitForExistence(timeout: 5))
 
     let iCloudSync = app.switches["icloud-settings-sync"]
+    for _ in 0..<4 where !iCloudSync.isHittable {
+      app.swipeUp()
+    }
     XCTAssertTrue(Self.waitForHittable(iCloudSync))
     XCTAssertEqual(iCloudSync.value as? String, "On")
     iCloudSync.tap()
@@ -495,13 +494,29 @@ final class DashUITests: XCTestCase {
       object: iCloudSync)
     XCTAssertEqual(XCTWaiter.wait(for: [syncOn], timeout: 5), .completed)
 
-    let pushAlerts = app.staticTexts["Push alerts"]
+    let pushAlerts =
+      app.descendants(matching: .any)
+      .matching(identifier: "Push alerts")
+      .firstMatch
     for _ in 0..<5 where !pushAlerts.exists {
       app.swipeUp()
     }
     XCTAssertTrue(pushAlerts.waitForExistence(timeout: 5))
-    // DashToggleRow combines title + switch into one accessibility element.
-    XCTAssertTrue(
-      app.buttons["Push alerts"].exists || app.switches["Push alerts"].exists)
+  }
+
+  func testAvatarOpensSettingsWithProfileAsAChildPage() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let headerProfile = app.buttons["header-profile-button"]
+    XCTAssertTrue(headerProfile.waitForExistence(timeout: 5))
+    headerProfile.tap()
+
+    let profileRow = app.buttons["settings-profile-row"]
+    XCTAssertTrue(profileRow.waitForExistence(timeout: 5))
+    profileRow.tap()
+
+    XCTAssertTrue(app.staticTexts["User ID"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Registered"].waitForExistence(timeout: 5))
   }
 }

@@ -15,7 +15,7 @@ Five resource surfaces, plus the shell that makes them usable:
 | **Domains** | Zones, DNS, cache purge, domain settings, zone analytics |
 | **Workers** | View scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics |
 | **Pages** | View projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
-| **R2** | Buckets, browse/upload/preview, rename/move, public URLs, share extension and Shortcuts |
+| **R2** | Buckets, browse/upload/preview, public URLs, Files integration, share extension and Shortcuts |
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 
 Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Settings (push alerts, About), multi-account OAuth, and iPhone-only single-stack navigation.

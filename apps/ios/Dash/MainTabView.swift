@@ -20,7 +20,6 @@ struct MainTabView: View {
   @State private var featuresNavigator = DestinationNavigator()
   @State private var watchtowerNavigator = DestinationNavigator()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
-  @State private var showsProfile = false
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
@@ -28,11 +27,10 @@ struct MainTabView: View {
 
   init() {}
 
-  /// Every tray style currently over this canvas — the pages' trays plus the
-  /// profile tray (whose preference sits above our reader, so it's OR-ed in).
+  /// Every tray style currently over this canvas.
   private var overlayTrays: DashTrayPresentation {
     DashTrayPresentation(
-      content: showsProfile || showsIgnoreAllAlerts || nestedTray.content,
+      content: showsIgnoreAllAlerts || nestedTray.content,
       large: nestedTray.large)
   }
 
@@ -94,18 +92,6 @@ struct MainTabView: View {
 
   private func openOnActiveTab(_ destination: Destination) {
     activeNavigator.push(destination)
-  }
-
-  /// Profile-tray Debug row. Nil in Release so the menu omits it.
-  private var openDebugFromProfileTray: (() -> Void)? {
-    #if DEBUG
-      {
-        showsProfile = false
-        openOnActiveTab(.debug)
-      }
-    #else
-      nil
-    #endif
   }
 
   /// Applies a route only after any account scope has been verified.
@@ -212,31 +198,22 @@ struct MainTabView: View {
         if let route { consume(route) }
       }
       .onChange(of: model.activeAccountID) { _, _ in
+        // Sign-out clears the account before remote cleanup finishes. Keep the
+        // Settings-owned confirmation tray mounted through its loading and
+        // success phases; AppRoot swaps to sign-in after the phase returns idle.
+        guard !model.signOutActionPhase.isActive else {
+          showsIgnoreAllAlerts = false
+          return
+        }
         homeNavigator.reset()
         featuresNavigator.reset()
         watchtowerNavigator.reset()
         watchtowerCustomization.cancelEditing()
-        if model.signOutActionPhase == .idle {
-          showsProfile = false
-        }
         showsIgnoreAllAlerts = false
         if let route = routeAfterAccountSwitch {
           routeAfterAccountSwitch = nil
           openVerifiedRoute(route)
         }
-      }
-      .dashTray(isPresented: $showsProfile, title: DashL10n.string("Profile")) {
-        ProfileTrayContent(
-          openProfile: {
-            showsProfile = false
-            openOnActiveTab(.profile)
-          },
-          openSettings: {
-            showsProfile = false
-            openOnActiveTab(.settings)
-          },
-          openDebug: openDebugFromProfileTray
-        )
       }
       .dashTray(
         isPresented: $showsIgnoreAllAlerts,
@@ -327,7 +304,7 @@ struct MainTabView: View {
       ZStack {
         ZStack(alignment: .topLeading) {
           if !hidesHeaderAvatar {
-            HeaderProfileButton { showsProfile = true }
+            HeaderProfileButton { openOnActiveTab(.settings) }
               // Tuned against the system back control's measured slot so the
               // push crossfade reads as the avatar becoming the back button.
               .padding(.leading, 10)

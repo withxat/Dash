@@ -460,15 +460,16 @@ private struct OnboardingView: View {
         DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
           model.enterDemo()
         }
-        .disabled(ownedAuthenticationPhase.isActive)
+        .disabled(ownedAuthenticationPhase.isActive || model.isEnteringDemo)
         .dashReveal(3, shown: revealed)
       } primary: {
         DashPillButton(
           title: primaryButtonTitle,
           icon: step == .permissions ? SolarAsset.cloudflare : nil,
           phase: step == .permissions ? ownedAuthenticationPhase : .idle,
-          isEnabled: step == .welcome
-            || (model.configuration.isConfigured && networkProbe.isReadyForConnect),
+          isEnabled: !model.isEnteringDemo
+            && (step == .welcome
+              || (model.configuration.isConfigured && networkProbe.isReadyForConnect)),
           onSuccessPresentationCompleted: {
             model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
           },

@@ -483,19 +483,20 @@ struct DashCodePanel: View {
 
 struct DashNotice: View {
   enum Kind {
-    case success, error, warning
+    case success, error, warning, info
 
     var defaultTitle: String {
       switch self {
       case .success: DashL10n.ui("Success")
       case .error: DashL10n.ui("Error")
       case .warning: DashL10n.ui("Warning")
+      case .info: DashL10n.ui("Note")
       }
     }
   }
 
   let kind: Kind
-  /// Defaults to the kind label (`Warning` / `Error` / `Success`).
+  /// Defaults to the kind label (`Warning` / `Error` / `Success` / `Note`).
   var title: String?
   let message: String
 
@@ -507,6 +508,7 @@ struct DashNotice: View {
     case .success: (DashTheme.success, DashTheme.successTint, SolarAsset.Content.checkCircle)
     case .error: (DashTheme.danger, DashTheme.dangerTint, SolarAsset.Content.danger)
     case .warning: (DashTheme.warning, DashTheme.warningTint, SolarAsset.Content.danger)
+    case .info: (DashTheme.brand, DashTheme.infoTint, SolarAsset.Content.checkCircle)
     }
   }
 

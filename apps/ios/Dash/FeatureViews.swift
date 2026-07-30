@@ -38,6 +38,7 @@ struct FeatureRouterContent: View {
       case .pages: PagesProjectsView()
       case .r2: R2BucketsView()
       case .kv: KVNamespacesView()
+      case .tunnels: TunnelsView()
       }
     }
   }
@@ -91,14 +92,19 @@ struct FeatureWriteAccessNotice: View {
 /// Maps a push destination to the catalog feature that owns its write scopes.
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
-  case .profile, .settings, .about, .openSource, .auditLogs, .pushAlerts, .watchtowerInbox: nil
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
+    .filesMount, .watchtowerInbox, .emailAddresses, .registrarDomains, .registrarDomain:
+    nil
   #if DEBUG
     case .debug: nil
   #endif
+  case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
-  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings:
+  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings,
+    .zoneEmailRouting:
     .zones
   case .worker: .workers
+  case .tunnel: .tunnels
   case .pagesProject, .pagesDeployment, .pagesDomains: .pages
   case .r2Bucket, .r2BucketSettings: .r2
   case .kvNamespace, .kvKey: .kv
@@ -115,7 +121,8 @@ func featureID(for destination: Destination) -> FeatureID? {
 /// include them. See DashAuthorizationScopes.initialReadOnly.
 func readScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .profile, .settings, .about, .openSource, .watchtowerInbox:
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .filesMount,
+    .watchtowerInbox:
     []
   #if DEBUG
     case .debug:
@@ -131,12 +138,25 @@ func readScopes(for destination: Destination) -> Set<String> {
     ["zone.read"]
   case .zoneSettings:
     ["zone.read", "zone-settings.read"]
+  case .zoneEmailRouting:
+    [
+      "zone.read", "dns.read", "zone-settings.read",
+      "email-routing-rule.read", "email-routing-address.read",
+    ]
+  case .emailAddresses:
+    ["email-routing-address.read"]
+  case .registrarDomains, .registrarDomain:
+    ["registrar-domains.read"]
+  case .tunnel:
+    ["argotunnel.read", "access.read"]
   case .zoneAnalytics:
     DashAuthorizationScopes.zoneAnalytics
   case .zoneWAF:
     DashAuthorizationScopes.zoneAnalytics.union(["zone-settings.read"])
   case .zoneWebAnalytics:
     DashAuthorizationScopes.webAnalytics
+  case .chartDetail(let detail):
+    detail.readScopes
   case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,
     .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
@@ -147,8 +167,8 @@ func readScopes(for destination: Destination) -> Set<String> {
 /// destination without enabling write controls owned by a sibling screen.
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .settings, .about, .openSource, .auditLogs, .watchtowerInbox, .zoneAnalytics,
-    .zoneWebAnalytics:
+  case .settings, .settingsAccounts, .about, .openSource, .auditLogs, .filesMount,
+    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   #if DEBUG
     case .debug:
@@ -164,6 +184,16 @@ func writeScopes(for destination: Destination) -> Set<String> {
     ["cache.purge"]
   case .zoneSettings:
     ["zone-settings.write"]
+  case .zoneEmailRouting:
+    ["zone-settings.write", "email-routing-rule.write"]
+  case .emailAddresses:
+    ["email-routing-address.write"]
+  case .registrarDomains:
+    []
+  case .registrarDomain:
+    ["registrar-domains.admin"]
+  case .tunnel:
+    []
   case .zoneWAF:
     ["zone-settings.write"]
   case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,

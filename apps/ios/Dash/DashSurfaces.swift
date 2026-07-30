@@ -1310,6 +1310,27 @@ enum StatusToken: String, CaseIterable, Sendable {
   case skipped
   /// Pages: Cloudflare reported a stage Dash does not model.
   case unknown
+  // Email Routing
+  case verified
+  case unverified
+  case ready
+  case misconfigured
+  case unlocked
+  case managed
+  case disabled
+  // Registrar
+  case registered
+  case registrationPending
+  case expired
+  case suspended
+  case redemptionPeriod
+  case pendingDelete
+  // Cloudflare Tunnel
+  case healthy
+  case degraded
+  case down
+  case inactive
+  case protected
 
   enum Presentation: Equatable {
     /// Quiet trailing label or check — never a colored capsule.
@@ -1327,19 +1348,28 @@ enum StatusToken: String, CaseIterable, Sendable {
 
   var presentation: Presentation {
     switch self {
-    case .current, .success: .quiet
+    case .current, .success, .verified, .ready, .registered, .healthy, .protected:
+      .quiet
     case .route, .readOnly, .locked, .unread, .failed, .inProgress, .canceled, .skipped,
-      .unknown:
+      .unknown, .unverified, .misconfigured, .unlocked, .managed, .disabled,
+      .registrationPending, .expired, .suspended, .redemptionPeriod, .pendingDelete, .degraded,
+      .down, .inactive:
       .capsule
     }
   }
 
   var tone: Tone {
     switch self {
-    case .current, .success: .success
-    case .readOnly, .locked: .warning
-    case .failed, .canceled: .danger
-    case .route, .unread, .inProgress, .skipped, .unknown: .info
+    case .current, .success, .verified, .ready, .registered, .healthy, .protected:
+      .success
+    case .readOnly, .locked, .unverified, .unlocked, .degraded:
+      .warning
+    case .failed, .canceled, .misconfigured, .expired, .suspended, .redemptionPeriod,
+      .pendingDelete, .down:
+      .danger
+    case .route, .unread, .inProgress, .skipped, .unknown, .managed, .disabled,
+      .registrationPending, .inactive:
+      .info
     }
   }
 
@@ -1359,6 +1389,24 @@ enum StatusToken: String, CaseIterable, Sendable {
     case .canceled: DashL10n.string("Canceled")
     case .skipped: DashL10n.string("Skipped")
     case .unknown: DashL10n.string("Unknown")
+    case .verified: DashL10n.string("Verified")
+    case .unverified: DashL10n.string("Unverified")
+    case .ready: DashL10n.string("Ready")
+    case .misconfigured: DashL10n.string("Misconfigured")
+    case .unlocked: DashL10n.string("Unlocked")
+    case .managed: DashL10n.string("Managed")
+    case .disabled: DashL10n.string("Disabled")
+    case .registered: DashL10n.string("Registered")
+    case .registrationPending: DashL10n.string("Pending")
+    case .expired: DashL10n.string("Expired")
+    case .suspended: DashL10n.string("Suspended")
+    case .redemptionPeriod: DashL10n.string("Redemption")
+    case .pendingDelete: DashL10n.string("Pending delete")
+    case .healthy: DashL10n.string("Healthy")
+    case .degraded: DashL10n.string("Degraded")
+    case .down: DashL10n.string("Down")
+    case .inactive: DashL10n.string("Inactive")
+    case .protected: DashL10n.string("Protected")
     }
   }
 
@@ -1381,6 +1429,49 @@ enum StatusToken: String, CaseIterable, Sendable {
       self = .skipped
     case "active", "idle", "building", "deploying", "queued", "initializing":
       self = .inProgress
+    default:
+      self = .unknown
+    }
+  }
+
+  /// Maps Cloudflare Registrar's raw registration lifecycle onto a token.
+  /// Unknown states stay unknown rather than inheriting a positive style.
+  init(registrarStatus: String?) {
+    let normalized =
+      registrarStatus?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+      .replacingOccurrences(of: " ", with: "_")
+    switch normalized {
+    case "active":
+      self = .registered
+    case "registration_pending":
+      self = .registrationPending
+    case "expired":
+      self = .expired
+    case "suspended":
+      self = .suspended
+    case "redemption_period":
+      self = .redemptionPeriod
+    case "pending_delete":
+      self = .pendingDelete
+    default:
+      self = .unknown
+    }
+  }
+
+  /// Maps Cloudflare Tunnel's raw health value onto a token. Anything new is
+  /// informationally unknown, never optimistically healthy.
+  init(tunnelStatus: String?) {
+    switch tunnelStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "healthy":
+      self = .healthy
+    case "degraded":
+      self = .degraded
+    case "down":
+      self = .down
+    case "inactive":
+      self = .inactive
     default:
       self = .unknown
     }

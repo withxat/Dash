@@ -176,6 +176,7 @@ import Testing
       workerErrors: 0,
       cpuTimeP90Us: 0,
       hours: 24),
+    previousOverview: nil,
     charts: [:],
     fetchedAt: .now)
 

@@ -8,7 +8,7 @@ private enum PushAlertScopes {
   static let all = read.union(write)
 }
 
-/// Settings card + full alerts screen for Cloudflare → APNs push.
+/// Settings controls + full alerts screen for Cloudflare → APNs push.
 struct PushAlertsSettingsCard: View {
   @Environment(AppModel.self) private var model
   @State private var pushEnabled = false
@@ -17,92 +17,101 @@ struct PushAlertsSettingsCard: View {
   @State private var testBusy = false
   @State private var isProvisional = false
   var body: some View {
-    DashListGroup(title: "Push alerts") {
-      dashListCard {
-        VStack(alignment: .leading, spacing: 10) {
-          if !model.hasScopes(PushAlertScopes.all) {
-            DashAuthorizationDisclosure()
-              .padding(.horizontal, 16)
-              .padding(.top, 12)
-          }
+    SettingsPlainSection(title: "Push alerts") {
+      if !model.hasScopes(PushAlertScopes.all) {
+        DashAuthorizationDisclosure()
+          .padding(.horizontal, DashTheme.Spacing.screen)
+          .padding(.bottom, 8)
+      }
 
-          DashToggleRow(
-            title: "Push alerts",
-            subtitle:
-              "Forward Cloudflare notification policies to this iPhone through dash.xat.sh.",
-            isOn: Binding(
-              get: { pushEnabled },
-              set: { newValue in
-                pushEnabled = newValue
-                Task { await setPushEnabled(newValue) }
-              }
-            ),
-            isEnabled: !pushBusy && model.configuration.pushBaseURL != nil,
-            isLoading: pushBusy
+      SettingsPlainToggleRow(
+        title: DashL10n.string("Push alerts"),
+        subtitle: DashL10n.string(
+          "Forward Cloudflare notification policies to this iPhone through dash.xat.sh."
+        ),
+        icon: SolarAsset.bolt,
+        isOn: Binding(
+          get: { pushEnabled },
+          set: { newValue in
+            pushEnabled = newValue
+            Task { await setPushEnabled(newValue) }
+          }
+        ),
+        isEnabled: !pushBusy && model.configuration.pushBaseURL != nil,
+        isLoading: pushBusy
+      )
+      .accessibilityIdentifier("Push alerts")
+
+      if model.configuration.pushBaseURL == nil {
+        DashNotice(
+          kind: .warning,
+          message: "Push is unavailable until the OAuth redirect URI is configured."
+        )
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .padding(.bottom, 8)
+      }
+
+      if let pushError {
+        DashNotice(kind: .error, message: pushError)
+          .padding(.horizontal, DashTheme.Spacing.screen)
+          .padding(.bottom, 8)
+      }
+
+      if pushEnabled, isProvisional {
+        SettingsPlainDivider()
+
+        // iOS granted quiet delivery without a dialog. Offer the upgrade here
+        // instead of firing the system prompt at toggle time.
+        Button {
+          Task { await promoteDelivery() }
+        } label: {
+          SettingsPlainRow(
+            title: DashL10n.string("Deliver alerts prominently"),
+            icon: SolarAsset.inbox,
+            textColor: DashTheme.brand
           )
-          .accessibilityIdentifier("Push alerts")
-
-          if model.configuration.pushBaseURL == nil {
-            DashNotice(
-              kind: .warning,
-              message: "Push is unavailable until the OAuth redirect URI is configured."
-            )
-            .padding(.horizontal, 16)
-            .padding(.bottom, 12)
-          }
-
-          if let pushError {
-            DashNotice(kind: .error, message: pushError)
-              .padding(.horizontal, 16)
-              .padding(.bottom, 12)
-          }
-
-          if pushEnabled, isProvisional {
-            // iOS granted quiet delivery without a dialog. Offer the upgrade
-            // here rather than firing the system prompt at toggle time.
-            Button {
-              Task { await promoteDelivery() }
-            } label: {
-              Text(DashL10n.string("Deliver alerts prominently"))
-                .dashTextStyle(.bodyMedium)
-                .foregroundStyle(DashTheme.brand)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
-            }
-            .buttonStyle(DashPressButtonStyle())
-            .accessibilityIdentifier("Deliver alerts prominently")
-
-            DashListGroupDivider()
-          }
-
-          if pushEnabled {
-            Button {
-              Task { await sendTest() }
-            } label: {
-              Text(DashL10n.string(testBusy ? "Sending…" : "Send test alert"))
-                .dashTextStyle(.bodyMedium)
-                .foregroundStyle(DashTheme.brand)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
-            }
-            .buttonStyle(DashPressButtonStyle())
-            .disabled(testBusy)
-            .accessibilityIdentifier("Send test alert")
-
-            DashListGroupDivider()
-
-            DashListGroupLink(value: .pushAlerts) {
-              DashListRow(
-                title: DashL10n.string("Alert policies"),
-                subtitle: DashL10n.string("Choose which Cloudflare alerts reach this iPhone"),
-                icon: SolarAsset.Content.bolt
-              )
-            }
-          }
         }
-        .dashListCardInset()
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("Deliver alerts prominently")
+      }
+
+      if pushEnabled {
+        SettingsPlainDivider()
+
+        Button {
+          Task { await sendTest() }
+        } label: {
+          SettingsPlainRow(
+            title: DashL10n.string(testBusy ? "Sending…" : "Send test alert"),
+            icon: SolarAsset.inbox,
+            textColor: DashTheme.brand
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .disabled(testBusy)
+        .accessibilityIdentifier("Send test alert")
+
+        SettingsPlainDivider()
+
+        DashListGroupLink(value: .pushAlerts) {
+          SettingsPlainRow(
+            title: DashL10n.string("Alert policies"),
+            subtitle: DashL10n.string("Choose which Cloudflare alerts reach this iPhone"),
+            icon: SolarAsset.bolt,
+            showsChevron: true
+          )
+        }
+      }
+
+      SettingsPlainDivider()
+
+      DashListGroupLink(value: .filesMount) {
+        SettingsPlainRow(
+          title: DashL10n.string("Files"),
+          subtitle: DashL10n.string("Show R2 buckets in the Files app"),
+          icon: SolarAsset.Content.folder,
+          showsChevron: true
+        )
       }
     }
     .task(id: model.accountRequestContext) {
