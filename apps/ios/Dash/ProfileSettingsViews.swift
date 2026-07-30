@@ -366,7 +366,6 @@ struct SettingsView: View {
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Language"),
-              subtitle: DashL10n.string("App display language"),
               icon: SolarAsset.globus,
               trailing: selectedLanguage.displayName,
               trailingIcon: SolarAsset.menuDots
@@ -374,6 +373,24 @@ struct SettingsView: View {
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityHint(DashL10n.string("Choose English, Simplified Chinese, or System"))
+
+          SettingsPlainDivider()
+
+          // Appearance held this one row on its own; a single-row section is a
+          // header the page pays for twice.
+          Button {
+            showsWorkspaceWashPicker = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Top glow"),
+              subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
+              icon: SolarAsset.slider,
+              trailing: selectedWorkspaceWash.displayName,
+              trailingIcon: SolarAsset.menuDots
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("workspace-wash-color")
 
           SettingsPlainDivider()
 
@@ -397,22 +414,6 @@ struct SettingsView: View {
             icon: SolarAsset.lock,
             isOn: $holdToConfirmEnabled
           )
-        }
-
-        SettingsPlainSection(title: "Appearance") {
-          Button {
-            showsWorkspaceWashPicker = true
-          } label: {
-            SettingsPlainRow(
-              title: DashL10n.string("Top glow"),
-              subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
-              icon: SolarAsset.slider,
-              trailing: selectedWorkspaceWash.displayName,
-              trailingIcon: SolarAsset.menuDots
-            )
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityIdentifier("workspace-wash-color")
         }
 
         SettingsPlainSection(title: "iCloud") {
@@ -450,7 +451,7 @@ struct SettingsView: View {
           SettingsPlainToggleRow(
             title: DashL10n.string("Notifications"),
             subtitle: DashL10n.string(
-              "Cloudflare delivers an alert here when one of your notification policies fires."
+              "Notify this iPhone when a Dash refresh finds new Cloudflare deliveries."
             ),
             icon: SolarAsset.inbox,
             isOn: $watchtowerNotifications
@@ -482,11 +483,13 @@ struct SettingsView: View {
             .padding(.horizontal, DashTheme.Spacing.screen)
             .padding(.bottom, 8)
           }
+
+          SettingsPlainDivider()
+
+          PushAlertsSettingsRows()
         }
 
-        PushAlertsSettingsCard()
-
-        SettingsPlainSection(title: "Shortcuts") {
+        SettingsPlainSection(title: "Integrations") {
           SettingsPlainRow(
             title: DashL10n.string("Siri & Shortcuts"),
             subtitle: DashL10n.string(
@@ -496,6 +499,17 @@ struct SettingsView: View {
           )
           .accessibilityHint(
             DashL10n.string("Available in the Shortcuts app when Dash is signed in"))
+
+          SettingsPlainDivider()
+
+          DashListGroupLink(value: .filesMount) {
+            SettingsPlainRow(
+              title: DashL10n.string("Files"),
+              subtitle: DashL10n.string("Show R2 buckets in the Files app"),
+              icon: SolarAsset.folder,
+              showsChevron: true
+            )
+          }
 
           SettingsPlainDivider()
 
@@ -531,68 +545,74 @@ struct SettingsView: View {
           }
         }
 
-        SettingsPlainSection(title: "Help & legal") {
-          externalRow(
-            title: DashL10n.string("Send feedback"),
-            subtitle: DashL10n.string("Email i@xat.sh"),
-            icon: SolarAsset.inbox,
-            destination: DashHelpLink.feedback,
-            accessibilityHint: DashL10n.string("Opens your email app")
-          )
-
-          SettingsPlainDivider()
-
-          externalRow(
-            title: DashL10n.string("Privacy Policy"),
-            subtitle: DashL10n.string("How Dash handles account and device data"),
-            icon: SolarAsset.shieldCheck,
-            destination: DashHelpLink.privacy,
-            accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
-          )
-
-          SettingsPlainDivider()
-
-          externalRow(
-            title: DashL10n.string("Terms of Use"),
-            subtitle: DashL10n.string("Independent client and operation responsibilities"),
-            icon: SolarAsset.file,
-            destination: DashHelpLink.terms,
-            accessibilityHint: DashL10n.string("Opens the terms on dash.xat.sh")
-          )
-        }
-
-        SettingsPlainSection(title: "About") {
-          DashListGroupLink(value: .about) {
-            SettingsPlainRow(
-              title: DashL10n.string("About Dash"),
-              subtitle: DashL10n.string("Version and app details"),
-              icon: SolarAsset.userCircle,
-              showsChevron: true
+        // Help, legal, and About were three-row and two-row sections stacked at
+        // the foot of the page; the titles carry these rows on their own, so
+        // the subtitles and the extra header are gone.
+        SettingsPlainSection(title: "Help & about") {
+          // Two `Group`s: one merged section now holds more rows than a single
+          // `ViewBuilder` accepts, and `Group` nests them without changing the
+          // enclosing stack's layout.
+          Group {
+            externalRow(
+              title: DashL10n.string("Send feedback"),
+              subtitle: DashL10n.string("Email i@xat.sh"),
+              icon: SolarAsset.inbox,
+              destination: DashHelpLink.feedback,
+              accessibilityHint: DashL10n.string("Opens your email app")
             )
-          }
 
-          SettingsPlainDivider()
-
-          DashListGroupLink(value: .openSource) {
-            SettingsPlainRow(
-              title: DashL10n.string("Open source"),
-              subtitle: DashL10n.string("Libraries and icons that power Dash"),
-              icon: SolarAsset.code,
-              showsChevron: true
-            )
-          }
-
-          #if DEBUG
             SettingsPlainDivider()
 
-            DashListGroupLink(value: .debug) {
+            externalRow(
+              title: DashL10n.string("Privacy Policy"),
+              icon: SolarAsset.shieldCheck,
+              destination: DashHelpLink.privacy,
+              accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
+            )
+
+            SettingsPlainDivider()
+
+            externalRow(
+              title: DashL10n.string("Terms of Use"),
+              icon: SolarAsset.file,
+              destination: DashHelpLink.terms,
+              accessibilityHint: DashL10n.string("Opens the terms on dash.xat.sh")
+            )
+          }
+
+          Group {
+            SettingsPlainDivider()
+
+            DashListGroupLink(value: .about) {
               SettingsPlainRow(
-                title: "Debug",
-                icon: SolarAsset.codeCircle,
+                title: DashL10n.string("About Dash"),
+                icon: SolarAsset.userCircle,
                 showsChevron: true
               )
             }
-          #endif
+
+            SettingsPlainDivider()
+
+            DashListGroupLink(value: .openSource) {
+              SettingsPlainRow(
+                title: DashL10n.string("Open source"),
+                icon: SolarAsset.code,
+                showsChevron: true
+              )
+            }
+
+            #if DEBUG
+              SettingsPlainDivider()
+
+              DashListGroupLink(value: .debug) {
+                SettingsPlainRow(
+                  title: "Debug",
+                  icon: SolarAsset.codeCircle,
+                  showsChevron: true
+                )
+              }
+            #endif
+          }
         }
 
         SettingsPlainSection(title: "Account") {
@@ -648,7 +668,7 @@ struct SettingsView: View {
 
   private func externalRow(
     title: String,
-    subtitle: String,
+    subtitle: String? = nil,
     icon: String,
     destination: URL,
     accessibilityHint: String
