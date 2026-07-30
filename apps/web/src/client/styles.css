@@ -121,3 +121,237 @@
 	pointer-events: none;
 	user-select: none;
 }
+
+/*
+  Device cluster:
+  - Compact: three upright phones in a horizontal scroll track
+  - sm+: fanned composition on the umbrella stage
+  Layout classes are @utility so better-tailwindcss recognizes them in TSX.
+*/
+@utility device-cluster {
+	position: relative;
+	/* Bleed past the page gutters (px-5 / sm:px-8) so the row can scroll edge to edge */
+	width: calc(100% + 2.5rem);
+	max-width: none;
+	margin-inline: -1.25rem;
+	padding-bottom: 0.5rem;
+}
+
+@utility device-cluster-stage {
+	position: absolute;
+	z-index: 0;
+	right: 1.25rem;
+	bottom: 0;
+	left: 1.25rem;
+	height: 48%;
+	overflow: hidden;
+	border-radius: 1.5rem;
+	/* Deep cool base only as the mesh floor — chroma lives in the moving layers */
+	background-color: oklch(28% 0.06 280);
+	background-image:
+		conic-gradient(
+			from var(--device-stage-angle, 0deg) at 50% 35%,
+			oklch(72% 0.19 45),
+			oklch(78% 0.16 30),
+			oklch(70% 0.17 320),
+			oklch(68% 0.14 250),
+			oklch(74% 0.15 200),
+			oklch(76% 0.18 55),
+			oklch(72% 0.19 45)
+		),
+		radial-gradient(
+			ellipse 70% 55% at var(--device-stage-x1, 22%) var(--device-stage-y1, 40%),
+			oklch(80% 0.16 50 / 0.9),
+			transparent 62%
+		),
+		radial-gradient(
+			ellipse 65% 50% at var(--device-stage-x2, 78%) var(--device-stage-y2, 55%),
+			oklch(72% 0.18 300 / 0.85),
+			transparent 60%
+		),
+		radial-gradient(ellipse 90% 70% at 50% 100%, oklch(70% 0.14 40 / 0.7), transparent 55%);
+	background-blend-mode: soft-light, normal, normal, normal;
+	animation: device-stage-umbrella 12s ease-in-out infinite alternate;
+}
+
+@property --device-stage-angle {
+	syntax: '<angle>';
+	inherits: false;
+	initial-value: 0deg;
+}
+
+@property --device-stage-x1 {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 22%;
+}
+
+@property --device-stage-y1 {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 40%;
+}
+
+@property --device-stage-x2 {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 78%;
+}
+
+@property --device-stage-y2 {
+	syntax: '<percentage>';
+	inherits: false;
+	initial-value: 55%;
+}
+
+@keyframes device-stage-umbrella {
+	0% {
+		--device-stage-angle: 0deg;
+		--device-stage-x1: 18%;
+		--device-stage-y1: 38%;
+		--device-stage-x2: 82%;
+		--device-stage-y2: 58%;
+	}
+	100% {
+		--device-stage-angle: 48deg;
+		--device-stage-x1: 32%;
+		--device-stage-y1: 52%;
+		--device-stage-x2: 68%;
+		--device-stage-y2: 42%;
+	}
+}
+
+@utility device-cluster-track {
+	position: relative;
+	z-index: 1;
+	display: flex;
+	flex-direction: row;
+	align-items: flex-end;
+	gap: 1rem;
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	scroll-snap-type: x mandatory;
+	scroll-padding-inline: 1.25rem;
+	padding: 0.5rem 1.25rem 1.25rem;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none;
+
+	&::-webkit-scrollbar {
+		display: none;
+	}
+}
+
+@utility device-cluster-phone {
+	position: relative;
+	flex: 0 0 auto;
+	width: min(58vw, 15.5rem);
+	scroll-snap-align: center;
+	transform: none;
+
+	/* Compact: upright row reads cleaner without per-phone drop shadows */
+	.app-shot-shadow {
+		filter: none;
+	}
+}
+
+@utility device-cluster-phone-left {
+	inset: auto;
+	bottom: auto;
+	left: auto;
+	right: auto;
+	z-index: auto;
+	width: min(58vw, 15.5rem);
+	transform: none;
+}
+
+@utility device-cluster-phone-center {
+	inset: auto;
+	bottom: auto;
+	left: auto;
+	right: auto;
+	z-index: auto;
+	width: min(58vw, 15.5rem);
+	transform: none;
+}
+
+@utility device-cluster-phone-right {
+	inset: auto;
+	bottom: auto;
+	left: auto;
+	right: auto;
+	z-index: auto;
+	width: min(58vw, 15.5rem);
+	transform: none;
+}
+
+@media (min-width: 640px) {
+	.device-cluster {
+		width: min(100%, 52rem);
+		max-width: min(100%, 52rem);
+		aspect-ratio: 1.05 / 1;
+		margin-inline: auto;
+		padding-bottom: 0;
+	}
+
+	.device-cluster-stage {
+		right: 0;
+		bottom: 0;
+		left: 0;
+		height: 56%;
+		border-radius: 2.25rem;
+	}
+
+	.device-cluster-track {
+		position: absolute;
+		inset: 0;
+		display: block;
+		overflow: visible;
+		padding: 0;
+		scroll-snap-type: none;
+	}
+
+	.device-cluster-phone {
+		position: absolute;
+		flex: none;
+		width: 38%;
+		scroll-snap-align: none;
+		transform-origin: 50% 100%;
+		will-change: transform;
+	}
+
+	.device-cluster-phone .app-shot-shadow {
+		filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
+	}
+
+	.device-cluster-phone-left {
+		bottom: 11%;
+		left: 2%;
+		z-index: 1;
+		transform: rotate(-14deg) translateY(6%);
+	}
+
+	.device-cluster-phone-center {
+		bottom: 9%;
+		left: 50%;
+		z-index: 3;
+		width: 42%;
+		transform: translateX(-50%);
+	}
+
+	.device-cluster-phone-right {
+		right: 2%;
+		bottom: 11%;
+		z-index: 2;
+		transform: rotate(14deg) translateY(6%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.device-cluster-phone {
+		will-change: auto;
+	}
+
+	.device-cluster-stage {
+		animation: none;
+	}
+}
