@@ -277,10 +277,6 @@ struct ZoneDetailView: View {
       title: "DNS", icon: SolarAsset.Content.globus, route: Destination.dns,
       blurb: "Records and proxy status"),
     ZoneTool(
-      title: "DNS analytics", icon: SolarAsset.Content.chart,
-      route: Destination.zoneDNSAnalytics,
-      blurb: "Query volume over time"),
-    ZoneTool(
       title: "HTTP traffic", icon: SolarAsset.Content.chart, route: Destination.zoneAnalytics,
       blurb: "Requests, visitors, and bandwidth"),
     ZoneTool(

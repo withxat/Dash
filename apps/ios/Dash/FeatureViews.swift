@@ -102,8 +102,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   #endif
   case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
-  case .zone, .dns, .cache, .zoneAnalytics, .zoneDNSAnalytics, .zoneWebAnalytics, .zoneWAF,
-    .zoneSettings:
+  case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings:
     .zones
   case .zoneEmailRouting, .emailAddresses:
     .emailRouting
@@ -152,7 +151,7 @@ func readScopes(for destination: Destination) -> Set<String> {
     ["email-routing-address.read"]
   case .tunnel:
     ["argotunnel.read", "access.read"]
-  case .zoneAnalytics, .zoneDNSAnalytics:
+  case .zoneAnalytics:
     DashAuthorizationScopes.zoneAnalytics
   case .zoneWAF:
     DashAuthorizationScopes.zoneAnalytics.union(["zone-settings.read"])
@@ -171,7 +170,7 @@ func readScopes(for destination: Destination) -> Set<String> {
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
   case .settings, .settingsAccounts, .about, .openSource, .auditLogs, .filesMount,
-    .watchtowerInbox, .zoneAnalytics, .zoneDNSAnalytics, .zoneWebAnalytics, .chartDetail:
+    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   #if DEBUG
     case .debug:

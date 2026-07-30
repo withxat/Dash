@@ -2743,35 +2743,6 @@ struct NetworkTests {
     #expect(summary.rules.map(\.count) == [2, 1])
   }
 
-  @Test func dnsAnalyticsHourlyComparisonAggregatesQueries() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      let body = try #require(requestBodyData(request))
-      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-      let query = try #require(object["query"] as? String)
-      #expect(query.contains("dnsAnalyticsAdaptiveGroups"))
-      #expect(query.contains("queryType"))
-      return (
-        200,
-        Data(
-          #"""
-          {"data":{"viewer":{"zones":[{
-            "current":[{"count":10,"dimensions":{"datetimeHour":"2026-07-30T10:00:00Z"}}],
-            "previous":[{"count":4,"dimensions":{"datetimeHour":"2026-07-29T10:00:00Z"}}],
-            "queryTypes":[{"count":7,"dimensions":{"queryType":"A"}}]
-          }]}},"errors":null}
-          """#.utf8)
-      )
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let summary = try await client.dnsAnalyticsHourlyComparison(zoneID: "zone", hours: 24)
-    #expect(summary.totalQueries == 10)
-    #expect(summary.previousTotalQueries == 4)
-    #expect(summary.queryTypes.map(\.label) == ["A"])
-  }
-
   @Test func r2BucketAnalyticsSumsOperations() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in

@@ -164,23 +164,6 @@
         }
       }
     },
-    "%@ queries" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ queries"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 次查询"
-          }
-        }
-      }
-    },
     "%@ record %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4370,57 +4353,6 @@
         }
       }
     },
-    "DNS analytics" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "DNS analytics"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "DNS 分析"
-          }
-        }
-      }
-    },
-    "DNS queries" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "DNS queries"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "DNS 查询"
-          }
-        }
-      }
-    },
-    "DNS queries chart for %@. Total %@ queries." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "DNS queries chart for %@. Total %@ queries."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ 的 DNS 查询图表。共 %@ 次查询。"
-          }
-        }
-      }
-    },
     "DNS record" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -8292,23 +8224,6 @@
         }
       }
     },
-    "No DNS queries yet" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No DNS queries yet"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "暂无 DNS 查询"
-          }
-        }
-      }
-    },
     "No DNS records" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -10317,74 +10232,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "推送工作正常。"
-          }
-        }
-      }
-    },
-    "Queries" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Queries"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查询"
-          }
-        }
-      }
-    },
-    "Query types" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Query types"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查询类型"
-          }
-        }
-      }
-    },
-    "Query volume for this domain will appear here." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Query volume for this domain will appear here."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "此域名的查询量会显示在这里。"
-          }
-        }
-      }
-    },
-    "Query volume over time" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Query volume over time"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "查询量随时间变化"
           }
         }
       }

@@ -841,7 +841,6 @@ struct LocalizationTests {
 @Test func destinationFeatureMappingCoversDirectRoutes() {
   #expect(featureID(for: .zone("z1")) == .zones)
   #expect(featureID(for: .dns("z1")) == .zones)
-  #expect(featureID(for: .zoneDNSAnalytics("z1")) == .zones)
   #expect(featureID(for: .zoneEmailRouting("z1")) == .emailRouting)
   #expect(featureID(for: .worker("api")) == .workers)
   #expect(featureID(for: .tunnel("t1")) == .tunnels)

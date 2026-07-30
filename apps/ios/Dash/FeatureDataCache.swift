@@ -48,12 +48,6 @@ enum FeatureCacheKey {
     "zoneAnalytics:\(zoneID):\(days)"
   }
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
-  static func zoneDNSAnalytics(_ zoneID: String, days: Int) -> String {
-    "zoneDNSAnalytics:\(zoneID):\(days)"
-  }
-  static func zoneDNSAnalyticsHourly(_ zoneID: String) -> String {
-    "zoneDNSAnalyticsHourly:\(zoneID)"
-  }
   static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
   static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
   static func emailRoutingAnalytics(_ zoneID: String) -> String {

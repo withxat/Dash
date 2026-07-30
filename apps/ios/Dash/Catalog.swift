@@ -66,8 +66,6 @@ enum Destination: Hashable {
   case dns(String)
   case cache(String)
   case zoneAnalytics(String)
-  /// DNS query volume from `dnsAnalyticsAdaptiveGroups` — not the DNS records list.
-  case zoneDNSAnalytics(String)
   /// Beacon-reported Web Analytics (RUM) — a different measurement from
   /// `zoneAnalytics`, which is what the edge saw.
   case zoneWebAnalytics(String)

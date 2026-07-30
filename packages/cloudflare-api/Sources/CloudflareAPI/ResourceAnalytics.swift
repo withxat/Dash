@@ -1,49 +1,5 @@
 import Foundation
 
-// MARK: - DNS
-
-/// One DNS query-volume bucket (hourly ISO timestamp or `yyyy-MM-dd`).
-public struct DNSAnalyticsPoint: Codable, Hashable, Sendable {
-  public let datetime: String
-  public let queries: Int
-
-  public init(datetime: String, queries: Int) {
-    self.datetime = datetime
-    self.queries = queries
-  }
-}
-
-public struct DNSAnalyticsBucket: Codable, Hashable, Identifiable, Sendable {
-  public var id: String { label }
-  public let label: String
-  public let count: Int
-
-  public init(label: String, count: Int) {
-    self.label = label
-    self.count = count
-  }
-}
-
-/// Zone DNS query analytics from `dnsAnalyticsAdaptiveGroups`.
-public struct DNSAnalyticsSummary: Codable, Hashable, Sendable {
-  public let points: [DNSAnalyticsPoint]
-  public let totalQueries: Int
-  public let previousTotalQueries: Int?
-  public let queryTypes: [DNSAnalyticsBucket]
-
-  public init(
-    points: [DNSAnalyticsPoint],
-    totalQueries: Int,
-    previousTotalQueries: Int? = nil,
-    queryTypes: [DNSAnalyticsBucket] = []
-  ) {
-    self.points = points
-    self.totalQueries = totalQueries
-    self.previousTotalQueries = previousTotalQueries
-    self.queryTypes = queryTypes
-  }
-}
-
 // MARK: - Email Routing
 
 public struct EmailRoutingAnalyticsPoint: Codable, Hashable, Sendable {
@@ -107,80 +63,6 @@ public struct StorageAnalyticsSummary: Codable, Hashable, Sendable {
 // MARK: - Client
 
 extension CloudflareClient {
-  /// Hourly DNS query volume for adjacent equal windows, plus top query types
-  /// for the current window. Requires `analytics.read`.
-  public func dnsAnalyticsHourlyComparison(zoneID: String, hours: Int = 24) async throws
-    -> DNSAnalyticsSummary
-  {
-    let window = max(hours, 1)
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    let end = Date()
-    let currentStart = end.addingTimeInterval(-TimeInterval(window) * 3600)
-    let previousStart = currentStart.addingTimeInterval(-TimeInterval(window) * 3600)
-    let endStamp = formatter.string(from: end)
-    let currentStartStamp = formatter.string(from: currentStart)
-    let previousStartStamp = formatter.string(from: previousStart)
-    let query = """
-      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
-      current: dnsAnalyticsAdaptiveGroups(limit: \(window + 1), \
-      filter: {datetime_geq: "\(currentStartStamp)", datetime_lt: "\(endStamp)"}, \
-      orderBy: [datetimeHour_ASC]) { count dimensions { datetimeHour } } \
-      previous: dnsAnalyticsAdaptiveGroups(limit: \(window + 1), \
-      filter: {datetime_geq: "\(previousStartStamp)", datetime_lt: "\(currentStartStamp)"}, \
-      orderBy: [datetimeHour_ASC]) { count dimensions { datetimeHour } } \
-      queryTypes: dnsAnalyticsAdaptiveGroups(limit: 8, \
-      filter: {datetime_geq: "\(currentStartStamp)", datetime_lt: "\(endStamp)"}, \
-      orderBy: [count_DESC]) { count dimensions { queryType } } } } }
-      """
-    return try await decodeDNSAnalytics(
-      query: query,
-      mapPoint: {
-        DNSAnalyticsPoint(datetime: $0.dimensions.datetimeHour ?? "", queries: $0.count)
-      },
-      mapQueryType: true)
-  }
-
-  /// Daily DNS query volume for adjacent equal windows. Requires `analytics.read`.
-  public func dnsAnalyticsDailyComparison(zoneID: String, days: Int = 7) async throws
-    -> DNSAnalyticsSummary
-  {
-    let window = max(days, 1)
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
-    let end = calendar.startOfDay(for: Date())
-    let currentStart = calendar.date(byAdding: .day, value: -window, to: end) ?? end
-    let previousStart =
-      calendar.date(byAdding: .day, value: -window, to: currentStart) ?? currentStart
-    let dayFormatter = DateFormatter()
-    dayFormatter.dateFormat = "yyyy-MM-dd"
-    dayFormatter.locale = Locale(identifier: "en_US_POSIX")
-    dayFormatter.timeZone = TimeZone(identifier: "UTC")
-    let endDay = dayFormatter.string(from: calendar.date(byAdding: .day, value: -1, to: end) ?? end)
-    let currentStartDay = dayFormatter.string(from: currentStart)
-    let previousEndDay =
-      dayFormatter.string(
-        from: calendar.date(byAdding: .day, value: -1, to: currentStart) ?? currentStart)
-    let previousStartDay = dayFormatter.string(from: previousStart)
-    let query = """
-      { viewer { zones(filter: {zoneTag: "\(zoneID)"}) { \
-      current: dnsAnalyticsAdaptiveGroups(limit: \(window + 1), \
-      filter: {date_geq: "\(currentStartDay)", date_leq: "\(endDay)"}, \
-      orderBy: [date_ASC]) { count dimensions { date } } \
-      previous: dnsAnalyticsAdaptiveGroups(limit: \(window + 1), \
-      filter: {date_geq: "\(previousStartDay)", date_leq: "\(previousEndDay)"}, \
-      orderBy: [date_ASC]) { count dimensions { date } } \
-      queryTypes: dnsAnalyticsAdaptiveGroups(limit: 8, \
-      filter: {date_geq: "\(currentStartDay)", date_leq: "\(endDay)"}, \
-      orderBy: [count_DESC]) { count dimensions { queryType } } } } }
-      """
-    return try await decodeDNSAnalytics(
-      query: query,
-      mapPoint: { DNSAnalyticsPoint(datetime: $0.dimensions.date ?? "", queries: $0.count) },
-      mapQueryType: true)
-  }
-
   /// Email Routing volume for the last `hours` via `emailRoutingAdaptiveGroups`.
   /// Requires `analytics.read`. Empty results are success, not an error.
   public func emailRoutingAnalytics(zoneID: String, hours: Int = 24) async throws
@@ -294,44 +176,6 @@ extension CloudflareClient {
       points: points)
   }
 
-  private func decodeDNSAnalytics(
-    query: String,
-    mapPoint: (DNSAnalyticsData.Group) -> DNSAnalyticsPoint,
-    mapQueryType: Bool
-  ) async throws -> DNSAnalyticsSummary {
-    let response = try await graphQL(query: query)
-    let envelope = try JSONDecoder().decode(
-      GraphQLEnvelope<DNSAnalyticsData>.self, from: response)
-    if let error = envelope.errors?.first {
-      throw CloudflareAPIError.request(
-        status: error.semanticStatusCode,
-        errors: [APIErrorItem(code: 0, message: error.message)])
-    }
-    let zone = envelope.data?.viewer.zones.first
-    let points = (zone?.current ?? []).map(mapPoint).filter { !$0.datetime.isEmpty }
-    let total = points.reduce(0) { $0 + $1.queries }
-    let previousTotal = zone?.previous.map { rows in
-      rows.reduce(0) { $0 + $1.count }
-    }
-    let queryTypes: [DNSAnalyticsBucket]
-    if mapQueryType {
-      queryTypes = (zone?.queryTypes ?? []).compactMap { group in
-        guard
-          let label = group.dimensions.queryType?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !label.isEmpty
-        else { return nil }
-        return DNSAnalyticsBucket(label: label, count: group.count)
-      }
-    } else {
-      queryTypes = []
-    }
-    return DNSAnalyticsSummary(
-      points: points,
-      totalQueries: total,
-      previousTotalQueries: previousTotal,
-      queryTypes: queryTypes)
-  }
-
   private static func escapeGraphQLString(_ value: String) -> String {
     value
       .replacingOccurrences(of: "\\", with: "\\\\")
@@ -340,25 +184,6 @@ extension CloudflareClient {
 }
 
 // MARK: - Decode shapes
-
-private struct DNSAnalyticsData: Decodable, Sendable {
-  let viewer: Viewer
-  struct Viewer: Decodable, Sendable { let zones: [Zone] }
-  struct Zone: Decodable, Sendable {
-    let current: [Group]?
-    let previous: [Group]?
-    let queryTypes: [Group]?
-  }
-  struct Group: Decodable, Sendable {
-    let count: Int
-    let dimensions: Dimensions
-    struct Dimensions: Decodable, Sendable {
-      let datetimeHour: String?
-      let date: String?
-      let queryType: String?
-    }
-  }
-}
 
 private struct EmailRoutingAnalyticsData: Decodable, Sendable {
   let viewer: Viewer

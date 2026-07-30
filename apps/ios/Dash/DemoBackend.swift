@@ -750,15 +750,6 @@ final class DemoBackend: URLProtocol {
     {
       return Reply(json: DemoWorld.firewallEvents(scale: scale))
     }
-    if query.contains("dnsAnalyticsAdaptiveGroups") {
-      let hours = query.contains("datetimeHour")
-      if hours {
-        return Reply(
-          json: DemoWorld.dnsAnalyticsHourly(
-            hours: max((limit(in: query) ?? 25) - 1, 1), scale: scale))
-      }
-      return Reply(json: DemoWorld.dnsAnalyticsDaily(days: limit(in: query) ?? 7, scale: scale))
-    }
     if query.contains("emailRoutingAdaptiveGroups") {
       return Reply(json: DemoWorld.emailRoutingAnalytics(scale: scale))
     }
@@ -1699,58 +1690,6 @@ private enum DemoWorld {
         "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}],
         "currentVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2100000,"interactionToNextPaintP75":140000,"cumulativeLayoutShiftP75":0.09}}],
         "previousVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2300000,"interactionToNextPaintP75":160000,"cumulativeLayoutShiftP75":0.11}}]
-      }]}},"errors":null}
-      """#
-  }
-
-  static func dnsAnalyticsHourly(hours: Int, scale: Double) -> String {
-    let count = max(hours, 1)
-    let current = (0..<count).map { hour -> String in
-      let queries = max(1, scaled(120 + wave(hour, base: 0, swing: 80), scale))
-      return
-        #"{"count":\#(queries),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count - hour))"}}"#
-    }
-    let previous = (0..<count).map { hour -> String in
-      let queries = max(1, scaled(90 + wave(hour, base: 1, swing: 60), scale))
-      return
-        #"{"count":\#(queries),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count * 2 - hour))"}}"#
-    }
-    let types = [
-      #"{"count":\#(max(1, scaled(40, scale))),"dimensions":{"queryType":"A"}}"#,
-      #"{"count":\#(max(1, scaled(22, scale))),"dimensions":{"queryType":"AAAA"}}"#,
-      #"{"count":\#(max(1, scaled(12, scale))),"dimensions":{"queryType":"MX"}}"#,
-    ]
-    return #"""
-      {"data":{"viewer":{"zones":[{
-        "current":[\#(current.joined(separator: ","))],
-        "previous":[\#(previous.joined(separator: ","))],
-        "queryTypes":[\#(types.joined(separator: ","))]
-      }]}},"errors":null}
-      """#
-  }
-
-  static func dnsAnalyticsDaily(days: Int, scale: Double) -> String {
-    let count = max(days, 1)
-    let current = (0..<count).map { day -> String in
-      let queries = max(1, scaled(2_400 + wave(day, base: 0, swing: 900), scale))
-      return
-        #"{"count":\#(queries),"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
-    }
-    let previous = (0..<count).map { day -> String in
-      let queries = max(1, scaled(1_800 + wave(day, base: 2, swing: 700), scale))
-      return
-        #"{"count":\#(queries),"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count * 2 - day))"}}"#
-    }
-    let types = [
-      #"{"count":\#(max(1, scaled(900, scale))),"dimensions":{"queryType":"A"}}"#,
-      #"{"count":\#(max(1, scaled(420, scale))),"dimensions":{"queryType":"AAAA"}}"#,
-      #"{"count":\#(max(1, scaled(180, scale))),"dimensions":{"queryType":"TXT"}}"#,
-    ]
-    return #"""
-      {"data":{"viewer":{"zones":[{
-        "current":[\#(current.joined(separator: ","))],
-        "previous":[\#(previous.joined(separator: ","))],
-        "queryTypes":[\#(types.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }
