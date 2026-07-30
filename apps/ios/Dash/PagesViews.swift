@@ -90,7 +90,8 @@ struct PagesProjectDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { pagesProjectDetailSkeleton }
     ) {
       DashSurfaceStack {
         if let project {
@@ -196,6 +197,37 @@ struct PagesProjectDetailView: View {
       await load()
     }
     .refreshable { await load(force: true) }
+  }
+
+  /// Summary card, Domains row, build-outcomes panel, then Deployments rows —
+  /// the same first-paint stack the loaded project settles into.
+  private var pagesProjectDetailSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashSurfaceStack {
+        DashCard {
+          VStack(alignment: .leading, spacing: 8) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.55))
+              .frame(width: 160, height: 18)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.4))
+              .frame(width: 200, height: 12)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        dashListCard {
+          DashListRowPlaceholders(rows: 1)
+            .dashListCardInset()
+        }
+        DashChartPanelPlaceholder(showsLegend: true)
+      }
+      DashListGroup(title: "Deployments") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   private var buildOutcomesCard: some View {
@@ -398,7 +430,8 @@ struct PagesDeploymentDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await refreshManually() } }
+      retry: { Task { await refreshManually() } },
+      skeleton: { pagesDeploymentDetailSkeleton }
     ) {
       if let deployment {
         deploymentGroup(deployment)
@@ -425,6 +458,21 @@ struct PagesDeploymentDetailView: View {
       }
       await monitorDeployment(key)
     }
+  }
+
+  /// Deployment + Stages info groups — the bounded fields that paint first.
+  private var pagesDeploymentDetailSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashInfoGroup(title: "Deployment", phase: .loading, placeholderRows: 4) {
+        EmptyView()
+      }
+      DashInfoGroup(title: "Stages", phase: .loading, placeholderRows: 3) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   /// The commit message is the screen's `detailHeader` title, so it is not

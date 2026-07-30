@@ -221,7 +221,8 @@ struct TunnelDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { tunnelDetailSkeleton }
     ) {
       if let tunnel = displayedTunnel {
         tunnelGroup(tunnel)
@@ -241,6 +242,14 @@ struct TunnelDetailView: View {
   }
 
   // MARK: Section 1 — Tunnel
+
+  /// The Tunnel info group is the screen's first paint; connectors and ingress
+  /// follow once the payload arrives.
+  private var tunnelDetailSkeleton: some View {
+    DashInfoGroup(title: "Tunnel", phase: .loading, placeholderRows: 5) {
+      EmptyView()
+    }
+  }
 
   @ViewBuilder private func tunnelGroup(_ tunnel: CloudflareTunnel) -> some View {
     let health = tunnel.health

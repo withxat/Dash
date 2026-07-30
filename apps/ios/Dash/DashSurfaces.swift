@@ -655,8 +655,10 @@ extension DashFeatureScreen where Chrome == EmptyView {
 /// What a feature list should render for a given load/error/content state.
 ///
 /// Loading contract (lists):
-/// - **Cold** (`loading`): no cached primary payload → `DashListSkeleton` only.
-///   Never paint an empty shell with “Updating…”.
+/// - **Cold** (`loading`): no cached primary payload → skeleton only (the
+///   optional `DashFeatureList` skeleton slot, defaulting to `DashListSkeleton`
+///   for catalog/list screens; detail screens pass a placeholder that matches
+///   their first-paint shape). Never paint an empty shell with “Updating…”.
 /// - **Warm** (`content` + `refreshing`): rows/shell already visible → keep
 ///   content and show the inline “Updating…” strip (and optional error banner).
 /// - **Empty settled** (`content`, not refreshing, zero items): `DashEmptyState`
@@ -681,11 +683,16 @@ enum DashListPhase: Equatable {
 }
 
 /// Shared feature list: loading/error slots, grouped list chrome.
-struct DashFeatureList<Header: View, Content: View>: View {
+///
+/// Cold loads paint `skeleton` (default `DashListSkeleton`). Catalog screens
+/// keep that row group; pushed details pass a placeholder whose panels and
+/// groups match the real first paint so arriving data lands in place.
+struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
   var isLoading: Bool = false
   var error: String?
   var hasContent: Bool = false
   var retry: () -> Void
+  @ViewBuilder var skeleton: () -> Skeleton
   @ViewBuilder var header: () -> Header
   @ViewBuilder var content: () -> Content
   @Environment(AppModel.self) private var model
@@ -696,6 +703,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
     error: String? = nil,
     hasContent: Bool = false,
     retry: @escaping () -> Void = {},
+    @ViewBuilder skeleton: @escaping () -> Skeleton,
     @ViewBuilder header: @escaping () -> Header,
     @ViewBuilder content: @escaping () -> Content
   ) {
@@ -703,6 +711,7 @@ struct DashFeatureList<Header: View, Content: View>: View {
     self.error = error
     self.hasContent = hasContent
     self.retry = retry
+    self.skeleton = skeleton
     self.header = header
     self.content = content
   }
@@ -717,9 +726,9 @@ struct DashFeatureList<Header: View, Content: View>: View {
         LazyVStack(spacing: 0) {
           switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
           case .loading:
-            DashListSkeleton()
+            skeleton()
           case .fullScreenError(let message):
-            ErrorStateView(message: message, retry: retry)
+            ErrorStateView(message: message, retry: retry, skeleton: skeleton)
               .dashFailureRemovalTransition()
           case .content(let banner, let refreshing):
             if refreshing {
@@ -778,7 +787,28 @@ struct DashFeatureList<Header: View, Content: View>: View {
   }
 }
 
-extension DashFeatureList where Header == EmptyView {
+extension DashFeatureList where Skeleton == DashListSkeleton {
+  init(
+    isLoading: Bool = false,
+    error: String? = nil,
+    hasContent: Bool = false,
+    retry: @escaping () -> Void = {},
+    @ViewBuilder header: @escaping () -> Header,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      isLoading: isLoading,
+      error: error,
+      hasContent: hasContent,
+      retry: retry,
+      skeleton: { DashListSkeleton() },
+      header: header,
+      content: content
+    )
+  }
+}
+
+extension DashFeatureList where Header == EmptyView, Skeleton == DashListSkeleton {
   init(
     isLoading: Bool = false,
     error: String? = nil,
@@ -791,6 +821,28 @@ extension DashFeatureList where Header == EmptyView {
       error: error,
       hasContent: hasContent,
       retry: retry,
+      skeleton: { DashListSkeleton() },
+      header: { EmptyView() },
+      content: content
+    )
+  }
+}
+
+extension DashFeatureList where Header == EmptyView {
+  init(
+    isLoading: Bool = false,
+    error: String? = nil,
+    hasContent: Bool = false,
+    retry: @escaping () -> Void = {},
+    @ViewBuilder skeleton: @escaping () -> Skeleton,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      isLoading: isLoading,
+      error: error,
+      hasContent: hasContent,
+      retry: retry,
+      skeleton: skeleton,
       header: { EmptyView() },
       content: content
     )
@@ -1724,8 +1776,9 @@ enum DashDelight {
 }
 
 /// Placeholder rows that match `DashListRow` / recessed card geometry so first
-/// paint keeps catalog structure instead of a blank 420pt spinner. Cold list
-/// loads go through `DashFeatureList` → `DashListPhase.loading` → this view.
+/// paint keeps catalog structure instead of a blank 420pt spinner. Default cold
+/// skeleton for catalog/list screens (`DashFeatureList` →
+/// `DashListPhase.loading`); detail screens pass a shape-matched slot instead.
 struct DashListSkeleton: View {
   var rows: Int = 4
 
@@ -1771,6 +1824,208 @@ struct DashListRowPlaceholders: View {
     .frame(maxWidth: .infinity)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading")
+  }
+}
+
+/// Heading bar over a row of metric tiles inside a glass card — the Worker
+/// totals panel and the same tile/bar vocabulary its cold-failure fallback uses.
+struct DashMetricPanelPlaceholder: View {
+  var tiles: Int = 3
+
+  var body: some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 10) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(DashTheme.fill.opacity(0.55))
+          .frame(width: 96, height: 12)
+        HStack(spacing: 12) {
+          ForEach(0..<max(tiles, 1), id: \.self) { _ in
+            VStack(alignment: .leading, spacing: 6) {
+              RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(DashTheme.fill.opacity(0.4))
+                .frame(width: 56, height: 10)
+              RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(DashTheme.fill.opacity(0.55))
+                .frame(width: 64, height: 16)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
+/// Compact glass metric tile — Zone analytics grid cells.
+struct DashMetricTilePlaceholder: View {
+  var body: some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 4) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(DashTheme.fill.opacity(0.4))
+          .frame(width: 72, height: 12)
+        Text(verbatim: "888,888")
+          .dashTextStyle(.sectionTitle)
+          .monospacedDigit()
+          .lineLimit(1)
+          .redacted(reason: .placeholder)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+/// Collapsed chart card: one reserved title line over a plot flush to the
+/// bottom edge — same enamel and heights as `DashCollapsedChartCard` /
+/// Watchtower's collapsed metric skeleton.
+struct DashCollapsedChartPlaceholder: View {
+  var title: String?
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var panelShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Group {
+        if let title {
+          Text(DashL10n.ui(title))
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+            .lineLimit(1, reservesSpace: true)
+        } else {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.55))
+            .frame(width: 72, height: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // Match the reserved title line so a pair of cards stay even.
+            .padding(.vertical, 2)
+        }
+      }
+      .padding(.horizontal, DashTheme.Spacing.card)
+      .padding(.top, DashTheme.Spacing.card)
+      .padding(.bottom, 8)
+
+      DashTheme.fill.opacity(0.4)
+        .frame(maxWidth: .infinity)
+        .frame(height: DashTheme.DitherChart.collapsedHeight(dynamicTypeSize: dynamicTypeSize))
+        .clipShape(
+          UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: DashTheme.Radius.card,
+            bottomTrailingRadius: DashTheme.Radius.card,
+            topTrailingRadius: 0,
+            style: .continuous))
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      DashTheme.homeCardSurface.clipShape(panelShape)
+    }
+    .dashEmbossChrome(shape: panelShape)
+    .accessibilityHidden(true)
+  }
+}
+
+/// Full chart / donut panel: title band over a plot at `DitherChart.height`.
+struct DashChartPanelPlaceholder: View {
+  var showsLegend = false
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  var body: some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 12) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(DashTheme.fill.opacity(0.55))
+          .frame(width: 112, height: 12)
+        DashTheme.fill.opacity(0.4)
+          .frame(maxWidth: .infinity)
+          .frame(
+            height: DashTheme.DitherChart.height(
+              dynamicTypeSize: dynamicTypeSize,
+              showsLegend: showsLegend)
+          )
+          .clipShape(
+            RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
+/// Web Analytics metric card: title + value over a short sparkline band.
+struct DashSparklineCardPlaceholder: View {
+  var body: some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 6) {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.4))
+            .frame(width: 96, height: 12)
+          Text(verbatim: "888,888")
+            .dashTextStyle(.emptyTitle)
+            .monospacedDigit()
+            .lineLimit(1)
+            .redacted(reason: .placeholder)
+        }
+        DashTheme.fill.opacity(0.4)
+          .frame(height: 52)
+          .frame(maxWidth: .infinity)
+          .clipShape(
+            RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+/// Aspect-ratio hero face — Zone detail's domain card slot before the zone
+/// payload arrives.
+struct DashHeroCardPlaceholder: View {
+  var aspectRatio: CGFloat = 5.0 / 3.0
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+  }
+
+  var body: some View {
+    DashTheme.fill.opacity(0.45)
+      .aspectRatio(aspectRatio, contentMode: .fit)
+      .frame(maxWidth: .infinity)
+      .clipShape(shape)
+      .dashEmbossChrome(shape: shape)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Loading")
+  }
+}
+
+/// Recessed control-card shape matching `DashToggleRow` (title bar + switch
+/// capsule) so a settings toggle does not pop in later.
+struct DashToggleRowPlaceholder: View {
+  var body: some View {
+    HStack(spacing: 16) {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(DashTheme.fill.opacity(0.55))
+        .frame(width: 120, height: 14)
+      Spacer(minLength: 12)
+      Capsule(style: .continuous)
+        .fill(DashTheme.fill.opacity(0.45))
+        .frame(width: 51, height: 31)
+    }
+    .frame(minHeight: 31)
+    .padding(.horizontal, 16)
+    .padding(.vertical, DashTheme.Spacing.comfortable)
+    .frame(maxWidth: .infinity)
+    .background(
+      DashTheme.recessed,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+    )
+    .accessibilityHidden(true)
   }
 }
 
@@ -1954,11 +2209,13 @@ private struct DashColdFailureCopy: View {
   }
 }
 
-/// Cold-load failure for a feature list: `DashListSkeleton` stays on screen and
-/// the failure lands on a wash over it (`dashColdFailure`).
-struct ErrorStateView: View {
+/// Cold-load failure for a feature list: the same skeleton the loading phase
+/// painted stays on screen and the failure lands on a wash over it
+/// (`dashColdFailure`).
+struct ErrorStateView<Skeleton: View>: View {
   let message: String
   let retry: () -> Void
+  @ViewBuilder var skeleton: () -> Skeleton
   @Environment(AppModel.self) private var model
   @Environment(\.featureRequiredScopes) private var featureRequiredScopes
 
@@ -1967,7 +2224,7 @@ struct ErrorStateView: View {
   }
 
   var body: some View {
-    DashListSkeleton()
+    skeleton()
       .dashColdFailure(
         message:
           presentation.action == .grantAccess && !model.isDemoSession

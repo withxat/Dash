@@ -190,6 +190,7 @@ struct WebAnalyticsView: View {
       error: currentError,
       hasContent: !snapshot.isEmpty,
       retry: { Task { await load(force: true) } },
+      skeleton: { webAnalyticsSkeleton },
       header: {
         if site != nil {
           DashTextTabs(
@@ -248,6 +249,17 @@ struct WebAnalyticsView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.graph), title: "Web analytics")
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
+  }
+
+  /// Three sparkline metric cards — Page load time / Visits / Page views.
+  private var webAnalyticsSkeleton: some View {
+    DashSurfaceStack {
+      DashSparklineCardPlaceholder()
+      DashSparklineCardPlaceholder()
+      DashSparklineCardPlaceholder()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   /// Dash cannot turn the beacon on: Cloudflare publishes no OAuth scope for

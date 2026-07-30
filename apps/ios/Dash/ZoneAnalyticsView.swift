@@ -248,6 +248,7 @@ struct ZoneAnalyticsView: View {
       error: currentError,
       hasContent: !snapshot.isEmpty,
       retry: { Task { await loadAll(force: true) } },
+      skeleton: { zoneAnalyticsSkeleton },
       header: {
         DashTextTabs(
           items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
@@ -274,6 +275,21 @@ struct ZoneAnalyticsView: View {
     .refreshable { await loadAll(force: true) }
     .onChange(of: range) { selectedSeriesID = nil }
     .task { await loadAll() }
+  }
+
+  /// Metric tile grid over the Requests chart panel — the durable first paint
+  /// before optional Visitors / Bandwidth cards appear.
+  private var zoneAnalyticsSkeleton: some View {
+    DashSurfaceStack {
+      LazyVGrid(columns: metricColumns, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(0..<4, id: \.self) { _ in
+          DashMetricTilePlaceholder()
+        }
+      }
+      DashChartPanelPlaceholder()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   private var metricsGrid: some View {

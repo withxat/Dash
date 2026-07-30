@@ -220,7 +220,8 @@ struct WorkerDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { workerDetailSkeleton }
     ) {
       if let analytics {
         workerMetricsSection(analytics)
@@ -529,6 +530,30 @@ struct WorkerDetailView: View {
     )
   }
 
+  /// Cold first paint: totals panel, the Requests / CPU Time collapsed pair,
+  /// then a Deployments row group — so the real sections land without reflow.
+  private var workerDetailSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashSurfaceStack {
+        DashMetricPanelPlaceholder(tiles: 3)
+        HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
+          ForEach(WorkerChartMetric.allCases, id: \.self) { metric in
+            DashCollapsedChartPlaceholder(title: metric.title)
+              .frame(maxWidth: .infinity)
+          }
+        }
+      }
+      DashListGroup(title: "Deployments") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+
   /// The metrics panel's own shape — heading over three stat tiles — holding the
   /// slot when analytics failed cold, with the failure veiled over it.
   /// Collapsing the glass card to a one-line notice was the section popping out
@@ -536,29 +561,10 @@ struct WorkerDetailView: View {
   /// absent here: with no payload there is no series to paint, exactly as when a
   /// loaded worker has no chart points.
   private var workerMetricsFallbackCard: some View {
-    DashGlassCard {
-      VStack(alignment: .leading, spacing: 10) {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.55))
-          .frame(width: 96, height: 12)
-        HStack(spacing: 12) {
-          ForEach(0..<3, id: \.self) { _ in
-            VStack(alignment: .leading, spacing: 6) {
-              RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(DashTheme.fill.opacity(0.4))
-                .frame(width: 56, height: 10)
-              RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(DashTheme.fill.opacity(0.55))
-                .frame(width: 64, height: 16)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }
-      }
+    DashMetricPanelPlaceholder(tiles: 3)
       .dashSectionFailure(
         analyticsError,
         retry: { Task { await load(force: true) } })
-    }
   }
 
   /// Totals panel, then one row of collapsed charts. The numbers live in the

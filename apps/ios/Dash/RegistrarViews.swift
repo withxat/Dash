@@ -609,7 +609,8 @@ struct RegistrarDomainDetailView: View {
       isLoading: isCold,
       error: screenError,
       hasContent: summary != nil,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { registrarDomainDetailSkeleton }
     ) {
       registrationGroup
       registryStatusGroup
@@ -619,6 +620,13 @@ struct RegistrarDomainDetailView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.globus), title: domain)
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
+  }
+
+  /// Registration fields first — the same four-row shape the loaded group uses.
+  private var registrarDomainDetailSkeleton: some View {
+    DashInfoGroup(title: "Registration", phase: .loading, placeholderRows: 4) {
+      EmptyView()
+    }
   }
 
   @ViewBuilder

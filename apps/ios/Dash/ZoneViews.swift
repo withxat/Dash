@@ -302,7 +302,8 @@ struct ZoneDetailView: View {
       isLoading: displayedZone == nil && error == nil,
       error: error,
       hasContent: displayedZone != nil,
-      retry: { Task { await load() } }
+      retry: { Task { await load() } },
+      skeleton: { zoneDetailSkeleton }
     ) {
       if let zone = displayedZone {
         zoneHero(zone)
@@ -583,6 +584,20 @@ struct ZoneDetailView: View {
     recentsRaw = RecentResources.recording(
       RecentResource(accountID: accountID, kind: .zone, resourceID: zoneID, title: zone.name),
       in: recentsRaw)
+  }
+
+  /// Domain hero face plus the Quick actions row group — registration is a
+  /// secondary fetch that reserves its own placeholders once the zone lands.
+  private var zoneDetailSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashHeroCardPlaceholder(aspectRatio: DomainCardFace.detailAspectRatio)
+      DashListGroup(title: "Quick actions") {
+        DashListRowPlaceholders(rows: tools.count)
+      }
+      .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   private func zoneHero(_ zone: CloudflareZone) -> some View {

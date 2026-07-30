@@ -897,7 +897,8 @@ struct WAFEventsView: View {
       isLoading: loading,
       error: error,
       hasContent: summary != nil || securityLoaded,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { wafDetailSkeleton }
     ) {
       if let summary {
         // A metric tile — the surface `DashGlassCard` exists for.
@@ -954,6 +955,41 @@ struct WAFEventsView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
     .refreshable { await load(force: true) }
     .task(id: model.grantedScopes) { await load() }
+  }
+
+  /// Blocked-requests metric panel, Under Attack toggle, then Top countries /
+  /// Top rules row groups.
+  private var wafDetailSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashGlassCard {
+        VStack(alignment: .leading, spacing: 8) {
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.55))
+            .frame(width: 96, height: 12)
+          Text(verbatim: "888,888")
+            .dashTextStyle(.sectionTitle)
+            .monospacedDigit()
+            .lineLimit(1)
+            .redacted(reason: .placeholder)
+          RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(DashTheme.fill.opacity(0.4))
+            .frame(width: 112, height: 11)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+      DashListGroup(title: "Top countries") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      DashListGroup(title: "Top rules") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   /// The GraphQL country dimension is an ISO 3166 alpha-2 code — show the

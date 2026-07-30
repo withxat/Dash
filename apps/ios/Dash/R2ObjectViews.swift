@@ -396,7 +396,8 @@ struct R2BucketSettingsView: View {
       isLoading: loading,
       error: error,
       hasContent: managed != nil || !custom.isEmpty,
-      retry: { Task { await load(force: true) } }
+      retry: { Task { await load(force: true) } },
+      skeleton: { r2BucketSettingsSkeleton }
     ) {
       managedCard
       customDomainsGroup
@@ -476,6 +477,21 @@ struct R2BucketSettingsView: View {
     ) {
       try await deleteBucket()
     }
+  }
+
+  /// Public r2.dev toggle row over the Custom domains group.
+  private var r2BucketSettingsSkeleton: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      DashCard {
+        DashInfoRowPlaceholders(rows: 1)
+      }
+      DashListGroup(title: "Custom domains") {
+        DashListRowPlaceholders(rows: 2)
+      }
+      .dashSectionBoundary()
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
   }
 
   private var managedCard: some View {
