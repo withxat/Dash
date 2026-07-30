@@ -292,41 +292,37 @@ struct WebAnalyticsView: View {
       axisValueFormat: axisValueFormat,
       tableValueFormat: tableValueFormat,
       trend: trend)
-    return DestinationLink(destination: .chartDetail(detail)) {
-      DashGlassCard {
-        VStack(alignment: .leading, spacing: 14) {
+    return DashGlassCard {
+      VStack(alignment: .leading, spacing: 14) {
+        HStack(alignment: .top, spacing: 8) {
           VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Text(title)
-                .dashTextStyle(.footnoteSemibold)
-                .foregroundStyle(DashTheme.subtle)
-              Spacer(minLength: 4)
-              Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DashTheme.placeholder)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            HStack(alignment: .lastTextBaseline, spacing: 8) {
               Text(value)
-                .dashTextStyle(.sectionTitle)
+                .dashTextStyle(.emptyTitle)
                 .monospacedDigit()
                 .foregroundStyle(DashTheme.strong)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
               DashChartTrendLabel(trend: trend)
+              Spacer(minLength: 4)
             }
           }
-          if metric.series.count >= 2 {
-            DitherSparkline(values: metric.series, color: color, variant: .gradient)
-              .frame(height: 52)
-              .frame(maxWidth: .infinity)
-              .accessibilityHidden(true)
-          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .accessibilityElement(children: .combine)
+          DashChartDetailButton(detail: detail)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        if metric.series.count >= 2 {
+          DitherSparkline(values: metric.series, color: color, variant: .gradient)
+            .frame(height: 52)
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
+        }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityHint("Shows chart details")
   }
 
   private func webChartDetail(

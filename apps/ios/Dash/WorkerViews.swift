@@ -139,7 +139,6 @@ struct WorkerDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @AppStorage(RecentResources.key) private var recentsRaw = ""
@@ -584,17 +583,13 @@ struct WorkerDetailView: View {
             items: [("Requests", WorkerMetricsTab.requests), ("CPU", .cpu)],
             selection: $metricsTab)
           let detail = workerChartDetail(summary, points: chartPoints)
-          DestinationLink(destination: .chartDetail(detail)) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-              Text(DashL10n.ui(detail.title))
-                .dashTextStyle(.footnoteSemibold)
-                .foregroundStyle(DashTheme.subtle)
-              Spacer(minLength: 4)
-              DashChartDisclosure(trend: detail.trend)
-            }
-            .contentShape(Rectangle())
+          HStack(alignment: .center, spacing: 8) {
+            Text(DashL10n.ui(detail.title))
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+            Spacer(minLength: 4)
+            DashChartDetailButton(detail: detail)
           }
-          .accessibilityHint("Shows chart details")
           switch metricsTab {
           case .requests:
             workerRequestsChart(summary, points: chartPoints)
@@ -625,10 +620,7 @@ struct WorkerDetailView: View {
           categoryAxisLabel: DashL10n.ui("Time"),
           valueAxisLabel: DashL10n.ui("Events"))),
       highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID,
-      onTap: {
-        navigator?.push(.chartDetail(workerChartDetail(summary, points: points)))
-      }
+      selection: $selectedMetricSeriesID
     )
     .frame(
       height: DashTheme.DitherChart.height(
@@ -651,10 +643,7 @@ struct WorkerDetailView: View {
           categoryAxisLabel: DashL10n.ui("Time"),
           valueAxisLabel: DashL10n.ui("Milliseconds"))),
       highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID,
-      onTap: {
-        navigator?.push(.chartDetail(workerChartDetail(summary, points: points)))
-      }
+      selection: $selectedMetricSeriesID
     )
     .frame(
       height: DashTheme.DitherChart.height(

@@ -203,17 +203,13 @@ struct PagesProjectDetailView: View {
     // surface split on `DashGlassCard`.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        DestinationLink(destination: .chartDetail(buildOutcomesDetail)) {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Build outcomes")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Spacer(minLength: 4)
-            DashChartDisclosure(trend: nil)
-          }
-          .contentShape(Rectangle())
+        HStack(alignment: .center, spacing: 8) {
+          Text("Build outcomes")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Spacer(minLength: 4)
+          DashChartDetailButton(detail: buildOutcomesDetail)
         }
-        .accessibilityHint("Shows chart details")
         DitherPieChart(
           slices: outcomeSlices,
           innerRadiusRatio: 0.62,

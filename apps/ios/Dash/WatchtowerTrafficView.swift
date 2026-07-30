@@ -2380,7 +2380,6 @@ private struct WatchtowerMetricChartCard: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.destinationNavigator) private var navigator
   let metric: WatchtowerAnalyticsMetric
   let overview: AccountAnalyticsOverview
   var previousOverview: AccountAnalyticsOverview? = nil
@@ -2465,6 +2464,10 @@ private struct WatchtowerMetricChartCard: View {
     DashTheme.DitherChart.height(dynamicTypeSize: dynamicTypeSize)
   }
 
+  private var overlayIsInteractive: Bool {
+    showsEditingControls || (detail != nil && renderingMode == .live)
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       header
@@ -2482,13 +2485,21 @@ private struct WatchtowerMetricChartCard: View {
     .dashEmbossChrome(shape: panelShape)
     .overlay(alignment: .topTrailing) {
       ZStack(alignment: .topTrailing) {
+        if let detail, renderingMode == .live, !showsEditingControls {
+          DashChartDetailButton(
+            detail: detail,
+            accessibilityIdentifier: "watchtower-chart-detail-\(metric.rawValue)"
+          )
+          .padding(8)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+        }
         if showsEditingControls {
           cardControls
             .transition(reduceMotion ? .opacity : .dashMorph)
         }
       }
-      .allowsHitTesting(showsEditingControls)
-      .accessibilityHidden(!showsEditingControls)
+      .allowsHitTesting(overlayIsInteractive)
+      .accessibilityHidden(!overlayIsInteractive)
     }
     .onChange(of: range) { selectedSeriesID = nil }
     // Collapse, the editor's placeholder swap, and unmount all take the live
@@ -2507,20 +2518,11 @@ private struct WatchtowerMetricChartCard: View {
     .onDisappear { onScrubChange(false) }
   }
 
-  @ViewBuilder
   private var header: some View {
-    if let detail, !showsEditingControls {
-      DestinationLink(destination: .chartDetail(detail)) {
-        headerContent(detail: detail)
-      }
-      .accessibilityHint("Shows chart details")
-      .accessibilityIdentifier("watchtower-chart-detail-\(metric.rawValue)")
-    } else {
-      headerContent(detail: nil)
-    }
+    headerContent
   }
 
-  private func headerContent(detail: DashChartDetail?) -> some View {
+  private var headerContent: some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(DashL10n.ui(metric.title))
         .dashTextStyle(.footnoteSemibold)
@@ -2534,10 +2536,10 @@ private struct WatchtowerMetricChartCard: View {
           .trailing,
           renderingMode == .placeholder
             ? WatchtowerMetricDragLayout.titleTrailingClearance
-            : 0)
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
+            : detail == nil ? 0 : DashTheme.Layout.minimumHitTarget)
+      HStack(alignment: .lastTextBaseline, spacing: 8) {
         Text(total.text)
-          .dashTextStyle(isExpanded ? .emptyTitle : .sectionTitle)
+          .dashTextStyle(.emptyTitle)
           .monospacedDigit()
           .foregroundStyle(DashTheme.strong)
           .lineLimit(1)
@@ -2545,10 +2547,8 @@ private struct WatchtowerMetricChartCard: View {
           .contentTransition(
             reduceMotion ? .opacity : .numericText(value: total.numeric)
           )
+        DashChartTrendLabel(trend: trend)
         Spacer(minLength: 4)
-        if let detail {
-          DashChartDisclosure(trend: detail.trend)
-        }
       }
       if isExpanded {
         // Reserve the footnote line on every expanded card so CPU Time (the one
@@ -2594,17 +2594,6 @@ private struct WatchtowerMetricChartCard: View {
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .overlay {
-          if detail != nil, !showsEditingControls {
-            Button(action: openDetail) {
-              Color.clear
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel(DashL10n.ui(metric.title))
-            .accessibilityHint("Shows chart details")
-          }
-        }
     }
   }
 
@@ -2628,21 +2617,10 @@ private struct WatchtowerMetricChartCard: View {
           accessibility: chartAccessibility),
         highlighted: selectedSeriesID != nil,
         selection: $selectedSeriesID,
-        onHoverChange: { index in onScrubChange(index != nil) },
-        onTap: detailTapAction
+        onHoverChange: { index in onScrubChange(index != nil) }
       )
       .frame(height: expandedHeight)
     }
-  }
-
-  private var detailTapAction: (() -> Void)? {
-    guard detail != nil else { return nil }
-    return { openDetail() }
-  }
-
-  private func openDetail() {
-    guard let detail else { return }
-    navigator?.push(.chartDetail(detail))
   }
 
   @ViewBuilder

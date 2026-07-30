@@ -1359,23 +1359,17 @@ struct DNSRecordsView: View {
     // surface split on `DashGlassCard`.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        DestinationLink(
-          destination: .chartDetail(
-            recordTypesDetail(
-              buckets: buckets,
-              slices: slices,
-              displayedRecordCount: displayedRecordCount))
-        ) {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Record types")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Spacer(minLength: 4)
-            DashChartDisclosure(trend: nil)
-          }
-          .contentShape(Rectangle())
+        let detail = recordTypesDetail(
+          buckets: buckets,
+          slices: slices,
+          displayedRecordCount: displayedRecordCount)
+        HStack(alignment: .center, spacing: 8) {
+          Text("Record types")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Spacer(minLength: 4)
+          DashChartDetailButton(detail: detail)
         }
-        .accessibilityHint("Shows chart details")
         DitherPieChart(
           slices: slices,
           innerRadiusRatio: 0.62,

@@ -24,7 +24,7 @@ struct DashChartTrend: Hashable, Sendable {
 
   /// Returns nil when there is no comparable period or either input is not
   /// finite. A zero baseline has no meaningful percentage unless both periods
-  /// are zero; the arrow still communicates its numeric direction.
+  /// are zero, so presentation omits the comparison text in that case.
   init?(
     current: Double,
     previous: Double?,
@@ -186,58 +186,63 @@ struct DashChartDetail: Hashable, Sendable {
   }
 }
 
-/// The arrow and relative magnitude used on metric cards and inside chart
-/// disclosures. A missing prior period renders nothing rather than inventing a
-/// zero comparison.
+/// The relative magnitude shown immediately after a chart's primary value. A
+/// missing or incomparable prior period renders nothing rather than inventing
+/// a zero comparison.
 struct DashChartTrendLabel: View {
   let trend: DashChartTrend?
 
   var body: some View {
-    if let trend {
-      HStack(spacing: 4) {
-        Image(systemName: trend.symbol)
-          .font(.system(size: 10, weight: .bold))
-          .accessibilityHidden(true)
-        if let percentage = trend.formattedPercentage {
-          Text(verbatim: percentage)
-            .dashTextStyle(.captionSemibold)
-            .monospacedDigit()
-        }
-      }
-      .foregroundStyle(trend.foreground)
-      .padding(.horizontal, 7)
-      .padding(.vertical, 3)
-      .background(trend.background, in: Capsule())
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(
-        "\(DashL10n.ui("Change")): \(trend.accessibilityValue)")
+    if let trend, let percentage = trend.formattedPercentage {
+      Text(verbatim: percentage)
+        .dashTextStyle(.captionSemibold)
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(trend.foreground)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+          "\(DashL10n.ui("Change")): \(percentage)")
     }
   }
 }
 
-/// A compact destination affordance for a chart-card title or value row. Keep
-/// the interactive Dither plot outside the `DestinationLink`; only this small
-/// disclosure and its surrounding title row need to initiate the push.
-struct DashChartDisclosure: View {
-  let trend: DashChartTrend?
+/// The only navigation affordance on a chart card. Keeping this as a discrete
+/// 44-point button leaves the chart itself free for selection and hold-to-scrub
+/// interactions without making the whole card an ambiguous navigation target.
+struct DashChartDetailButton: View {
+  let detail: DashChartDetail
+  var accessibilityIdentifier: String? = nil
+  @Environment(\.destinationNavigator) private var navigator
 
+  @ViewBuilder
   var body: some View {
-    HStack(spacing: 6) {
-      DashChartTrendLabel(trend: trend)
+    if let accessibilityIdentifier {
+      button
+        .accessibilityIdentifier(accessibilityIdentifier)
+    } else {
+      button
+    }
+  }
+
+  private var button: some View {
+    Button {
+      navigator?.push(.chartDetail(detail))
+    } label: {
       SolarIcon(
         asset: SolarAsset.chevronRight,
         size: DashTheme.Chevron.compact,
-        color: DashTheme.placeholder)
+        color: DashTheme.strong
+      )
+      .frame(width: 32, height: 32)
+      .background(DashTheme.recessed, in: Circle())
+      .dashCompactHitTarget()
     }
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(disclosureAccessibilityLabel)
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(
+      "\(DashL10n.ui(detail.title)), \(DashL10n.ui("Details"))"
+    )
     .accessibilityHint("Shows chart details")
-  }
-
-  private var disclosureAccessibilityLabel: String {
-    guard let trend else { return DashL10n.ui("Details") }
-    return
-      "\(DashL10n.ui("Change")): \(trend.accessibilityValue), \(DashL10n.ui("Details"))"
   }
 }
 
@@ -267,8 +272,8 @@ struct DashChartDetailView: View {
           .dashTextStyle(.footnoteSemibold)
           .foregroundStyle(DashTheme.subtle)
 
-        if detail.summaryValue != nil || detail.trend != nil {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
+        if detail.summaryValue != nil || detail.trend?.formattedPercentage != nil {
+          HStack(alignment: .lastTextBaseline, spacing: 8) {
             if let summaryValue = detail.summaryValue {
               Text(verbatim: summaryValue)
                 .dashTextStyle(.emptyTitle)
@@ -277,8 +282,8 @@ struct DashChartDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             }
-            Spacer(minLength: 4)
             DashChartTrendLabel(trend: detail.trend)
+            Spacer(minLength: 4)
           }
         }
 
@@ -468,14 +473,6 @@ private struct DashChartTableRow: View {
 }
 
 extension DashChartTrend {
-  fileprivate var symbol: String {
-    switch direction {
-    case .up: "arrow.up.right"
-    case .down: "arrow.down.right"
-    case .flat: "arrow.right"
-    }
-  }
-
   fileprivate var formattedPercentage: String? {
     guard let percentChange else { return nil }
     let magnitude = abs(percentChange).formatted(
@@ -489,30 +486,11 @@ extension DashChartTrend {
     }
   }
 
-  fileprivate var accessibilityValue: String {
-    formattedPercentage
-      ?? {
-        switch direction {
-        case .up: "+"
-        case .down: "−"
-        case .flat: "0%"
-        }
-      }()
-  }
-
   fileprivate var foreground: Color {
     switch sentiment {
     case .positive: DashTheme.success
     case .negative: DashTheme.danger
     case .neutral: DashTheme.subtle
-    }
-  }
-
-  fileprivate var background: Color {
-    switch sentiment {
-    case .positive: DashTheme.successTint
-    case .negative: DashTheme.dangerTint
-    case .neutral: DashTheme.metaBadgeSurface
     }
   }
 

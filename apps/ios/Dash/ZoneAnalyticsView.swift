@@ -224,7 +224,6 @@ struct ZoneAnalyticsView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.destinationNavigator) private var navigator
   let zoneID: String
   @State private var range: AnalyticsRange = .day
   @State private var snapshotsByRange: [AnalyticsRange: ZoneAnalyticsSnapshot] = [:]
@@ -327,17 +326,13 @@ struct ZoneAnalyticsView: View {
   ) -> some View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        DestinationLink(destination: .chartDetail(detail)) {
-          HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(DashL10n.ui(detail.title))
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Spacer(minLength: 4)
-            DashChartDisclosure(trend: detail.trend)
-          }
-          .contentShape(Rectangle())
+        HStack(alignment: .center, spacing: 8) {
+          Text(DashL10n.ui(detail.title))
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Spacer(minLength: 4)
+          DashChartDetailButton(detail: detail)
         }
-        .accessibilityHint("Shows chart details")
         chart()
       }
     }
@@ -359,8 +354,7 @@ struct ZoneAnalyticsView: View {
             categoryAxisLabel: DashL10n.ui(range == .day ? "Hour" : "Day"),
             valueAxisLabel: DashL10n.ui("Events"))),
         highlighted: selectedSeriesID != nil,
-        selection: $selectedSeriesID,
-        onTap: { navigator?.push(.chartDetail(requestsDetail)) }
+        selection: $selectedSeriesID
       )
       .frame(
         height: DashTheme.DitherChart.height(
@@ -393,8 +387,7 @@ struct ZoneAnalyticsView: View {
               peak: peakUniques,
               isHourly: range == .day),
             categoryAxisLabel: DashL10n.ui(range == .day ? "Hour" : "Day"),
-            valueAxisLabel: DashL10n.ui("Visitors"))),
-        onTap: { navigator?.push(.chartDetail(visitorsDetail)) }
+            valueAxisLabel: DashL10n.ui("Visitors")))
       )
       .frame(height: DashTheme.DitherChart.height(dynamicTypeSize: dynamicTypeSize))
     }
@@ -423,8 +416,7 @@ struct ZoneAnalyticsView: View {
             categoryAxisLabel: DashL10n.ui(range == .day ? "Hour" : "Day"),
             valueAxisLabel: DashL10n.ui("Bytes")),
           valueFormat: .byteCount(),
-          leadingMargin: 58),
-        onTap: { navigator?.push(.chartDetail(bandwidthDetail)) }
+          leadingMargin: 58)
       )
       .frame(height: DashTheme.DitherChart.height(dynamicTypeSize: dynamicTypeSize))
     }
