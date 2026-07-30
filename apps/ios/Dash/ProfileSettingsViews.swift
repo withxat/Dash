@@ -518,22 +518,22 @@ struct SettingsView: View {
           // page. `shortcuts://` only restores Shortcuts’ last screen; there is
           // no public URI for an app’s own actions folder.
           ZStack {
+            ShortcutsLink()
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .accessibilityLabel(DashL10n.string("Siri & Shortcuts"))
+              .accessibilityHint(DashL10n.string("Opens the Shortcuts app"))
+              .accessibilityIdentifier("settings-siri-shortcuts")
+
             SettingsPlainRow(
               title: DashL10n.string("Siri & Shortcuts"),
               subtitle: DashL10n.string("View available actions in the Shortcuts app."),
               icon: SolarAsset.bolt,
               showsChevron: true
             )
-
-            ShortcutsLink()
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .opacity(0.02)
-              .accessibilityHidden(true)
+            .background(DashTheme.canvas)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
           }
-          .accessibilityElement(children: .combine)
-          .accessibilityAddTraits(.isButton)
-          .accessibilityHint(DashL10n.string("Opens the Shortcuts app"))
-          .accessibilityIdentifier("settings-siri-shortcuts")
 
           SettingsPlainDivider()
 

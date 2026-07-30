@@ -488,6 +488,12 @@ final class DashUITests: XCTestCase {
       app.swipeUp()
     }
     XCTAssertTrue(pushAlerts.waitForExistence(timeout: 5))
+
+    let shortcuts = app.buttons["settings-siri-shortcuts"]
+    for _ in 0..<4 where !shortcuts.isHittable {
+      app.swipeUp()
+    }
+    XCTAssertTrue(Self.waitForHittable(shortcuts))
   }
 
   func testAvatarOpensSettingsWithProfileAsAChildPage() {
