@@ -1,5 +1,6 @@
 import { Badge } from '@cloudflare/kumo/components/badge'
 import { LinkButton } from '@cloudflare/kumo/components/button'
+import { useEffect, useRef } from 'react'
 
 import { Stagger, StaggerItem } from './motion-primitives'
 import { SiteShell } from './site-shell'
@@ -105,18 +106,59 @@ export function LandingPage() {
 /**
  * Three real captures in the licensed bezel. Desktop fans them at slight
  * angles on the umbrella stage; compact widths lay them upright in a
- * horizontal scroll track instead.
+ * horizontal scroll track with a thin gradient rail and frosted scroll cue.
  */
 function DeviceCluster() {
+	const trackRef = useRef<HTMLDivElement>(null)
+	const thumbRef = useRef<HTMLDivElement>(null)
+
+	useEffect(() => {
+		const track = trackRef.current
+		const thumb = thumbRef.current
+		if (!track || !thumb) {
+			return
+		}
+
+		const syncThumb = () => {
+			const maxScroll = track.scrollWidth - track.clientWidth
+			const trackWidth = thumb.parentElement?.clientWidth ?? 0
+			if (maxScroll <= 0 || trackWidth <= 0) {
+				thumb.style.width = '100%'
+				thumb.style.transform = 'translateX(0)'
+				return
+			}
+			// Thumb spans the visible fraction of the row; moves with scrollLeft.
+			const ratio = track.clientWidth / track.scrollWidth
+			const thumbWidth = Math.max(trackWidth * ratio, 36)
+			const travel = trackWidth - thumbWidth
+			const progress = track.scrollLeft / maxScroll
+			thumb.style.width = `${thumbWidth}px`
+			thumb.style.transform = `translateX(${travel * progress}px)`
+		}
+
+		syncThumb()
+		track.addEventListener('scroll', syncThumb, { passive: true })
+		const ro = new ResizeObserver(syncThumb)
+		ro.observe(track)
+		return () => {
+			track.removeEventListener('scroll', syncThumb)
+			ro.disconnect()
+		}
+	}, [])
+
 	return (
 		<div
 			aria-label="Dash on iPhone: zone, Watchtower, and Pages screens"
 			className="device-cluster"
 			role="img"
 		>
-			{/* Rounded clip only — fill is the animated umbrella gradient, not a flat brand wash. */}
+			{/* Desktop: large umbrella plinth. Compact: thin gradient rail under the row. */}
 			<div aria-hidden="true" className="device-cluster-stage" />
-			<div className="device-cluster-track">
+			{/* Compact-only frosted scrollbar cue, linked to the track's scrollLeft. */}
+			<div aria-hidden="true" className="device-cluster-scrollcue">
+				<div className="device-cluster-scrollcue-thumb" ref={thumbRef} />
+			</div>
+			<div className="device-cluster-track" ref={trackRef}>
 				<div className="device-cluster-phone device-cluster-phone-left">
 					<AppScreenshot screenshot={zoneShot} priority />
 				</div>
