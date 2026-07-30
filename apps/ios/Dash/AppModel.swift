@@ -834,9 +834,9 @@ final class AppModel {
     !scopes.isSubset(of: demoGrantedScopes)
   }
 
-  /// Real-account authorization is intentionally one-shot for now. Existing
-  /// grants still contribute any out-of-profile scopes, while every upgrade
-  /// asks for the complete set used by Dash's current features.
+  /// Real-account authorization is one-shot: every OAuth request asks for the
+  /// complete set used by Dash's current features. Any already-granted scopes
+  /// outside that set are kept so a reauthorization never narrows the token.
   static func accountAccessScopes(
     granted: Set<String>?,
     requested: Set<String>
