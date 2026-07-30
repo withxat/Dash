@@ -1695,17 +1695,16 @@ private let watchtowerDropFrames: [CGRect] = [
 
 /// The conditionally mounted backdrop enters far enough from its final
 /// position to hide the filter's first frame. A full-width atmospheric layer
-/// gets a more legible entrance than micro chrome; returning to the top remains
-/// materially quicker.
-@Test func headerFrostUsesAsymmetricEntranceMotion() {
+/// gets the same calm duration in either direction, with a smaller exit lift.
+@Test func headerFrostUsesMatchedBidirectionalTiming() {
   #expect(DashHeaderScrimMotion.insertionOffsetY == -8)
   #expect(DashHeaderScrimMotion.removalOffsetY == -3)
   #expect(DashHeaderScrimMotion.insertionDuration == 0.36)
-  #expect(DashHeaderScrimMotion.removalDuration == 0.22)
+  #expect(DashHeaderScrimMotion.removalDuration == 0.36)
   #expect(DashHeaderScrimMotion.insertionDuration > 0)
   #expect(DashHeaderScrimMotion.removalDuration > 0)
   #expect(abs(DashHeaderScrimMotion.removalOffsetY) < abs(DashHeaderScrimMotion.insertionOffsetY))
-  #expect(DashHeaderScrimMotion.insertionDuration > DashHeaderScrimMotion.removalDuration)
+  #expect(DashHeaderScrimMotion.insertionDuration == DashHeaderScrimMotion.removalDuration)
   #expect(DashHeaderScrimMotion.insertionDuration <= 0.4)
 }
 

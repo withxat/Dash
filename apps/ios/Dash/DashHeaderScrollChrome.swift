@@ -231,13 +231,13 @@ enum DashHeaderScrimMetrics {
 
 /// The backdrop filter is created only after the scroll threshold is crossed.
 /// Give that first composited frame a short entrance so the filter never lands
-/// as a fully opaque flash. The smaller, faster exit gets out of the way when
-/// content returns to the top.
+/// as a fully opaque flash. Exit uses the same calm timing with a smaller lift,
+/// so returning to the top does not snap the atmosphere away.
 enum DashHeaderScrimMotion {
   static let insertionOffsetY: CGFloat = -8
   static let removalOffsetY: CGFloat = -3
   static let insertionDuration = 0.36
-  static let removalDuration = 0.22
+  static let removalDuration = insertionDuration
 
   static let insertion = Animation.timingCurve(
     0.25,
@@ -247,9 +247,9 @@ enum DashHeaderScrimMotion {
     duration: insertionDuration
   )
   static let removal = Animation.timingCurve(
-    0.23,
-    1,
-    0.32,
+    0.25,
+    0.1,
+    0.25,
     1,
     duration: removalDuration
   )
