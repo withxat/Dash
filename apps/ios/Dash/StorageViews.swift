@@ -1020,7 +1020,10 @@ private struct R2TwoFingerSelectInstaller: UIViewRepresentable {
   }
 }
 
-private struct R2BrowserSnapshot: Sendable {
+/// One cached page of a bucket listing, keyed per account/bucket/prefix. Shared
+/// with Home's upload destination picker: it needs the same `commonPrefixes` to
+/// offer folders, so a listing either screen fetches warms the other.
+struct R2BrowserSnapshot: Sendable {
   let objects: [R2Object]
   let commonPrefixes: [String]
   let cursor: String?
@@ -1362,13 +1365,10 @@ struct R2CreateBucketSheet: View {
             DashNotice(kind: .error, message: error)
           }
           DashFormField(label: DashL10n.string("Bucket name"), text: $name)
-          Text(DashL10n.string("Use lowercase letters, numbers, and hyphens."))
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .fixedSize(horizontal: false, vertical: true)
         }
       }
     )
+    .dashTrayDescription(DashL10n.string("Use lowercase letters, numbers, and hyphens."))
   }
 
   private func create() async {

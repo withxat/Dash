@@ -1672,33 +1672,6 @@
         }
       }
     },
-    "App display language" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "应用显示语言"
-          }
-        }
-      }
-    },
-    "Appearance" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Appearance"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "外观"
-          }
-        }
-      }
-    },
     "Asset URL" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2050,6 +2023,17 @@
         }
       }
     },
+    "Bucket root" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储桶根目录"
+          }
+        }
+      }
+    },
     "Bucket settings" : {
       "localizations" : {
         "en" : {
@@ -2304,6 +2288,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已缓存"
+          }
+        }
+      }
+    },
+    "Can't list this bucket's folders. The upload still goes to the folder shown above." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法列出此存储桶中的文件夹。上传仍会写入上方显示的文件夹。"
           }
         }
       }
@@ -6493,13 +6488,19 @@
         }
       }
     },
-    "Help & legal" : {
+    "Help & about" : {
       "extractionState" : "manual",
       "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Help & about"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "帮助与法律信息"
+            "value" : "帮助与关于"
           }
         }
       }
@@ -6594,17 +6595,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "小时"
-          }
-        }
-      }
-    },
-    "How Dash handles account and device data" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "了解 Dash 如何处理账户与设备数据"
           }
         }
       }
@@ -6776,17 +6766,6 @@
         }
       }
     },
-    "Independent client and operation responsibilities" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "独立客户端与操作责任说明"
-          }
-        }
-      }
-    },
     "Initialize" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6816,6 +6795,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "检查资源"
+          }
+        }
+      }
+    },
+    "Integrations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Integrations"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统集成"
           }
         }
       }
@@ -7111,22 +7107,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "软件库"
-          }
-        }
-      }
-    },
-    "Libraries and icons that power Dash" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Libraries and icons that power Dash"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "驱动 Dash 的开源库与图标"
           }
         }
       }
@@ -8337,6 +8317,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "后台检查后通知"
+          }
+        }
+      }
+    },
+    "Notify this iPhone when a Dash refresh finds new Cloudflare deliveries." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当 Dash 刷新时发现新的 Cloudflare 通知，就在此 iPhone 上提醒你。"
           }
         }
       }
@@ -13268,16 +13258,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "版本 %1$@ · %2$@%% 流量"
-          }
-        }
-      }
-    },
-    "Version and app details" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "版本与应用详情"
           }
         }
       }

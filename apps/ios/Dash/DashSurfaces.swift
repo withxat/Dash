@@ -322,6 +322,103 @@ struct DashGlassCard<Content: View>: View {
   }
 }
 
+/// A chart in its collapsed state: a title band over a sparkline flush to the
+/// card's bottom edge, on the same embossed enamel as `DashGlassCard`. Sized so
+/// two of them share one row (Watchtower's collapsed metric cards are the same
+/// shape).
+///
+/// It composes its own panel rather than nesting in `DashGlassCard` because the
+/// plot has to reach that bottom edge, which a uniformly padded card cannot
+/// allow. The plot is summary-only — no axes, legend, tooltip, or scrubbing —
+/// so the totals belong to the metric panel above it and the interactive chart
+/// belongs to the pushed detail behind `detail`.
+struct DashCollapsedChartCard: View {
+  /// Catalog key, localized here.
+  let title: String
+  let data: [DitherDatum]
+  let series: [DitherSeries]
+  /// From `CollapsedDitherTrendSeries`, so an all-zero series keeps its short
+  /// band instead of expanding to the full plot height.
+  var valueCeiling: Double?
+  /// Already-localized sentence describing the series; the card is one
+  /// accessibility element reading title then this.
+  let accessibilitySummary: String
+  var detail: DashChartDetail?
+  var detailAccessibilityIdentifier: String?
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  private var combinedAccessibilityLabel: String {
+    "\(DashL10n.ui(title)). \(accessibilitySummary)"
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text(DashL10n.ui(title))
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+        // One reserved line keeps a pair of cards the same height in every
+        // language — a title that wrapped on one side only would leave the row
+        // uneven — so a long translation shrinks instead of wrapping. The
+        // reserved trailing slot keeps the text clear of the detail button
+        // floating over it.
+        .lineLimit(1, reservesSpace: true)
+        .minimumScaleFactor(0.7)
+        .padding(.trailing, detail == nil ? 0 : DashTheme.Layout.minimumHitTarget)
+        .padding(.horizontal, DashTheme.Spacing.card)
+        .padding(.top, DashTheme.Spacing.card)
+        .padding(.bottom, 8)
+      sparkline
+        .frame(maxWidth: .infinity)
+        .frame(height: DashTheme.DitherChart.collapsedHeight(dynamicTypeSize: dynamicTypeSize))
+        // Only the bottom corners take the panel radius, so the dither does not
+        // square off the embossed fill.
+        .clipShape(
+          UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: DashTheme.Radius.card,
+            bottomTrailingRadius: DashTheme.Radius.card,
+            topTrailingRadius: 0,
+            style: .continuous)
+        )
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .combine)
+    // A resolved `String`, not an interpolated literal: the literal overload is
+    // `LocalizedStringKey`, and both halves are already localized.
+    .accessibilityLabel(combinedAccessibilityLabel)
+    .background(DashTheme.homeCardSurface, in: shape)
+    .dashEmbossChrome(shape: shape)
+    .overlay(alignment: .topTrailing) {
+      if let detail {
+        DashChartDetailButton(
+          detail: detail,
+          accessibilityIdentifier: detailAccessibilityIdentifier
+        )
+        .padding(8)
+      }
+    }
+  }
+
+  private var sparkline: some View {
+    DitherAreaChart(
+      data: data,
+      series: series,
+      options: DashTheme.DitherChart.sparklineOptions(
+        accessibility: DitherAccessibility(
+          title: DashL10n.ui(title),
+          summary: accessibilitySummary),
+        valueCeiling: valueCeiling),
+      highlighted: false,
+      selection: nil)
+  }
+}
+
 /// A small, bounded stack of independent cards, controls, or notices.
 ///
 /// `DashFeatureList` keeps its outer lazy stack at zero spacing so large

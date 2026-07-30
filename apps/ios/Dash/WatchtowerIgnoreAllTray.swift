@@ -8,23 +8,16 @@ struct WatchtowerIgnoreAllTray: View {
   @Environment(\.dashTrayDismiss) private var dismiss
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text(confirmationMessage)
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-      DashActionButton(
-        title: DashL10n.string("Ignore all"),
-        role: .destructive,
-        holdToConfirm: true,
-        action: {
-          onConfirm()
-          dismiss()
-        }
-      )
-    }
+    DashActionButton(
+      title: DashL10n.string("Ignore all"),
+      role: .destructive,
+      holdToConfirm: true,
+      action: {
+        onConfirm()
+        dismiss()
+      }
+    )
+    .dashTrayDescription(confirmationMessage)
   }
 
   private var confirmationMessage: String {

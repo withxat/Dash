@@ -625,12 +625,11 @@ struct UploadToR2Intent: AppIntent {
     return .result(dialog: "Uploaded \(file.filename) to \(bucketName) in \(accountName).")
   }
 
-  /// Pure: "/a/b" and "a/b/" both become "a/b/"; empty stays empty.
+  /// Pure: "/a/b" and "a/b/" both become "a/b/"; empty stays empty. One rule
+  /// with the in-app destination picker — a shortcut and a tap must agree on
+  /// what folder a string means.
   static func normalizedPrefix(_ raw: String) -> String {
-    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-    while value.hasPrefix("/") { value.removeFirst() }
-    if !value.isEmpty && !value.hasSuffix("/") { value += "/" }
-    return value
+    R2FolderPath.normalized(raw)
   }
 }
 

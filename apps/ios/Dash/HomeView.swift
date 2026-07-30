@@ -540,18 +540,6 @@ private struct HomeDemoConnectContent: View {
 
   var body: some View {
     VStack(spacing: 12) {
-      Text(
-        DashL10n.string(
-          "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.bottom, 4)
-
       DashPillButton(
         title: "Return to connect",
         icon: SolarAsset.cloudflare,
@@ -563,6 +551,11 @@ private struct HomeDemoConnectContent: View {
         action: dismiss
       )
     }
+    .dashTrayDescription(
+      DashL10n.string(
+        "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+      )
+    )
   }
 }
 
@@ -869,28 +862,24 @@ private struct HomeDNSRecordAction: View {
           kind: .warning,
           message: DashL10n.string("Add a domain before creating a DNS record."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the domain for the new DNS record.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-              Button {
-                selectedZoneID = zone.id
-              } label: {
-                DashListRow(
-                  title: zone.name,
-                  subtitle: (zone.status ?? "unknown").capitalized,
-                  avatarSeed: zone.name
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < zones.count - 1 {
-                DashListGroupDivider()
-              }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+            Button {
+              selectedZoneID = zone.id
+            } label: {
+              DashListRow(
+                title: zone.name,
+                subtitle: (zone.status ?? "unknown").capitalized,
+                avatarSeed: zone.name
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < zones.count - 1 {
+              DashListGroupDivider()
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain for the new DNS record."))
       }
     }
   }
@@ -931,28 +920,24 @@ private struct HomeCreateKVKeyAction: View {
           kind: .warning,
           message: DashL10n.string("Create a KV namespace before adding a key."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the namespace for the new key.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(namespaces.enumerated()), id: \.element.id) { index, namespace in
-              Button {
-                selectedNamespaceID = namespace.id
-              } label: {
-                DashListRow(
-                  title: namespace.title,
-                  subtitle: DashL10n.string("KV namespace"),
-                  icon: SolarAsset.Content.pinList
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < namespaces.count - 1 {
-                DashListGroupDivider()
-              }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(namespaces.enumerated()), id: \.element.id) { index, namespace in
+            Button {
+              selectedNamespaceID = namespace.id
+            } label: {
+              DashListRow(
+                title: namespace.title,
+                subtitle: DashL10n.string("KV namespace"),
+                icon: SolarAsset.Content.pinList
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < namespaces.count - 1 {
+              DashListGroupDivider()
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the namespace for the new key."))
       }
     }
     .task(id: model.accountRequestContext) {
@@ -1037,26 +1022,22 @@ private struct HomePagesDomainAction: View {
         kind: .warning,
         message: DashL10n.string("Create a Pages project before attaching a domain."))
     } else {
-      VStack(alignment: .leading, spacing: 12) {
-        Text("Choose the Pages project for the custom domain.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
-            Button {
-              selectedProject = project.name
-            } label: {
-              DashListRow(
-                title: project.name,
-                subtitle: project.subdomain,
-                icon: SolarAsset.Content.codeCircle
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            if index < projects.count - 1 { DashListGroupDivider() }
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+          Button {
+            selectedProject = project.name
+          } label: {
+            DashListRow(
+              title: project.name,
+              subtitle: project.subdomain,
+              icon: SolarAsset.Content.codeCircle
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          if index < projects.count - 1 { DashListGroupDivider() }
         }
       }
+      .dashTrayDescription(DashL10n.string("Choose the Pages project for the custom domain."))
     }
   }
 
@@ -1135,22 +1116,18 @@ private struct HomeWorkerDomainAction: View {
         kind: .warning,
         message: DashL10n.string("Deploy a Worker before attaching a domain."))
     } else {
-      VStack(alignment: .leading, spacing: 12) {
-        Text("Choose the Worker for the custom domain.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(workers.enumerated()), id: \.element.id) { index, worker in
-            Button {
-              selectedWorker = worker.id
-            } label: {
-              DashListRow(title: worker.id, icon: SolarAsset.Content.code)
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            if index < workers.count - 1 { DashListGroupDivider() }
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(workers.enumerated()), id: \.element.id) { index, worker in
+          Button {
+            selectedWorker = worker.id
+          } label: {
+            DashListRow(title: worker.id, icon: SolarAsset.Content.code)
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          if index < workers.count - 1 { DashListGroupDivider() }
         }
       }
+      .dashTrayDescription(DashL10n.string("Choose the Worker for the custom domain."))
     }
   }
 
@@ -1271,26 +1248,22 @@ private struct HomeZoneModeAction: View {
           kind: .warning,
           message: DashL10n.string("Add a domain before changing this mode."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the domain to update.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-              Button {
-                selectedZoneID = zone.id
-              } label: {
-                DashListRow(
-                  title: zone.name,
-                  subtitle: (zone.status ?? "unknown").capitalized,
-                  avatarSeed: zone.name
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < zones.count - 1 { DashListGroupDivider() }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+            Button {
+              selectedZoneID = zone.id
+            } label: {
+              DashListRow(
+                title: zone.name,
+                subtitle: (zone.status ?? "unknown").capitalized,
+                avatarSeed: zone.name
+              )
             }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < zones.count - 1 { DashListGroupDivider() }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain to update."))
       }
     }
   }
@@ -1378,6 +1351,16 @@ private struct HomeR2UploadSheet: View {
   let onUploaded: (String) -> Void
   @State private var buckets: [R2Bucket] = []
   @State private var selectedBucket = ""
+  /// Chosen destination folder as a key prefix (trailing `/`), `""` at the
+  /// bucket root. Seeded from the last-used destination, then owned by the
+  /// picker — Home writes wherever the user points it, not only to the root.
+  @State private var folderPrefix = ""
+  /// Folders directly inside `folderPrefix`, so the picker can go deeper.
+  @State private var childFolders: [String] = []
+  /// A folder listing that threw. Empty and failed are different answers: a
+  /// bucket with no folders offers only the root, a lookup that failed says so
+  /// and leaves the chosen destination alone.
+  @State private var folderListingFailed = false
   @State private var fileURL: URL?
   @State private var importsFile = false
   @State private var loading = true
@@ -1389,14 +1372,24 @@ private struct HomeR2UploadSheet: View {
   @State private var uploadTask: Task<Void, Never>?
   @State private var uploadGeneration: UInt64 = 0
 
+  /// Identity of one folder listing. The account generation is part of it, so a
+  /// response can only ever land on the account, bucket, and folder that asked
+  /// for it.
+  private struct FolderListingRequest: Hashable {
+    let context: AccountRequestContext
+    let bucket: String
+    let prefix: String
+  }
+
   private var remembered: R2ShareDestination? {
     guard let accountID = model.activeAccountID else { return nil }
     return R2ShareDestination.destination(accountID: accountID)
   }
 
-  private var destinationPrefix: String {
-    guard remembered?.bucket == selectedBucket else { return "" }
-    return remembered?.prefix ?? ""
+  private var folderListingRequest: FolderListingRequest? {
+    guard let context = model.accountRequestContext, !selectedBucket.isEmpty else { return nil }
+    return FolderListingRequest(
+      context: context, bucket: selectedBucket, prefix: folderPrefix)
   }
 
   private var actionTitle: String {
@@ -1442,6 +1435,16 @@ private struct HomeR2UploadSheet: View {
               options: buckets.map(\.name)
             )
 
+            HomeR2FolderField(prefix: $folderPrefix, childFolders: childFolders)
+
+            if folderListingFailed {
+              DashNotice(
+                kind: .warning,
+                message: DashL10n.string(
+                  "Can't list this bucket's folders. The upload still goes to the folder shown above."
+                ))
+            }
+
             if let fileURL {
               HStack(spacing: 12) {
                 SolarIcon(asset: SolarAsset.Content.cloud, size: 22, color: DashTheme.brand)
@@ -1450,10 +1453,13 @@ private struct HomeR2UploadSheet: View {
                     .dashTextStyle(.bodyMedium)
                     .foregroundStyle(DashTheme.text)
                     .lineLimit(1)
-                  Text(destinationText)
+                  // Where the file lands, spelled out: bucket, chosen folder,
+                  // and the key the upload will write.
+                  Text(selectedBucket + "/" + folderPrefix + fileURL.lastPathComponent)
                     .dashTextStyle(.footnote)
                     .foregroundStyle(DashTheme.subtle)
                     .lineLimit(1)
+                    .truncationMode(.head)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button(DashL10n.string("Change")) { importsFile = true }
@@ -1466,11 +1472,6 @@ private struct HomeR2UploadSheet: View {
                 DashTheme.recessed,
                 in: RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
               )
-            } else {
-              Text(destinationText)
-                .dashTextStyle(.footnote)
-                .foregroundStyle(DashTheme.subtle)
-                .fixedSize(horizontal: false, vertical: true)
             }
           }
         }
@@ -1488,13 +1489,12 @@ private struct HomeR2UploadSheet: View {
       }
     }
     .task { await loadBuckets() }
+    // Restarts on every bucket or folder hop, and cancels the one it replaces.
+    .task(id: folderListingRequest) { await loadChildFolders() }
+    .onChange(of: selectedBucket) { _, bucket in
+      folderPrefix = rememberedPrefix(inBucket: bucket)
+    }
     .onDisappear { cancelUpload() }
-  }
-
-  private var destinationText: String {
-    let folder = destinationPrefix.isEmpty ? DashL10n.string("bucket root") : destinationPrefix
-    return DashL10n.string(
-      "Destination: \(selectedBucket.isEmpty ? "R2" : selectedBucket) / \(folder)")
   }
 
   private func performPrimaryAction() {
@@ -1535,7 +1535,52 @@ private struct HomeR2UploadSheet: View {
     selectedBucket =
       loaded.first(where: { $0.name == remembered?.bucket })?.name
       ?? loaded.first?.name ?? ""
+    folderPrefix = rememberedPrefix(inBucket: selectedBucket)
     loading = false
+  }
+
+  /// The last-used folder counts only inside the bucket it was used in; every
+  /// other bucket starts at its root.
+  private func rememberedPrefix(inBucket bucket: String) -> String {
+    guard let remembered, remembered.bucket == bucket else { return "" }
+    return R2FolderPath.normalized(remembered.prefix)
+  }
+
+  /// Lists the folders one level under the chosen destination. Reads and writes
+  /// the same per-prefix listing cache as the R2 browser, so hopping between
+  /// Home and a bucket screen does not re-fetch what the other just loaded.
+  private func loadChildFolders() async {
+    guard let request = folderListingRequest else {
+      childFolders = []
+      folderListingFailed = false
+      return
+    }
+    let key = FeatureCacheKey.r2Objects(
+      accountID: request.context.accountID, bucket: request.bucket, prefix: request.prefix)
+    if let cached: R2BrowserSnapshot = model.featureCache.get(key) {
+      childFolders = cached.commonPrefixes
+      folderListingFailed = false
+      return
+    }
+    childFolders = []
+    folderListingFailed = false
+    do {
+      let page = try await model.client.listR2Objects(
+        accountID: request.context.accountID,
+        bucket: request.bucket,
+        prefix: request.prefix.isEmpty ? nil : request.prefix,
+        delimiter: "/")
+      guard !Task.isCancelled, folderListingRequest == request else { return }
+      childFolders = page.commonPrefixes
+      model.featureCache.set(
+        key,
+        R2BrowserSnapshot(
+          objects: page.objects, commonPrefixes: page.commonPrefixes, cursor: page.cursor))
+    } catch {
+      guard !Task.isCancelled, !error.dashIsCancellation, folderListingRequest == request
+      else { return }
+      folderListingFailed = true
+    }
   }
 
   private func startUpload() {
@@ -1544,7 +1589,7 @@ private struct HomeR2UploadSheet: View {
       !selectedBucket.isEmpty
     else { return }
     let bucket = selectedBucket
-    let prefix = destinationPrefix
+    let prefix = folderPrefix
     let rememberedDestination = R2ShareDestination.destination(accountID: context.accountID)
     let destination = R2ShareDestination(
       accountID: context.accountID,
@@ -1659,6 +1704,63 @@ private struct HomeR2UploadSheet: View {
   }
 }
 
+/// Destination-folder chooser for an R2 upload. Wears `DashFormMenuField`'s
+/// chrome, but folder names are bucket data — they render verbatim instead of
+/// going through `DashL10n.ui`, which would translate a folder that happens to
+/// share a catalog key. One menu reaches any depth: it lists the bucket root,
+/// the path down to the current choice, and the folders inside it, so choosing
+/// a folder both selects it and offers its children on the next open. There is
+/// no ring while the next level loads — a menu value is never replaced by
+/// progress; the list simply grows when the listing lands.
+private struct HomeR2FolderField: View {
+  @Binding var prefix: String
+  let childFolders: [String]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Folder")
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+      Menu {
+        Picker("Folder", selection: $prefix) {
+          Text("Bucket root").tag("")
+          ForEach(
+            R2FolderPath.destinations(prefix: prefix, children: childFolders), id: \.self
+          ) { folder in
+            Text(R2FolderPath.label(for: folder)).tag(folder)
+          }
+        }
+      } label: {
+        HStack(spacing: 8) {
+          Group {
+            if prefix.isEmpty {
+              Text("Bucket root")
+            } else {
+              Text(R2FolderPath.label(for: prefix))
+            }
+          }
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(1)
+          // A deep path matters at its tail — keep the chosen folder visible.
+          .truncationMode(.head)
+          Spacer(minLength: 0)
+          SolarIcon(
+            asset: SolarAsset.chevronRight, size: DashTheme.Chevron.compact,
+            color: DashTheme.placeholder
+          )
+          .rotationEffect(.degrees(90))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(DashTheme.recessed)
+        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+      }
+    }
+  }
+}
+
 private enum HomeR2UploadError: LocalizedError {
   case unreadableFile
   case fileTooLarge(String, Int)
@@ -1681,16 +1783,12 @@ private struct HomePurgeCachePicker: View {
   let onSelect: (CloudflareZone) -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    Group {
       if zones.isEmpty {
         DashNotice(
           kind: .warning,
           message: DashL10n.string("Add a domain before purging cache."))
       } else {
-        Text("Choose the domain whose cache you want to clear.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .fixedSize(horizontal: false, vertical: true)
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
             Button {
@@ -1709,6 +1807,7 @@ private struct HomePurgeCachePicker: View {
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain whose cache you want to clear."))
       }
     }
   }
@@ -1755,7 +1854,15 @@ struct AddDomainSheet: View {
       }
     }
     .dashTrayTitle(
-      created == nil ? DashL10n.string("Add domain") : DashL10n.string("Domain added"))
+      created == nil ? DashL10n.string("Add domain") : DashL10n.string("Domain added")
+    )
+    // Step two answers the question itself, in the success content.
+    .dashTrayDescription(
+      created == nil
+        ? DashL10n.string(
+          "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
+        )
+        : nil)
   }
 
   private var formContent: some View {
@@ -1768,12 +1875,6 @@ struct AddDomainSheet: View {
         text: $name,
         keyboard: .URL,
         contentType: .URL)
-      Text(
-        "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
-      )
-      .dashTextStyle(.footnote)
-      .foregroundStyle(DashTheme.subtle)
-      .fixedSize(horizontal: false, vertical: true)
     }
   }
 

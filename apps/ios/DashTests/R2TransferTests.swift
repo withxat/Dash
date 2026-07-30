@@ -82,6 +82,50 @@ private func r2Object(
   #expect(R2Media.versionToken(for: tagged) == "etag:version-1")
 }
 
+@Test func r2FolderPathNormalizesEveryWayAFolderCanBeWritten() {
+  #expect(R2FolderPath.normalized("") == "")
+  #expect(R2FolderPath.normalized("   ") == "")
+  #expect(R2FolderPath.normalized("/images/covers") == "images/covers/")
+  #expect(R2FolderPath.normalized("images/covers/") == "images/covers/")
+  #expect(R2FolderPath.normalized("images") == "images/")
+  // Same rule as the Shortcuts intent, which now shares this implementation.
+  #expect(R2FolderPath.normalized("/a/b") == UploadToR2Intent.normalizedPrefix("/a/b"))
+}
+
+@Test func r2FolderPathLabelsAFolderByItsWholePathWithoutTheSeparator() {
+  #expect(R2FolderPath.label(for: "images/covers/") == "images/covers")
+  #expect(R2FolderPath.label(for: "images/") == "images")
+  #expect(R2FolderPath.label(for: "") == "")
+}
+
+@Test func r2FolderPathTrailWalksBackUpAndKeepsEmptySegments() {
+  #expect(R2FolderPath.trail(of: "") == [])
+  #expect(R2FolderPath.trail(of: "images/") == ["images/"])
+  #expect(
+    R2FolderPath.trail(of: "images/covers/2026/") == [
+      "images/", "images/covers/", "images/covers/2026/",
+    ])
+  // `a//b/` is a real, different key prefix — collapsing it would offer a
+  // folder the bucket does not have.
+  #expect(R2FolderPath.trail(of: "a//b/") == ["a/", "a//", "a//b/"])
+}
+
+@Test func r2FolderPathDestinationsOfferThePathDownPlusItsOwnFolders() {
+  #expect(
+    R2FolderPath.destinations(prefix: "", children: ["images/", "logs/"]) == ["images/", "logs/"])
+  #expect(
+    R2FolderPath.destinations(prefix: "images/", children: ["images/covers/"])
+      == ["images/", "images/covers/"])
+  // The chosen prefix changes a frame before its listing arrives: the previous
+  // level's siblings must not pose as this level's folders.
+  #expect(
+    R2FolderPath.destinations(prefix: "images/", children: ["images/", "logs/"]) == ["images/"])
+  // No duplicate rows when a listing repeats a folder already on the path.
+  #expect(
+    R2FolderPath.destinations(prefix: "images/covers/", children: ["images/covers/"])
+      == ["images/", "images/covers/"])
+}
+
 @Test func r2BucketRequestIdentityChangesWithAccountGenerationAndLocation() {
   let original = R2BucketRequestIdentity(
     context: AccountRequestContext(accountID: "account-a", generation: 1),
