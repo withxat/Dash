@@ -62,18 +62,26 @@
 	border-top: 1px solid color-mix(in oklch, currentColor 15%, transparent);
 }
 
+/*
+  Drop shadow sits on an outer wrapper. Putting `filter` on the same box as
+  the screen clip has made overflow/border-radius fail to cut the image in
+  Chromium, so the square capture corners leaked through the bezel hole.
+*/
+@utility app-shot-shadow {
+	filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
+}
+
 @utility app-shot-frame {
 	position: relative;
 	aspect-ratio: 94.191667 / 193.14585;
-	filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
 }
 
 /*
   Screen window geometry matches the SVG cutout (rect7 on the Wikimedia
   iPhone 16 Pro vector): x 4.118 / y 3.129 / 85.955×186.887 on a
   94.192×193.146 viewBox, with a circular corner radius of 13.340.
-  The clip must own that radius — the bezel is a transparent hole, so
-  square screenshot corners otherwise poke through the rounded cutout.
+  The bezel is a transparent hole, so the capture must be masked to that
+  same rounded rect — overflow alone is not enough once a filter is nearby.
 */
 @utility app-shot-screen-clip {
 	position: absolute;
@@ -84,6 +92,14 @@
 	overflow: hidden;
 	/* 13.340 / 85.955 of width, 13.340 / 186.887 of height */
 	border-radius: 15.52% / 7.14%;
+	/* Exact rounded-rect mask (same rx as the SVG cutout). Alpha mask, not
+	   luminance, so white = keep. */
+	-webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 85955 186887'%3E%3Crect width='85955' height='186887' rx='13340' ry='13340' fill='%23fff'/%3E%3C/svg%3E");
+	mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 85955 186887'%3E%3Crect width='85955' height='186887' rx='13340' ry='13340' fill='%23fff'/%3E%3C/svg%3E");
+	-webkit-mask-size: 100% 100%;
+	mask-size: 100% 100%;
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
 }
 
 @utility app-shot-screen {
@@ -91,6 +107,9 @@
 	width: 100%;
 	height: 100%;
 	object-fit: fill;
+	/* Replaced elements sometimes ignore a parent's overflow clip; inherit the
+	   same radius so the bitmap itself is rounded. */
+	border-radius: 15.52% / 7.14%;
 }
 
 @utility app-shot-bezel {

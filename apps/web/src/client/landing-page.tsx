@@ -344,29 +344,33 @@ function AppScreenshot({
 			${widthClass}
 		`}
 		>
-			<div className="app-shot-frame">
-				<div className="app-shot-screen-clip">
+			{/* Shadow wrapper stays outside the frame so `filter` cannot defeat
+			    the screen clip (see app-shot-shadow / app-shot-screen-clip). */}
+			<div className="app-shot-shadow">
+				<div className="app-shot-frame">
+					<div className="app-shot-screen-clip">
+						<img
+							alt={screenshot.alt}
+							className="app-shot-screen"
+							fetchPriority={priority ? 'high' : 'auto'}
+							height={SHOT_HEIGHT}
+							loading={priority ? 'eager' : 'lazy'}
+							src={screenshot.src}
+							width={SHOT_WIDTH}
+						/>
+					</div>
 					<img
-						alt={screenshot.alt}
-						className="app-shot-screen"
+						alt=""
+						aria-hidden="true"
+						className="app-shot-bezel"
+						draggable={false}
 						fetchPriority={priority ? 'high' : 'auto'}
-						height={SHOT_HEIGHT}
+						height="730"
 						loading={priority ? 'eager' : 'lazy'}
-						src={screenshot.src}
-						width={SHOT_WIDTH}
+						src={IPHONE_16_PRO_FRAME}
+						width="356"
 					/>
 				</div>
-				<img
-					alt=""
-					aria-hidden="true"
-					className="app-shot-bezel"
-					draggable={false}
-					fetchPriority={priority ? 'high' : 'auto'}
-					height="730"
-					loading={priority ? 'eager' : 'lazy'}
-					src={IPHONE_16_PRO_FRAME}
-					width="356"
-				/>
 			</div>
 		</figure>
 	)
