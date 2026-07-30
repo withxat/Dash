@@ -7,6 +7,7 @@ import Foundation
 enum DashAuthorizationScopes {
   static let coreFeatures: Set<FeatureID> = [
     .zones,
+    .registrar,
     .workers,
     .pages,
     .r2,
@@ -19,8 +20,7 @@ enum DashAuthorizationScopes {
   /// every catalog surface without mutation permission.
   ///
   /// Tunnels list/detail calls `argotunnel.read`; its positive Protected badge
-  /// calls `access.read`; Registrar list/detail calls
-  /// `registrar-domains.read`. Email Routing rules and destination addresses
+  /// calls `access.read`. Email Routing rules and destination addresses
   /// call their matching read scopes. The removed load-balancing, health-check,
   /// and SSL scopes remain absent because no current screen calls them. Do not
   /// add a scope without a screen that calls the endpoint — the sign-in sheet
@@ -39,12 +39,15 @@ enum DashAuthorizationScopes {
     "analytics.read",
     "email-routing-rule.read",
     "email-routing-address.read",
-    "registrar-domains.read",
     "access.read",
   ]
 
   /// Mutating operations that are not represented by a FeatureID. They remain
   /// explicit so `core` audits the complete real-account authorization.
+  ///
+  /// `registrar-domains.admin` is here rather than on `FeatureID.registrar`
+  /// because only the per-domain screen mutates; the catalog index would
+  /// otherwise render a read-only banner over a screen with no controls.
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",

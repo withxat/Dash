@@ -477,10 +477,14 @@ enum DashTheme {
       adaptive(
         light: 0x8E51FF, dark: 0x8E51FF, highLight: 0x6E11B0, highDark: 0xC4B4FF)
     case .teal:
-      adaptive(
-        light: 0x009689, dark: 0x00BBA7, highLight: 0x00786F, highDark: 0x46ECD5)
+      teal
     }
   }
+
+  /// Categorical teal — the same stop the dither charts use for a third series.
+  /// Shared with the `.teal` workspace wash and the Registrar catalog tone.
+  static let teal = adaptive(
+    light: 0x009689, dark: 0x00BBA7, highLight: 0x00786F, highDark: 0x46ECD5)
 
   /// `color-kumo-brand` / `color-kumo-brand-hover` (high light) /
   /// `text-kumo-link` (high dark). Reserved for focus rings, primary CTAs,
@@ -731,6 +735,7 @@ enum FeatureVisualTone: Hashable, Sendable {
   case danger
   case info
   case violet
+  case teal
 
   var muted: Color {
     switch self {
@@ -742,6 +747,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .danger: DashTheme.danger.opacity(0.85)
     case .info: DashTheme.info.opacity(0.85)
     case .violet: DashTheme.violet.opacity(0.85)
+    case .teal: DashTheme.teal.opacity(0.85)
     }
   }
 
@@ -755,6 +761,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .danger: DashTheme.danger
     case .info: DashTheme.info
     case .violet: DashTheme.violet
+    case .teal: DashTheme.teal
     }
   }
 
@@ -776,6 +783,7 @@ enum FeatureVisualIdentity {
   static func tone(for feature: FeatureID) -> FeatureVisualTone {
     switch feature {
     case .zones: .success
+    case .registrar: .teal
     case .workers: .brand
     case .pages: .info
     case .r2: .accent

@@ -34,6 +34,7 @@ struct FeatureRouterContent: View {
     Group {
       switch feature {
       case .zones: ZonesView()
+      case .registrar: RegistrarDomainsView()
       case .workers: WorkersView()
       case .pages: PagesProjectsView()
       case .r2: R2BucketsView()
@@ -93,7 +94,7 @@ struct FeatureWriteAccessNotice: View {
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
   case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
-    .filesMount, .watchtowerInbox, .emailAddresses, .registrarDomains, .registrarDomain:
+    .filesMount, .watchtowerInbox, .emailAddresses:
     nil
   #if DEBUG
     case .debug: nil
@@ -103,6 +104,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings,
     .zoneEmailRouting:
     .zones
+  case .registrarDomain: .registrar
   case .worker: .workers
   case .tunnel: .tunnels
   case .pagesProject, .pagesDeployment, .pagesDomains: .pages
@@ -145,8 +147,6 @@ func readScopes(for destination: Destination) -> Set<String> {
     ]
   case .emailAddresses:
     ["email-routing-address.read"]
-  case .registrarDomains, .registrarDomain:
-    ["registrar-domains.read"]
   case .tunnel:
     ["argotunnel.read", "access.read"]
   case .zoneAnalytics:
@@ -157,8 +157,8 @@ func readScopes(for destination: Destination) -> Set<String> {
     DashAuthorizationScopes.webAnalytics
   case .chartDetail(let detail):
     detail.readScopes
-  case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains, .r2Bucket,
-    .r2BucketSettings, .kvNamespace, .kvKey:
+  case .feature, .zone, .registrarDomain, .worker, .pagesProject, .pagesDeployment, .pagesDomains,
+    .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
   }
 }
@@ -188,8 +188,9 @@ func writeScopes(for destination: Destination) -> Set<String> {
     ["zone-settings.write", "email-routing-rule.write"]
   case .emailAddresses:
     ["email-routing-address.write"]
-  case .registrarDomains:
-    []
+  // Not on `FeatureID.registrar.capability.write`: only this screen mutates,
+  // and the catalog feature must stay write-free so the index does not wear a
+  // read-only banner for controls it never shows.
   case .registrarDomain:
     ["registrar-domains.admin"]
   case .tunnel:

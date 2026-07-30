@@ -3,21 +3,24 @@ import SwiftUI
 
 // MARK: - Access
 
-/// The one place the Registrar scope ids are written down.
+/// The one place the Registrar scope ids are read from.
 ///
-/// Registrar is deliberately **not** a `FeatureID`: the catalog already ships a
-/// feature titled "Domains", and a sibling "Registrar" tile would give one
-/// domain two homes in the same browse list. The screens live under
-/// Profile → Account and gate themselves per screen instead of locking a tile,
-/// so these sets are what `readScopes(for:)` / `writeScopes(for:)` return for
-/// the two registrar destinations.
+/// Registrar is a catalog `FeatureID` (`Resources → Registered domains`), so
+/// the read scope lives in `FeatureCatalog.descriptors` like every other
+/// feature's and is mirrored here for the two screens that gate on it. The
+/// write scope stays out of that capability on purpose — see below.
 enum RegistrarAccess {
-  static let read: Set<String> = ["registrar-domains.read"]
+  static let read: Set<String> = FeatureID.registrar.capability.read
 
   /// `.admin`, not `.write`. `registrar-domains.write` does not exist in
   /// Cloudflare's scope catalog, and `CloudflareScopes.sanitized()` drops
   /// unknown ids silently — the guess produces a successful consent flow that
   /// grants nothing, and a read-only screen with no error to explain it.
+  ///
+  /// Kept off `FeatureID.registrar.capability.write` because only the per-domain
+  /// screen mutates: as a feature write scope it would hang
+  /// `FeatureReadOnlyBanner` over the index, which has no controls to gate, and
+  /// duplicate the notice this screen already shows.
   static let write: Set<String> = ["registrar-domains.admin"]
 }
 
@@ -458,7 +461,9 @@ struct RegistrarDomainsView: View {
         }
       }
     }
-    .detailHeader(icon: .solar(SolarAsset.Content.globus), title: "Registered domains")
+    // No `detailHeader` here: this is `Destination.feature(.registrar)`, and
+    // `FeatureRouterContent` already installs the catalog icon and title. A
+    // second one would add a second principal toolbar item.
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
   }
@@ -935,14 +940,72 @@ func registrarDateLabel(_ value: String) -> String {
   return day.string(from: date)
 }
 
-/// RDAP sends spaced statuses ("client transfer prohibited"); the WHOIS
-/// fallback sends EPP camelCase ("clientTransferProhibited"), and the registrar
-/// API sends comma-joined EPP codes. Fold all three into one English source
-/// form so a single catalog key localizes them — and so the zone screen's
-/// Registration card and the registrar screen's Registry status never spell the
-/// same code two ways.
+/// The EPP / RDAP status vocabulary, keyed by a code with its case and every
+/// separator dropped.
+///
+/// The same code reaches Dash spelled three ways: RDAP sends it lowercased and
+/// spaced ("client transfer prohibited"), the WHOIS backstop sends EPP camelCase
+/// ("clientTransferProhibited"), and Cloudflare's Registrar API sends it
+/// lowercased and run together ("clienttransferprohibited"). Only the first two
+/// carry a boundary a splitter can find, which is why the third used to reach
+/// the screen as "Clienttransferprohibited" — one unreadable word, and a key no
+/// catalog can hold, so it stayed English on a Chinese screen.
+///
+/// Matching on letters alone folds every spelling onto the one English source
+/// form `Localizable.xcstrings` does hold. The vocabulary is closed (RFC 5731
+/// plus ICANN's grace periods), so a table is the honest shape here; anything
+/// outside it falls back to `rdapStatusLabel`'s shape heuristic and keeps
+/// Cloudflare's own wording.
+enum RegistryStatusVocabulary {
+  /// A status code reduced to its letters and digits, so case and every
+  /// separator (space, `_`, `-`, the ICANN URL's `#`) stop mattering.
+  static func key(_ raw: String) -> String {
+    raw.lowercased().filter { $0.isLetter || $0.isNumber }
+  }
+
+  static let labels: [String: String] = [
+    "ok": "OK",
+    "active": "Active",
+    "inactive": "Inactive",
+    "linked": "Linked",
+    "clientdeleteprohibited": "Client Delete Prohibited",
+    "clienthold": "Client Hold",
+    "clientrenewprohibited": "Client Renew Prohibited",
+    "clienttransferprohibited": "Client Transfer Prohibited",
+    "clientupdateprohibited": "Client Update Prohibited",
+    "serverdeleteprohibited": "Server Delete Prohibited",
+    "serverhold": "Server Hold",
+    "serverrenewprohibited": "Server Renew Prohibited",
+    "servertransferprohibited": "Server Transfer Prohibited",
+    "serverupdateprohibited": "Server Update Prohibited",
+    "pendingcreate": "Pending Create",
+    "pendingdelete": "Pending Delete",
+    "pendingrenew": "Pending Renew",
+    "pendingrestore": "Pending Restore",
+    "pendingtransfer": "Pending Transfer",
+    "pendingupdate": "Pending Update",
+    "addperiod": "Add Period",
+    "autorenewperiod": "Auto Renew Period",
+    "redemptionperiod": "Redemption Period",
+    "renewperiod": "Renew Period",
+    "transferperiod": "Transfer Period",
+  ]
+}
+
+/// One English source form per status code, whatever spelling it arrived in, so
+/// a single catalog key localizes it — and so the zone screen's Registration
+/// card and the registrar screen's Registry status never spell the same code two
+/// ways.
 func rdapStatusLabel(_ raw: String) -> String {
-  var spaced = raw.replacingOccurrences(of: "_", with: " ")
+  if let known = RegistryStatusVocabulary.labels[RegistryStatusVocabulary.key(raw)] {
+    return DashL10n.ui(known)
+  }
+  // Unrecognized code: split what has a boundary and keep Cloudflare's wording
+  // rather than inventing words a lowercase run does not contain.
+  var spaced =
+    raw
+    .replacingOccurrences(of: "_", with: " ")
+    .replacingOccurrences(of: "-", with: " ")
   if !spaced.contains(" ") {
     var split = ""
     for character in spaced {

@@ -1,7 +1,7 @@
 import Foundation
 
 enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case zones, workers, pages, r2, kv, tunnels
+  case zones, registrar, workers, pages, r2, kv, tunnels
 
   var id: String { rawValue }
   var title: String {
@@ -81,9 +81,8 @@ enum Destination: Hashable {
   case watchtowerInbox
   /// Account-level Email Routing destination addresses.
   case emailAddresses
-  /// Cloudflare Registrar, reached from Profile → Account.
-  case registrarDomains
-  /// One Cloudflare Registrar domain, keyed on its FQDN.
+  /// One Cloudflare Registrar domain, keyed on its FQDN. The account's index is
+  /// `feature(.registrar)` in Resources — there is no separate list destination.
   case registrarDomain(String)
   /// Render-ready snapshot of the chart the user tapped; never refetches.
   case chartDetail(DashChartDetail)
@@ -108,6 +107,16 @@ enum FeatureCatalog {
       .zones, "Domains", "Domains, DNS, cache, and domain settings", "globe",
       "SolarGlobalFill", "SolarGlobalOutline", "Domains & DNS",
       read: ["zone.read"], write: ["zone.write"]),
+    // A zone and a registration are different objects — a zone Cloudflare
+    // serves DNS for versus a name the account owns — so Registrar browses
+    // beside Domains instead of hiding under Profile. `write` stays empty on
+    // purpose: the list mutates nothing, and the per-domain screen asks for
+    // `registrar-domains.admin` itself (see `RegistrarAccess`). Declaring it
+    // here would hang a second read-only banner over a screen with no controls.
+    feature(
+      .registrar, "Registered domains", "Domains you bought on Cloudflare",
+      "checkmark.seal", "SolarGlobusFill", "SolarGlobusOutline", "Domains & DNS",
+      read: ["registrar-domains.read"]),
     // Compute
     feature(
       .workers, "Workers", "Deployments, domains, and analytics",
