@@ -470,20 +470,24 @@ public actor CloudflareClient {
   public func workerTag(accountID: String, name: String) async throws -> String? {
     try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
   }
+  /// Pages returns 8000024 ("Invalid list options… Review the `page` or
+  /// `per_page` parameter") for oversized pages. `50` fails on real accounts;
+  /// `10` matches wrangler and the OpenAPI example.
   public func listPagesProjects(accountID: String) async throws -> [PagesProject] {
-    try await listAllPages("/accounts/\(accountID)/pages/projects", perPage: 50)
+    try await listAllPages("/accounts/\(accountID)/pages/projects", perPage: 10)
   }
 
   public func getPagesProject(accountID: String, projectName: String) async throws -> PagesProject {
     try await request("/accounts/\(accountID)/pages/projects/\(projectName)")
   }
 
+  /// Deployments cap `per_page` at 25 (same 8000024 above that).
   public func listPagesDeployments(
     accountID: String, projectName: String, page: Int = 1, perPage: Int = 25
   ) async throws -> Page<PagesDeployment> {
     try await list(
       "/accounts/\(accountID)/pages/projects/\(projectName)/deployments",
-      query: ["page": String(page), "per_page": String(perPage)])
+      query: ["page": String(page), "per_page": String(min(max(perPage, 1), 25))])
   }
 
   public func getPagesDeployment(

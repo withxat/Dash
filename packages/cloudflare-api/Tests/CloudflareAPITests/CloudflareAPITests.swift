@@ -233,7 +233,7 @@ struct NetworkTests {
           })
       let page = query["page"] ?? "1"
       recorder.record(page)
-      #expect(query["per_page"] == "50")
+      #expect(query["per_page"] == "10")
       if page == "1" {
         return (
           200,

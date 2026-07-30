@@ -584,7 +584,7 @@ final class DemoBackend: URLProtocol {
     if rest.count == 1 {
       return ok(
         "[\(projects.map(DemoWorld.pagesProject(named:)).joined(separator: ","))]",
-        info: #"{"page":1,"per_page":25,"total_count":\#(projects.count)}"#)
+        info: #"{"page":1,"per_page":10,"total_count":\#(projects.count)}"#)
     }
     let name = rest[1]
     switch rest.dropFirst(2).first {
