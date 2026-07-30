@@ -2232,34 +2232,6 @@ struct DashChartPanelPlaceholder: View {
   }
 }
 
-/// Web Analytics metric card: title + value over a short sparkline band.
-struct DashSparklineCardPlaceholder: View {
-  var body: some View {
-    DashGlassCard {
-      VStack(alignment: .leading, spacing: 14) {
-        VStack(alignment: .leading, spacing: 6) {
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .dashSkeletonFill(DashSkeletonStyle.soft)
-            .frame(width: 96, height: 12)
-          Text(verbatim: "888,888")
-            .dashTextStyle(.emptyTitle)
-            .monospacedDigit()
-            .lineLimit(1)
-            .redacted(reason: .placeholder)
-            .dashSkeletonShimmer()
-        }
-        DashSkeletonBand()
-          .frame(height: 52)
-          .frame(maxWidth: .infinity)
-          .clipShape(
-            RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .accessibilityHidden(true)
-  }
-}
-
 /// Aspect-ratio hero face — Zone detail's domain card slot before the zone
 /// payload arrives.
 struct DashHeroCardPlaceholder: View {

@@ -5814,23 +5814,6 @@
         }
       }
     },
-    "Email Routing" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email Routing"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Email Routing"
-          }
-        }
-      }
-    },
     "Email Routing volume over the last %lld hours. Total %@." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7318,7 +7301,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "KV keys"
+            "value" : "KV 键"
           }
         }
       }
@@ -13939,7 +13922,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Web Analytics"
+            "value" : "网页分析"
           }
         }
       }

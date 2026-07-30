@@ -874,8 +874,9 @@ private enum MetricsWidgetValueFormatter {
   }
 }
 
-/// Widget-local Swift Charts sparkline matching `DashSystemSparkline` in the
-/// app. Lives here so DashWidgets does not compile the full DashCharts module.
+/// Widget-local Swift Charts sparkline matching the band a collapsed chart card
+/// paints in the app. Lives here so DashWidgets does not compile the full
+/// DashCharts module.
 private struct MetricsWidgetSystemSparkline: View {
   let values: [Double]
   let valueCeiling: Double?

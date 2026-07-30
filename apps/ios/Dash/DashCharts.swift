@@ -155,29 +155,6 @@ struct DashPieChart: View {
   }
 }
 
-/// Sparkline that follows Settings → Chart style.
-struct DashSparkline: View {
-  @AppStorage(DashChartStylePreference.storageKey) private var styleRaw =
-    DashChartStylePreference.defaultStyle.rawValue
-
-  let values: [Double]
-  let color: DitherColor
-  var variant: DitherVariant = .gradient
-
-  private var style: DashChartStylePreference {
-    DashChartStylePreference.resolved(stored: styleRaw)
-  }
-
-  var body: some View {
-    switch style {
-    case .dither:
-      DitherSparkline(values: values, color: color, variant: variant)
-    case .system:
-      DashSystemSparkline(values: values, color: color)
-    }
-  }
-}
-
 // MARK: - Swift Charts renderers
 
 private enum DashSystemCartesianKind {
@@ -472,44 +449,5 @@ private struct DashSystemPieChart: View {
         }
         selection.wrappedValue = match?.id
       })
-  }
-}
-
-private struct DashSystemSparkline: View {
-  let values: [Double]
-  let color: DitherColor
-
-  private var points: [(index: Int, value: Double)] {
-    values.enumerated().map { ($0.offset, $0.element.isFinite ? $0.element : 0) }
-  }
-
-  var body: some View {
-    Chart(points, id: \.index) { point in
-      AreaMark(
-        x: .value("Index", point.index),
-        y: .value("Value", point.value)
-      )
-      .foregroundStyle(
-        LinearGradient(
-          colors: [
-            Color(dither: color).opacity(0.4),
-            Color(dither: color).opacity(0.05),
-          ],
-          startPoint: .top,
-          endPoint: .bottom)
-      )
-      .interpolationMethod(.catmullRom)
-      LineMark(
-        x: .value("Index", point.index),
-        y: .value("Value", point.value)
-      )
-      .foregroundStyle(Color(dither: color))
-      .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-      .interpolationMethod(.catmullRom)
-    }
-    .chartXAxis(.hidden)
-    .chartYAxis(.hidden)
-    .chartLegend(.hidden)
-    .chartXScale(domain: 0...max(0, values.count - 1))
   }
 }

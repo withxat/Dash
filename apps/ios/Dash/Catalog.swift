@@ -121,7 +121,11 @@ enum FeatureCatalog {
     // `write` stays empty on the index — mutations live on the per-zone screen
     // and destination-address destinations (same pattern as Registrar).
     feature(
-      .emailRouting, "Email Routing", "Forward domain mail to inboxes you already use",
+      // Sentence case, and the same catalog key the zone row and the per-zone
+      // screen already use: "Email Routing" was a second key differing only in
+      // case, and the one nobody translated — so Resources showed English on a
+      // Chinese screen while the row one tap away read 邮件路由.
+      .emailRouting, "Email routing", "Forward domain mail to inboxes you already use",
       "tray", "SolarInboxFill", "SolarInboxOutline", "Domains & DNS",
       read: ["zone.read", "email-routing-rule.read"]),
     // Compute

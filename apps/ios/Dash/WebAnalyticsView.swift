@@ -193,6 +193,106 @@ enum WebAnalyticsChartModel {
   }
 }
 
+// MARK: - Cards
+
+/// The Web Analytics cards, in order. Each case owns its catalog title, series
+/// key, snapshot key path, polarity, and formats.
+///
+/// The screen used to switch on a card's English title to find both its key path
+/// and its value formatter — the one thing `StatusBadge` and the relay's
+/// `mapAlert` already forbid: identity and presentation must never be
+/// re-derived from wording, because the wording is what gets localized.
+private enum WebAnalyticsChartMetric: String, Hashable, CaseIterable, Identifiable {
+  case pageLoadTime
+  case visits
+  case pageViews
+  case lcpP75
+  case inpP75
+  case clsP75
+
+  /// Shown whenever the beacon reported page loads at all.
+  static let headline: [Self] = [.pageLoadTime, .visits, .pageViews]
+
+  var id: String { rawValue }
+
+  /// Catalog key; also the pushed detail's title.
+  var title: String {
+    switch self {
+    case .pageLoadTime: "Page load time"
+    case .visits: "Visits"
+    case .pageViews: "Page views"
+    case .lcpP75: "LCP p75"
+    case .inpP75: "INP p75"
+    case .clsP75: "CLS p75"
+    }
+  }
+
+  /// Series id shared by the collapsed sparkline and the detail chart.
+  var seriesKey: String { rawValue }
+
+  /// Where this card's figures live in a loaded snapshot.
+  var keyPath: KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric> {
+    switch self {
+    case .pageLoadTime: \.pageLoadTimeMs
+    case .visits: \.visits
+    case .pageViews: \.pageViews
+    case .lcpP75: \.lcpP75Ms
+    case .inpP75: \.inpP75Ms
+    case .clsP75: \.clsP75
+    }
+  }
+
+  /// Timings and layout shift are better when they fall; traffic counts carry no
+  /// opinion.
+  var trendPolarity: DashChartTrend.Polarity {
+    switch self {
+    case .visits, .pageViews: .neutral
+    case .pageLoadTime, .lcpP75, .inpP75, .clsP75: .lowerIsBetter
+    }
+  }
+
+  var valueAxisLabel: String {
+    switch self {
+    case .pageLoadTime, .lcpP75, .inpP75: "Milliseconds"
+    case .visits: "Visits"
+    case .pageViews: "Page views"
+    case .clsP75: "CLS"
+    }
+  }
+
+  var axisValueFormat: DashChartValueFormat {
+    switch self {
+    case .pageLoadTime, .lcpP75, .inpP75: .milliseconds(maximumFractionDigits: 0)
+    case .visits, .pageViews: .compact
+    case .clsP75: .number(maximumFractionDigits: 3)
+    }
+  }
+
+  var tableValueFormat: DashChartValueFormat {
+    switch self {
+    case .pageLoadTime, .lcpP75, .inpP75: .milliseconds(maximumFractionDigits: 0)
+    case .visits, .pageViews: .number(maximumFractionDigits: 0)
+    case .clsP75: .number(maximumFractionDigits: 3)
+    }
+  }
+
+  /// A card's headline, a detail's summary, and a range tab's total all read the
+  /// same figure, so they format in one place.
+  func valueText(_ value: Double) -> String {
+    switch self {
+    case .pageLoadTime, .lcpP75, .inpP75:
+      let milliseconds = Int(value.rounded())
+        .formatted(.number.locale(DashL10n.activeLocale))
+      return "\(milliseconds)ms"
+    case .visits, .pageViews:
+      return Int(value.rounded()).formatted(.number.locale(DashL10n.activeLocale))
+    case .clsP75:
+      return value.formatted(
+        .number.precision(.fractionLength(0...3)).locale(DashL10n.activeLocale))
+    }
+  }
+}
+
 // MARK: - View
 
 /// Beacon-reported Web Analytics for one zone. Deliberately separate from
@@ -202,6 +302,7 @@ struct WebAnalyticsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.openURL) private var openURL
   private let zoneID: String
 
@@ -246,75 +347,8 @@ struct WebAnalyticsView: View {
           message: "Web Analytics reports a page view once a real browser loads a page."
         )
       } else {
-        DashSurfaceStack {
-          metricCard(
-            title: "Page load time",
-            detailTitle: "Page load time",
-            metric: snapshot.pageLoadTimeMs,
-            color: DashTheme.DitherChart.accentBlue(
-              colorScheme: colorScheme, contrast: colorSchemeContrast),
-            trendPolarity: .lowerIsBetter,
-            value: durationString(snapshot.pageLoadTimeMs.current),
-            valueAxisLabel: "Milliseconds",
-            axisValueFormat: .milliseconds(maximumFractionDigits: 0),
-            tableValueFormat: .milliseconds(maximumFractionDigits: 0))
-          metricCard(
-            title: "Visits",
-            detailTitle: "Visits",
-            metric: snapshot.visits,
-            color: DashTheme.DitherChart.accentPurple(
-              colorScheme: colorScheme, contrast: colorSchemeContrast),
-            trendPolarity: .neutral,
-            value: countString(snapshot.visits.current),
-            valueAxisLabel: "Visits",
-            axisValueFormat: .compact,
-            tableValueFormat: .number(maximumFractionDigits: 0))
-          metricCard(
-            title: "Page views",
-            detailTitle: "Page views",
-            metric: snapshot.pageViews,
-            color: DashTheme.DitherChart.accentTeal(
-              colorScheme: colorScheme, contrast: colorSchemeContrast),
-            trendPolarity: .neutral,
-            value: countString(snapshot.pageViews.current),
-            valueAxisLabel: "Page views",
-            axisValueFormat: .compact,
-            tableValueFormat: .number(maximumFractionDigits: 0))
-          if snapshot.hasWebVitals {
-            metricCard(
-              title: "LCP p75",
-              detailTitle: "LCP p75",
-              metric: snapshot.lcpP75Ms,
-              color: DashTheme.DitherChart.warning(
-                colorScheme: colorScheme, contrast: colorSchemeContrast),
-              trendPolarity: .lowerIsBetter,
-              value: durationString(snapshot.lcpP75Ms.current),
-              valueAxisLabel: "Milliseconds",
-              axisValueFormat: .milliseconds(maximumFractionDigits: 0),
-              tableValueFormat: .milliseconds(maximumFractionDigits: 0))
-            metricCard(
-              title: "INP p75",
-              detailTitle: "INP p75",
-              metric: snapshot.inpP75Ms,
-              color: DashTheme.DitherChart.accentPurple(
-                colorScheme: colorScheme, contrast: colorSchemeContrast),
-              trendPolarity: .lowerIsBetter,
-              value: durationString(snapshot.inpP75Ms.current),
-              valueAxisLabel: "Milliseconds",
-              axisValueFormat: .milliseconds(maximumFractionDigits: 0),
-              tableValueFormat: .milliseconds(maximumFractionDigits: 0))
-            metricCard(
-              title: "CLS p75",
-              detailTitle: "CLS p75",
-              metric: snapshot.clsP75,
-              color: DashTheme.DitherChart.accentTeal(
-                colorScheme: colorScheme, contrast: colorSchemeContrast),
-              trendPolarity: .lowerIsBetter,
-              value: clsString(snapshot.clsP75.current),
-              valueAxisLabel: "CLS",
-              axisValueFormat: .number(maximumFractionDigits: 3),
-              tableValueFormat: .number(maximumFractionDigits: 3))
-          }
+        cardGrid(visibleMetrics) { metric in
+          metricCard(metric)
         }
       }
     }
@@ -323,15 +357,57 @@ struct WebAnalyticsView: View {
     .task(id: model.accountRequestContext) { await load() }
   }
 
-  /// Three sparkline metric cards — Page load time / Visits / Page views.
+  /// Core Web Vitals only exist on sites whose beacon collects them, so they
+  /// join the grid rather than reserving three permanently empty cards.
+  private var visibleMetrics: [WebAnalyticsChartMetric] {
+    snapshot.hasWebVitals
+      ? WebAnalyticsChartMetric.allCases
+      : WebAnalyticsChartMetric.headline
+  }
+
+  /// Cold: the three headline metrics in the same paired collapsed shape the
+  /// loaded screen paints, so the arriving cards land in place. Web Vitals stay
+  /// out — whether the beacon reports them is only known once the payload lands.
   private var webAnalyticsSkeleton: some View {
-    DashSurfaceStack {
-      DashSparklineCardPlaceholder()
-      DashSparklineCardPlaceholder()
-      DashSparklineCardPlaceholder()
+    cardGrid(WebAnalyticsChartMetric.headline) { metric in
+      DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading")
+  }
+
+  /// Collapsed cards pair into half-width rows, the same pose as Watchtower's
+  /// charts and the Worker screen's Requests / CPU pair; a lone trailing card
+  /// keeps its half width instead of stretching across the row. Accessibility
+  /// sizes cannot hold a half-width title, so they reflow to one per row.
+  @ViewBuilder
+  private func cardGrid<Card: View>(
+    _ metrics: [WebAnalyticsChartMetric],
+    @ViewBuilder card: @escaping (WebAnalyticsChartMetric) -> Card
+  ) -> some View {
+    DashSurfaceStack {
+      ForEach(rows(metrics), id: \.self) { row in
+        HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
+          ForEach(row) { metric in
+            card(metric)
+              .frame(maxWidth: .infinity)
+          }
+          if row.count == 1, !dynamicTypeSize.isAccessibilitySize {
+            Color.clear
+              .frame(maxWidth: .infinity)
+          }
+        }
+      }
+    }
+  }
+
+  private func rows(
+    _ metrics: [WebAnalyticsChartMetric]
+  ) -> [[WebAnalyticsChartMetric]] {
+    if dynamicTypeSize.isAccessibilitySize { return metrics.map { [$0] } }
+    return stride(from: 0, to: metrics.count, by: 2).map { start in
+      Array(metrics[start..<min(start + 2, metrics.count)])
+    }
   }
 
   /// Dash cannot turn the beacon on: Cloudflare publishes no OAuth scope for
@@ -352,146 +428,103 @@ struct WebAnalyticsView: View {
     )
   }
 
-  private func metricCard(
-    title: LocalizedStringKey,
-    detailTitle: String,
-    metric: WebAnalyticsMetric,
-    color: DitherColor,
-    trendPolarity: DashChartTrend.Polarity,
-    value: String,
-    valueAxisLabel: String,
-    axisValueFormat: DashChartValueFormat,
-    tableValueFormat: DashChartValueFormat
-  ) -> some View {
-    let trend = DashChartTrend(
-      current: metric.current,
-      previous: metric.previous,
-      polarity: trendPolarity)
-    let detail = webChartDetail(
-      title: detailTitle,
-      metricKeyPath: webMetricKeyPath(for: detailTitle),
-      color: color,
-      valueFormatter: { snap in
-        switch detailTitle {
-        case "Page load time": durationString(snap.pageLoadTimeMs.current)
-        case "Visits": countString(snap.visits.current)
-        case "LCP p75": durationString(snap.lcpP75Ms.current)
-        case "INP p75": durationString(snap.inpP75Ms.current)
-        case "CLS p75": clsString(snap.clsP75.current)
-        default: countString(snap.pageViews.current)
-        }
-      },
-      valueAxisLabel: valueAxisLabel,
-      axisValueFormat: axisValueFormat,
-      tableValueFormat: tableValueFormat,
-      trendPolarity: trendPolarity)
-    return DashGlassCard {
-      VStack(alignment: .leading, spacing: 14) {
-        HStack(alignment: .top, spacing: 8) {
-          VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            HStack(alignment: .lastTextBaseline, spacing: 8) {
-              Text(value)
-                .dashTextStyle(.emptyTitle)
-                .monospacedDigit()
-                .foregroundStyle(DashTheme.strong)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-              DashChartTrendLabel(trend: trend)
-              Spacer(minLength: 4)
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .accessibilityElement(children: .combine)
-          DashChartDetailButton(detail: detail)
-        }
-        if metric.series.count >= 2 {
-          DashSparkline(values: metric.series, color: color, variant: .gradient)
-            .frame(height: 52)
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+  /// One collapsed chart per metric: title, the window's figure and its trend
+  /// over a sparkline flush to the card's bottom edge, and the whole surface
+  /// pushes the interactive detail.
+  private func metricCard(_ metric: WebAnalyticsChartMetric) -> some View {
+    let payload = snapshot[keyPath: metric.keyPath]
+    let value = metric.valueText(payload.current)
+    // The floor lift is a band's device — it keeps a quiet series visible — and
+    // the ceiling it reports is why a flat week does not fill the plot.
+    let collapsed = CollapsedDitherTrendSeries(values: payload.series)
+    let data = zip(payload.points, collapsed.values).map { point, lifted in
+      DitherDatum(
+        id: point.date.ISO8601Format(),
+        label: dayLabel(point.date),
+        values: [metric.seriesKey: lifted])
+    }
+    return DashCollapsedChartCard(
+      title: metric.title,
+      summaryValue: value,
+      trend: DashChartTrend(
+        current: payload.current,
+        previous: payload.previous,
+        polarity: metric.trendPolarity),
+      data: data,
+      series: [series(for: metric)],
+      valueCeiling: collapsed.valueCeiling,
+      // The sentence Watchtower's collapsed cards already speak, so the two
+      // screens read alike and no new catalog key is needed.
+      accessibilitySummary: DashL10n.string(
+        "\(DashL10n.ui(metric.title)) for \(DashL10n.ui(range.totalsHeading)). Total \(value)."),
+      detail: chartDetail(for: metric),
+      detailAccessibilityIdentifier: "web-analytics-chart-detail-\(metric.rawValue)")
+  }
+
+  private func series(for metric: WebAnalyticsChartMetric) -> DitherSeries {
+    DitherSeries(
+      id: metric.seriesKey,
+      label: DashL10n.ui(metric.title),
+      color: color(for: metric),
+      variant: .gradient)
+  }
+
+  private func color(for metric: WebAnalyticsChartMetric) -> DitherColor {
+    switch metric {
+    case .pageLoadTime:
+      DashTheme.DitherChart.accentBlue(
+        colorScheme: colorScheme, contrast: colorSchemeContrast)
+    case .visits, .inpP75:
+      DashTheme.DitherChart.accentPurple(
+        colorScheme: colorScheme, contrast: colorSchemeContrast)
+    case .pageViews, .clsP75:
+      DashTheme.DitherChart.accentTeal(
+        colorScheme: colorScheme, contrast: colorSchemeContrast)
+    case .lcpP75:
+      DashTheme.DitherChart.warning(
+        colorScheme: colorScheme, contrast: colorSchemeContrast)
     }
   }
 
-  private func webMetricKeyPath(
-    for detailTitle: String
-  ) -> KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric> {
-    switch detailTitle {
-    case "Page load time": \.pageLoadTimeMs
-    case "Visits": \.visits
-    case "LCP p75": \.lcpP75Ms
-    case "INP p75": \.inpP75Ms
-    case "CLS p75": \.clsP75
-    default: \.pageViews
-    }
-  }
-
-  private func clsString(_ value: Double) -> String {
-    value.formatted(
-      .number.precision(.fractionLength(0...3)).locale(DashL10n.activeLocale))
-  }
-
-  private func webChartDetail(
-    title: String,
-    metricKeyPath: KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric>,
-    color: DitherColor,
-    valueFormatter: (WebAnalyticsMetricsSnapshot) -> String,
-    valueAxisLabel: String,
-    axisValueFormat: DashChartValueFormat,
-    tableValueFormat: DashChartValueFormat,
-    trendPolarity: DashChartTrend.Polarity
-  ) -> DashChartDetail {
-    let seriesID = "value"
+  /// The pushed detail carries both loaded windows, so its 7d / 30d tabs swap
+  /// already-fetched points. It plots the real values, not the lifted ones.
+  private func chartDetail(for metric: WebAnalyticsChartMetric) -> DashChartDetail {
+    let plotSeries = series(for: metric)
     let available: [AnalyticsRange] = [.week, .month]
     let ranges: [DashChartDetailRange] = available.compactMap { target in
       guard let snap = snapshotsByRange[target], !snap.isEmpty else { return nil }
-      let metric = snap[keyPath: metricKeyPath]
-      let value = valueFormatter(snap)
-      let points = metric.points.map { point in
+      let payload = snap[keyPath: metric.keyPath]
+      let value = metric.valueText(payload.current)
+      let points = payload.points.map { point in
         DashChartDataPoint(
           datum: DitherDatum(
             id: point.date.ISO8601Format(),
-            label: point.date.formatted(
-              .dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale)),
-            values: [seriesID: point.value]),
-          tableLabel: point.date.formatted(
-            .dateTime.year().month(.abbreviated).day().locale(DashL10n.activeLocale)))
+            label: dayLabel(point.date),
+            values: [metric.seriesKey: point.value]),
+          tableLabel: tableLabel(point.date))
       }
       return DashChartDetailRange(
         range: target,
         rangeLabel: target.totalsHeading,
         summaryValue: value,
         trend: DashChartTrend(
-          current: metric.current,
-          previous: metric.previous,
-          polarity: trendPolarity),
+          current: payload.current,
+          previous: payload.previous,
+          polarity: metric.trendPolarity),
         categoryAxisLabel: "Day",
-        accessibilitySummary: "\(DashL10n.ui(title)), \(value)",
-        content: .area(
-          points: points,
-          series: [
-            DitherSeries(
-              id: seriesID,
-              label: DashL10n.ui(title),
-              color: color,
-              variant: .gradient)
-          ]))
+        accessibilitySummary: "\(DashL10n.ui(metric.title)), \(value)",
+        content: .area(points: points, series: [plotSeries]))
     }
     let current = ranges.first(where: { $0.range == range }) ?? ranges.first
     return DashChartDetail(
-      title: title,
+      title: metric.title,
       rangeLabel: current?.rangeLabel ?? range.totalsHeading,
       summaryValue: current?.summaryValue,
       trend: current?.trend,
       categoryAxisLabel: "Day",
-      valueAxisLabel: valueAxisLabel,
-      axisValueFormat: axisValueFormat,
-      tableValueFormat: tableValueFormat,
+      valueAxisLabel: metric.valueAxisLabel,
+      axisValueFormat: metric.axisValueFormat,
+      tableValueFormat: metric.tableValueFormat,
       accessibilitySummary: current?.accessibilitySummary ?? "",
       content: current?.content ?? .area(points: [], series: []),
       featureID: .zones,
@@ -500,12 +533,13 @@ struct WebAnalyticsView: View {
       selectedRange: range)
   }
 
-  private func countString(_ value: Double) -> String {
-    Int(value.rounded()).formatted(.number.locale(DashL10n.activeLocale))
+  private func dayLabel(_ date: Date) -> String {
+    date.formatted(.dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale))
   }
 
-  private func durationString(_ ms: Double) -> String {
-    "\(Int(ms.rounded()).formatted(.number.locale(DashL10n.activeLocale)))ms"
+  private func tableLabel(_ date: Date) -> String {
+    date.formatted(
+      .dateTime.year().month(.abbreviated).day().locale(DashL10n.activeLocale))
   }
 
   private func load(force: Bool = false) async {
