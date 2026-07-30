@@ -1694,18 +1694,19 @@ private let watchtowerDropFrames: [CGRect] = [
 }
 
 /// The conditionally mounted backdrop enters far enough from its final
-/// position to hide the filter's first frame, but stays within a compact
-/// sub-300ms UI transition. Returning to the top must always be quicker.
+/// position to hide the filter's first frame. A full-width atmospheric layer
+/// gets a more legible entrance than micro chrome; returning to the top remains
+/// materially quicker.
 @Test func headerFrostUsesAsymmetricEntranceMotion() {
-  #expect(DashHeaderScrimMotion.insertionOffsetY == -10)
-  #expect(DashHeaderScrimMotion.removalOffsetY == -4)
-  #expect(DashHeaderScrimMotion.insertionDuration == 0.24)
-  #expect(DashHeaderScrimMotion.removalDuration == 0.16)
+  #expect(DashHeaderScrimMotion.insertionOffsetY == -8)
+  #expect(DashHeaderScrimMotion.removalOffsetY == -3)
+  #expect(DashHeaderScrimMotion.insertionDuration == 0.36)
+  #expect(DashHeaderScrimMotion.removalDuration == 0.22)
   #expect(DashHeaderScrimMotion.insertionDuration > 0)
   #expect(DashHeaderScrimMotion.removalDuration > 0)
   #expect(abs(DashHeaderScrimMotion.removalOffsetY) < abs(DashHeaderScrimMotion.insertionOffsetY))
   #expect(DashHeaderScrimMotion.insertionDuration > DashHeaderScrimMotion.removalDuration)
-  #expect(DashHeaderScrimMotion.insertionDuration < 0.3)
+  #expect(DashHeaderScrimMotion.insertionDuration <= 0.4)
 }
 
 /// The store carries the hysteresis: it is asked with a raw scroll distance and

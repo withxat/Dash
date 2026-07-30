@@ -234,15 +234,15 @@ enum DashHeaderScrimMetrics {
 /// as a fully opaque flash. The smaller, faster exit gets out of the way when
 /// content returns to the top.
 enum DashHeaderScrimMotion {
-  static let insertionOffsetY: CGFloat = -10
-  static let removalOffsetY: CGFloat = -4
-  static let insertionDuration = 0.24
-  static let removalDuration = 0.16
+  static let insertionOffsetY: CGFloat = -8
+  static let removalOffsetY: CGFloat = -3
+  static let insertionDuration = 0.36
+  static let removalDuration = 0.22
 
   static let insertion = Animation.timingCurve(
-    0.22,
-    1,
-    0.36,
+    0.25,
+    0.1,
+    0.25,
     1,
     duration: insertionDuration
   )
