@@ -301,11 +301,14 @@ struct SettingsView: View {
     true
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
     DashWorkspaceWashPreset.defaultPreset.rawValue
+  @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
+    DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
   @State private var showsTimeFormatPicker = false
   @State private var showsWorkspaceWashPicker = false
+  @State private var showsChartStylePicker = false
   @State private var showsICloudSyncDetails = false
   @State private var showsSignOutConfirmation = false
 
@@ -315,6 +318,10 @@ struct SettingsView: View {
 
   private var selectedTimeFormat: DashTimeFormatPreference {
     DashTimeFormatPreference.resolved(stored: timeFormatRaw)
+  }
+
+  private var selectedChartStyle: DashChartStylePreference {
+    DashChartStylePreference.resolved(stored: chartStyleRaw)
   }
 
   private var selectedWorkspaceWash: DashWorkspaceWashPreset {
@@ -414,6 +421,22 @@ struct SettingsView: View {
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityIdentifier("workspace-wash-color")
+
+          SettingsPlainDivider()
+
+          Button {
+            showsChartStylePicker = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Chart style"),
+              subtitle: DashL10n.string("Dithered charts or the system Swift Charts look."),
+              icon: SolarAsset.chart,
+              trailing: selectedChartStyle.displayName,
+              trailingIcon: SolarAsset.menuDots
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("chart-style")
 
           SettingsPlainDivider()
 
@@ -676,6 +699,12 @@ struct SettingsView: View {
       WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
     }
     .dashTray(
+      isPresented: $showsChartStylePicker,
+      title: DashL10n.string("Chart style")
+    ) {
+      ChartStylePickerTray(chartStyleRaw: $chartStyleRaw)
+    }
+    .dashTray(
       isPresented: $showsICloudSyncDetails,
       title: DashL10n.string("What syncs")
     ) {
@@ -920,6 +949,57 @@ private struct WorkspaceWashPickerTray: View {
         .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
       }
     }
+  }
+}
+
+private struct ChartStylePickerTray: View {
+  @Binding var chartStyleRaw: String
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 12) {
+      ForEach(DashChartStylePreference.allCases) { preference in
+        let isSelected =
+          DashChartStylePreference.resolved(stored: chartStyleRaw) == preference
+        Button {
+          guard chartStyleRaw != preference.rawValue else {
+            dismiss()
+            return
+          }
+          chartStyleRaw = preference.rawValue
+          DashDelight.selectionChanged()
+          dismiss()
+        } label: {
+          HStack(spacing: 12) {
+            Text(preference.displayName)
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            SolarIcon(
+              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
+              size: 22,
+              color: isSelected ? DashTheme.brand : DashTheme.placeholder
+            )
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+          .background(DashTheme.Sheet.shortcutItem)
+          .clipShape(DashTheme.buttonShape)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("chart-style-\(preference.rawValue)")
+      }
+    }
+    .dashTrayDescription(
+      DashL10n.string(
+        "Dither is Dash’s dotted look. Swift Charts uses the system chart style."
+      )
+    )
   }
 }
 

@@ -332,6 +332,11 @@ struct DashGlassCard<Content: View>: View {
 struct DashCollapsedChartCard: View {
   /// Catalog key, localized here.
   let title: String
+  /// When set, the card matches Watchtower's collapsed metric chrome — two
+  /// reserved title lines over the total and trend — instead of a title-only
+  /// strip above the sparkline.
+  var summaryValue: String? = nil
+  var trend: DashChartTrend? = nil
   let data: [DitherDatum]
   let series: [DitherSeries]
   /// From `CollapsedDitherTrendSeries`, so an all-zero series keeps its short
@@ -342,36 +347,48 @@ struct DashCollapsedChartCard: View {
   let accessibilitySummary: String
   var detail: DashChartDetail?
   var detailAccessibilityIdentifier: String?
+  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private var shape: RoundedRectangle {
     RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
   }
 
+  private var showsMetricHeader: Bool {
+    summaryValue != nil || trend != nil
+  }
+
   private var combinedAccessibilityLabel: String {
-    "\(DashL10n.ui(title)). \(accessibilitySummary)"
+    if let summaryValue {
+      return "\(DashL10n.ui(title)), \(summaryValue). \(accessibilitySummary)"
+    }
+    return "\(DashL10n.ui(title)). \(accessibilitySummary)"
   }
 
   var body: some View {
+    Group {
+      if let detail {
+        Button {
+          navigator?.push(.chartDetail(detail))
+        } label: {
+          cardContent
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityHint("Shows chart details")
+        .accessibilityIdentifier(detailAccessibilityIdentifier ?? "collapsed-chart-detail")
+      } else {
+        cardContent
+      }
+    }
+  }
+
+  private var cardContent: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Text(DashL10n.ui(title))
-        .dashTextStyle(.footnoteSemibold)
-        .foregroundStyle(DashTheme.subtle)
-        // One reserved line keeps a pair of cards the same height in every
-        // language — a title that wrapped on one side only would leave the row
-        // uneven — so a long translation shrinks instead of wrapping. The
-        // reserved trailing slot keeps the text clear of the detail button
-        // floating over it.
-        .lineLimit(1, reservesSpace: true)
-        .minimumScaleFactor(0.7)
-        .padding(.trailing, detail == nil ? 0 : DashTheme.Layout.minimumHitTarget)
-        .padding(.horizontal, DashTheme.Spacing.card)
-        .padding(.top, DashTheme.Spacing.card)
-        .padding(.bottom, 8)
+      header
       sparkline
         .frame(maxWidth: .infinity)
         .frame(height: DashTheme.DitherChart.collapsedHeight(dynamicTypeSize: dynamicTypeSize))
-        // Only the bottom corners take the panel radius, so the dither does not
+        // Only the bottom corners take the panel radius, so the plot does not
         // square off the embossed fill.
         .clipShape(
           UnevenRoundedRectangle(
@@ -391,19 +408,40 @@ struct DashCollapsedChartCard: View {
     .accessibilityLabel(combinedAccessibilityLabel)
     .background(DashTheme.homeCardSurface, in: shape)
     .dashEmbossChrome(shape: shape)
-    .overlay(alignment: .topTrailing) {
-      if let detail {
-        DashChartDetailButton(
-          detail: detail,
-          accessibilityIdentifier: detailAccessibilityIdentifier
-        )
-        .padding(8)
+  }
+
+  private var header: some View {
+    VStack(alignment: .leading, spacing: showsMetricHeader ? 4 : 0) {
+      Text(DashL10n.ui(title))
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+        // Watchtower reserves two lines so paired cards share one height when
+        // a title wraps; the title-only Worker pose kept one line before the
+        // metric header landed here — same rule once a total is present.
+        .lineLimit(showsMetricHeader ? 2 : 1, reservesSpace: true)
+        .minimumScaleFactor(showsMetricHeader ? 0.85 : 0.7)
+      if showsMetricHeader {
+        HStack(alignment: .lastTextBaseline, spacing: 8) {
+          if let summaryValue {
+            Text(verbatim: summaryValue)
+              .dashTextStyle(.emptyTitle)
+              .monospacedDigit()
+              .foregroundStyle(DashTheme.strong)
+              .lineLimit(1)
+              .minimumScaleFactor(0.7)
+          }
+          DashChartTrendLabel(trend: trend)
+          Spacer(minLength: 4)
+        }
       }
     }
+    .padding(.horizontal, DashTheme.Spacing.card)
+    .padding(.top, DashTheme.Spacing.card)
+    .padding(.bottom, 8)
   }
 
   private var sparkline: some View {
-    DitherAreaChart(
+    DashAreaChart(
       data: data,
       series: series,
       options: DashTheme.DitherChart.sparklineOptions(
@@ -1875,11 +1913,13 @@ struct DashMetricTilePlaceholder: View {
   }
 }
 
-/// Collapsed chart card: one reserved title line over a plot flush to the
-/// bottom edge — same enamel and heights as `DashCollapsedChartCard` /
+/// Collapsed chart card: title (optionally over a total) and a plot flush to
+/// the bottom edge — same enamel and heights as `DashCollapsedChartCard` /
 /// Watchtower's collapsed metric skeleton.
 struct DashCollapsedChartPlaceholder: View {
   var title: String?
+  /// Matches `DashCollapsedChartCard` when it carries a total + trend.
+  var showsMetricHeader = false
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private var panelShape: RoundedRectangle {
@@ -1888,19 +1928,26 @@ struct DashCollapsedChartPlaceholder: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
-      Group {
-        if let title {
-          Text(DashL10n.ui(title))
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-            .lineLimit(1, reservesSpace: true)
-        } else {
+      VStack(alignment: .leading, spacing: showsMetricHeader ? 4 : 0) {
+        Group {
+          if let title {
+            Text(DashL10n.ui(title))
+              .dashTextStyle(.footnoteSemibold)
+              .foregroundStyle(DashTheme.subtle)
+              .lineLimit(showsMetricHeader ? 2 : 1, reservesSpace: true)
+          } else {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(0.55))
+              .frame(width: 72, height: 12)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(.vertical, 2)
+          }
+        }
+        if showsMetricHeader {
           RoundedRectangle(cornerRadius: 4, style: .continuous)
             .fill(DashTheme.fill.opacity(0.55))
-            .frame(width: 72, height: 12)
+            .frame(width: 64, height: 22)
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Match the reserved title line so a pair of cards stay even.
-            .padding(.vertical, 2)
         }
       }
       .padding(.horizontal, DashTheme.Spacing.card)

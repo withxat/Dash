@@ -538,7 +538,7 @@ struct WorkerDetailView: View {
         DashMetricPanelPlaceholder(tiles: 3)
         HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
           ForEach(WorkerChartMetric.allCases, id: \.self) { metric in
-            DashCollapsedChartPlaceholder(title: metric.title)
+            DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
               .frame(maxWidth: .infinity)
           }
         }
@@ -567,10 +567,9 @@ struct WorkerDetailView: View {
         retry: { Task { await load(force: true) } })
   }
 
-  /// Totals panel, then one row of collapsed charts. The numbers live in the
-  /// panel and nowhere else — a collapsed card that repeated its own total two
-  /// surfaces below the tile showing it read as a duplicate, so the cards carry
-  /// a title, a sparkline, and the detail push.
+  /// Totals panel (requests / errors / CPU p50), then Watchtower-matched
+  /// collapsed charts — each card carries its own total + trend over the
+  /// sparkline so the pair reads like the Charts tab, not a second pose.
   private func workerMetricsSection(_ summary: WorkerAnalyticsPayload) -> some View {
     let chartPoints = WorkerAnalyticsChartModel.points(from: summary.points)
     return DashSurfaceStack {
@@ -634,9 +633,8 @@ struct WorkerDetailView: View {
         }
       }
     } else {
-      // Both cards are structurally identical — a single reserved title line
-      // over a fixed-height plot — so halving the row is all it takes for the
-      // pair to stand the same height.
+      // Both cards share Watchtower's collapsed chrome (two-line title + total
+      // + trend over a fixed-height plot), so halving the row keeps them even.
       HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
         ForEach(WorkerChartMetric.allCases, id: \.self) { metric in
           workerChartCard(metric, summary: summary, points: points)
@@ -662,8 +660,11 @@ struct WorkerDetailView: View {
         label: point.date.formatted(workerChartAxisFormat),
         values: [metric.seriesKey: value])
     }
+    let (summaryValue, trend) = workerChartSummary(metric, summary: summary)
     return DashCollapsedChartCard(
       title: metric.title,
+      summaryValue: summaryValue,
+      trend: trend,
       data: data,
       series: workerCollapsedSeries(metric),
       valueCeiling: collapsed.valueCeiling,
@@ -673,6 +674,30 @@ struct WorkerDetailView: View {
         points: points),
       detail: workerChartDetail(metric, summary: summary, points: points),
       detailAccessibilityIdentifier: metric.detailAccessibilityIdentifier)
+  }
+
+  private func workerChartSummary(
+    _ metric: WorkerChartMetric,
+    summary: WorkerAnalyticsPayload
+  ) -> (String, DashChartTrend?) {
+    switch metric {
+    case .requests:
+      (
+        summary.requests.formatted(.number.locale(DashL10n.activeLocale)),
+        DashChartTrend(
+          current: Double(summary.requests),
+          previous: summary.previousRequests.map(Double.init),
+          polarity: .neutral)
+      )
+    case .cpu:
+      (
+        String(format: "%.1f ms", summary.cpuTimeP50Us / 1000),
+        DashChartTrend(
+          current: summary.cpuTimeP50Us,
+          previous: summary.previousCPUTimeP50Us,
+          polarity: .lowerIsBetter)
+      )
+    }
   }
 
   /// A collapsed card paints its own metric only: the errors overlay would be a

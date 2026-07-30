@@ -151,6 +151,7 @@
 		B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
 		B000000000000000000001CD /* HoloStickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CD /* HoloStickerView.swift */; };
 		B000000000000000000001CF /* ChartDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CF /* ChartDetailView.swift */; };
+		B000000000000000000001D1 /* DashCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001D1 /* DashCharts.swift */; };
 		B000000000000000000001D0 /* VariableBlur in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000014 /* VariableBlur */; };
 /* End PBXBuildFile section */
 
@@ -298,6 +299,7 @@
 		F0000000000000000000015E /* DashControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashControls.swift; sourceTree = "<group>"; };
 		F0000000000000000000015F /* DashHeaderScrollChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashHeaderScrollChrome.swift; sourceTree = "<group>"; };
 		F000000000000000000001CF /* ChartDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDetailView.swift; sourceTree = "<group>"; };
+		F000000000000000000001D1 /* DashCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashCharts.swift; sourceTree = "<group>"; };
 		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000162 /* R2TransferSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferSupport.swift; sourceTree = "<group>"; };
@@ -456,6 +458,7 @@
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
 				F000000000000000000001CF /* ChartDetailView.swift */,
+				F000000000000000000001D1 /* DashCharts.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000015A /* ZoneViews.swift */,
 				F000000000000000000001B8 /* EmailRoutingViews.swift */,
@@ -947,6 +950,7 @@
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B000000000000000000001CF /* ChartDetailView.swift in Sources */,
+				B000000000000000000001D1 /* DashCharts.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000015A /* ZoneViews.swift in Sources */,
 				B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */,

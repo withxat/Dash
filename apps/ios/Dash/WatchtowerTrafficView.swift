@@ -1265,9 +1265,10 @@ struct WatchtowerTrafficView: View {
       overview: overview,
       previousOverview: snapshot.previousOverview,
       // The card retains this value through its two-stage visual handoff, then
-      // unmounts the Dither view while editing. Arrays remain copy-on-write.
+      // unmounts the live chart while editing. Arrays remain copy-on-write.
       chart: snapshot.charts[metric] ?? .empty,
       range: state.range,
+      snapshotsByRange: state.snapshots,
       isExpanded: expanded,
       showsEditingControls: editorControlsVisible,
       renderingMode: WatchtowerMetricChartRenderingMode.resolved(
@@ -2379,12 +2380,16 @@ private struct WatchtowerMetricChartCard: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let metric: WatchtowerAnalyticsMetric
   let overview: AccountAnalyticsOverview
   var previousOverview: AccountAnalyticsOverview? = nil
   let chart: WatchtowerAnalyticsChartModel.MetricSnapshot
   let range: AnalyticsRange
+  /// Warm snapshots for every time tab so the pushed detail can switch ranges
+  /// without refetching.
+  var snapshotsByRange: [AnalyticsRange: WatchtowerAnalyticsChartModel.Snapshot] = [:]
   let isExpanded: Bool
   let showsEditingControls: Bool
   let renderingMode: WatchtowerMetricChartRenderingMode
@@ -2409,11 +2414,62 @@ private struct WatchtowerMetricChartCard: View {
       polarity: metric.trendPolarity)
   }
 
+  private var opensDetailOnTap: Bool {
+    !isExpanded && !showsEditingControls && detail != nil && renderingMode == .live
+  }
+
   private var detail: DashChartDetail? {
-    guard !chart.isEmpty, chart.expandedData.count == chart.tableLabels.count else {
+    let rangeSnapshots = AnalyticsRange.allCases.compactMap { target -> DashChartDetailRange? in
+      guard
+        let snapshot = snapshotsByRange[target] ?? (target == range ? currentRangeSnapshot : nil)
+      else { return nil }
+      return detailRange(from: snapshot, range: target)
+    }
+    guard let current = detailRange(from: currentRangeSnapshot, range: range) else {
       return nil
     }
-    let points = zip(chart.expandedData, chart.tableLabels).map { datum, tableLabel in
+    return DashChartDetail(
+      title: metric.title,
+      rangeLabel: current.rangeLabel,
+      summaryValue: current.summaryValue,
+      trend: current.trend,
+      categoryAxisLabel: current.categoryAxisLabel,
+      valueAxisLabel: metric.valueAxisLabel,
+      axisValueFormat: metric.axisValueFormat,
+      tableValueFormat: metric.tableValueFormat,
+      accessibilitySummary: current.accessibilitySummary,
+      content: current.content,
+      featureID: nil,
+      readScopes: DashAuthorizationScopes.accountAnalytics,
+      ranges: rangeSnapshots,
+      selectedRange: range)
+  }
+
+  private var currentRangeSnapshot: WatchtowerAnalyticsChartModel.Snapshot {
+    WatchtowerAnalyticsChartModel.Snapshot(
+      overview: overview,
+      previousOverview: previousOverview,
+      charts: [metric: chart],
+      fetchedAt: .now)
+  }
+
+  private func detailRange(
+    from snapshot: WatchtowerAnalyticsChartModel.Snapshot,
+    range target: AnalyticsRange
+  ) -> DashChartDetailRange? {
+    let metricChart = snapshot.charts[metric] ?? .empty
+    guard !metricChart.isEmpty,
+      metricChart.expandedData.count == metricChart.tableLabels.count
+    else { return nil }
+    let total = WatchtowerAnalyticsChartModel.totalValue(snapshot.overview, metric: metric)
+    let trend: DashChartTrend? = {
+      guard let previous = snapshot.previousOverview else { return nil }
+      return DashChartTrend(
+        current: total.numeric,
+        previous: WatchtowerAnalyticsChartModel.totalValue(previous, metric: metric).numeric,
+        polarity: metric.trendPolarity)
+    }()
+    let points = zip(metricChart.expandedData, metricChart.tableLabels).map { datum, tableLabel in
       DashChartDataPoint(
         datum: DitherDatum(
           id: datum.id,
@@ -2423,22 +2479,17 @@ private struct WatchtowerMetricChartCard: View {
           ]),
         tableLabel: tableLabel)
     }
-    return DashChartDetail(
-      title: metric.title,
-      rangeLabel: range.totalsHeading,
+    return DashChartDetailRange(
+      range: target,
+      rangeLabel: target.totalsHeading,
       summaryValue: total.text,
       trend: trend,
-      categoryAxisLabel: range == .month ? "Day" : "Hour",
-      valueAxisLabel: metric.valueAxisLabel,
-      axisValueFormat: metric.axisValueFormat,
-      tableValueFormat: metric.tableValueFormat,
+      categoryAxisLabel: target == .month ? "Day" : "Hour",
       accessibilitySummary: WatchtowerAnalyticsChartModel.accessibilitySummary(
         metric: metric,
-        rangeLabel: DashL10n.ui(range.totalsHeading),
+        rangeLabel: DashL10n.ui(target.totalsHeading),
         value: total.text),
-      content: .area(points: points, series: chartSeries),
-      featureID: nil,
-      readScopes: DashAuthorizationScopes.accountAnalytics)
+      content: .area(points: points, series: chartSeries))
   }
 
   private var chartAccessibility: DitherAccessibility {
@@ -2465,41 +2516,24 @@ private struct WatchtowerMetricChartCard: View {
   }
 
   private var overlayIsInteractive: Bool {
-    showsEditingControls || (detail != nil && renderingMode == .live)
+    showsEditingControls
+      || (isExpanded && detail != nil && renderingMode == .live && !showsEditingControls)
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      header
-      chartBody
-        .padding(.horizontal, isExpanded ? DashTheme.Spacing.card : 0)
-        .padding(.bottom, isExpanded ? DashTheme.Spacing.card : 0)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    // Clip only the fill — not the whole card — so expanded-chart tooltips can
-    // paint past the panel edge. Chart bodies that sit flush still clip locally.
-    .background {
-      DashTheme.homeCardSurface
-        .clipShape(panelShape)
-    }
-    .dashEmbossChrome(shape: panelShape)
-    .overlay(alignment: .topTrailing) {
-      ZStack(alignment: .topTrailing) {
-        if let detail, renderingMode == .live, !showsEditingControls {
-          DashChartDetailButton(
-            detail: detail,
-            accessibilityIdentifier: "watchtower-chart-detail-\(metric.rawValue)"
-          )
-          .padding(8)
-          .transition(reduceMotion ? .opacity : .dashMorph)
+    Group {
+      if opensDetailOnTap, let detail {
+        Button {
+          navigator?.push(.chartDetail(detail))
+        } label: {
+          cardChrome
         }
-        if showsEditingControls {
-          cardControls
-            .transition(reduceMotion ? .opacity : .dashMorph)
-        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityHint("Shows chart details")
+        .accessibilityIdentifier("watchtower-chart-detail-\(metric.rawValue)")
+      } else {
+        cardChrome
       }
-      .allowsHitTesting(overlayIsInteractive)
-      .accessibilityHidden(!overlayIsInteractive)
     }
     .onChange(of: range) { selectedSeriesID = nil }
     // Collapse, the editor's placeholder swap, and unmount all take the live
@@ -2516,6 +2550,43 @@ private struct WatchtowerMetricChartCard: View {
       }
     }
     .onDisappear { onScrubChange(false) }
+  }
+
+  private var cardChrome: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      header
+      chartBody
+        .padding(.horizontal, isExpanded ? DashTheme.Spacing.card : 0)
+        .padding(.bottom, isExpanded ? DashTheme.Spacing.card : 0)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    // Clip only the fill — not the whole card — so expanded-chart tooltips can
+    // paint past the panel edge. Chart bodies that sit flush still clip locally.
+    .background {
+      DashTheme.homeCardSurface
+        .clipShape(panelShape)
+    }
+    .dashEmbossChrome(shape: panelShape)
+    .overlay(alignment: .topTrailing) {
+      ZStack(alignment: .topTrailing) {
+        // Expanded charts keep a discrete detail control so hold-to-scrub is
+        // not also a navigation target. Collapsed cards push from the surface.
+        if let detail, isExpanded, renderingMode == .live, !showsEditingControls {
+          DashChartDetailButton(
+            detail: detail,
+            accessibilityIdentifier: "watchtower-chart-detail-\(metric.rawValue)"
+          )
+          .padding(8)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+        }
+        if showsEditingControls {
+          cardControls
+            .transition(reduceMotion ? .opacity : .dashMorph)
+        }
+      }
+      .allowsHitTesting(overlayIsInteractive)
+      .accessibilityHidden(!overlayIsInteractive)
+    }
   }
 
   private var header: some View {
@@ -2536,7 +2607,7 @@ private struct WatchtowerMetricChartCard: View {
           .trailing,
           renderingMode == .placeholder
             ? WatchtowerMetricDragLayout.titleTrailingClearance
-            : detail == nil ? 0 : DashTheme.Layout.minimumHitTarget)
+            : (isExpanded && detail != nil) ? DashTheme.Layout.minimumHitTarget : 0)
       HStack(alignment: .lastTextBaseline, spacing: 8) {
         Text(total.text)
           .dashTextStyle(.emptyTitle)
@@ -2609,7 +2680,7 @@ private struct WatchtowerMetricChartCard: View {
         // end-of-scrub callback — with it.
         .onAppear { onScrubChange(false) }
     } else {
-      DitherAreaChart(
+      DashAreaChart(
         data: chart.expandedData,
         series: chartSeries,
         options: DashTheme.DitherChart.options(
@@ -2681,9 +2752,9 @@ private struct WatchtowerMetricChartCard: View {
   }
 
   /// Flush to the panel edges. Zeros (including all-zero) lift off the floor so
-  /// the sparkline still paints a short dither band.
+  /// the sparkline still paints a short band.
   private var collapsedSparkline: some View {
-    DitherAreaChart(
+    DashAreaChart(
       data: chart.collapsedData,
       series: chartSeries,
       options: DashTheme.DitherChart.sparklineOptions(

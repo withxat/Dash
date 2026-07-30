@@ -297,13 +297,19 @@ struct WebAnalyticsView: View {
       polarity: trendPolarity)
     let detail = webChartDetail(
       title: detailTitle,
-      metric: metric,
+      metricKeyPath: webMetricKeyPath(for: detailTitle),
       color: color,
-      value: value,
+      valueFormatter: { snap in
+        switch detailTitle {
+        case "Page load time": durationString(snap.pageLoadTimeMs.current)
+        case "Visits": countString(snap.visits.current)
+        default: countString(snap.pageViews.current)
+        }
+      },
       valueAxisLabel: valueAxisLabel,
       axisValueFormat: axisValueFormat,
       tableValueFormat: tableValueFormat,
-      trend: trend)
+      trendPolarity: trendPolarity)
     return DashGlassCard {
       VStack(alignment: .leading, spacing: 14) {
         HStack(alignment: .top, spacing: 8) {
@@ -327,7 +333,7 @@ struct WebAnalyticsView: View {
           DashChartDetailButton(detail: detail)
         }
         if metric.series.count >= 2 {
-          DitherSparkline(values: metric.series, color: color, variant: .gradient)
+          DashSparkline(values: metric.series, color: color, variant: .gradient)
             .frame(height: 52)
             .frame(maxWidth: .infinity)
             .accessibilityHidden(true)
@@ -337,48 +343,78 @@ struct WebAnalyticsView: View {
     }
   }
 
+  private func webMetricKeyPath(
+    for detailTitle: String
+  ) -> KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric> {
+    switch detailTitle {
+    case "Page load time": \.pageLoadTimeMs
+    case "Visits": \.visits
+    default: \.pageViews
+    }
+  }
+
   private func webChartDetail(
     title: String,
-    metric: WebAnalyticsMetric,
+    metricKeyPath: KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric>,
     color: DitherColor,
-    value: String,
+    valueFormatter: (WebAnalyticsMetricsSnapshot) -> String,
     valueAxisLabel: String,
     axisValueFormat: DashChartValueFormat,
     tableValueFormat: DashChartValueFormat,
-    trend: DashChartTrend?
+    trendPolarity: DashChartTrend.Polarity
   ) -> DashChartDetail {
     let seriesID = "value"
-    let points = metric.points.map { point in
-      DashChartDataPoint(
-        datum: DitherDatum(
-          id: point.date.ISO8601Format(),
-          label: point.date.formatted(
-            .dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale)),
-          values: [seriesID: point.value]),
-        tableLabel: point.date.formatted(
-          .dateTime.year().month(.abbreviated).day().locale(DashL10n.activeLocale)))
+    let available: [AnalyticsRange] = [.week, .month]
+    let ranges: [DashChartDetailRange] = available.compactMap { target in
+      guard let snap = snapshotsByRange[target], !snap.isEmpty else { return nil }
+      let metric = snap[keyPath: metricKeyPath]
+      let value = valueFormatter(snap)
+      let points = metric.points.map { point in
+        DashChartDataPoint(
+          datum: DitherDatum(
+            id: point.date.ISO8601Format(),
+            label: point.date.formatted(
+              .dateTime.month(.abbreviated).day().locale(DashL10n.activeLocale)),
+            values: [seriesID: point.value]),
+          tableLabel: point.date.formatted(
+            .dateTime.year().month(.abbreviated).day().locale(DashL10n.activeLocale)))
+      }
+      return DashChartDetailRange(
+        range: target,
+        rangeLabel: target.totalsHeading,
+        summaryValue: value,
+        trend: DashChartTrend(
+          current: metric.current,
+          previous: metric.previous,
+          polarity: trendPolarity),
+        categoryAxisLabel: "Day",
+        accessibilitySummary: "\(DashL10n.ui(title)), \(value)",
+        content: .area(
+          points: points,
+          series: [
+            DitherSeries(
+              id: seriesID,
+              label: DashL10n.ui(title),
+              color: color,
+              variant: .gradient)
+          ]))
     }
+    let current = ranges.first(where: { $0.range == range }) ?? ranges.first
     return DashChartDetail(
       title: title,
-      rangeLabel: range.totalsHeading,
-      summaryValue: value,
-      trend: trend,
+      rangeLabel: current?.rangeLabel ?? range.totalsHeading,
+      summaryValue: current?.summaryValue,
+      trend: current?.trend,
       categoryAxisLabel: "Day",
       valueAxisLabel: valueAxisLabel,
       axisValueFormat: axisValueFormat,
       tableValueFormat: tableValueFormat,
-      accessibilitySummary: "\(DashL10n.ui(title)), \(value)",
-      content: .area(
-        points: points,
-        series: [
-          DitherSeries(
-            id: seriesID,
-            label: DashL10n.ui(title),
-            color: color,
-            variant: .gradient)
-        ]),
+      accessibilitySummary: current?.accessibilitySummary ?? "",
+      content: current?.content ?? .area(points: [], series: []),
       featureID: .zones,
-      readScopes: DashAuthorizationScopes.webAnalytics)
+      readScopes: DashAuthorizationScopes.webAnalytics,
+      ranges: ranges,
+      selectedRange: range)
   }
 
   private func countString(_ value: Double) -> String {

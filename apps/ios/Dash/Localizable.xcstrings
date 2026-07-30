@@ -2475,6 +2475,17 @@
         }
       }
     },
+    "Chart style" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "图表风格"
+          }
+        }
+      }
+    },
     "Charts" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5192,6 +5203,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "不再显示此提示"
+          }
+        }
+      }
+    },
+    "Dither" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dither"
+          }
+        }
+      }
+    },
+    "Dither is Dash’s dotted look. Swift Charts uses the system chart style." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dither 是 Dash 的点阵风格。Swift Charts 使用系统图表样式。"
+          }
+        }
+      }
+    },
+    "Dithered charts or the system Swift Charts look." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点阵图表，或系统自带的 Swift Charts 样式。"
           }
         }
       }
@@ -11684,6 +11728,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已暂停"
+          }
+        }
+      }
+    },
+    "Swift Charts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swift Charts"
           }
         }
       }

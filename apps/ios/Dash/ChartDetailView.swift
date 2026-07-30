@@ -143,6 +143,18 @@ enum DashChartDetailContent: Hashable, Sendable {
   case pie(slices: [DitherSlice], innerRadiusRatio: Double = 0.62)
 }
 
+/// One time-range payload inside a chart detail. Shared title / axis formats
+/// live on `DashChartDetail`; this carries only what changes with the tab.
+struct DashChartDetailRange: Hashable, Sendable {
+  let range: AnalyticsRange
+  let rangeLabel: String
+  let summaryValue: String?
+  let trend: DashChartTrend?
+  let categoryAxisLabel: String
+  let accessibilitySummary: String
+  let content: DashChartDetailContent
+}
+
 struct DashChartDetail: Hashable, Sendable {
   let title: String
   let rangeLabel: String
@@ -156,6 +168,12 @@ struct DashChartDetail: Hashable, Sendable {
   let content: DashChartDetailContent
   let featureID: FeatureID?
   let readScopes: Set<String>
+  /// When two or more, the detail screen shows time tabs. Empty means a single
+  /// frozen snapshot (pie charts, worker 24h, etc.).
+  let ranges: [DashChartDetailRange]
+  /// Initial tab when `ranges` is non-empty — matches the outer screen's
+  /// current time dimension at the moment of the push.
+  let selectedRange: AnalyticsRange?
 
   init(
     title: String,
@@ -169,7 +187,9 @@ struct DashChartDetail: Hashable, Sendable {
     accessibilitySummary: String,
     content: DashChartDetailContent,
     featureID: FeatureID? = nil,
-    readScopes: Set<String> = []
+    readScopes: Set<String> = [],
+    ranges: [DashChartDetailRange] = [],
+    selectedRange: AnalyticsRange? = nil
   ) {
     self.title = title
     self.rangeLabel = rangeLabel
@@ -183,7 +203,11 @@ struct DashChartDetail: Hashable, Sendable {
     self.content = content
     self.featureID = featureID
     self.readScopes = readScopes
+    self.ranges = ranges
+    self.selectedRange = selectedRange
   }
+
+  var showsRangeTabs: Bool { ranges.count >= 2 }
 }
 
 /// The relative magnitude shown immediately after a chart's primary value. A
@@ -207,9 +231,10 @@ struct DashChartTrendLabel: View {
   }
 }
 
-/// The only navigation affordance on a chart card. Keeping this as a discrete
-/// 44-point button leaves the chart itself free for selection and hold-to-scrub
-/// interactions without making the whole card an ambiguous navigation target.
+/// Discrete navigation affordance for expanded / interactive chart cards.
+/// Collapsed metric cards push detail from the whole surface instead — a
+/// trailing chevron there is furniture next to a target that is already the
+/// card.
 struct DashChartDetailButton: View {
   let detail: DashChartDetail
   var accessibilityIdentifier: String? = nil
@@ -249,9 +274,31 @@ struct DashChartDetailButton: View {
 struct DashChartDetailView: View {
   let detail: DashChartDetail
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @State private var range: AnalyticsRange
+
+  init(detail: DashChartDetail) {
+    self.detail = detail
+    let preferred = detail.selectedRange
+    let initial: AnalyticsRange = {
+      if let preferred, detail.ranges.contains(where: { $0.range == preferred }) {
+        return preferred
+      }
+      return detail.ranges.first?.range ?? .day
+    }()
+    _range = State(initialValue: initial)
+  }
 
   var body: some View {
-    DashFeatureList {
+    DashFeatureList(
+      header: {
+        if detail.showsRangeTabs {
+          DashTextTabs(
+            items: detail.ranges.map { ($0.range.title, $0.range) },
+            selection: $range
+          )
+        }
+      }
+    ) {
       summaryCard
       DashListGroupHeader(title: DashL10n.ui("Details"))
         .padding(.horizontal, DashTheme.Spacing.rowInset)
@@ -265,16 +312,27 @@ struct DashChartDetailView: View {
       title: detail.title)
   }
 
+  private var active: DashChartDetailActiveSnapshot {
+    if let match = detail.ranges.first(where: { $0.range == range }) {
+      return DashChartDetailActiveSnapshot(range: match)
+    }
+    return DashChartDetailActiveSnapshot(detail: detail)
+  }
+
   private var summaryCard: some View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-        Text(DashL10n.ui(detail.rangeLabel))
-          .dashTextStyle(.footnoteSemibold)
-          .foregroundStyle(DashTheme.subtle)
+        // Tabs already name the window when present; keep the prose heading
+        // only for single-snapshot details (Deployments, Loaded records, …).
+        if !detail.showsRangeTabs {
+          Text(DashL10n.ui(active.rangeLabel))
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+        }
 
-        if detail.summaryValue != nil || detail.trend?.formattedPercentage != nil {
+        if active.summaryValue != nil || active.trend?.formattedPercentage != nil {
           HStack(alignment: .lastTextBaseline, spacing: 8) {
-            if let summaryValue = detail.summaryValue {
+            if let summaryValue = active.summaryValue {
               Text(verbatim: summaryValue)
                 .dashTextStyle(.emptyTitle)
                 .monospacedDigit()
@@ -282,7 +340,7 @@ struct DashChartDetailView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             }
-            DashChartTrendLabel(trend: detail.trend)
+            DashChartTrendLabel(trend: active.trend)
             Spacer(minLength: 4)
           }
         }
@@ -295,19 +353,19 @@ struct DashChartDetailView: View {
 
   @ViewBuilder
   private var chart: some View {
-    switch detail.content {
+    switch active.content {
     case .area(let points, let series):
-      DitherAreaChart(
+      DashAreaChart(
         data: points.map(\.datum),
         series: series,
         options: cartesianOptions(series: series))
     case .line(let points, let series):
-      DitherLineChart(
+      DashLineChart(
         data: points.map(\.datum),
         series: series,
         options: cartesianOptions(series: series))
     case .pie(let slices, let innerRadiusRatio):
-      DitherPieChart(
+      DashPieChart(
         slices: slices,
         innerRadiusRatio: innerRadiusRatio,
         options: DitherPolarOptions(
@@ -331,14 +389,14 @@ struct DashChartDetailView: View {
   private var chartAccessibility: DitherAccessibility {
     DitherAccessibility(
       title: DashL10n.ui(detail.title),
-      summary: detail.accessibilitySummary,
-      categoryAxisLabel: DashL10n.ui(detail.categoryAxisLabel),
+      summary: active.accessibilitySummary,
+      categoryAxisLabel: DashL10n.ui(active.categoryAxisLabel),
       valueAxisLabel: DashL10n.ui(detail.valueAxisLabel))
   }
 
   private var chartHeight: CGFloat {
     let showsLegend =
-      switch detail.content {
+      switch active.content {
       case .area(_, let series), .line(_, let series):
         series.count > 1
       case .pie:
@@ -351,7 +409,7 @@ struct DashChartDetailView: View {
   }
 
   private var tableRows: [DashChartTableRowModel] {
-    switch detail.content {
+    switch active.content {
     case .area(let points, let series), .line(let points, let series):
       return points.map { point in
         DashChartTableRowModel(
@@ -379,6 +437,35 @@ struct DashChartDetailView: View {
           ])
       }
     }
+  }
+}
+
+/// Resolved fields for the detail screen's active time tab (or the single
+/// frozen snapshot when the push carried no range list).
+private struct DashChartDetailActiveSnapshot {
+  let rangeLabel: String
+  let summaryValue: String?
+  let trend: DashChartTrend?
+  let categoryAxisLabel: String
+  let accessibilitySummary: String
+  let content: DashChartDetailContent
+
+  init(range: DashChartDetailRange) {
+    rangeLabel = range.rangeLabel
+    summaryValue = range.summaryValue
+    trend = range.trend
+    categoryAxisLabel = range.categoryAxisLabel
+    accessibilitySummary = range.accessibilitySummary
+    content = range.content
+  }
+
+  init(detail: DashChartDetail) {
+    rangeLabel = detail.rangeLabel
+    summaryValue = detail.summaryValue
+    trend = detail.trend
+    categoryAxisLabel = detail.categoryAxisLabel
+    accessibilitySummary = detail.accessibilitySummary
+    content = detail.content
   }
 }
 

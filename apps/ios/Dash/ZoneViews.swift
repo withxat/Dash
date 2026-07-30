@@ -1371,7 +1371,7 @@ struct DNSRecordsView: View {
           Spacer(minLength: 4)
           DashChartDetailButton(detail: detail)
         }
-        DitherPieChart(
+        DashPieChart(
           slices: slices,
           innerRadiusRatio: 0.62,
           options: DashTheme.DitherChart.polarOptions(

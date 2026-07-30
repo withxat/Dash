@@ -242,7 +242,7 @@ struct PagesProjectDetailView: View {
           Spacer(minLength: 4)
           DashChartDetailButton(detail: buildOutcomesDetail)
         }
-        DitherPieChart(
+        DashPieChart(
           slices: outcomeSlices,
           innerRadiusRatio: 0.62,
           options: DashTheme.DitherChart.polarOptions(

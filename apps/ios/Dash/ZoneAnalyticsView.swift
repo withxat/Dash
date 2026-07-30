@@ -356,9 +356,9 @@ struct ZoneAnalyticsView: View {
 
   private var requestsChartCard: some View {
     chartCard(detail: requestsDetail) {
-      DitherAreaChart(
+      DashAreaChart(
         data: snapshot.requestsData,
-        series: ditherSeries,
+        series: requestSeries(showsThreats: totalThreats > 0),
         options: DashTheme.DitherChart.options(
           showsLegend: totalThreats > 0,
           accessibility: DitherAccessibility(
@@ -383,17 +383,9 @@ struct ZoneAnalyticsView: View {
   /// of people, not a quantity that accumulates under the curve.
   private var visitorsChartCard: some View {
     chartCard(detail: visitorsDetail) {
-      DitherLineChart(
+      DashLineChart(
         data: snapshot.visitorsData,
-        series: [
-          DitherSeries(
-            id: "uniques",
-            label: DashL10n.ui("Unique visitors"),
-            color: DashTheme.DitherChart.accentPurple(
-              colorScheme: colorScheme,
-              contrast: colorSchemeContrast),
-            variant: .gradient)
-        ],
+        series: visitorsSeries,
         options: DashTheme.DitherChart.options(
           showsLegend: false,
           accessibility: DitherAccessibility(
@@ -411,17 +403,9 @@ struct ZoneAnalyticsView: View {
 
   private var bandwidthChartCard: some View {
     chartCard(detail: bandwidthDetail) {
-      DitherAreaChart(
+      DashAreaChart(
         data: snapshot.bandwidthData,
-        series: [
-          DitherSeries(
-            id: "bytes",
-            label: DashL10n.ui("Bandwidth"),
-            color: DashTheme.DitherChart.accentTeal(
-              colorScheme: colorScheme,
-              contrast: colorSchemeContrast),
-            variant: .gradient)
-        ],
+        series: bandwidthSeries,
         options: DashTheme.DitherChart.options(
           showsLegend: false,
           accessibility: DitherAccessibility(
@@ -438,7 +422,7 @@ struct ZoneAnalyticsView: View {
     }
   }
 
-  private var ditherSeries: [DitherSeries] {
+  private func requestSeries(showsThreats: Bool) -> [DitherSeries] {
     var series = [
       DitherSeries(
         id: "requests",
@@ -448,7 +432,7 @@ struct ZoneAnalyticsView: View {
           contrast: colorSchemeContrast),
         variant: .gradient)
     ]
-    if totalThreats > 0 {
+    if showsThreats {
       series.append(
         DitherSeries(
           id: "threats",
@@ -461,28 +445,8 @@ struct ZoneAnalyticsView: View {
     return series
   }
 
-  private var requestsDetail: DashChartDetail {
-    chartDetail(
-      title: "Requests",
-      summaryValue: totalRequests.formatted(.number.locale(DashL10n.activeLocale)),
-      trend: DashChartTrend(
-        current: Double(totalRequests),
-        previous: snapshot.previousTotalRequests.map(Double.init),
-        polarity: .neutral),
-      data: snapshot.requestsData,
-      series: ditherSeries,
-      valueAxisLabel: "Events",
-      axisValueFormat: .compact,
-      tableValueFormat: .number(maximumFractionDigits: 0),
-      accessibilitySummary: ZoneAnalyticsChartModel.chartAccessibilitySummary(
-        rangeLabel: DashL10n.ui(range.totalsHeading),
-        requests: totalRequests,
-        threats: totalThreats),
-      isLine: false)
-  }
-
-  private var visitorsDetail: DashChartDetail {
-    let series = [
+  private var visitorsSeries: [DitherSeries] {
+    [
       DitherSeries(
         id: "uniques",
         label: DashL10n.ui("Unique visitors"),
@@ -491,27 +455,10 @@ struct ZoneAnalyticsView: View {
           contrast: colorSchemeContrast),
         variant: .gradient)
     ]
-    return chartDetail(
-      title: "Unique visitors",
-      summaryValue: peakUniques.formatted(.number.locale(DashL10n.activeLocale)),
-      trend: DashChartTrend(
-        current: Double(peakUniques),
-        previous: snapshot.previousPeakUniques.map(Double.init),
-        polarity: .neutral),
-      data: snapshot.visitorsData,
-      series: series,
-      valueAxisLabel: "Visitors",
-      axisValueFormat: .compact,
-      tableValueFormat: .number(maximumFractionDigits: 0),
-      accessibilitySummary: ZoneAnalyticsChartModel.visitorsAccessibilitySummary(
-        rangeLabel: DashL10n.ui(range.totalsHeading),
-        peak: peakUniques,
-        isHourly: range == .day),
-      isLine: true)
   }
 
-  private var bandwidthDetail: DashChartDetail {
-    let series = [
+  private var bandwidthSeries: [DitherSeries] {
+    [
       DitherSeries(
         id: "bytes",
         label: DashL10n.ui("Bandwidth"),
@@ -520,61 +467,135 @@ struct ZoneAnalyticsView: View {
           contrast: colorSchemeContrast),
         variant: .gradient)
     ]
-    return chartDetail(
+  }
+
+  private var requestsDetail: DashChartDetail {
+    multiRangeChartDetail(
+      title: "Requests",
+      valueAxisLabel: "Events",
+      axisValueFormat: .compact,
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      isLine: false
+    ) { target, snap in
+      (
+        summaryValue: snap.totalRequests.formatted(.number.locale(DashL10n.activeLocale)),
+        trend: DashChartTrend(
+          current: Double(snap.totalRequests),
+          previous: snap.previousTotalRequests.map(Double.init),
+          polarity: .neutral),
+        data: snap.requestsData,
+        series: requestSeries(showsThreats: snap.totalThreats > 0),
+        accessibilitySummary: ZoneAnalyticsChartModel.chartAccessibilitySummary(
+          rangeLabel: DashL10n.ui(target.totalsHeading),
+          requests: snap.totalRequests,
+          threats: snap.totalThreats)
+      )
+    }
+  }
+
+  private var visitorsDetail: DashChartDetail {
+    multiRangeChartDetail(
+      title: "Unique visitors",
+      valueAxisLabel: "Visitors",
+      axisValueFormat: .compact,
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      isLine: true
+    ) { target, snap in
+      (
+        summaryValue: snap.peakUniques.formatted(.number.locale(DashL10n.activeLocale)),
+        trend: DashChartTrend(
+          current: Double(snap.peakUniques),
+          previous: snap.previousPeakUniques.map(Double.init),
+          polarity: .neutral),
+        data: snap.visitorsData,
+        series: visitorsSeries,
+        accessibilitySummary: ZoneAnalyticsChartModel.visitorsAccessibilitySummary(
+          rangeLabel: DashL10n.ui(target.totalsHeading),
+          peak: snap.peakUniques,
+          isHourly: target == .day)
+      )
+    }
+  }
+
+  private var bandwidthDetail: DashChartDetail {
+    multiRangeChartDetail(
       title: "Bandwidth",
-      summaryValue: bandwidth(totalBytes),
-      trend: DashChartTrend(
-        current: Double(totalBytes),
-        previous: snapshot.previousTotalBytes.map(Double.init),
-        polarity: .neutral),
-      data: snapshot.bandwidthData,
-      series: series,
       valueAxisLabel: "Bytes",
       axisValueFormat: .byteCount,
       tableValueFormat: .byteCount,
-      accessibilitySummary: ZoneAnalyticsChartModel.bandwidthAccessibilitySummary(
-        rangeLabel: DashL10n.ui(range.totalsHeading),
-        total: bandwidth(totalBytes)),
-      isLine: false)
+      isLine: false
+    ) { target, snap in
+      (
+        summaryValue: bandwidth(snap.totalBytes),
+        trend: DashChartTrend(
+          current: Double(snap.totalBytes),
+          previous: snap.previousTotalBytes.map(Double.init),
+          polarity: .neutral),
+        data: snap.bandwidthData,
+        series: bandwidthSeries,
+        accessibilitySummary: ZoneAnalyticsChartModel.bandwidthAccessibilitySummary(
+          rangeLabel: DashL10n.ui(target.totalsHeading),
+          total: bandwidth(snap.totalBytes))
+      )
+    }
   }
 
-  private func chartDetail(
+  private func multiRangeChartDetail(
     title: String,
-    summaryValue: String,
-    trend: DashChartTrend?,
-    data: [DitherDatum],
-    series: [DitherSeries],
     valueAxisLabel: String,
     axisValueFormat: DashChartValueFormat,
     tableValueFormat: DashChartValueFormat,
-    accessibilitySummary: String,
-    isLine: Bool
+    isLine: Bool,
+    payload: (AnalyticsRange, ZoneAnalyticsSnapshot) -> (
+      summaryValue: String,
+      trend: DashChartTrend?,
+      data: [DitherDatum],
+      series: [DitherSeries],
+      accessibilitySummary: String
+    )
   ) -> DashChartDetail {
-    let points = zip(data, snapshot.points).map { datum, point in
-      DashChartDataPoint(
-        datum: datum,
-        tableLabel: ZoneAnalyticsChartModel.detailLabel(
-          point.date,
-          range: range,
-          locale: DashL10n.activeLocale))
+    let ranges: [DashChartDetailRange] = AnalyticsRange.allCases.compactMap { target in
+      guard let snap = snapshotsByRange[target], !snap.isEmpty else { return nil }
+      let built = payload(target, snap)
+      let points = zip(built.data, snap.points).map { datum, point in
+        DashChartDataPoint(
+          datum: datum,
+          tableLabel: ZoneAnalyticsChartModel.detailLabel(
+            point.date,
+            range: target,
+            locale: DashL10n.activeLocale))
+      }
+      let content: DashChartDetailContent =
+        isLine
+        ? .line(points: points, series: built.series)
+        : .area(points: points, series: built.series)
+      return DashChartDetailRange(
+        range: target,
+        rangeLabel: target.totalsHeading,
+        summaryValue: built.summaryValue,
+        trend: built.trend,
+        categoryAxisLabel: target == .day ? "Hour" : "Day",
+        accessibilitySummary: built.accessibilitySummary,
+        content: content)
     }
-    let content: DashChartDetailContent =
-      isLine
-      ? .line(points: points, series: series)
-      : .area(points: points, series: series)
+    let current =
+      ranges.first(where: { $0.range == range })
+      ?? ranges.first
     return DashChartDetail(
       title: title,
-      rangeLabel: range.totalsHeading,
-      summaryValue: summaryValue,
-      trend: trend,
-      categoryAxisLabel: range == .day ? "Hour" : "Day",
+      rangeLabel: current?.rangeLabel ?? range.totalsHeading,
+      summaryValue: current?.summaryValue,
+      trend: current?.trend,
+      categoryAxisLabel: current?.categoryAxisLabel ?? (range == .day ? "Hour" : "Day"),
       valueAxisLabel: valueAxisLabel,
       axisValueFormat: axisValueFormat,
       tableValueFormat: tableValueFormat,
-      accessibilitySummary: accessibilitySummary,
-      content: content,
+      accessibilitySummary: current?.accessibilitySummary ?? "",
+      content: current?.content ?? .area(points: [], series: []),
       featureID: .zones,
-      readScopes: DashAuthorizationScopes.zoneAnalytics)
+      readScopes: DashAuthorizationScopes.zoneAnalytics,
+      ranges: ranges,
+      selectedRange: range)
   }
 
   /// Zones on plans that do not return `uniq { uniques }` come back as all
