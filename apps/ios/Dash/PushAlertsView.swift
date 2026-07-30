@@ -471,7 +471,11 @@ struct PushAlertsView: View {
     }
     guard model.isCurrentAccount(context) else { return }
     loading = false
-    if error == nil || !policies.isEmpty || storedWebhookID != nil {
+    // Warm only settles on a real answer: a stored webhook id alone proves
+    // nothing about the policy list, and flipping it here presented a failed
+    // cold load as the settled "No alert policies" empty state instead of the
+    // skeleton's failure veil.
+    if error == nil || !policies.isEmpty {
       hasPresentedContent = true
     }
   }

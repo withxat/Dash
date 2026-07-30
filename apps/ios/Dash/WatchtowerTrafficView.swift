@@ -931,12 +931,13 @@ final class WatchtowerTrafficState {
         accountName: model.activeAccount?.name ?? context.accountID,
         range: target)
     } catch {
-      guard !Task.isCancelled, rangeLoads[target]?.id == loadID,
+      guard !Task.isCancelled, !error.dashIsCancellation, rangeLoads[target]?.id == loadID,
         model.isCurrentAccount(context)
       else { return }
-      if snapshots[target] == nil {
-        errorByRange[target] = error.dashActionableMessage
-      }
+      // Warm too: `commit` clears this slot on the next success, and gating it
+      // on `snapshots[target] == nil` made the warm banner below the charts
+      // unreachable — a failed pull-to-refresh over live charts ended silent.
+      errorByRange[target] = error.dashActionableMessage
       if let apiError = error as? CloudflareAPIError, apiError.isForbidden {
         needsAnalyticsAccess = true
       }

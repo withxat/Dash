@@ -298,12 +298,15 @@ struct ZoneSettingsView: View {
       loading = false
       return
     }
+    defer { loading = false }
     do {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
       model.featureCache.set(key, settings)
       error = nil
-    } catch { self.error = error.dashActionableMessage }
-    loading = false
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      self.error = error.dashActionableMessage
+    }
   }
 
   /// Flips local state immediately, then commits over the network.
@@ -430,13 +433,14 @@ struct AuditLogView: View {
     }
     if entries.isEmpty { loading = true }
     error = nil
+    defer { loading = false }
     do {
       entries = try await model.client.listAuditLogs(accountID: accountID, perPage: 50)
       model.featureCache.set(key, entries)
     } catch {
+      guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
     }
-    loading = false
   }
 }
 
@@ -865,6 +869,9 @@ struct WAFEventsView: View {
   @State private var error: String?
   @State private var underAttack = false
   @State private var securityLoaded = false
+  /// A settled settings response with no `security_level` is an answer, not a
+  /// failure: the toggle hides rather than sitting disabled forever.
+  @State private var securityAvailable = true
   @State private var securityUpdating = false
 
   private var requiredWriteScopes: Set<String> {
@@ -910,22 +917,24 @@ struct WAFEventsView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
       }
-      DashToggleRow(
-        title: "Under Attack mode",
-        subtitle: canToggleSecurity
-          ? "Challenges every visitor. Restores the previous security level when turned off."
-          : "Grant zone settings write access to change this.",
-        isOn: underAttackBinding,
-        isEnabled: securityLoaded && canToggleSecurity,
-        isLoading: securityUpdating
-      )
-      .dashSectionBoundary(summary != nil)
-      if !canToggleSecurity {
-        FeatureWriteAccessNotice(
-          message: "Read-only — grant zone settings write access to change Under Attack mode.",
-          scopes: requiredWriteScopes
+      if securityAvailable {
+        DashToggleRow(
+          title: "Under Attack mode",
+          subtitle: canToggleSecurity
+            ? "Challenges every visitor. Restores the previous security level when turned off."
+            : "Grant zone settings write access to change this.",
+          isOn: underAttackBinding,
+          isEnabled: securityLoaded && canToggleSecurity,
+          isLoading: securityUpdating
         )
-        .dashItemBoundary()
+        .dashSectionBoundary(summary != nil)
+        if !canToggleSecurity {
+          FeatureWriteAccessNotice(
+            message: "Read-only — grant zone settings write access to change Under Attack mode.",
+            scopes: requiredWriteScopes
+          )
+          .dashItemBoundary()
+        }
       }
       if let summary {
         let topCountries = WAFChartModel.topCountries(summary.countries)
@@ -1155,6 +1164,7 @@ struct WAFEventsView: View {
       applySummary(fetched)
       model.featureCache.set(key, fetched)
     } catch {
+      guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
     }
   }
@@ -1190,7 +1200,10 @@ struct WAFEventsView: View {
       model.featureCache.set(key, settings)
       applySecurity(settings)
     } catch {
-      securityLoaded = false
+      guard !error.dashIsCancellation, !Task.isCancelled else { return }
+      // A failed re-check keeps the last-known toggle state; the summary's
+      // failure message, when present, owns the banner.
+      if self.error == nil { self.error = error.dashActionableMessage }
     }
   }
 
@@ -1198,6 +1211,9 @@ struct WAFEventsView: View {
     if case .string(let value)? = settings.first(where: { $0.id == "security_level" })?.value {
       underAttack = value == "under_attack"
       securityLoaded = true
+      securityAvailable = true
+    } else {
+      securityAvailable = false
     }
   }
 

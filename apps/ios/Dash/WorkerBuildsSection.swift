@@ -188,9 +188,17 @@ struct WorkerBuildsSection: View {
       unavailable = page.items.isEmpty
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
-      // An account without Workers Builds answers 403/404 here. Staying silent
-      // is the whole point — the Worker's own screen is unaffected.
-      unavailable = true
+      if builds.isEmpty {
+        // An account without Workers Builds answers 403/404 here. Staying
+        // silent is the whole point — the Worker's own screen is unaffected.
+        unavailable = true
+      } else {
+        // Warm re-load (a watched build finished, or pull-to-refresh): the
+        // history the user is looking at stays mounted, the failure rides the
+        // section's inline notice. Content on screen never vanishes over a
+        // polling error.
+        actionError = error.dashActionableMessage
+      }
     }
     loaded = true
   }
@@ -230,8 +238,13 @@ struct WorkerBuildsSection: View {
           unavailable = false
           loaded = true
         }
-      case .failure(_, let terminal):
-        if terminal { unavailable = true }
+      case .failure(let message, let terminal):
+        // The monitor only runs with the section mounted and a build card on
+        // screen (`latest.isInProgress` guard above), so this is always warm:
+        // keep the rendered history and say why polling stopped. `unavailable`
+        // is reserved for the initial no-tag / 403 / empty answers — flipping
+        // it here unmounted the exact rows the user was watching.
+        if terminal { actionError = message }
       }
     }
   }

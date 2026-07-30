@@ -137,6 +137,7 @@ struct ZonesView: View {
     }
     if zones.isEmpty { loading = true }
     error = nil
+    defer { loading = false }
     do {
       pageState.reset()
       let page = try await model.client.listZones(
@@ -152,9 +153,9 @@ struct ZonesView: View {
         accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
         replacesCatalog: !pageState.canLoadMore)
     } catch {
+      guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
     }
-    loading = false
   }
 
   private func loadMore() async {
@@ -457,11 +458,10 @@ struct ZoneDetailView: View {
       recordRecent(fetched)
       await loadRdap(for: fetched, force: true)
     } catch {
-      // Keep the locally resolved zone on screen; only surface the error when
-      // we have nothing to show.
-      if zone == nil, displayedZone == nil {
-        self.error = error.dashActionableMessage
-      }
+      guard !error.dashIsCancellation else { return }
+      // The displayed zone stays on screen; a failed refresh surfaces the
+      // warm banner over it.
+      self.error = error.dashActionableMessage
     }
   }
 

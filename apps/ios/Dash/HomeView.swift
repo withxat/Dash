@@ -1877,7 +1877,10 @@ private struct HomeDomainsSection: View {
         if locked {
           lockedRecovery
         } else if let error, zones.isEmpty {
-          failureRecovery(message: error)
+          // Cold failure keeps the same row placeholders the loading state
+          // paints and veils the presentation over them — the card never
+          // swaps its shape for a notice block.
+          failurePlaceholder(message: error)
             .dashFailureRemovalTransition()
         } else if zones.isEmpty, !isLoading {
           emptyDomains
@@ -1886,6 +1889,12 @@ private struct HomeDomainsSection: View {
         }
       }
       .padding(.horizontal, DashTheme.Spacing.rowInset)
+      if let error, !zones.isEmpty {
+        // Warm refresh failure: the cached domains stay, the failure says so
+        // beside them instead of vanishing with the spinner.
+        DashNotice(kind: .error, message: DashFailurePresentation.from(message: error).message)
+          .padding(.horizontal, DashTheme.Spacing.rowInset)
+      }
     }
     .padding(.horizontal, 12)
     .padding(.vertical, 10)
@@ -1973,34 +1982,40 @@ private struct HomeDomainsSection: View {
   /// Matches `HomeDomainRow` (30pt avatar + 12pt vertical padding).
   private static let expandedRowHeight: CGFloat = 54
 
+  /// Cold placeholder matching `HomeDomainRow` rhythm — never a ring. Shared
+  /// by the loading state and the failure veil, so the failed card keeps
+  /// exactly the shape a successful retry will fill.
+  private var domainRowPlaceholders: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(0..<3, id: \.self) { _ in
+        HStack(spacing: 12) {
+          Circle()
+            .fill(DashTheme.recessed)
+            .frame(width: 30, height: 30)
+          VStack(alignment: .leading, spacing: 6) {
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.recessed)
+              .frame(height: 13)
+              .frame(maxWidth: 140)
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.recessed.opacity(0.7))
+              .frame(height: 11)
+              .frame(maxWidth: 90)
+          }
+          Spacer(minLength: 0)
+        }
+        .padding(.vertical, 12)
+        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+      }
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+
   private var expandedRows: some View {
     Group {
       if isLoading, zones.isEmpty {
-        // Cold: row placeholders matching HomeDomainRow rhythm — never a ring.
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(0..<3, id: \.self) { _ in
-            HStack(spacing: 12) {
-              Circle()
-                .fill(DashTheme.recessed)
-                .frame(width: 30, height: 30)
-              VStack(alignment: .leading, spacing: 6) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                  .fill(DashTheme.recessed)
-                  .frame(height: 13)
-                  .frame(maxWidth: 140)
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                  .fill(DashTheme.recessed.opacity(0.7))
-                  .frame(height: 11)
-                  .frame(maxWidth: 90)
-              }
-              Spacer(minLength: 0)
-            }
-            .padding(.vertical, 12)
-            .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-          }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading")
+        domainRowPlaceholders
       } else if zones.count > Self.expandedVisibleCount {
         HomeDomainsScrollViewport(
           zones: zones,
@@ -2037,22 +2052,25 @@ private struct HomeDomainsSection: View {
     .padding(.vertical, 16)
   }
 
-  private func failureRecovery(message: String) -> some View {
+  private func failurePlaceholder(message: String) -> some View {
     let presentation = DashFailurePresentation.from(message: message)
-    return VStack(alignment: .leading, spacing: 10) {
-      DashNotice(kind: .error, message: presentation.message)
-        .dashContentReveal()
-      if presentation.action == .grantAccess {
-        DashAuthorizationDisclosure()
-          .dashContentReveal(1)
-      }
-      DashSecondaryPillButton(title: presentation.action.title) {
-        performFailureAction(presentation.action)
-      }
-      .dashContentReveal(presentation.action == .grantAccess ? 2 : 1)
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.vertical, 16)
+    // The veil's copy has one message slot; the one-authorization disclosure
+    // joins it the way ErrorStateView's does.
+    let fullMessage =
+      presentation.action == .grantAccess && !model.isDemoSession
+      ? [
+        presentation.message,
+        DashL10n.string(
+          "Dash requests all permissions used by its current features in one authorization."
+        ),
+      ].joined(separator: " ")
+      : presentation.message
+    return
+      domainRowPlaceholders
+      .dashSectionFailure(
+        fullMessage,
+        actionTitle: presentation.action.title,
+        retry: { performFailureAction(presentation.action) })
   }
 
   private func performFailureAction(_ action: DashFailureAction) {

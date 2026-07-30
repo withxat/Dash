@@ -365,6 +365,11 @@ struct R2BucketSettingsView: View {
   let bucket: String
   @State private var managed: R2ManagedDomain?
   @State private var custom: [R2CustomDomain] = []
+  /// The custom-domains list's own settled state. Empty and failed are
+  /// different answers: `.content` with zero rows is the real "no custom
+  /// domains" card, `.failed` keeps placeholder rows under the section veil —
+  /// a thrown list must never render the connect-a-domain instructions.
+  @State private var customPhase: DashSectionPhase = .loading
   @State private var loading = true
   @State private var error: String?
   @State private var togglingManaged = false
@@ -463,34 +468,43 @@ struct R2BucketSettingsView: View {
 
   private var managedCard: some View {
     DashCard {
-      Button {
-        toggleManaged()
-      } label: {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text("Public r2.dev URL")
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.text)
-            Text(managedSubtitle)
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .lineLimit(2)
+      if let managed {
+        Button {
+          toggleManaged()
+        } label: {
+          HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text("Public r2.dev URL")
+                .dashTextStyle(.bodySemibold)
+                .foregroundStyle(DashTheme.text)
+              Text(managedSubtitle(managed))
+                .dashTextStyle(.footnote)
+                .foregroundStyle(DashTheme.subtle)
+                .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            DashSwitch(isOn: managed.enabled)
+              .opacity(togglingManaged ? 0.72 : 1)
           }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          DashSwitch(isOn: managed?.enabled ?? false)
-            .opacity(togglingManaged ? 0.72 : 1)
         }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .disabled(!featureAllowsWrites || togglingManaged)
+        .accessibilityLabel("Public r2.dev URL")
+        .accessibilityValue(managed.enabled ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+      } else {
+        // A settled managed lookup always carries the domain record, so an
+        // empty slot here means the fetch failed: hold the row's shape and
+        // let the screen banner / cold veil carry the message — "unavailable"
+        // copy for a transport error is the failure impersonating a settled
+        // answer.
+        DashInfoRowPlaceholders(rows: 1)
+          .allowsHitTesting(false)
       }
-      .buttonStyle(DashSurfaceButtonStyle())
-      .disabled(!featureAllowsWrites || managed == nil || togglingManaged)
-      .accessibilityLabel("Public r2.dev URL")
-      .accessibilityValue(managed?.enabled == true ? "On" : "Off")
-      .accessibilityAddTraits(.isToggle)
     }
   }
 
-  private var managedSubtitle: String {
-    guard let managed else { return "Managed URL unavailable for this bucket." }
+  private func managedSubtitle(_ managed: R2ManagedDomain) -> String {
     if managed.enabled {
       return "\(managed.domain) — rate-limited by Cloudflare; fine for testing, not production."
     }
@@ -506,13 +520,26 @@ struct R2BucketSettingsView: View {
       action: featureAllowsWrites ? { addsDomain = true } : nil
     ) {
       if custom.isEmpty {
-        DashCard {
-          Text(
-            "Connect a domain from one of this account's zones to serve the bucket without r2.dev limits."
-          )
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .frame(maxWidth: .infinity, alignment: .leading)
+        switch customPhase {
+        case .content:
+          DashCard {
+            Text(
+              "Connect a domain from one of this account's zones to serve the bucket without r2.dev limits."
+            )
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        case .loading, .failed:
+          // The rows the answer will land on hold their ground; a failure
+          // veils over them instead of swapping in the empty-state
+          // instructions for a list that never arrived.
+          DashCard {
+            DashInfoRowPlaceholders(rows: 2)
+              .dashSectionFailure(
+                customFailureMessage,
+                retry: retryCustomDomains)
+          }
         }
       } else {
         dashListCard {
@@ -538,12 +565,25 @@ struct R2BucketSettingsView: View {
     }
   }
 
+  private var customFailureMessage: String? {
+    if case .failed(let message) = customPhase { return message }
+    return nil
+  }
+
+  private func retryCustomDomains() {
+    withAnimation(DashTheme.Motion.content) {
+      if custom.isEmpty { customPhase = .loading }
+    }
+    Task { await load(force: true) }
+  }
+
   private func load(force: Bool = false) async {
     guard let accountID = model.activeAccountID else { return }
     let key = FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucket)
     if !force, let cached: R2DomainsSnapshot = model.featureCache.get(key) {
       managed = cached.managed
       custom = cached.custom
+      customPhase = .content
       loading = false
       error = nil
       return
@@ -556,22 +596,35 @@ struct R2BucketSettingsView: View {
       try await client.listR2CustomDomains(accountID: accountID, bucket: bucket)
     }
     let (managedOutcome, customOutcome) = await (managedResult, customResult)
+    // Each half settles on its own; stale values survive a failed refresh.
+    // One failure message reaches the screen slot — with nothing on screen
+    // that is the cold veil, over kept content it is the warm banner. A
+    // custom-list failure with no rows to keep stays in its section instead,
+    // veiled over the placeholder rows.
+    var failureMessage: String?
     switch managedOutcome {
-    case .success(let domain): managed = domain
-    case .failure: break
+    case .success(let domain):
+      managed = domain
+    case .failure(let failure):
+      guard !failure.dashIsCancellation else { break }
+      failureMessage = failure.dashActionableMessage
     }
     switch customOutcome {
     case .success(let domains):
       custom = domains
-      error = nil
+      customPhase = .content
     case .failure(let failure):
-      // The custom list is the screen's backbone; the managed row degrades on
-      // its own. Surface the failure only when both sides came back empty.
-      if managed == nil && custom.isEmpty {
-        error = failure.dashActionableMessage
+      guard !failure.dashIsCancellation else { break }
+      if custom.isEmpty {
+        customPhase = .failed(failure.dashActionableMessage)
+      } else {
+        failureMessage = failure.dashActionableMessage
       }
     }
-    if case .success = customOutcome {
+    error = failureMessage
+    // The snapshot feeds Copy public URL across the whole session — a half
+    // from a thrown fetch must not be persisted as the settled answer.
+    if case .success = managedOutcome, case .success = customOutcome {
       model.featureCache.set(key, R2DomainsSnapshot(managed: managed, custom: custom))
     }
     loading = false
@@ -695,6 +748,7 @@ private struct R2AddDomainForm: View {
   @State private var hostname = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
+  @State private var zonesError: String?
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
@@ -734,6 +788,19 @@ private struct R2AddDomainForm: View {
               kind: .warning,
               message: "No zone in this account matches that hostname.")
           }
+          if let zonesError {
+            // A failed zones lookup is not "no zone matches": say so, and
+            // offer the retry the .task won't repeat on its own.
+            DashNotice(kind: .error, message: zonesError)
+            Button(DashL10n.string("Try again")) {
+              withAnimation(DashTheme.Motion.content) { self.zonesError = nil }
+              Task { await loadZones() }
+            }
+            .dashTextStyle(.supportingSemibold)
+            .foregroundStyle(DashTheme.brand)
+            .buttonStyle(DashPressButtonStyle())
+            .dashCompactHitTarget()
+          }
           if let error {
             DashNotice(kind: .error, message: error)
           }
@@ -755,8 +822,15 @@ private struct R2AddDomainForm: View {
       zonesLoaded = true
       return
     }
-    zones = (try? await model.client.listZones(accountID: accountID, perPage: 50).items) ?? []
-    zonesLoaded = true
+    do {
+      zones = try await model.client.listZones(accountID: accountID, perPage: 50).items
+      zonesLoaded = true
+    } catch {
+      // `zonesLoaded` stays false: an empty list from a thrown lookup must
+      // never present the "No zone matches" answer.
+      guard !error.dashIsCancellation else { return }
+      zonesError = error.dashActionableMessage
+    }
   }
 
   private func save() async {

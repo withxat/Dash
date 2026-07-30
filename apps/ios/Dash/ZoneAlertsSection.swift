@@ -14,6 +14,10 @@ struct ZoneAlertsSection: View {
 
   @State private var policies: [NotificationPolicy] = []
   @State private var loaded = false
+  /// A thrown policy list, kept apart from `policies == []`: rendering all-off
+  /// switches from a failed fetch invites a duplicate-policy create on the
+  /// next flip — failed and empty are different answers.
+  @State private var loadFailure: String?
   @State private var busyAlertTypes: Set<String> = []
   @State private var error: String?
 
@@ -32,16 +36,29 @@ struct ZoneAlertsSection: View {
     Group {
       // Nothing to offer until push is on: a subscription with no destination
       // is a switch that delivers to nowhere.
-      if let webhookID, loaded {
-        DashListGroup(title: "Alerts") {
-          DashSurfaceStack {
-            ForEach(ZoneAlertKind.all) { kind in
-              row(kind, webhookID: webhookID)
+      if let webhookID {
+        if loaded, loadFailure == nil {
+          DashListGroup(title: "Alerts") {
+            DashSurfaceStack {
+              ForEach(ZoneAlertKind.all) { kind in
+                row(kind, webhookID: webhookID)
+              }
+            }
+            if let error {
+              DashNotice(kind: .error, message: error)
+                .dashItemBoundary()
             }
           }
-          if let error {
-            DashNotice(kind: .error, message: error)
-              .dashItemBoundary()
+        } else {
+          // The group holds its ground from first paint — a section that pops
+          // in when the fetch lands is a layout shift — and a thrown list
+          // veils over the same placeholder rows instead of rendering every
+          // switch as a confident "off".
+          DashListGroup(title: "Alerts") {
+            DashCard {
+              DashInfoRowPlaceholders(rows: ZoneAlertKind.all.count)
+                .dashSectionFailure(loadFailure, retry: retryLoad)
+            }
           }
         }
       }
@@ -78,6 +95,10 @@ struct ZoneAlertsSection: View {
     guard let context = model.accountRequestContext, webhookID != nil, !model.isDemoSession,
       model.hasScopes(readScopes(for: .pushAlerts))
     else {
+      // No fetch happened: the switches render from local knowledge and a
+      // flip routes through requestAccess. A stale failure from a previous
+      // account must not veil them.
+      loadFailure = nil
       loaded = true
       return
     }
@@ -86,13 +107,20 @@ struct ZoneAlertsSection: View {
         accountID: context.accountID)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       policies = fetched
+      loadFailure = nil
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
-      // Silent: this is a secondary section on a settings screen, and a
-      // notifications 403 must not make the zone's own settings look broken.
-      policies = []
+      loadFailure = error.dashActionableMessage
     }
     loaded = true
+  }
+
+  private func retryLoad() {
+    withAnimation(DashTheme.Motion.content) {
+      loadFailure = nil
+      loaded = false
+    }
+    Task { await load() }
   }
 
   private func apply(_ kind: ZoneAlertKind, subscribed: Bool, webhookID: String) async {

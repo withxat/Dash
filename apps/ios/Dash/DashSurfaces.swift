@@ -1020,8 +1020,10 @@ extension DashInfoRow where Accessory == EmptyView {
 
 /// The shape an info group's data will take, painted while it loads. Bar
 /// heights and the row floor match `DashInfoRow` so the arriving values land
-/// where the placeholder was.
-private struct DashInfoRowPlaceholders: View {
+/// where the placeholder was. Also the stock placeholder for any self-fetching
+/// section that veils failures with `dashSectionFailure` and has no
+/// content-shaped skeleton of its own.
+struct DashInfoRowPlaceholders: View {
   let rows: Int
 
   var body: some View {
@@ -1062,6 +1064,10 @@ private struct DashSectionFailureVeil: View {
   /// never has to stretch to fill it. The enclosing card clips the overhang, so
   /// it can never reach the header band.
   let covers: CGFloat
+  /// Catalog key (or an already-resolved presentation title) for the action —
+  /// `DashFailurePresentation` failures recover with Grant access / Sign in
+  /// again, not only Try again.
+  var actionTitle: String = "Try again"
   let retry: (() -> Void)?
 
   var body: some View {
@@ -1075,7 +1081,7 @@ private struct DashSectionFailureVeil: View {
         .fixedSize(horizontal: false, vertical: true)
         .dashContentReveal()
       if let retry {
-        Button(DashL10n.string("Try again"), action: retry)
+        Button(DashL10n.ui(actionTitle), action: retry)
           .dashTextStyle(.supportingSemibold)
           .foregroundStyle(DashTheme.brand)
           .buttonStyle(DashPressButtonStyle())
@@ -1091,6 +1097,70 @@ private struct DashSectionFailureVeil: View {
         .padding(.vertical, -covers)
     }
     .accessibilityElement(children: .contain)
+  }
+}
+
+extension View {
+  /// Section-scale failure for sections that are not `DashInfoGroup`s — chart
+  /// cards, log cards, deployment rows. Apply it to the section's own
+  /// *placeholder* (the shape its loading state paints) and the failure lands
+  /// on the card-fill veil over it, exactly as `DashInfoGroup.phase == .failed`
+  /// does for info rows: no swap, no layout shift, the section keeps showing
+  /// the shape a successful retry will fill.
+  ///
+  /// The placeholder becomes frozen chrome while the message is up — hit
+  /// testing and VoiceOver both belong to the veil, so nothing announces
+  /// "Loading" after a failure. Apply the modifier *inside* the section's
+  /// card, to its content: the veil overhangs the placeholder's box so
+  /// whichever layer is taller stays covered, and the modifier clips its own
+  /// overhang so a bare call site can't leak fill over its neighbors.
+  ///
+  /// `actionTitle` defaults to Try again; a `DashFailurePresentation` failure
+  /// passes its own action title (Grant access, Sign in again) with the matching
+  /// closure.
+  func dashSectionFailure(
+    _ message: String?,
+    actionTitle: String = "Try again",
+    retry: (() -> Void)? = nil
+  ) -> some View {
+    modifier(
+      DashSectionFailureModifier(
+        message: message, actionTitle: actionTitle, retry: retry))
+  }
+}
+
+private struct DashSectionFailureModifier: ViewModifier {
+  let message: String?
+  let actionTitle: String
+  let retry: (() -> Void)?
+  /// Measured height of the placeholder, feeding the veil's overhang the same
+  /// way `DashInfoGroup` derives `covers` from its row count.
+  @State private var placeholderHeight: CGFloat = 0
+
+  func body(content: Content) -> some View {
+    ZStack {
+      content
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+          placeholderHeight = height
+        }
+        .allowsHitTesting(message == nil)
+        .accessibilityHidden(message != nil)
+
+      if let message {
+        // The ZStack takes whichever layer is taller, so a long message grows
+        // the section instead of clipping.
+        DashSectionFailureVeil(
+          message: message,
+          covers: placeholderHeight,
+          actionTitle: actionTitle,
+          retry: retry
+        )
+        .dashFailureRemovalTransition()
+      }
+    }
+    // Inside `DashInfoGroup` the enclosing card trims the veil's overhang;
+    // here the modifier trims it itself.
+    .clipped()
   }
 }
 
@@ -1473,7 +1543,22 @@ struct DashListSkeleton: View {
 
   var body: some View {
     DashListGroup(title: " ") {
-      ForEach(0..<rows, id: \.self) { index in
+      DashListRowPlaceholders(rows: rows)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
+/// The `DashListSkeleton` row shape (icon circle + two bars) without the group
+/// chrome: the placeholder for a *section* of list rows — deployments, domains
+/// — that fetches on its own and veils failures with `dashSectionFailure`.
+struct DashListRowPlaceholders: View {
+  var rows: Int = 3
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(0..<max(rows, 1), id: \.self) { _ in
         HStack(spacing: 12) {
           Circle()
             .fill(DashTheme.fill.opacity(0.55))
@@ -1495,6 +1580,7 @@ struct DashListSkeleton: View {
         .accessibilityHidden(true)
       }
     }
+    .frame(maxWidth: .infinity)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading")
   }

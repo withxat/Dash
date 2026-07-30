@@ -346,6 +346,7 @@ struct WebAnalyticsView: View {
     siteTag: String,
     force: Bool
   ) async {
+    defer { loadingRanges.remove(target) }
     let days = target == .month ? 30 : 7
     let key = FeatureCacheKey.webAnalyticsMetrics(siteTag, days: days)
     do {
@@ -364,11 +365,8 @@ struct WebAnalyticsView: View {
       errorByRange[target] = nil
     } catch {
       guard model.isCurrentAccount(context), !error.dashIsCancellation else { return }
-      if snapshotsByRange[target] == nil {
-        errorByRange[target] = error.dashActionableMessage
-      }
+      errorByRange[target] = error.dashActionableMessage
     }
-    loadingRanges.remove(target)
   }
 
   private func reset() {

@@ -139,8 +139,14 @@ struct PagesProjectDetailView: View {
         .padding(.bottom, 8)
       if deployments.isEmpty {
         DashCard {
-          if let deploymentsError {
-            DashNotice(kind: .warning, message: deploymentsError)
+          if deploymentsError != nil {
+            // A failed deployments fetch keeps the rows' shape on the ground
+            // and veils the message over it — swapping in a bare notice was
+            // the section popping out of its own frame.
+            DashListRowPlaceholders(rows: 3)
+              .dashSectionFailure(
+                deploymentsError,
+                retry: { Task { await load(force: true) } })
           } else {
             Text("No deployments yet.")
               .dashTextStyle(.footnote)
@@ -294,8 +300,9 @@ struct PagesProjectDetailView: View {
         project = fetched
         model.featureCache.set(projectKey, fetched)
       } catch {
-        // List row already named the project; surface only when we have nothing.
-        if project == nil { self.error = error.dashActionableMessage }
+        // Cold: the veil over the skeleton. Warm: the inline banner over the
+        // kept project — a pull-to-refresh that fails must say so.
+        if !error.dashIsCancellation { self.error = error.dashActionableMessage }
       }
     }
 
@@ -311,7 +318,14 @@ struct PagesProjectDetailView: View {
         deploymentsError = nil
         model.featureCache.set(deployKey, deployments)
       } catch {
-        deploymentsError = error.dashActionableMessage
+        if !error.dashIsCancellation {
+          deploymentsError = error.dashActionableMessage
+          // With rows on screen the section keeps them; the shared warm
+          // banner is the only surface that can carry the refresh failure.
+          if !deployments.isEmpty, self.error == nil {
+            self.error = error.dashActionableMessage
+          }
+        }
       }
     }
     loading = false
@@ -486,9 +500,7 @@ struct PagesDeploymentDetailView: View {
 
   @ViewBuilder private var logsSection: some View {
     DashListGroup(title: "Build log") {
-      if let logsError {
-        DashNotice(kind: .warning, message: logsError)
-      } else if let logs {
+      if let logs {
         DashCard {
           DashFadedScrollView(
             surface: DashTheme.recessed,
@@ -505,18 +517,41 @@ struct PagesDeploymentDetailView: View {
             }
           }
         }
+        if let logsError {
+          // Warm: the monitor's forced refresh failed mid-build — keep the
+          // visible log and say so beside it instead of tearing it down.
+          DashNotice(kind: .warning, message: logsError)
+            .dashItemBoundary()
+        }
       } else {
+        // The log's own shape holds the section while it loads, and a failure
+        // veils over the same lines — the card never swaps to a bare notice.
         DashCard {
-          HStack(spacing: 10) {
-            DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
-            Text("Loading log…")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
+          logPlaceholder
+            .dashSectionFailure(logsError, retry: retryLogs)
         }
       }
     }
+  }
+
+  private var logPlaceholder: some View {
+    let widths: [CGFloat] = [200, 148, 232, 120, 184, 96]
+    return VStack(alignment: .leading, spacing: 8) {
+      ForEach(0..<6, id: \.self) { index in
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .fill(DashTheme.fill.opacity(index.isMultiple(of: 2) ? 0.5 : 0.35))
+          .frame(width: widths[index], height: 10)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+
+  private func retryLogs() {
+    guard let key = monitorKey else { return }
+    withAnimation(DashTheme.Motion.content) { logsError = nil }
+    Task { await loadLogs(key: key, force: true) }
   }
 
   private func monitorDeployment(_ key: PagesBuildMonitorKey) async {
@@ -616,7 +651,9 @@ struct PagesDeploymentDetailView: View {
       logs = fetched
       logsError = nil
     } catch {
-      guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
+      guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context),
+        monitorKey == key
+      else {
         return
       }
       logsError = error.dashActionableMessage

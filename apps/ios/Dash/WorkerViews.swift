@@ -191,8 +191,8 @@ struct WorkerDetailView: View {
     ) {
       if let analytics {
         workerMetricsCard(analytics)
-      } else if let analyticsError {
-        DashNotice(kind: .warning, message: analyticsError)
+      } else if analyticsError != nil {
+        workerMetricsFallbackCard
       }
       // Builds sit above deployments: a build is what *produces* a deployment,
       // and it renders nothing at all unless this Worker is repo-connected.
@@ -207,8 +207,14 @@ struct WorkerDetailView: View {
         .padding(.bottom, 8)
       if deployments.isEmpty {
         DashCard {
-          if let deploymentError {
-            DashNotice(kind: .warning, message: deploymentError)
+          if deploymentError != nil {
+            // Failed is not empty: the rows' shape stays and the message
+            // veils over it. "No deployments yet." is reserved for the
+            // settled zero-row answer below.
+            DashListRowPlaceholders(rows: 3)
+              .dashSectionFailure(
+                deploymentError,
+                retry: { Task { await load(force: true) } })
           } else {
             Text("No deployments yet.")
               .dashTextStyle(.footnote)
@@ -347,8 +353,13 @@ struct WorkerDetailView: View {
     .dashSectionBoundary()
     .padding(.bottom, 8)
     if let domainsError, domains.isEmpty {
-      DashNotice(kind: .warning, message: domainsError)
-        .dashListCardInset()
+      DashCard {
+        DashListRowPlaceholders(rows: 2)
+          .dashSectionFailure(
+            domainsError,
+            retry: { Task { await loadDomains(force: true) } })
+      }
+      .dashListCardInset()
     } else if domains.isEmpty, routes.isEmpty, routesError == nil, !routesLoading {
       DashCard {
         Text("Route a hostname from one of this account's zones to this Worker.")
@@ -414,8 +425,23 @@ struct WorkerDetailView: View {
       }
     }
     if let routesError {
-      DashNotice(kind: .warning, message: routesError)
+      if routes.isEmpty {
+        // Cold: route discovery came back with nothing to show — keep the
+        // rows' shape under the veil instead of swapping the loading card
+        // for a one-line notice.
+        DashCard {
+          DashListRowPlaceholders(rows: 2)
+            .dashSectionFailure(
+              routesError,
+              retry: { Task { await load(force: true) } })
+        }
         .dashListCardInset()
+      } else {
+        // Warm/partial: preserved route rows stay, the notice rides beside
+        // them.
+        DashNotice(kind: .warning, message: routesError)
+          .dashListCardInset()
+      }
     }
   }
 
@@ -468,6 +494,40 @@ struct WorkerDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     )
+  }
+
+  /// The metrics card's own shape — heading, three stat tiles, a chart block —
+  /// holding the slot when analytics failed cold, with the failure veiled over
+  /// it. Collapsing the glass card to a one-line notice was the section
+  /// popping out of its frame.
+  private var workerMetricsFallbackCard: some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 10) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .fill(DashTheme.fill.opacity(0.55))
+          .frame(width: 96, height: 12)
+        HStack(spacing: 12) {
+          ForEach(0..<3, id: \.self) { _ in
+            VStack(alignment: .leading, spacing: 6) {
+              RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(DashTheme.fill.opacity(0.4))
+                .frame(width: 56, height: 10)
+              RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(DashTheme.fill.opacity(0.55))
+                .frame(width: 64, height: 16)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+        }
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+          .fill(DashTheme.fill.opacity(0.3))
+          .frame(maxWidth: .infinity)
+          .frame(height: 120)
+      }
+      .dashSectionFailure(
+        analyticsError,
+        retry: { Task { await load(force: true) } })
+    }
   }
 
   private func workerMetricsCard(_ summary: WorkerAnalyticsPayload) -> some View {
@@ -719,6 +779,23 @@ struct WorkerDetailView: View {
     analyticsError = result.analytics.failureMessage
     domains = result.domains.value ?? domains
     domainsError = result.domains.failureMessage
+
+    // A section that failed while its stale content is still showing has no
+    // in-place slot — failed-empty sections veil over their own placeholders,
+    // but kept rows are live content, so the shared warm banner carries the
+    // first such failure. The hostname lookup never has rows of its own and
+    // rides the same banner rather than silently rendering as "no hostname".
+    if error == nil {
+      if let message = deploymentError, !deployments.isEmpty {
+        error = message
+      } else if let message = analyticsError, analytics != nil {
+        error = message
+      } else if let message = domainsError, !domains.isEmpty {
+        error = message
+      } else if let message = result.workersDevHostname.failureMessage {
+        error = message
+      }
+    }
   }
 
   private func loadRoutes(
@@ -968,6 +1045,7 @@ struct WorkerAddDomainForm: View {
   @State private var hostname = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
+  @State private var zonesError: String?
   @State private var zonesContext: AccountRequestContext?
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
@@ -1008,6 +1086,19 @@ struct WorkerAddDomainForm: View {
               kind: .warning,
               message: "No zone in this account matches that hostname.")
           }
+          if let zonesError {
+            // A failed zones lookup is not "no zone matches": say so, and
+            // offer the retry the .task won't repeat on its own.
+            DashNotice(kind: .error, message: zonesError)
+            Button(DashL10n.string("Try again")) {
+              withAnimation(DashTheme.Motion.content) { self.zonesError = nil }
+              Task { await loadZones() }
+            }
+            .dashTextStyle(.supportingSemibold)
+            .foregroundStyle(DashTheme.brand)
+            .buttonStyle(DashPressButtonStyle())
+            .dashCompactHitTarget()
+          }
           if let error {
             DashNotice(kind: .error, message: error)
           }
@@ -1027,6 +1118,7 @@ struct WorkerAddDomainForm: View {
     zonesContext = context
     zones = []
     zonesLoaded = false
+    zonesError = nil
     guard let context else { return }
     if let cached: [CloudflareZone] = model.featureCache.get(
       FeatureCacheKey.zones(context.accountID))
@@ -1037,13 +1129,21 @@ struct WorkerAddDomainForm: View {
       return
     }
     let client = model.client
-    let loaded =
-      (try? await client.listZones(accountID: context.accountID, perPage: 50).items) ?? []
-    guard !Task.isCancelled, model.isCurrentAccount(context), zonesContext == context else {
-      return
+    do {
+      let loaded = try await client.listZones(accountID: context.accountID, perPage: 50).items
+      guard !Task.isCancelled, model.isCurrentAccount(context), zonesContext == context else {
+        return
+      }
+      zones = loaded
+      zonesLoaded = true
+    } catch {
+      // `zonesLoaded` stays false: an empty list from a thrown lookup must
+      // never present the "No zone matches" answer.
+      guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context),
+        zonesContext == context
+      else { return }
+      zonesError = error.dashActionableMessage
     }
-    zones = loaded
-    zonesLoaded = true
   }
 
   private func save() async {

@@ -130,6 +130,9 @@ struct R2BucketView: View {
   /// Public-exposure snapshot for Copy-URL actions; loaded lazily and shared
   /// with the settings screen through the feature cache.
   @State private var domains: R2DomainsSnapshot?
+  /// Collapses the `.task` and `onAppear` retry paths into one fetch — both
+  /// fire on first mount, and `domains == nil` alone would let them race.
+  @State private var domainsLoadInFlight = false
   /// Reference storage keeps scroll-driven geometry outside SwiftUI's
   /// observation graph. Only the two-finger recognizer reads it.
   @State private var objectFrameStore = R2ObjectFrameStore()
@@ -348,8 +351,17 @@ struct R2BucketView: View {
       }
     }
     // Settings may have changed the domains while this screen stayed mounted
-    // below it — resync from the shared cache on return.
-    .onAppear { refreshDomainsFromCache() }
+    // below it — resync from the shared cache on return. A visit that finds
+    // nothing (the last lookup failed and left `domains` nil) retries the
+    // fetch instead: the `.task` identity hasn't changed, so this is the only
+    // retry that screen re-entry can provide.
+    .onAppear {
+      refreshDomainsFromCache()
+      if domains == nil {
+        let request = requestIdentity
+        Task { await loadDomains(for: request) }
+      }
+    }
     .onChange(of: navigator?.path) { _, path in
       if path?.contains(currentDestination) != true {
         cancelOutstandingWork()
@@ -798,6 +810,7 @@ struct R2BucketView: View {
   private func loadDomains(for request: R2BucketRequestIdentity) async {
     guard
       domains == nil,
+      !domainsLoadInFlight,
       let context = request.context,
       canCommit(request)
     else { return }
@@ -808,17 +821,23 @@ struct R2BucketView: View {
       domains = cached
       return
     }
+    domainsLoadInFlight = true
+    defer { domainsLoadInFlight = false }
     async let managedTask = model.client.getR2ManagedDomain(accountID: accountID, bucket: bucket)
     async let customTask = model.client.listR2CustomDomains(accountID: accountID, bucket: bucket)
-    let managed = try? await managedTask
-    let custom = try? await customTask
-    guard canCommit(request) else { return }
-    let snapshot = R2DomainsSnapshot(managed: managed, custom: custom ?? [])
+    // A snapshot must never be materialized from a thrown fetch: managed nil +
+    // custom [] is exactly what "no public access" looks like, so a transport
+    // error would impersonate that settled answer and silently drop Copy
+    // public URL. Failed and empty are different answers — on failure `domains`
+    // stays nil and the next visit retries.
+    guard
+      let managed = try? await managedTask,
+      let custom = try? await customTask,
+      canCommit(request)
+    else { return }
+    let snapshot = R2DomainsSnapshot(managed: managed, custom: custom)
     domains = snapshot
-    // A failed fetch must not poison the shared per-bucket cache for its TTL.
-    if custom != nil {
-      model.featureCache.set(key, snapshot)
-    }
+    model.featureCache.set(key, snapshot)
   }
 
   private func refreshDomainsFromCache() {
@@ -980,7 +999,9 @@ struct R2BucketView: View {
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
         guard canCommit(request) else { return }
-        error = DashL10n.string("Can't read that file's size.")
+        // Operation feedback, not a listing failure: the screen's `error`
+        // channel belongs to load()/loadMore(), like the oversize branch below.
+        model.toasts.error(DashL10n.string("Can't read that file's size."))
         return
       }
       guard size <= R2Media.transferSizeLimit else {
@@ -1744,6 +1765,7 @@ struct KVKeyDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.featureRequiredScopes) private var featureRequiredScopes
   let namespaceID: String
   let key: String
 
@@ -1790,7 +1812,7 @@ struct KVKeyDetailView: View {
               } else if loaded {
                 DashKVCodeEditor(text: $value, editable: mode == .editing && !saving)
                   .frame(maxWidth: .infinity)
-                  .frame(height: max(280, geo.size.height - 220))
+                  .frame(height: editorHeight(in: geo))
                   .clipShape(
                     RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
                 if mode == .editing {
@@ -1806,18 +1828,32 @@ struct KVKeyDetailView: View {
                       ))
                   }
                 }
-              } else if error == nil {
-                HStack(spacing: 10) {
-                  DashLoadingRing(color: DashTheme.subtle)
-                  Text(DashL10n.string("Loading value…"))
-                    .dashTextStyle(.supporting)
-                    .foregroundStyle(DashTheme.subtle)
-                }
-                .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+              } else if let error {
+                // Cold failure keeps the editor-shaped placeholder on the
+                // ground and lands the message on the wash over it — the value
+                // is this screen's primary payload, so it gets the cold-list
+                // contract, not a swapped-in notice.
+                editorSkeleton(height: editorHeight(in: geo))
+                  .dashColdFailure(
+                    message: DashFailurePresentation.from(message: error).message,
+                    actionTitle: DashFailurePresentation.from(message: error).action.title,
+                    extent: .skeleton,
+                    action: recoverFromLoadFailure
+                  )
+                  .dashFailureRemovalTransition()
+              } else {
+                // Cold load paints the shape the value lands on, not a bare
+                // ring — the editor arrives without a layout shift, and a
+                // failure has something to veil over.
+                editorSkeleton(height: editorHeight(in: geo))
+                  .accessibilityElement(children: .ignore)
+                  .accessibilityLabel("Loading")
               }
             }
 
-            if let error, !confirmingDelete {
+            // Load failures render on the cold veil above; this notice belongs
+            // to the save/format/delete operations of a loaded value.
+            if let error, loaded, !confirmingDelete {
               DashNotice(kind: .error, message: error)
             }
 
@@ -1950,6 +1986,46 @@ struct KVKeyDetailView: View {
 
   private func invalidateKeys(context: AccountRequestContext) {
     model.featureCache.remove(prefix: "kvKeys:\(context.accountID):\(namespaceID):")
+  }
+
+  /// The editor's height formula, shared with the cold placeholder so the
+  /// arriving value lands exactly where the skeleton stood.
+  private func editorHeight(in geo: GeometryProxy) -> CGFloat {
+    max(280, geo.size.height - 220)
+  }
+
+  /// The shape the value lands on: the editor's recessed frame with a few
+  /// code-line bars, matching the app's skeleton language (`DashListSkeleton`).
+  private func editorSkeleton(height: CGFloat) -> some View {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+      .fill(DashTheme.recessed)
+      .frame(maxWidth: .infinity)
+      .frame(height: height)
+      .overlay(alignment: .topLeading) {
+        let widths: [CGFloat] = [168, 220, 132, 200, 96]
+        VStack(alignment: .leading, spacing: 12) {
+          ForEach(0..<5, id: \.self) { index in
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+              .fill(DashTheme.fill.opacity(index == 0 ? 0.55 : 0.4))
+              .frame(width: widths[index], height: 11)
+          }
+        }
+        .padding(16)
+      }
+  }
+
+  private func recoverFromLoadFailure() {
+    switch DashFailurePresentation.from(message: error ?? "").action {
+    case .signInAgain:
+      Task { await model.signOut() }
+    case .grantAccess:
+      model.requestAccess(
+        to: featureRequiredScopes.isEmpty
+          ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
+    case .tryAgain:
+      withAnimation(DashTheme.Motion.content) { error = nil }
+      Task { await load() }
+    }
   }
 
   private func load() async {

@@ -91,7 +91,7 @@ struct WatchtowerInboxView: View {
   var body: some View {
     DashFeatureList(
       isLoading: state.loading,
-      error: nil,
+      error: alertsFailureMessage,
       hasContent: state.hasPresentedContent,
       retry: { Task { await load(force: true) } },
       header: {
@@ -102,25 +102,7 @@ struct WatchtowerInboxView: View {
         .accessibilityIdentifier("watchtower-inbox-filter")
       },
       content: {
-        if state.alertsStatus == .unavailable {
-          DashNotice(
-            kind: .warning,
-            message: DashL10n.string("Cloudflare alert history needs notifications access.")
-          )
-          .dashContentReveal()
-          .dashFailureRemovalTransition()
-        } else if state.alertsStatus == .error {
-          DashNotice(
-            kind: .error,
-            message: DashL10n.string("Couldn’t load Cloudflare alert history. Pull to refresh.")
-          )
-          .dashContentReveal()
-          .dashFailureRemovalTransition()
-        }
-
         filteredContent
-          .dashSectionBoundary(
-            state.alertsStatus == .unavailable || state.alertsStatus == .error)
       }
     )
     .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alerts")
@@ -167,6 +149,24 @@ struct WatchtowerInboxView: View {
     }
   }
 
+  /// Feeds `DashFeatureList`'s error slot: cold (nothing presented) it becomes
+  /// the skeleton's failure veil, warm it becomes the inline banner over the
+  /// kept rows. Raw English catalog keys on purpose, like
+  /// `dashActionableMessage`: `DashFailurePresentation` classifies the action
+  /// from this wording (the unavailable copy must say "Grant access") and the
+  /// chrome localizes at render.
+  private var alertsFailureMessage: String? {
+    switch state.alertsStatus {
+    case .error:
+      return "Couldn’t load Cloudflare alert history."
+    case .unavailable:
+      return
+        "Cloudflare alert history needs notifications access. Grant access, or confirm the active account includes it."
+    case .ok, .loading:
+      return nil
+    }
+  }
+
   private var emptyTitle: String {
     switch filter {
     case .inbox: DashL10n.string("No unread alerts")
@@ -190,11 +190,16 @@ struct WatchtowerInboxView: View {
   @ViewBuilder
   private var filteredContent: some View {
     if visible.isEmpty {
-      DashEmptyState(
-        icon: SolarAsset.inbox,
-        title: emptyTitle,
-        message: emptyMessage
-      )
+      // Only a settled OK answer earns the empty copy — a failed or denied
+      // fetch renders through the error slot above, never as "No unread
+      // alerts".
+      if state.alertsStatus == .ok {
+        DashEmptyState(
+          icon: SolarAsset.inbox,
+          title: emptyTitle,
+          message: emptyMessage
+        )
+      }
     } else {
       switch filter {
       case .inbox:
@@ -267,26 +272,33 @@ struct WatchtowerInboxView: View {
     }
     let loadID = state.beginLoad(for: context)
     state.ignoredIDs = WatchtowerInboxStore.ignoredIDs(accountID: context.accountID)
-    if let snapshot = await model.watchtowerSnapshot(force: force) {
-      guard
-        !Task.isCancelled,
-        state.ownsLoad(loadID, context: context),
-        model.isCurrentAccount(context)
-      else { return }
-      state.alertsStatus = snapshot.alertsStatus
-      state.contents = WatchtowerInboxStore.contents(
-        accountID: context.accountID,
-        alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : []
-      )
-    }
+    let snapshot = await model.watchtowerSnapshot(force: force)
     guard
       !Task.isCancelled,
       state.ownsLoad(loadID, context: context),
       model.isCurrentAccount(context)
     else { return }
+    if let snapshot {
+      state.alertsStatus = snapshot.alertsStatus
+      // Only an OK answer rebuilds the inbox: a failed refresh must keep the
+      // entries already on screen instead of wiping them to an empty split.
+      if snapshot.alertsStatus == .ok {
+        state.contents = WatchtowerInboxStore.contents(
+          accountID: context.accountID,
+          alerts: snapshot.alerts
+        )
+      }
+    } else if state.contents.isEmpty {
+      // A load that produced nothing at all (a coalesced flight cancelled
+      // under us, a stale remote generation) must not settle as an empty
+      // inbox.
+      state.alertsStatus = .error
+    }
     state.ignoredIDs = WatchtowerInboxStore.ignoredIDs(accountID: context.accountID)
     state.loading = false
-    state.hasPresentedContent = true
+    // Cold failure stays cold: the skeleton holds under the failure veil and
+    // Try again re-enters here. Warm keeps whatever was already presented.
+    state.hasPresentedContent = state.alertsStatus == .ok || !state.contents.isEmpty
   }
 
   private func rebuildFromCache() {
@@ -298,10 +310,13 @@ struct WatchtowerInboxView: View {
       FeatureCacheKey.watchtower(context.accountID))
     guard let cached else { return }
     state.alertsStatus = cached.alertsStatus
-    state.contents = WatchtowerInboxStore.contents(
-      accountID: context.accountID,
-      alerts: cached.alertsStatus == .ok ? cached.alerts : []
-    )
+    // Same rule as load(): a cached failure keeps the presented entries.
+    if cached.alertsStatus == .ok {
+      state.contents = WatchtowerInboxStore.contents(
+        accountID: context.accountID,
+        alerts: cached.alerts
+      )
+    }
   }
 
   private func select(_ entry: WatchtowerInboxEntry) {

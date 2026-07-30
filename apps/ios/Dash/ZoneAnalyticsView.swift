@@ -462,10 +462,8 @@ struct ZoneAnalyticsView: View {
           fetchedAt: loaded.fetchedAt)
       }
     } catch {
-      guard model.isCurrentAccount(context) else { return }
-      if snapshotsByRange[target] == nil {
-        errorByRange[target] = error.dashActionableMessage
-      }
+      guard model.isCurrentAccount(context), !error.dashIsCancellation else { return }
+      errorByRange[target] = error.dashActionableMessage
     }
   }
 
