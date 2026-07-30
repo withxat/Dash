@@ -5,10 +5,10 @@ import Foundation
 /// user last uploaded. JSON (not pipes) because bucket names and prefixes can
 /// contain any separator — the same reasoning as `RecentResources`.
 ///
-/// Compiled into BOTH the app and the share extension; keep it
+/// Compiled into the app, share extension, and File Provider; keep it
 /// Foundation-only.
 struct R2ShareDestination: Codable, Equatable, Sendable {
-  static let appGroupID = "group.sh.xat.dash.app"
+  static let appGroupID = DashAppGroup.id
   static let destinationsKey = "dash.r2_share_destinations"
   /// The share extension cannot present Cloudflare's OAuth flow. Real-account
   /// sign-in already requests these with `core`; every process-outside-the-app
@@ -25,7 +25,7 @@ struct R2ShareDestination: Codable, Equatable, Sendable {
   }
   /// Mirror of the app's standard-defaults active account id — extensions
   /// can't read `UserDefaults.standard` across processes.
-  static let activeAccountKey = "dash.active_account_id"
+  static let activeAccountKey = DashAppGroup.activeAccountKey
   static let limit = 8
 
   var accountID: String

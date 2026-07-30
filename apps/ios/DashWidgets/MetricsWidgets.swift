@@ -1,4 +1,5 @@
 import AppIntents
+import Charts
 import Foundation
 import SwiftDitherKit
 import SwiftUI
@@ -570,7 +571,7 @@ struct AccountMetricsWidget: Widget {
         .widgetURL(entry.presentation.deepLinkURL)
     }
     .configurationDisplayName("Account Metrics")
-    .description("A dithered Watchtower trend for your account.")
+    .description("A Watchtower trend for your account.")
     .supportedFamilies([.systemSmall, .systemMedium])
     .contentMarginsDisabled()
   }
@@ -590,7 +591,7 @@ struct DomainMetricsWidget: Widget {
         .widgetURL(entry.presentation.deepLinkURL)
     }
     .configurationDisplayName("Domain Metrics")
-    .description("A dithered analytics trend for one domain.")
+    .description("An analytics trend for one domain.")
     .supportedFamilies([.systemSmall, .systemMedium])
     .contentMarginsDisabled()
   }
@@ -713,37 +714,47 @@ private struct MetricsWidgetView: View {
   private var chart: some View {
     let trend = CollapsedDitherTrendSeries(values: entry.presentation.values)
     if entry.presentation.availability == .available, !trend.values.isEmpty {
-      DitherAreaChart(
-        data: trend.values.enumerated().map { index, value in
-          DitherDatum(
-            id: "sample-\(index)",
-            label: "\(index + 1)",
-            values: [Self.chartSeriesID: value])
-        },
-        series: [
-          DitherSeries(
-            id: Self.chartSeriesID,
-            label: entry.presentation.title,
-            color: entry.presentation.color.ditherColor(
-              colorScheme: colorScheme,
-              increasedContrast: colorSchemeContrast == .increased),
-            variant: .gradient)
-        ],
-        options: DitherCartesianOptions(
-          stacking: .overlaid,
-          margins: .sparkline,
-          bloom: .off,
-          animate: false,
-          interactive: false,
-          showsAxes: false,
-          showsLegend: false,
-          showsTooltip: false,
-          valueFormat: .compact,
-          valueCeiling: trend.valueCeiling),
-        highlighted: false,
-        selection: nil
-      )
-      .ditherRenderingMode(.immediate)
+      let ditherColor = entry.presentation.color.ditherColor(
+        colorScheme: colorScheme,
+        increasedContrast: colorSchemeContrast == .increased)
+      Group {
+        if DashWidgetBridges.mirroredChartStyleIsSystem {
+          MetricsWidgetSystemSparkline(
+            values: trend.values,
+            valueCeiling: trend.valueCeiling,
+            color: ditherColor)
+        } else {
+          DitherAreaChart(
+            data: trend.values.enumerated().map { index, value in
+              DitherDatum(
+                id: "sample-\(index)",
+                label: "\(index + 1)",
+                values: [Self.chartSeriesID: value])
+            },
+            series: [
+              DitherSeries(
+                id: Self.chartSeriesID,
+                label: entry.presentation.title,
+                color: ditherColor,
+                variant: .gradient)
+            ],
+            options: DitherCartesianOptions(
+              stacking: .overlaid,
+              margins: .sparkline,
+              bloom: .off,
+              animate: false,
+              interactive: false,
+              showsAxes: false,
+              showsLegend: false,
+              showsTooltip: false,
+              valueFormat: .compact,
+              valueCeiling: trend.valueCeiling),
+            highlighted: false,
+            selection: nil
+          )
+          .ditherRenderingMode(.immediate)
+        }
+      }
       .opacity(entry.presentation.isStale(at: entry.date) ? 0.58 : 1)
       .allowsHitTesting(false)
       .accessibilityHidden(true)
@@ -860,6 +871,60 @@ private enum MetricsWidgetValueFormatter {
           width: .abbreviated,
           usage: .asProvided,
           numberFormatStyle: .number.precision(.fractionLength(0...2))))
+  }
+}
+
+/// Widget-local Swift Charts sparkline matching `DashSystemSparkline` in the
+/// app. Lives here so DashWidgets does not compile the full DashCharts module.
+private struct MetricsWidgetSystemSparkline: View {
+  let values: [Double]
+  let valueCeiling: Double?
+  let color: DitherColor
+
+  private var points: [(index: Int, value: Double)] {
+    values.enumerated().map { ($0.offset, $0.element.isFinite ? $0.element : 0) }
+  }
+
+  var body: some View {
+    Chart(points, id: \.index) { point in
+      AreaMark(
+        x: .value("Index", point.index),
+        y: .value("Value", point.value)
+      )
+      .foregroundStyle(
+        LinearGradient(
+          colors: [
+            Color(dither: color).opacity(0.4),
+            Color(dither: color).opacity(0.05),
+          ],
+          startPoint: .top,
+          endPoint: .bottom)
+      )
+      .interpolationMethod(.catmullRom)
+      LineMark(
+        x: .value("Index", point.index),
+        y: .value("Value", point.value)
+      )
+      .foregroundStyle(Color(dither: color))
+      .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+      .interpolationMethod(.catmullRom)
+    }
+    .chartXAxis(.hidden)
+    .chartYAxis(.hidden)
+    .chartLegend(.hidden)
+    .chartXScale(domain: 0...max(0, values.count - 1))
+    .metricsWidgetYScale(ceiling: valueCeiling)
+  }
+}
+
+extension View {
+  @ViewBuilder
+  fileprivate func metricsWidgetYScale(ceiling: Double?) -> some View {
+    if let ceiling, ceiling > 0 {
+      chartYScale(domain: 0...ceiling)
+    } else {
+      self
+    }
   }
 }
 

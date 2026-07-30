@@ -8,6 +8,7 @@ struct DashWidgetsBundle: WidgetBundle {
     WatchtowerWidget()
     AccountMetricsWidget()
     DomainMetricsWidget()
+    QuickActionsWidget()
     PagesBuildLiveActivity()
     WorkerBuildLiveActivity()
   }
@@ -306,7 +307,11 @@ struct WatchtowerWidget: Widget {
         .widgetURL(entry.snapshot?.deepLinkURL)
     }
     .configurationDisplayName("Watchtower")
-    .description("Unread Cloudflare alerts for your account.")
+    .description(
+      Text(
+        "Unread Cloudflare alerts for your account.",
+        comment: "Description of the Watchtower widget.")
+    )
     .supportedFamilies([.systemSmall, .systemMedium])
   }
 }
@@ -350,8 +355,12 @@ struct WatchtowerWidgetView: View {
         if snapshot.alerts.isEmpty {
           Text(
             snapshot.alertsUnavailable
-              ? "Open Dash to reconnect notification access."
-              : "Cloudflare hasn't sent anything new."
+              ? String(
+                localized: "Open Dash to reconnect notification access.",
+                comment: "Watchtower widget message when notification access has expired.")
+              : String(
+                localized: "Cloudflare hasn't sent anything new.",
+                comment: "Watchtower widget message when its alert history is empty.")
           )
           .font(.caption)
           .foregroundStyle(.secondary)

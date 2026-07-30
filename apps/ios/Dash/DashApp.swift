@@ -211,6 +211,9 @@ private struct RootWithSplash: View {
         // The notification extension has its own defaults suite; the App Group
         // mirror is the only way the language choice reaches it.
         DashAlertStrings.mirrorLanguage(languageRaw)
+        DashChartStylePreference.mirrorToWidgets()
+        HomeActions.mirrorToAppGroup(
+          UserDefaults.standard.string(forKey: HomeActions.key) ?? HomeActions.defaultValue)
       }
       .onChange(of: languageRaw) { _, _ in
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()

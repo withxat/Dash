@@ -872,6 +872,7 @@ private struct ChartStylePickerTray: View {
             return
           }
           chartStyleRaw = preference.rawValue
+          DashChartStylePreference.mirrorToWidgets(preference.rawValue)
           DashDelight.selectionChanged()
           dismiss()
         } label: {

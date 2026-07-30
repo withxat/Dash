@@ -482,6 +482,10 @@ final class ICloudPreferencesSync {
 
   private func postApplied(_ groups: Set<Group>) {
     guard !groups.isEmpty else { return }
+    if groups.contains(.homeActions) {
+      HomeActions.mirrorToAppGroup(
+        defaults.string(forKey: HomeActions.key) ?? HomeActions.defaultValue)
+    }
     notificationCenter.post(
       name: Self.didApplyRemoteChanges,
       object: self,

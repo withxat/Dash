@@ -11,7 +11,7 @@ enum DashChartStylePreference: String, CaseIterable, Identifiable, Sendable {
   case dither
   case system
 
-  static let storageKey = "dash.chart_style"
+  static let storageKey = DashWidgetBridges.chartStyleKey
   static let defaultStyle = DashChartStylePreference.dither
 
   var id: String { rawValue }
@@ -30,6 +30,14 @@ enum DashChartStylePreference: String, CaseIterable, Identifiable, Sendable {
   static var current: DashChartStylePreference {
     resolved(
       stored: UserDefaults.standard.string(forKey: storageKey) ?? defaultStyle.rawValue)
+  }
+
+  /// Push the in-app choice into the App Group so metrics widgets can follow
+  /// Settings → Chart style, then wake their timelines.
+  static func mirrorToWidgets(_ raw: String? = nil) {
+    let value = raw ?? (UserDefaults.standard.string(forKey: storageKey) ?? defaultStyle.rawValue)
+    DashWidgetBridges.mirrorChartStyle(value)
+    DashWidgetBridges.reloadMetricsWidgets()
   }
 }
 

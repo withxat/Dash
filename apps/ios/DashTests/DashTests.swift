@@ -1624,6 +1624,38 @@ private let watchtowerDropFrames: [CGRect] = [
   let removed = HomeActions.toggled(.purgeCache, in: full)
   #expect(HomeActions.decode(removed) == [.enableUnderAttackMode, .uploadR2])
   #expect(HomeActions.decode(HomeActions.toggled(.createKVKey, in: removed)).last == .createKVKey)
+
+  let scopedURL = HomeActions.deepLink(action: .purgeCache, accountID: " account one ")
+  #expect(scopedURL?.absoluteString == "dash://action/purgeCache?account=account%20one")
+  #expect(scopedURL.flatMap(DashRoute.parse) == .action(.purgeCache).scoped(to: "account one"))
+
+  let accountA = AccountRequestContext(accountID: "account-a", generation: 1)
+  let accountB = AccountRequestContext(accountID: "account-b", generation: 2)
+  let pending = PendingHomeAction(action: .purgeCache, context: accountA)
+  #expect(pending.matches(accountA))
+  #expect(!pending.matches(accountB))
+  #expect(!pending.matches(nil))
+}
+
+@Test func widgetPreferenceMirrorsPreserveExplicitHomeSelectionAndChartStyle() {
+  let suiteName = "DashTests.WidgetPreferences.\(UUID().uuidString)"
+  guard let store = UserDefaults(suiteName: suiteName) else {
+    Issue.record("Could not create isolated widget preference defaults")
+    return
+  }
+  defer { store.removePersistentDomain(forName: suiteName) }
+
+  #expect(HomeActions.mirroredActions(in: store) == HomeActions.defaults)
+  store.set("", forKey: HomeActions.key)
+  #expect(HomeActions.mirroredActions(in: store).isEmpty)
+  store.set(HomeActions.encode([.addDomain, .uploadR2]), forKey: HomeActions.key)
+  #expect(HomeActions.mirroredActions(in: store) == [.addDomain, .uploadR2])
+
+  #expect(!DashWidgetBridges.mirroredChartStyleIsSystem(in: store))
+  DashWidgetBridges.mirrorChartStyle("system", in: store)
+  #expect(DashWidgetBridges.mirroredChartStyleIsSystem(in: store))
+  DashWidgetBridges.mirrorChartStyle("unknown", in: store)
+  #expect(!DashWidgetBridges.mirroredChartStyleIsSystem(in: store))
 }
 
 @Test func homeEducationRequiresAccountScopedR2EvidenceAndHonorsDismissal() {
@@ -2071,6 +2103,7 @@ private let watchtowerDropFrames: [CGRect] = [
 
   #expect(parse("dash://settings") == .settings)
   #expect(parse("dash://watchtower") == .watchtower)
+  #expect(parse("dash://action/purgeCache") == .action(.purgeCache))
   #expect(parse("dash://zone/abc") == .zone("abc"))
   #expect(parse("dash://zone/abc/dns") == .zoneDNS("abc"))
   #expect(parse("dash://zone/abc/cache") == .zoneCache("abc"))
@@ -2099,6 +2132,8 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(parse("dash://feature/bogus") == nil)  // unknown FeatureID
   #expect(parse("dash://feature/d1") == nil)  // retired FeatureID
   #expect(parse("dash://d1/db-uuid") == nil)  // retired host; stale Spotlight items land here
+  #expect(parse("dash://action/not-an-action") == nil)
+  #expect(parse("dash://action/purgeCache/extra") == nil)
   #expect(parse("dash://zone") == nil)  // missing id
   #expect(parse("https://watchtower") == nil)  // wrong scheme
   #expect(parse("dash://unknownhost") == nil)
@@ -2109,6 +2144,7 @@ private let watchtowerDropFrames: [CGRect] = [
   // destination mapping.
   #expect(DashRoute.settings.destination == .settings)
   #expect(DashRoute.watchtower.destination == nil)
+  #expect(DashRoute.action(.purgeCache).destination == nil)
   #expect(DashRoute.zoneDNS("z").destination == .dns("z"))
   #expect(DashRoute.feature(.r2).destination == .feature(.r2))
   #expect(DashRoute.worker("w").destination == .worker("w"))

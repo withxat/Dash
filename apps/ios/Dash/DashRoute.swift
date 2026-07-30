@@ -13,6 +13,7 @@ enum DashRouteAccountResolution: Equatable, Sendable {
 /// Grammar:
 ///   dash://settings
 ///   dash://watchtower
+///   dash://action/<HomeActionID.rawValue>
 ///   dash://zone/<id>[/dns|cache|settings|analytics|waf]
 ///   dash://feature/<FeatureID.rawValue>
 ///   dash://worker/<name>
@@ -29,6 +30,8 @@ enum DashRouteAccountResolution: Equatable, Sendable {
 enum DashRoute: Hashable, Sendable {
   case settings
   case watchtower
+  /// Opens Home and runs the matching quick action tray.
+  case action(HomeActionID)
   case zone(String)
   case zoneDNS(String)
   case zoneCache(String)
@@ -77,6 +80,11 @@ enum DashRoute: Hashable, Sendable {
       return segments.isEmpty ? .settings : nil
     case "watchtower":
       return .watchtower
+    case "action":
+      guard segments.count == 1, let action = HomeActionID(rawValue: segments[0]) else {
+        return nil
+      }
+      return .action(action)
     case "zone":
       guard let id = segments.first else { return nil }
       switch segments.count >= 2 ? segments[1] : "" {
@@ -161,6 +169,7 @@ enum DashRoute: Hashable, Sendable {
     switch self {
     case .settings: .settings
     case .watchtower: nil
+    case .action: nil
     case .zone(let id): .zone(id)
     case .zoneDNS(let id): .dns(id)
     case .zoneCache(let id): .cache(id)

@@ -47,6 +47,13 @@
 		B00000000000000000000109 /* DashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000109 /* DashWidgets.swift */; };
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		B000000000000000000001F0 /* DashWidgetBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F0 /* DashWidgetBridges.swift */; };
+		B000000000000000000001F1 /* DashWidgetBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F0 /* DashWidgetBridges.swift */; };
+		B000000000000000000001F2 /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F1 /* QuickActionsWidget.swift */; };
+		B000000000000000000001F4 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
+		B000000000000000000001F5 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
+		B000000000000000000001F6 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
+		B000000000000000000001F7 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
 		B0000000000000000000010C /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010C /* PushRegistration.swift */; };
 		B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B1 /* WorkerBuildsSection.swift */; };
@@ -264,6 +271,9 @@
 		F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerWidgetSnapshot.swift; sourceTree = "<group>"; };
 		F00000000000000000000108 /* WatchtowerNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerNotifications.swift; sourceTree = "<group>"; };
 		F00000000000000000000109 /* DashWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgets.swift; sourceTree = "<group>"; };
+		F000000000000000000001F0 /* DashWidgetBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgetBridges.swift; sourceTree = "<group>"; };
+		F000000000000000000001F1 /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
+		F000000000000000000001F4 /* DashAppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppGroup.swift; sourceTree = "<group>"; };
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
 		F0000000000000000000010C /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
@@ -489,6 +499,8 @@
 				F00000000000000000000161 /* DashActionChrome.swift */,
 				F00000000000000000000163 /* MetricsWidgetSnapshot.swift */,
 				F00000000000000000000164 /* MetricsWidgetPublishing.swift */,
+				F000000000000000000001F4 /* DashAppGroup.swift */,
+				F000000000000000000001F0 /* DashWidgetBridges.swift */,
 				F00000000000000000000101 /* Pagination.swift */,
 				F00000000000000000000103 /* HomePersistence.swift */,
 				F00000000000000000000105 /* DashRoute.swift */,
@@ -591,6 +603,7 @@
 			children = (
 				F00000000000000000000109 /* DashWidgets.swift */,
 				F00000000000000000000165 /* MetricsWidgets.swift */,
+				F000000000000000000001F1 /* QuickActionsWidget.swift */,
 				F0000000000000000000010A /* Info.plist */,
 				F0000000000000000000010B /* DashWidgets.entitlements */,
 			);
@@ -981,6 +994,8 @@
 				B00000000000000000000161 /* DashActionChrome.swift in Sources */,
 				B000000000000000000001A0 /* MetricsWidgetSnapshot.swift in Sources */,
 				B000000000000000000001A1 /* MetricsWidgetPublishing.swift in Sources */,
+				B000000000000000000001F4 /* DashAppGroup.swift in Sources */,
+				B000000000000000000001F0 /* DashWidgetBridges.swift in Sources */,
 				B0000000000000000000001A /* FeatureDataCache.swift in Sources */,
 				B00000000000000000000101 /* Pagination.swift in Sources */,
 				B00000000000000000000103 /* HomePersistence.swift in Sources */,
@@ -1053,8 +1068,11 @@
 			files = (
 				B00000000000000000000109 /* DashWidgets.swift in Sources */,
 				B000000000000000000001A2 /* MetricsWidgets.swift in Sources */,
+				B000000000000000000001F2 /* QuickActionsWidget.swift in Sources */,
 				B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */,
 				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
+				B000000000000000000001F5 /* DashAppGroup.swift in Sources */,
+				B000000000000000000001F1 /* DashWidgetBridges.swift in Sources */,
 				B00000000000000000000123 /* PagesBuildActivity.swift in Sources */,
 				B000000000000000000001B3 /* WorkerBuildActivity.swift in Sources */,
 			);
@@ -1065,6 +1083,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B0000000000000000000011A /* ShareViewController.swift in Sources */,
+				B000000000000000000001F6 /* DashAppGroup.swift in Sources */,
 				B0000000000000000000011B /* R2ShareDestination.swift in Sources */,
 				B0000000000000000000011C /* KeychainTokenStore.swift in Sources */,
 				B0000000000000000000011D /* AppConfiguration.swift in Sources */,
@@ -1091,6 +1110,7 @@
 				B000000000000000000001C2 /* FileProviderErrorMapping.swift in Sources */,
 				B000000000000000000001C3 /* KeychainTokenStore.swift in Sources */,
 				B000000000000000000001C4 /* AppConfiguration.swift in Sources */,
+				B000000000000000000001F7 /* DashAppGroup.swift in Sources */,
 				B000000000000000000001C5 /* R2ShareDestination.swift in Sources */,
 				B000000000000000000001C6 /* R2TransferSupport.swift in Sources */,
 			);

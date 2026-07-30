@@ -100,6 +100,11 @@ struct MainTabView: View {
     case .watchtower:
       selection = .watchtower
       watchtowerNavigator.reset()
+    case .action(let action):
+      selection = .home
+      homeNavigator.reset()
+      guard let context = model.accountRequestContext else { return }
+      model.pendingHomeAction = PendingHomeAction(action: action, context: context)
     default:
       guard let destination = route.destination else { break }
       selection = .home
@@ -258,7 +263,9 @@ struct MainTabView: View {
             navigator: homeNavigator,
             isTabActive: selection == .home
           ) {
-            HomeView()
+            HomeView(
+              isActive: selection == .home,
+              isAtRoot: homeNavigator.depth == 0)
           }
         }
         tabPage(.features) {

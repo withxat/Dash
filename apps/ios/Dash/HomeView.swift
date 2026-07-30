@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 struct HomeView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
+  let isActive: Bool
+  let isAtRoot: Bool
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
@@ -127,7 +129,10 @@ struct HomeView: View {
     // `MainTabView`), shared with Resources and Watchtower. The greeting sits
     // in that glow; opaque cards (`homeCardSurface`) keep a true fill on top.
     .dashCatalogScreen()
-    .task(id: model.accountRequestContext) { await loadZones() }
+    .task(id: model.accountRequestContext) {
+      await loadZones()
+      consumePendingHomeActionIfReady()
+    }
     .onChange(of: model.accountRequestContext) { _, context in
       resetZones(for: context)
     }
@@ -192,12 +197,45 @@ struct HomeView: View {
     .dashTray(isPresented: $showsDemoConnect, title: DashL10n.string("Connect your account")) {
       HomeDemoConnectContent(connect: leaveDemoForConnection)
     }
-    .onChange(of: actionsRaw) { _, _ in
+    .onChange(of: actionsRaw) { _, newValue in
       ICloudPreferencesSync.shared.publish(.homeActions)
+      HomeActions.mirrorToAppGroup(newValue)
     }
     .onChange(of: shortcutsRaw) { _, _ in
       ICloudPreferencesSync.shared.publish(.homeShortcuts)
     }
+    .onAppear { consumePendingHomeActionIfReady() }
+    .onChange(of: model.pendingHomeAction) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
+    .onChange(of: zonesLoading) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
+    .onChange(of: zonesContext) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
+    .onChange(of: isActive) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
+    .onChange(of: isAtRoot) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
+  }
+
+  /// Deep-linked quick actions wait for the same zone context a tile tap would
+  /// already have, so purge / DNS / mode trays do not open against a stale list.
+  private func consumePendingHomeActionIfReady() {
+    guard let pending = model.pendingHomeAction else { return }
+    guard isActive, isAtRoot else { return }
+    guard pending.matches(model.accountRequestContext) else {
+      model.pendingHomeAction = nil
+      return
+    }
+    if pending.action.needsLoadedZones {
+      guard !zonesLoading, zonesContext == model.accountRequestContext else { return }
+    }
+    model.pendingHomeAction = nil
+    perform(pending.action)
   }
 
   private func perform(_ action: HomeActionID) {
@@ -620,6 +658,17 @@ private struct HomeQuickActionsSection: View {
 }
 
 extension HomeActionID {
+  /// Zone-picker actions need the Home zones fetch to finish before the tray
+  /// can list domains (same guard `perform` uses for DNS / mode / purge).
+  fileprivate var needsLoadedZones: Bool {
+    switch self {
+    case .addDNSRecord, .enableDevelopmentMode, .enableUnderAttackMode, .purgeCache:
+      true
+    case .addDomain, .uploadR2, .createKVKey, .createR2Bucket, .addPagesDomain, .addWorkerDomain:
+      false
+    }
+  }
+
   fileprivate var title: String {
     switch self {
     case .addDomain: DashL10n.string("Add domain")

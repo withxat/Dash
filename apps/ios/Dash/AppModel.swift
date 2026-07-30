@@ -64,6 +64,15 @@ struct AccountRequestContext: Hashable, Sendable {
   let generation: UInt64
 }
 
+struct PendingHomeAction: Equatable, Sendable {
+  let action: HomeActionID
+  let context: AccountRequestContext
+
+  func matches(_ currentContext: AccountRequestContext?) -> Bool {
+    context == currentContext
+  }
+}
+
 enum WatchtowerRefreshSource: Equatable, Sendable {
   case foreground
   case background
@@ -190,6 +199,9 @@ final class AppModel {
     didSet {
       R2ShareDestination.setActiveAccountID(activeAccountID)
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
+      // Quick Actions deep links embed `?account=`; refresh so tiles target the
+      // newly selected account even when the action list itself is unchanged.
+      WidgetCenter.shared.reloadTimelines(ofKind: QuickActionsWidgetKind.id)
       guard oldValue != activeAccountID else { return }
       clearWatchtowerWidgetSnapshot()
     }
@@ -232,6 +244,10 @@ final class AppModel {
   /// Buffered here because a link can arrive before the tab view mounts
   /// (cold launch) or before the user is authenticated.
   var pendingRoute: DashRoute?
+  /// Quick-action deep link waiting for Home to present the matching tray.
+  /// Set by MainTabView after account scope is verified; cleared by Home once
+  /// zones (when needed) are ready to drive the same path as a tile tap.
+  var pendingHomeAction: PendingHomeAction?
   /// An older notification that predates account-bound routes. It stays
   /// buffered until identity proves there is exactly one possible account.
   private var pendingLegacyNotificationRoute: DashRoute?
@@ -279,7 +295,7 @@ final class AppModel {
       },
       persistence: deferredDeletionPersistence,
       requiresCredentialActivation: true)
-    activeAccountID = UserDefaults.standard.string(forKey: "dash.active_account_id")
+    activeAccountID = UserDefaults.standard.string(forKey: DashAppGroup.activeAccountKey)
     // Property observers don't fire during init — mirror explicitly so the
     // share extension works without waiting for an account switch.
     R2ShareDestination.setActiveAccountID(activeAccountID)
@@ -363,6 +379,7 @@ final class AppModel {
     fileProviderReconcileTask?.cancel()
     fileProviderReconcileTask = nil
     accountGeneration &+= 1
+    pendingHomeAction = nil
     featureCache.clear()
     PagesBuildActivityController.shared.invalidateSession()
     WorkerBuildActivityController.shared.invalidateSession()
@@ -1208,11 +1225,12 @@ final class AppModel {
     identityStale = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
+    pendingHomeAction = nil
     pendingLegacyNotificationRoute = nil
     WatchtowerNotificationBaselineStore.clearAll()
     MetricsWidgetPublisher.clear()
     toasts.clearAll()
-    UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
+    UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
     if setsAuthenticationState {
       authState = .unauthenticated
@@ -1315,6 +1333,7 @@ final class AppModel {
     identityStale = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
+    pendingHomeAction = nil
     pendingLegacyNotificationRoute = nil
     pendingDeviceToken = nil
     WatchtowerNotificationBaselineStore.clearAll()
@@ -1326,7 +1345,7 @@ final class AppModel {
     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     clearWatchtowerWidgetSnapshot()
     MetricsWidgetPublisher.clear()
-    UserDefaults.standard.removeObject(forKey: "dash.active_account_id")
+    UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
     if presentsCompletion {
       signOutActionPhase = .succeeded
@@ -1382,7 +1401,7 @@ final class AppModel {
     watchtowerUnreadAlertCount = nil
     toasts.clearAll()
     activeAccountID = account.id
-    UserDefaults.standard.set(account.id, forKey: "dash.active_account_id")
+    UserDefaults.standard.set(account.id, forKey: DashAppGroup.activeAccountKey)
     // Domains are account-scoped, not active-account-scoped. Reconciliation
     // only subtracts accounts that no longer exist and never unmounts the
     // other authenticated accounts when this selection changes.

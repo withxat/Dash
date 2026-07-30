@@ -212,59 +212,6 @@ enum HomeShortcuts {
   }
 }
 
-enum HomeActionID: String, CaseIterable, Hashable, Identifiable, Sendable {
-  case addDomain
-  case uploadR2
-  case addDNSRecord
-  case createKVKey
-  case createR2Bucket
-  case addPagesDomain
-  case addWorkerDomain
-  case enableDevelopmentMode
-  case enableUnderAttackMode
-  case purgeCache
-
-  var id: String { rawValue }
-}
-
-/// Home's operation buttons are independent from feature Shortcuts. A maximum
-/// of three keeps the compact iPhone row stable while still letting people tune
-/// the launcher to the work they actually do.
-enum HomeActions {
-  static let key = "dash.home_actions"
-  static let limit = 3
-  /// Used only while `key` is absent. `@AppStorage` continues to return a
-  /// person's saved raw selection after an app update.
-  static let defaults: [HomeActionID] = [.purgeCache, .enableUnderAttackMode, .uploadR2]
-  static let defaultValue = encode(defaults)
-
-  static func decode(_ raw: String) -> [HomeActionID] {
-    var seen = Set<HomeActionID>()
-    return raw.split(separator: ",").compactMap { token in
-      guard let action = HomeActionID(rawValue: String(token)), seen.insert(action).inserted else {
-        return nil
-      }
-      return action
-    }
-    .prefix(limit)
-    .map { $0 }
-  }
-
-  static func encode(_ actions: [HomeActionID]) -> String {
-    actions.prefix(limit).map(\.rawValue).joined(separator: ",")
-  }
-
-  static func toggled(_ action: HomeActionID, in raw: String) -> String {
-    var actions = decode(raw)
-    if let index = actions.firstIndex(of: action) {
-      actions.remove(at: index)
-    } else if actions.count < limit {
-      actions.append(action)
-    }
-    return encode(actions)
-  }
-}
-
 struct PinnedZone: Hashable, Identifiable, Sendable {
   let accountID: String
   let zoneID: String
