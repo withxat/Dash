@@ -371,7 +371,8 @@ private struct R2ObjectActionsSheet: View {
             Text("Download")
               .dashTextStyle(.buttonBold)
               .foregroundStyle(DashTheme.strong)
-              .frame(maxWidth: .infinity, minHeight: 52)
+              .frame(maxWidth: .infinity)
+              .frame(height: DashTheme.Layout.actionPillHeight)
               .background(DashTheme.recessed, in: DashTheme.pillShape)
               .dashShadow(.border, in: DashTheme.pillShape)
           }
@@ -396,7 +397,8 @@ private struct R2ObjectActionsSheet: View {
             Text("Download")
               .dashTextStyle(.button)
               .foregroundStyle(DashTheme.inverse)
-              .frame(maxWidth: .infinity, minHeight: 52)
+              .frame(maxWidth: .infinity)
+              .frame(height: DashTheme.Layout.actionPillHeight)
               .background(DashTheme.strong, in: DashTheme.pillShape)
           }
           .buttonStyle(DashPressButtonStyle())

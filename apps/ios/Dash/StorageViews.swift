@@ -458,7 +458,8 @@ struct R2BucketView: View {
       )
       .dashTextStyle(.button)
       .foregroundStyle(DashTheme.inverse)
-      .frame(maxWidth: .infinity, minHeight: 52)
+      .frame(maxWidth: .infinity)
+      .frame(height: DashTheme.Layout.actionPillHeight)
       .background(DashTheme.danger, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())

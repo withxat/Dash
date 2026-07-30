@@ -8,6 +8,9 @@ enum DashTheme {
   enum Layout {
     static let emptyStateMinHeight: CGFloat = 420
     static let minimumHitTarget: CGFloat = 44
+    /// Fixed height for every primary / secondary tray pill. Never `minHeight`
+    /// alone — pills must not grow with Dynamic Type or leftover tray space.
+    static let actionPillHeight: CGFloat = 52
   }
 
   enum DitherChart {

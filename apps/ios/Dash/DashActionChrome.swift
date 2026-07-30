@@ -165,7 +165,8 @@ struct DashPillButton: View {
           .contentTransition(.opacity)
       }
       .foregroundStyle(DashTheme.inverse)
-      .frame(maxWidth: .infinity, minHeight: 52)
+      .frame(maxWidth: .infinity)
+      .frame(height: DashTheme.Layout.actionPillHeight)
       .overlay(alignment: .trailing) {
         DashActionStatusIcon(
           phase: phase,
@@ -202,7 +203,8 @@ struct DashSecondaryPillButton: View {
     Text(DashL10n.ui(title))
       .dashTextStyle(.buttonBold)
       .foregroundStyle(DashTheme.strong)
-      .frame(maxWidth: .infinity, minHeight: 52)
+      .frame(maxWidth: .infinity)
+      .frame(height: DashTheme.Layout.actionPillHeight)
       .background(DashTheme.recessed, in: DashTheme.pillShape)
       .dashShadow(.border, in: DashTheme.pillShape)
   }
@@ -568,6 +570,10 @@ struct DashActionButton: View {
     // Dual enamel faces share one silhouette. The cut layer is always mounted
     // and cropped by width so the hold animates as a hard left→right wipe:
     // black + white ink over the idle danger/strong face.
+    // Fixed height — not `minHeight`. `GeometryReader` expands to fill any
+    // leftover vertical space; in `.large` trays `DashConfirmMorph` pins the
+    // footer inside an infinitely tall VStack, so a loose min would stretch
+    // Done into a full-height slab (Edit quick actions).
     let face = GeometryReader { geo in
       let cutWidth = max(0, geo.size.width * progress)
       ZStack(alignment: .leading) {
@@ -581,7 +587,8 @@ struct DashActionButton: View {
           .allowsHitTesting(false)
       }
     }
-    .frame(maxWidth: .infinity, minHeight: 52)
+    .frame(maxWidth: .infinity)
+    .frame(height: DashTheme.Layout.actionPillHeight)
     .clipShape(DashTheme.pillShape)
     .overlay(alignment: .trailing) {
       DashActionStatusIcon(
@@ -721,7 +728,8 @@ struct DashTrayPillButton: View {
       Text(DashL10n.ui(title))
         .dashTextStyle(.buttonBold)
         .foregroundStyle(DashTheme.strong)
-        .frame(maxWidth: .infinity, minHeight: 52)
+        .frame(maxWidth: .infinity)
+        .frame(height: DashTheme.Layout.actionPillHeight)
         .overlay(alignment: .trailing) {
           DashActionStatusIcon(
             phase: phase,
