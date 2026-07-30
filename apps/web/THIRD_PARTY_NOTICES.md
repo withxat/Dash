@@ -8,6 +8,8 @@ by Rafael Fernandez.
 
 The source and this adapted SVG are licensed under the
 [Creative Commons Attribution-ShareAlike 4.0 International license](https://creativecommons.org/licenses/by-sa/4.0/).
-The adaptation isolates the front bezel as a transparent overlay, simplifies
-the original paths and material shading, and adds the Camera Control detail.
-The CC BY-SA 4.0 license applies to the adapted SVG asset.
+The adaptation keeps the full front-bezel artwork (titanium shell, side
+controls, materials), punches a transparent screen cutout via mask for
+screenshot overlay use, and redraws the Dynamic Island above the cutout so
+it sits over the capture. The CC BY-SA 4.0 license applies to the adapted
+SVG asset.

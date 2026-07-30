@@ -68,13 +68,28 @@
 	filter: drop-shadow(0 2px 4px rgb(0 0 0 / 0.16)) drop-shadow(0 24px 24px rgb(0 0 0 / 0.2));
 }
 
-@utility app-shot-screen {
+/*
+  Screen window geometry matches the SVG cutout (rect7 on the Wikimedia
+  iPhone 16 Pro vector): x 4.118 / y 3.129 / 85.955×186.887 on a
+  94.192×193.146 viewBox, with a circular corner radius of 13.340.
+  The clip must own that radius — the bezel is a transparent hole, so
+  square screenshot corners otherwise poke through the rounded cutout.
+*/
+@utility app-shot-screen-clip {
 	position: absolute;
 	top: 1.6202%;
 	left: 4.3724%;
-	display: block;
 	width: 91.2552%;
 	height: 96.7596%;
+	overflow: hidden;
+	/* 13.340 / 85.955 of width, 13.340 / 186.887 of height */
+	border-radius: 15.52% / 7.14%;
+}
+
+@utility app-shot-screen {
+	display: block;
+	width: 100%;
+	height: 100%;
 	object-fit: fill;
 }
 

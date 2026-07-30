@@ -20,7 +20,7 @@ const PRIMARY_CTA_LABEL = 'Read the source on GitHub'
 const SHOT_VERSION = '?v=1'
 const SHOT_WIDTH = 1206
 const SHOT_HEIGHT = 2622
-const IPHONE_16_PRO_FRAME = '/device-frames/iphone-16-pro-desert-titanium.svg?v=1'
+const IPHONE_16_PRO_FRAME = '/device-frames/iphone-16-pro-desert-titanium.svg?v=2'
 
 interface ScreenshotSpec {
 	alt: string
@@ -209,11 +209,12 @@ function ZoneStage() {
 			</div>
 
 			{/* The device rises out of the fold as the band scrolls past. One
-			    entrance, not a perpetual float. */}
+			    entrance, not a perpetual float. Bottom padding keeps the bezel
+			    off the contrast band's hard edge. */}
 			<Parallax
 				className="
-					mt-14 px-5
-					sm:mt-16 sm:px-8
+					mt-14 px-5 pb-16
+					sm:mt-16 sm:px-8 sm:pb-20
 				"
 				depth={28}
 			>
@@ -344,15 +345,17 @@ function AppScreenshot({
 		`}
 		>
 			<div className="app-shot-frame">
-				<img
-					alt={screenshot.alt}
-					className="app-shot-screen"
-					fetchPriority={priority ? 'high' : 'auto'}
-					height={SHOT_HEIGHT}
-					loading={priority ? 'eager' : 'lazy'}
-					src={screenshot.src}
-					width={SHOT_WIDTH}
-				/>
+				<div className="app-shot-screen-clip">
+					<img
+						alt={screenshot.alt}
+						className="app-shot-screen"
+						fetchPriority={priority ? 'high' : 'auto'}
+						height={SHOT_HEIGHT}
+						loading={priority ? 'eager' : 'lazy'}
+						src={screenshot.src}
+						width={SHOT_WIDTH}
+					/>
+				</div>
 				<img
 					alt=""
 					aria-hidden="true"

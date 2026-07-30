@@ -49,7 +49,8 @@ The page is light only, deliberately. Kumo's tokens are `light-dark()` pairs, bu
 - Calls to action use an interruptible `scale(0.96)` press state over 150ms.
 - Use the same Solar SVG assets generated for the iOS app. Do not reach for a near-miss glyph to fill a slot; a section with no honest icon gets no icon.
 - Use the official Dash App icon for the favicon and every brand lockup.
-- `AppScreenshot` owns screenshot geometry. It places the exact 1206x2622 capture below the licensed iPhone 16 Pro bezel in `public/device-frames/`; the bezel owns the titanium shell, black screen border, Dynamic Island, and side controls. It never draws or reconstructs the app interface.
+- `AppScreenshot` owns screenshot geometry. It places the exact 1206x2622 capture below the licensed iPhone 16 Pro bezel in `public/device-frames/`; the capture is clipped to the screen cutout's corner radius before the bezel paints over it. The bezel owns the titanium shell, black screen border, Dynamic Island, and side controls. It never draws or reconstructs the app interface.
+- The sticky header brand mark is absent while the landing hero (which already shows the app icon) is on screen, and slides in from the left once the hero has left. Pages without a hero keep the mark visible.
 - One call-to-action label per intent across the whole page, navigation included.
 
 ## 5. Layout principles
@@ -81,6 +82,7 @@ Motion lives in `motion-primitives.tsx` and uses Motion (`motion/react`). One ea
 - `Reveal` is the single-block version for content with nothing to sequence.
 - `Parallax` applies a scroll-linked vertical offset.
 - `StickyTour` holds one device still while the surfaces inside it change. The pin is the argument: the product is a single compact app, not a pile of separate screens. It is built on CSS `position: sticky` rather than a scroll-hijacking pin, so it cannot desynchronise from the scrollbar or strand a reader mid-section, and below `lg` it degrades to a plain stacked list with each capture inline.
+- The header brand icon is a discrete enter/exit driven by an `IntersectionObserver` on the hero — not a scroll-linked motion value. The icon is out of flow (absolute) so its entrance is x + blur + opacity only; the wordmark is pushed by the same transition on `paddingLeft`, so icon and text move together rather than the text jumping after the icon settles. Never a width stretch of the mark itself.
 - Every animation must answer "what does this communicate?" with hierarchy, sequence, or feedback. Decoration is not an answer.
 - Scroll values stay on Motion values (`useScroll`, `useTransform`). Never drive continuous scroll or pointer values through React state, and never attach a `scroll` listener.
 - Everything degrades through `useReducedMotion()` to a static, fully visible page, backed by the CSS `prefers-reduced-motion` block.
