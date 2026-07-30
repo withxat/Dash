@@ -8,8 +8,10 @@ private enum PushAlertScopes {
   static let all = read.union(write)
 }
 
-/// Settings controls + full alerts screen for Cloudflare → APNs push.
-struct PushAlertsSettingsCard: View {
+/// Cloudflare → APNs push rows, emitted into Settings' Watchtower section
+/// beside the local notification toggle: both answer "what reaches this
+/// iPhone", and splitting them across two sections read as two features.
+struct PushAlertsSettingsRows: View {
   @Environment(AppModel.self) private var model
   @State private var pushEnabled = false
   @State private var pushBusy = false
@@ -17,7 +19,7 @@ struct PushAlertsSettingsCard: View {
   @State private var testBusy = false
   @State private var isProvisional = false
   var body: some View {
-    SettingsPlainSection(title: "Push alerts") {
+    VStack(alignment: .leading, spacing: 0) {
       if !model.hasScopes(PushAlertScopes.all) {
         DashAuthorizationDisclosure()
           .padding(.horizontal, DashTheme.Spacing.screen)
@@ -102,18 +104,8 @@ struct PushAlertsSettingsCard: View {
           )
         }
       }
-
-      SettingsPlainDivider()
-
-      DashListGroupLink(value: .filesMount) {
-        SettingsPlainRow(
-          title: DashL10n.string("Files"),
-          subtitle: DashL10n.string("Show R2 buckets in the Files app"),
-          icon: SolarAsset.Content.folder,
-          showsChevron: true
-        )
-      }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
     .task(id: model.accountRequestContext) {
       pushBusy = false
       pushError = nil

@@ -99,6 +99,7 @@ const OUTLINE_ICONS = {
 	SolarTrashBinOutline: 'ui/Linear/TrashBinMinimalistic',
 	SolarCloudOutline: 'weather/Linear/Cloud',
 	SolarFileOutline: 'files/Linear/File',
+	SolarFolderOutline: 'folders/Linear/Folder',
 	SolarUploadOutline: 'arrows-action/Linear/Upload',
 	SolarMagnifierOutline: 'search/Linear/MinimalisticMagnifier',
 	SolarCheckCircleOutline: 'ui/Linear/CheckCircle',
