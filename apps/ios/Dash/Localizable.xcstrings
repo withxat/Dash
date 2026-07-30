@@ -8342,7 +8342,7 @@
       }
     },
     "OK" : {
-      "extractionState" : "stale",
+      "extractionState" : "manual",
       "localizations" : {
         "en" : {
           "stringUnit" : {

@@ -420,7 +420,6 @@ struct DestinationRoutedContent: View {
       case .filesMount: FilesMountView()
       case .watchtowerInbox: WatchtowerInboxView()
       case .emailAddresses: EmailDestinationAddressesView()
-      case .registrarDomains: RegistrarDomainsView()
       case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
       case .chartDetail(let detail): DashChartDetailView(detail: detail)
       case .worker(let name): WorkerDetailView(name: name)

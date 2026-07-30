@@ -314,6 +314,44 @@ struct LocalizationTests {
     }
   }
 
+  /// A registry status arrives spelled three ways — RDAP spaces it, WHOIS sends
+  /// EPP camelCase, Cloudflare's Registrar API lowercases it and runs it
+  /// together. Only the first two have a boundary to split on, so the third used
+  /// to reach the screen as `Clienttransferprohibited`: one word, and a key the
+  /// catalog cannot hold, which is why it stayed English on a Chinese screen.
+  @Test func registryStatusLabelsFoldEverySpellingOntoOneCatalogKey() {
+    let previous = DashL10n.localeOverrideForTesting
+    defer { DashL10n.localeOverrideForTesting = previous }
+
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    for spelling in [
+      "clienttransferprohibited", "clientTransferProhibited",
+      "client transfer prohibited", "CLIENT_TRANSFER_PROHIBITED",
+      "client-transfer-prohibited",
+    ] {
+      #expect(rdapStatusLabel(spelling) == "Client Transfer Prohibited")
+    }
+    #expect(rdapStatusLabel("ok") == "OK")
+    #expect(rdapStatusLabel("OK") == "OK")
+    #expect(rdapStatusLabel("autorenewperiod") == "Auto Renew Period")
+    // Outside the closed vocabulary, keep Cloudflare's own wording — a
+    // lowercase run holds no words to recover.
+    #expect(rdapStatusLabel("someFutureState") == "Some Future State")
+
+    // Every entry must be reachable by its own key, and translated: a typo'd
+    // key can never match, and an untranslated label ships English anyway.
+    for (code, english) in RegistryStatusVocabulary.labels {
+      #expect(RegistryStatusVocabulary.key(code) == code)
+      #expect(rdapStatusLabel(code) == english)
+    }
+    DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
+    for (code, english) in RegistryStatusVocabulary.labels {
+      #expect(
+        rdapStatusLabel(code) != english,
+        "registry status \(english.debugDescription) has no zh-Hans entry")
+    }
+  }
+
   // `View` is a @MainActor protocol, so StatusBadge/DashNotice statics are
   // isolated too — the test has to hop on as well.
   @MainActor
@@ -397,7 +435,7 @@ struct LocalizationTests {
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 6)
+  #expect(FeatureID.allCases.count == 7)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -754,8 +792,7 @@ struct LocalizationTests {
   #expect(featureID(for: .settingsAccounts) == nil)
   #expect(featureID(for: .filesMount) == nil)
   #expect(featureID(for: .emailAddresses) == nil)
-  #expect(featureID(for: .registrarDomains) == nil)
-  #expect(featureID(for: .registrarDomain("example.com")) == nil)
+  #expect(featureID(for: .registrarDomain("example.com")) == .registrar)
 }
 
 /// Operational destinations keep reads and mutations explicit so Demo and
@@ -793,9 +830,8 @@ struct LocalizationTests {
       == ["zone-settings.write", "email-routing-rule.write"])
   #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
   #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
-  #expect(readScopes(for: .registrarDomains) == ["registrar-domains.read"])
-  #expect(writeScopes(for: .registrarDomains).isEmpty)
   #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
+  #expect(FeatureID.registrar.capability.write.isEmpty)
   #expect(
     writeScopes(for: .registrarDomain("example.com"))
       == ["registrar-domains.admin"])
@@ -1365,6 +1401,7 @@ private let watchtowerDropFrames: [CGRect] = [
 
 @Test func featureVisualIdentityMapsStableTonesPerFeature() {
   #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
+  #expect(FeatureVisualIdentity.tone(for: .registrar) == .teal)
   #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
   #expect(FeatureVisualIdentity.tone(for: .pages) == .info)
   #expect(FeatureVisualIdentity.tone(for: .r2) == .accent)

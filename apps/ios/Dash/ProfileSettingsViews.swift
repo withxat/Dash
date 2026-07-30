@@ -1295,16 +1295,10 @@ struct ProfileView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
 
+        // Registered domains used to sit here; it browses as its own catalog
+        // feature in Resources now, so this group carries the audit log alone.
         DashListGroup(title: "Account") {
           dashListCard {
-            DashListGroupLink(value: .registrarDomains) {
-              DashListRow(
-                title: DashL10n.string("Registered domains"),
-                subtitle: DashL10n.string("Domains you bought on Cloudflare"),
-                icon: SolarAsset.Content.globus
-              )
-            }
-            .dashListCardInset()
             DashListGroupLink(value: .auditLogs) {
               DashListRow(
                 title: DashL10n.string("Audit log"),
