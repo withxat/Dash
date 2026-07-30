@@ -83,6 +83,40 @@ function catalogIndex(catalog) {
   return normalized;
 }
 
+function catalogKeyOrder(contents) {
+  return contents
+    .split("\n")
+    .flatMap((line) => {
+      const match = line.match(/^    (".*") : \{$/);
+      return match ? [JSON.parse(match[1])] : [];
+    });
+}
+
+function catalogSerializationIssues(actual, xcodeSerialized) {
+  const issues = [];
+  const actualKeys = catalogKeyOrder(actual);
+  const xcodeKeys = catalogKeyOrder(xcodeSerialized);
+
+  if (actualKeys.length !== xcodeKeys.length) {
+    issues.push(
+      `Xcode sync writes ${xcodeKeys.length} key(s), but the catalog has ${actualKeys.length}`
+    );
+  } else {
+    const mismatch = actualKeys.findIndex((key, index) => key !== xcodeKeys[index]);
+    if (mismatch !== -1) {
+      issues.push(
+        `key ${JSON.stringify(actualKeys[mismatch])} at index ${mismatch} ` +
+          `would be reordered to ${JSON.stringify(xcodeKeys[mismatch])}`
+      );
+    }
+  }
+
+  if (actual.endsWith("\n") !== xcodeSerialized.endsWith("\n")) {
+    issues.push("the trailing newline differs from xcstringstool output");
+  }
+  return issues;
+}
+
 function addSites(target, key, sites) {
   if (!target.has(key)) target.set(key, new Set());
   for (const site of sites) target.get(key).add(site);
@@ -144,11 +178,13 @@ function translationPlaceholderIssue(sourceKey, translatedValue) {
 }
 
 function auditCatalogIntegrity(catalog) {
+  const emptyKeys = [];
   const positionalSourceKeys = [];
   const missingTranslations = new Map();
   const placeholderMismatches = [];
 
   for (const [key, entry] of Object.entries(catalog)) {
+    if (!key) emptyKeys.push(key);
     if (POSITIONAL_SOURCE_PLACEHOLDER.test(key)) {
       positionalSourceKeys.push(key);
     }
@@ -197,7 +233,12 @@ function auditCatalogIntegrity(catalog) {
     const rightID = `${right.key}\0${right.locale}\0${right.path}`;
     return leftID < rightID ? -1 : leftID > rightID ? 1 : 0;
   });
-  return { missingTranslations, placeholderMismatches, positionalSourceKeys };
+  return {
+    emptyKeys,
+    missingTranslations,
+    placeholderMismatches,
+    positionalSourceKeys,
+  };
 }
 
 /**
@@ -208,11 +249,15 @@ function auditCatalogIntegrity(catalog) {
 function auditCatalog(catalog, extracted) {
   const normalized = catalogIndex(catalog);
   const resolved = new Map();
+  const empty = new Map();
   const missing = new Map();
   const ambiguous = new Map();
 
   for (const [extractedKey, sites] of extracted) {
-    if (!extractedKey) continue;
+    if (!extractedKey) {
+      addSites(empty, extractedKey, sites);
+      continue;
+    }
     const candidates = Object.hasOwn(catalog, extractedKey)
       ? [extractedKey]
       : (normalized.get(normalizeFormatKey(extractedKey)) ?? []);
@@ -238,7 +283,7 @@ function auditCatalog(catalog, extracted) {
     }
   }
 
-  return { ambiguous, liveStale, missing, resolved };
+  return { ambiguous, empty, liveStale, missing, resolved };
 }
 
 function effectiveBuildSetting(configuration, name) {
@@ -251,7 +296,7 @@ function effectiveBuildSetting(configuration, name) {
   return value;
 }
 
-function extractProductionKeys() {
+function extractProductionKeys(catalogContents, catalog) {
   const scratch = mkdtempSync(join(tmpdir(), "dash-l10n-check-"));
   const rewrittenSources = [];
   const originalSourceByRewrite = new Map();
@@ -301,9 +346,13 @@ function extractProductionKeys() {
     }
 
     const extracted = new Map();
-    for (const outputFile of readdirSync(outputDirectory).sort()) {
+    let serializationProbe;
+    const stringsdataFiles = readdirSync(outputDirectory)
+      .sort()
+      .map((outputFile) => join(outputDirectory, outputFile));
+    for (const outputFile of stringsdataFiles) {
       const contents = JSON.parse(
-        readFileSync(join(outputDirectory, outputFile), "utf8")
+        readFileSync(outputFile, "utf8")
       );
       const original =
         originalSourceByRewrite.get(resolve(contents.source)) ??
@@ -312,9 +361,79 @@ function extractProductionKeys() {
         addSites(extracted, row.key, [
           `${original}:${row.location.startingLine}`,
         ]);
+        if (
+          !serializationProbe &&
+          row.key &&
+          !row.visibility &&
+          Object.hasOwn(catalog, row.key) &&
+          catalog[row.key].extractionState !== "manual" &&
+          catalog[row.key].extractionState !== "stale"
+        ) {
+          serializationProbe = {
+            source: contents.source,
+            tables: { Localizable: [row] },
+            version: contents.version,
+          };
+        }
       }
     }
-    return extracted;
+
+    if (!serializationProbe) {
+      throw new Error("no safe string-catalog serialization probe was extracted");
+    }
+
+    const syncedCatalog = join(scratch, "Localizable.xcstrings");
+    const syncedDocument = JSON.parse(catalogContents);
+    const probeKey = serializationProbe.tables.Localizable[0].key;
+    delete syncedDocument.strings[probeKey];
+    writeFileSync(syncedCatalog, JSON.stringify(syncedDocument));
+    const probeFile = join(scratch, "serialization-probe.stringsdata");
+    writeFileSync(probeFile, JSON.stringify(serializationProbe));
+    try {
+      execFileSync(
+        "xcrun",
+        [
+          "xcstringstool",
+          "sync",
+          syncedCatalog,
+          "--stringsdata",
+          probeFile,
+          "--skip-marking-strings-stale",
+        ],
+        {
+          encoding: "utf8",
+          maxBuffer: 10 * 1024 * 1024,
+          stdio: ["ignore", "pipe", "pipe"],
+        }
+      );
+    } catch (error) {
+      const diagnostics = [error.stdout, error.stderr]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
+      throw new Error(
+        `xcstringstool sync failed${diagnostics ? `:\n${diagnostics}` : ""}`
+      );
+    }
+
+    const xcodeSerialized = readFileSync(syncedCatalog, "utf8");
+    const xcodeDocument = JSON.parse(xcodeSerialized);
+    if (
+      !Object.hasOwn(xcodeDocument.strings, probeKey) ||
+      Object.keys(xcodeDocument.strings).length !== Object.keys(catalog).length
+    ) {
+      throw new Error(
+        `xcstringstool serialization probe did not restore ${JSON.stringify(probeKey)}`
+      );
+    }
+
+    return {
+      extracted,
+      serializationIssues: catalogSerializationIssues(
+        catalogContents,
+        xcodeSerialized
+      ),
+    };
   } finally {
     rmSync(scratch, { force: true, recursive: true });
   }
@@ -362,6 +481,22 @@ function runSelfTests() {
     ),
     "NO"
   );
+  assert.deepEqual(
+    catalogKeyOrder(
+      '{\n  "strings" : {\n    "A \\"quoted\\" key" : {\n    "Second" : {\n  }\n}'
+    ),
+    ['A "quoted" key', "Second"]
+  );
+  assert.deepEqual(
+    catalogSerializationIssues(
+      '{\n  "strings" : {\n    "Second" : {\n    "First" : {\n  }\n}\n',
+      '{\n  "strings" : {\n    "First" : {\n    "Second" : {\n  }\n}'
+    ),
+    [
+      'key "Second" at index 0 would be reordered to "First"',
+      "the trailing newline differs from xcstringstool output",
+    ]
+  );
 
   const catalog = {
     Automatic: {},
@@ -389,6 +524,7 @@ function runSelfTests() {
     "Value %lld",
   ]);
   assert.deepEqual([...result.liveStale.keys()], ["Stale"]);
+  assert.deepEqual([...result.empty.keys()], [""]);
   assert.deepEqual([...result.missing.keys()], ["Missing"]);
   assert.deepEqual([...result.ambiguous.keys()], ["Collision %arg"]);
   assert.deepEqual(
@@ -397,6 +533,7 @@ function runSelfTests() {
   );
 
   const integrity = auditCatalogIntegrity({
+    "": { extractionState: "stale" },
     "Good %@": {
       localizations: {
         "zh-Hans": {
@@ -425,6 +562,7 @@ function runSelfTests() {
   assert.deepEqual([...integrity.missingTranslations.keys()], [
     "Missing translation",
   ]);
+  assert.deepEqual(integrity.emptyKeys, [""]);
   assert.deepEqual(integrity.positionalSourceKeys, ["Positional %1$@"]);
   assert.equal(integrity.placeholderMismatches.length, 0);
 }
@@ -436,9 +574,13 @@ function main() {
     return 0;
   }
 
-  const catalogDocument = JSON.parse(readFileSync(CATALOG, "utf8"));
+  const catalogContents = readFileSync(CATALOG, "utf8");
+  const catalogDocument = JSON.parse(catalogContents);
   const catalog = catalogDocument.strings;
-  const extracted = extractProductionKeys();
+  const { extracted, serializationIssues } = extractProductionKeys(
+    catalogContents,
+    catalog
+  );
   const audit = auditCatalog(catalog, extracted);
   const integrity = auditCatalogIntegrity(catalog);
   const buildSetting = effectiveBuildSetting(
@@ -449,12 +591,15 @@ function main() {
 
   if (
     buildSettingValid &&
+    audit.empty.size === 0 &&
+    integrity.emptyKeys.length === 0 &&
     audit.missing.size === 0 &&
     audit.liveStale.size === 0 &&
     audit.ambiguous.size === 0 &&
     integrity.missingTranslations.size === 0 &&
     integrity.positionalSourceKeys.length === 0 &&
-    integrity.placeholderMismatches.length === 0
+    integrity.placeholderMismatches.length === 0 &&
+    serializationIssues.length === 0
   ) {
     console.log(
       `check-l10n-keys: ${audit.resolved.size} production key(s) present and live ` +
@@ -466,11 +611,12 @@ function main() {
   console.error(
     "check-l10n-keys: failed " +
       `(build setting ${buildSettingValid ? "ok" : "invalid"}, ` +
+      `${audit.empty.size} empty source, ${integrity.emptyKeys.length} empty catalog, ` +
       `${audit.missing.size} missing, ${audit.liveStale.size} live-stale, ` +
       `${audit.ambiguous.size} ambiguous, ` +
       `${integrity.missingTranslations.size} untranslated, ` +
       `${integrity.positionalSourceKeys.length + integrity.placeholderMismatches.length} ` +
-      `placeholder issue(s))\n`
+      `placeholder issue(s), ${serializationIssues.length} serialization issue(s))\n`
   );
 
   if (!buildSettingValid) {
@@ -487,6 +633,16 @@ function main() {
       printSites(sites);
     }
     console.error("");
+  }
+
+  if (audit.empty.size > 0) {
+    console.error("  Empty localization keys extracted:");
+    for (const sites of audit.empty.values()) printSites(sites);
+    console.error("");
+  }
+
+  if (integrity.emptyKeys.length > 0) {
+    console.error("  Empty keys found in Localizable.xcstrings.\n");
   }
 
   if (audit.liveStale.size > 0) {
@@ -541,6 +697,12 @@ function main() {
       );
       console.error(`      ${JSON.stringify(entry.value)}`);
     }
+    console.error("");
+  }
+
+  if (serializationIssues.length > 0) {
+    console.error("  Catalog differs from Xcode serialization:");
+    for (const issue of serializationIssues) console.error(`    ${issue}`);
     console.error("");
   }
 

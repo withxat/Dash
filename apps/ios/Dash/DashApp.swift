@@ -380,7 +380,7 @@ private struct RootWithSplash: View {
             content: {
               VStack(spacing: 24) {
                 DashFormField(label: "Name", text: $text)
-                Text("Form background")
+                Text(verbatim: "Form background")
                   .frame(maxWidth: .infinity, minHeight: 80)
               }
             }

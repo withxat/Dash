@@ -149,7 +149,7 @@ extension View {
   /// three tabs share one light field: the glow holds still while pages slide
   /// across it. Give a root an opaque plate again and it goes dark on that tab.
   func dashCatalogScreen() -> some View {
-    navigationTitle("")
+    navigationTitle(Text(verbatim: ""))
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         // Invisible prop: a titleless bar with no items collapses to zero

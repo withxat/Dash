@@ -2042,7 +2042,12 @@ private struct HomeDomainsSection: View {
     .accessibilityIdentifier("home-domains-toggle")
     .accessibilityLabel("Domains")
     .accessibilityValue(
-      expandable ? (isExpanded ? "Expanded" : "Collapsed, \(zones.count) domains") : "")
+      expandable
+        ? (isExpanded
+          ? Text("Expanded")
+          : Text("Collapsed, \(zones.count) domains"))
+        : Text(verbatim: "")
+    )
   }
 
   @ViewBuilder
