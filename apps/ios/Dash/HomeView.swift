@@ -1572,10 +1572,14 @@ private struct HomeR2UploadSheet: View {
         delimiter: "/")
       guard !Task.isCancelled, folderListingRequest == request else { return }
       childFolders = page.commonPrefixes
+      let objects = page.objects.filter { !R2FolderMarker.isMarker(key: $0.key) }
+      let hasFolderMarker =
+        !request.prefix.isEmpty && page.objects.contains { $0.key == request.prefix }
       model.featureCache.set(
         key,
         R2BrowserSnapshot(
-          objects: page.objects, commonPrefixes: page.commonPrefixes, cursor: page.cursor))
+          objects: objects, commonPrefixes: page.commonPrefixes, cursor: page.cursor,
+          hasFolderMarker: hasFolderMarker))
     } catch {
       guard !Task.isCancelled, !error.dashIsCancellation, folderListingRequest == request
       else { return }

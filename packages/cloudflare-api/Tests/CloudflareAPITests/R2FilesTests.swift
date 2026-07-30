@@ -26,7 +26,105 @@ import Testing
   #expect(!R2ObjectPath(bucket: "assets", key: "photos/../cover.jpg").isFileProviderRepresentable)
 }
 
+@Test func r2FolderMarkerResolvesNamesIntoKeyPrefixes() {
+  #expect(R2FolderMarker.isMarker(key: "photos/"))
+  #expect(!R2FolderMarker.isMarker(key: "photos/cover.jpg"))
+
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: "photos") == "photos/")
+  #expect(R2FolderMarker.markerKey(parentPrefix: "photos/", name: "2026") == "photos/2026/")
+  // Nesting, stray separators, and pasted whitespace all resolve to one leaf.
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: "photos/2026") == "photos/2026/")
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: "/photos/") == "photos/")
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: "  photos  ") == "photos/")
+  #expect(R2FolderMarker.markerKey(parentPrefix: "a/", name: " b / c ") == "a/b/c/")
+  // Nested names materialize every intermediate marker, not only the leaf —
+  // otherwise a parent that exists only as a common prefix disappears when its
+  // last child is deleted.
+  #expect(
+    R2FolderMarker.markerKeys(parentPrefix: "", name: "photos/2026") == [
+      "photos/", "photos/2026/",
+    ])
+  #expect(
+    R2FolderMarker.markerKeys(parentPrefix: "a/", name: " b / c ") == ["a/b/", "a/b/c/"])
+  #expect(R2FolderMarker.markerKeys(for: "photos/2026") == ["photos/", "photos/2026/"])
+  #expect(R2FolderMarker.markerKeys(for: "photos/") == ["photos/"])
+
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "photos") == nil)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "") == .empty)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "   ") == .empty)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "///") == .empty)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "a//b") == .emptyPathComponent)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "a/ /b") == .emptyPathComponent)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "..") == .relativePathComponent)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "a/./b") == .relativePathComponent)
+  // Only the edges are trimmed, so an interior control character stays visible
+  // to the check instead of being silently written into a key.
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "a\u{0}b") == .controlCharacters)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: "a\nb") == .controlCharacters)
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: "a\u{0}b") == nil)
+
+  let longName = String(repeating: "x", count: R2Limits.objectKeyMaximumBytes)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: longName) == .keyTooLong)
+  let fittingName = String(repeating: "x", count: R2Limits.objectKeyMaximumBytes - 1)
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: fittingName)?.utf8.count == 1024)
+  // Byte-counted, not character-counted: R2's ceiling is UTF-8 bytes, and the
+  // marker slash spends one of them.
+  let wideName = String(repeating: "书", count: R2Limits.objectKeyMaximumBytes / 3)
+  #expect(R2FolderMarker.markerKey(parentPrefix: "", name: wideName)?.utf8.count == 1024)
+  #expect(R2FolderMarker.nameProblem(parentPrefix: "", name: wideName + "书") == .keyTooLong)
+
+  // Every name Dash accepts must survive the Files mount's own key rules.
+  for name in ["photos", "photos/2026", "  spaced name  ", "emoji 🎈"] {
+    let key = R2FolderMarker.markerKey(parentPrefix: "media/", name: name)
+    #expect(key != nil)
+    #expect(R2ObjectPath(bucket: "assets", key: key ?? "").isFileProviderRepresentable)
+  }
+}
+
 extension NetworkTests {
+  @Test func r2CreateFolderPutsZeroByteMarkerWithLiteralTrailingSlash() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      let body = requestBodyData(request) ?? Data()
+      recorder.record(
+        [
+          request.httpMethod ?? "?",
+          request.url?.absoluteString ?? "?",
+          "bytes=\(body.count)",
+          "type=\(request.value(forHTTPHeaderField: "Content-Type") ?? "none")",
+        ].joined(separator: " "))
+      return (200, Data(#"{"success":true,"result":null}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client",
+      tokenStore: store,
+      apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.createR2Folder(
+      accountID: "account", bucket: "assets", key: "photos/2026/")
+    // A caller that forgets the marker slash still creates a folder, never a
+    // zero-byte file that looks like one.
+    try await client.createR2Folder(
+      accountID: "account", bucket: "assets", key: "photos/2026")
+
+    // A percent-encoded separator would create an object literally named
+    // "photos/2026/" instead of the prefix, and the trailing slash IS the
+    // marker: both have to reach Cloudflare exactly as written, with a real
+    // zero-byte body rather than no body at all. Nested keys also put every
+    // intermediate marker so each empty parent survives on its own.
+    func expected(_ key: String) -> String {
+      "PUT https://api.example.test/accounts/account/r2/buckets/assets/objects/\(key)? "
+        + "bytes=0 type=none"
+    }
+    #expect(
+      recorder.paths == [
+        expected("photos/"), expected("photos/2026/"),
+        expected("photos/"), expected("photos/2026/"),
+      ])
+  }
+
   @Test func r2FileFetchesOneBucketPageAndPreservesOpaqueCursor() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

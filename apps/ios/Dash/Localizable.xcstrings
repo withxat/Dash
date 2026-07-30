@@ -810,6 +810,26 @@
         }
       }
     },
+    "A folder named %@ is already here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有名为 %1$@ 的文件夹。"
+          }
+        }
+      }
+    },
+    "A folder can't be named . or .." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件夹不能命名为 . 或 .."
+          }
+        }
+      }
+    },
     "A load balancer pool for %@ changed health." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1597,6 +1617,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@ 处已存在对象。"
+          }
+        }
+      }
+    },
+    "An object named %@ is already here." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已有名为 %1$@ 的对象。"
           }
         }
       }
@@ -3921,6 +3951,26 @@
         }
       }
     },
+    "Create folder, Groups objects under a key prefix" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建文件夹，用 key 前缀组织对象"
+          }
+        }
+      }
+    },
+    "Create folder" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建文件夹"
+          }
+        }
+      }
+    },
     "Create key" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4481,6 +4531,26 @@
         }
       }
     },
+    "Delete folder, This folder is empty" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除文件夹，此文件夹为空"
+          }
+        }
+      }
+    },
+    "Delete folder" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除文件夹"
+          }
+        }
+      }
+    },
     "Delete objects" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4552,6 +4622,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除成功"
+          }
+        }
+      }
+    },
+    "Deletes the empty %@ folder from %@. This can't be undone." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将从 %2$@ 删除空文件夹 %1$@。此操作无法撤销。"
           }
         }
       }
@@ -5702,6 +5782,16 @@
         }
       }
     },
+    "Enter a folder name." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请输入文件夹名称。"
+          }
+        }
+      }
+    },
     "Enterprise Website" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5781,6 +5871,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每次触发"
+          }
+        }
+      }
+    },
+    "Every part between slashes needs a name." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "斜杠之间的每一段都需要名称。"
           }
         }
       }
@@ -6055,6 +6155,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文件夹（可选）"
+          }
+        }
+      }
+    },
+    "Folder name" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件夹名称"
           }
         }
       }
@@ -6379,6 +6489,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已授权"
+          }
+        }
+      }
+    },
+    "Groups objects under a key prefix" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "用 key 前缀组织对象"
           }
         }
       }
@@ -9909,6 +10029,16 @@
         }
       }
     },
+    "R2 stores key prefixes, not folders — use / to nest. Dash writes a zero-byte placeholder so the folder stays visible while it is empty." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "R2 存储的是 key 前缀而非文件夹 — 可用 / 嵌套。Dash 会写入一个零字节占位对象，让空文件夹在列表中保持可见。"
+          }
+        }
+      }
+    },
     "R2 write access is required." : {
       "localizations" : {
         "zh-Hans" : {
@@ -10446,6 +10576,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "清理单个缓存资源，不影响域名其余部分。"
+          }
+        }
+      }
+    },
+    "Remove the line breaks from the name." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请去掉名称中的换行符。"
           }
         }
       }
@@ -11923,6 +12063,16 @@
         }
       }
     },
+    "That path is too long — an R2 key holds 1,024 bytes." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "路径过长 — R2 key 最多 1,024 字节。"
+          }
+        }
+      }
+    },
     "The Files location and its downloaded files will be removed from this iPhone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -12078,6 +12228,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此域名目前通过 %@ 接收邮件。开启邮件路由会替换现有 MX 记录，邮件将立即停止送达该服务商。"
+          }
+        }
+      }
+    },
+    "This folder is empty" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此文件夹为空"
           }
         }
       }

@@ -122,6 +122,15 @@ struct R2BucketView: View {
   @State private var selectedKeys: Set<String> = []
   @State private var confirmsBatchDelete = false
   @State private var showsBucketActions = false
+  /// Steps of the Actions tray. A second `dashTray` on this screen would have to
+  /// present while the first is still animating out, so the create form and the
+  /// folder-delete confirmation morph inside the tray that is already open.
+  @State private var createsFolder = false
+  @State private var confirmsFolderDelete = false
+  /// Whether this prefix has its own zero-byte `…/` marker object. It is the
+  /// only thing "delete this empty folder" can remove — a folder that exists
+  /// purely because objects sit under it disappears on its own once they go.
+  @State private var hasFolderMarker = false
   /// The account/bucket/prefix currently represented by the state above.
   /// This survives view-value updates so stale async tasks can be rejected.
   @State private var displayedRequestIdentity: R2BucketRequestIdentity?
@@ -137,8 +146,16 @@ struct R2BucketView: View {
   /// Once a two-finger pan starts, keep adding or removing based on the first
   /// row under the fingers (UITableView multiselect behavior).
   @State private var paintAdds: Bool?
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
+  /// Deleting a folder here removes exactly one zero-byte marker, so it is
+  /// offered only once the listing proves there is nothing else under the
+  /// prefix. No recursive delete hides behind this.
+  private var canDeleteFolder: Bool {
+    featureAllowsWrites && !folderPrefix.isEmpty && hasFolderMarker
+      && folders.isEmpty && objects.isEmpty && !canLoadMore && !loading && error == nil
+  }
   private var tracksObjectFrames: Bool {
     featureAllowsWrites && !objects.isEmpty
   }
@@ -334,6 +351,13 @@ struct R2BucketView: View {
     .dashTray(isPresented: $showsBucketActions, title: "Actions") {
       r2BucketActionsTray
     }
+    // `isPresented` flips only after the tray's exit animation, so resetting the
+    // step here never morphs the content back while it is still on screen.
+    .onChange(of: showsBucketActions) { _, presented in
+      guard !presented else { return }
+      createsFolder = false
+      confirmsFolderDelete = false
+    }
     // Settings may have changed the domains while this screen stayed mounted
     // below it — resync from the shared cache on return. A visit that finds
     // nothing (the last lookup failed and left `domains` nil) retries the
@@ -345,6 +369,7 @@ struct R2BucketView: View {
         let request = requestIdentity
         Task { await loadDomains(for: request) }
       }
+      reloadIfInvalidated()
     }
     .onChange(of: navigator?.path) { _, path in
       if path?.contains(currentDestination) != true {
@@ -390,6 +415,9 @@ struct R2BucketView: View {
     selectedKeys = []
     confirmsBatchDelete = false
     showsBucketActions = false
+    createsFolder = false
+    confirmsFolderDelete = false
+    hasFolderMarker = false
     domains = nil
     objectFrameStore.clear()
     paintAdds = nil
@@ -441,9 +469,51 @@ struct R2BucketView: View {
     .background(DashTheme.canvas)
   }
 
+  /// One tray, three steps: the action menu, the create-folder form, and the
+  /// folder-delete confirmation. Each step transitions in place, the way
+  /// `AddDomainSheet` morphs its form into the name-server step.
   @ViewBuilder private var r2BucketActionsTray: some View {
+    ZStack {
+      if createsFolder {
+        R2CreateFolderSheet(
+          bucket: bucket,
+          folderPrefix: folderPrefix,
+          siblingFolders: folders,
+          siblingObjectKeys: objects.map(\.key),
+          onCreated: { await invalidateAndReload() }
+        )
+        .transition(reduceMotion ? .opacity : .dashMorph)
+      } else if confirmsFolderDelete {
+        DashConfirmableActions(actions: [deleteFolderAction])
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      } else {
+        r2BucketActionsMenu
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      }
+    }
+  }
+
+  @ViewBuilder private var r2BucketActionsMenu: some View {
     dashListCard {
       if featureAllowsWrites {
+        Button {
+          withAnimation(DashTheme.Motion.morph) { createsFolder = true }
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Create folder"),
+            subtitle: DashL10n.string("Groups objects under a key prefix"),
+            icon: SolarAsset.Content.folder,
+            showsChevron: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel(
+          DashL10n.string("Create folder, Groups objects under a key prefix")
+        )
+        .dashListCardInset()
+
+        DashListGroupDivider()
+
         Button {
           showsBucketActions = false
           withAnimation(DashTheme.Motion.morph) {
@@ -486,7 +556,58 @@ struct R2BucketView: View {
       .buttonStyle(DashSurfaceButtonStyle())
       .accessibilityLabel(DashL10n.string("Bucket settings, Public access and custom domains"))
       .dashListCardInset()
+
+      if canDeleteFolder {
+        DashListGroupDivider()
+
+        Button {
+          withAnimation(DashTheme.Motion.morph) { confirmsFolderDelete = true }
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Delete folder"),
+            subtitle: DashL10n.string("This folder is empty"),
+            icon: SolarAsset.trash,
+            iconColor: DashTheme.danger,
+            showsChevron: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel(DashL10n.string("Delete folder, This folder is empty"))
+        .dashListCardInset()
+      }
     }
+  }
+
+  /// Removes the folder's own marker. Cloudflare keeps no folder to empty first —
+  /// `canDeleteFolder` already proved the prefix holds nothing else.
+  private var deleteFolderAction: DashDangerAction {
+    DashDangerAction(
+      id: "delete-folder",
+      title: DashL10n.string("Delete folder"),
+      message: DashL10n.string(
+        "Deletes the empty \(currentFolderName) folder from \(bucket). This can't be undone."),
+      onSuccessPresentationCompleted: {
+        confirmsFolderDelete = false
+        // The parent listing is stale by exactly this folder; its own
+        // `reloadIfInvalidated` refetches when the cache comes back cold.
+        navigator?.pop()
+      },
+      perform: { try await deleteFolder() }
+    )
+  }
+
+  private func deleteFolder() async throws {
+    let request = requestIdentity
+    guard let context = request.context, canCommit(request), canDeleteFolder else {
+      throw CancellationError()
+    }
+    try await model.client.deleteR2Object(
+      accountID: context.accountID, bucket: bucket, key: folderPrefix)
+    guard matchesCurrentRequest(request) else { return }
+    model.featureCache.remove(
+      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: context.accountID, bucket: bucket))
+    hasFolderMarker = false
+    model.toasts.success(DashL10n.string("Deleted \(currentFolderName)."))
   }
 
   private func toggleSelection(_ object: R2Object) {
@@ -616,6 +737,22 @@ struct R2BucketView: View {
     await load(force: true, for: request)
   }
 
+  /// A folder created or deleted on a screen pushed above this one drops the
+  /// cache for the whole bucket while this listing stays alive underneath;
+  /// refresh on return when this prefix went cold. Same contract as the bucket
+  /// list one screen up.
+  private func reloadIfInvalidated() {
+    let request = requestIdentity
+    guard
+      let context = request.context,
+      matchesCurrentRequest(request),
+      !objects.isEmpty || !folders.isEmpty
+    else { return }
+    let cached: R2BrowserSnapshot? = model.featureCache.get(
+      FeatureCacheKey.r2Objects(accountID: context.accountID, bucket: bucket, prefix: folderPrefix))
+    if cached == nil { Task { await load(force: true, for: request) } }
+  }
+
   private func loadDomains(for request: R2BucketRequestIdentity) async {
     guard
       domains == nil,
@@ -697,6 +834,7 @@ struct R2BucketView: View {
       objects = cached.objects
       folders = cached.commonPrefixes
       cursor = cached.cursor
+      hasFolderMarker = cached.hasFolderMarker
       if cursor == nil { selectedKeys.formIntersection(objects.map(\.key)) }
       error = nil
       loading = false
@@ -706,14 +844,22 @@ struct R2BucketView: View {
       let page = try await model.client.listR2Objects(
         accountID: id, bucket: bucket, prefix: folderPrefix.nilIfEmpty, delimiter: "/")
       guard canCommit(request) else { return }
-      objects = page.objects
+      // A folder's own `…/` marker comes back as an object of the folder it
+      // names, where it has no name left to show. It is this screen's own
+      // identity, not a row in it — and both Dash and the Cloudflare dashboard
+      // write one for every folder they create.
+      objects = page.objects.filter { !R2FolderMarker.isMarker(key: $0.key) }
       folders = page.commonPrefixes
       cursor = page.cursor
+      hasFolderMarker = !folderPrefix.isEmpty && page.objects.contains { $0.key == folderPrefix }
       // A first-page refetch can't see selections made on later pages —
       // prune only when the listing is complete.
       if cursor == nil { selectedKeys.formIntersection(objects.map(\.key)) }
       model.featureCache.set(
-        key, R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
+        key,
+        R2BrowserSnapshot(
+          objects: objects, commonPrefixes: folders, cursor: cursor,
+          hasFolderMarker: hasFolderMarker))
       error = nil
     } catch {
       guard canCommit(request), !error.dashIsCancellation else { return }
@@ -746,14 +892,19 @@ struct R2BucketView: View {
         accountID: id, bucket: bucket, cursor: requestedCursor, prefix: listedPrefix.nilIfEmpty,
         delimiter: "/")
       guard canCommit(request), listedPrefix == folderPrefix else { return }
-      objects += page.objects
+      objects += page.objects.filter { !R2FolderMarker.isMarker(key: $0.key) }
       for folder in page.commonPrefixes where !folders.contains(folder) {
         folders.append(folder)
       }
       cursor = page.cursor
+      if !listedPrefix.isEmpty, page.objects.contains(where: { $0.key == listedPrefix }) {
+        hasFolderMarker = true
+      }
       model.featureCache.set(
         FeatureCacheKey.r2Objects(accountID: id, bucket: bucket, prefix: listedPrefix),
-        R2BrowserSnapshot(objects: objects, commonPrefixes: folders, cursor: cursor))
+        R2BrowserSnapshot(
+          objects: objects, commonPrefixes: folders, cursor: cursor,
+          hasFolderMarker: hasFolderMarker))
       error = nil
       loadMorePhase = .succeeded
     } catch {
@@ -1027,6 +1178,10 @@ struct R2BrowserSnapshot: Sendable {
   let objects: [R2Object]
   let commonPrefixes: [String]
   let cursor: String?
+  /// Whether the listed prefix carries its own zero-byte marker object. Cached
+  /// with the page because "this folder is empty" and "this folder can be
+  /// deleted" are different answers, and only the listing knows the difference.
+  let hasFolderMarker: Bool
 }
 
 /// Holds in-flight upload work for one `R2BucketView`. Kept as a class so
@@ -1400,6 +1555,139 @@ struct R2CreateBucketSheet: View {
     actionPhase = .idle
     onCreated()
     dismiss()
+  }
+}
+
+/// Creates a folder by writing the zero-byte `…/` marker object Cloudflare's own
+/// dashboard writes for its Create folder action, so a folder made in Dash is
+/// the same folder the web UI — or rclone, or Cyberduck — would have made.
+///
+/// Name collisions are checked against the listing already on screen instead of
+/// with another request. R2's PUT is idempotent, so re-creating an existing
+/// folder would answer with a silent success; and a folder that takes an
+/// object's name would hide that object in the Files mount, where a file and a
+/// directory cannot share one filename.
+struct R2CreateFolderSheet: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  let bucket: String
+  /// The prefix this tray creates into — `""` at the bucket root.
+  let folderPrefix: String
+  let siblingFolders: [String]
+  let siblingObjectKeys: [String]
+  var onCreated: () async -> Void
+  @State private var name = ""
+  @State private var actionPhase: DashActionPhase = .idle
+  @State private var error: String?
+
+  private var markerKey: String? {
+    R2FolderMarker.markerKey(parentPrefix: folderPrefix, name: name)
+  }
+  /// The name as a row will read it: the path below this screen's own prefix.
+  private var displayName: String? {
+    markerKey.map { String($0.dropFirst(folderPrefix.count).dropLast()) }
+  }
+  private var collisionMessage: String? {
+    guard let markerKey, let displayName else { return nil }
+    if siblingFolders.contains(markerKey) {
+      return DashL10n.string("A folder named \(displayName) is already here.")
+    }
+    // Nested names only collide with this listing's first component — deeper
+    // segments live under prefixes this screen has not fetched.
+    if let first = displayName.split(separator: "/").first.map(String.init) {
+      let firstObjectKey = folderPrefix + first
+      if siblingObjectKeys.contains(firstObjectKey) {
+        return DashL10n.string("An object named \(first) is already here.")
+      }
+    }
+    if siblingObjectKeys.contains(String(markerKey.dropLast())) {
+      return DashL10n.string("An object named \(displayName) is already here.")
+    }
+    return nil
+  }
+  /// An untouched field is not a mistake — Create folder simply stays disabled.
+  private var notice: String? {
+    guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    if let problem = R2FolderMarker.nameProblem(parentPrefix: folderPrefix, name: name) {
+      return message(for: problem)
+    }
+    return collisionMessage
+  }
+  private var canSave: Bool { markerKey != nil && collisionMessage == nil }
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: DashL10n.string("Create folder"),
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeCreatePresentation,
+      canSave: canSave,
+      onSave: { Task { await create() } },
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          if let error {
+            DashNotice(kind: .error, message: error)
+          } else if let notice {
+            DashNotice(kind: .warning, message: notice)
+          }
+          DashFormField(label: DashL10n.string("Folder name"), text: $name)
+          Text(
+            DashL10n.string(
+              "R2 stores key prefixes, not folders — use / to nest. Dash writes a zero-byte placeholder so the folder stays visible while it is empty."
+            )
+          )
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+        }
+        .disabled(actionPhase.isActive)
+      }
+    )
+    .dashTrayTitle(DashL10n.string("Create folder"))
+  }
+
+  private func message(for problem: R2FolderNameProblem) -> String {
+    switch problem {
+    case .empty:
+      DashL10n.string("Enter a folder name.")
+    case .emptyPathComponent:
+      DashL10n.string("Every part between slashes needs a name.")
+    case .relativePathComponent:
+      DashL10n.string("A folder can't be named . or ..")
+    case .controlCharacters:
+      DashL10n.string("Remove the line breaks from the name.")
+    case .keyTooLong:
+      DashL10n.string("That path is too long — an R2 key holds 1,024 bytes.")
+    }
+  }
+
+  private func create() async {
+    guard let context = model.accountRequestContext, let markerKey, canSave else { return }
+    actionPhase = .loading
+    error = nil
+    do {
+      try await model.client.createR2Folder(
+        accountID: context.accountID, bucket: bucket, key: markerKey)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
+      model.toasts.success(DashL10n.string("Created successfully."))
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func completeCreatePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    actionPhase = .idle
+    dismiss()
+    Task { await onCreated() }
   }
 }
 
