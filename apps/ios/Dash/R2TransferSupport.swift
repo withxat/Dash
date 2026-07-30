@@ -62,6 +62,64 @@ enum R2Media {
   }
 }
 
+// MARK: - Virtual folders
+
+/// Path arithmetic for R2's virtual folders — key prefixes ending in `/`.
+/// Kept pure so a destination picker can offer a walkable path without a
+/// bucket listing, and so the rules stay testable in isolation.
+enum R2FolderPath {
+  /// Any remembered, typed, or imported folder as a key prefix: no leading
+  /// separator, exactly one trailing separator, empty for the bucket root.
+  static func normalized(_ raw: String) -> String {
+    var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    while value.hasPrefix("/") { value.removeFirst() }
+    if !value.isEmpty && !value.hasSuffix("/") { value += "/" }
+    return value
+  }
+
+  /// Display form of one folder prefix: the whole path without its trailing
+  /// separator, so nesting stays legible in a one-line control.
+  static func label(for prefix: String) -> String {
+    prefix.hasSuffix("/") ? String(prefix.dropLast()) : prefix
+  }
+
+  /// Every ancestor of `prefix`, shallowest first, ending with `prefix`
+  /// itself; empty at the bucket root. Empty segments are preserved because
+  /// `a//b/` is a different key prefix than `a/b/`.
+  static func trail(of prefix: String) -> [String] {
+    guard !prefix.isEmpty else { return [] }
+    var segments = prefix.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+    // A well-formed folder prefix ends with the separator, which leaves one
+    // trailing empty segment that is not a folder of its own.
+    if segments.last?.isEmpty == true { segments.removeLast() }
+    var trail: [String] = []
+    var current = ""
+    for segment in segments {
+      current += segment + "/"
+      trail.append(current)
+    }
+    return trail
+  }
+
+  /// Destinations a folder picker offers below the bucket root: the path down
+  /// to the current choice, so the walk stays reversible in one control,
+  /// followed by the folders directly inside it. Folders from another level
+  /// are dropped — the chosen prefix changes a frame before its listing
+  /// arrives, and offering the previous level's siblings as children would
+  /// flicker them away when it lands.
+  static func destinations(prefix: String, children: [String]) -> [String] {
+    var seen: Set<String> = [""]
+    var destinations: [String] = []
+    for ancestor in trail(of: prefix) {
+      if seen.insert(ancestor).inserted { destinations.append(ancestor) }
+    }
+    for child in children where child.hasPrefix(prefix) && child != prefix {
+      if seen.insert(child).inserted { destinations.append(child) }
+    }
+    return destinations
+  }
+}
+
 /// Caller-owned scratch location for one R2 operation. Every purpose lives
 /// under Dash's single temporary root so launch cleanup covers previews,
 /// thumbnails, intents, and exports after a crash or force quit.

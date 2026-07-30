@@ -2050,6 +2050,17 @@
         }
       }
     },
+    "Bucket root" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储桶根目录"
+          }
+        }
+      }
+    },
     "Bucket settings" : {
       "localizations" : {
         "en" : {
@@ -2304,6 +2315,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已缓存"
+          }
+        }
+      }
+    },
+    "Can't list this bucket's folders. The upload still goes to the folder shown above." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法列出此存储桶中的文件夹。上传仍会写入上方显示的文件夹。"
           }
         }
       }
