@@ -1362,13 +1362,10 @@ struct R2CreateBucketSheet: View {
             DashNotice(kind: .error, message: error)
           }
           DashFormField(label: DashL10n.string("Bucket name"), text: $name)
-          Text(DashL10n.string("Use lowercase letters, numbers, and hyphens."))
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .fixedSize(horizontal: false, vertical: true)
         }
       }
     )
+    .dashTrayDescription(DashL10n.string("Use lowercase letters, numbers, and hyphens."))
   }
 
   private func create() async {

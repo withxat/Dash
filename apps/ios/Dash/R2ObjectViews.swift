@@ -816,13 +816,13 @@ private struct R2AddDomainForm: View {
           if let error {
             DashNotice(kind: .error, message: error)
           }
-          Text(
-            "Cloudflare creates the DNS record and edge certificate automatically. The bucket serves on the domain once both are active."
-          )
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
         }
       }
+    )
+    .dashTrayDescription(
+      DashL10n.string(
+        "Cloudflare creates the DNS record and edge certificate automatically. The bucket serves on the domain once both are active."
+      )
     )
     .task { await loadZones() }
   }

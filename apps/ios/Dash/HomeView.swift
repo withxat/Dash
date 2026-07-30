@@ -540,18 +540,6 @@ private struct HomeDemoConnectContent: View {
 
   var body: some View {
     VStack(spacing: 12) {
-      Text(
-        DashL10n.string(
-          "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.bottom, 4)
-
       DashPillButton(
         title: "Return to connect",
         icon: SolarAsset.cloudflare,
@@ -563,6 +551,11 @@ private struct HomeDemoConnectContent: View {
         action: dismiss
       )
     }
+    .dashTrayDescription(
+      DashL10n.string(
+        "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+      )
+    )
   }
 }
 
@@ -869,28 +862,24 @@ private struct HomeDNSRecordAction: View {
           kind: .warning,
           message: DashL10n.string("Add a domain before creating a DNS record."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the domain for the new DNS record.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-              Button {
-                selectedZoneID = zone.id
-              } label: {
-                DashListRow(
-                  title: zone.name,
-                  subtitle: (zone.status ?? "unknown").capitalized,
-                  avatarSeed: zone.name
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < zones.count - 1 {
-                DashListGroupDivider()
-              }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+            Button {
+              selectedZoneID = zone.id
+            } label: {
+              DashListRow(
+                title: zone.name,
+                subtitle: (zone.status ?? "unknown").capitalized,
+                avatarSeed: zone.name
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < zones.count - 1 {
+              DashListGroupDivider()
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain for the new DNS record."))
       }
     }
   }
@@ -931,28 +920,24 @@ private struct HomeCreateKVKeyAction: View {
           kind: .warning,
           message: DashL10n.string("Create a KV namespace before adding a key."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the namespace for the new key.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(namespaces.enumerated()), id: \.element.id) { index, namespace in
-              Button {
-                selectedNamespaceID = namespace.id
-              } label: {
-                DashListRow(
-                  title: namespace.title,
-                  subtitle: DashL10n.string("KV namespace"),
-                  icon: SolarAsset.Content.pinList
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < namespaces.count - 1 {
-                DashListGroupDivider()
-              }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(namespaces.enumerated()), id: \.element.id) { index, namespace in
+            Button {
+              selectedNamespaceID = namespace.id
+            } label: {
+              DashListRow(
+                title: namespace.title,
+                subtitle: DashL10n.string("KV namespace"),
+                icon: SolarAsset.Content.pinList
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < namespaces.count - 1 {
+              DashListGroupDivider()
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the namespace for the new key."))
       }
     }
     .task(id: model.accountRequestContext) {
@@ -1037,26 +1022,22 @@ private struct HomePagesDomainAction: View {
         kind: .warning,
         message: DashL10n.string("Create a Pages project before attaching a domain."))
     } else {
-      VStack(alignment: .leading, spacing: 12) {
-        Text("Choose the Pages project for the custom domain.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
-            Button {
-              selectedProject = project.name
-            } label: {
-              DashListRow(
-                title: project.name,
-                subtitle: project.subdomain,
-                icon: SolarAsset.Content.codeCircle
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            if index < projects.count - 1 { DashListGroupDivider() }
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(projects.enumerated()), id: \.element.id) { index, project in
+          Button {
+            selectedProject = project.name
+          } label: {
+            DashListRow(
+              title: project.name,
+              subtitle: project.subdomain,
+              icon: SolarAsset.Content.codeCircle
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          if index < projects.count - 1 { DashListGroupDivider() }
         }
       }
+      .dashTrayDescription(DashL10n.string("Choose the Pages project for the custom domain."))
     }
   }
 
@@ -1135,22 +1116,18 @@ private struct HomeWorkerDomainAction: View {
         kind: .warning,
         message: DashL10n.string("Deploy a Worker before attaching a domain."))
     } else {
-      VStack(alignment: .leading, spacing: 12) {
-        Text("Choose the Worker for the custom domain.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(workers.enumerated()), id: \.element.id) { index, worker in
-            Button {
-              selectedWorker = worker.id
-            } label: {
-              DashListRow(title: worker.id, icon: SolarAsset.Content.code)
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            if index < workers.count - 1 { DashListGroupDivider() }
+      VStack(alignment: .leading, spacing: 0) {
+        ForEach(Array(workers.enumerated()), id: \.element.id) { index, worker in
+          Button {
+            selectedWorker = worker.id
+          } label: {
+            DashListRow(title: worker.id, icon: SolarAsset.Content.code)
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          if index < workers.count - 1 { DashListGroupDivider() }
         }
       }
+      .dashTrayDescription(DashL10n.string("Choose the Worker for the custom domain."))
     }
   }
 
@@ -1271,26 +1248,22 @@ private struct HomeZoneModeAction: View {
           kind: .warning,
           message: DashL10n.string("Add a domain before changing this mode."))
       } else {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Choose the domain to update.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-              Button {
-                selectedZoneID = zone.id
-              } label: {
-                DashListRow(
-                  title: zone.name,
-                  subtitle: (zone.status ?? "unknown").capitalized,
-                  avatarSeed: zone.name
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-              if index < zones.count - 1 { DashListGroupDivider() }
+        VStack(alignment: .leading, spacing: 0) {
+          ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
+            Button {
+              selectedZoneID = zone.id
+            } label: {
+              DashListRow(
+                title: zone.name,
+                subtitle: (zone.status ?? "unknown").capitalized,
+                avatarSeed: zone.name
+              )
             }
+            .buttonStyle(DashSurfaceButtonStyle())
+            if index < zones.count - 1 { DashListGroupDivider() }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain to update."))
       }
     }
   }
@@ -1681,16 +1654,12 @@ private struct HomePurgeCachePicker: View {
   let onSelect: (CloudflareZone) -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    Group {
       if zones.isEmpty {
         DashNotice(
           kind: .warning,
           message: DashL10n.string("Add a domain before purging cache."))
       } else {
-        Text("Choose the domain whose cache you want to clear.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .fixedSize(horizontal: false, vertical: true)
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
             Button {
@@ -1709,6 +1678,7 @@ private struct HomePurgeCachePicker: View {
             }
           }
         }
+        .dashTrayDescription(DashL10n.string("Choose the domain whose cache you want to clear."))
       }
     }
   }
@@ -1755,7 +1725,15 @@ struct AddDomainSheet: View {
       }
     }
     .dashTrayTitle(
-      created == nil ? DashL10n.string("Add domain") : DashL10n.string("Domain added"))
+      created == nil ? DashL10n.string("Add domain") : DashL10n.string("Domain added")
+    )
+    // Step two answers the question itself, in the success content.
+    .dashTrayDescription(
+      created == nil
+        ? DashL10n.string(
+          "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
+        )
+        : nil)
   }
 
   private var formContent: some View {
@@ -1768,12 +1746,6 @@ struct AddDomainSheet: View {
         text: $name,
         keyboard: .URL,
         contentType: .URL)
-      Text(
-        "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
-      )
-      .dashTextStyle(.footnote)
-      .foregroundStyle(DashTheme.subtle)
-      .fixedSize(horizontal: false, vertical: true)
     }
   }
 
