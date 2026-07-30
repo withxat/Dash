@@ -10,9 +10,10 @@ import Foundation
 struct R2ShareDestination: Codable, Equatable, Sendable {
   static let appGroupID = "group.sh.xat.dash.app"
   static let destinationsKey = "dash.r2_share_destinations"
-  /// The share extension cannot present Cloudflare's OAuth flow. The containing
-  /// app grants these once from Settings, and every process-outside-the-app
-  /// upload checks the shared Keychain scope record before issuing a PUT.
+  /// The share extension cannot present Cloudflare's OAuth flow. Real-account
+  /// sign-in already requests these with `core`; every process-outside-the-app
+  /// upload still checks the shared Keychain scope record before issuing a PUT
+  /// (Demo and signed-out sessions fail closed).
   static let requiredWriteScopes: Set<String> = [
     "workers-r2.write",
     "workers-r2-bucket-item.write",

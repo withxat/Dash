@@ -59,15 +59,6 @@ enum DashAuthorizationScopes {
     "registrar-domains.admin",
   ]
 
-  /// Mutations exposed outside Dash's normal feature screens. App Intents and
-  /// the share extension cannot safely present OAuth themselves, so Settings
-  /// checks this subset to explain whether those actions are ready. Any
-  /// reauthorization still requests `core` in one reviewed grant.
-  static let shortcutsAndShareWrites: Set<String> = Set([
-    "zone-settings.write",
-    "cache.purge",
-  ]).union(R2ShareDestination.requiredWriteScopes)
-
   /// Read-only profile retained for Demo and capability-gating tests.
   /// Real-account authorization uses `core`.
   static let initialReadOnly: Set<String> = {

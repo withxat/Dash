@@ -328,11 +328,6 @@ struct SettingsView: View {
     DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
   }
 
-  private var hasShortcutsAndShareWriteAccess: Bool {
-    guard let grantedScopes = model.grantedScopes else { return false }
-    return DashAuthorizationScopes.shortcutsAndShareWrites.isSubset(of: grantedScopes)
-  }
-
   private var profileSubtitle: String? {
     if let email = model.user?.email, email != model.profileTitle {
       return email
@@ -557,38 +552,6 @@ struct SettingsView: View {
             )
           }
 
-          SettingsPlainDivider()
-
-          if hasShortcutsAndShareWriteAccess {
-            SettingsPlainRow(
-              title: DashL10n.string("Shortcuts & Share write access"),
-              subtitle: DashL10n.string(
-                "Purge Cache, domain security modes, and R2 uploads are authorized."
-              ),
-              icon: SolarAsset.shieldCheck,
-              trailing: DashL10n.string("Granted")
-            )
-          } else {
-            Button {
-              model.requestAccess(to: DashAuthorizationScopes.shortcutsAndShareWrites)
-            } label: {
-              SettingsPlainRow(
-                title: DashL10n.string("Shortcuts & Share write access"),
-                subtitle: DashL10n.string(
-                  "Dash requests all permissions used by its current features in one authorization."
-                ),
-                icon: SolarAsset.shieldCheck,
-                trailing: model.isAuthenticating
-                  ? DashL10n.string("Opening…") : DashL10n.string("Grant"),
-                showsChevron: true
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .disabled(model.isAuthenticating)
-            .accessibilityHint(
-              DashL10n.string("Opens Cloudflare to review the requested permissions")
-            )
-          }
         }
 
         // Help, legal, and About were three-row and two-row sections stacked at

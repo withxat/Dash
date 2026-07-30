@@ -595,13 +595,13 @@ struct ShareUploadView: View {
         Text("R2 write access is required.")
           .font(.headline)
         Text(
-          "Open Dash Settings, grant Shortcuts & Share write access, then share these files again."
+          "Open Dash and connect your Cloudflare account, then share these files again."
         )
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
-        Button("Open Dash Settings") {
+        Button("Open Dash") {
           model.openWriteAccessSettings()
         }
         .buttonStyle(.borderedProminent)

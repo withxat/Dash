@@ -538,11 +538,12 @@ struct LocalizationTests {
   #expect(
     DashAuthorizationScopes.watchtower.isSubset(of: DashAuthorizationScopes.initialReadOnly))
   #expect(
-    DashAuthorizationScopes.shortcutsAndShareWrites.isSubset(
-      of: DashAuthorizationScopes.core))
+    R2ShareDestination.requiredWriteScopes.isSubset(of: DashAuthorizationScopes.core))
   #expect(
-    DashAuthorizationScopes.shortcutsAndShareWrites.isDisjoint(
+    R2ShareDestination.requiredWriteScopes.isDisjoint(
       with: DashAuthorizationScopes.initialReadOnly))
+  #expect(DashAuthorizationScopes.core.contains("cache.purge"))
+  #expect(DashAuthorizationScopes.core.contains("zone-settings.write"))
   #expect(DashAuthorizationScopes.core.contains("account-settings.write"))
   #expect(!DashAuthorizationScopes.initialReadOnly.contains("account-settings.write"))
   #expect(!model.hasScopes(["dns.write"]))
@@ -567,29 +568,29 @@ struct LocalizationTests {
   }
 }
 
-@Test func processExternalMutationsFailClosedWithoutTheirIncrementalGrant() {
-  let required = DashAuthorizationScopes.shortcutsAndShareWrites
+@Test func processExternalMutationsFailClosedWithoutWriteScopes() {
+  let intentWrites: Set<String> = ["cache.purge", "zone-settings.write"]
+  let r2Writes = R2ShareDestination.requiredWriteScopes
   #expect(
     !DashIntentAuthorization.hasRequiredScopes(
-      required,
+      intentWrites,
       granted: nil))
   #expect(
     !DashIntentAuthorization.hasRequiredScopes(
-      required,
+      intentWrites,
       granted: DashAuthorizationScopes.initialReadOnly))
   #expect(
     DashIntentAuthorization.hasRequiredScopes(
-      required,
-      granted: DashAuthorizationScopes.initialReadOnly.union(required)))
-  #expect(
-    R2ShareDestination.requiredWriteScopes.isSubset(
-      of: DashAuthorizationScopes.shortcutsAndShareWrites))
+      intentWrites,
+      granted: DashAuthorizationScopes.core))
+  #expect(intentWrites.isSubset(of: DashAuthorizationScopes.core))
+  #expect(r2Writes.isSubset(of: DashAuthorizationScopes.core))
   #expect(
     !R2ShareDestination.hasWriteAccess(
       grantedScopes: DashAuthorizationScopes.initialReadOnly))
   #expect(
     R2ShareDestination.hasWriteAccess(
-      grantedScopes: DashAuthorizationScopes.initialReadOnly.union(required)))
+      grantedScopes: DashAuthorizationScopes.core))
 }
 
 /// Scopes that no surviving FeatureID declares, but that kept screens and App
@@ -3086,19 +3087,19 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(state.ownsLoad(loadB, context: accountB))
 }
 
-@Test @MainActor func legacyAuthorizationUpgradeRequestsFullAccountAccess() {
-  let legacyGrant = DashAuthorizationScopes.initialReadOnly
-  #expect(Set(["analytics.read"]).isSubset(of: legacyGrant))
+@Test @MainActor func accountAuthorizationAlwaysRequestsFullCore() {
+  let demoGrant = DashAuthorizationScopes.initialReadOnly
+  #expect(Set(["analytics.read"]).isSubset(of: demoGrant))
 
   let request = AppModel.accountAuthorizationRequest(
-    granted: legacyGrant,
+    granted: demoGrant,
     requested: ["analytics.read"]
   )
   #expect(request != nil)
   let scopes = request ?? []
-  #expect(legacyGrant.isSubset(of: scopes))
+  #expect(demoGrant.isSubset(of: scopes))
   #expect(DashAuthorizationScopes.core.isSubset(of: scopes))
-  #expect(!scopes.isSubset(of: legacyGrant))
+  #expect(!scopes.isSubset(of: demoGrant))
   #expect(Set(CloudflareScopes.required).isSubset(of: scopes))
   #expect(
     AppModel.accountAuthorizationRequest(

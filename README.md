@@ -48,7 +48,7 @@ cp apps/ios/Config/Secrets.xcconfig.example apps/ios/Config/Secrets.xcconfig
 
 Set `DASH_CLIENT_ID` to the public Cloudflare OAuth client ID and `DASH_REDIRECT_URI` to the deployed relay's HTTPS `/oauth/callback` URL. The HTTPS redirect must be registered on the Cloudflare OAuth client. Do not register the custom scheme with Cloudflare; the relay converts the final callback to `dash://oauth/callback`.
 
-Real-account sign-in requests the audited union of read and write permissions used by Dash's current features in one authorization. The Demo remains read-only. Existing narrower or unknown grants are upgraded to that current set the next time an access action opens OAuth.
+Real-account sign-in requests the audited union of read and write permissions used by Dash's current features in one authorization. The Demo remains read-only. Any later OAuth reauthorization also requests that full set.
 
 Changing scopes requires enabling the same exact scope IDs on the OAuth client and authorizing the updated request again.
 

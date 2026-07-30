@@ -21,7 +21,7 @@ struct DashIntentError: Error, CustomLocalizedStringResourceConvertible {
 
   static let writeAccessRequired = DashIntentError(
     localizedStringResource:
-      "Open Dash → Settings → Shortcuts & Share, grant write access, then run this shortcut again."
+      "Open Dash and connect your Cloudflare account, then run this shortcut again."
   )
 }
 
