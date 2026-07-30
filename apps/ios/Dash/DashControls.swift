@@ -658,13 +658,28 @@ struct DashToolbarIconButton: View {
   private var label: some View {
     switch variant {
     case .confirmation:
-      confirmationGlyph
-        .frame(
-          width: AvatarHeaderMetrics.barSize,
-          height: AvatarHeaderMetrics.barSize
-        )
-        .background(DashTheme.brand, in: Circle())
-        .contentShape(Circle())
+      if #available(iOS 26.0, *) {
+        // Same explicit plate as `.standard`: after
+        // `sharedBackgroundVisibility(.hidden)`, `.glassProminent` /
+        // `.borderedProminent` paint neither tint nor glass. Brand-tint the
+        // 44pt circle so it reads like QL's `UIBarButtonItem.Style.prominent`.
+        confirmationGlyph
+          .frame(
+            width: AvatarHeaderMetrics.barSize,
+            height: AvatarHeaderMetrics.barSize
+          )
+          .contentShape(Circle())
+          .glassEffect(
+            .regular.tint(DashTheme.brand).interactive(), in: .circle)
+      } else {
+        confirmationGlyph
+          .frame(
+            width: AvatarHeaderMetrics.barSize,
+            height: AvatarHeaderMetrics.barSize
+          )
+          .background(DashTheme.brand, in: Circle())
+          .contentShape(Circle())
+      }
     case .standard:
       if #available(iOS 26.0, *) {
         // Do NOT use `.buttonStyle(.glass)` here. After
@@ -687,24 +702,10 @@ struct DashToolbarIconButton: View {
   }
 
   var body: some View {
-    Group {
-      if #available(iOS 26.0, *), variant == .confirmation {
-        // In a toolbar, borderedProminent is the system's tinted Liquid Glass
-        // confirmation treatment. Let it own sizing, contrast, and interaction
-        // while retaining Dash's Solar glyph.
-        Button(action: action) {
-          confirmationGlyph
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.circle)
-        .tint(DashTheme.brand)
-      } else {
-        Button(action: action) {
-          label
-        }
-        .buttonStyle(DashPressButtonStyle())
-      }
+    Button(action: action) {
+      label
     }
+    .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(DashL10n.ui(accessibilityLabel))
   }
 }
