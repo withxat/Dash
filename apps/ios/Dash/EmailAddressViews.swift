@@ -250,14 +250,13 @@ struct EmailAddressAddForm: View {
           if let errorMessage {
             DashNotice(kind: .error, message: errorMessage)
           }
-          Text(
-            "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened."
-          )
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
-          .fixedSize(horizontal: false, vertical: true)
         }
       }
+    )
+    .dashTrayDescription(
+      DashL10n.string(
+        "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened."
+      )
     )
   }
 

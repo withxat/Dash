@@ -203,9 +203,29 @@ extension View {
   func dashTrayTitle(_ title: String?) -> some View {
     preference(key: DashTrayTitleKey.self, value: title)
   }
+
+  /// Publishes the tray's description — the sentence that says what this tray
+  /// does — so the chrome seats it under the title instead of the content
+  /// stacking it above the first control or stranding it under the last one.
+  /// A tray that has one loses the header separator (see `DashSheetHeader`).
+  ///
+  /// It lives with the content, not at the `dashTray` call site, because most
+  /// tray bodies are reusable views presented from several screens and because
+  /// the copy is usually conditional on the step the body is showing — pass
+  /// `nil` for the steps that have nothing to say.
+  func dashTrayDescription(_ description: String?) -> some View {
+    preference(key: DashTrayDescriptionKey.self, value: description)
+  }
 }
 
 private struct DashTrayTitleKey: PreferenceKey {
+  static var defaultValue: String? { nil }
+  static func reduce(value: inout String?, nextValue: () -> String?) {
+    value = nextValue() ?? value
+  }
+}
+
+private struct DashTrayDescriptionKey: PreferenceKey {
   static var defaultValue: String? { nil }
   static func reduce(value: inout String?, nextValue: () -> String?) {
     value = nextValue() ?? value
@@ -331,8 +351,21 @@ private struct DashSheetMenuButtons: View {
 }
 
 /// Shared header (title + menu buttons, optional grab bar) for both tray styles.
+///
+/// Two variants, one rule: a bare title is closed by the hairline separator,
+/// and a title with a description under it is not. The description is the
+/// tray's own explanation of what it does, and it reads as one block with the
+/// title — a line drawn between them would cut that block in half, and a line
+/// drawn under both would fence off a header taller than the body it
+/// introduces. So the description *is* the separator. Never render both.
+///
+/// Content publishes it with `dashTrayDescription`; anything that arrives that
+/// way stops being body copy, which is the point — this used to be a paragraph
+/// stacked above the first control on some trays and stranded under the last
+/// one on others.
 private struct DashSheetHeader: View {
   let title: String
+  var description: String? = nil
   var showsGrabBar = false
   var showsMenuButtons = true
   var trailingAction: DashSheetHeaderAction? = nil
@@ -341,7 +374,19 @@ private struct DashSheetHeader: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AccessibilityFocusState private var titleFocused: Bool
 
+  /// Air between the title and its description — tight enough that the two
+  /// read as one block, which is what lets the separator go.
+  private static let descriptionGap: CGFloat = 6
+
   private var displayedTitle: String { DashL10n.ui(title) }
+
+  /// Empty is absent, not a blank line: a conditional caller that computes its
+  /// way to `""` must still get the separator, never a hairline-less header
+  /// with nothing under the title.
+  private var displayedDescription: String? {
+    guard let description, !description.isEmpty else { return nil }
+    return DashL10n.ui(description)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -375,12 +420,35 @@ private struct DashSheetHeader: View {
       // aligns with the title's 28pt leading edge.
       .padding(.trailing, showsMenuButtons ? DashTheme.Sheet.content - 6 : DashTheme.Sheet.content)
       .padding(.top, showsGrabBar ? 12 : DashTheme.Sheet.headerTop)
-      .padding(.bottom, DashTheme.Sheet.headerBottom)
+      .padding(
+        .bottom,
+        displayedDescription == nil ? DashTheme.Sheet.headerBottom : Self.descriptionGap)
 
-      Rectangle()
-        .fill(DashTheme.Sheet.headerBorder)
-        .frame(height: 1)
-        .padding(.horizontal, DashTheme.Sheet.content)
+      if let displayedDescription {
+        // Full width: the menu buttons are on the row above, not beside this.
+        //
+        // No `.id(…)` here, unlike the title. A description wraps, so swapping
+        // identity on every edit would hard-cut a height change; keeping one
+        // Text lets the crossfade and the reflow run as one animation.
+        Text(displayedDescription)
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .contentTransition(reduceMotion ? .identity : .opacity)
+          .animation(
+            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph,
+            value: displayedDescription
+          )
+          .padding(.horizontal, DashTheme.Sheet.content)
+          // Leaves the same gap to the body the separator did.
+          .padding(.bottom, DashTheme.Sheet.headerBottom)
+      } else {
+        Rectangle()
+          .fill(DashTheme.Sheet.headerBorder)
+          .frame(height: 1)
+          .padding(.horizontal, DashTheme.Sheet.content)
+      }
     }
     .onAppear {
       titleFocused = true
@@ -452,6 +520,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
   @State private var keyboardHeight: CGFloat = 0
   @State private var headerAction: DashSheetHeaderAction?
   @State private var contentTitle: String?
+  @State private var contentDescription: String?
   @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
@@ -502,6 +571,7 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
     .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
+    .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
@@ -527,6 +597,8 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
     }
   }
 
+  /// A hero replaces the title row outright, so it has nowhere to seat a
+  /// description — `dashTrayDescription` is inert under one, by design.
   @ViewBuilder private var trayHeader: some View {
     if let hero {
       DashSheetHeroHeader(
@@ -535,7 +607,8 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
         dismiss: requestClose, hero: hero)
     } else {
       DashSheetHeader(
-        title: resolvedTitle, showsMenuButtons: showsMenuButtons,
+        title: resolvedTitle, description: contentDescription,
+        showsMenuButtons: showsMenuButtons,
         trailingAction: headerAction, menuButtonsDisabled: dismissDisabled,
         dismiss: requestClose)
     }
@@ -655,6 +728,7 @@ private struct DashExpandableSheet<Content: View>: View {
   @State private var expanded = true
   @State private var drag: CGFloat = 0
   @State private var contentTitle: String?
+  @State private var contentDescription: String?
   @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
@@ -695,6 +769,7 @@ private struct DashExpandableSheet<Content: View>: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .environment(\.dashTrayDismiss, close)
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
+    .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .presentationBackground(.clear)
     .dashToastHost()
@@ -719,7 +794,8 @@ private struct DashExpandableSheet<Content: View>: View {
     )
     return VStack(spacing: 0) {
       DashSheetHeader(
-        title: resolvedTitle, showsGrabBar: true, showsMenuButtons: showsMenuButtons,
+        title: resolvedTitle, description: contentDescription, showsGrabBar: true,
+        showsMenuButtons: showsMenuButtons,
         menuButtonsDisabled: dismissDisabled,
         dismiss: requestClose
       )

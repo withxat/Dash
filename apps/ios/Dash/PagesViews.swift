@@ -971,12 +971,11 @@ struct PagesAddDomainForm: View {
           if let error {
             DashNotice(kind: .error, message: error)
           }
-          Text("Cloudflare validates DNS and issues a certificate for the hostname.")
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
         }
       }
     )
+    .dashTrayDescription(
+      DashL10n.string("Cloudflare validates DNS and issues a certificate for the hostname."))
   }
 
   private func save() async {

@@ -1188,13 +1188,13 @@ struct WorkerAddDomainForm: View {
           if let error {
             DashNotice(kind: .error, message: error)
           }
-          Text(
-            "Cloudflare provisions the edge certificate. DNS for the hostname must already point at this account."
-          )
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
         }
       }
+    )
+    .dashTrayDescription(
+      DashL10n.string(
+        "Cloudflare provisions the edge certificate. DNS for the hostname must already point at this account."
+      )
     )
     .task(id: model.accountRequestContext) { await loadZones() }
   }

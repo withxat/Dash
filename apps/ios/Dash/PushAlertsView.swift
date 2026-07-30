@@ -699,13 +699,13 @@ private struct AlertPolicyCreateForm: View {
             }
           }
           .disabled(!allowsWrites)
-          Text(
-            "Delivers through your Dash webhook. Alert text is forwarded via dash.xat.sh to this iPhone."
-          )
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
         }
       }
+    )
+    .dashTrayDescription(
+      DashL10n.string(
+        "Delivers through your Dash webhook. Alert text is forwarded via dash.xat.sh to this iPhone."
+      )
     )
     .onAppear {
       if selectedType.isEmpty {

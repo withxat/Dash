@@ -729,27 +729,18 @@ private struct AccountSwitchConfirmationContent: View {
   let cancel: () -> Void
 
   var body: some View {
-    VStack(spacing: 16) {
-      Text(
-        DashL10n.string(
-          "Switch to \(account.name)? Cached data and open screens for the current account will reset."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.top, 4)
-
-      DashTrayActionPair {
-        DashTrayTextButton(title: DashL10n.string("Cancel"), action: cancel)
-      } primary: {
-        DashActionButton(title: DashL10n.string("Switch account")) {
-          model.selectAccount(account)
-        }
+    DashTrayActionPair {
+      DashTrayTextButton(title: DashL10n.string("Cancel"), action: cancel)
+    } primary: {
+      DashActionButton(title: DashL10n.string("Switch account")) {
+        model.selectAccount(account)
       }
     }
+    .dashTrayDescription(
+      DashL10n.string(
+        "Switch to \(account.name)? Cached data and open screens for the current account will reset."
+      )
+    )
   }
 }
 
@@ -757,43 +748,35 @@ private struct SignOutConfirmationContent: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
 
+  /// Two consequences, two paragraphs — kept as separate catalog keys and
+  /// joined here, because the Files sentence is only true of this app's mounts
+  /// and must stay translatable on its own.
+  private var consequences: String {
+    [
+      DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."),
+      DashL10n.string(
+        "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
+      ),
+    ].joined(separator: "\n\n")
+  }
+
   var body: some View {
-    VStack(spacing: 16) {
-      Text(DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."))
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-
-      Text(
-        DashL10n.string(
-          "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-
-      DashTrayActionPair {
-        DashTrayTextButton(title: DashL10n.string("Cancel"), action: dismiss)
-          .disabled(model.signOutActionPhase.isActive)
-      } primary: {
-        DashActionButton(
-          title: DashL10n.string("Sign out"),
-          role: .destructive,
-          phase: model.signOutActionPhase,
-          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-        ) {
-          Task {
-            await model.signOut(presentsCompletion: true)
-          }
+    DashTrayActionPair {
+      DashTrayTextButton(title: DashL10n.string("Cancel"), action: dismiss)
+        .disabled(model.signOutActionPhase.isActive)
+    } primary: {
+      DashActionButton(
+        title: DashL10n.string("Sign out"),
+        role: .destructive,
+        phase: model.signOutActionPhase,
+        onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+      ) {
+        Task {
+          await model.signOut(presentsCompletion: true)
         }
       }
     }
+    .dashTrayDescription(consequences)
   }
 }
 
@@ -831,19 +814,14 @@ private struct ICloudSyncDetailsTray: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isEnabled ? .isSelected : [])
       }
-
-      Text(
-        DashL10n.string(
-          isEnabled
-            ? "Only these preferences are synced. Accounts, credentials, alerts, and cached Cloudflare data stay on this iPhone."
-            : "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
-        )
-      )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .fixedSize(horizontal: false, vertical: true)
-      .padding(.horizontal, 4)
     }
+    .dashTrayDescription(
+      DashL10n.string(
+        isEnabled
+          ? "Only these preferences are synced. Accounts, credentials, alerts, and cached Cloudflare data stay on this iPhone."
+          : "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
+      )
+    )
   }
 }
 
@@ -937,16 +915,11 @@ private struct LanguagePickerTray: View {
         .buttonStyle(DashSurfaceButtonStyle())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
       }
-
-      Text(
-        DashL10n.string(
-          "System follows the iPhone language, including Settings → Dash → Language.")
-      )
-      .dashTextStyle(.footnote)
-      .foregroundStyle(DashTheme.subtle)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.top, 4)
     }
+    .dashTrayDescription(
+      DashL10n.string(
+        "System follows the iPhone language, including Settings → Dash → Language.")
+    )
   }
 }
 
