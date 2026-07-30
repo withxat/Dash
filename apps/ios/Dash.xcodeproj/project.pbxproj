@@ -113,7 +113,6 @@
 		B0000000000000000000015D /* DashSurfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015D /* DashSurfaces.swift */; };
 		B0000000000000000000015E /* DashControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015E /* DashControls.swift */; };
 		B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000015F /* DashHeaderScrollChrome.swift */; };
-		B000000000000000000001CE /* DashVariableBlur.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CE /* DashVariableBlur.swift */; };
 		B00000000000000000000160 /* DashFormChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000160 /* DashFormChrome.swift */; };
 		B00000000000000000000161 /* DashActionChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000161 /* DashActionChrome.swift */; };
 		B00000000000000000000162 /* R2TransferSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000162 /* R2TransferSupport.swift */; };
@@ -151,6 +150,7 @@
 		B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
 		B000000000000000000001CD /* HoloStickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CD /* HoloStickerView.swift */; };
 		B000000000000000000001CF /* ChartDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CF /* ChartDetailView.swift */; };
+		B000000000000000000001D0 /* VariableBlur in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000014 /* VariableBlur */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -295,7 +295,6 @@
 		F0000000000000000000015D /* DashSurfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSurfaces.swift; sourceTree = "<group>"; };
 		F0000000000000000000015E /* DashControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashControls.swift; sourceTree = "<group>"; };
 		F0000000000000000000015F /* DashHeaderScrollChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashHeaderScrollChrome.swift; sourceTree = "<group>"; };
-		F000000000000000000001CE /* DashVariableBlur.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashVariableBlur.swift; sourceTree = "<group>"; };
 		F000000000000000000001CF /* ChartDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDetailView.swift; sourceTree = "<group>"; };
 		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
@@ -352,6 +351,7 @@
 				B00000000000000000000115 /* SwiftDitherKit in Frameworks */,
 				B00000000000000000000163 /* SwiftGlobeKit in Frameworks */,
 				B00000000000000000000142 /* CodeEditor in Frameworks */,
+				B000000000000000000001D0 /* VariableBlur in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -477,7 +477,6 @@
 				F00000000000000000000034 /* SolarIcons.swift */,
 				F00000000000000000000035 /* DashChrome.swift */,
 				F0000000000000000000015F /* DashHeaderScrollChrome.swift */,
-				F000000000000000000001CE /* DashVariableBlur.swift */,
 				F00000000000000000000160 /* DashFormChrome.swift */,
 				F00000000000000000000161 /* DashActionChrome.swift */,
 				F00000000000000000000163 /* MetricsWidgetSnapshot.swift */,
@@ -663,6 +662,7 @@
 				P00000000000000000000006 /* SwiftDitherKit */,
 				P00000000000000000000010 /* SwiftGlobeKit */,
 				P0000000000000000000000E /* CodeEditor */,
+				P00000000000000000000014 /* VariableBlur */,
 			);
 			productName = Dash;
 			productReference = F00000000000000000000020 /* Dash.app */;
@@ -835,6 +835,7 @@
 				P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */,
 				P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */,
 				P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */,
+				P00000000000000000000013 /* XCRemoteSwiftPackageReference "VariableBlur" */,
 			);
 			productRefGroup = A00000000000000000000014 /* Products */;
 			projectDirPath = "";
@@ -965,7 +966,6 @@
 				B00000000000000000000018 /* SolarIcons.swift in Sources */,
 				B00000000000000000000019 /* DashChrome.swift in Sources */,
 				B0000000000000000000015F /* DashHeaderScrollChrome.swift in Sources */,
-				B000000000000000000001CE /* DashVariableBlur.swift in Sources */,
 				B00000000000000000000160 /* DashFormChrome.swift in Sources */,
 				B00000000000000000000161 /* DashActionChrome.swift in Sources */,
 				B000000000000000000001A0 /* MetricsWidgetSnapshot.swift in Sources */,
@@ -1581,6 +1581,14 @@
 				minimumVersion = 1.2.6;
 			};
 		};
+		P00000000000000000000013 /* XCRemoteSwiftPackageReference "VariableBlur" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nikstar/VariableBlur";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1628,6 +1636,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
 			productName = CloudflareAPI;
+		};
+		P00000000000000000000014 /* VariableBlur */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = P00000000000000000000013 /* XCRemoteSwiftPackageReference "VariableBlur" */;
+			productName = VariableBlur;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

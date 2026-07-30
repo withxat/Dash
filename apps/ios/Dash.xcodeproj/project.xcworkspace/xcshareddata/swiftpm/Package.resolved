@@ -1,5 +1,5 @@
 {
-  "originHash" : "47fb403535a15aa3a7a76efd1a97a270ef5b6c5c57572fd3cd0931a2742d7b0d",
+  "originHash" : "e13f88ff249dcb611e9e7aeed47fefd2d6bec48809ebc6e446dbfd4cd8763e26",
   "pins" : [
     {
       "identity" : "codeeditor",
@@ -17,6 +17,15 @@
       "state" : {
         "revision" : "bd0358056ff1f12ea83833a9fc1b3b5a396a9da0",
         "version" : "3.0.2"
+      }
+    },
+    {
+      "identity" : "variableblur",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/nikstar/VariableBlur",
+      "state" : {
+        "branch" : "main",
+        "revision" : "5073a0d9080e488a2d317e04859c001a57fbb3e8"
       }
     }
   ],
