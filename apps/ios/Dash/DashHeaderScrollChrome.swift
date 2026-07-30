@@ -221,12 +221,38 @@ enum DashHeaderScrimMetrics {
   static let tintOpacityMiddle = 0.5
   static let tintMiddleY: CGFloat = 90
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
-  /// finger — it crosses this line and mounts at full strength, so a nudge or
-  /// rubber-band settle never leaves a half-painted header on screen.
+  /// finger — crossing this line starts its own short entrance, so a nudge or
+  /// rubber-band settle never leaves a half-painted header tracking the touch.
   static let enter: CGFloat = 20
   /// The shallower depth it leaves at. Two thresholds, not one: a single line
   /// makes the band chatter on and off while a finger rests on it.
   static let exit: CGFloat = 6
+}
+
+/// The backdrop filter is created only after the scroll threshold is crossed.
+/// Give that first composited frame a short entrance so the filter never lands
+/// as a fully opaque flash. The smaller, faster exit gets out of the way when
+/// content returns to the top.
+enum DashHeaderScrimMotion {
+  static let insertionOffsetY: CGFloat = -10
+  static let removalOffsetY: CGFloat = -4
+  static let insertionDuration = 0.24
+  static let removalDuration = 0.16
+
+  static let insertion = Animation.timingCurve(
+    0.22,
+    1,
+    0.36,
+    1,
+    duration: insertionDuration
+  )
+  static let removal = Animation.timingCurve(
+    0.23,
+    1,
+    0.32,
+    1,
+    duration: removalDuration
+  )
 }
 
 enum DashHeaderScrimRules {
@@ -285,9 +311,9 @@ enum DashHeaderScrimRules {
 @MainActor
 @Observable
 final class DashHeaderScrollState {
-  /// Mounts and unmounts the band immediately. It is a flip, never a scrubbed
-  /// or animated value, and doubles as the hysteresis memory — what the screen
-  /// wanted last time it was asked.
+  /// Mounts and unmounts the band as a discrete state. It is never scrubbed by
+  /// the finger; the transition owns the short entrance after the threshold is
+  /// crossed. The value also doubles as the hysteresis memory.
   private(set) var isFrosted = false
 
   func report(distance: CGFloat) {
@@ -333,6 +359,7 @@ struct DashHeaderScrimModifier: ViewModifier {
 /// the profile avatar lives) would sit on top of them instead.
 struct DashHeaderScrim: View {
   let scroll: DashHeaderScrollState
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorScheme) private var colorScheme
 
@@ -352,11 +379,31 @@ struct DashHeaderScrim: View {
         )
         .frame(width: proxy.size.width, height: height)
         .offset(y: -top)
-        .transition(.identity)
+        .transition(scrimTransition)
       }
     }
+    .animation(scrimAnimation, value: scroll.isFrosted)
     .allowsHitTesting(false)
     .accessibilityHidden(true)
+  }
+
+  private var scrimAnimation: Animation {
+    guard !reduceMotion else { return DashTheme.Motion.reduced }
+    return scroll.isFrosted
+      ? DashHeaderScrimMotion.insertion
+      : DashHeaderScrimMotion.removal
+  }
+
+  private var scrimTransition: AnyTransition {
+    guard !reduceMotion else { return .opacity }
+    return .asymmetric(
+      insertion: .opacity.combined(
+        with: .offset(y: DashHeaderScrimMotion.insertionOffsetY)
+      ),
+      removal: .opacity.combined(
+        with: .offset(y: DashHeaderScrimMotion.removalOffsetY)
+      )
+    )
   }
 
   /// The optical path follows ProgressiveBlurHeader: one variable-radius

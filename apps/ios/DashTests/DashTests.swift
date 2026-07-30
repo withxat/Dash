@@ -1693,6 +1693,21 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashHeaderScrimMetrics.tintMiddleY == 90)
 }
 
+/// The conditionally mounted backdrop enters far enough from its final
+/// position to hide the filter's first frame, but stays within a compact
+/// sub-300ms UI transition. Returning to the top must always be quicker.
+@Test func headerFrostUsesAsymmetricEntranceMotion() {
+  #expect(DashHeaderScrimMotion.insertionOffsetY == -10)
+  #expect(DashHeaderScrimMotion.removalOffsetY == -4)
+  #expect(DashHeaderScrimMotion.insertionDuration == 0.24)
+  #expect(DashHeaderScrimMotion.removalDuration == 0.16)
+  #expect(DashHeaderScrimMotion.insertionDuration > 0)
+  #expect(DashHeaderScrimMotion.removalDuration > 0)
+  #expect(abs(DashHeaderScrimMotion.removalOffsetY) < abs(DashHeaderScrimMotion.insertionOffsetY))
+  #expect(DashHeaderScrimMotion.insertionDuration > DashHeaderScrimMotion.removalDuration)
+  #expect(DashHeaderScrimMotion.insertionDuration < 0.3)
+}
+
 /// The store carries the hysteresis: it is asked with a raw scroll distance and
 /// remembers what it answered, so a screen parked between the two thresholds
 /// keeps whatever it already had. A screen with no scroll view clears outright.
@@ -1719,9 +1734,9 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!state.isFrosted)
 }
 
-/// A stacked layer stops early: it must reach fully clear at its own extent
-/// and stay there, or it paints a step across the layer underneath it.
-@Test func headerFrostLayerClearsAtItsOwnExtent() {
+/// A bounded accessibility mask must reach fully clear at its own extent and
+/// stay there, or its fallback canvas paints a hard step over the content.
+@Test func headerAccessibilityMaskClearsAtItsConfiguredExtent() {
   let stops = DashHeaderScrimRules.maskStops(solidFraction: 0.2, extent: 0.5)
   #expect(stops.first?.opacity == 1)
   #expect(stops.contains { $0.opacity == 1 && $0.location == 0.2 })
