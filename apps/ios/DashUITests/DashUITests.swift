@@ -473,20 +473,6 @@ final class DashUITests: XCTestCase {
       object: iCloudSync)
     XCTAssertEqual(XCTWaiter.wait(for: [syncOff], timeout: 5), .completed)
 
-    let details = app.buttons["icloud-settings-details"]
-    XCTAssertTrue(Self.waitForHittable(details))
-    details.tap()
-    XCTAssertTrue(app.staticTexts["What syncs"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Watchtower charts"].waitForExistence(timeout: 5))
-    XCTAssertTrue(
-      app.staticTexts[
-        "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
-      ].waitForExistence(timeout: 5))
-
-    let close = app.buttons["Close"]
-    XCTAssertTrue(Self.waitForHittable(close))
-    close.tap()
-
     XCTAssertTrue(Self.waitForHittable(iCloudSync))
     iCloudSync.tap()
     let syncOn = XCTNSPredicateExpectation(

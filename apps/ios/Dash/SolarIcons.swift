@@ -64,6 +64,8 @@ enum SolarAsset {
   static let danger = "SolarDangerTriangleOutline"
   static let bolt = "SolarBoltOutline"
   static let boltCircle = "SolarBoltCircleOutline"
+  static let smartphoneVibration = "SolarSmartphoneVibrationOutline"
+  static let sunset = "SolarSunsetOutline"
   static let globe = "SolarGlobalOutline"
   static let file = "SolarFileOutline"
   static let folder = "SolarFolderOutline"

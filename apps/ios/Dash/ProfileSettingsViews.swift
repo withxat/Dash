@@ -1,3 +1,4 @@
+import AppIntents
 import CloudflareAPI
 import CoreTransferable
 import PhotosUI
@@ -309,7 +310,6 @@ struct SettingsView: View {
   @State private var showsTimeFormatPicker = false
   @State private var showsWorkspaceWashPicker = false
   @State private var showsChartStylePicker = false
-  @State private var showsICloudSyncDetails = false
   @State private var showsSignOutConfirmation = false
 
   private var selectedLanguage: DashAppLanguage {
@@ -409,7 +409,7 @@ struct SettingsView: View {
             SettingsPlainRow(
               title: DashL10n.string("Top glow"),
               subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
-              icon: SolarAsset.slider,
+              icon: SolarAsset.sunset,
               trailing: selectedWorkspaceWash.displayName,
               trailingIcon: SolarAsset.menuDots
             )
@@ -438,7 +438,7 @@ struct SettingsView: View {
           SettingsPlainToggleRow(
             title: DashL10n.string("Haptic feedback"),
             subtitle: DashL10n.string("Vibrate on button presses, selections, and confirmations."),
-            icon: SolarAsset.boltCircle,
+            icon: SolarAsset.smartphoneVibration,
             isOn: $hapticsEnabled
           )
           .onChange(of: hapticsEnabled) { _, enabled in
@@ -462,30 +462,13 @@ struct SettingsView: View {
             title: DashL10n.string("Sync settings"),
             subtitle: DashL10n.string(
               iCloudSyncEnabled
-                ? "Keep selected Dash preferences in sync across iPhones using your iCloud account."
+                ? "Keep Dash preferences in sync across iPhones using your iCloud account."
                 : "Settings on this iPhone stay local."
             ),
             icon: SolarAsset.cloud,
             isOn: $iCloudSyncEnabled
           )
           .accessibilityIdentifier("icloud-settings-sync")
-
-          SettingsPlainDivider()
-
-          Button {
-            showsICloudSyncDetails = true
-          } label: {
-            SettingsPlainRow(
-              title: DashL10n.string("What syncs"),
-              subtitle: DashL10n.string(
-                "Quick actions, Shortcuts, Watchtower charts, and Top glow."
-              ),
-              icon: SolarAsset.file,
-              showsChevron: true
-            )
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityIdentifier("icloud-settings-details")
         }
 
         SettingsPlainSection(title: "Watchtower") {
@@ -531,15 +514,26 @@ struct SettingsView: View {
         }
 
         SettingsPlainSection(title: "Integrations") {
-          SettingsPlainRow(
-            title: DashL10n.string("Siri & Shortcuts"),
-            subtitle: DashL10n.string(
-              "Purge Cache, Under Attack, Development Mode, Upload to R2, and Open Watchtower."
-            ),
-            icon: SolarAsset.bolt
-          )
-          .accessibilityHint(
-            DashL10n.string("Available in the Shortcuts app when Dash is signed in"))
+          // `ShortcutsLink` is the only supported way into Dash’s App Shortcuts
+          // page. `shortcuts://` only restores Shortcuts’ last screen; there is
+          // no public URI for an app’s own actions folder.
+          ZStack {
+            SettingsPlainRow(
+              title: DashL10n.string("Siri & Shortcuts"),
+              subtitle: DashL10n.string("View available actions in the Shortcuts app."),
+              icon: SolarAsset.bolt,
+              showsChevron: true
+            )
+
+            ShortcutsLink()
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .opacity(0.02)
+              .accessibilityHidden(true)
+          }
+          .accessibilityElement(children: .combine)
+          .accessibilityAddTraits(.isButton)
+          .accessibilityHint(DashL10n.string("Opens the Shortcuts app"))
+          .accessibilityIdentifier("settings-siri-shortcuts")
 
           SettingsPlainDivider()
 
@@ -551,7 +545,6 @@ struct SettingsView: View {
               showsChevron: true
             )
           }
-
         }
 
         // Help, legal, and About were three-row and two-row sections stacked at
@@ -666,12 +659,6 @@ struct SettingsView: View {
       title: DashL10n.string("Chart style")
     ) {
       ChartStylePickerTray(chartStyleRaw: $chartStyleRaw)
-    }
-    .dashTray(
-      isPresented: $showsICloudSyncDetails,
-      title: DashL10n.string("What syncs")
-    ) {
-      ICloudSyncDetailsTray(isEnabled: iCloudSyncEnabled)
     }
     .dashTray(
       isPresented: $showsSignOutConfirmation,
@@ -818,51 +805,6 @@ private struct SignOutConfirmationContent: View {
       }
     }
     .dashTrayDescription(consequences)
-  }
-}
-
-private struct ICloudSyncDetailsTray: View {
-  let isEnabled: Bool
-
-  private var items: [String] {
-    [
-      DashL10n.string("Quick actions"),
-      DashL10n.string("Shortcuts"),
-      DashL10n.string("Watchtower charts"),
-      DashL10n.string("Top glow"),
-    ]
-  }
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      ForEach(items, id: \.self) { item in
-        HStack(spacing: 12) {
-          SolarIcon(
-            asset: isEnabled ? SolarAsset.checkCircleFill : SolarAsset.circle,
-            size: 22,
-            color: isEnabled ? DashTheme.brand : DashTheme.placeholder
-          )
-          .accessibilityHidden(true)
-          Text(item)
-            .dashTextStyle(.bodyMedium)
-            .foregroundStyle(DashTheme.text)
-          Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.minimumHitTarget)
-        .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(isEnabled ? .isSelected : [])
-      }
-    }
-    .dashTrayDescription(
-      DashL10n.string(
-        isEnabled
-          ? "Only these preferences are synced. Accounts, credentials, alerts, and cached Cloudflare data stay on this iPhone."
-          : "Sync is off. These preferences stay on this iPhone, and the existing iCloud copy is not deleted."
-      )
-    )
   }
 }
 
