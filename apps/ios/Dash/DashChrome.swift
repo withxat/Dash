@@ -445,7 +445,7 @@ private struct DashSheetHeader: View {
           .padding(.bottom, DashTheme.Sheet.headerBottom)
       } else {
         Rectangle()
-          .fill(DashTheme.Sheet.headerBorder)
+          .fill(DashTheme.separator)
           .frame(height: 1)
           .padding(.horizontal, DashTheme.Sheet.content)
       }

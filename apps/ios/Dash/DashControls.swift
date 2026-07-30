@@ -801,9 +801,9 @@ struct DashTextTabs<Selection: Hashable>: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.bottom, DashTheme.Spacing.compact)
 
-      // Same hairline the tray header carries, so tabs read as header chrome.
+      // Same adaptive edge the tray header carries, so tabs read as header chrome.
       Rectangle()
-        .fill(DashTheme.Sheet.headerBorder)
+        .fill(DashTheme.separator)
         .frame(height: 1)
     }
   }

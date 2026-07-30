@@ -184,7 +184,7 @@ struct SettingsPlainDivider: View {
 
   var body: some View {
     Divider()
-      .overlay(DashTheme.hairline)
+      .overlay(DashTheme.separator)
       .padding(
         .leading,
         DashTheme.Spacing.screen

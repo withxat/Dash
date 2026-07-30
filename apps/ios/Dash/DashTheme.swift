@@ -360,8 +360,8 @@ enum DashTheme {
     static let grabBarBottom: CGFloat = 8
     /// `text-kumo-placeholder`
     static let closeIcon = adaptive(light: 0xA1A1A1, dark: 0x737373)
-    /// `color-kumo-tint`
-    static let headerBorder = adaptive(light: 0xF5F5F5, dark: 0x262626)
+    /// 1pt rule under tray titles — same adaptive edge as `DashTheme.separator`.
+    static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
     static let scrimOpacity: CGFloat = 0.35
@@ -498,12 +498,21 @@ enum DashTheme {
   /// material samples and darkens pigmented content beneath it.
   static let glassActionForeground = adaptive(
     light: 0x056DFF, dark: 0x51A2FF, highLight: 0x1447E6, highDark: 0x8EC5FF)
-  /// `color-kumo-line` (light composited over white; dark solid).
-  static let line = adaptive(light: 0xE7E7E7, dark: 0x333333)
-  /// `color-kumo-hairline`
+  /// Shared edge for strokes, 1pt rules, and card rings — pure black/white at
+  /// token opacity so the line reads on canvas, wash, elevated, and tinted fills.
+  /// Prefer this over solid gray hexes for any border or separator.
+  static let separator = Color(
+    uiColor: UIColor { traits in
+      traits.userInterfaceStyle == .dark
+        ? UIColor.white.withAlphaComponent(0.10)
+        : UIColor.black.withAlphaComponent(0.12)
+    })
+  /// Alias of `separator` — kept for older stroke call sites.
+  static var line: Color { separator }
+  /// Soft solid gray for non-edge uses (globe glow). Not a border token.
   static let hairline = adaptive(light: 0xE9E9E9, dark: 0x262626)
-  /// Row separators on `recessed` panels — `color-kumo-line`.
-  static let panelLine = adaptive(light: 0xE7E7E7, dark: 0x333333)
+  /// Alias of `separator` — row rules on recessed panels.
+  static var panelLine: Color { separator }
   /// Status foregrounds — `text-kumo-*` for readable copy on matching tints.
   /// Increased Contrast lifts dark-mode stops toward `text-kumo-strong`.
   static let danger = adaptive(

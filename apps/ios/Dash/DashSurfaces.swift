@@ -32,7 +32,7 @@ extension View {
   }
 
   /// Applies a shared shadow-as-border treatment. Prefer this over ad-hoc
-  /// `.shadow` stacks or `DashTheme.line` strokes on elevated surfaces.
+  /// `.shadow` stacks or solid gray strokes on elevated surfaces.
   func dashShadow(
     _ style: DashTheme.Shadow = .border,
     cornerRadius: CGFloat = DashTheme.Radius.card
@@ -53,19 +53,16 @@ extension View {
   }
 }
 
-/// A flat 1pt ring that defines an elevated surface's edge — `color-kumo-shadow-edge`
-/// (pure black/white at token opacity), never a tinted hairline. Drop shadows
-/// were removed project-wide, so `.border` and `.raised` render identically.
+/// A flat 1pt ring that defines an elevated surface's edge — `DashTheme.separator`
+/// (pure black/white at token opacity), never a tinted solid. Drop shadows were
+/// removed project-wide, so `.border` and `.raised` render identically.
 private struct DashShadowModifier<S: InsettableShape>: ViewModifier {
   let style: DashTheme.Shadow
   let shape: S
-  @Environment(\.colorScheme) private var colorScheme
 
   func body(content: Content) -> some View {
     content.overlay {
-      shape.strokeBorder(
-        colorScheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.12),
-        lineWidth: 1)
+      shape.strokeBorder(DashTheme.separator, lineWidth: 1)
     }
   }
 }
