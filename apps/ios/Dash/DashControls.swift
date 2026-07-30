@@ -547,6 +547,9 @@ struct DashSectionHeader: View {
   let title: String
   /// Optional content glyph seated before the title.
   var icon: String?
+  /// What VoiceOver reads for `title` when the visible string is a bare
+  /// fragment that needs its subject ("3 minutes ago" → "Updated …").
+  var titleAccessibilityLabel: String?
   /// Optional metadata capsule seated after the title, vertically centred on
   /// it — a section's freshness, never a status. Pre-localized like `title`.
   var badge: String?
@@ -562,6 +565,7 @@ struct DashSectionHeader: View {
   init(
     _ title: String,
     icon: String? = nil,
+    titleAccessibilityLabel: String? = nil,
     badge: String? = nil,
     badgeAccessibilityLabel: String? = nil,
     actionIcon: String? = nil,
@@ -570,6 +574,7 @@ struct DashSectionHeader: View {
   ) {
     self.title = title
     self.icon = icon
+    self.titleAccessibilityLabel = titleAccessibilityLabel
     self.badge = badge
     self.badgeAccessibilityLabel = badgeAccessibilityLabel
     self.actionIcon = actionIcon
@@ -581,12 +586,16 @@ struct DashSectionHeader: View {
     HStack(spacing: 8) {
       if let icon {
         SolarIcon(asset: icon, size: 20, color: DashTheme.strong)
+          .accessibilityHidden(true)
       }
-      Text(title)
-        .dashTextStyle(.sectionTitle)
-        .foregroundStyle(DashTheme.strong)
-        .textCase(nil)
-        .layoutPriority(1)
+      if !title.isEmpty {
+        Text(title)
+          .dashTextStyle(.sectionTitle)
+          .foregroundStyle(DashTheme.strong)
+          .textCase(nil)
+          .layoutPriority(1)
+          .accessibilityLabel(titleAccessibilityLabel ?? title)
+      }
       if let badge {
         DashMetaBadge(badge)
           .accessibilityLabel(badgeAccessibilityLabel ?? badge)
@@ -801,7 +810,8 @@ struct DashTextTabs<Selection: Hashable>: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.bottom, DashTheme.Spacing.compact)
 
-      // Same adaptive edge the tray header carries, so tabs read as header chrome.
+      // Same adaptive edge the tray header carries. Tabs themselves stay
+      // unfilled page chrome above the header frost (`DashPageChromeHost`).
       Rectangle()
         .fill(DashTheme.separator)
         .frame(height: 1)

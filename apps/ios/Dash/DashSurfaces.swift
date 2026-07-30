@@ -667,14 +667,11 @@ struct DashFeatureScreen<Chrome: View, Content: View>: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      chrome()
-        .padding(.horizontal, DashTheme.Spacing.screen)
-      // Bound the scroll slot to the remaining height. Without this, ScrollView
-      // reports its full content height inside the VStack, the stack grows past
-      // the screen, and the list clips instead of scrolling.
+    // `DashPageChromeHost` keeps fixed chrome (text tabs) above the header
+    // frost — same stacking as the nav title — and sizes the scroll slot to
+    // the remaining height so the list scrolls instead of clipping.
+    DashPageChromeHost(chrome: chrome) {
       content()
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     .background(DashTheme.canvas)

@@ -621,16 +621,21 @@ enum WatchtowerAnalyticsChartModel {
     let fetchedAt: Date
   }
 
-  /// Freshness for the Charts section-header badge, as a bare relative
-  /// fragment ("3 minutes ago"). `nil` before the first snapshot lands: the
-  /// skeleton and the pull-to-refresh spinner already say "loading", so this
-  /// never carries a second loading label of its own.
+  /// Freshness for the Charts section header, as a bare relative fragment
+  /// ("3 minutes ago"). `nil` before the first snapshot lands: the skeleton
+  /// and the pull-to-refresh spinner already say "loading", so this never
+  /// carries a second loading label of its own.
+  ///
+  /// `now` often comes from a `TimelineView` schedule tick, which can lag the
+  /// wall clock by up to the period. A just-fetched stamp then looks slightly
+  /// in the future and `RelativeDateTimeFormatter` would say "in N seconds" —
+  /// clamp any future stamp down so freshness always reads as past-or-now.
   static func updatedBadge(fetchedAt: Date?, now: Date = .now) -> String? {
     guard let fetchedAt else { return nil }
-    return watchtowerRelativeTime(fetchedAt, relativeTo: now)
+    return watchtowerRelativeTime(min(fetchedAt, now), relativeTo: now)
   }
 
-  /// The badge alone is a fragment; VoiceOver needs its subject back.
+  /// The fragment alone needs its subject back for VoiceOver.
   static func updatedAccessibilityLabel(_ badge: String) -> String {
     DashL10n.string("Updated \(badge)")
   }
@@ -1058,14 +1063,6 @@ struct WatchtowerTrafficView: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
-        if !isEditing {
-          DashTextTabs(
-            items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
-            selection: $state.range
-          )
-          .transition(.opacity)
-        }
-
         if state.needsAnalyticsAccess, state.overview == nil {
           statusCard {
             emptyContent(

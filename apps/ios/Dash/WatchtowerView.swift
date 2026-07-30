@@ -31,50 +31,67 @@ struct WatchtowerView: View {
   }
 
   var body: some View {
-    content
-      .dashSectionEntrance()
-      .dashCatalogScreen()
-      .toolbar {
-        if customization.isEditing {
-          ToolbarItem(placement: .topBarLeading) {
+    @Bindable var trafficState = trafficState
+    // Freshness + range tabs sit in `DashPageChromeHost` above the header
+    // frost (same stacking as the nav bar). Inside the scroll they would sit
+    // in the blur tail and go soft.
+    DashPageChromeHost {
+      if model.activeAccountID != nil, !customization.isEditing {
+        VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+          chartsHeader
+          DashTextTabs(
+            items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+            selection: $trafficState.range
+          )
+        }
+        .transition(.opacity)
+      }
+    } content: {
+      content
+    }
+    .dashSectionEntrance()
+    .dashCatalogScreen()
+    .toolbar {
+      if customization.isEditing {
+        ToolbarItem(placement: .topBarLeading) {
+          DashToolbarIconButton(
+            asset: SolarAsset.editClose,
+            accessibilityLabel: "Cancel",
+            action: cancelCustomization
+          )
+          .accessibilityIdentifier("watchtower-customize-cancel")
+        }
+        .dashSeparateToolbarBackground()
+        ToolbarItem(placement: .topBarTrailing) {
+          DashToolbarActionGroup {
+            addChartMenu
             DashToolbarIconButton(
-              asset: SolarAsset.editClose,
-              accessibilityLabel: "Cancel",
-              action: cancelCustomization
+              asset: SolarAsset.unread,
+              accessibilityLabel: "Done",
+              variant: .confirmation,
+              action: commitCustomization
             )
-            .accessibilityIdentifier("watchtower-customize-cancel")
+            .accessibilityIdentifier("watchtower-customize-done")
           }
-          .dashSeparateToolbarBackground()
-          ToolbarItem(placement: .topBarTrailing) {
-            DashToolbarActionGroup {
-              addChartMenu
-              DashToolbarIconButton(
-                asset: SolarAsset.unread,
-                accessibilityLabel: "Done",
-                variant: .confirmation,
-                action: commitCustomization
-              )
-              .accessibilityIdentifier("watchtower-customize-done")
-            }
-          }
-          .dashSeparateToolbarBackground()
         }
+        .dashSeparateToolbarBackground()
       }
-      .task(id: LoadKey(context: model.accountRequestContext, active: tabActive)) {
-        guard tabActive else { return }
-        await load()
+    }
+    .task(id: LoadKey(context: model.accountRequestContext, active: tabActive)) {
+      guard tabActive else { return }
+      await load()
+    }
+    .onChange(of: model.grantedScopes) {
+      guard tabActive else { return }
+      Task {
+        await trafficState.load(model: model, force: true)
       }
-      .onChange(of: model.grantedScopes) {
-        guard tabActive else { return }
-        Task {
-          await trafficState.load(model: model, force: true)
-        }
-      }
-      .onChange(of: customization.isEditing) { _, isEditing in
-        guard !isEditing else { return }
-        editorInteractionsReady = false
-        editorControlsVisible = false
-      }
+    }
+    .onChange(of: customization.isEditing) { _, isEditing in
+      guard !isEditing else { return }
+      editorInteractionsReady = false
+      editorControlsVisible = false
+    }
   }
 
   private var content: some View {
@@ -84,12 +101,20 @@ struct WatchtowerView: View {
           accountUnavailableCard
             .dashSectionReveal()
         } else {
-          chartsSection
-            .dashSectionContentReveal()
+          WatchtowerTrafficView(
+            state: trafficState,
+            customization: customization,
+            dragVisual: dragVisual,
+            isEditing: customization.isEditing,
+            editorControlsVisible: editorControlsVisible,
+            usesPlaceholderCharts: customization.isEditing
+          )
+          .dashSectionContentReveal()
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      .padding(.top, DashTheme.Spacing.compact)
+      // Match the old in-scroll gap between range tabs and the first chart.
+      .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .modifier(DashScrollEdgeEffectsHidden())
@@ -99,37 +124,18 @@ struct WatchtowerView: View {
     }
   }
 
-  private var chartsSection: some View {
-    VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-      if !customization.isEditing {
-        chartsHeader
-          .transition(.opacity)
-      }
-      WatchtowerTrafficView(
-        state: trafficState,
-        customization: customization,
-        dragVisual: dragVisual,
-        isEditing: customization.isEditing,
-        editorControlsVisible: editorControlsVisible,
-        usesPlaceholderCharts: customization.isEditing
-      )
-    }
-  }
-
-  /// Freshness rides the section title as a badge rather than its own line:
-  /// pull-to-refresh owns reloading this screen, so the charts need neither a
-  /// Refresh control nor an inline spinner repeating what the pull already
-  /// shows. The timeline only re-reads the relative wording.
+  /// Freshness is the section title itself (clock + relative time). Pull-to-
+  /// refresh owns reloading, so the charts need neither a Refresh control nor
+  /// an inline spinner. The timeline only re-reads the relative wording.
   private var chartsHeader: some View {
     TimelineView(.periodic(from: .now, by: 60)) { context in
-      let badge = WatchtowerAnalyticsChartModel.updatedBadge(
+      let freshness = WatchtowerAnalyticsChartModel.updatedBadge(
         fetchedAt: trafficState.fetchedAt,
         now: context.date)
       DashSectionHeader(
-        DashL10n.string("Charts"),
-        icon: SolarAsset.Content.chartSquare,
-        badge: badge,
-        badgeAccessibilityLabel: badge.map(
+        freshness ?? "",
+        icon: freshness == nil ? nil : SolarAsset.Content.clock,
+        titleAccessibilityLabel: freshness.map(
           WatchtowerAnalyticsChartModel.updatedAccessibilityLabel),
         actionIcon: SolarAsset.pen,
         actionLabel: DashL10n.string("Edit charts"),

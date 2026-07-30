@@ -186,8 +186,77 @@ extension View {
   /// content, below the navigation bar. That z-order is the whole point — the
   /// bar's title and back control have to stay crisp on top of the blur, and
   /// nothing outside the page can be layered underneath UIKit's bar.
+  ///
+  /// Screens that host fixed page chrome (`DashPageChromeHost` / text tabs)
+  /// install their own frost under that chrome and set
+  /// `DashHeaderScrimHandledKey`, so this wrapper skips and does not smear
+  /// the tabs.
   func dashHeaderScrim() -> some View {
     modifier(DashHeaderScrimModifier())
+  }
+}
+
+/// Preference set by `DashPageChromeHost` so the destination/root
+/// `dashHeaderScrim()` wrapper does not paint a second band on top of the
+/// page chrome (text tabs) that must stay as crisp as the nav title.
+enum DashHeaderScrimHandledKey: PreferenceKey {
+  static let defaultValue = false
+
+  static func reduce(value: inout Bool, nextValue: () -> Bool) {
+    value = value || nextValue()
+  }
+}
+
+private enum DashPageChromeHeightKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+/// Fixed page chrome (text tabs) above the header frost, same stacking as the
+/// navigation bar's title and back control: no fill of its own, never softened
+/// by the blur tail. Owns the frost for this screen so the outer
+/// `dashHeaderScrim()` wrapper can stand down.
+struct DashPageChromeHost<Chrome: View, Content: View>: View {
+  @ViewBuilder var chrome: () -> Chrome
+  @ViewBuilder var content: () -> Content
+  @State private var scroll = DashHeaderScrollState()
+  @State private var chromeHeight: CGFloat = 0
+
+  var body: some View {
+    content()
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .padding(.top, chromeHeight)
+      // Frost first, chrome second: the band still reaches the status bar, but
+      // the tabs paint above it like UIKit's bar items.
+      .overlay(alignment: .top) { DashHeaderScrim(scroll: scroll) }
+      .overlay(alignment: .top) {
+        // ZStack + fixedSize so an empty chrome branch (editing, unresolved
+        // site) still reports height 0 instead of leaving the last measured
+        // inset stranded under the bar.
+        ZStack(alignment: .top) {
+          chrome()
+            .padding(.horizontal, DashTheme.Spacing.screen)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .background {
+          GeometryReader { geo in
+            Color.clear.preference(
+              key: DashPageChromeHeightKey.self,
+              value: geo.size.height
+            )
+          }
+        }
+      }
+      .onPreferenceChange(DashPageChromeHeightKey.self) { chromeHeight = $0 }
+      .background {
+        DashHeaderScrollProbe(scroll: scroll)
+        DashScreenClipLift()
+      }
+      .preference(key: DashHeaderScrimHandledKey.self, value: true)
   }
 }
 
@@ -334,17 +403,29 @@ final class DashHeaderScrollState {
 /// Installs the frost on one screen: the band as an overlay (above content,
 /// below the bar), the probe that drives it, and the clip lift that lets the
 /// band reach the status bar.
+///
+/// When a descendant `DashPageChromeHost` already owns the frost (so its text
+/// tabs can sit above the band), this modifier stands down — otherwise the
+/// wrapper overlay would cover those tabs again.
 struct DashHeaderScrimModifier: ViewModifier {
   @State private var scroll = DashHeaderScrollState()
 
   func body(content: Content) -> some View {
     content
-      .overlay(alignment: .top) { DashHeaderScrim(scroll: scroll) }
-      .background {
-        DashHeaderScrollProbe(scroll: scroll)
-        // The band draws above its own layout box to cover the status bar;
-        // SwiftUI's hosting wrappers shear it there unless they are unclipped.
-        DashScreenClipLift()
+      .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+        if !handled {
+          DashHeaderScrim(scroll: scroll)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .allowsHitTesting(false)
+        }
+      }
+      .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+        if !handled {
+          DashHeaderScrollProbe(scroll: scroll)
+          // The band draws above its own layout box to cover the status bar;
+          // SwiftUI's hosting wrappers shear it there unless they are unclipped.
+          DashScreenClipLift()
+        }
       }
   }
 }
