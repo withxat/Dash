@@ -601,10 +601,18 @@ struct DomainMetricsWidget: Widget {
 
 private struct MetricsWidgetView: View {
   private static let chartSeriesID = "value"
+  /// Floor for the plot so a dither band still reads at accessibility text
+  /// sizes, where the header claims most of a widget that cannot grow.
+  private static let minimumPlotHeight: CGFloat = 44
 
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.colorScheme) private var colorScheme
-  @Environment(\.widgetFamily) private var family
+
+  /// Mirrors `DashTextStyle.emptyTitle`, the collapsed card's total: 24pt bold
+  /// in the default design, scaled from `.title2`. Not `.title2` rounded — SF
+  /// Rounded's bold reads about a weight lighter than SF Pro's, which is what
+  /// made the widget's main metric look like body weight next to the app's.
+  @ScaledMetric(relativeTo: .title2) private var totalFontSize: CGFloat = 24
 
   let entry: MetricsWidgetEntry
 
@@ -617,10 +625,15 @@ private struct MetricsWidgetView: View {
         .padding(.horizontal, 14)
         .padding(.top, 12)
         .padding(.bottom, 8)
-      Spacer(minLength: 0)
+      // The plot claims every point the header leaves instead of taking a fixed
+      // height under a spacer. Fixed heights cannot fit both families: 52pt on
+      // the small one left `CollapsedDitherTrendSeries`' 10% floor lift about
+      // five points tall, too short for the dither gradient to read as a band
+      // at all, while 88pt plus a two-line title overflowed the medium family
+      // and squeezed the header instead.
       chart
         .frame(maxWidth: .infinity)
-        .frame(height: sparklineHeight)
+        .frame(minHeight: Self.minimumPlotHeight, maxHeight: .infinity)
         .clipShape(
           UnevenRoundedRectangle(
             topLeadingRadius: 0,
@@ -634,21 +647,21 @@ private struct MetricsWidgetView: View {
     .accessibilityElement(children: .combine)
   }
 
-  private var sparklineHeight: CGFloat {
-    family == .systemMedium ? 88 : 52
-  }
-
   private var header: some View {
     VStack(alignment: .leading, spacing: 4) {
       scopeAndRange
       Text(entry.presentation.title)
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
-        .lineLimit(family == .systemMedium ? 2 : 1, reservesSpace: true)
+        // One line in both families. Watchtower reserves two so paired cards
+        // share a height; a widget has no pair, and the medium family is wide
+        // enough for every metric title — the second line only shortened the
+        // plot.
+        .lineLimit(1, reservesSpace: true)
         .minimumScaleFactor(0.85)
       HStack(alignment: .lastTextBaseline, spacing: 8) {
         Text(entry.presentation.total)
-          .font(.system(.title2, design: .rounded, weight: .bold))
+          .font(.system(size: totalFontSize, weight: .bold))
           .monospacedDigit()
           .foregroundStyle(.primary)
           .lineLimit(1)
