@@ -3,6 +3,27 @@ import Testing
 
 @testable import Dash
 
+@Test func metricsWidgetMetricSnapshotDecodesWithoutPreviousTotal() throws {
+  let legacy = """
+    {"metricID":"webTraffic","total":42,"points":[]}
+    """.data(using: .utf8)!
+  let decoded = try JSONDecoder().decode(MetricsWidgetMetricSnapshot.self, from: legacy)
+  #expect(decoded.metricID == "webTraffic")
+  #expect(decoded.total == 42)
+  #expect(decoded.previousTotal == nil)
+  #expect(decoded.points.isEmpty)
+
+  let withPrevious = MetricsWidgetMetricSnapshot(
+    metric: .webTraffic,
+    total: 50,
+    previousTotal: 40,
+    points: [])
+  let roundTrip = try JSONDecoder().decode(
+    MetricsWidgetMetricSnapshot.self,
+    from: JSONEncoder().encode(withPrevious))
+  #expect(roundTrip.previousTotal == 40)
+}
+
 @Test func metricsWidgetTrendMatchesCollapsedWatchtowerZeroFloor() {
   let mixed = CollapsedDitherTrendSeries(values: [0, 50, 0, 100])
   let collapsedMixed = WatchtowerAnalyticsChartModel.collapsedSeriesValues([0, 50, 0, 100])

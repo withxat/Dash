@@ -304,9 +304,19 @@ struct MetricsWidgetPresentation {
     case missing
   }
 
+  enum TrendTone {
+    case positive
+    case negative
+    case neutral
+  }
+
   let title: String
+  /// Account name (Watchtower) or zone hostname (domain analytics).
   let scope: String
   let total: String
+  /// Period-over-period label such as `+12%`, when a prior total exists.
+  let trendText: String?
+  let trendTone: TrendTone
   let values: [Double]
   let range: MetricsWidgetRange
   let fetchedAt: Date?
@@ -330,6 +340,8 @@ struct MetricsWidgetPresentation {
       title: title,
       scope: scope,
       total: "—",
+      trendText: nil,
+      trendTone: .neutral,
       values: [],
       range: range,
       fetchedAt: nil,
@@ -347,6 +359,8 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
         title: localizedTitle(AccountMetricsWidgetMetric.webTraffic),
         scope: String(localized: "Account"),
         total: MetricsWidgetValueFormatter.count(1_284_300),
+        trendText: "+12%",
+        trendTone: .neutral,
         values: [18, 24, 21, 36, 31, 46, 42, 58, 51, 67, 62, 74],
         range: .day,
         fetchedAt: .now,
@@ -414,12 +428,18 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
           color: color))
     }
 
+    let trend = MetricsWidgetTrendFormatter.trend(
+      current: metric.total,
+      previous: metric.previousTotal,
+      polarity: configuration.metric.trendPolarity)
     return MetricsWidgetEntry(
       date: now,
       presentation: MetricsWidgetPresentation(
         title: title,
         scope: snapshot.accountName,
         total: MetricsWidgetValueFormatter.account(metric.total, metric: configuration.metric),
+        trendText: trend.text,
+        trendTone: trend.tone,
         values: metric.points.map(\.value),
         range: configuration.range,
         fetchedAt: snapshot.fetchedAt,
@@ -437,6 +457,8 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
         title: localizedTitle(DomainMetricsWidgetMetric.requests),
         scope: "example.com",
         total: MetricsWidgetValueFormatter.count(428_900),
+        trendText: "+8%",
+        trendTone: .neutral,
         values: [12, 19, 17, 28, 25, 39, 34, 48, 45, 57, 53, 64],
         range: .day,
         fetchedAt: .now,
@@ -511,12 +533,18 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
           color: color))
     }
 
+    let trend = MetricsWidgetTrendFormatter.trend(
+      current: metric.total,
+      previous: metric.previousTotal,
+      polarity: configuration.metric.trendPolarity)
     return MetricsWidgetEntry(
       date: now,
       presentation: MetricsWidgetPresentation(
         title: title,
         scope: snapshot.domainName,
         total: MetricsWidgetValueFormatter.domain(metric.total, metric: configuration.metric),
+        trendText: trend.text,
+        trendTone: trend.tone,
         values: metric.points.map(\.value),
         range: configuration.range,
         fetchedAt: snapshot.fetchedAt,
@@ -579,63 +607,84 @@ private struct MetricsWidgetView: View {
 
   let entry: MetricsWidgetEntry
 
+  /// Matches collapsed Watchtower / Worker cards: scope + range above the
+  /// metric chrome, then title → total (+ trend) → sparkline flush to the
+  /// bottom edge.
   var body: some View {
-    Group {
-      if family == .systemMedium {
-        mediumLayout
-      } else {
-        smallLayout
-      }
+    VStack(alignment: .leading, spacing: 0) {
+      header
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+      Spacer(minLength: 0)
+      chart
+        .frame(maxWidth: .infinity)
+        .frame(height: sparklineHeight)
+        .clipShape(
+          UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 20,
+            bottomTrailingRadius: 20,
+            topTrailingRadius: 0,
+            style: .continuous)
+        )
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     .accessibilityElement(children: .combine)
   }
 
-  private var smallLayout: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      VStack(alignment: .leading, spacing: 4) {
-        heading
-        scope
-        total
-        freshness
-      }
-      .padding(.horizontal, 14)
-      .padding(.top, 14)
-      Spacer(minLength: 2)
-      chart
-        .frame(maxWidth: .infinity)
-        .frame(height: 42)
-    }
+  private var sparklineHeight: CGFloat {
+    family == .systemMedium ? 88 : 52
   }
 
-  private var mediumLayout: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      VStack(alignment: .leading, spacing: 7) {
-        heading
-        HStack(alignment: .bottom, spacing: 14) {
-          VStack(alignment: .leading, spacing: 4) {
-            scope
-            total
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          freshness
-        }
-      }
-      .padding(.horizontal, 14)
-      .padding(.top, 14)
-      Spacer(minLength: 2)
-      chart
-        .frame(maxWidth: .infinity)
-        .frame(height: 72)
-    }
-  }
-
-  private var heading: some View {
-    HStack(alignment: .firstTextBaseline, spacing: 8) {
+  private var header: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      scopeAndRange
       Text(entry.presentation.title)
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
+        .lineLimit(family == .systemMedium ? 2 : 1, reservesSpace: true)
+        .minimumScaleFactor(0.85)
+      HStack(alignment: .lastTextBaseline, spacing: 8) {
+        Text(entry.presentation.total)
+          .font(.system(.title2, design: .rounded, weight: .bold))
+          .monospacedDigit()
+          .foregroundStyle(.primary)
+          .lineLimit(1)
+          .minimumScaleFactor(0.65)
+        if let trendText = entry.presentation.trendText {
+          Text(verbatim: trendText)
+            .font(.caption.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(trendColor)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
+        }
+        Spacer(minLength: 4)
+      }
+      if showsFreshness {
+        Text(freshnessText)
+          .font(.caption2)
+          .foregroundStyle(
+            entry.presentation.isStale(at: entry.date)
+              ? Color.orange
+              : Color.secondary.opacity(0.7)
+          )
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+      }
+    }
+  }
+
+  /// Widget-only band above the collapsed-chart chrome: who/where the series
+  /// belongs to, and which window it covers.
+  private var scopeAndRange: some View {
+    HStack(alignment: .firstTextBaseline, spacing: 8) {
+      Text(entry.presentation.scope)
+        .font(.caption2.weight(.medium))
+        .foregroundStyle(.secondary)
         .lineLimit(1)
+        .minimumScaleFactor(0.8)
       Spacer(minLength: 0)
       Text(localizedTitle(entry.presentation.range))
         .font(.caption2.weight(.semibold))
@@ -647,20 +696,17 @@ private struct MetricsWidgetView: View {
     }
   }
 
-  private var scope: some View {
-    Text(entry.presentation.scope)
-      .font(.caption2)
-      .foregroundStyle(.secondary)
-      .lineLimit(1)
+  private var showsFreshness: Bool {
+    entry.presentation.availability != .available
+      || entry.presentation.isStale(at: entry.date)
   }
 
-  private var total: some View {
-    Text(entry.presentation.total)
-      .font(.system(.title2, design: .rounded, weight: .bold))
-      .monospacedDigit()
-      .foregroundStyle(.primary)
-      .lineLimit(1)
-      .minimumScaleFactor(0.65)
+  private var trendColor: Color {
+    switch entry.presentation.trendTone {
+    case .positive: .green
+    case .negative: .red
+    case .neutral: .secondary
+    }
   }
 
   @ViewBuilder
@@ -710,33 +756,60 @@ private struct MetricsWidgetView: View {
     }
   }
 
-  private var freshness: some View {
-    Text(freshnessText)
-      .font(.caption2)
-      .foregroundStyle(
-        entry.presentation.isStale(at: entry.date)
-          ? Color.orange
-          : Color.secondary.opacity(0.7)
-      )
-      .lineLimit(1)
-      .minimumScaleFactor(0.8)
-  }
-
   private var freshnessText: String {
     guard entry.presentation.availability == .available else {
-      return String(localized: "Open Dash to refresh.")
-    }
-    guard let fetchedAt = entry.presentation.fetchedAt else {
       return String(localized: "Open Dash to refresh.")
     }
     if entry.presentation.isStale(at: entry.date) {
       return String(localized: "Stale — open Dash to refresh.")
     }
-    let formatter = RelativeDateTimeFormatter()
-    formatter.dateTimeStyle = .named
-    formatter.unitsStyle = .abbreviated
-    let relative = formatter.localizedString(for: fetchedAt, relativeTo: entry.date)
-    return String(localized: "Checked \(relative)")
+    return String(localized: "Open Dash to refresh.")
+  }
+}
+
+private enum MetricsWidgetTrendFormatter {
+  static func trend(
+    current: Double,
+    previous: Double?,
+    polarity: MetricsWidgetTrendPolarity
+  ) -> (text: String?, tone: MetricsWidgetPresentation.TrendTone) {
+    guard current.isFinite, let previous, previous.isFinite else {
+      return (nil, .neutral)
+    }
+    let direction: Int = {
+      if current > previous { return 1 }
+      if current < previous { return -1 }
+      return 0
+    }()
+    let percentChange: Double? = {
+      if previous == 0 {
+        return current == 0 ? 0 : nil
+      }
+      let comparison = (current - previous) / abs(previous)
+      return comparison.isFinite ? comparison : nil
+    }()
+    guard let percentChange else { return (nil, .neutral) }
+
+    let magnitude = abs(percentChange).formatted(
+      .percent.precision(.fractionLength(0...1)))
+    let text: String = {
+      switch direction {
+      case 1: return "+\(magnitude)"
+      case -1: return "−\(magnitude)"
+      default: return magnitude
+      }
+    }()
+    let tone: MetricsWidgetPresentation.TrendTone = {
+      switch (polarity, direction) {
+      case (.higherIsBetter, 1), (.lowerIsBetter, -1):
+        .positive
+      case (.higherIsBetter, -1), (.lowerIsBetter, 1):
+        .negative
+      default:
+        .neutral
+      }
+    }()
+    return (text, tone)
   }
 }
 

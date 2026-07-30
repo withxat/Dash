@@ -62,6 +62,9 @@ enum MetricsWidgetPublisher {
       return MetricsWidgetMetricSnapshot(
         metricID: widgetMetric.rawValue,
         total: accountTotal(snapshot.overview, metric: metric),
+        previousTotal: snapshot.previousOverview.map {
+          accountTotal($0, metric: metric)
+        },
         points: points)
     }
 
@@ -90,6 +93,7 @@ enum MetricsWidgetPublisher {
       MetricsWidgetMetricSnapshot(
         metricID: metric.rawValue,
         total: domainTotal(snapshot, metric: metric),
+        previousTotal: domainPreviousTotal(snapshot, metric: metric),
         points: snapshot.points.map {
           MetricsWidgetPoint(
             timestamp: $0.date,
@@ -240,6 +244,25 @@ enum MetricsWidgetPublisher {
       return Double(snapshot.totalCachedRequests) / Double(snapshot.totalRequests)
     case .threats: return Double(snapshot.totalThreats)
     case .uniqueVisitors: return Double(snapshot.peakUniques)
+    }
+  }
+
+  /// Zone analytics only carries prior totals for requests, bandwidth, and
+  /// unique visitors — cache rate / threats omit the comparison rather than
+  /// inventing a baseline.
+  private static func domainPreviousTotal(
+    _ snapshot: ZoneAnalyticsSnapshot,
+    metric: DomainMetricsWidgetMetric
+  ) -> Double? {
+    switch metric {
+    case .requests:
+      snapshot.previousTotalRequests.map(Double.init)
+    case .bandwidth:
+      snapshot.previousTotalBytes.map(Double.init)
+    case .uniqueVisitors:
+      snapshot.previousPeakUniques.map(Double.init)
+    case .cacheRate, .threats:
+      nil
     }
   }
 

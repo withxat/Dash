@@ -37,6 +37,14 @@ enum MetricsWidgetRange: String, Codable, CaseIterable, Identifiable, Hashable, 
   }
 }
 
+/// Whether a higher period-over-period change is good, bad, or neutral — same
+/// rule Watchtower uses for collapsed metric cards.
+enum MetricsWidgetTrendPolarity: String, Codable, Hashable, Sendable {
+  case neutral
+  case higherIsBetter
+  case lowerIsBetter
+}
+
 enum AccountMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
   case workerInvocations
   case workerErrors
@@ -63,6 +71,17 @@ enum AccountMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Ha
     case .encryptedBandwidth: "Encrypted Bandwidth"
     }
   }
+
+  var trendPolarity: MetricsWidgetTrendPolarity {
+    switch self {
+    case .workerErrors, .cpuTime, .clientRequestErrors:
+      .lowerIsBetter
+    case .cacheRate, .encryptedRequestsRate:
+      .higherIsBetter
+    case .workerInvocations, .webTraffic, .totalBandwidth, .encryptedBandwidth:
+      .neutral
+    }
+  }
 }
 
 enum DomainMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
@@ -83,6 +102,17 @@ enum DomainMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Has
     case .uniqueVisitors: "Unique visitors"
     }
   }
+
+  var trendPolarity: MetricsWidgetTrendPolarity {
+    switch self {
+    case .threats:
+      .lowerIsBetter
+    case .cacheRate:
+      .higherIsBetter
+    case .requests, .bandwidth, .uniqueVisitors:
+      .neutral
+    }
+  }
 }
 
 struct MetricsWidgetPoint: Codable, Hashable, Sendable {
@@ -96,28 +126,47 @@ struct MetricsWidgetPoint: Codable, Hashable, Sendable {
 struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
   var metricID: String
   var total: Double
+  /// Prior-period total in the same units as `total`, when the publisher had a
+  /// comparable window. Absent on older snapshots and metrics without a prior.
+  var previousTotal: Double?
   var points: [MetricsWidgetPoint]
 
-  init(metricID: String, total: Double, points: [MetricsWidgetPoint]) {
+  init(
+    metricID: String,
+    total: Double,
+    previousTotal: Double? = nil,
+    points: [MetricsWidgetPoint]
+  ) {
     self.metricID = metricID
     self.total = total
+    self.previousTotal = previousTotal
     self.points = points
   }
 
   init(
     metric: AccountMetricsWidgetMetric,
     total: Double,
+    previousTotal: Double? = nil,
     points: [MetricsWidgetPoint]
   ) {
-    self.init(metricID: metric.rawValue, total: total, points: points)
+    self.init(
+      metricID: metric.rawValue,
+      total: total,
+      previousTotal: previousTotal,
+      points: points)
   }
 
   init(
     metric: DomainMetricsWidgetMetric,
     total: Double,
+    previousTotal: Double? = nil,
     points: [MetricsWidgetPoint]
   ) {
-    self.init(metricID: metric.rawValue, total: total, points: points)
+    self.init(
+      metricID: metric.rawValue,
+      total: total,
+      previousTotal: previousTotal,
+      points: points)
   }
 }
 
