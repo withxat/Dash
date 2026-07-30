@@ -66,6 +66,15 @@ struct DashActionStatusIcon: View {
   @State private var completionArmed = false
   @State private var transitionGeneration = 0
 
+  /// The ring's stroke straddles a `size`-wide path, so the spinner reads
+  /// `size + lineWidth` across, while Solar's `ui/Bold/CheckCircle` only fills
+  /// 20 of its 24pt canvas. A glyph drawn at `size` therefore landed a quarter
+  /// narrower than the ring it replaces. Scale its frame so the two circles
+  /// share an outer edge, trimmed 4% because a solid disc carries more weight
+  /// than an outline of the same width. Only the transparent margin exceeds the
+  /// slot; the ink stays inside it.
+  private var successSize: CGFloat { (size + lineWidth) * 0.96 * (24.0 / 20.0) }
+
   var body: some View {
     ZStack {
       if rendersLayers {
@@ -75,7 +84,7 @@ struct DashActionStatusIcon: View {
         statusLayer(isVisible: displayedPhase == .succeeded) {
           SolarIcon(
             asset: SolarAsset.checkCircleFill,
-            size: size,
+            size: successSize,
             color: successColor ?? loadingColor
           )
         }
