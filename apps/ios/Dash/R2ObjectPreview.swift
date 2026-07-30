@@ -156,7 +156,7 @@ struct R2ObjectPreview: View {
   let object: R2Object
   let publicURL: URL?
   let allowsWrites: Bool
-  var onMutated: () async -> Void
+  var onDeleted: () async -> Void
 
   @State private var localFile: R2TemporaryFile?
   @State private var status: Status = .loading
@@ -196,7 +196,7 @@ struct R2ObjectPreview: View {
         // The sheet dismisses itself, then this closure (owned by the browser)
         // clears the preview's item binding and reloads the listing — each
         // presentation layer is torn down by its own owner.
-        onMutated: onMutated
+        onDeleted: onDeleted
       )
     }
   }
@@ -322,24 +322,16 @@ private struct PreviewChromeButton: View {
 // MARK: - Actions sheet
 
 /// The object's actions, reached from the preview's "⋯" button: Copy public
-/// URL, Rename (morphs to a key editor in place), Download / share, and a
-/// header-trash delete. Also lists the object's metadata fields. Rename and
-/// delete run the download → PUT → delete dance through `CloudflareClient`;
-/// there is no server-side copy.
+/// URL, Download / share, and a header-trash delete. Also lists the object's
+/// metadata fields.
 private struct R2ObjectActionsSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let bucket: String
   let object: R2Object
   let publicURL: URL?
   let allowsWrites: Bool
-  var onMutated: () async -> Void
-  @State private var renaming = false
-  @State private var newKey = ""
-  @State private var renameActionPhase: DashActionPhase = .idle
-  @State private var renameError: String?
-  @State private var renamePhase: String?
+  var onDeleted: () async -> Void
   @State private var deleteActionPhase: DashActionPhase = .idle
   @State private var deleteError: String?
 
@@ -347,30 +339,8 @@ private struct R2ObjectActionsSheet: View {
     object.key.split(separator: "/").last.map(String.init) ?? object.key
   }
 
-  /// Rename uses a file-backed phone-side copy and keeps the same explicit
-  /// on-device transfer ceiling as preview and move.
-  private var canRename: Bool {
-    allowsWrites && R2Media.isWithinTransferLimit(object.size)
-  }
-
-  private var normalizedKey: String? {
-    var value = newKey.trimmingCharacters(in: .whitespacesAndNewlines)
-    while value.hasPrefix("/") { value.removeFirst() }
-    guard !value.isEmpty, !value.hasSuffix("/"), value != object.key else { return nil }
-    return value
-  }
-
   var body: some View {
-    ZStack {
-      if renaming {
-        renameForm
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      } else {
-        detail
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      }
-    }
-    .dashTrayTitle(renaming ? "Rename" : nil)
+    detail
   }
 
   private var detail: some View {
@@ -387,16 +357,8 @@ private struct R2ObjectActionsSheet: View {
       // Secondary/reversible pills first; the primary action pill stays
       // bottom-most so its position reads as the main verb.
       VStack(spacing: 10) {
-        if publicURL != nil, canRename {
-          DashTrayPillButton(title: "Rename") {
-            newKey = object.key
-            renameError = nil
-            withAnimation(DashTheme.Motion.morph) { renaming = true }
-          }
-        }
-        // Download is file-backed but shares the on-device transfer ceiling
-        // with preview, rename, and move.
-        if publicURL != nil || canRename,
+        // Download is file-backed and shares the preview transfer ceiling.
+        if publicURL != nil,
           let accountID = model.activeAccountID,
           R2Media.isWithinTransferLimit(object.size)
         {
@@ -421,13 +383,6 @@ private struct R2ObjectActionsSheet: View {
             UIPasteboard.general.url = publicURL
             model.toasts.success(DashL10n.string("Public URL copied."))
           }
-        } else if canRename {
-          // No public URL — Rename is the primary verb.
-          DashActionButton(title: "Rename") {
-            newKey = object.key
-            renameError = nil
-            withAnimation(DashTheme.Motion.morph) { renaming = true }
-          }
         } else if let accountID = model.activeAccountID,
           R2Media.isWithinTransferLimit(object.size)
         {
@@ -450,83 +405,6 @@ private struct R2ObjectActionsSheet: View {
     }
   }
 
-  private var renameForm: some View {
-    DashFormSheet(
-      saveTitle: "Rename",
-      actionPhase: renameActionPhase,
-      onSuccessPresentationCompleted: completeRenamePresentation,
-      canSave: normalizedKey != nil,
-      secondaryActionTitle: DashL10n.string("Back"),
-      secondaryActionEnabled: !renameActionPhase.isActive,
-      onSecondaryAction: {
-        withAnimation(DashTheme.Motion.morph) { renaming = false }
-      },
-      onSave: { Task { await performRename() } },
-      content: {
-        VStack(alignment: .leading, spacing: 14) {
-          DashFormField(label: "Key", text: $newKey)
-          Text(
-            "Moving between folders is just renaming the key — use / to nest. The object is copied to the new key, then the old one is deleted."
-          )
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
-          if let renamePhase {
-            Text(renamePhase)
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          if let renameError {
-            DashNotice(kind: .error, message: renameError)
-          }
-        }
-      }
-    )
-  }
-
-  private func performRename() async {
-    guard let accountID = model.activeAccountID, let target = normalizedKey else { return }
-    renameActionPhase = .loading
-    renameError = nil
-    do {
-      renamePhase = "Checking destination…"
-      try await R2ObjectConsistency.requireAbsent(
-        client: model.client, accountID: accountID, bucket: bucket, key: target)
-      renamePhase = "Downloading…"
-      let temporaryFile = R2TemporaryFile.make(purpose: "r2-rename", filename: filename)
-      defer { temporaryFile.remove() }
-      try await model.client.downloadR2Object(
-        accountID: accountID, bucket: bucket, key: object.key,
-        to: temporaryFile.fileURL, maximumBytes: R2Media.transferSizeLimitBytes)
-      try await R2ObjectConsistency.requireUnchanged(
-        object, client: model.client, accountID: accountID, bucket: bucket)
-      try await R2ObjectConsistency.requireAbsent(
-        client: model.client, accountID: accountID, bucket: bucket, key: target)
-      renamePhase = DashL10n.string("Uploading as \(target)…")
-      try await model.client.putR2Object(
-        accountID: accountID, bucket: bucket, key: target, fileURL: temporaryFile.fileURL,
-        contentType: object.contentType ?? R2Media.mimeType(forKey: target))
-      try Task.checkCancellation()
-      try await R2ObjectConsistency.requireUnchanged(
-        object, client: model.client, accountID: accountID, bucket: bucket)
-      renamePhase = "Removing old key…"
-      try await model.client.deleteR2Object(
-        accountID: accountID, bucket: bucket, key: object.key)
-      model.toasts.success(DashL10n.string("Renamed to \(target)."))
-      renameActionPhase = .succeeded
-    } catch {
-      renameActionPhase = .idle
-      renameError = error.dashActionableMessage
-      DashDelight.failError()
-    }
-    renamePhase = nil
-  }
-
-  private func completeRenamePresentation() {
-    guard renameActionPhase == .succeeded else { return }
-    dismiss()
-    Task { await onMutated() }
-  }
-
   private func performDelete() async {
     guard let accountID = model.activeAccountID else { return }
     deleteActionPhase = .loading
@@ -545,7 +423,7 @@ private struct R2ObjectActionsSheet: View {
   private func completeDeletePresentation() {
     guard deleteActionPhase == .succeeded else { return }
     dismiss()
-    Task { await onMutated() }
+    Task { await onDeleted() }
   }
 }
 

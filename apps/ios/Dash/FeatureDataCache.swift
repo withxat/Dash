@@ -88,9 +88,9 @@ enum FeatureCacheKey {
   static func r2Objects(accountID: String, bucket: String, prefix: String) -> String {
     "r2:\(accountID):\(bucket):\(prefix)"
   }
-  /// Prefix under which every object listing of one bucket lives — rename and
-  /// move invalidate all of them at once, since the destination folder's
-  /// snapshot goes stale along with the source's.
+  /// Prefix under which every object listing of one bucket lives. Object
+  /// mutations invalidate all of them at once because the affected key may
+  /// appear in more than one cached prefix listing.
   static func r2ObjectsPrefix(accountID: String, bucket: String) -> String {
     "r2:\(accountID):\(bucket):"
   }
@@ -300,8 +300,8 @@ final class FeatureDataCache {
     inFlight.removeValue(forKey: key)?.cancel()
   }
 
-  /// Drops every entry under a key prefix (e.g. all cached listings of one
-  /// bucket after a rename touched two folders).
+  /// Drops every entry under a key prefix (e.g. every cached listing of one
+  /// bucket after an object mutation).
   func remove(prefix: String) {
     storage = storage.filter { !$0.key.hasPrefix(prefix) }
     let matchingLoads = inFlight.keys.filter { $0.hasPrefix(prefix) }

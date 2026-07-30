@@ -121,9 +121,7 @@ struct R2BucketView: View {
   @State private var selecting = false
   @State private var selectedKeys: Set<String> = []
   @State private var confirmsBatchDelete = false
-  @State private var movesSelection = false
   @State private var showsBucketActions = false
-  @State private var batchLabel: String?
   /// The account/bucket/prefix currently represented by the state above.
   /// This survives view-value updates so stale async tasks can be rejected.
   @State private var displayedRequestIdentity: R2BucketRequestIdentity?
@@ -138,11 +136,8 @@ struct R2BucketView: View {
   @State private var paintAdds: Bool?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
-  private var hasTransferStatus: Bool {
-    uploadingFileName != nil || batchLabel != nil
-  }
   private var tracksObjectFrames: Bool {
-    featureAllowsWrites && !objects.isEmpty && work.batch == nil
+    featureAllowsWrites && !objects.isEmpty
   }
   private var currentDestination: Destination {
     .r2Bucket(bucket, prefix: folderPrefix)
@@ -168,14 +163,9 @@ struct R2BucketView: View {
         Task { await load(for: request) }
       }
     ) {
-      if hasTransferStatus {
+      if let uploadingFileName {
         DashSurfaceStack {
-          if let uploadingFileName {
-            uploadProgressCard(uploadingFileName)
-          }
-          if let batchLabel {
-            batchProgressCard(batchLabel)
-          }
+          uploadProgressCard(uploadingFileName)
         }
         .padding(.bottom, DashTheme.Spacing.itemGap)
       }
@@ -267,7 +257,6 @@ struct R2BucketView: View {
                 selectedKeys = []
               }
             }
-            .disabled(work.batch != nil)
           } else {
             // Stable trailing chrome: Upload (writes) + More. Select and
             // settings live in More so load completion never inserts a third
@@ -294,7 +283,7 @@ struct R2BucketView: View {
     }
     .background {
       R2TwoFingerSelectInstaller(
-        isEnabled: featureAllowsWrites && !objects.isEmpty && work.batch == nil,
+        isEnabled: featureAllowsWrites && !objects.isEmpty,
         onBegan: beginTwoFingerSelect,
         onPaintAt: paintTwoFingerSelect,
         onEnded: { paintAdds = nil }
@@ -326,9 +315,9 @@ struct R2BucketView: View {
         object: object,
         publicURL: domains?.publicURL(forKey: object.key),
         allowsWrites: featureAllowsWrites,
-        onMutated: {
+        onDeleted: {
           // Owner of the preview cover: close it, then reload the listing —
-          // the object it showed was just renamed or deleted.
+          // the object it showed was just deleted.
           selectedObject = nil
           await invalidateAndReload()
         }
@@ -341,11 +330,6 @@ struct R2BucketView: View {
     )
     .dashTray(isPresented: $showsBucketActions, title: "Actions") {
       r2BucketActionsTray
-    }
-    .dashTray(isPresented: $movesSelection, title: "Move objects") {
-      R2MoveForm(currentFolder: folderPrefix, count: selectedKeys.count) { destination in
-        beginBatchMove(to: destination)
-      }
     }
     // Settings may have changed the domains while this screen stayed mounted
     // below it — resync from the shared cache on return.
@@ -375,7 +359,6 @@ struct R2BucketView: View {
   private func cancelOutstandingWork() {
     work.cancelAndRelease()
     uploadingFileName = nil
-    batchLabel = nil
   }
 
   /// Synchronously drops every account-scoped value before a new request can
@@ -394,7 +377,6 @@ struct R2BucketView: View {
     selecting = false
     selectedKeys = []
     confirmsBatchDelete = false
-    movesSelection = false
     showsBucketActions = false
     domains = nil
     objectFrameStore.clear()
@@ -427,40 +409,21 @@ struct R2BucketView: View {
   }
 
   private var selectionBar: some View {
-    HStack(spacing: 10) {
-      Button {
-        movesSelection = true
-      } label: {
-        Text(
-          selectedKeys.isEmpty
-            ? DashL10n.string("Move") : DashL10n.string("Move \(selectedKeys.count)")
-        )
-        .dashTextStyle(.buttonBold)
-        .foregroundStyle(DashTheme.strong)
-        .frame(maxWidth: .infinity, minHeight: 52)
-        .background(DashTheme.recessed, in: DashTheme.pillShape)
-        .dashShadow(.border, in: DashTheme.pillShape)
-      }
-      .buttonStyle(DashPressButtonStyle())
-      .disabled(selectedKeys.isEmpty || work.batch != nil)
-      .opacity(selectedKeys.isEmpty || work.batch != nil ? 0.45 : 1)
-
-      Button {
-        confirmsBatchDelete = true
-      } label: {
-        Text(
-          selectedKeys.isEmpty
-            ? DashL10n.string("Delete") : DashL10n.string("Delete \(selectedKeys.count)")
-        )
-        .dashTextStyle(.button)
-        .foregroundStyle(DashTheme.inverse)
-        .frame(maxWidth: .infinity, minHeight: 52)
-        .background(DashTheme.danger, in: DashTheme.pillShape)
-      }
-      .buttonStyle(DashPressButtonStyle())
-      .disabled(selectedKeys.isEmpty || work.batch != nil)
-      .opacity(selectedKeys.isEmpty || work.batch != nil ? 0.45 : 1)
+    Button {
+      confirmsBatchDelete = true
+    } label: {
+      Text(
+        selectedKeys.isEmpty
+          ? DashL10n.string("Delete") : DashL10n.string("Delete \(selectedKeys.count)")
+      )
+      .dashTextStyle(.button)
+      .foregroundStyle(DashTheme.inverse)
+      .frame(maxWidth: .infinity, minHeight: 52)
+      .background(DashTheme.danger, in: DashTheme.pillShape)
     }
+    .buttonStyle(DashPressButtonStyle())
+    .disabled(selectedKeys.isEmpty)
+    .opacity(selectedKeys.isEmpty ? 0.45 : 1)
     .padding(.horizontal, DashTheme.Spacing.screen)
     .padding(.vertical, 10)
     .background(DashTheme.canvas)
@@ -491,8 +454,8 @@ struct R2BucketView: View {
             ? DashL10n.string("Select objects, Nothing to select in this folder")
             : DashL10n.string("Select objects, Or drag with two fingers on the list")
         )
-        .disabled(objects.isEmpty || work.batch != nil)
-        .opacity(objects.isEmpty || work.batch != nil ? 0.45 : 1)
+        .disabled(objects.isEmpty)
+        .opacity(objects.isEmpty ? 0.45 : 1)
         .dashListCardInset()
 
         DashListGroupDivider()
@@ -523,7 +486,7 @@ struct R2BucketView: View {
   }
 
   private func beginTwoFingerSelect() {
-    guard featureAllowsWrites, !objects.isEmpty, work.batch == nil else { return }
+    guard featureAllowsWrites, !objects.isEmpty else { return }
     if !selecting {
       withAnimation(DashTheme.Motion.morph) {
         selecting = true
@@ -533,7 +496,7 @@ struct R2BucketView: View {
   }
 
   private func paintTwoFingerSelect(at point: CGPoint) {
-    guard featureAllowsWrites, work.batch == nil else { return }
+    guard featureAllowsWrites else { return }
     if !selecting {
       withAnimation(DashTheme.Motion.morph) { selecting = true }
     }
@@ -633,160 +596,6 @@ struct R2BucketView: View {
     }
   }
 
-  private func beginBatchMove(to destination: String) {
-    let request = requestIdentity
-    guard work.batch == nil, request.context != nil, canCommit(request) else { return }
-    let targets = objects.filter { selectedKeys.contains($0.key) }
-    guard !targets.isEmpty else { return }
-    work.batch = Task { await batchMove(targets, to: destination, request: request) }
-  }
-
-  /// Sequential per object on purpose: each move owns one scratch file and one
-  /// network transfer at a time.
-  private func batchMove(
-    _ targets: [R2Object],
-    to destination: String,
-    request: R2BucketRequestIdentity
-  ) async {
-    guard let context = request.context, canCommit(request) else { return }
-    let accountID = context.accountID
-    defer {
-      if matchesCurrentRequest(request) {
-        work.batch = nil
-        batchLabel = nil
-      }
-    }
-    var moved = 0
-    var skippedLarge = 0
-    var skippedExisting = 0
-    var failedKeys: [String] = []
-    var remainingKeys = Set(targets.map(\.key))
-    var wasCancelled = false
-    for (index, object) in targets.enumerated() {
-      if !canCommit(request) {
-        wasCancelled = true
-        break
-      }
-      batchLabel = DashL10n.string("Moving \(index + 1) of \(targets.count)…")
-      let filename = object.key.split(separator: "/").last.map(String.init) ?? object.key
-      // Dashboard-created folder markers end in "/" — keep them folders.
-      let isFolderMarker = object.key.hasSuffix("/")
-      let newKey = destination + filename + (isFolderMarker ? "/" : "")
-      guard newKey != object.key else {
-        selectedKeys.remove(object.key)
-        remainingKeys.remove(object.key)
-        continue
-      }
-      guard R2Media.isWithinTransferLimit(object.size) else {
-        skippedLarge += 1
-        continue
-      }
-      do {
-        do {
-          try await R2ObjectConsistency.requireAbsent(
-            client: model.client, accountID: accountID, bucket: bucket, key: newKey)
-          guard canCommit(request) else {
-            wasCancelled = true
-            break
-          }
-        } catch R2ObjectConsistencyError.destinationExists {
-          skippedExisting += 1
-          continue
-        }
-        let temporaryFile = R2TemporaryFile.make(purpose: "r2-batch-move", filename: filename)
-        defer { temporaryFile.remove() }
-        try await model.client.downloadR2Object(
-          accountID: accountID, bucket: bucket, key: object.key,
-          to: temporaryFile.fileURL, maximumBytes: R2Media.transferSizeLimitBytes)
-        guard canCommit(request) else {
-          wasCancelled = true
-          break
-        }
-        try await R2ObjectConsistency.requireUnchanged(
-          object, client: model.client, accountID: accountID, bucket: bucket)
-        guard canCommit(request) else {
-          wasCancelled = true
-          break
-        }
-        do {
-          try await R2ObjectConsistency.requireAbsent(
-            client: model.client, accountID: accountID, bucket: bucket, key: newKey)
-          guard canCommit(request) else {
-            wasCancelled = true
-            break
-          }
-        } catch R2ObjectConsistencyError.destinationExists {
-          skippedExisting += 1
-          continue
-        }
-        try await model.client.putR2Object(
-          accountID: accountID, bucket: bucket, key: newKey, fileURL: temporaryFile.fileURL,
-          contentType: object.contentType ?? R2Media.mimeType(forKey: newKey))
-        guard canCommit(request) else {
-          wasCancelled = true
-          break
-        }
-        try await R2ObjectConsistency.requireUnchanged(
-          object, client: model.client, accountID: accountID, bucket: bucket)
-        guard canCommit(request) else {
-          wasCancelled = true
-          break
-        }
-        try await model.client.deleteR2Object(
-          accountID: accountID, bucket: bucket, key: object.key)
-        guard canCommit(request) else {
-          wasCancelled = true
-          break
-        }
-        moved += 1
-        selectedKeys.remove(object.key)
-        remainingKeys.remove(object.key)
-      } catch {
-        if error.dashIsCancellation || !canCommit(request) {
-          wasCancelled = true
-          break
-        }
-        failedKeys.append(object.key)
-      }
-    }
-    if !canCommit(request) { wasCancelled = true }
-    guard matchesCurrentRequest(request) else { return }
-    model.featureCache.remove(
-      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
-    await load(force: true, for: request)
-    if !canCommit(request) { wasCancelled = true }
-    guard matchesCurrentRequest(request) else { return }
-    // A complete reload may prune selection. Restore skipped, failed, and
-    // never-started keys so cancellation can be retried without reselecting.
-    selectedKeys.formUnion(remainingKeys)
-    if wasCancelled { return }
-    let failed = failedKeys.count
-    var parts: [String] = []
-    if moved > 0 { parts.append(DashL10n.string("Moved \(moved)")) }
-    if skippedLarge > 0 {
-      parts.append(DashL10n.string("skipped \(skippedLarge) over the 100 MB on-device limit"))
-    }
-    if skippedExisting > 0 {
-      parts.append(
-        DashL10n.string("skipped \(skippedExisting) — an object already exists at the destination"))
-    }
-    if failed > 0 { parts.append(DashL10n.string("\(failed) failed")) }
-    if !parts.isEmpty {
-      let message = parts.joined(separator: " · ") + "."
-      let clean = failed == 0 && skippedLarge == 0 && skippedExisting == 0
-      if clean {
-        model.toasts.success(message)
-      } else if moved > 0 {
-        model.toasts.warning(message)
-      } else {
-        model.toasts.error(message)
-      }
-    }
-    if failed == 0 && skippedLarge == 0 && skippedExisting == 0 {
-      withAnimation(DashTheme.Motion.morph) { selecting = false }
-    }
-  }
-
   private func invalidateAndReload() async {
     let request = requestIdentity
     guard let context = request.context, canCommit(request) else { return }
@@ -847,32 +656,6 @@ struct R2BucketView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         Button("Cancel") {
           work.upload?.cancel()
-        }
-        .dashTextStyle(.supportingSemibold)
-        .foregroundStyle(DashTheme.danger)
-        .buttonStyle(DashPressButtonStyle())
-        .dashCompactHitTarget()
-      }
-    }
-    .accessibilityElement(children: .contain)
-  }
-
-  private func batchProgressCard(_ label: String) -> some View {
-    DashCard {
-      HStack(spacing: 12) {
-        DashLoadingRing(color: DashTheme.brand)
-        VStack(alignment: .leading, spacing: 2) {
-          Text(label)
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-            .lineLimit(1)
-          Text("Keep Dash open until the move finishes.")
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        Button("Cancel") {
-          work.batch?.cancel()
         }
         .dashTextStyle(.supportingSemibold)
         .foregroundStyle(DashTheme.danger)
@@ -1222,26 +1005,21 @@ private struct R2BrowserSnapshot: Sendable {
   let cursor: String?
 }
 
-/// Holds in-flight upload/batch work for one `R2BucketView`. Kept as a class so
+/// Holds in-flight upload work for one `R2BucketView`. Kept as a class so
 /// NavigationStack can hide the screen under a folder push without cancelling;
 /// `deinit` cancels when the screen is popped off the stack.
 @Observable
 private final class R2BucketWork {
   var upload: Task<Void, Never>?
-  var batch: Task<Void, Never>?
 
   func cancelAndRelease() {
     let upload = upload
-    let batch = batch
     self.upload = nil
-    self.batch = nil
     upload?.cancel()
-    batch?.cancel()
   }
 
   deinit {
     upload?.cancel()
-    batch?.cancel()
   }
 }
 
@@ -2184,53 +1962,6 @@ private struct DashKVCodeEditor: View {
 private struct R2BatchFailure: LocalizedError {
   let message: String
   var errorDescription: String? { message }
-}
-
-/// Destination-prefix form for a batch move. The heavy lifting stays in the
-/// browser (progress card, cancellation); this only normalizes the prefix.
-private struct R2MoveForm: View {
-  @Environment(\.dashTrayDismiss) private var dismiss
-  let currentFolder: String
-  let count: Int
-  let onMove: (String) -> Void
-  @State private var destination: String
-
-  init(currentFolder: String, count: Int, onMove: @escaping (String) -> Void) {
-    self.currentFolder = currentFolder
-    self.count = count
-    self.onMove = onMove
-    _destination = State(initialValue: currentFolder)
-  }
-
-  private var normalized: String {
-    var value = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-    while value.hasPrefix("/") { value.removeFirst() }
-    if !value.isEmpty && !value.hasSuffix("/") { value += "/" }
-    return value
-  }
-
-  var body: some View {
-    DashFormSheet(
-      saveTitle: DashL10n.string(
-        "Move \(count) \(count == 1 ? DashL10n.string("object") : DashL10n.string("objects"))"
-      ),
-      canSave: normalized != currentFolder,
-      onSave: {
-        onMove(normalized)
-        dismiss()
-      },
-      content: {
-        VStack(alignment: .leading, spacing: 14) {
-          DashFormField(label: "Destination folder", text: $destination)
-          Text(
-            "Folders are key prefixes — use / to nest, leave empty for the bucket root. Files keep their names."
-          )
-          .dashTextStyle(.caption)
-          .foregroundStyle(DashTheme.subtle)
-        }
-      }
-    )
-  }
 }
 
 extension String { fileprivate var nilIfEmpty: String? { isEmpty ? nil : self } }
