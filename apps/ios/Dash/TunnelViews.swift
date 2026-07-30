@@ -263,13 +263,13 @@ struct TunnelDetailView: View {
       // down has no honest "connected since".
       if health == .healthy || health == .degraded {
         if let since = tunnel.connsActiveAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
-          DashInfoRow("Connected since", value: tunnelDateLabel(since))
+          DashInfoRow("Connected since", value: DashDateFormatting.dateAndTime(since))
         }
       } else if let last = tunnel.connsInactiveAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
-        DashInfoRow("Disconnected", value: tunnelDateLabel(last))
+        DashInfoRow("Disconnected", value: DashDateFormatting.dateAndTime(last))
       }
       if let created = tunnel.createdAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
-        DashInfoRow("Created", value: tunnelDateLabel(created))
+        DashInfoRow("Created", value: DashDateFormatting.dateAndTime(created))
       }
       tunnelIDRow
     }
@@ -962,10 +962,3 @@ func tunnelRowAccessibilityLabel(_ tunnel: CloudflareTunnel) -> String {
 }
 
 /// Medium date, in the in-app language rather than the system one.
-func tunnelDateLabel(_ date: Date) -> String {
-  let formatter = DateFormatter()
-  formatter.dateStyle = .medium
-  formatter.timeStyle = .short
-  formatter.locale = DashL10n.activeLocale
-  return formatter.string(from: date)
-}

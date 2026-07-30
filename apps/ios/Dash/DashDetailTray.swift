@@ -127,23 +127,12 @@ extension R2Object {
           value: ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))
       },
       uploaded.map {
-        DashDetailField(label: "Uploaded", value: Self.formattedUploadDate($0))
+        DashDetailField(
+          label: "Uploaded",
+          value: DashDateFormatting.dateAndTime(fromISO8601: $0))
       },
       etag.map { DashDetailField(label: "ETag", value: $0, mono: true) },
     ].compactMap { $0 }
-  }
-
-  /// Cloudflare returns `last_modified` as ISO 8601 (with or without fractional
-  /// seconds). Show a local date + short time instead of the raw stamp.
-  private static func formattedUploadDate(_ iso: String) -> String {
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let plain = ISO8601DateFormatter()
-    plain.formatOptions = [.withInternetDateTime]
-    guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else {
-      return iso
-    }
-    return date.formatted(date: .abbreviated, time: .shortened)
   }
 }
 

@@ -990,12 +990,9 @@ private func r2BucketAccessibilityLabel(_ bucket: R2Bucket) -> String {
 
 private func r2BucketCreationText(_ value: String?) -> String? {
   guard let value, !value.isEmpty else { return nil }
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let plain = ISO8601DateFormatter()
-  plain.formatOptions = [.withInternetDateTime]
-  guard let date = fractional.date(from: value) ?? plain.date(from: value) else { return value }
-  return DashL10n.string("Created \(date.formatted(date: .abbreviated, time: .omitted))")
+  guard ExpiryReminders.date(fromISO8601: value) != nil else { return value }
+  return DashL10n.string(
+    "Created \(DashDateFormatting.dateOnly(fromISO8601: value))")
 }
 
 /// Global frames for R2 object rows, used by the two-finger paint-select pan.

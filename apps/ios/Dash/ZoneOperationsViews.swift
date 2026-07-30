@@ -418,7 +418,9 @@ struct AuditLogView: View {
     var parts: [String] = []
     if let who = entry.actor?.email ?? entry.actor?.type { parts.append(who) }
     if let what = entry.resource?.product ?? entry.resource?.type { parts.append(what) }
-    if let when = entry.occurredAt { parts.append(auditDateLabel(when)) }
+    if let when = entry.occurredAt {
+      parts.append(DashDateFormatting.dateAndTime(fromISO8601: when))
+    }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
@@ -442,23 +444,6 @@ struct AuditLogView: View {
       self.error = error.dashActionableMessage
     }
   }
-}
-
-/// Audit "when" stamps are ISO 8601 with or without fractional seconds; show a
-/// localized date + time, falling back to the raw day prefix.
-private func auditDateLabel(_ value: String) -> String {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let plain = ISO8601DateFormatter()
-  plain.formatOptions = [.withInternetDateTime]
-  guard let date = fractional.date(from: value) ?? plain.date(from: value) else {
-    return String(value.prefix(10))
-  }
-  let label = DateFormatter()
-  label.dateStyle = .medium
-  label.timeStyle = .short
-  label.locale = DashL10n.activeLocale
-  return label.string(from: date)
 }
 
 /// Pure conversion for the WAF top-countries visualization, so capping,

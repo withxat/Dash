@@ -354,10 +354,10 @@ struct RegistrarRegistrationRows: View {
       DashInfoRow("Status") { StatusBadge(token) }
     }
     if let expires = summary.expiresAt {
-      DashInfoRow("Expires", value: registrarDateLabel(expires))
+      DashInfoRow("Expires", value: DashDateFormatting.dateOnly(fromISO8601: expires))
     }
     if let created = summary.createdAt {
-      DashInfoRow("Registered", value: registrarDateLabel(created))
+      DashInfoRow("Registered", value: DashDateFormatting.dateOnly(fromISO8601: created))
     }
     // Omitted when Cloudflare did not say. Substituting a Dash-authored
     // "Cloudflare" here would state something no endpoint returned.
@@ -902,7 +902,8 @@ struct RegistrarDomainDetail: Sendable {
 extension RegistrarDomainSummary {
   fileprivate var expiresSubtitle: String? {
     guard let expiresAt else { return nil }
-    return DashL10n.string("Expires \(registrarDateLabel(expiresAt))")
+    return DashL10n.string(
+      "Expires \(DashDateFormatting.dateOnly(fromISO8601: expiresAt))")
   }
 
   /// Cloudflare documents exactly one value for `privacy_mode` (`redaction`)
@@ -935,18 +936,6 @@ extension RegistrarContact {
 }
 
 // MARK: - Formatting
-
-/// Registrar and RDAP both send ISO 8601 stamps; show a localized day.
-func registrarDateLabel(_ value: String) -> String {
-  guard let date = ExpiryReminders.date(fromISO8601: value) else {
-    return String(value.prefix(10))
-  }
-  let day = DateFormatter()
-  day.dateStyle = .medium
-  day.timeStyle = .none
-  day.locale = DashL10n.activeLocale
-  return day.string(from: date)
-}
 
 /// The EPP / RDAP status vocabulary, keyed by a code with its case and every
 /// separator dropped.

@@ -294,6 +294,8 @@ struct SettingsView: View {
   @Environment(\.openURL) private var openURL
   @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var watchtowerNotifications = false
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system.rawValue
+  @AppStorage(DashTimeFormatPreference.storageKey) private var timeFormatRaw =
+    DashTimeFormatPreference.system.rawValue
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
   @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
     true
@@ -302,12 +304,17 @@ struct SettingsView: View {
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
+  @State private var showsTimeFormatPicker = false
   @State private var showsWorkspaceWashPicker = false
   @State private var showsICloudSyncDetails = false
   @State private var showsSignOutConfirmation = false
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
+  }
+
+  private var selectedTimeFormat: DashTimeFormatPreference {
+    DashTimeFormatPreference.resolved(stored: timeFormatRaw)
   }
 
   private var selectedWorkspaceWash: DashWorkspaceWashPreset {
@@ -373,6 +380,22 @@ struct SettingsView: View {
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityHint(DashL10n.string("Choose English, Simplified Chinese, or System"))
+
+          SettingsPlainDivider()
+
+          Button {
+            showsTimeFormatPicker = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Time format"),
+              icon: SolarAsset.clock,
+              trailing: selectedTimeFormat.displayName,
+              trailingIcon: SolarAsset.menuDots
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityHint(
+            DashL10n.string("Choose System, 12-hour, 24-hour, or ISO"))
 
           SettingsPlainDivider()
 
@@ -639,6 +662,12 @@ struct SettingsView: View {
       title: DashL10n.string("Language")
     ) {
       LanguagePickerTray(languageRaw: $languageRaw)
+    }
+    .dashTray(
+      isPresented: $showsTimeFormatPicker,
+      title: DashL10n.string("Time format")
+    ) {
+      TimeFormatPickerTray(timeFormatRaw: $timeFormatRaw)
     }
     .dashTray(
       isPresented: $showsWorkspaceWashPicker,
@@ -939,6 +968,55 @@ private struct LanguagePickerTray: View {
     .dashTrayDescription(
       DashL10n.string(
         "System follows the iPhone language, including Settings → Dash → Language.")
+    )
+  }
+}
+
+private struct TimeFormatPickerTray: View {
+  @Binding var timeFormatRaw: String
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    VStack(spacing: 12) {
+      ForEach(DashTimeFormatPreference.allCases) { preference in
+        let isSelected = timeFormatRaw == preference.rawValue
+        Button {
+          guard timeFormatRaw != preference.rawValue else {
+            dismiss()
+            return
+          }
+          timeFormatRaw = preference.rawValue
+          DashDelight.selectionChanged()
+          dismiss()
+        } label: {
+          HStack(spacing: 12) {
+            Text(preference.displayName)
+              .dashTextStyle(.bodyMedium)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+            Spacer(minLength: 0)
+            SolarIcon(
+              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
+              size: 22,
+              color: isSelected ? DashTheme.brand : DashTheme.placeholder
+            )
+          }
+          .padding(.horizontal, 12)
+          .padding(.vertical, 8)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+          .background(DashTheme.Sheet.shortcutItem)
+          .clipShape(DashTheme.buttonShape)
+          .contentShape(Rectangle())
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+      }
+    }
+    .dashTrayDescription(
+      DashL10n.string(
+        "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged."
+      )
     )
   }
 }
@@ -1476,11 +1554,8 @@ struct ProfileView: View {
   /// seconds; render them as a plain date.
   private func formattedDate(_ iso: String?) -> String? {
     guard let iso else { return nil }
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    let plain = ISO8601DateFormatter()
-    guard let date = fractional.date(from: iso) ?? plain.date(from: iso) else { return iso }
-    return date.formatted(date: .abbreviated, time: .omitted)
+    guard ExpiryReminders.date(fromISO8601: iso) != nil else { return iso }
+    return DashDateFormatting.dateOnly(fromISO8601: iso)
   }
 }
 

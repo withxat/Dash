@@ -678,6 +678,40 @@
         }
       }
     },
+    "12-hour" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "12-hour"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "12 小时制"
+          }
+        }
+      }
+    },
+    "24-hour" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24-hour"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "24 小时制"
+          }
+        }
+      }
+    },
     "24h" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2578,6 +2612,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择英语、简体中文或跟随系统"
+          }
+        }
+      }
+    },
+    "Choose System, 12-hour, 24-hour, or ISO" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose System, 12-hour, 24-hour, or ISO"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择跟随系统、12 小时制、24 小时制或 ISO"
           }
         }
       }
@@ -6715,6 +6766,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "小时"
+          }
+        }
+      }
+    },
+    "ISO" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ISO"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ISO"
           }
         }
       }
@@ -11946,6 +12014,23 @@
         }
       }
     },
+    "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“跟随系统”使用 iPhone 的“24 小时制”。只影响绝对时间，相对时间不变。"
+          }
+        }
+      }
+    },
     "TTL" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12388,6 +12473,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "时间"
+          }
+        }
+      }
+    },
+    "Time format" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time format"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间格式"
           }
         }
       }

@@ -172,6 +172,39 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   }
 }
 
+/// Absolute timestamp presentation (Settings → Time format). Relative ages
+/// ("2 hours ago") stay on their own formatters; this preference only drives
+/// `DashDateFormatting`. Device-local — not mirrored through iCloud.
+enum DashTimeFormatPreference: String, CaseIterable, Identifiable, Sendable {
+  case system
+  case twelveHour = "12-hour"
+  case twentyFourHour = "24-hour"
+  case iso
+
+  static let storageKey = "dash.time_format"
+
+  var id: String { rawValue }
+
+  var displayName: String {
+    switch self {
+    case .system: DashL10n.string("System")
+    case .twelveHour: DashL10n.string("12-hour")
+    case .twentyFourHour: DashL10n.string("24-hour")
+    case .iso: DashL10n.string("ISO")
+    }
+  }
+
+  static func resolved(stored raw: String) -> DashTimeFormatPreference {
+    DashTimeFormatPreference(rawValue: raw) ?? .system
+  }
+
+  /// Current device-local choice for non-View formatters.
+  static var current: DashTimeFormatPreference {
+    resolved(
+      stored: UserDefaults.standard.string(forKey: storageKey) ?? system.rawValue)
+  }
+}
+
 /// In-app language preference (Settings → Language). Persisted separately from
 /// iOS per-app language so Dash can offer a first-class picker; `system` clears
 /// the process override and follows the phone (or Settings → Dash → Language).

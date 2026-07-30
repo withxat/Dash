@@ -741,10 +741,11 @@ struct ZoneDetailView: View {
             DashInfoRow("Registrar", value: registrar)
           }
           if let expires = registration.expiresOn {
-            DashInfoRow("Expires", value: rdapDateLabel(expires))
+            DashInfoRow("Expires", value: DashDateFormatting.dateOnly(fromISO8601: expires))
           }
           if let registered = registration.registeredOn {
-            DashInfoRow("Registered", value: rdapDateLabel(registered))
+            DashInfoRow(
+              "Registered", value: DashDateFormatting.dateOnly(fromISO8601: registered))
           }
           if let status = registration.status.first {
             DashInfoRow("Status", value: rdapStatusLabel(status))
@@ -776,21 +777,6 @@ struct ZoneNameserversGroup: View {
       }
     }
   }
-}
-
-private func rdapDateLabel(_ value: String) -> String {
-  let fractional = ISO8601DateFormatter()
-  fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-  let plain = ISO8601DateFormatter()
-  plain.formatOptions = [.withInternetDateTime]
-  let day = DateFormatter()
-  day.dateStyle = .medium
-  day.timeStyle = .none
-  day.locale = DashL10n.activeLocale
-  if let date = fractional.date(from: value) ?? plain.date(from: value) {
-    return day.string(from: date)
-  }
-  return String(value.prefix(10))
 }
 
 /// Native glass control on the detail hero card — opens the color picker.

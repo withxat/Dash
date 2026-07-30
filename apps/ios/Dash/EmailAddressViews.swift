@@ -142,25 +142,30 @@ struct EmailDestinationAddressesView: View {
 
   static func detailFields(for address: EmailDestinationAddress) -> [DashDetailField] {
     var fields = [DashDetailField(label: "Address", value: address.email, mono: true)]
-    if let added = address.created.flatMap(ExpiryReminders.date(fromISO8601:)) {
+    if let created = address.created, ExpiryReminders.date(fromISO8601: created) != nil {
       fields.append(
         DashDetailField(
-          label: "Added", value: added.formatted(date: .abbreviated, time: .shortened)))
+          label: "Added",
+          value: DashDateFormatting.dateAndTime(fromISO8601: created)))
     }
     fields.append(
       DashDetailField(
         label: "Verified",
-        value: address.verified.flatMap(ExpiryReminders.date(fromISO8601:))
-          .map { $0.formatted(date: .abbreviated, time: .shortened) }
-          ?? DashL10n.string("Unverified")))
+        value: address.verified.flatMap { iso -> String? in
+          guard ExpiryReminders.date(fromISO8601: iso) != nil else { return nil }
+          return DashDateFormatting.dateAndTime(fromISO8601: iso)
+        } ?? DashL10n.string("Unverified")))
     return fields
   }
 
   static func addedSubtitle(_ address: EmailDestinationAddress) -> String? {
-    guard let added = address.created.flatMap(ExpiryReminders.date(fromISO8601:)) else {
+    guard let created = address.created,
+      ExpiryReminders.date(fromISO8601: created) != nil
+    else {
       return nil
     }
-    return DashL10n.string("Added \(added.formatted(date: .abbreviated, time: .omitted))")
+    return DashL10n.string(
+      "Added \(DashDateFormatting.dateOnly(fromISO8601: created))")
   }
 
   // MARK: Loading

@@ -59,6 +59,64 @@ import UIKit
   #expect(DashAppLanguage.system.localeIdentifier == nil)
 }
 
+@Test func timeFormatPreferenceResolvesStoredPreference() {
+  #expect(DashTimeFormatPreference.resolved(stored: "system") == .system)
+  #expect(DashTimeFormatPreference.resolved(stored: "12-hour") == .twelveHour)
+  #expect(DashTimeFormatPreference.resolved(stored: "24-hour") == .twentyFourHour)
+  #expect(DashTimeFormatPreference.resolved(stored: "iso") == .iso)
+  #expect(DashTimeFormatPreference.resolved(stored: "nope") == .system)
+
+  let rawValues = DashTimeFormatPreference.allCases.map(\.rawValue)
+  #expect(Set(rawValues).count == rawValues.count)
+}
+
+@Test func dateFormattingUsesAbsolutePresets() {
+  // 2026-07-30 14:30:00 UTC → fixed local wall via explicit TimeZone.
+  var calendar = Calendar(identifier: .gregorian)
+  calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+  let date = calendar.date(
+    from: DateComponents(year: 2026, month: 7, day: 30, hour: 14, minute: 30))!
+  let zone = TimeZone(secondsFromGMT: 0)!
+  let english = Locale(identifier: "en_US")
+  let chinese = Locale(identifier: "zh_Hans")
+
+  #expect(
+    DashDateFormatting.dateOnly(
+      date, preference: .iso, locale: english, timeZone: zone)
+      == "2026-07-30")
+  #expect(
+    DashDateFormatting.dateAndTime(
+      date, preference: .iso, locale: english, timeZone: zone)
+      == "2026-07-30 14:30")
+
+  let twelve = DashDateFormatting.dateAndTime(
+    date, preference: .twelveHour, locale: english, timeZone: zone)
+  #expect(twelve.contains("2:30"))
+  #expect(twelve.uppercased().contains("PM"))
+
+  let twentyFour = DashDateFormatting.dateAndTime(
+    date, preference: .twentyFourHour, locale: english, timeZone: zone)
+  #expect(twentyFour.contains("14:30"))
+  #expect(!twentyFour.uppercased().contains("PM"))
+  #expect(!twentyFour.uppercased().contains("AM"))
+
+  let chineseDay = DashDateFormatting.dateOnly(
+    date, preference: .twentyFourHour, locale: chinese, timeZone: zone)
+  #expect(chineseDay.contains("2026"))
+  #expect(chineseDay.contains("7"))
+
+  #expect(
+    DashDateFormatting.dateOnly(fromISO8601: "not-a-date", preference: .iso)
+      == "not-a-date")
+  #expect(
+    DashDateFormatting.dateOnly(
+      fromISO8601: "2026-07-30T14:30:00Z",
+      preference: .iso,
+      locale: english,
+      timeZone: zone)
+      == "2026-07-30")
+}
+
 @Test func workspaceWashPresetResolvesStoredPreference() {
   #expect(DashWorkspaceWashPreset.defaultPreset == .cloudflare)
   #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .cloudflare)
