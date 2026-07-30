@@ -830,7 +830,7 @@ enum WatchtowerAnalyticsChartModel {
     rangeLabel: String,
     value: String
   ) -> String {
-    DashL10n.string("\(metric.title) for \(rangeLabel). Total \(value).")
+    DashL10n.string("\(DashL10n.ui(metric.title)) for \(rangeLabel). Total \(value).")
   }
 
   private static func bandwidth(_ bytes: Int64) -> String {
