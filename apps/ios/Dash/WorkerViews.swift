@@ -82,15 +82,40 @@ struct WorkerAnalyticsChartPoint: Identifiable, Hashable {
   var id: Date { date }
 }
 
-/// Which chart the worker metrics card shows below the stat tiles.
-private enum WorkerMetricsTab: Hashable {
+/// The two collapsed charts below the worker metrics panel. Each is its own
+/// card, and each pushes its own chart detail — the pair replaced a tab strip
+/// that hid half the data behind a switch.
+private enum WorkerChartMetric: Hashable, CaseIterable {
   case requests
   case cpu
 
-  var detailTitle: String {
+  /// Catalog key; also the pushed detail's title.
+  var title: String {
     switch self {
     case .requests: "Requests"
     case .cpu: "CPU Time"
+    }
+  }
+
+  /// Series id shared by the collapsed sparkline and the detail chart.
+  var seriesKey: String {
+    switch self {
+    case .requests: "requests"
+    case .cpu: "cpu"
+    }
+  }
+
+  var detailAccessibilityIdentifier: String {
+    switch self {
+    case .requests: "worker-chart-detail-requests"
+    case .cpu: "worker-chart-detail-cpu"
+    }
+  }
+
+  func value(in point: WorkerAnalyticsChartPoint) -> Double {
+    switch self {
+    case .requests: Double(point.requests)
+    case .cpu: point.cpuTimeP50Ms
     }
   }
 }
@@ -145,8 +170,6 @@ struct WorkerDetailView: View {
   let name: String
   @State private var analytics: WorkerAnalyticsPayload?
   @State private var analyticsError: String?
-  @State private var metricsTab: WorkerMetricsTab = .requests
-  @State private var selectedMetricSeriesID: String?
   @State private var deployments: [WorkerDeploymentSummary] = []
   @State private var deploymentError: String?
   @State private var selectedDeployment: WorkerDeploymentSummary?
@@ -200,7 +223,7 @@ struct WorkerDetailView: View {
       retry: { Task { await load(force: true) } }
     ) {
       if let analytics {
-        workerMetricsCard(analytics)
+        workerMetricsSection(analytics)
       } else if analyticsError != nil {
         workerMetricsFallbackCard
       }
@@ -506,10 +529,12 @@ struct WorkerDetailView: View {
     )
   }
 
-  /// The metrics card's own shape — heading, three stat tiles, a chart block —
-  /// holding the slot when analytics failed cold, with the failure veiled over
-  /// it. Collapsing the glass card to a one-line notice was the section
-  /// popping out of its frame.
+  /// The metrics panel's own shape — heading over three stat tiles — holding the
+  /// slot when analytics failed cold, with the failure veiled over it.
+  /// Collapsing the glass card to a one-line notice was the section popping out
+  /// of its frame. The two collapsed chart cards are separate surfaces and stay
+  /// absent here: with no payload there is no series to paint, exactly as when a
+  /// loaded worker has no chart points.
   private var workerMetricsFallbackCard: some View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: 10) {
@@ -529,10 +554,6 @@ struct WorkerDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
           }
         }
-        RoundedRectangle(cornerRadius: 8, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.3))
-          .frame(maxWidth: .infinity)
-          .frame(height: 120)
       }
       .dashSectionFailure(
         analyticsError,
@@ -540,115 +561,137 @@ struct WorkerDetailView: View {
     }
   }
 
-  private func workerMetricsCard(_ summary: WorkerAnalyticsPayload) -> some View {
+  /// Totals panel, then one row of collapsed charts. The numbers live in the
+  /// panel and nowhere else — a collapsed card that repeated its own total two
+  /// surfaces below the tile showing it read as a duplicate, so the cards carry
+  /// a title, a sparkline, and the detail push.
+  private func workerMetricsSection(_ summary: WorkerAnalyticsPayload) -> some View {
     let chartPoints = WorkerAnalyticsChartModel.points(from: summary.points)
-    return DashGlassCard {
-      VStack(alignment: .leading, spacing: 10) {
-        // Tiles combine into one accessibility element; the charts below stay
-        // their own elements so DitherAccessibility keeps working.
-        VStack(alignment: .leading, spacing: 10) {
-          Text("Last 24 hours")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 12) {
-              workerMetric("Requests", summary.requests.formatted())
-              workerMetric("Errors", summary.errors.formatted())
-              workerMetric(
-                "CPU p50",
-                String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
-            }
-          } else {
-            HStack(spacing: 12) {
-              workerMetric("Requests", summary.requests.formatted())
-              workerMetric("Errors", summary.errors.formatted())
-              workerMetric(
-                "CPU p50",
-                String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
-            }
-          }
-          if summary.requests > 0 {
-            let rate = Double(summary.errors) / Double(summary.requests)
-            Text("Error rate \(String(format: "%.2f%%", rate * 100))")
-              .dashTextStyle(.caption)
-              .foregroundStyle(rate > 0.05 ? DashTheme.danger : DashTheme.subtle)
-          }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-          DashL10n.string("Worker metrics. \(summary.requests) requests, \(summary.errors) errors")
-        )
-        if !chartPoints.isEmpty {
-          DashTextTabs(
-            items: [("Requests", WorkerMetricsTab.requests), ("CPU", .cpu)],
-            selection: $metricsTab)
-          let detail = workerChartDetail(summary, points: chartPoints)
-          HStack(alignment: .center, spacing: 8) {
-            Text(DashL10n.ui(detail.title))
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Spacer(minLength: 4)
-            DashChartDetailButton(detail: detail)
-          }
-          switch metricsTab {
-          case .requests:
-            workerRequestsChart(summary, points: chartPoints)
-          case .cpu:
-            workerCPUChart(summary, points: chartPoints)
-          }
-        }
+    return DashSurfaceStack {
+      workerMetricsPanel(summary)
+      if !chartPoints.isEmpty {
+        workerChartRow(summary, points: chartPoints)
       }
     }
-    .onChange(of: metricsTab) { selectedMetricSeriesID = nil }
-    .onChange(of: analytics) { selectedMetricSeriesID = nil }
   }
 
-  private func workerRequestsChart(
-    _ summary: WorkerAnalyticsPayload, points: [WorkerAnalyticsChartPoint]
-  ) -> some View {
-    let showsErrors = summary.errors > 0
-    return DitherAreaChart(
-      data: workerDitherData(points),
-      series: workerRequestSeries(showsErrors: showsErrors),
-      options: DashTheme.DitherChart.options(
-        showsLegend: showsErrors,
-        accessibility: DitherAccessibility(
-          title: DashL10n.ui("Worker requests"),
-          summary: WorkerAnalyticsChartModel.requestsAccessibilitySummary(
-            requests: summary.requests,
-            errors: summary.errors),
-          categoryAxisLabel: DashL10n.ui("Time"),
-          valueAxisLabel: DashL10n.ui("Events"))),
-      highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID
-    )
-    .frame(
-      height: DashTheme.DitherChart.height(
-        dynamicTypeSize: dynamicTypeSize,
-        showsLegend: showsErrors))
+  private func workerMetricsPanel(_ summary: WorkerAnalyticsPayload) -> some View {
+    DashGlassCard {
+      // The whole panel is one accessibility element; each chart card below is
+      // its own.
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Last 24 hours")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: 12) {
+            workerMetric("Requests", summary.requests.formatted())
+            workerMetric("Errors", summary.errors.formatted())
+            workerMetric(
+              "CPU p50",
+              String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+          }
+        } else {
+          HStack(spacing: 12) {
+            workerMetric("Requests", summary.requests.formatted())
+            workerMetric("Errors", summary.errors.formatted())
+            workerMetric(
+              "CPU p50",
+              String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
+          }
+        }
+        if summary.requests > 0 {
+          let rate = Double(summary.errors) / Double(summary.requests)
+          Text("Error rate \(String(format: "%.2f%%", rate * 100))")
+            .dashTextStyle(.caption)
+            .foregroundStyle(rate > 0.05 ? DashTheme.danger : DashTheme.subtle)
+        }
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(
+        DashL10n.string("Worker metrics. \(summary.requests) requests, \(summary.errors) errors")
+      )
+    }
   }
 
-  private func workerCPUChart(
+  @ViewBuilder
+  private func workerChartRow(
     _ summary: WorkerAnalyticsPayload,
     points: [WorkerAnalyticsChartPoint]
   ) -> some View {
-    DitherLineChart(
-      data: workerDitherData(points),
-      series: workerCPUSeries,
-      options: DashTheme.DitherChart.options(
-        showsLegend: false,
-        accessibility: DitherAccessibility(
-          title: DashL10n.ui("Worker CPU time"),
-          summary: WorkerAnalyticsChartModel.cpuAccessibilitySummary(points: points),
-          categoryAxisLabel: DashL10n.ui("Time"),
-          valueAxisLabel: DashL10n.ui("Milliseconds"))),
-      highlighted: selectedMetricSeriesID != nil,
-      selection: $selectedMetricSeriesID
-    )
-    .frame(
-      height: DashTheme.DitherChart.height(
-        dynamicTypeSize: dynamicTypeSize,
-        showsLegend: false))
+    if dynamicTypeSize.isAccessibilitySize {
+      // A half-width card cannot hold its title at these sizes — the same
+      // reflow Watchtower's card layout performs.
+      VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(WorkerChartMetric.allCases, id: \.self) { metric in
+          workerChartCard(metric, summary: summary, points: points)
+        }
+      }
+    } else {
+      // Both cards are structurally identical — a single reserved title line
+      // over a fixed-height plot — so halving the row is all it takes for the
+      // pair to stand the same height.
+      HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(WorkerChartMetric.allCases, id: \.self) { metric in
+          workerChartCard(metric, summary: summary, points: points)
+            .frame(maxWidth: .infinity)
+        }
+      }
+    }
+  }
+
+  /// One collapsed chart. The sparkline is an area band for both metrics — the
+  /// floor lift that keeps a quiet series visible is a band's device, and a line
+  /// pinned to 10% would state a value the worker never had. The CPU detail
+  /// behind it stays a line chart.
+  private func workerChartCard(
+    _ metric: WorkerChartMetric,
+    summary: WorkerAnalyticsPayload,
+    points: [WorkerAnalyticsChartPoint]
+  ) -> some View {
+    let collapsed = CollapsedDitherTrendSeries(values: points.map { metric.value(in: $0) })
+    let data = zip(points, collapsed.values).map { point, value in
+      DitherDatum(
+        id: point.date.ISO8601Format(),
+        label: point.date.formatted(workerChartAxisFormat),
+        values: [metric.seriesKey: value])
+    }
+    return DashCollapsedChartCard(
+      title: metric.title,
+      data: data,
+      series: workerCollapsedSeries(metric),
+      valueCeiling: collapsed.valueCeiling,
+      accessibilitySummary: workerChartAccessibilitySummary(
+        metric,
+        summary: summary,
+        points: points),
+      detail: workerChartDetail(metric, summary: summary, points: points),
+      detailAccessibilityIdentifier: metric.detailAccessibilityIdentifier)
+  }
+
+  /// A collapsed card paints its own metric only: the errors overlay would be a
+  /// second band with no legend to name it, and it survives in the requests
+  /// detail where the legend does.
+  private func workerCollapsedSeries(_ metric: WorkerChartMetric) -> [DitherSeries] {
+    switch metric {
+    case .requests: workerRequestSeries(showsErrors: false)
+    case .cpu: workerCPUSeries
+    }
+  }
+
+  private func workerChartAccessibilitySummary(
+    _ metric: WorkerChartMetric,
+    summary: WorkerAnalyticsPayload,
+    points: [WorkerAnalyticsChartPoint]
+  ) -> String {
+    switch metric {
+    case .requests:
+      WorkerAnalyticsChartModel.requestsAccessibilitySummary(
+        requests: summary.requests,
+        errors: summary.errors)
+    case .cpu:
+      WorkerAnalyticsChartModel.cpuAccessibilitySummary(points: points)
+    }
   }
 
   private func workerDitherData(_ points: [WorkerAnalyticsChartPoint]) -> [DitherDatum] {
@@ -700,7 +743,8 @@ struct WorkerDetailView: View {
   }
 
   private func workerChartDetail(
-    _ summary: WorkerAnalyticsPayload,
+    _ metric: WorkerChartMetric,
+    summary: WorkerAnalyticsPayload,
     points: [WorkerAnalyticsChartPoint]
   ) -> DashChartDetail {
     let data = workerDitherData(points)
@@ -711,11 +755,11 @@ struct WorkerDetailView: View {
           .dateTime.month(.abbreviated).day().hour().minute()
             .locale(DashL10n.activeLocale)))
     }
-    switch metricsTab {
+    switch metric {
     case .requests:
       let showsErrors = summary.errors > 0
       return DashChartDetail(
-        title: metricsTab.detailTitle,
+        title: metric.title,
         rangeLabel: "Last 24 hours",
         summaryValue: summary.requests.formatted(
           .number.locale(DashL10n.activeLocale)),
@@ -737,7 +781,7 @@ struct WorkerDetailView: View {
         readScopes: FeatureID.workers.capability.read)
     case .cpu:
       return DashChartDetail(
-        title: metricsTab.detailTitle,
+        title: metric.title,
         rangeLabel: "Last 24 hours",
         summaryValue: String(format: "%.1f ms", summary.cpuTimeP50Us / 1000),
         trend: DashChartTrend(
