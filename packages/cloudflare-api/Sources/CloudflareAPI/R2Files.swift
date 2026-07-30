@@ -64,6 +64,24 @@ extension CloudflareClient {
       cursor: nextCursor)
   }
 
+  /// Materializes an empty folder as the zero-byte `…/` objects Cloudflare's own
+  /// dashboard writes for its Create folder action. R2 stores prefixes, not
+  /// directories, so these markers are the only way a folder with nothing in it
+  /// survives a listing. Nested keys write every intermediate marker too —
+  /// `photos/2026/` also puts `photos/` — so a parent created in one step does
+  /// not vanish when its only child is deleted. Overwriting an existing marker
+  /// is harmless: zero bytes replace zero bytes and children are untouched.
+  public func createR2Folder(accountID: String, bucket: String, key: String) async throws {
+    for markerKey in R2FolderMarker.markerKeys(for: key) {
+      try await putR2Object(
+        accountID: accountID,
+        bucket: bucket,
+        key: markerKey,
+        data: Data(),
+        contentType: nil)
+    }
+  }
+
   /// Resolves an exact object key without mistaking a child or a similarly
   /// prefixed key for the requested object.
   public func getR2ObjectMetadata(
