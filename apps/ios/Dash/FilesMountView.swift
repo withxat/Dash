@@ -89,20 +89,18 @@ struct FilesMountView: View {
   private var accountsGroup: some View {
     DashListGroup(title: "Accounts") {
       switch accountsPhase {
-      case .loading:
+      case .loading, .failed:
+        // Keep the row placeholders under the failure veil — same contract as
+        // `DashInfoGroup` / `dashColdFailure`, not a swapped-in notice.
         loadingAccountRows
+          .dashSectionFailure(
+            accountsPhase.failureMessage,
+            retry: { Task { await loadDomains() } }
+          )
       case .content:
         ForEach(model.accounts) { account in
           accountButton(account)
         }
-      case .failed(let message):
-        VStack(spacing: DashTheme.Spacing.compact) {
-          DashNotice(kind: .error, message: message)
-          DashSecondaryPillButton(title: "Try again") {
-            Task { await loadDomains() }
-          }
-        }
-        .padding(.vertical, DashTheme.Spacing.compact)
       }
     }
   }

@@ -665,10 +665,10 @@ struct LocalizationTests {
 
 @Test func coldFailureWashRampFillsAtTheCopyAndClearsAbove() {
   let stops = DashColdFailureWashRamp.stops
-  // Fill at the copy's edge, clear at the top of the band: the failure copy
-  // always has an opaque floor and the placeholder above it always survives.
+  // Translucent at the copy's edge, clear at the top of the band: the skeleton
+  // stays readable through the veil and the wash never ends on a hard line.
   #expect(stops.first?.location == 0)
-  #expect(stops.first?.opacity == 1)
+  #expect(stops.first?.opacity == 0.88)
   #expect(stops.last?.location == 1)
   #expect(stops.last?.opacity == 0)
   // Monotonic in both axes: locations climb away from the copy and opacity only

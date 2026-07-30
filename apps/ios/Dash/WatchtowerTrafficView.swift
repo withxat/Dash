@@ -1063,40 +1063,19 @@ struct WatchtowerTrafficView: View {
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
-        if state.needsAnalyticsAccess, state.overview == nil {
-          statusCard {
-            emptyContent(
-              title: DashL10n.string("Analytics access needed"),
-              message: [
-                DashL10n.string("Allow Account Analytics: Read to load account traffic."),
-                DashL10n.string(
-                  "Dash requests all permissions used by its current features in one authorization."
-                ),
-              ].joined(separator: " "),
-              buttonTitle: DashL10n.string("Grant access")
-            ) {
-              model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)
-            }
-          }
-        } else if state.isLoadingCurrent, state.overview == nil {
-          // Cold load paints the saved layout, not one generic panel: the card
-          // count, order, and expanded/collapsed shape are already on disk, so
-          // the arriving data lands in place instead of reflowing the screen.
-          chartsSkeleton
-        } else if let error = state.currentError, state.overview == nil {
-          // Same contract as a cold list failure: the saved card layout stays
-          // painted and the failure lands on a wash over it, so the screen the
-          // user was waiting for never blinks out for one status card.
-          // `error` is already an actionable, localized message — only the
-          // surrounding chrome needs the catalog.
+        if state.overview == nil,
+          state.needsAnalyticsAccess || state.isLoadingCurrent || state.currentError != nil
+        {
+          // One continuous skeleton across load → access/error. A 403 used to
+          // swap the cards for a status panel; now the saved layout stays and
+          // the failure wash lands on top (shimmer off).
           chartsSkeleton
             .dashColdFailure(
-              title: DashL10n.string("Traffic unavailable"),
-              message: error,
-              actionTitle: DashL10n.string("Try again")
-            ) {
-              Task { await state.retry(model: model) }
-            }
+              title: coldFailureTitle,
+              message: coldFailureMessage,
+              actionTitle: coldFailureActionTitle,
+              action: performColdFailureAction
+            )
             .dashFailureRemovalTransition()
         } else if let overview = state.overview, let snapshot = state.snapshot {
           if customization.visibleMetrics.isEmpty {
@@ -1348,6 +1327,38 @@ struct WatchtowerTrafficView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(DashTheme.homeCardSurface, in: shape)
       .dashEmbossChrome(shape: shape)
+  }
+
+  private var coldFailureTitle: String {
+    state.needsAnalyticsAccess
+      ? DashL10n.string("Analytics access needed")
+      : DashL10n.string("Traffic unavailable")
+  }
+
+  private var coldFailureMessage: String? {
+    if state.needsAnalyticsAccess {
+      return [
+        DashL10n.string("Allow Account Analytics: Read to load account traffic."),
+        DashL10n.string(
+          "Dash requests all permissions used by its current features in one authorization."
+        ),
+      ].joined(separator: " ")
+    }
+    return state.currentError
+  }
+
+  private var coldFailureActionTitle: String {
+    state.needsAnalyticsAccess
+      ? DashL10n.string("Grant access")
+      : DashL10n.string("Try again")
+  }
+
+  private func performColdFailureAction() {
+    if state.needsAnalyticsAccess {
+      model.requestAccess(to: DashAuthorizationScopes.accountAnalytics)
+    } else {
+      Task { await state.retry(model: model) }
+    }
   }
 
   @ViewBuilder

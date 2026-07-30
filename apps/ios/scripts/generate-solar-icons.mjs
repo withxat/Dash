@@ -22,7 +22,6 @@ const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/packag
 const FILL_ICONS = {
 	SolarBoltFill: 'ui/Bold/Bolt',
 	SolarBoxMinimalisticFill: 'ui/Bold/BoxMinimalistic',
-	SolarClockCircleFill: 'time/BoldDuotone/ClockCircle',
 	SolarCloudFill: 'weather/Bold/Cloud',
 	SolarDangerTriangleFill: 'ui/Bold/DangerTriangle',
 	SolarFileFill: 'files/Bold/File',
@@ -137,6 +136,12 @@ const STROKE_ICONS = {
 
 /** Hand-tuned bodies that deviate from Solar's linear source. */
 const HAND_TUNED_ICONS = {
+	// Solar Bold ClockCircle paints the hands `white` on a solid disc. Our
+	// template pipeline flattens every fill to black, so that white cutout
+	// becomes a second black blob and the face reads as a solid circle.
+	// Evenodd compound path (same device as Bold AddCircle / CheckCircle).
+	SolarClockCircleFill:
+		'<path fill="#000" fill-rule="evenodd" clip-rule="evenodd" d="M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12ZM12 7.25C12.4142 7.25 12.75 7.58579 12.75 8V11.6893L15.0303 13.9697C15.3232 14.2626 15.3232 14.7374 15.0303 15.0303C14.7374 15.3232 14.2626 15.3232 13.9697 15.0303L11.4697 12.5303C11.329 12.3897 11.25 12.1989 11.25 12V8C11.25 7.58579 11.5858 7.25 12 7.25Z"/>',
 	// Solar draws menu dots as stroked rings; solid dots read better at 22pt.
 	SolarMenuDotsOutline:
 		'<circle cx="5" cy="12" r="2" fill="#000"/><circle cx="12" cy="12" r="2" fill="#000"/><circle cx="19" cy="12" r="2" fill="#000"/>',

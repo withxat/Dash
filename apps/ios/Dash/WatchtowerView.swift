@@ -144,6 +144,7 @@ struct WatchtowerView: View {
         titleAccessibilityLabel: freshness.map(
           WatchtowerAnalyticsChartModel.updatedAccessibilityLabel),
         showsTitleSkeleton: showsSkeleton,
+        titleIsMeta: true,
         actionIcon: SolarAsset.pen,
         actionLabel: DashL10n.string("Edit charts"),
         action: beginCustomization

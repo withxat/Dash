@@ -553,6 +553,9 @@ struct DashSectionHeader: View {
   /// Cold-load stand-in for the title — a short bar that matches section-title
   /// height so freshness can shimmer in place before the first stamp lands.
   var showsTitleSkeleton = false
+  /// Quiet meta copy (freshness, relative time) — footnote + subtle, not the
+  /// section-title weight used for real headings.
+  var titleIsMeta = false
   /// Optional metadata capsule seated after the title, vertically centred on
   /// it — a section's freshness, never a status. Pre-localized like `title`.
   var badge: String?
@@ -570,6 +573,7 @@ struct DashSectionHeader: View {
     icon: String? = nil,
     titleAccessibilityLabel: String? = nil,
     showsTitleSkeleton: Bool = false,
+    titleIsMeta: Bool = false,
     badge: String? = nil,
     badgeAccessibilityLabel: String? = nil,
     actionIcon: String? = nil,
@@ -580,6 +584,7 @@ struct DashSectionHeader: View {
     self.icon = icon
     self.titleAccessibilityLabel = titleAccessibilityLabel
     self.showsTitleSkeleton = showsTitleSkeleton
+    self.titleIsMeta = titleIsMeta
     self.badge = badge
     self.badgeAccessibilityLabel = badgeAccessibilityLabel
     self.actionIcon = actionIcon
@@ -590,18 +595,22 @@ struct DashSectionHeader: View {
   var body: some View {
     HStack(spacing: 8) {
       if let icon {
-        SolarIcon(asset: icon, size: 20, color: DashTheme.strong)
-          .accessibilityHidden(true)
+        SolarIcon(
+          asset: icon,
+          size: titleIsMeta ? 16 : 20,
+          color: titleIsMeta ? DashTheme.subtle : DashTheme.strong
+        )
+        .accessibilityHidden(true)
       }
       if showsTitleSkeleton {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .dashSkeletonFill(DashSkeletonStyle.strong)
-          .frame(width: 96, height: 14)
+          .dashSkeletonFill(DashSkeletonStyle.soft)
+          .frame(width: 72, height: 12)
           .accessibilityLabel(DashL10n.ui("Loading"))
       } else if !title.isEmpty {
         Text(title)
-          .dashTextStyle(.sectionTitle)
-          .foregroundStyle(DashTheme.strong)
+          .dashTextStyle(titleIsMeta ? .footnote : .sectionTitle)
+          .foregroundStyle(titleIsMeta ? DashTheme.subtle : DashTheme.strong)
           .textCase(nil)
           .layoutPriority(1)
           .accessibilityLabel(titleAccessibilityLabel ?? title)
