@@ -949,15 +949,16 @@ struct WAFEventsView: View {
       DashGlassCard {
         VStack(alignment: .leading, spacing: 8) {
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.55))
+            .dashSkeletonFill(DashSkeletonStyle.strong)
             .frame(width: 96, height: 12)
           Text(verbatim: "888,888")
             .dashTextStyle(.sectionTitle)
             .monospacedDigit()
             .lineLimit(1)
             .redacted(reason: .placeholder)
+            .dashSkeletonShimmer()
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.4))
+            .dashSkeletonFill(DashSkeletonStyle.soft)
             .frame(width: 112, height: 11)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

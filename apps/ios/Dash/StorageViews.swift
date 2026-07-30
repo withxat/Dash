@@ -2070,7 +2070,7 @@ struct KVKeyDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
           ForEach(0..<5, id: \.self) { index in
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(index == 0 ? 0.55 : 0.4))
+              .dashSkeletonFill(index == 0 ? DashSkeletonStyle.strong : DashSkeletonStyle.soft)
               .frame(width: widths[index], height: 11)
           }
         }

@@ -550,6 +550,9 @@ struct DashSectionHeader: View {
   /// What VoiceOver reads for `title` when the visible string is a bare
   /// fragment that needs its subject ("3 minutes ago" → "Updated …").
   var titleAccessibilityLabel: String?
+  /// Cold-load stand-in for the title — a short bar that matches section-title
+  /// height so freshness can shimmer in place before the first stamp lands.
+  var showsTitleSkeleton = false
   /// Optional metadata capsule seated after the title, vertically centred on
   /// it — a section's freshness, never a status. Pre-localized like `title`.
   var badge: String?
@@ -566,6 +569,7 @@ struct DashSectionHeader: View {
     _ title: String,
     icon: String? = nil,
     titleAccessibilityLabel: String? = nil,
+    showsTitleSkeleton: Bool = false,
     badge: String? = nil,
     badgeAccessibilityLabel: String? = nil,
     actionIcon: String? = nil,
@@ -575,6 +579,7 @@ struct DashSectionHeader: View {
     self.title = title
     self.icon = icon
     self.titleAccessibilityLabel = titleAccessibilityLabel
+    self.showsTitleSkeleton = showsTitleSkeleton
     self.badge = badge
     self.badgeAccessibilityLabel = badgeAccessibilityLabel
     self.actionIcon = actionIcon
@@ -588,7 +593,12 @@ struct DashSectionHeader: View {
         SolarIcon(asset: icon, size: 20, color: DashTheme.strong)
           .accessibilityHidden(true)
       }
-      if !title.isEmpty {
+      if showsTitleSkeleton {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.strong)
+          .frame(width: 96, height: 14)
+          .accessibilityLabel(DashL10n.ui("Loading"))
+      } else if !title.isEmpty {
         Text(title)
           .dashTextStyle(.sectionTitle)
           .foregroundStyle(DashTheme.strong)

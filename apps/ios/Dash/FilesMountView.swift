@@ -112,14 +112,14 @@ struct FilesMountView: View {
     if model.accounts.isEmpty {
       HStack(spacing: 12) {
         Circle()
-          .fill(DashTheme.fill.opacity(0.55))
+          .dashSkeletonFill(DashSkeletonStyle.strong)
           .frame(width: 36, height: 36)
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.55))
+          .dashSkeletonFill(DashSkeletonStyle.strong)
           .frame(width: 132, height: 14)
         Spacer(minLength: 0)
         Capsule(style: .continuous)
-          .fill(DashTheme.fill.opacity(0.45))
+          .dashSkeletonFill(DashSkeletonStyle.mid)
           .frame(width: 51, height: 31)
       }
       .frame(minHeight: DashTheme.Layout.minimumHitTarget)
@@ -129,6 +129,7 @@ struct FilesMountView: View {
       ForEach(model.accounts) { account in
         accountRow(account, isMounted: false, isLoading: true)
           .redacted(reason: .placeholder)
+          .dashSkeletonShimmer()
           .allowsHitTesting(false)
           .accessibilityHidden(true)
       }

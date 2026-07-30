@@ -1416,7 +1416,7 @@ private let watchtowerDropFrames: [CGRect] = [
   defer { DashL10n.localeOverrideForTesting = previousLocale }
 
   // No snapshot yet: the skeleton and the pull-to-refresh spinner are the only
-  // loading signals, so the header shows no badge at all.
+  // loading signals, so the header shows no freshness text at all.
   #expect(WatchtowerAnalyticsChartModel.updatedBadge(fetchedAt: nil) == nil)
 
   let now = Date()
@@ -1424,11 +1424,19 @@ private let watchtowerDropFrames: [CGRect] = [
     fetchedAt: now.addingTimeInterval(-180),
     now: now)
   #expect(badge?.contains("minute") == true || badge?.contains("seconds") == true)
-  // The capsule carries the bare fragment; only VoiceOver gets the subject.
+  // Visible string is the bare fragment; only VoiceOver gets the subject.
   #expect(badge?.hasPrefix("Updated") == false)
   #expect(
     WatchtowerAnalyticsChartModel.updatedAccessibilityLabel("3 minutes ago")
       == "Updated 3 minutes ago")
+
+  // A TimelineView tick can lag the wall clock, so a just-fetched stamp looks
+  // slightly in the future — clamp it so the header never says "in N seconds".
+  let futureClamped = WatchtowerAnalyticsChartModel.updatedBadge(
+    fetchedAt: now.addingTimeInterval(45),
+    now: now)
+  #expect(futureClamped?.contains("in ") == false)
+  #expect(futureClamped?.contains("from now") == false)
 }
 
 @Test func watchtowerAnalyticsChartPointsParseHourAndDayStamps() {

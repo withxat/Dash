@@ -207,10 +207,10 @@ struct PagesProjectDetailView: View {
         DashCard {
           VStack(alignment: .leading, spacing: 8) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(0.55))
+              .dashSkeletonFill(DashSkeletonStyle.strong)
               .frame(width: 160, height: 18)
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(0.4))
+              .dashSkeletonFill(DashSkeletonStyle.soft)
               .frame(width: 200, height: 12)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -609,7 +609,7 @@ struct PagesDeploymentDetailView: View {
     return VStack(alignment: .leading, spacing: 8) {
       ForEach(0..<6, id: \.self) { index in
         RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .fill(DashTheme.fill.opacity(index.isMultiple(of: 2) ? 0.5 : 0.35))
+          .dashSkeletonFill(index.isMultiple(of: 2) ? 0.5 : 0.35)
           .frame(width: widths[index], height: 10)
       }
     }

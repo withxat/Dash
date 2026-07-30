@@ -1086,6 +1086,9 @@ struct DashInfoGroup<Content: View>: View {
             .transition(.opacity)
           } else {
             DashInfoRowPlaceholders(rows: placeholderRows)
+              // Failure freezes the bars under the veil (same contract as
+              // `dashColdFailure`).
+              .environment(\.dashSkeletonShimmerActive, failureMessage == nil)
               .allowsHitTesting(false)
               .accessibilityHidden(failureMessage != nil)
               .transition(.opacity)
@@ -1212,11 +1215,11 @@ struct DashInfoRowPlaceholders: View {
       ForEach(0..<max(rows, 1), id: \.self) { index in
         HStack(spacing: 12) {
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.55))
+            .dashSkeletonFill(DashSkeletonStyle.strong)
             .frame(width: 64, height: 12)
           Spacer(minLength: 0)
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.4))
+            .dashSkeletonFill(DashSkeletonStyle.soft)
             .frame(width: index.isMultiple(of: 2) ? 132 : 100, height: 12)
         }
         .frame(minHeight: DashTheme.Layout.minimumHitTarget)
@@ -1321,6 +1324,7 @@ private struct DashSectionFailureModifier: ViewModifier {
   func body(content: Content) -> some View {
     ZStack {
       content
+        .environment(\.dashSkeletonShimmerActive, message == nil)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
           placeholderHeight = height
         }
@@ -1807,6 +1811,163 @@ enum DashDelight {
   }
 }
 
+// MARK: - Skeleton shimmer
+
+/// Cold-load placeholders shimmer until a failure freezes them. Flip this off
+/// under `dashColdFailure` / section failure veils so the washed-out chrome
+/// stops breathing the moment the error lands.
+private struct DashSkeletonShimmerActiveKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
+extension EnvironmentValues {
+  var dashSkeletonShimmerActive: Bool {
+    get { self[DashSkeletonShimmerActiveKey.self] }
+    set { self[DashSkeletonShimmerActiveKey.self] = newValue }
+  }
+}
+
+enum DashSkeletonStyle {
+  static let strong: Double = 0.55
+  static let mid: Double = 0.45
+  static let soft: Double = 0.4
+  /// One highlight sweep across a placeholder bar.
+  static let period: TimeInterval = 1.45
+}
+
+/// Shared fill for every cold-load bar / circle / capsule. The highlight sweep
+/// is date-driven so every placeholder on screen stays in phase, and Reduce
+/// Motion (or a failure env flip) lands on the resting fill immediately.
+struct DashSkeletonShape<S: Shape>: View {
+  var shape: S
+  var opacity: Double = DashSkeletonStyle.strong
+  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var animating: Bool { shimmerActive && !reduceMotion }
+
+  var body: some View {
+    TimelineView(
+      .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
+    ) { context in
+      shape.fill(DashTheme.fill.opacity(opacity))
+        .overlay {
+          if animating {
+            GeometryReader { geo in
+              let width = max(geo.size.width * 0.5, 36)
+              LinearGradient(
+                colors: [
+                  .clear,
+                  Color.primary.opacity(0.14),
+                  Color.primary.opacity(0.22),
+                  Color.primary.opacity(0.14),
+                  .clear,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+              )
+              .frame(width: width)
+              .offset(
+                x: dashSkeletonShimmerOffset(
+                  phase: dashSkeletonShimmerPhase(at: context.date),
+                  travel: geo.size.width,
+                  highlight: width))
+            }
+            .allowsHitTesting(false)
+          }
+        }
+        .clipShape(shape)
+    }
+  }
+}
+
+extension Shape {
+  func dashSkeletonFill(_ opacity: Double = DashSkeletonStyle.strong) -> some View {
+    DashSkeletonShape(shape: self, opacity: opacity)
+  }
+}
+
+/// Full-bleed plot / hero stand-in. Callers own the clip shape.
+struct DashSkeletonBand: View {
+  var opacity: Double = DashSkeletonStyle.soft
+  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var animating: Bool { shimmerActive && !reduceMotion }
+
+  var body: some View {
+    TimelineView(
+      .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
+    ) { context in
+      DashTheme.fill.opacity(opacity)
+        .overlay {
+          if animating {
+            GeometryReader { geo in
+              let width = max(geo.size.width * 0.45, 48)
+              LinearGradient(
+                colors: [
+                  .clear,
+                  Color.primary.opacity(0.12),
+                  Color.primary.opacity(0.2),
+                  Color.primary.opacity(0.12),
+                  .clear,
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+              )
+              .frame(width: width)
+              .offset(
+                x: dashSkeletonShimmerOffset(
+                  phase: dashSkeletonShimmerPhase(at: context.date),
+                  travel: geo.size.width,
+                  highlight: width))
+            }
+            .allowsHitTesting(false)
+          }
+        }
+    }
+  }
+}
+
+/// Soft opacity breathe for `.redacted` text stand-ins that aren't shape fills.
+struct DashSkeletonShimmerModifier: ViewModifier {
+  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var animating: Bool { shimmerActive && !reduceMotion }
+
+  func body(content: Content) -> some View {
+    TimelineView(
+      .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
+    ) { context in
+      let pulse: Double = {
+        guard animating else { return 1 }
+        let t = dashSkeletonShimmerPhase(at: context.date)
+        return 0.62 + 0.38 * (0.5 - 0.5 * cos(t * 2 * Double.pi))
+      }()
+      content.opacity(pulse)
+    }
+  }
+}
+
+extension View {
+  func dashSkeletonShimmer() -> some View {
+    modifier(DashSkeletonShimmerModifier())
+  }
+}
+
+private func dashSkeletonShimmerPhase(at date: Date) -> Double {
+  date.timeIntervalSinceReferenceDate
+    .truncatingRemainder(dividingBy: DashSkeletonStyle.period)
+    / DashSkeletonStyle.period
+}
+
+private func dashSkeletonShimmerOffset(
+  phase: Double, travel: CGFloat, highlight: CGFloat
+) -> CGFloat {
+  -highlight + CGFloat(phase) * (travel + highlight)
+}
+
 /// Placeholder rows that match `DashListRow` / recessed card geometry so first
 /// paint keeps catalog structure instead of a blank 420pt spinner. Default cold
 /// skeleton for catalog/list screens (`DashFeatureList` →
@@ -1834,15 +1995,15 @@ struct DashListRowPlaceholders: View {
       ForEach(0..<max(rows, 1), id: \.self) { _ in
         HStack(spacing: 12) {
           Circle()
-            .fill(DashTheme.fill.opacity(0.55))
+            .dashSkeletonFill(DashSkeletonStyle.strong)
             .frame(width: 44, height: 44)
           VStack(alignment: .leading, spacing: 8) {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(0.55))
+              .dashSkeletonFill(DashSkeletonStyle.strong)
               .frame(height: 14)
               .frame(maxWidth: 160)
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(0.4))
+              .dashSkeletonFill(DashSkeletonStyle.soft)
               .frame(height: 11)
               .frame(maxWidth: 220)
           }
@@ -1868,16 +2029,16 @@ struct DashMetricPanelPlaceholder: View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: 10) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.55))
+          .dashSkeletonFill(DashSkeletonStyle.strong)
           .frame(width: 96, height: 12)
         HStack(spacing: 12) {
           ForEach(0..<max(tiles, 1), id: \.self) { _ in
             VStack(alignment: .leading, spacing: 6) {
               RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(DashTheme.fill.opacity(0.4))
+                .dashSkeletonFill(DashSkeletonStyle.soft)
                 .frame(width: 56, height: 10)
               RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(DashTheme.fill.opacity(0.55))
+                .dashSkeletonFill(DashSkeletonStyle.strong)
                 .frame(width: 64, height: 16)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1896,13 +2057,14 @@ struct DashMetricTilePlaceholder: View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: 4) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.4))
+          .dashSkeletonFill(DashSkeletonStyle.soft)
           .frame(width: 72, height: 12)
         Text(verbatim: "888,888")
           .dashTextStyle(.sectionTitle)
           .monospacedDigit()
           .lineLimit(1)
           .redacted(reason: .placeholder)
+          .dashSkeletonShimmer()
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1934,7 +2096,7 @@ struct DashCollapsedChartPlaceholder: View {
               .lineLimit(showsMetricHeader ? 2 : 1, reservesSpace: true)
           } else {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .fill(DashTheme.fill.opacity(0.55))
+              .dashSkeletonFill(DashSkeletonStyle.strong)
               .frame(width: 72, height: 12)
               .frame(maxWidth: .infinity, alignment: .leading)
               .padding(.vertical, 2)
@@ -1942,7 +2104,7 @@ struct DashCollapsedChartPlaceholder: View {
         }
         if showsMetricHeader {
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.55))
+            .dashSkeletonFill(DashSkeletonStyle.strong)
             .frame(width: 64, height: 22)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -1951,7 +2113,7 @@ struct DashCollapsedChartPlaceholder: View {
       .padding(.top, DashTheme.Spacing.card)
       .padding(.bottom, 8)
 
-      DashTheme.fill.opacity(0.4)
+      DashSkeletonBand()
         .frame(maxWidth: .infinity)
         .frame(height: DashTheme.DitherChart.collapsedHeight(dynamicTypeSize: dynamicTypeSize))
         .clipShape(
@@ -1980,9 +2142,9 @@ struct DashChartPanelPlaceholder: View {
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
         RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .fill(DashTheme.fill.opacity(0.55))
+          .dashSkeletonFill(DashSkeletonStyle.strong)
           .frame(width: 112, height: 12)
-        DashTheme.fill.opacity(0.4)
+        DashSkeletonBand()
           .frame(maxWidth: .infinity)
           .frame(
             height: DashTheme.DitherChart.height(
@@ -2005,15 +2167,16 @@ struct DashSparklineCardPlaceholder: View {
       VStack(alignment: .leading, spacing: 14) {
         VStack(alignment: .leading, spacing: 6) {
           RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .fill(DashTheme.fill.opacity(0.4))
+            .dashSkeletonFill(DashSkeletonStyle.soft)
             .frame(width: 96, height: 12)
           Text(verbatim: "888,888")
             .dashTextStyle(.emptyTitle)
             .monospacedDigit()
             .lineLimit(1)
             .redacted(reason: .placeholder)
+            .dashSkeletonShimmer()
         }
-        DashTheme.fill.opacity(0.4)
+        DashSkeletonBand()
           .frame(height: 52)
           .frame(maxWidth: .infinity)
           .clipShape(
@@ -2035,7 +2198,7 @@ struct DashHeroCardPlaceholder: View {
   }
 
   var body: some View {
-    DashTheme.fill.opacity(0.45)
+    DashSkeletonBand(opacity: DashSkeletonStyle.mid)
       .aspectRatio(aspectRatio, contentMode: .fit)
       .frame(maxWidth: .infinity)
       .clipShape(shape)
@@ -2051,11 +2214,11 @@ struct DashToggleRowPlaceholder: View {
   var body: some View {
     HStack(spacing: 16) {
       RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(DashTheme.fill.opacity(0.55))
+        .dashSkeletonFill(DashSkeletonStyle.strong)
         .frame(width: 120, height: 14)
       Spacer(minLength: 12)
       Capsule(style: .continuous)
-        .fill(DashTheme.fill.opacity(0.45))
+        .dashSkeletonFill(DashSkeletonStyle.mid)
         .frame(width: 51, height: 31)
     }
     .frame(minHeight: 31)
@@ -2121,9 +2284,11 @@ private struct DashColdFailureModifier: ViewModifier {
 
       // Top-pinned: the skeleton must stay exactly where the loading phase left
       // it, whatever height the layer grows to — the point of the treatment is
-      // that nothing moves when the failure arrives.
+      // that nothing moves when the failure arrives. Shimmer stops here so the
+      // washed-out chrome doesn't keep sweeping under the error copy.
       VStack(spacing: 0) {
         content
+          .environment(\.dashSkeletonShimmerActive, false)
         Spacer(minLength: 0)
       }
       .allowsHitTesting(false)

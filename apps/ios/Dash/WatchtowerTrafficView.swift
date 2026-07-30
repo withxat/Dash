@@ -2197,6 +2197,7 @@ private struct WatchtowerMetricSkeletonCard: View {
           .monospacedDigit()
           .lineLimit(1)
           .redacted(reason: .placeholder)
+          .dashSkeletonShimmer()
         if isExpanded {
           Text(verbatim: " ")
             .dashTextStyle(.caption)
@@ -2220,7 +2221,7 @@ private struct WatchtowerMetricSkeletonCard: View {
   }
 
   private var chartBlock: some View {
-    DashTheme.fill.opacity(0.4)
+    DashSkeletonBand()
       .frame(maxWidth: .infinity)
       .frame(height: chartHeight)
       .clipShape(

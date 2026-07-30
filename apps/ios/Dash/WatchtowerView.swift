@@ -124,7 +124,8 @@ struct WatchtowerView: View {
     }
   }
 
-  /// Freshness is the section title itself (clock + relative time). Pull-to-
+  /// Freshness is the section title itself (clock + relative time). Cold loads
+  /// paint a shimmering bar in that slot; a cold failure freezes it. Pull-to-
   /// refresh owns reloading, so the charts need neither a Refresh control nor
   /// an inline spinner. The timeline only re-reads the relative wording.
   private var chartsHeader: some View {
@@ -132,15 +133,22 @@ struct WatchtowerView: View {
       let freshness = WatchtowerAnalyticsChartModel.updatedBadge(
         fetchedAt: trafficState.fetchedAt,
         now: context.date)
+      let coldFailed =
+        trafficState.overview == nil && trafficState.currentError != nil
+      let coldLoading =
+        trafficState.overview == nil && trafficState.isLoadingCurrent
+      let showsSkeleton = freshness == nil && (coldLoading || coldFailed)
       DashSectionHeader(
         freshness ?? "",
-        icon: freshness == nil ? nil : SolarAsset.Content.clock,
+        icon: (freshness != nil || showsSkeleton) ? SolarAsset.Content.clock : nil,
         titleAccessibilityLabel: freshness.map(
           WatchtowerAnalyticsChartModel.updatedAccessibilityLabel),
+        showsTitleSkeleton: showsSkeleton,
         actionIcon: SolarAsset.pen,
         actionLabel: DashL10n.string("Edit charts"),
         action: beginCustomization
       )
+      .environment(\.dashSkeletonShimmerActive, !coldFailed)
     }
   }
 

@@ -13,7 +13,7 @@ enum SolarAsset {
     static let box = "SolarBoxFill"
     static let boxMinimalistic = "SolarBoxMinimalisticFill"
     static let chart = "SolarChart2Fill"
-    /// Bars inside a rounded square — the Watchtower Charts section mark.
+    /// Bars inside a rounded square.
     static let chartSquare = "SolarChartSquareFill"
     static let checkCircle = "SolarCheckCircleFill"
     static let clock = "SolarClockCircleFill"
