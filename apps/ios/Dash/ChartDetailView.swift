@@ -239,6 +239,12 @@ struct DashChartDetailButton: View {
   let detail: DashChartDetail
   var accessibilityIdentifier: String? = nil
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  /// Painted diameter. `dashCompactHitTarget` keeps the 44pt tap area around it,
+  /// which is also the trailing clearance expanded headers reserve for this
+  /// control — so the plate's size must not grow.
+  private static let diameter: CGFloat = 32
 
   @ViewBuilder
   var body: some View {
@@ -254,20 +260,48 @@ struct DashChartDetailButton: View {
     Button {
       navigator?.push(.chartDetail(detail))
     } label: {
-      SolarIcon(
-        asset: SolarAsset.chevronRight,
-        size: DashTheme.Chevron.compact,
-        color: DashTheme.strong
-      )
-      .frame(width: 32, height: 32)
-      .background(DashTheme.recessed, in: Circle())
-      .dashCompactHitTarget()
+      plate
     }
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(
       "\(DashL10n.ui(detail.title)), \(DashL10n.ui("Details"))"
     )
     .accessibilityHint("Shows chart details")
+  }
+
+  private var glyph: some View {
+    SolarIcon(
+      asset: SolarAsset.chevronRight,
+      size: DashTheme.Chevron.compact,
+      color: DashTheme.strong
+    )
+    .frame(width: Self.diameter, height: Self.diameter)
+  }
+
+  /// Liquid Glass on iOS 26 — the same circular glass as the nav-bar icon
+  /// actions and the floated profile / inbox controls, so a chart's detail
+  /// control reads as chrome floating over the plot instead of a recessed hole
+  /// punched in the card. `.interactive()` is safe here because this view *is*
+  /// the button: the glass plane is not stealing hits from an enclosing row.
+  /// Reduce Transparency and iOS 17–18 keep the opaque recessed circle.
+  @ViewBuilder
+  private var plate: some View {
+    if reduceTransparency {
+      recessedPlate
+    } else if #available(iOS 26.0, *) {
+      glyph
+        .contentShape(Circle())
+        .glassEffect(.regular.interactive(), in: .circle)
+        .dashCompactHitTarget()
+    } else {
+      recessedPlate
+    }
+  }
+
+  private var recessedPlate: some View {
+    glyph
+      .background(DashTheme.recessed, in: Circle())
+      .dashCompactHitTarget()
   }
 }
 

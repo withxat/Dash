@@ -2387,6 +2387,7 @@ private struct WatchtowerMetricChartCard: View {
   private static let placeholderRatios: [CGFloat] = [0.28, 0.5, 0.38, 0.72, 0.56, 0.84, 0.64]
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.destinationNavigator) private var navigator
@@ -2815,21 +2816,52 @@ private struct WatchtowerMetricChartCard: View {
       alignment: .topTrailing)
   }
 
+  /// Editor controls sit in the same top-right corner as `DashChartDetailButton`
+  /// and take the same Liquid Glass circle, so entering the editor swaps the
+  /// control set without swapping the material. Keep the 28pt plate and its 4pt
+  /// padding: `WatchtowerMetricDragSourceUIView` punches exactly
+  /// `controlsPassthroughSize` (96×60) out of the drag bridge for this cluster,
+  /// and a larger plate would push a button under the lift gesture.
   private func chartControl<Label: View>(
     accessibilityLabel: String,
     action: @escaping () -> Void,
     @ViewBuilder label: () -> Label
   ) -> some View {
     Button(action: action) {
-      label()
-        .frame(width: 28, height: 28)
-        .background(DashTheme.homeCardSurface, in: Circle())
-        .dashEmbossChrome(shape: Circle())
-        .padding(4)
-        .contentShape(Circle())
+      chartControlPlate { label() }
     }
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(accessibilityLabel)
+  }
+
+  /// The glyph keeps its own tint (danger for remove, brand for the size toggle)
+  /// on a neutral plate — a tinted glass circle would read as a filled
+  /// destructive button rather than editor chrome.
+  @ViewBuilder
+  private func chartControlPlate<Label: View>(
+    @ViewBuilder label: () -> Label
+  ) -> some View {
+    let glyph = label().frame(width: 28, height: 28)
+    if reduceTransparency {
+      embossedControlPlate(glyph)
+    } else if #available(iOS 26.0, *) {
+      glyph
+        .glassEffect(.regular.interactive(), in: .circle)
+        // Same padded circle the embossed plate offers, so the tap area does not
+        // shrink to the 28pt glass.
+        .padding(4)
+        .contentShape(Circle())
+    } else {
+      embossedControlPlate(glyph)
+    }
+  }
+
+  private func embossedControlPlate(_ glyph: some View) -> some View {
+    glyph
+      .background(DashTheme.homeCardSurface, in: Circle())
+      .dashEmbossChrome(shape: Circle())
+      .padding(4)
+      .contentShape(Circle())
   }
 
   private var seriesColor: DitherColor {
