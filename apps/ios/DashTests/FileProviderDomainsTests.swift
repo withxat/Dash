@@ -44,7 +44,7 @@ import Testing
     ))
   #expect(
     !AppModel.shouldReconcileFileProviderDomains(
-      authState: .checking,
+      authState: .loading,
       identityStale: false,
       isDemoSession: false,
       isSigningOut: false
