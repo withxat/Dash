@@ -628,11 +628,14 @@ enum WatchtowerAnalyticsChartModel {
   ///
   /// `now` often comes from a `TimelineView` schedule tick, which can lag the
   /// wall clock by up to the period. A just-fetched stamp then looks slightly
-  /// in the future and `RelativeDateTimeFormatter` would say "in N seconds" —
-  /// clamp any future stamp down so freshness always reads as past-or-now.
+  /// in the future. `RelativeDateTimeFormatter` also renders a zero or
+  /// sub-second age as "in 0 seconds", so handle that boundary explicitly.
   static func updatedBadge(fetchedAt: Date?, now: Date = .now) -> String? {
     guard let fetchedAt else { return nil }
-    return watchtowerRelativeTime(min(fetchedAt, now), relativeTo: now)
+    guard now.timeIntervalSince(fetchedAt) >= 1 else {
+      return DashL10n.string("just now")
+    }
+    return watchtowerRelativeTime(fetchedAt, relativeTo: now)
   }
 
   /// The fragment alone needs its subject back for VoiceOver.

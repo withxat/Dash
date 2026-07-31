@@ -1413,12 +1413,16 @@ private let watchtowerDropFrames: [CGRect] = [
       == "Updated 3 minutes ago")
 
   // A TimelineView tick can lag the wall clock, so a just-fetched stamp looks
-  // slightly in the future — clamp it so the header never says "in N seconds".
+  // slightly in the future. The zero/sub-second formatter boundary must stay
+  // a positive, localized "just now" result rather than "in 0 seconds".
   let futureClamped = WatchtowerAnalyticsChartModel.updatedBadge(
     fetchedAt: now.addingTimeInterval(45),
     now: now)
-  #expect(futureClamped?.contains("in ") == false)
-  #expect(futureClamped?.contains("from now") == false)
+  #expect(futureClamped == "just now")
+  #expect(
+    WatchtowerAnalyticsChartModel.updatedBadge(
+      fetchedAt: now.addingTimeInterval(-0.5),
+      now: now) == "just now")
 }
 
 @Test func watchtowerAnalyticsChartPointsParseHourAndDayStamps() {
