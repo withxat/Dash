@@ -368,7 +368,9 @@ struct MainTabView: View {
     .background {
       ZStack(alignment: .top) {
         DashTheme.canvas
-        DashWorkspaceTopWash(color: DashTheme.workspaceWash(for: workspaceWashPreset))
+        if workspaceWashPreset != .none {
+          DashWorkspaceTopWash(color: DashTheme.workspaceWash(for: workspaceWashPreset))
+        }
       }
       .ignoresSafeArea()
     }

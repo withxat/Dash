@@ -829,6 +829,14 @@ private struct WorkspaceWashPickerTray: View {
               .fill(DashTheme.workspaceWash(for: preset))
               .frame(width: 22, height: 22)
               .overlay(Circle().stroke(DashTheme.line, lineWidth: 1))
+              .overlay {
+                if preset == .none {
+                  Rectangle()
+                    .fill(DashTheme.iconMuted)
+                    .frame(width: 1, height: 18)
+                    .rotationEffect(.degrees(45))
+                }
+              }
               .accessibilityHidden(true)
             Text(preset.displayName)
               .dashTextStyle(.bodyMedium)

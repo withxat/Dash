@@ -148,6 +148,7 @@ enum DashInteractionPreferences {
 /// than a color value so every choice can keep following Kumo's adaptive
 /// light, dark, and Increased Contrast stops.
 enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
+  case none
   case cloudflare
   case blue
   case purple
@@ -160,6 +161,7 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
 
   var displayName: String {
     switch self {
+    case .none: DashL10n.string("None")
     case .cloudflare: DashL10n.string("Cloudflare")
     case .blue: DashL10n.string("Blue")
     case .purple: DashL10n.string("Purple")

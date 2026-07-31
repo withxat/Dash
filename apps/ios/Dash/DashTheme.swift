@@ -475,6 +475,8 @@ enum DashTheme {
   /// and teal match the app's categorical chart families.
   static func workspaceWash(for preset: DashWorkspaceWashPreset) -> Color {
     switch preset {
+    case .none:
+      .clear
     case .cloudflare:
       wash
     case .blue:

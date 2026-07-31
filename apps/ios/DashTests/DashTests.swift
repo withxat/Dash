@@ -119,6 +119,7 @@ import UIKit
 
 @Test func workspaceWashPresetResolvesStoredPreference() {
   #expect(DashWorkspaceWashPreset.defaultPreset == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "none") == .none)
   #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .cloudflare)
   #expect(DashWorkspaceWashPreset.resolved(stored: "blue") == .blue)
   #expect(DashWorkspaceWashPreset.resolved(stored: "purple") == .purple)
