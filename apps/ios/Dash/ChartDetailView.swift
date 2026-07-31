@@ -346,17 +346,21 @@ struct DashChartDetailView: View {
   }
 
   var body: some View {
-    DashFeatureList(
-      header: {
-        if detail.showsRangeTabs {
-          DashTextTabs(
-            items: detail.ranges.map { ($0.range.title, $0.range) },
-            selection: $range
-          )
-        }
+    DashFeatureList {
+      summaryHeader
+      chart
+        .frame(height: chartHeight)
+        // The plot is the page here, not an inset card: it runs to both screen
+        // edges and the range selector sits under it like a caption.
+        .padding(.horizontal, -DashTheme.Spacing.screen)
+        .dashSectionBoundary()
+      if detail.showsRangeTabs {
+        DashChartRangeSelector(
+          items: detail.ranges.map { ($0.range.title, $0.range) },
+          selection: $range
+        )
+        .dashSectionBoundary()
       }
-    ) {
-      summaryCard
       DashListGroupHeader(title: DashL10n.ui("Details"))
         .padding(.horizontal, DashTheme.Spacing.rowInset)
         .dashSectionBoundary()
@@ -376,32 +380,30 @@ struct DashChartDetailView: View {
     return DashChartDetailActiveSnapshot(detail: detail)
   }
 
-  private var summaryCard: some View {
-    DashGlassCard {
-      VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-        // Tabs already name the window when present; keep the prose heading
-        // only for single-snapshot details (Deployments, Loaded records, …).
-        if !detail.showsRangeTabs {
-          Text(DashL10n.ui(active.rangeLabel))
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-        }
-
-        if active.summaryValue != nil || active.trend?.formattedPercentage != nil {
-          HStack(alignment: .lastTextBaseline, spacing: 8) {
-            if let summaryValue = active.summaryValue {
-              Text(verbatim: summaryValue)
-                .dashChartPrimaryMetricValue()
-            }
-            DashChartTrendLabel(trend: active.trend)
-            Spacer(minLength: 4)
+  /// Value first, comparison opposite it, the range named underneath — the
+  /// whole block sits on the page rather than in a card, so the plot below can
+  /// reach both screen edges without a frame cutting across it.
+  private var summaryHeader: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      if active.summaryValue != nil || active.trend?.formattedPercentage != nil {
+        HStack(alignment: .firstTextBaseline, spacing: DashTheme.Spacing.itemGap) {
+          if let summaryValue = active.summaryValue {
+            Text(verbatim: summaryValue)
+              .dashChartPrimaryMetricValue()
           }
+          Spacer(minLength: 4)
+          DashChartDetailTrendLabel(trend: active.trend)
         }
-
-        chart
-          .frame(height: chartHeight)
+      }
+      // Tabs already name the window when present; keep the prose heading
+      // only for single-snapshot details (Deployments, Loaded records, …).
+      if !detail.showsRangeTabs {
+        Text(DashL10n.ui(active.rangeLabel))
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
       }
     }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   @ViewBuilder
@@ -456,9 +458,9 @@ struct DashChartDetailView: View {
         true
       }
     if dynamicTypeSize.isAccessibilitySize {
-      return showsLegend ? 340 : 312
+      return showsLegend ? 360 : 332
     }
-    return showsLegend ? 284 : 260
+    return showsLegend ? 308 : 284
   }
 
   private var tableRows: [DashChartTableRowModel] {
@@ -488,6 +490,86 @@ struct DashChartDetailView: View {
               value: detail.tableValueFormat.tableString(slice.value),
               color: slice.color)
           ])
+      }
+    }
+  }
+}
+
+/// The detail screen's comparison label: an arrow beside the signed percentage,
+/// scaled up to sit opposite the primary value. `DashChartTrendLabel` stays the
+/// compact caption used on cards.
+private struct DashChartDetailTrendLabel: View {
+  let trend: DashChartTrend?
+
+  var body: some View {
+    if let trend, let percentage = trend.formattedPercentage {
+      HStack(spacing: 2) {
+        if let asset = trend.compactDirectionAsset {
+          SolarIcon(asset: asset, size: 20, color: trend.foreground)
+        }
+        Text(verbatim: percentage.trimmingSign)
+          .dashTextStyle(.sectionTitle)
+          .monospacedDigit()
+          .lineLimit(1)
+          .allowsTightening(true)
+          .minimumScaleFactor(0.75)
+          .foregroundStyle(trend.foreground)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(DashL10n.ui("Change")): \(percentage)")
+    }
+  }
+}
+
+extension String {
+  /// The arrow already states direction, so the glyph beside it would repeat
+  /// the sign. Only a leading +/− is dropped; the digits are untouched.
+  fileprivate var trimmingSign: String {
+    var text = self
+    for sign in ["+", "-", "\u{2212}"] where text.hasPrefix(sign) {
+      text.removeFirst()
+      break
+    }
+    return text
+  }
+}
+
+/// Evenly divided time-range control under the plot: the selection is a filled
+/// capsule that slides between segments. Distinct from `DashTextTabs`, which is
+/// leading-aligned page chrome above a screen's content.
+private struct DashChartRangeSelector<Selection: Hashable>: View {
+  let items: [(title: String, value: Selection)]
+  @Binding var selection: Selection
+  @Namespace private var namespace
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(items.indices, id: \.self) { index in
+        let item = items[index]
+        let isSelected = selection == item.value
+        Button {
+          withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick) {
+            selection = item.value
+          }
+        } label: {
+          Text(DashL10n.ui(item.title))
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(isSelected ? DashTheme.strong : DashTheme.placeholder)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity)
+            .frame(height: DashTheme.Layout.minimumHitTarget)
+            .background {
+              if isSelected {
+                Capsule(style: .continuous)
+                  .fill(DashTheme.recessed)
+                  .matchedGeometryEffect(id: "dashChartRangeSelection", in: namespace)
+              }
+            }
+            .contentShape(Capsule(style: .continuous))
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
       }
     }
   }
