@@ -78,9 +78,7 @@ build never skips the versions history:
 pnpm web:deploy
 ```
 
-`observability.enabled` is on in `wrangler.jsonc` (Workers Logs). A GitHub
-Actions cron (`.github/workflows/relay-probe.yml`) dials `/health` and checks
-that `/oauth/callback` still 302s to `dash://` every 15 minutes.
+`observability.enabled` is on in `wrangler.jsonc` (Workers Logs).
 
 Verify:
 
