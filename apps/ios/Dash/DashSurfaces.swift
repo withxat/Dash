@@ -602,8 +602,14 @@ struct DashListGroupLink<Label: View>: View {
 }
 
 struct DashListGroupDivider: View {
+  /// A filled rule, not `Divider()`: the system divider paints its own line
+  /// under the overlay, so a translucent token stacked on top read darker than
+  /// the same token anywhere else. Same 1pt edge `DashTextTabs` and
+  /// `SettingsPlainDivider` draw.
   var body: some View {
-    Divider().overlay(DashTheme.panelLine)
+    Rectangle()
+      .fill(DashTheme.panelLine)
+      .frame(height: 1)
   }
 }
 

@@ -513,8 +513,8 @@ enum DashTheme {
   static let separator = Color(
     uiColor: UIColor { traits in
       traits.userInterfaceStyle == .dark
-        ? UIColor.white.withAlphaComponent(0.06)
-        : UIColor.black.withAlphaComponent(0.08)
+        ? UIColor.white.withAlphaComponent(0.045)
+        : UIColor.black.withAlphaComponent(0.055)
     })
   /// Alias of `separator` — kept for older stroke call sites.
   static var line: Color { separator }

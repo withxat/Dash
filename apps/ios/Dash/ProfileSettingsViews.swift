@@ -184,8 +184,12 @@ struct SettingsPlainDivider: View {
   var featured = false
 
   var body: some View {
-    Divider()
-      .overlay(DashTheme.separator)
+    // A filled rule, not `Divider()`: the system divider paints its own line
+    // under the overlay, so a translucent token stacked on top read darker
+    // than the same token anywhere else. Same 1pt edge `DashTextTabs` draws.
+    Rectangle()
+      .fill(DashTheme.separator)
+      .frame(height: 1)
       .padding(
         .leading,
         DashTheme.Spacing.screen
@@ -385,7 +389,6 @@ struct SettingsView: View {
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Top glow"),
-              subtitle: DashL10n.string("For Home, Resources, and Watchtower."),
               icon: SolarAsset.sunset,
               trailing: selectedWorkspaceWash.displayName,
               trailingIcon: SolarAsset.menuDots
@@ -401,7 +404,6 @@ struct SettingsView: View {
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Chart style"),
-              subtitle: DashL10n.string("Dithered charts or the system Swift Charts look."),
               icon: SolarAsset.chart,
               trailing: selectedChartStyle.displayName,
               trailingIcon: SolarAsset.menuDots
@@ -414,7 +416,6 @@ struct SettingsView: View {
 
           SettingsPlainToggleRow(
             title: DashL10n.string("Haptic feedback"),
-            subtitle: DashL10n.string("Vibrate on button presses, selections, and confirmations."),
             icon: SolarAsset.smartphoneVibration,
             isOn: $hapticsEnabled
           )
@@ -426,11 +427,6 @@ struct SettingsView: View {
         SettingsPlainSection(title: "iCloud") {
           SettingsPlainToggleRow(
             title: DashL10n.string("Sync settings"),
-            subtitle: DashL10n.string(
-              iCloudSyncEnabled
-                ? "Keep Dash preferences in sync across iPhones using your iCloud account."
-                : "Settings on this iPhone stay local."
-            ),
             icon: SolarAsset.cloud,
             isOn: $iCloudSyncEnabled
           )
@@ -440,9 +436,6 @@ struct SettingsView: View {
         SettingsPlainSection(title: "Watchtower") {
           SettingsPlainToggleRow(
             title: DashL10n.string("Notifications"),
-            subtitle: DashL10n.string(
-              "Notify this iPhone when a Dash refresh finds new Cloudflare deliveries."
-            ),
             icon: SolarAsset.inbox,
             isOn: $watchtowerNotifications
           )
@@ -492,7 +485,6 @@ struct SettingsView: View {
 
             SettingsPlainRow(
               title: DashL10n.string("Siri & Shortcuts"),
-              subtitle: DashL10n.string("View available actions in the Shortcuts app."),
               icon: SolarAsset.bolt,
               showsChevron: true
             )
@@ -506,7 +498,6 @@ struct SettingsView: View {
           DashListGroupLink(value: .filesMount) {
             SettingsPlainRow(
               title: DashL10n.string("Files"),
-              subtitle: DashL10n.string("Show R2 buckets in the Files app"),
               icon: SolarAsset.folder,
               showsChevron: true
             )
@@ -516,9 +507,6 @@ struct SettingsView: View {
         SettingsPlainSection(title: "Experimental") {
           SettingsPlainToggleRow(
             title: DashL10n.string("Tunnels"),
-            subtitle: DashL10n.string(
-              "Show Tunnels in Resources. Authorization is requested when you open it."
-            ),
             icon: SolarAsset.routing,
             isOn: $tunnelsExperimentalEnabled
           )
@@ -535,7 +523,6 @@ struct SettingsView: View {
           Group {
             externalRow(
               title: DashL10n.string("Send feedback"),
-              subtitle: DashL10n.string("Email i@xat.sh"),
               icon: SolarAsset.inbox,
               destination: DashHelpLink.feedback,
               accessibilityHint: DashL10n.string("Opens your email app")
@@ -648,7 +635,6 @@ struct SettingsView: View {
 
   private func externalRow(
     title: String,
-    subtitle: String? = nil,
     icon: String,
     destination: URL,
     accessibilityHint: String
@@ -658,7 +644,6 @@ struct SettingsView: View {
     } label: {
       SettingsPlainRow(
         title: title,
-        subtitle: subtitle,
         icon: icon,
         showsChevron: true
       )

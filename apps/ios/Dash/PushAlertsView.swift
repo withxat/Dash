@@ -28,9 +28,6 @@ struct PushAlertsSettingsRows: View {
 
       SettingsPlainToggleRow(
         title: DashL10n.string("Push alerts"),
-        subtitle: DashL10n.string(
-          "Forward Cloudflare notification policies to this iPhone through dash.xat.sh."
-        ),
         icon: SolarAsset.bolt,
         isOn: Binding(
           get: { pushEnabled },
@@ -98,7 +95,6 @@ struct PushAlertsSettingsRows: View {
         DashListGroupLink(value: .pushAlerts) {
           SettingsPlainRow(
             title: DashL10n.string("Alert policies"),
-            subtitle: DashL10n.string("Choose which Cloudflare alerts reach this iPhone"),
             icon: SolarAsset.bolt,
             showsChevron: true
           )
