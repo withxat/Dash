@@ -216,6 +216,7 @@ private struct RootWithSplash: View {
       .onChange(of: languageRaw) { _, _ in
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()
         DashAlertStrings.mirrorLanguage(languageRaw)
+        DashWidgetBridges.reloadMetricsWidgets()
         model.discardLocalizedCaches()
       }
       .onChange(of: scenePhase) { _, phase in

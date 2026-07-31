@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 const require = createRequire(import.meta.url)
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const assetsDir = path.join(__dirname, '../Dash/Resources/Assets.xcassets')
+const widgetAssetsDir = path.join(__dirname, '../DashWidgets/WidgetAssets.xcassets')
 const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/package.json'))
 
 /** @typedef {{ tag: 'path' | 'circle' | 'ellipse' | 'rect' | 'g', d?: string, cx?: string, cy?: string, r?: string, rx?: string, ry?: string, x?: string, y?: string, width?: string, height?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, children?: Element[] }} Element */
@@ -60,6 +61,11 @@ const FILL_ICONS = {
 	SolarAddCircleFill: 'ui/Bold/AddCircle',
 	SolarUploadFill: 'arrows-action/Bold/Upload',
 }
+
+const WIDGET_FILL_ICONS = new Set([
+	'SolarArrowRightDownBold',
+	'SolarArrowRightUpBold',
+])
 
 /** Linear outline icons reserved for controls and interface chrome. */
 const OUTLINE_ICONS = {
@@ -409,8 +415,8 @@ function strokeSvgFor(paths) {
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${body}</svg>`
 }
 
-function writeImageset(name, svg, template) {
-	const dir = path.join(assetsDir, `${name}.imageset`)
+function writeImageset(name, svg, template, catalogDir = assetsDir) {
+	const dir = path.join(catalogDir, `${name}.imageset`)
 	fs.mkdirSync(dir, { recursive: true })
 	const filename = `${name}.svg`
 	fs.writeFileSync(path.join(dir, filename), svg)
@@ -425,10 +431,19 @@ function writeImageset(name, svg, template) {
 }
 
 function generateAllIcons() {
+	fs.mkdirSync(widgetAssetsDir, { recursive: true })
+	fs.writeFileSync(path.join(widgetAssetsDir, 'Contents.json'), `${JSON.stringify({
+		info: { author: 'xcode', version: 1 },
+	}, null, 2)}\n`)
+
 	for (const [name, iconPath] of Object.entries(FILL_ICONS)) {
 		const svg = svgFor(extractElements(iconPath), { template: true })
 		writeImageset(name, svg, true)
 		console.log(`fill ${name}`)
+		if (WIDGET_FILL_ICONS.has(name)) {
+			writeImageset(name, svg, true, widgetAssetsDir)
+			console.log(`widget fill ${name}`)
+		}
 	}
 
 	// Outline assets render at stroke-width 2 (Solar ships 1.5) — see SolarIcons.swift.

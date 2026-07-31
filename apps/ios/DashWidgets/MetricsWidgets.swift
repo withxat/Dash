@@ -305,19 +305,13 @@ struct MetricsWidgetPresentation {
     case missing
   }
 
-  enum TrendTone {
-    case positive
-    case negative
-    case neutral
-  }
-
   let title: String
   /// Account name (Watchtower) or zone hostname (domain analytics).
   let scope: String
   let total: String
   /// Period-over-period label such as `+12%`, when a prior total exists.
   let trendText: String?
-  let trendTone: TrendTone
+  let trendDirection: DashChartTrendDirection?
   let values: [Double]
   let range: MetricsWidgetRange
   let fetchedAt: Date?
@@ -342,7 +336,7 @@ struct MetricsWidgetPresentation {
       scope: scope,
       total: "—",
       trendText: nil,
-      trendTone: .neutral,
+      trendDirection: nil,
       values: [],
       range: range,
       fetchedAt: nil,
@@ -361,7 +355,7 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
         scope: String(localized: "Account"),
         total: MetricsWidgetValueFormatter.count(1_284_300),
         trendText: "+12%",
-        trendTone: .neutral,
+        trendDirection: .up,
         values: [18, 24, 21, 36, 31, 46, 42, 58, 51, 67, 62, 74],
         range: .day,
         fetchedAt: .now,
@@ -431,8 +425,7 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
 
     let trend = MetricsWidgetTrendFormatter.trend(
       current: metric.total,
-      previous: metric.previousTotal,
-      polarity: configuration.metric.trendPolarity)
+      previous: metric.previousTotal)
     return MetricsWidgetEntry(
       date: now,
       presentation: MetricsWidgetPresentation(
@@ -440,7 +433,7 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
         scope: snapshot.accountName,
         total: MetricsWidgetValueFormatter.account(metric.total, metric: configuration.metric),
         trendText: trend.text,
-        trendTone: trend.tone,
+        trendDirection: trend.direction,
         values: metric.points.map(\.value),
         range: configuration.range,
         fetchedAt: snapshot.fetchedAt,
@@ -459,7 +452,7 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
         scope: "example.com",
         total: MetricsWidgetValueFormatter.count(428_900),
         trendText: "+8%",
-        trendTone: .neutral,
+        trendDirection: .up,
         values: [12, 19, 17, 28, 25, 39, 34, 48, 45, 57, 53, 64],
         range: .day,
         fetchedAt: .now,
@@ -536,8 +529,7 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
 
     let trend = MetricsWidgetTrendFormatter.trend(
       current: metric.total,
-      previous: metric.previousTotal,
-      polarity: configuration.metric.trendPolarity)
+      previous: metric.previousTotal)
     return MetricsWidgetEntry(
       date: now,
       presentation: MetricsWidgetPresentation(
@@ -545,7 +537,7 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
         scope: snapshot.domainName,
         total: MetricsWidgetValueFormatter.domain(metric.total, metric: configuration.metric),
         trendText: trend.text,
-        trendTone: trend.tone,
+        trendDirection: trend.direction,
         values: metric.points.map(\.value),
         range: configuration.range,
         fetchedAt: snapshot.fetchedAt,
@@ -659,23 +651,23 @@ private struct MetricsWidgetView: View {
         // plot.
         .lineLimit(1, reservesSpace: true)
         .minimumScaleFactor(0.85)
-      HStack(alignment: .lastTextBaseline, spacing: 8) {
+      HStack(alignment: .center, spacing: 6) {
         Text(entry.presentation.total)
           .font(.system(size: totalFontSize, weight: .bold))
           .monospacedDigit()
           .foregroundStyle(.primary)
           .lineLimit(1)
-          .minimumScaleFactor(0.65)
-        if let trendText = entry.presentation.trendText {
-          Text(verbatim: trendText)
-            .font(.caption.weight(.semibold))
-            .monospacedDigit()
-            .foregroundStyle(trendColor)
-            .lineLimit(1)
-            .fixedSize(horizontal: true, vertical: false)
+          .allowsTightening(true)
+          .layoutPriority(1)
+        if entry.presentation.trendText != nil,
+          let direction = entry.presentation.trendDirection
+        {
+          trendIcon(direction)
         }
         Spacer(minLength: 4)
       }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(metricAccessibilityLabel)
       if showsFreshness {
         Text(freshnessText)
           .font(.caption2)
@@ -715,12 +707,44 @@ private struct MetricsWidgetView: View {
       || entry.presentation.isStale(at: entry.date)
   }
 
-  private var trendColor: Color {
-    switch entry.presentation.trendTone {
-    case .positive: .green
-    case .negative: .red
-    case .neutral: .secondary
+  private var metricAccessibilityLabel: String {
+    guard let trendText = entry.presentation.trendText else {
+      return entry.presentation.total
     }
+    return
+      "\(entry.presentation.total), \(String(localized: "Change")): \(trendText)"
+  }
+
+  @ViewBuilder
+  private func trendIcon(_ direction: DashChartTrendDirection) -> some View {
+    switch direction {
+    case .up:
+      trendImage("SolarArrowRightUpBold", direction: direction)
+    case .down:
+      trendImage("SolarArrowRightDownBold", direction: direction)
+    case .flat:
+      EmptyView()
+    }
+  }
+
+  private func trendImage(
+    _ asset: String,
+    direction: DashChartTrendDirection
+  ) -> some View {
+    Image(asset)
+      .resizable()
+      .renderingMode(.template)
+      .scaledToFit()
+      .frame(width: 16, height: 16)
+      .foregroundStyle(
+        MetricsWidgetTrendPalette.color(
+          direction: direction,
+          convention: DashChartTrendColorConvention.resolved(
+            locale: DashWidgetBridges.mirroredLocale()),
+          colorScheme: colorScheme,
+          increasedContrast: colorSchemeContrast == .increased)
+      )
+      .accessibilityHidden(true)
   }
 
   @ViewBuilder
@@ -794,46 +818,56 @@ private struct MetricsWidgetView: View {
 private enum MetricsWidgetTrendFormatter {
   static func trend(
     current: Double,
-    previous: Double?,
-    polarity: MetricsWidgetTrendPolarity
-  ) -> (text: String?, tone: MetricsWidgetPresentation.TrendTone) {
-    guard current.isFinite, let previous, previous.isFinite else {
-      return (nil, .neutral)
+    previous: Double?
+  ) -> (text: String?, direction: DashChartTrendDirection?) {
+    guard let trend = DashChartTrendComparison(current: current, previous: previous) else {
+      return (nil, nil)
     }
-    let direction: Int = {
-      if current > previous { return 1 }
-      if current < previous { return -1 }
-      return 0
-    }()
-    let percentChange: Double? = {
-      if previous == 0 {
-        return current == 0 ? 0 : nil
-      }
-      let comparison = (current - previous) / abs(previous)
-      return comparison.isFinite ? comparison : nil
-    }()
-    guard let percentChange else { return (nil, .neutral) }
+    let text = trend.formattedPercentage(locale: DashWidgetBridges.mirroredLocale())
+    return (text, text == nil ? nil : trend.direction)
+  }
+}
 
-    let magnitude = abs(percentChange).formatted(
-      .percent.precision(.fractionLength(0...1)))
-    let text: String = {
-      switch direction {
-      case 1: return "+\(magnitude)"
-      case -1: return "−\(magnitude)"
-      default: return magnitude
-      }
-    }()
-    let tone: MetricsWidgetPresentation.TrendTone = {
-      switch (polarity, direction) {
-      case (.higherIsBetter, 1), (.lowerIsBetter, -1):
-        .positive
-      case (.higherIsBetter, -1), (.lowerIsBetter, 1):
-        .negative
-      default:
-        .neutral
-      }
-    }()
-    return (text, tone)
+private enum MetricsWidgetTrendPalette {
+  static func color(
+    direction: DashChartTrendDirection,
+    convention: DashChartTrendColorConvention,
+    colorScheme: ColorScheme,
+    increasedContrast: Bool
+  ) -> Color {
+    guard direction != .flat else { return .secondary }
+
+    let usesRed: Bool
+    switch (convention, direction) {
+    case (.redUpGreenDown, .up), (.greenUpRedDown, .down):
+      usesRed = true
+    case (.redUpGreenDown, .down), (.greenUpRedDown, .up):
+      usesRed = false
+    case (_, .flat):
+      return .secondary
+    }
+
+    let isDark: Bool
+    switch colorScheme {
+    case .light:
+      isDark = false
+    case .dark:
+      isDark = true
+    @unknown default:
+      return .secondary
+    }
+    let token = usesRed ? DashChartTrendColorTokens.red : DashChartTrendColorTokens.green
+    let hex = token.hex(isDark: isDark, increasedContrast: increasedContrast)
+    return Color(metricsWidgetHex: hex)
+  }
+}
+
+extension Color {
+  fileprivate init(metricsWidgetHex hex: UInt32) {
+    self.init(
+      red: Double((hex >> 16) & 0xFF) / 255,
+      green: Double((hex >> 8) & 0xFF) / 255,
+      blue: Double(hex & 0xFF) / 255)
   }
 }
 

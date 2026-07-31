@@ -1636,6 +1636,23 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashWidgetBridges.mirroredChartStyleIsSystem(in: store))
   DashWidgetBridges.mirrorChartStyle("unknown", in: store)
   #expect(!DashWidgetBridges.mirroredChartStyleIsSystem(in: store))
+
+  let systemLocale = Locale(identifier: "ja_JP")
+  #expect(
+    DashWidgetBridges.mirroredLocale(in: store, systemLocale: systemLocale)
+      .language.languageCode?.identifier == "ja")
+  store.set("zh-Hans", forKey: DashWidgetBridges.languageKey)
+  #expect(
+    DashWidgetBridges.mirroredLocale(in: store, systemLocale: systemLocale)
+      .language.languageCode?.identifier == "zh")
+  store.set("en", forKey: DashWidgetBridges.languageKey)
+  #expect(
+    DashWidgetBridges.mirroredLocale(in: store, systemLocale: systemLocale)
+      .language.languageCode?.identifier == "en")
+  store.set("system", forKey: DashWidgetBridges.languageKey)
+  #expect(
+    DashWidgetBridges.mirroredLocale(in: store, systemLocale: systemLocale)
+      .language.languageCode?.identifier == "ja")
 }
 
 @Test func homeEducationRequiresAccountScopedR2EvidenceAndHonorsDismissal() {

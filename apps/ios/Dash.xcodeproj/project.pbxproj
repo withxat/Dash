@@ -49,6 +49,7 @@
 		B000000000000000000001F0 /* DashWidgetBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F0 /* DashWidgetBridges.swift */; };
 		B000000000000000000001F1 /* DashWidgetBridges.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F0 /* DashWidgetBridges.swift */; };
 		B000000000000000000001F2 /* QuickActionsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F1 /* QuickActionsWidget.swift */; };
+		B000000000000000000001FA /* WidgetAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001FA /* WidgetAssets.xcassets */; };
 		B000000000000000000001F4 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
 		B000000000000000000001F5 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
 		B000000000000000000001F6 /* DashAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001F4 /* DashAppGroup.swift */; };
@@ -128,6 +129,8 @@
 		B000000000000000000001A1 /* MetricsWidgetPublishing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000164 /* MetricsWidgetPublishing.swift */; };
 		B000000000000000000001A2 /* MetricsWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000165 /* MetricsWidgets.swift */; };
 		B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000163 /* MetricsWidgetSnapshot.swift */; };
+		B000000000000000000001FB /* ChartTrendShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001FB /* ChartTrendShared.swift */; };
+		B000000000000000000001FC /* ChartTrendShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001FB /* ChartTrendShared.swift */; };
 		B000000000000000000001A4 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000011 /* SwiftDitherKit */; };
 		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
 		B00000000000000000000176 /* AlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000176 /* AlertRoutingTests.swift */; };
@@ -271,6 +274,7 @@
 		F00000000000000000000109 /* DashWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgets.swift; sourceTree = "<group>"; };
 		F000000000000000000001F0 /* DashWidgetBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgetBridges.swift; sourceTree = "<group>"; };
 		F000000000000000000001F1 /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
+		F000000000000000000001FA /* WidgetAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WidgetAssets.xcassets; sourceTree = "<group>"; };
 		F000000000000000000001F4 /* DashAppGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppGroup.swift; sourceTree = "<group>"; };
 		F0000000000000000000010A /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		F0000000000000000000010B /* DashWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DashWidgets.entitlements; sourceTree = "<group>"; };
@@ -309,6 +313,7 @@
 		F0000000000000000000015E /* DashControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashControls.swift; sourceTree = "<group>"; };
 		F0000000000000000000015F /* DashHeaderScrollChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashHeaderScrollChrome.swift; sourceTree = "<group>"; };
 		F000000000000000000001CF /* ChartDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDetailView.swift; sourceTree = "<group>"; };
+		F000000000000000000001FB /* ChartTrendShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTrendShared.swift; sourceTree = "<group>"; };
 		F000000000000000000001D1 /* DashCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashCharts.swift; sourceTree = "<group>"; };
 		F00000000000000000000160 /* DashFormChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFormChrome.swift; sourceTree = "<group>"; };
 		F00000000000000000000161 /* DashActionChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashActionChrome.swift; sourceTree = "<group>"; };
@@ -468,6 +473,7 @@
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
 				F000000000000000000001CF /* ChartDetailView.swift */,
+				F000000000000000000001FB /* ChartTrendShared.swift */,
 				F000000000000000000001D1 /* DashCharts.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000015A /* ZoneViews.swift */,
@@ -601,6 +607,7 @@
 				F00000000000000000000109 /* DashWidgets.swift */,
 				F00000000000000000000165 /* MetricsWidgets.swift */,
 				F000000000000000000001F1 /* QuickActionsWidget.swift */,
+				F000000000000000000001FA /* WidgetAssets.xcassets */,
 				F0000000000000000000010A /* Info.plist */,
 				F0000000000000000000010B /* DashWidgets.entitlements */,
 			);
@@ -877,6 +884,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000191 /* Localizable.xcstrings in Resources */,
+				B000000000000000000001FA /* WidgetAssets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -963,6 +971,7 @@
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
 				B000000000000000000001CF /* ChartDetailView.swift in Sources */,
+				B000000000000000000001FB /* ChartTrendShared.swift in Sources */,
 				B000000000000000000001D1 /* DashCharts.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000015A /* ZoneViews.swift in Sources */,
@@ -1065,6 +1074,7 @@
 				B00000000000000000000109 /* DashWidgets.swift in Sources */,
 				B000000000000000000001A2 /* MetricsWidgets.swift in Sources */,
 				B000000000000000000001F2 /* QuickActionsWidget.swift in Sources */,
+				B000000000000000000001FC /* ChartTrendShared.swift in Sources */,
 				B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */,
 				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B000000000000000000001F5 /* DashAppGroup.swift in Sources */,

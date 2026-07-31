@@ -7,11 +7,7 @@ import SwiftUI
 /// lower is favorable as metric metadata; the visible red / green convention
 /// follows the active language instead.
 struct DashChartTrend: Hashable, Sendable {
-  enum Direction: Hashable, Sendable {
-    case up
-    case down
-    case flat
-  }
+  typealias Direction = DashChartTrendDirection
 
   enum Polarity: Hashable, Sendable {
     case neutral
@@ -19,9 +15,11 @@ struct DashChartTrend: Hashable, Sendable {
     case lowerIsBetter
   }
 
-  let direction: Direction
-  let percentChange: Double?
+  private let comparison: DashChartTrendComparison
   let polarity: Polarity
+
+  var direction: Direction { comparison.direction }
+  var percentChange: Double? { comparison.percentChange }
 
   /// Returns nil when there is no comparable period or either input is not
   /// finite. A zero baseline has no meaningful percentage unless both periods
@@ -31,44 +29,23 @@ struct DashChartTrend: Hashable, Sendable {
     previous: Double?,
     polarity: Polarity = .neutral
   ) {
-    guard current.isFinite, let previous, previous.isFinite else { return nil }
-
-    if current > previous {
-      direction = .up
-    } else if current < previous {
-      direction = .down
-    } else {
-      direction = .flat
+    guard let comparison = DashChartTrendComparison(current: current, previous: previous) else {
+      return nil
     }
+    self.comparison = comparison
     self.polarity = polarity
-
-    if previous == 0 {
-      percentChange = current == 0 ? 0 : nil
-    } else {
-      let comparison = (current - previous) / abs(previous)
-      percentChange = comparison.isFinite ? comparison : nil
-    }
   }
 }
 
-enum DashChartTrendColorConvention: Hashable, Sendable {
-  case redUpGreenDown
-  case greenUpRedDown
-
-  static func resolved(locale: Locale) -> Self {
-    locale.language.languageCode?.identifier == "zh"
-      ? .redUpGreenDown
-      : .greenUpRedDown
-  }
-
+extension DashChartTrendColorConvention {
   fileprivate func foreground(for direction: DashChartTrend.Direction) -> Color {
     switch (self, direction) {
     case (_, .flat):
       DashTheme.subtle
     case (.redUpGreenDown, .up), (.greenUpRedDown, .down):
-      DashTheme.danger
+      DashTheme.chartTrendRed
     case (.redUpGreenDown, .down), (.greenUpRedDown, .up):
-      DashTheme.success
+      DashTheme.chartTrendGreen
     }
   }
 }
@@ -645,16 +622,7 @@ extension DashChartTrend {
   }
 
   var formattedPercentage: String? {
-    guard let percentChange else { return nil }
-    let magnitude = abs(percentChange).formatted(
-      .percent
-        .precision(.fractionLength(0...1))
-        .locale(DashL10n.activeLocale))
-    switch direction {
-    case .up: return "+\(magnitude)"
-    case .down: return "−\(magnitude)"
-    case .flat: return magnitude
-    }
+    comparison.formattedPercentage(locale: DashL10n.activeLocale)
   }
 
   fileprivate var foreground: Color {

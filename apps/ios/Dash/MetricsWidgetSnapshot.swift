@@ -37,14 +37,6 @@ enum MetricsWidgetRange: String, Codable, CaseIterable, Identifiable, Hashable, 
   }
 }
 
-/// Whether a higher period-over-period change is good, bad, or neutral — same
-/// rule Watchtower uses for collapsed metric cards.
-enum MetricsWidgetTrendPolarity: String, Codable, Hashable, Sendable {
-  case neutral
-  case higherIsBetter
-  case lowerIsBetter
-}
-
 enum AccountMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
   case workerInvocations
   case workerErrors
@@ -71,17 +63,6 @@ enum AccountMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Ha
     case .encryptedBandwidth: "Encrypted Bandwidth"
     }
   }
-
-  var trendPolarity: MetricsWidgetTrendPolarity {
-    switch self {
-    case .workerErrors, .cpuTime, .clientRequestErrors:
-      .lowerIsBetter
-    case .cacheRate, .encryptedRequestsRate:
-      .higherIsBetter
-    case .workerInvocations, .webTraffic, .totalBandwidth, .encryptedBandwidth:
-      .neutral
-    }
-  }
 }
 
 enum DomainMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
@@ -100,17 +81,6 @@ enum DomainMetricsWidgetMetric: String, Codable, CaseIterable, Identifiable, Has
     case .cacheRate: "Cache Rate"
     case .threats: "Threats"
     case .uniqueVisitors: "Unique visitors"
-    }
-  }
-
-  var trendPolarity: MetricsWidgetTrendPolarity {
-    switch self {
-    case .threats:
-      .lowerIsBetter
-    case .cacheRate:
-      .higherIsBetter
-    case .requests, .bandwidth, .uniqueVisitors:
-      .neutral
     }
   }
 }

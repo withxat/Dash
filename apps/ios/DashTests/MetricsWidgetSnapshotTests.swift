@@ -24,6 +24,43 @@ import Testing
   #expect(roundTrip.previousTotal == 40)
 }
 
+@Test func metricsWidgetTrendMatchesChartDirectionAndPercentageRules() throws {
+  let up = try #require(DashChartTrendComparison(current: 125, previous: 100))
+  #expect(up.direction == .up)
+  #expect(up.percentChange == 0.25)
+  #expect(up.formattedPercentage(locale: Locale(identifier: "en_US")) == "+25%")
+
+  let down = try #require(DashChartTrendComparison(current: 75, previous: 100))
+  #expect(down.direction == .down)
+  #expect(down.percentChange == -0.25)
+  #expect(down.formattedPercentage(locale: Locale(identifier: "en_US")) == "−25%")
+
+  let flat = try #require(DashChartTrendComparison(current: 100, previous: 100))
+  #expect(flat.direction == .flat)
+  #expect(flat.percentChange == 0)
+  #expect(flat.formattedPercentage(locale: Locale(identifier: "en_US")) == "0%")
+
+  let zeroBaseline = try #require(DashChartTrendComparison(current: 1, previous: 0))
+  #expect(zeroBaseline.direction == .up)
+  #expect(zeroBaseline.percentChange == nil)
+  #expect(zeroBaseline.formattedPercentage(locale: Locale(identifier: "en_US")) == nil)
+
+  #expect(DashChartTrendComparison(current: 1, previous: nil) == nil)
+  #expect(DashChartTrendComparison(current: .infinity, previous: 1) == nil)
+}
+
+@Test func metricsWidgetTrendColorsFollowMirroredLanguageConvention() {
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "zh-Hans"))
+      == .redUpGreenDown)
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "zh-Hant"))
+      == .redUpGreenDown)
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "en"))
+      == .greenUpRedDown)
+}
+
 @Test func metricsWidgetTrendMatchesCollapsedWatchtowerZeroFloor() {
   let mixed = CollapsedDitherTrendSeries(values: [0, 50, 0, 100])
   let collapsedMixed = WatchtowerAnalyticsChartModel.collapsedSeriesValues([0, 50, 0, 100])

@@ -45,6 +45,27 @@ extension DashWidgetBridges {
   }
 }
 
+// MARK: - Language mirror
+
+extension DashWidgetBridges {
+  /// Same App Group mirror maintained by `DashAlertStrings`.
+  static let languageKey = "dash.app_language"
+
+  static func mirroredLocale(
+    in store: UserDefaults? = defaults,
+    systemLocale: Locale = .autoupdatingCurrent
+  ) -> Locale {
+    guard
+      let raw = store?.string(forKey: languageKey),
+      raw != "system",
+      !raw.isEmpty
+    else {
+      return systemLocale
+    }
+    return Locale(identifier: raw)
+  }
+}
+
 // MARK: - Quick actions
 
 enum QuickActionsWidgetKind {

@@ -532,6 +532,19 @@ enum DashTheme {
     light: 0x006045, dark: 0xA4F4CF, highLight: 0x006045, highDark: 0xFAFAFA)
   /// `color-kumo-success-tint` composited over `color-kumo-base`.
   static let successTint = adaptive(light: 0xEBFDF1, dark: 0x0E1D15)
+  /// Locale-aware chart directions need vivid red / green without borrowing
+  /// status semantics. The light green keeps 4.95:1 on `homeCardSurface`;
+  /// Increased Contrast deepens it further instead of turning both hues white.
+  static let chartTrendGreen = adaptive(
+    light: DashChartTrendColorTokens.green.light,
+    dark: DashChartTrendColorTokens.green.dark,
+    highLight: DashChartTrendColorTokens.green.highLight,
+    highDark: DashChartTrendColorTokens.green.highDark)
+  static let chartTrendRed = adaptive(
+    light: DashChartTrendColorTokens.red.light,
+    dark: DashChartTrendColorTokens.red.dark,
+    highLight: DashChartTrendColorTokens.red.highLight,
+    highDark: DashChartTrendColorTokens.red.highDark)
   /// `text-kumo-warning`; high stops use `text-kumo-badge-orange-subtle`.
   /// Light diverges from the Kumo stop (`0xBD6500`, 4.0:1 on `warningTint`):
   /// darkened so 12–13pt badge copy clears WCAG AA 4.5:1 (now 4.9:1).
