@@ -127,10 +127,11 @@ struct DashApp: App {
 
 /// Bridges the static system launch screen into the first interactive frame:
 /// same `LaunchBackground` + centered `LaunchLogo`, held until bootstrap
-/// finishes (and a short minimum). Signed out, the "Dash" wordmark first
-/// expands beside the centered icon, then the whole lockup glides and scales
-/// onto the welcome header while the solid canvas fades to the login
-/// backdrop; signed in, everything fades together.
+/// finishes (and a short minimum). Signed out, the centered icon first springs
+/// down from launch-logo size to brand size, then the "Dash" wordmark expands
+/// beside it, then the whole lockup glides and scales onto the welcome header
+/// while the solid canvas fades to the login backdrop; signed in, everything
+/// fades together.
 private struct RootWithSplash: View {
   var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -143,18 +144,36 @@ private struct RootWithSplash: View {
   /// needs it to keep the icon's center on target through every phase.
   @State private var lockupSize: CGSize = .zero
 
-  private enum Phase { case holding, branding, landing, done }
+  private enum Phase {
+    case holding, shrinking, branding, landing, done
+
+    /// The icon is alone and centered until the shrink settles; the wordmark
+    /// belongs to every phase after it.
+    var showsWordmark: Bool { self != .holding && self != .shrinking }
+  }
 
   private static let minimumDuration: Duration = .milliseconds(800)
+  /// Icon shrink: under-damped on purpose, so the launch logo lands on brand
+  /// size with a small overshoot instead of easing flatly into it.
+  private static let shrinkDuration: TimeInterval = 0.45
+  private static let shrinkDamping: Double = 0.62
+  /// Lets the shrink's bounce read before the wordmark opens beside it.
+  private static let shrinkHold: Duration = .milliseconds(360)
   private static let brandDuration: TimeInterval = 0.5
   /// Wordmark expansion plus a read beat before the lockup departs.
-  private static let brandHold: Duration = .milliseconds(1000)
+  private static let brandHold: Duration = .milliseconds(880)
   /// While branding, the wordmark renders at this fraction of lockup
-  /// proportion — smaller beside the big centered icon — and grows back to
-  /// full proportion during landing.
+  /// proportion — smaller beside the icon — and grows back to full proportion
+  /// during landing.
   private static let brandWordmarkScale: CGFloat = 0.8
   private static let landDuration: TimeInterval = 0.6
   private static let holdingIconSize = OnboardingBrandTypography.launchIconSize
+  /// Size the icon springs down to before the wordmark joins it. The lockup's
+  /// own proportion sets the wordmark off the icon, so at launch-logo size the
+  /// word "Dash" arrives near 76pt and overpowers the beat it introduces;
+  /// shrinking first keeps the brand row in proportion at ~48pt.
+  private static let brandIconSize: CGFloat = 56
+  private static let brandScale = brandIconSize / holdingIconSize
   /// The overlay lockup lays out at launch-logo size and scales *down* onto
   /// the welcome header — supersampled, so the wordmark stays crisp through
   /// the whole morph.
@@ -234,8 +253,16 @@ private struct RootWithSplash: View {
           return
         }
         if model.authState == .unauthenticated {
-          // Brand beat: the wordmark expands beside the still-centered icon
-          // before the lockup departs for the welcome header.
+          // Shrink beat: the centered icon springs down from launch-logo size
+          // to brand size, alone, before anything joins it.
+          withAnimation(
+            .spring(response: Self.shrinkDuration, dampingFraction: Self.shrinkDamping)
+          ) {
+            phase = .shrinking
+          }
+          try? await Task.sleep(for: Self.shrinkHold)
+          // Brand beat: the wordmark expands beside the shrunken icon before
+          // the lockup departs for the welcome header.
           withAnimation(.spring(response: Self.brandDuration, dampingFraction: 0.85)) {
             phase = .branding
           }
@@ -252,9 +279,9 @@ private struct RootWithSplash: View {
   /// Matches `UILaunchScreen` composition while holding. `target` is the
   /// welcome lockup icon's frame when onboarding is mounted underneath.
   private func splashOverlay(in proxy: GeometryProxy, target: CGRect?) -> some View {
-    let hasBackdrop = phase == .holding || phase == .branding
+    let hasBackdrop = phase == .holding || phase == .shrinking || phase == .branding
     let measured = lockupSize.width > 0
-    let wordmarkShown = phase != .holding && target != nil
+    let wordmarkShown = phase.showsWordmark && target != nil
     return ZStack {
       Color("LaunchBackground")
         .ignoresSafeArea()
@@ -321,20 +348,24 @@ private struct RootWithSplash: View {
     return Self.holdingIconSize + gap + textWidth * Self.brandWordmarkScale
   }
 
-  /// Full-size unless the expanded lockup would overflow the screen (large
-  /// Dynamic Type), in which case the whole group contracts to fit.
+  /// Brand size unless the expanded lockup would still overflow the screen
+  /// (large Dynamic Type), in which case the whole group contracts further to
+  /// fit. Shared with the shrink phase so the icon settles on the size the
+  /// wordmark then opens beside — one size change, not two.
   private func brandingScale(in proxy: GeometryProxy) -> CGFloat {
-    guard lockupSize.width > 0 else { return 1 }
-    return min(1, (proxy.size.width - 48) / brandingVisualWidth)
+    guard lockupSize.width > 0 else { return Self.brandScale }
+    return min(Self.brandScale, (proxy.size.width - 48) / brandingVisualWidth)
   }
 
   private func lockupScale(target: CGRect?, in proxy: GeometryProxy) -> CGFloat {
     switch phase {
     case .holding:
       return 1
-    case .branding:
-      // No landing anchor means no wordmark will show — keep the icon as-is.
-      return target == nil ? 1 : brandingScale(in: proxy)
+    case .shrinking, .branding:
+      // Deliberately not gated on the landing anchor: the shrink is the
+      // splash's own beat, and gating it would make a late anchor snap the
+      // icon down with no animation to carry it.
+      return brandingScale(in: proxy)
     case .landing, .done:
       guard let target, target.width > 0 else { return 1 }
       return target.width / Self.holdingIconSize
@@ -345,7 +376,7 @@ private struct RootWithSplash: View {
     let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
     guard lockupSize.width > 0 else { return center }
     switch phase {
-    case .holding:
+    case .holding, .shrinking:
       // Icon centered on screen; the hidden wordmark trails to its right.
       return CGPoint(x: center.x + iconCenterInset, y: center.y)
     case .branding:
