@@ -230,6 +230,12 @@ public actor CloudflareClient {
   public func triggerZoneActivationCheck(zoneID: String) async throws {
     let _: JSONValue = try await request("/zones/\(zoneID)/activation_check", method: "PUT")
   }
+  /// Removes the zone from the account. Used to abandon an unfinished setup
+  /// (`pending` / `initializing` / `moved`); Dash does not expose this for
+  /// active domains.
+  public func deleteZone(zoneID: String) async throws {
+    let _: JSONValue = try await request("/zones/\(zoneID)", method: "DELETE")
+  }
   public func listDNSRecords(
     zoneID: String, page: Int = 1, perPage: Int = 100, search: String? = nil, type: String? = nil
   ) async throws -> Page<DNSRecord> {

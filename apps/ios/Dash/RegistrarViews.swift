@@ -5,7 +5,7 @@ import SwiftUI
 
 /// The one place the Registrar scope ids are read from.
 ///
-/// Registrar is a catalog `FeatureID` (`Resources → Registered domains`), so
+/// Registrar is a catalog `FeatureID` (`Resources → Registrations`), so
 /// the read scope lives in `FeatureCatalog.descriptors` like every other
 /// feature's and is mirrored here for the two screens that gate on it. The
 /// write scope stays out of that capability on purpose — see below.
@@ -17,11 +17,10 @@ enum RegistrarAccess {
   /// unknown ids silently — the guess produces a successful consent flow that
   /// grants nothing, and a read-only screen with no error to explain it.
   ///
-  /// Kept off `FeatureID.registrar.capability.write` because only the per-domain
-  /// screen mutates: as a feature write scope it would hang
-  /// `FeatureReadOnlyBanner` over the index, which has no controls to gate, and
-  /// duplicate the notice this screen already shows.
-  static let write: Set<String> = ["registrar-domains.admin"]
+  /// Mirrored on `FeatureID.registrar.capability.write` so Resources can badge
+  /// Demo / partial grants. The domains index suppresses the catalog banner
+  /// (`showsCatalogReadOnlyBanner`); this screen keeps its own notice.
+  static let write: Set<String> = FeatureID.registrar.capability.write
 }
 
 /// Account-scoped deep link to one registrar domain, for locally-scheduled
@@ -373,33 +372,11 @@ struct RegistrarRegistrationRows: View {
   }
 }
 
-/// The zone screen's link into the registrar detail.
-///
-/// Rendered **only** on the first-party path. A domain registered at another
-/// registrar has no `/registrar/registrations` record, so a link that is always
-/// there would push a screen that 404s — the `WorkerBuildsSection`
-/// permanent-furniture mistake in a new place.
-struct RegistrarManageLink: View {
-  let domain: String
-
-  var body: some View {
-    dashListCard {
-      DashListGroupLink(value: .registrarDomain(domain)) {
-        DashListRow(
-          title: DashL10n.string("Manage registration"),
-          subtitle: DashL10n.string("Auto-renew, transfer lock, WHOIS privacy"),
-          icon: SolarAsset.Content.globus
-        )
-        .dashListCardInset()
-      }
-    }
-  }
-}
-
 // MARK: - Domains list
 
 struct RegistrarDomainsView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var index: RegistrarAccountIndex?
   @State private var loading = true
   @State private var error: String?
@@ -416,50 +393,43 @@ struct RegistrarDomainsView: View {
       isLoading: loading,
       error: error,
       hasContent: !domains.isEmpty,
+      // Reached only when a source that answered 200 said zero. A 403, a beta
+      // 404 or a decode failure takes the `fullScreenError` branch instead —
+      // most accounts legitimately own no registrar domains, which makes this
+      // state perfect camouflage for a failure.
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.globus,
+        title: "No registered domains",
+        message:
+          "Domains you buy from Cloudflare Registrar appear here. Registration itself happens on the Cloudflare dashboard."
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if domains.isEmpty {
-        // Reached only when a source that answered 200 said zero. A 403, a beta
-        // 404 or a decode failure takes the `fullScreenError` branch instead —
-        // most accounts legitimately own no registrar domains, which makes this
-        // state perfect camouflage for a failure.
-        DashEmptyState(
-          icon: SolarAsset.Content.globus,
-          title: "No registered domains",
-          message:
-            "Domains you buy from Cloudflare Registrar appear here. Registration itself happens on the Cloudflare dashboard."
-        )
-      } else {
-        if !allowsWrites {
-          FeatureWriteAccessNotice(
-            message: "Read-only — grant Registrar access to change these settings.",
-            scopes: RegistrarAccess.write)
-        }
-        DashListGroupHeader(title: DashL10n.string("Registrar"))
-          .padding(.horizontal, 4)
-          .padding(.bottom, 8)
-          .dashSectionBoundary(!allowsWrites)
-        // Header and rows are siblings in the outer lazy stack — a
-        // `DashListGroup` wrapper owns an eager `VStack` and would mount every
-        // row of a long registrar list at once.
-        dashListCard {
-          dashListCardRows(items: domains) { domain in
-            DashListGroupLink(value: .registrarDomain(domain.name)) {
-              DashListRow(
-                title: domain.name,
-                subtitle: domain.expiresSubtitle,
-                avatarSeed: domain.name
-              ) {
-                // Positive states carry no capsule: the row is the domain, and
-                // "Registered" on every row is noise.
-                if let token = domain.statusToken, token != .registered {
-                  StatusBadge(token)
-                }
+    ) { mode in
+      if !mode.isPlaceholder, !allowsWrites {
+        FeatureWriteAccessNotice(
+          message: "Read-only — grant Registrar access to change these settings.",
+          scopes: RegistrarAccess.write)
+      }
+      // Header and rows used to share the lazy stack; keep rows here so a
+      // `DashListGroup` wrapper cannot mount a long registrar list eagerly.
+      dashListCard {
+        dashModeListRows(mode: mode, items: domains, reduceMotion: reduceMotion) { domain in
+          DashListGroupLink(value: .registrarDomain(domain.name)) {
+            DashListRow(
+              title: domain.name,
+              subtitle: domain.expiresSubtitle,
+              avatarSeed: domain.name
+            ) {
+              // Positive states carry no capsule: the row is the domain, and
+              // "Registered" on every row is noise.
+              if let token = domain.statusToken, token != .registered {
+                StatusBadge(token)
               }
             }
           }
         }
       }
+      .dashSectionBoundary(!mode.isPlaceholder && !allowsWrites)
     }
     // No `detailHeader` here: this is `Destination.feature(.registrar)`, and
     // `FeatureRouterContent` already installs the catalog icon and title. A
@@ -517,6 +487,7 @@ struct RegistrarDomainsView: View {
 /// and a disabled button that explains itself is still furniture.
 struct RegistrarDomainDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let domain: String
 
   /// Seeded from the account index the list screen (or a zone visit) already
@@ -609,23 +580,51 @@ struct RegistrarDomainDetailView: View {
       isLoading: isCold,
       error: screenError,
       hasContent: summary != nil,
-      retry: { Task { await load(force: true) } },
-      skeleton: { registrarDomainDetailSkeleton }
-    ) {
-      registrationGroup
-      registryStatusGroup
-      settingsGroup
-      registrantGroup
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      registrarDomainDetailBody(mode: mode)
     }
     .detailHeader(icon: .solar(SolarAsset.Content.globus), title: domain)
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
   }
 
-  /// Registration fields first — the same four-row shape the loaded group uses.
-  private var registrarDomainDetailSkeleton: some View {
-    DashInfoGroup(title: "Registration", phase: .loading, placeholderRows: 4) {
-      EmptyView()
+  /// Fuller first-paint reserve: registration, registry status, settings, and
+  /// registrant. Live mode drops empty status / settings / registrant; those
+  /// slots exit upward. Registry/registrant stay section-cold after the facts
+  /// land (`factsPhase` / `registryPhase`).
+  @ViewBuilder
+  private func registrarDomainDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashInfoGroup(title: "Registration", phase: .loading, placeholderRows: 4) {
+        EmptyView()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashInfoGroup(title: "Registry status", phase: .loading, placeholderRows: 2) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroupHeader(title: DashL10n.string("Settings"))
+        .padding(.horizontal, 4)
+        .padding(.bottom, 8)
+        .dashSectionBoundary()
+      DashSurfaceStack {
+        DashToggleRowPlaceholder()
+        DashToggleRowPlaceholder()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashInfoGroup(title: "Registrant", phase: .loading, placeholderRows: 3) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      registrationGroup
+        .dashBodySlot(reduceMotion: reduceMotion)
+      registryStatusGroup
+      settingsGroup
+      registrantGroup
     }
   }
 
@@ -663,6 +662,7 @@ struct RegistrarDomainDetailView: View {
         }
       )
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -673,49 +673,52 @@ struct RegistrarDomainDetailView: View {
     // domain it does not know keeps its transfer lock and simply has no
     // auto-renew row — rather than a switch that starts on a guess.
     if autoRenewValue != nil || lockedValue != nil {
-      DashListGroupHeader(title: DashL10n.string("Settings"))
-        .padding(.horizontal, 4)
-        .padding(.bottom, 8)
-        .dashSectionBoundary()
-      if !allowsWrites {
-        FeatureWriteAccessNotice(
-          message: "Read-only — grant Registrar access to change these settings.",
-          scopes: RegistrarAccess.write
+      Group {
+        DashListGroupHeader(title: DashL10n.string("Settings"))
+          .padding(.horizontal, 4)
+          .padding(.bottom, 8)
+          .dashSectionBoundary()
+        if !allowsWrites {
+          FeatureWriteAccessNotice(
+            message: "Read-only — grant Registrar access to change these settings.",
+            scopes: RegistrarAccess.write
+          )
+          .padding(.bottom, DashTheme.Spacing.itemGap)
+        }
+        DashSurfaceStack {
+          if let autoRenew = autoRenewValue {
+            DashToggleRow(
+              title: "Auto-renew",
+              subtitle: autoRenew
+                ? "Cloudflare renews this domain before it expires."
+                : "Renew it yourself or you lose the domain.",
+              isOn: Binding(get: { autoRenew }, set: { update(.autoRenew, to: $0) }),
+              isEnabled: allowsWrites && inFlight == nil,
+              isLoading: inFlight == .autoRenew)
+          }
+          if let locked = lockedValue {
+            DashToggleRow(
+              title: "Transfer lock",
+              subtitle: locked
+                ? "Another registrar can’t start a transfer."
+                : "Another registrar can start a transfer.",
+              isOn: Binding(get: { locked }, set: { update(.transferLock, to: $0) }),
+              isEnabled: allowsWrites && inFlight == nil,
+              isLoading: inFlight == .transferLock)
+          }
+        }
+        Text(
+          DashL10n.string(
+            "Renewals, transfers, and contact changes happen on the Cloudflare dashboard.")
         )
-        .padding(.bottom, DashTheme.Spacing.itemGap)
+        .dashTextStyle(.caption)
+        .foregroundStyle(DashTheme.subtle)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .dashItemBoundary()
       }
-      DashSurfaceStack {
-        if let autoRenew = autoRenewValue {
-          DashToggleRow(
-            title: "Auto-renew",
-            subtitle: autoRenew
-              ? "Cloudflare renews this domain before it expires."
-              : "Renew it yourself or you lose the domain.",
-            isOn: Binding(get: { autoRenew }, set: { update(.autoRenew, to: $0) }),
-            isEnabled: allowsWrites && inFlight == nil,
-            isLoading: inFlight == .autoRenew)
-        }
-        if let locked = lockedValue {
-          DashToggleRow(
-            title: "Transfer lock",
-            subtitle: locked
-              ? "Another registrar can’t start a transfer."
-              : "Another registrar can start a transfer.",
-            isOn: Binding(get: { locked }, set: { update(.transferLock, to: $0) }),
-            isEnabled: allowsWrites && inFlight == nil,
-            isLoading: inFlight == .transferLock)
-        }
-      }
-      Text(
-        DashL10n.string(
-          "Renewals, transfers, and contact changes happen on the Cloudflare dashboard.")
-      )
-      .dashTextStyle(.caption)
-      .foregroundStyle(DashTheme.subtle)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 16)
-      .dashItemBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -748,6 +751,7 @@ struct RegistrarDomainDetailView: View {
         }
       )
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -838,6 +842,11 @@ struct RegistrarDomainDetailView: View {
       case .autoRenew: RegistrarDomainSettings(autoRenew: value)
       case .transferLock: RegistrarDomainSettings(locked: value)
       }
+    let op = model.optimistic.begin(.toggle(value)) {
+      autoRenewOverride = previousAutoRenew
+      lockedOverride = previousLocked
+      inFlight = nil
+    }
     Task {
       defer {
         if !Task.isCancelled, model.isCurrentAccount(context) {
@@ -845,26 +854,36 @@ struct RegistrarDomainDetailView: View {
         }
       }
       do {
+        try await model.optimistic.waitForCommit(op)
         try await model.client.updateRegistrarDomain(
           accountID: context.accountID, domain: domain, settings: settings)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         // List, detail and the zone card all read these two keys; leaving
         // either behind would show the old answer one screen away.
         model.featureCache.remove(FeatureCacheKey.registrarDomains(context.accountID))
         model.featureCache.remove(
           FeatureCacheKey.registrarDomain(accountID: context.accountID, domain: domain))
-        DashDelight.celebrateSuccess()
+        model.optimistic.finishSuccess(op)
         // The toggle is the moment the reminder's premise changes: auto-renew
         // going on means there is no longer a deadline to count down to.
         await scheduleExpiryReminder(accountID: context.accountID)
+      } catch is CancellationError {
+        // Undo during grace already reverted local state.
       } catch {
         guard
           !Task.isCancelled,
           !error.dashIsCancellation,
           model.isCurrentAccount(context)
-        else { return }
+        else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         autoRenewOverride = previousAutoRenew
         lockedOverride = previousLocked
+        model.optimistic.finishFailure(op)
         model.toasts.error(error.dashActionableMessage)
       }
     }

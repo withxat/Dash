@@ -581,6 +581,7 @@ private struct DitherCartesianPlot: View {
               bands: bands,
               scale: scale,
               plotRect: plotRect,
+              containerHeight: proxy.size.height,
               tooltipHeight: tooltipSize.height
             )
           )
@@ -631,9 +632,10 @@ private struct DitherCartesianPlot: View {
     } else {
       localX = DitherGeometry.xCenter(index: index, count: data.count, width: plotRect.width)
     }
-    let half = max(tooltipWidth, 1) / 2
-    let inset = max(8, half)
-    return min(max(inset, plotRect.minX + localX), max(inset, containerWidth - inset))
+    return DitherGeometry.tooltipCenterX(
+      markX: plotRect.minX + localX,
+      containerWidth: containerWidth,
+      tooltipWidth: tooltipWidth)
   }
 
   private func tooltipY(
@@ -641,15 +643,15 @@ private struct DitherCartesianPlot: View {
     bands: DitherBandResult,
     scale: DitherLinearScale,
     plotRect: CGRect,
+    containerHeight: CGFloat,
     tooltipHeight: CGFloat
   ) -> CGFloat {
     let candidates = series.compactMap { bands.bands[$0.id]?[safe: index]?.upper }
     let highest = candidates.max() ?? scale.upperBound
-    let markY = plotRect.minY + scale.y(for: highest)
-    let gap: CGFloat = 12
-    let half = max(tooltipHeight, 1) / 2
-    // Always sit above the mark — even if that means overflowing the chart top.
-    return markY - gap - half
+    return DitherGeometry.tooltipCenterY(
+      markY: plotRect.minY + scale.y(for: highest),
+      containerHeight: containerHeight,
+      tooltipHeight: tooltipHeight)
   }
 }
 

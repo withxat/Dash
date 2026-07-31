@@ -185,7 +185,7 @@ extension NetworkTests {
       session: session)
 
     // Degrading to empty arrays would render "Records Cloudflare will add:
-    // (nothing)" beside an armed hold-to-confirm that replaces the apex MX set,
+    // (nothing)" beside an armed confirm that replaces the apex MX set,
     // and would collapse the client-side conflict check. Empty != failed.
     await #expect(throws: DecodingError.self) {
       try await client.getEmailRoutingDNSPlan(zoneID: "zone-1")

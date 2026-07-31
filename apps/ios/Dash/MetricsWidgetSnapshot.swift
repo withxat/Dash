@@ -140,6 +140,28 @@ struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
   }
 }
 
+/// Plot metrics shared by the app and widget **axis-less** system-chart
+/// renderers (collapsed cards, widgets). Expanded Swift Charts with axes must
+/// not apply this as `chartPlotStyle` padding — that shifts marks off the
+/// axis frame.
+enum CollapsedSystemChartPlotMetrics {
+  /// Swift Charts centers vector strokes on the value coordinate. Keep the
+  /// stroke and its antialiasing inside a clipped sparkline without changing
+  /// the data domain or the Dither renderer's edge-to-edge scale.
+  static let minimumTopInset: CGFloat = 4
+
+  static func topInset(existingTop: CGFloat) -> CGFloat {
+    max(existingTop, minimumTopInset)
+  }
+
+  /// `chartPlotStyle` top padding for the system renderer. Axes-on charts
+  /// return 0 so marks stay registered to the axis frame; sparklines keep the
+  /// stroke headroom from `topInset(existingTop:)`.
+  static func plotStyleTopInset(showsAxes: Bool, existingTop: CGFloat) -> CGFloat {
+    showsAxes ? 0 : topInset(existingTop: existingTop)
+  }
+}
+
 /// Render-ready values that mirror the collapsed Watchtower sparkline: zero
 /// samples keep a short 10% band, while an all-zero series uses a synthetic
 /// ceiling so that band does not scale up to the full chart height.

@@ -750,9 +750,6 @@ final class DemoBackend: URLProtocol {
     {
       return Reply(json: DemoWorld.firewallEvents(scale: scale))
     }
-    if query.contains("emailRoutingAdaptiveGroups") {
-      return Reply(json: DemoWorld.emailRoutingAnalytics(scale: scale))
-    }
     return Reply(json: #"{"data":null,"errors":null}"#)
   }
 
@@ -1682,19 +1679,6 @@ private enum DemoWorld {
         "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}],
         "currentVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2100000,"interactionToNextPaintP75":140000,"cumulativeLayoutShiftP75":0.09}}],
         "previousVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2300000,"interactionToNextPaintP75":160000,"cumulativeLayoutShiftP75":0.11}}]
-      }]}},"errors":null}
-      """#
-  }
-
-  static func emailRoutingAnalytics(scale: Double) -> String {
-    let series = (0..<24).map { hour -> String in
-      let count = max(0, scaled(wave(hour, base: 2, swing: 8), scale))
-      return
-        #"{"count":\#(count),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"}}"#
-    }
-    return #"""
-      {"data":{"viewer":{"zones":[{
-        "emailRoutingAdaptiveGroups":[\#(series.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }

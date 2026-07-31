@@ -8,6 +8,12 @@ enum FeatureCacheKey {
   static func zone(_ zoneID: String) -> String { "zone:\(zoneID)" }
   static func dnsRecords(_ zoneID: String) -> String { "dns:\(zoneID)" }
   static func emailRouting(_ zoneID: String) -> String { "emailRouting:\(zoneID)" }
+  /// Settings alone for the Email Routing domains index. Kept apart from
+  /// `emailRouting` so a list fan-out cannot poison the zone screen's full
+  /// snapshot (empty rules / catch-all) on the next warm open.
+  static func emailRoutingSettings(_ zoneID: String) -> String {
+    "emailRoutingSettings:\(zoneID)"
+  }
   static func emailRoutingDNS(_ zoneID: String) -> String { "emailRoutingDNS:\(zoneID)" }
   static func emailAddresses(_ accountID: String) -> String { "emailAddresses:\(accountID)" }
   static func workers(_ accountID: String) -> String { "workers:\(accountID)" }
@@ -50,9 +56,6 @@ enum FeatureCacheKey {
   static func zoneAnalyticsHourly(_ zoneID: String) -> String { "zoneAnalyticsHourly:\(zoneID)" }
   static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
   static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
-  static func emailRoutingAnalytics(_ zoneID: String) -> String {
-    "emailRoutingAnalytics:\(zoneID)"
-  }
   static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
   static func webAnalyticsPageviews(_ siteTag: String, days: Int) -> String {
     "rumPageviews:\(siteTag):\(days)"

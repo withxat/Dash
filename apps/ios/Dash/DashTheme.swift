@@ -8,6 +8,10 @@ enum DashTheme {
   enum Layout {
     static let emptyStateMinHeight: CGFloat = 420
     static let minimumHitTarget: CGFloat = 44
+    /// Title + subtitle list row. Resources `FeatureRow` usually settles on two
+    /// subtitle lines; detail Actions with short blurbs reserve the same slot
+    /// so they don't stack denser than the catalog.
+    static let subtitledListRow: CGFloat = 72
     /// Fixed height for every primary / secondary tray pill. Never `minHeight`
     /// alone — pills must not grow with Dynamic Type or leftover tray space.
     static let actionPillHeight: CGFloat = 52
@@ -341,10 +345,11 @@ enum DashTheme {
       isReduced ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.9)
     }
 
-    // MARK: Floating surfaces — trays and toasts share one present / release /
-    // dismiss set (aliased by `DashTrayMotion` and `DashToastMotion`). `dismiss`
-    // is the fast exit. Raw springs: call sites gate reduce-motion, and some
-    // deliberately skip the gate to keep a drag-release physical.
+    // MARK: Floating surfaces — trays use this present / release / dismiss set
+    // (`DashTrayMotion`). Toasts keep a springier present of their own so the
+    // card can bounce; they still share `release` / `dismiss`. Raw springs:
+    // call sites gate reduce-motion, and some deliberately skip the gate to
+    // keep a drag-release physical.
     static let present = Animation.spring(
       response: 0.35, dampingFraction: 0.88, blendDuration: 0.12)
     static let release = Animation.spring(
@@ -400,21 +405,18 @@ enum DashTheme {
   /// The light value tracks `listGroupHeaderSurface` on purpose, not by
   /// derivation: Domains, Shortcuts, and Recently used are three sibling
   /// groups stacked on one screen, and their outer plates have to be one
-  /// tone. The two tokens stay separate because this one also fills the
-  /// expanded zone rows and backs the avatar-overlap ring — move that value
-  /// and look at this one in the same pass.
-  static let homeDomainsSurface = adaptive(light: 0xEDEDED, dark: 0x262626)
+  /// tone (`#F6F6F6`). The two tokens stay separate because this one also
+  /// fills the expanded zone rows and backs the avatar-overlap ring — move
+  /// that value and look at this one in the same pass.
+  static let homeDomainsSurface = adaptive(light: 0xF6F6F6, dark: 0x262626)
   /// Header band across a two-tone list group — elevated dark step so the band
   /// stays visible above the card fill.
   ///
-  /// The light value is deliberately off the neutral ramp, between
-  /// `color-kumo-tint` and `color-kumo-fill`, because it does two jobs at once
-  /// in `DashTwoToneListGroup`: it fills the header band *and* it is the 2pt
-  /// border showing through around the rows card. Tint (`#F5F5F5`) left a 4%
-  /// edge nobody could see; fill (`#E5E5E5`) drew the edge but turned the band
-  /// into a heavy grey block. Do not "correct" this back onto the ramp without
-  /// looking at both at once.
-  static let listGroupHeaderSurface = adaptive(light: 0xEDEDED, dark: 0x333333)
+  /// Light `#F6F6F6` matches `homeDomainsSurface` so Home's sibling groups and
+  /// every `DashInfoGroup` / `DashTwoToneListGroup` share one outer plate. It
+  /// also paints the 2pt border showing through around the rows card, so keep
+  /// it a step off `homeCardSurface` white in both appearances.
+  static let listGroupHeaderSurface = adaptive(light: 0xF6F6F6, dark: 0x333333)
   /// Home's cards (Shortcuts / Recently used / quick actions) — `color-kumo-base`
   /// in light; `color-kumo-tint` in dark. These groups carry no ring, so this
   /// fill is the only thing that separates the rows from the header band above
@@ -465,9 +467,9 @@ enum DashTheme {
   static let accent = adaptive(
     light: 0xF6821F, dark: 0xFF9838, highLight: 0xC45A00, highDark: 0xFFB366)
   /// Soft brand-orange default for the workspace's configurable top light
-  /// field (`DashWorkspaceTopWash`, shared by all three tab roots), plus the
-  /// fixed About halo. Same adaptive stop as `accent`; call sites apply
-  /// opacity so it washes into `canvas`.
+  /// field (`DashWorkspaceTopWash`, shared by all three tab roots). Same
+  /// adaptive stop as `accent`; call sites apply opacity so it washes into
+  /// `canvas`.
   static let wash = accent
 
   /// Decorative workspace pigments. They retain the existing Kumo four-stop
@@ -579,39 +581,21 @@ enum DashTheme {
       })
   }
 
-  /// Sign-in backdrop palettes: 3×3 mesh vertex colors (row-major) and the
-  /// three-stop still wash used on iOS 17 and under Reduce Motion.
-  ///
-  /// Built only from Kumo surface / warning-tint / brand-orange stops so the
-  /// mesh stays inside the token system. Two keyframe palettes per scheme —
-  /// airy and deep — crossfade per vertex so the backdrop breathes.
+  /// Sign-in backdrop palettes: four Paper mesh-gradient spots (orange / white
+  /// derived) and the three-stop still wash used under Reduce Motion.
   enum LoginBackdrop {
-    // `color-kumo-base` / `color-kumo-canvas` / `color-kumo-elevated` /
-    // `color-kumo-warning-tint` (composited) / soft `text-kumo-brand` washes.
-    private static let meshLightAiry: [UInt32] = [
-      0xFFFFFF, 0xFFFAEA, 0xFBFBFB,
-      0xF8F8F8, 0xFFFFFF, 0xFFFAEA,
-      0xFBFBFB, 0xFFFAEA, 0xFFFFFF,
-    ]
-    // Deep extreme uses `color-kumo-banner-warning` / warning-tint so
-    // `text-kumo-subtle` stays near ≥4.5:1.
-    private static let meshLightDeep: [UInt32] = [
-      0xFFFAEA, 0xFEF9C2, 0xFFFAEA,
-      0xFEF9C2, 0xFFFAEA, 0xFEF9C2,
-      0xFFFAEA, 0xFEF9C2, 0xFFFAEA,
-    ]
-    private static let meshDarkAiry: [UInt32] = [
-      0x030303, 0x2A1C0A, 0x0F0F0F,
-      0x18181B, 0x0B0B0B, 0x2A1C0A,
-      0x0F0F0F, 0x18181B, 0x030303,
-    ]
-    // Deep extreme stays on `color-kumo-warning-tint` / base so
-    // `text-kumo-subtle` keeps ≥4.5:1 on the hottest stop.
-    private static let meshDarkDeep: [UInt32] = [
-      0x0F0F0F, 0x2A1C0A, 0x18181B,
-      0x2A1C0A, 0x0B0B0B, 0x2A1C0A,
-      0x18181B, 0x2A1C0A, 0x0F0F0F,
-    ]
+    /// Spot colors for `loginMeshGradient` — white / cream / soft yellow /
+    /// brand-orange wash in light; near-black / base / warning-tint / warm
+    /// umber in dark. The orange stop needs enough chroma that moving spots
+    /// read as a mesh, not a flat wash.
+    static func meshSpots(dark: Bool) -> [SIMD4<Float>] {
+      let hexes: [UInt32] =
+        dark
+        ? [0x030303, 0x18181B, 0x2A1C0A, 0x7A4A12]
+        : [0xFFFFFF, 0xFFFAEA, 0xFEF9C2, 0xF6A85C]
+      return hexes.map(rgba)
+    }
+
     static let stillLight: [Color] = [
       Color(hex: 0xFFFAEA), Color(hex: 0xFFFFFF), Color(hex: 0xFBFBFB),
     ]
@@ -619,22 +603,12 @@ enum DashTheme {
       Color(hex: 0x2A1C0A), Color(hex: 0x030303), Color(hex: 0x18181B),
     ]
 
-    /// Vertex colors for the sign-in mesh. `blend` maps a vertex index to a
-    /// 0…1 mix between the airy and deep keyframes for that vertex.
-    static func meshColors(dark: Bool, blend: (Int) -> Double) -> [Color] {
-      let airy = dark ? meshDarkAiry : meshLightAiry
-      let deep = dark ? meshDarkDeep : meshLightDeep
-      return airy.indices.map { mixed(airy[$0], deep[$0], unit: blend($0)) }
-    }
-
-    private static func mixed(_ from: UInt32, _ to: UInt32, unit: Double) -> Color {
-      let unit = min(max(unit, 0), 1)
-      func channel(_ shift: UInt32) -> Double {
-        let start = Double((from >> shift) & 0xFF)
-        let end = Double((to >> shift) & 0xFF)
-        return (start + (end - start) * unit) / 255
-      }
-      return Color(red: channel(16), green: channel(8), blue: channel(0))
+    private static func rgba(_ hex: UInt32) -> SIMD4<Float> {
+      SIMD4(
+        Float((hex >> 16) & 0xFF) / 255,
+        Float((hex >> 8) & 0xFF) / 255,
+        Float(hex & 0xFF) / 255,
+        1)
     }
   }
 }
@@ -670,25 +644,6 @@ extension DomainCardColors {
 
   static func secondaryForeground(_ hex: UInt32) -> Color {
     foreground(hex).opacity(0.74)
-  }
-
-  static func hex(from color: Color) -> UInt32 {
-    let ui = UIColor(color)
-    var r: CGFloat = 0
-    var g: CGFloat = 0
-    var b: CGFloat = 0
-    var a: CGFloat = 0
-    guard ui.getRed(&r, green: &g, blue: &b, alpha: &a) else {
-      // Fallback for grayscale / non-RGB spaces.
-      var white: CGFloat = 0
-      ui.getWhite(&white, alpha: &a)
-      let v = UInt32((white * 255).rounded())
-      return (v << 16) | (v << 8) | v
-    }
-    let red = UInt32((r * 255).rounded())
-    let green = UInt32((g * 255).rounded())
-    let blue = UInt32((b * 255).rounded())
-    return (red << 16) | (green << 8) | blue
   }
 }
 

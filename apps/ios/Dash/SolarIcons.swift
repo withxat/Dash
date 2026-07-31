@@ -27,6 +27,7 @@ enum SolarAsset {
     static let globus = "SolarGlobusFill"
     static let graph = "SolarGraphNewFill"
     static let inbox = "SolarInboxFill"
+    static let mailbox = "SolarMailboxFill"
     static let key = "SolarKeyFill"
     static let lock = "SolarLockKeyholeFill"
     static let pinList = "SolarPinListFill"
@@ -41,8 +42,8 @@ enum SolarAsset {
     static let all: Set<String> = [
       addCircle, bolt, box, boxMinimalistic, chart, chartSquare, checkCircle,
       clock, cloud, code, codeCircle, danger, file, folder, globe, globus,
-      graph, inbox, key, lock, pinList, routing, search, settings, shieldCheck, slider,
-      upload, user,
+      graph, inbox, key, lock, mailbox, pinList, routing, search, settings, shieldCheck,
+      slider, upload, user,
     ]
   }
 
@@ -82,9 +83,11 @@ enum SolarAsset {
   static let pin = "SolarPinOutline"
   static let pinFilled = "SolarPinFill"
   static let inbox = "SolarInboxOutline"
+  static let mailbox = "SolarMailboxOutline"
   static let gallery = "SolarGalleryOutline"
   static let video = "SolarVideoLibraryOutline"
   static let chart = "SolarChart2Outline"
+  static let graph = "SolarGraphNewOutline"
   static let users = "SolarUsersGroupOutline"
   static let userCircle = "SolarUserCircleOutline"
   static let user = "SolarUserOutline"

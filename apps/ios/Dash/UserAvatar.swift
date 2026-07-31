@@ -472,6 +472,9 @@ enum AvatarHeaderMetrics {
   /// Matches UIKit minimal back-button slot width on iOS.
   static let barSize: CGFloat = 44
   static let titleSize: CGFloat = 34
+  /// Floated header chrome inset (avatar / inbox / editor). Toast tops use the
+  /// same value so they share the avatar's top edge numerically.
+  static let chromeInset: CGFloat = 10
 }
 
 /// The profile circle, in three layers: a locally chosen photo, then Gravatar,

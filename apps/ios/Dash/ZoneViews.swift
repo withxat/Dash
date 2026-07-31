@@ -1,4 +1,3 @@
-import BlossomColorPickerCore
 import CloudflareAPI
 import GradientAvatars
 import SwiftDitherKit
@@ -11,6 +10,7 @@ struct ZonesView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   @State private var zones: [CloudflareZone] = []
   @State private var error: String?
@@ -31,26 +31,19 @@ struct ZonesView: View {
       isLoading: loading,
       error: error,
       hasContent: !zones.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.globus,
+        title: "No domains",
+        message: featureAllowsWrites
+          ? "Add your first domain to put it on Cloudflare."
+          : "Cloudflare returned no domains for this account.",
+        actionTitle: featureAllowsWrites ? "Add domain" : nil,
+        action: featureAllowsWrites ? { showsAddDomain = true } : nil
+      ),
       retry: { Task { await load() } }
-    ) {
-      if zones.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.globus,
-          title: "No domains",
-          message: featureAllowsWrites
-            ? "Add your first domain to put it on Cloudflare."
-            : "Cloudflare returned no domains for this account.",
-          actionTitle: featureAllowsWrites ? "Add domain" : nil,
-          action: featureAllowsWrites ? { showsAddDomain = true } : nil
-        )
-      } else {
-        LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
-          ForEach(zones) { zone in
-            domainCardLink(zone)
-          }
-        }
-      }
-      if pageState.canLoadMore || loadMorePhase.isActive {
+    ) { mode in
+      domainCardGrid(mode: mode)
+      if !mode.isPlaceholder, pageState.canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: zones.count,
           total: pageState.totalCount,
@@ -91,6 +84,35 @@ struct ZonesView: View {
       showsAddDomain = true
     } else {
       model.requestAccess(to: FeatureID.zones.capability.write)
+    }
+  }
+
+  /// Same 2-up (or 1-up a11y) grid for cold and live — surplus placeholder
+  /// cards recede when fewer domains land.
+  @ViewBuilder
+  private func domainCardGrid(mode: DashBodyMode) -> some View {
+    let count =
+      mode.isPlaceholder
+      ? DashBodyPlaceholderDepth.domainCards
+      : zones.count
+    LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+      ForEach(0..<count, id: \.self) { index in
+        Group {
+          if mode.isPlaceholder {
+            DomainCardFace(
+              name: "domain.example",
+              status: "Active",
+              seed: "dash.placeholder.\(index)",
+              fillHex: DomainCardColors.defaultPalette[
+                index % DomainCardColors.defaultPalette.count]
+            )
+            .dashBodyPlaceholder(true)
+          } else {
+            domainCardLink(zones[index])
+          }
+        }
+        .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
   }
 
@@ -191,6 +213,9 @@ struct ZonesView: View {
 
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   @AppStorage(RecentResources.key) private var recentsRaw = ""
@@ -206,6 +231,7 @@ struct ZoneDetailView: View {
   /// Non-nil while the overlay runs its settle-back exit.
   @State private var cardCustomizeExit: DomainCardCustomizeExit?
   @State private var activationCheckPhase: DashActionPhase = .idle
+  @State private var showsAbandonSetup = false
   @Namespace private var cardCustomizeNamespace
 
   private var isExitingCardCustomize: Bool { cardCustomizeExit != nil }
@@ -274,27 +300,23 @@ struct ZoneDetailView: View {
 
   private let tools: [ZoneTool] = [
     ZoneTool(
-      title: "DNS", icon: SolarAsset.Content.globus, route: Destination.dns,
+      title: "DNS", icon: SolarAsset.globus, route: Destination.dns,
       blurb: "Records and proxy status"),
     ZoneTool(
-      title: "HTTP traffic", icon: SolarAsset.Content.chart, route: Destination.zoneAnalytics,
+      title: "HTTP traffic", icon: SolarAsset.chart, route: Destination.zoneAnalytics,
       blurb: "Requests, visitors, and bandwidth"),
     ZoneTool(
-      title: "Web analytics", icon: SolarAsset.Content.graph,
+      title: "Web analytics", icon: SolarAsset.graph,
       route: Destination.zoneWebAnalytics,
       blurb: "Page views and Core Web Vitals"),
     ZoneTool(
-      title: "WAF", icon: SolarAsset.Content.shieldCheck, route: Destination.zoneWAF,
+      title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF,
       blurb: "Blocks, countries, Under Attack"),
     ZoneTool(
-      title: "Cache", icon: SolarAsset.Content.bolt, route: Destination.cache,
+      title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
       blurb: "Purge by URL or everything"),
     ZoneTool(
-      title: "Email routing", icon: SolarAsset.Content.inbox,
-      route: Destination.zoneEmailRouting,
-      blurb: "Forward mail to an inbox you already use"),
-    ZoneTool(
-      title: "Settings", icon: SolarAsset.Content.settings, route: Destination.zoneSettings,
+      title: "Settings", icon: SolarAsset.settings, route: Destination.zoneSettings,
       blurb: "Under Attack, SSL, and dev mode"),
   ]
 
@@ -303,30 +325,16 @@ struct ZoneDetailView: View {
       isLoading: displayedZone == nil && error == nil,
       error: error,
       hasContent: displayedZone != nil,
-      retry: { Task { await load() } },
-      skeleton: { zoneDetailSkeleton }
-    ) {
-      if let zone = displayedZone {
-        zoneHero(zone)
-        // Nameservers appear only while activation needs them copied — the
-        // activation copy points at them. Active zones keep a reference copy
-        // at the top of Settings instead of a permanent card here.
-        if needsActivation(zone) {
-          if let servers = zone.nameServers, !servers.isEmpty {
-            ZoneNameserversGroup(servers: servers)
-              .dashSectionBoundary()
-          }
-          activationCard(zone)
-            .dashSectionBoundary()
-        }
-        identifiersGroup
-          .dashSectionBoundary()
-        registrationGroup()
-        primaryActions()
-          .dashSectionBoundary()
-      }
+      retry: { Task { await load() } }
+    ) { mode in
+      zoneDetailBody(mode: mode)
     }
     .detailHeader(icon: .avatar(domainAvatarSeed), title: headerTitle)
+    .dashMoreMenu(
+      isPresented: $showsAbandonSetup,
+      title: "Abandon setup",
+      actions: [abandonSetupAction]
+    )
     .navigationBarBackButtonHidden(showsCustomizeOverlay && isCustomizingCard)
     .toolbar {
       if showsCustomizeOverlay && isCustomizingCard {
@@ -589,22 +597,69 @@ struct ZoneDetailView: View {
       in: recentsRaw)
   }
 
-  /// Domain hero face, copyable IDs, and Quick actions — registration is a
-  /// secondary fetch that reserves its own placeholders once the zone lands.
-  private var zoneDetailSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      DashHeroCardPlaceholder(aspectRatio: DomainCardFace.detailAspectRatio)
-      DashInfoGroup(title: "Identifiers", phase: .loading, placeholderRows: 2) {
-        EmptyView()
-      }
-      .dashSectionBoundary()
-      DashListGroup(title: "Quick actions") {
+  /// Fuller first-paint reserve (2B): hero + identifiers + quick actions.
+  /// Non-active setup chrome and registration replace/remove slots on handoff;
+  /// registration itself stays section-cold after the zone lands.
+  @ViewBuilder
+  private func zoneDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      zoneHeroPlaceholder
+        .dashBodySlot(reduceMotion: reduceMotion)
+      identifiersGroup
+        .dashBodyPlaceholder(true)
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Actions") {
         DashListRowPlaceholders(rows: tools.count)
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let zone = displayedZone {
+      zoneHero(zone)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      if isActive(zone) {
+        identifiersGroup
+          .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
+        registrationGroup()
+        primaryActions()
+          .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else {
+        // Dash only serves active domains. Everything else is setup chrome:
+        // nameservers + activation check while Cloudflare still needs them,
+        // then abandon — no DNS / traffic / WAF / cache / settings.
+        if needsActivation(zone) {
+          if let servers = zone.nameServers, !servers.isEmpty {
+            ZoneNameserversGroup(servers: servers)
+              .dashSectionBoundary()
+              .dashBodySlot(reduceMotion: reduceMotion)
+          }
+          activationCard(zone)
+            .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+        identifiersGroup
+          .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
+        if featureAllowsWrites {
+          abandonSetupRow
+            .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      }
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
+  }
+
+  private var zoneHeroPlaceholder: some View {
+    DomainCardFace(
+      name: "domain.example",
+      status: "Active",
+      seed: "dash.placeholder.zone",
+      fillHex: DomainCardColors.defaultPalette[0],
+      aspectRatio: DomainCardFace.detailAspectRatio
+    )
+    .dashBodyPlaceholder(true)
   }
 
   /// Zone and account IDs for GraphQL / API probes. Tap a row to copy — same
@@ -684,26 +739,108 @@ struct ZoneDetailView: View {
   }
 
   private func primaryActions() -> some View {
-    DashListGroup(title: "Quick actions") {
+    DashListGroup(title: "Actions") {
       dashListCardRows(items: tools, inset: false) { tool in
         let destination = tool.route(zoneID)
         DashListGroupLink(value: destination) {
           DashListRow(
-            title: DashL10n.ui(tool.title), subtitle: DashL10n.ui(tool.blurb), icon: tool.icon)
+            title: DashL10n.ui(tool.title),
+            subtitle: DashL10n.ui(tool.blurb),
+            icon: tool.icon,
+            showsIconPlate: false)
         }
       }
     }
   }
 
+  /// Dash tools (DNS, analytics, cache, settings) only run on active zones.
+  private func isActive(_ zone: CloudflareZone) -> Bool {
+    (zone.status ?? "").lowercased() == "active"
+  }
+
   /// Statuses a name-server re-check can move forward. `moved` means
   /// Cloudflare stopped seeing its name servers; pointing them back and
-  /// re-checking restores the zone.
+  /// re-checking restores the zone. Until then the zone stays in the
+  /// setup-only pose with abandon.
   private func needsActivation(_ zone: CloudflareZone) -> Bool {
     ["pending", "initializing", "moved"].contains((zone.status ?? "").lowercased())
   }
 
   private var canTriggerActivationCheck: Bool {
     model.hasScopes(FeatureID.zones.capability.write)
+  }
+
+  private var abandonSetupRow: some View {
+    Button {
+      showsAbandonSetup = true
+    } label: {
+      HStack(spacing: 12) {
+        SolarIcon(asset: SolarAsset.trash, size: 22, color: DashTheme.danger)
+        Text(DashL10n.string("Abandon setup"))
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.danger)
+          .lineLimit(1)
+        Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 14)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+        DashTheme.dangerTint,
+        in: RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous))
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityLabel(DashL10n.string("Abandon setup"))
+  }
+
+  private var abandonSetupAction: DashDangerAction {
+    let name = displayedZone?.name ?? headerTitle
+    return DashDangerAction(
+      title: "Abandon setup",
+      message: DashL10n.string(
+        "Removes \(name) from this account. Name servers at the registrar are untouched — you can add the domain again later."
+      ),
+      confirmTitle: "Abandon setup",
+      onSuccessPresentationCompleted: completeAbandonSetupPresentation
+    ) {
+      try await abandonSetup()
+    }
+  }
+
+  private func abandonSetup() async throws {
+    guard let context = model.accountRequestContext else { throw CancellationError() }
+    try await model.client.deleteZone(zoneID: zoneID)
+    try Task.checkCancellation()
+    guard model.isCurrentAccount(context) else { throw CancellationError() }
+    model.featureCache.remove(FeatureCacheKey.zone(zoneID))
+    model.featureCache.remove(FeatureCacheKey.zones(context.accountID))
+    model.featureCache.remove(FeatureCacheKey.zoneRdap(zoneID))
+    model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
+    if PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID),
+      let zone = displayedZone
+    {
+      pinnedZoneData = PinnedZones.toggled(
+        pinnedZoneData,
+        pin: PinnedZone(accountID: context.accountID, zoneID: zoneID, name: zone.name))
+    }
+    recentsRaw = RecentResources.encode(
+      RecentResources.decode(recentsRaw).filter {
+        !($0.kind == .zone && $0.resourceID == zoneID)
+      })
+  }
+
+  private func completeAbandonSetupPresentation() {
+    navigator?.path.removeAll { destination in
+      switch destination {
+      case .zone(let id), .dns(let id), .cache(let id), .zoneAnalytics(let id),
+        .zoneWebAnalytics(let id), .zoneWAF(let id), .zoneSettings(let id),
+        .zoneEmailRouting(let id):
+        id == zoneID
+      default:
+        false
+      }
+    }
+    model.toasts.success(DashL10n.string("Removed from account."))
   }
 
   private func activationBlurb(_ zone: CloudflareZone) -> String {
@@ -776,13 +913,22 @@ struct ZoneDetailView: View {
   @ViewBuilder
   private func registrationGroup() -> some View {
     if registrarRegistration != nil || rdapPhase != .content || rdap != nil {
+      // First-party path only: the header action pushes registrar detail.
+      // A domain registered elsewhere has no `/registrar/registrations`
+      // record, so an always-on control would open a screen that 404s.
+      let manageDomain = registrarRegistration?.name
       DashInfoGroup(
         title: "Registration",
         phase: rdapPhase,
         // The four fields below, so the arriving values land on the
         // placeholder instead of growing the section.
         placeholderRows: 4,
-        retry: { Task { await retryRegistration() } }
+        retry: { Task { await retryRegistration() } },
+        actionTitle: manageDomain != nil ? "Manage registration" : nil,
+        actionIcon: manageDomain != nil ? SolarAsset.globus : nil,
+        action: manageDomain.map { domain in
+          { navigator?.push(.registrarDomain(domain)) }
+        }
       ) {
         if let registration = registrarRegistration {
           RegistrarRegistrationRows(summary: registration)
@@ -803,13 +949,6 @@ struct ZoneDetailView: View {
         }
       }
       .dashSectionBoundary()
-      // First-party path only. A domain registered elsewhere has no
-      // `/registrar/registrations` record, so a link that is always there would
-      // push a screen that 404s.
-      if let registration = registrarRegistration {
-        RegistrarManageLink(domain: registration.name)
-          .dashItemBoundary()
-      }
     }
   }
 }
@@ -983,9 +1122,9 @@ private enum DomainCardCustomizeExit: Equatable {
 /// In-place color editor over zone detail.
 ///
 /// The detail hero morphs here via `matchedGeometryEffect`, the scrim blurs in,
-/// then the always-mounted Blossom picker fades up. Entrance timing uses an
-/// unstructured `Task` from `onAppear` — not `.task` — so parent redraws cannot
-/// cancel the sleep and leave the picker stuck hidden.
+/// then the always-mounted built-in swatch grid fades up. Entrance timing uses
+/// an unstructured `Task` from `onAppear` — not `.task` — so parent redraws
+/// cannot cancel the sleep and leave the picker stuck hidden.
 private struct DomainCardColorCustomizeOverlay: View {
   let domainName: String
   let status: String
@@ -1001,53 +1140,10 @@ private struct DomainCardColorCustomizeOverlay: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-  @State private var model: BlossomColorPickerModel
   @State private var scrimProgress: CGFloat = 0
   @State private var pickerRevealed = false
   @State private var isExiting = false
   @State private var didStartEntrance = false
-
-  private let layout = PetalLayout(
-    innerRadius: 44,
-    outerRadius: 80
-  )
-  private let style = BlossomStyle(
-    petalSize: 40,
-    innerPetalSize: 40,
-    centerCircleSize: 40,
-    sliderWidth: 14
-  )
-
-  init(
-    domainName: String,
-    status: String,
-    seed: String,
-    plan: String? = nil,
-    morphNamespace: Namespace.ID,
-    morphID: String,
-    isMorphSource: Bool,
-    fillHex: Binding<UInt32>,
-    exitRequest: Binding<DomainCardCustomizeExit?>,
-    onExitFinished: @escaping () -> Void
-  ) {
-    self.domainName = domainName
-    self.status = status
-    self.seed = seed
-    self.plan = plan
-    self.morphNamespace = morphNamespace
-    self.morphID = morphID
-    self.isMorphSource = isMorphSource
-    _fillHex = fillHex
-    _exitRequest = exitRequest
-    self.onExitFinished = onExitFinished
-    _model = State(
-      wrappedValue: BlossomColorPickerModel(
-        initialColor: DomainCardColors.fill(fillHex.wrappedValue)))
-  }
-
-  private var blossomSize: CGFloat {
-    ExpandedBlossomView.totalSize(layout: layout, style: style)
-  }
 
   var body: some View {
     ZStack {
@@ -1078,16 +1174,12 @@ private struct DomainCardColorCustomizeOverlay: View {
 
         // Always mounted: conditional insert + `.task` cancellation was the
         // intermittent "picker never appears" failure mode.
-        ExpandedBlossomView(model: model, layout: layout)
-          .blossomStyle(style)
-          .frame(width: blossomSize, height: blossomSize)
-          .frame(maxWidth: .infinity)
+        DomainCardColorPaletteGrid(selection: $fillHex)
+          .padding(.horizontal, DashTheme.Spacing.screen)
           .opacity(pickerRevealed ? 1 : 0)
-          .scaleEffect(pickerRevealed ? 1 : 0.92)
+          .scaleEffect(pickerRevealed ? 1 : 0.96)
           .offset(y: pickerRevealed ? 0 : 12)
           .allowsHitTesting(pickerRevealed && !isExiting)
-          .accessibilityElement(children: .contain)
-          .accessibilityLabel("Color palette")
           .accessibilityHidden(!pickerRevealed)
 
         Spacer(minLength: 16)
@@ -1106,17 +1198,6 @@ private struct DomainCardColorCustomizeOverlay: View {
         await runExit()
       }
     }
-    .onChange(of: model.selectedColor) { _, color in
-      guard !isExiting else { return }
-      let hex = DomainCardColors.hex(from: color)
-      guard hex != fillHex else { return }
-      fillHex = hex
-    }
-    .onChange(of: model.isExpanded) { _, isExpanded in
-      // Center-tap collapse is a Blossom affordance — keep the disc open here
-      // so Close / Save stay the only exits.
-      if !isExpanded, !isExiting { model.expand() }
-    }
   }
 
   @ViewBuilder
@@ -1131,8 +1212,6 @@ private struct DomainCardColorCustomizeOverlay: View {
   private func startEntranceIfNeeded() {
     guard !didStartEntrance else { return }
     didStartEntrance = true
-    // Expand while still invisible so the first reveal is a fully bloomed disc.
-    model.expand()
     Task { @MainActor in
       await runEntrance()
     }
@@ -1175,6 +1254,64 @@ private struct DomainCardColorCustomizeOverlay: View {
     }
     try? await Task.sleep(for: .milliseconds(220))
     onExitFinished()
+  }
+}
+
+/// 4×5 built-in swatches — solid circles on a white plate, matching the
+/// customize-picker reference (no freeform hue wheel).
+private struct DomainCardColorPaletteGrid: View {
+  @Binding var selection: UInt32
+
+  private let columns = Array(
+    repeating: GridItem(.flexible(), spacing: 14),
+    count: 5
+  )
+
+  var body: some View {
+    LazyVGrid(columns: columns, spacing: 18) {
+      ForEach(DomainCardColors.defaultPalette, id: \.self) { hex in
+        DomainCardColorSwatch(
+          hex: hex,
+          isSelected: selection == hex
+        ) {
+          guard selection != hex else { return }
+          selection = hex
+          DashDelight.selectionChanged()
+        }
+      }
+    }
+    .padding(20)
+    .background(
+      DashTheme.homeCardSurface,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+    )
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Color palette")
+  }
+}
+
+private struct DomainCardColorSwatch: View {
+  let hex: UInt32
+  let isSelected: Bool
+  let action: () -> Void
+
+  var body: some View {
+    Button(action: action) {
+      ZStack {
+        Circle()
+          .fill(DomainCardColors.fill(hex))
+        if isSelected {
+          Image(systemName: "checkmark")
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(DomainCardColors.foreground(hex))
+        }
+      }
+      .aspectRatio(1, contentMode: .fit)
+      .contentShape(Circle())
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(DomainCardColors.formatHex(hex))
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -1236,14 +1373,17 @@ struct DNSRecordsView: View {
       isLoading: loading,
       error: error,
       hasContent: !displayedRecords.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.globus,
+        title: "No DNS records",
+        message: "Create a record with the add button."
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if displayedRecords.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.globus,
-          title: "No DNS records",
-          message: "Create a record with the add button."
-        )
+    ) { mode in
+      if mode.isPlaceholder {
+        DashChartPanelPlaceholder(showsLegend: true)
+          .padding(.bottom, DashTheme.Spacing.itemGap)
+          .dashBodySlot(reduceMotion: reduceMotion)
       } else {
         recordTypesCard(
           buckets: buckets,
@@ -1255,34 +1395,37 @@ struct DNSRecordsView: View {
         // are a bare lazy `ForEach` and must stay untouched (StorageViews
         // precedent).
         .padding(.bottom, DashTheme.Spacing.itemGap)
-        dashListCard {
-          dashListCardRows(items: visibleRecords) { record in
-            Button {
-              if emailRoutingGuard.isLocked(record) {
-                lockedRecord = record
-              } else {
-                selected = record
-              }
-            } label: {
-              DashListRow(
-                title: record.name,
-                subtitle: dnsRecordSubtitle(record),
-                icon: record.proxied == true
-                  ? SolarAsset.Content.cloud : SolarAsset.Content.globus,
-                // Proxied keeps the orange cloud; unproxied inherits the
-                // zones catalog green.
-                iconColor: record.proxied == true ? DashTheme.accent : nil
-              ) {
-                if emailRoutingGuard.isManaged(record) { StatusBadge(.managed) }
-              }
+        .dashBodySlot(reduceMotion: reduceMotion)
+      }
+      dashListCard {
+        dashModeListRows(
+          mode: mode, items: visibleRecords, reduceMotion: reduceMotion
+        ) { record in
+          Button {
+            if emailRoutingGuard.isLocked(record) {
+              lockedRecord = record
+            } else {
+              selected = record
             }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityIdentifier("dns-record-\(record.id)")
-            .transition(morphTransition)
+          } label: {
+            DashListRow(
+              title: record.name,
+              subtitle: dnsRecordSubtitle(record),
+              icon: record.proxied == true
+                ? SolarAsset.Content.cloud : SolarAsset.Content.globus,
+              // Proxied keeps the orange cloud; unproxied inherits the
+              // zones catalog green.
+              iconColor: record.proxied == true ? DashTheme.accent : nil
+            ) {
+              if emailRoutingGuard.isManaged(record) { StatusBadge(.managed) }
+            }
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("dns-record-\(record.id)")
+          .transition(morphTransition)
         }
       }
-      if pageState.canLoadMore || loadMorePhase.isActive {
+      if !mode.isPlaceholder, pageState.canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: displayedRecords.count,
           total: displayedTotal,
@@ -1341,7 +1484,7 @@ struct DNSRecordsView: View {
             ) {
               DashListRow(
                 title: DashL10n.string("Open email routing"),
-                icon: SolarAsset.Content.inbox)
+                icon: SolarAsset.Content.mailbox)
             }
           }
         }
@@ -1407,20 +1550,15 @@ struct DNSRecordsView: View {
     displayedRecordCount: Int
   ) -> some View {
     // Chart cards stay on the glass surface, not the info-group band — see the
-    // surface split on `DashGlassCard`.
+    // surface split on `DashGlassCard`. No detail chevron: the donut is a filter
+    // control for the records below, and its legend already names every slice,
+    // so a pushed copy would only restate what the card shows.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        let detail = recordTypesDetail(
-          buckets: buckets,
-          slices: slices,
-          displayedRecordCount: displayedRecordCount)
-        HStack(alignment: .center, spacing: 8) {
-          Text("Record types")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          Spacer(minLength: 4)
-          DashChartDetailButton(detail: detail)
-        }
+        Text("Record types")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
         DashPieChart(
           slices: slices,
           innerRadiusRatio: 0.62,
@@ -1448,27 +1586,6 @@ struct DNSRecordsView: View {
           displayedRecordCount: displayedRecordCount)
       }
     }
-  }
-
-  private func recordTypesDetail(
-    buckets: [DNSChartModel.Bucket],
-    slices: [DitherSlice],
-    displayedRecordCount: Int
-  ) -> DashChartDetail {
-    DashChartDetail(
-      title: "Record types",
-      rangeLabel: "Loaded records",
-      summaryValue: displayedRecordCount.formatted(
-        .number.locale(DashL10n.activeLocale)),
-      trend: nil,
-      categoryAxisLabel: "Record type",
-      valueAxisLabel: "Records",
-      axisValueFormat: .number(maximumFractionDigits: 0),
-      tableValueFormat: .number(maximumFractionDigits: 0),
-      accessibilitySummary: DNSChartModel.chartAccessibilitySummary(buckets: buckets),
-      content: .pie(slices: slices),
-      featureID: .zones,
-      readScopes: ["zone.read", "dns.read"])
   }
 
   @ViewBuilder

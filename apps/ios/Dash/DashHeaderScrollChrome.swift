@@ -10,9 +10,18 @@ import VariableBlur
 /// leading slot of the roots' titleless nav bars, so on push it fades out
 /// exactly where the system back control fades in — same spot, same glass
 /// circle — reading as one control trading places.
+///
+/// Tap opens Settings; long-press opens the account switcher tray, matching
+/// the inbox's long-press pattern.
 struct HeaderProfileButton: View {
   @Environment(AppModel.self) private var model
   let action: @MainActor () -> Void
+  /// Long-press opens the account switcher tray when provided.
+  var onLongPress: (@MainActor () -> Void)? = nil
+  /// Long-press and Button both see the same touch up; once the hold has
+  /// opened the tray, swallow the click that would otherwise push Settings
+  /// underneath it.
+  @State private var suppressNextTap = false
 
   private var accountLabel: String {
     model.activeAccount?.name ?? model.profileTitle
@@ -25,27 +34,50 @@ struct HeaderProfileButton: View {
   /// instead of leaving a gap around it.
   var body: some View {
     let email = model.user?.email ?? ""
-    if #available(iOS 26.0, *) {
-      Button {
-        DashDelight.lightImpact()
-        action()
-      } label: {
-        HeaderProfileAvatar(email: email)
-          .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-          .padding(-7)
+    Group {
+      if #available(iOS 26.0, *) {
+        Button {
+          performTap()
+        } label: {
+          HeaderProfileAvatar(email: email)
+            .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
+            .padding(-7)
+        }
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
+      } else {
+        Button(action: performTap) {
+          HeaderProfileAvatar(email: email)
+        }
+        .buttonStyle(DashPressButtonStyle())
       }
-      .buttonStyle(.glass)
-      .buttonBorderShape(.circle)
-      .accessibilityLabel("Profile, \(accountLabel)")
-      .accessibilityIdentifier("header-profile-button")
-    } else {
-      Button(action: action) {
-        HeaderProfileAvatar(email: email)
-      }
-      .buttonStyle(DashPressButtonStyle())
-      .accessibilityLabel("Profile, \(accountLabel)")
-      .accessibilityIdentifier("header-profile-button")
     }
+    .simultaneousGesture(
+      LongPressGesture(minimumDuration: 0.35).onEnded { _ in
+        guard let onLongPress else { return }
+        suppressNextTap = true
+        DashDelight.lightImpact()
+        onLongPress()
+      }
+    )
+    .accessibilityLabel("Profile, \(accountLabel)")
+    .accessibilityIdentifier("header-profile-button")
+    .accessibilityHint(
+      onLongPress != nil
+        ? DashL10n.string("Long press for account menu") : ""
+    )
+    .accessibilityAction(named: DashL10n.string("Switch account")) {
+      onLongPress?()
+    }
+  }
+
+  private func performTap() {
+    if suppressNextTap {
+      suppressNextTap = false
+      return
+    }
+    DashDelight.lightImpact()
+    action()
   }
 }
 
@@ -58,6 +90,7 @@ struct HeaderInboxButton: View {
   let action: @MainActor () -> Void
   /// Long-press opens the shared Ignore-all confirmation when there are actives.
   var onLongPress: (@MainActor () -> Void)? = nil
+  @State private var suppressNextTap = false
 
   private var accessibilityLabel: String {
     count > 0
@@ -74,6 +107,7 @@ struct HeaderInboxButton: View {
       .simultaneousGesture(
         LongPressGesture(minimumDuration: 0.35).onEnded { _ in
           guard count > 0, let onLongPress else { return }
+          suppressNextTap = true
           DashDelight.lightImpact()
           onLongPress()
         }
@@ -108,8 +142,7 @@ struct HeaderInboxButton: View {
   private var circleButton: some View {
     if #available(iOS 26.0, *) {
       Button {
-        DashDelight.lightImpact()
-        action()
+        performTap()
       } label: {
         SolarIcon(asset: SolarAsset.inbox, size: 24, color: DashTheme.strong)
           .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
@@ -119,7 +152,7 @@ struct HeaderInboxButton: View {
       .buttonBorderShape(.circle)
       .accessibilityLabel(accessibilityLabel)
     } else {
-      Button(action: action) {
+      Button(action: performTap) {
         SolarIcon(asset: SolarAsset.inbox, size: 24, color: DashTheme.strong)
           .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
           .background(DashTheme.elevated, in: Circle())
@@ -128,6 +161,15 @@ struct HeaderInboxButton: View {
       .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel(accessibilityLabel)
     }
+  }
+
+  private func performTap() {
+    if suppressNextTap {
+      suppressNextTap = false
+      return
+    }
+    DashDelight.lightImpact()
+    action()
   }
 }
 
@@ -227,6 +269,9 @@ struct DashPageChromeHost<Chrome: View, Content: View>: View {
   let isChromeVisible: Bool
   @ViewBuilder var chrome: () -> Chrome
   @ViewBuilder var content: () -> Content
+  /// Watchtower's root hosts its range tabs through here, so this probe is the
+  /// one driving the workspace glow on that tab (see `dashWorkspaceWashScroll`).
+  @Environment(\.dashWorkspaceWashScroll) private var washScroll
   @State private var scroll = DashHeaderScrollState()
   @State private var chromeHeight: CGFloat = 0
 
@@ -271,7 +316,7 @@ struct DashPageChromeHost<Chrome: View, Content: View>: View {
       }
       .onPreferenceChange(DashPageChromeHeightKey.self) { chromeHeight = $0 }
       .background {
-        DashHeaderScrollProbe(scroll: scroll)
+        DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
         DashScreenClipLift()
       }
       .preference(key: DashHeaderScrimHandledKey.self, value: true)
@@ -299,14 +344,18 @@ enum DashHeaderScrimMetrics {
   /// Floor for the safe-area top inset, in case a screen reports one without
   /// its navigation bar. Never a substitute for the measured inset.
   static let minimumTop: CGFloat = 44
-  /// ProgressiveBlurHeader's fade length.
-  static let tail: CGFloat = 64
+  /// ProgressiveBlurHeader's fade length below the navigation inset. Kept
+  /// shorter than the old 64pt so the frost clears sooner into content; the
+  /// workspace glow (`DashWorkspaceTopWash`) is a separate layer and untouched.
+  static let tail: CGFloat = 40
   /// ProgressiveBlurHeader's restrained optical tuning.
   static let maxBlurRadius: CGFloat = 5
   static let startOffset: CGFloat = 0
   static let tintOpacityTop = 0.7
   static let tintOpacityMiddle = 0.5
-  static let tintMiddleY: CGFloat = 90
+  /// Absolute Y of the mid tint stop inside the band — scaled with `tail` so
+  /// the ramp still eases out before the lower edge.
+  static let tintMiddleY: CGFloat = 56
   /// Scroll depth that brings the frost in. The band is not scrubbed by the
   /// finger — crossing this line starts its own short entrance, so a nudge or
   /// rubber-band settle never leaves a half-painted header tracking the touch.
@@ -418,6 +467,70 @@ final class DashHeaderScrollState {
   }
 }
 
+// MARK: - Workspace wash
+
+/// How the shared workspace glow answers the active root's scroll.
+///
+/// The frost and the glow are different kinds of layer and now behave like it:
+/// the frost is chrome, pinned to the physical top edge for as long as the
+/// screen is scrolled, while the glow belongs to the *top of the content* and
+/// leaves with it. Riding 1:1 is what makes it read as light lying on the page
+/// instead of a fixture of the window — pinning both is what made the glow look
+/// stuck to the blur.
+enum DashWorkspaceWashRules {
+  /// Fall-off distance from the physical top edge — also exactly how far the
+  /// field has to travel before none of it is left on screen.
+  static let depth: CGFloat = 300
+
+  /// Clamped at both ends. A rubber-band pull past the top must not push the
+  /// light *down* off its own edge and expose bare canvas above it, and once
+  /// the field has cleared `depth` there is nothing left to move.
+  static func lift(for distance: CGFloat) -> CGFloat {
+    min(max(distance, 0), depth)
+  }
+}
+
+/// Scroll distance of the tab root that currently owns the workspace canvas.
+/// Written by that root's `DashHeaderScrollProbe`, read ONLY by
+/// `DashWorkspaceTopWash`.
+///
+/// Same rule as `DashHeaderScrollState`, and for the same reason: this value
+/// moves on every scrolled frame, so it must never become `MainTabView` state.
+/// The tab view only hands the reference to the wash; reading it in that body
+/// would re-apply the `NavigationStack` paths mid-push and UIKit would cancel
+/// the transition.
+@MainActor
+@Observable
+final class DashWorkspaceWashScroll {
+  private(set) var distance: CGFloat = 0
+
+  func report(distance: CGFloat) {
+    guard distance != self.distance else { return }
+    self.distance = distance
+  }
+
+  /// A root with no scroll view of its own leaves the glow at rest.
+  func clear() {
+    report(distance: 0)
+  }
+}
+
+private struct DashWorkspaceWashScrollKey: EnvironmentKey {
+  static let defaultValue: DashWorkspaceWashScroll? = nil
+}
+
+extension EnvironmentValues {
+  /// Present on the ACTIVE tab page only (`MainTabView`), and cleared again for
+  /// pushed destinations (`DestinationStackHost`), so exactly one screen — the
+  /// visible root — drives the shared glow. An off-screen root would fight it
+  /// over the same store, and a pushed screen would wrench the light while the
+  /// transparent root it covers is still sliding away.
+  var dashWorkspaceWashScroll: DashWorkspaceWashScroll? {
+    get { self[DashWorkspaceWashScrollKey.self] }
+    set { self[DashWorkspaceWashScrollKey.self] = newValue }
+  }
+}
+
 /// Installs the frost on one screen: the band as an overlay (above content,
 /// below the bar), the probe that drives it, and the clip lift that lets the
 /// band reach the status bar.
@@ -426,6 +539,9 @@ final class DashHeaderScrollState {
 /// tabs can sit above the band), this modifier stands down — otherwise the
 /// wrapper overlay would cover those tabs again.
 struct DashHeaderScrimModifier: ViewModifier {
+  /// Non-nil only on the active tab root; the same probe then feeds this
+  /// screen's frost and the workspace glow from one observation.
+  @Environment(\.dashWorkspaceWashScroll) private var washScroll
   @State private var scroll = DashHeaderScrollState()
 
   func body(content: Content) -> some View {
@@ -439,7 +555,7 @@ struct DashHeaderScrimModifier: ViewModifier {
       }
       .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
         if !handled {
-          DashHeaderScrollProbe(scroll: scroll)
+          DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
           // The band draws above its own layout box to cover the status bar;
           // SwiftUI's hosting wrappers shear it there unless they are unclipped.
           DashScreenClipLift()
@@ -572,13 +688,17 @@ enum DashHeaderScrollProbeSchedule {
 /// destination feeds its own frost without a feature screen knowing it exists.
 struct DashHeaderScrollProbe: UIViewRepresentable {
   let scroll: DashHeaderScrollState
+  /// The workspace glow, on the one screen that owns it — nil everywhere else.
+  /// One observation feeds both: the frost wants a threshold off this distance,
+  /// the glow wants the distance itself.
+  var wash: DashWorkspaceWashScroll?
 
   func makeUIView(context: Context) -> DashHeaderScrollProbeView {
     DashHeaderScrollProbeView()
   }
 
   func updateUIView(_ uiView: DashHeaderScrollProbeView, context: Context) {
-    uiView.configure(scroll: scroll)
+    uiView.configure(scroll: scroll, wash: wash)
   }
 
   static func dismantleUIView(_ uiView: DashHeaderScrollProbeView, coordinator: ()) {
@@ -592,6 +712,7 @@ struct DashHeaderScrollProbe: UIViewRepresentable {
 /// `@Observable` store re-renders only the band that reads it.
 final class DashHeaderScrollProbeView: UIView {
   private weak var scroll: DashHeaderScrollState?
+  private weak var wash: DashWorkspaceWashScroll?
   private weak var scrollView: UIScrollView?
   private var offsetObservation: NSKeyValueObservation?
   private var retryTask: Task<Void, Never>?
@@ -606,8 +727,13 @@ final class DashHeaderScrollProbeView: UIView {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError() }
 
-  func configure(scroll: DashHeaderScrollState) {
+  func configure(scroll: DashHeaderScrollState, wash: DashWorkspaceWashScroll?) {
     self.scroll = scroll
+    // Reassigned rather than merged: the store arrives when this screen becomes
+    // the active tab root and is taken away again when it stops being one, and
+    // the `report()` below hands the glow the new owner's position in the same
+    // turn the pager settles.
+    self.wash = wash
     attachIfNeeded()
     report()
     scheduleAttachRetries()
@@ -635,6 +761,10 @@ final class DashHeaderScrollProbeView: UIView {
   func tearDown() {
     detach()
     scroll = nil
+    // Deliberately not cleared to zero: a teardown is a rebuild as often as a
+    // departure, and snapping the glow back down would flash it under whatever
+    // replaces this screen. The next owner reports its own position on mount.
+    wash = nil
   }
 
   private func detach() {
@@ -692,10 +822,12 @@ final class DashHeaderScrollProbeView: UIView {
     guard let scroll, window != nil else { return }
     guard let scrollView, scrollView.window != nil else {
       scroll.clear()
+      wash?.clear()
       return
     }
-    scroll.report(
-      distance: scrollView.contentOffset.y + scrollView.adjustedContentInset.top)
+    let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+    scroll.report(distance: distance)
+    wash?.report(distance: distance)
   }
 }
 

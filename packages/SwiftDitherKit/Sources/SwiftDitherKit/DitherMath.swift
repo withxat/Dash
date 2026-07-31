@@ -43,6 +43,51 @@ enum DitherGeometry {
     return CGFloat(index) / CGFloat(count - 1) * width
   }
 
+  /// Center for the tooltip bubble, kept inside the chart's own bounds.
+  ///
+  /// The chart cannot assume it has chrome around it to spill into: a plot
+  /// drawn to a screen's edges has no card margin absorbing an overhang, so the
+  /// bubble is clamped to the container with a small gutter. A bubble too wide
+  /// for the container centers instead of picking an edge to hang off.
+  static func tooltipCenterX(
+    markX: CGFloat,
+    containerWidth: CGFloat,
+    tooltipWidth: CGFloat,
+    gutter: CGFloat = 8
+  ) -> CGFloat {
+    let half = max(tooltipWidth, 1) / 2
+    let minimum = half + gutter
+    let maximum = containerWidth - half - gutter
+    guard maximum > minimum else { return containerWidth / 2 }
+    return min(max(minimum, markX), maximum)
+  }
+
+  /// Vertical center for the tooltip bubble: above the mark when it fits, below
+  /// it when it does not.
+  ///
+  /// Sitting above is the preference — it keeps the bubble clear of the finger
+  /// — but a peak near the top of a full-bleed plot leaves no room up there,
+  /// and a bubble that overflows the chart lands on whatever the chart is
+  /// stacked under. Neither placement fitting means the container is shorter
+  /// than the bubble; center it then rather than choose an overflow.
+  static func tooltipCenterY(
+    markY: CGFloat,
+    containerHeight: CGFloat,
+    tooltipHeight: CGFloat,
+    gap: CGFloat = 12,
+    gutter: CGFloat = 8
+  ) -> CGFloat {
+    let half = max(tooltipHeight, 1) / 2
+    let above = markY - gap - half
+    if above - half >= gutter { return above }
+    let below = markY + gap + half
+    if below + half <= containerHeight - gutter { return below }
+    let minimum = half + gutter
+    let maximum = containerHeight - half - gutter
+    guard maximum > minimum else { return containerHeight / 2 }
+    return min(max(minimum, above), maximum)
+  }
+
   static func barBand(index: Int, count: Int, width: CGFloat) -> (x: CGFloat, width: CGFloat) {
     guard count > 0, width > 0 else { return (0, 0) }
     let innerPadding: CGFloat = 0.28

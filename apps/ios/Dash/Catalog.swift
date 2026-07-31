@@ -17,6 +17,18 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
     DashL10n.ui(FeatureCatalog.descriptor(for: self).category)
   }
   var capability: FeatureCapability { FeatureCatalog.descriptor(for: self).capability }
+
+  /// Whether `FeatureRouterContent` should hang the shared read-only banner
+  /// over this feature's index. Registrar and Email Routing indexes are
+  /// browse-only — mutations live on nested destinations that already show
+  /// their own notice. Tunnels has no write scopes at all (Dash never mutates
+  /// tunnels), so a Grant-access banner would request nothing.
+  var showsCatalogReadOnlyBanner: Bool {
+    switch self {
+    case .registrar, .emailRouting, .tunnels: false
+    case .zones, .workers, .pages, .r2, .kv: true
+    }
+  }
 }
 
 struct FeatureCapability: Hashable, Sendable {
@@ -28,7 +40,9 @@ struct FeatureCapability: Hashable, Sendable {
   func accessLevel(grantedScopes: Set<String>?) -> FeatureAccessLevel {
     guard let grantedScopes else { return .locked }
     guard read.isSubset(of: grantedScopes) else { return .locked }
-    guard write.isEmpty || write.isSubset(of: grantedScopes) else { return .readOnly }
+    // Empty write means Dash never mutates this feature — permanently
+    // Read-only once unlocked, not "full" just because there is nothing to grant.
+    guard !write.isEmpty, write.isSubset(of: grantedScopes) else { return .readOnly }
     return .full
   }
 }
@@ -58,7 +72,7 @@ enum Destination: Hashable {
   /// Settings → Open source: third-party libraries and icon sets Dash ships.
   case openSource
   #if DEBUG
-    /// DEBUG-only playground (toasts, haptics, hold-to-confirm).
+    /// DEBUG-only playground (toasts, haptics).
     case debug
   #endif
   case feature(FeatureID)
@@ -120,25 +134,27 @@ enum FeatureCatalog {
       read: ["zone.read"], write: ["zone.write"]),
     // A zone and a registration are different objects — a zone Cloudflare
     // serves DNS for versus a name the account owns — so Registrar browses
-    // beside Domains instead of hiding under Profile. `write` stays empty on
-    // purpose: the list mutates nothing, and the per-domain screen asks for
-    // `registrar-domains.admin` itself (see `RegistrarAccess`). Declaring it
-    // here would hang a second read-only banner over a screen with no controls.
+    // beside Domains. `write` carries `registrar-domains.admin` so Resources
+    // can badge Demo / partial grants as Read-only; the index itself is
+    // browse-only and suppresses `FeatureReadOnlyBanner` (see
+    // `FeatureID.showsCatalogReadOnlyBanner`).
     feature(
-      .registrar, "Registered domains", "Domains you bought on Cloudflare",
+      .registrar, "Registrations", "Domains you bought on Cloudflare",
       "checkmark.seal", "SolarGlobusFill", "SolarGlobusOutline", "Domains & DNS",
-      read: ["registrar-domains.read"]),
+      read: ["registrar-domains.read"], write: ["registrar-domains.admin"]),
     // Email Routing browses beside Domains: pick a zone, then manage routes.
-    // `write` stays empty on the index — mutations live on the per-zone screen
-    // and destination-address destinations (same pattern as Registrar).
+    // Write scopes live on the capability for the Resources Read-only badge;
+    // the domains index suppresses the catalog banner (mutations sit on
+    // per-zone / destination-address screens with their own notices).
     feature(
       // Sentence case, and the same catalog key the zone row and the per-zone
       // screen already use: "Email Routing" was a second key differing only in
       // case, and the one nobody translated — so Resources showed English on a
       // Chinese screen while the row one tap away read 邮件路由.
       .emailRouting, "Email routing", "Forward domain mail to inboxes you already use",
-      "tray", "SolarInboxFill", "SolarInboxOutline", "Domains & DNS",
-      read: ["zone.read", "email-routing-rule.read"]),
+      "tray", "SolarMailboxFill", "SolarMailboxOutline", "Domains & DNS",
+      read: ["zone.read", "email-routing-rule.read"],
+      write: ["email-routing-rule.write", "email-routing-address.write"]),
     // Compute
     feature(
       .workers, "Workers", "Deployments, domains, and analytics",
@@ -161,7 +177,8 @@ enum FeatureCatalog {
       read: ["workers-kv-storage.read"], write: ["workers-kv-storage.write"]),
     // Networks — experimental. Hidden from Resources until Settings →
     // Experimental opts it in; scopes stay out of `core` and are requested
-    // when the locked row's Grant access runs.
+    // when the locked row's Grant access runs. `write` stays empty on purpose:
+    // Dash never mutates tunnels, so an unlocked row is always Read-only.
     feature(
       .tunnels, "Tunnels", "Connectors, hostnames, and private routes",
       "point.3.connected.trianglepath.dotted", "SolarRoutingFill", "SolarRoutingOutline",

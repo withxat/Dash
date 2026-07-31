@@ -8,8 +8,9 @@ struct DashListRow<Accessory: View>: View {
   let title: String
   var subtitle: String?
   var icon: String?
-  /// Explicit override; when nil, uses the owning feature accent from the
-  /// environment (catalog muted tone), then falls back to brand.
+  /// Explicit override. When nil: service rows (plate on) use the owning
+  /// feature's catalog tone via `featureIdentity`; action rows (plate off)
+  /// fall back to Settings' `iconMuted`.
   var iconColor: Color?
   /// Deterministic domain dither avatar — takes precedence over `icon`.
   var avatarSeed: String?
@@ -18,6 +19,10 @@ struct DashListRow<Accessory: View>: View {
   var thumbnail: UIImage?
   var trailing: String?
   var showsChevron = true
+  /// Soft tone plate behind the leading glyph. Default on for **service**
+  /// items (Workers / Pages / R2 / KV / tunnels / …). Detail **Actions**
+  /// (zone tools, Pages Domains entry) pass `false` for a bare muted outline.
+  var showsIconPlate = true
   @ViewBuilder var accessory: () -> Accessory
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.featureIdentity) private var featureIdentity
@@ -32,6 +37,7 @@ struct DashListRow<Accessory: View>: View {
     thumbnail: UIImage? = nil,
     trailing: String? = nil,
     showsChevron: Bool = true,
+    showsIconPlate: Bool = true,
     @ViewBuilder accessory: @escaping () -> Accessory
   ) {
     self.title = title
@@ -42,12 +48,13 @@ struct DashListRow<Accessory: View>: View {
     self.thumbnail = thumbnail
     self.trailing = trailing
     self.showsChevron = showsChevron
+    self.showsIconPlate = showsIconPlate
     self.accessory = accessory
   }
 
   private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
-  /// Match `CatalogFeatureIcon` `.list` (Home Shortcuts / Resources): 24pt
-  /// glyph in a 36pt tone circle — content rows used to lag at 22/40.
+  /// Same 24-in-36 slot as `CatalogFeatureIcon.list` / Resources, so the
+  /// label column lines up whether the plate is tinted or transparent.
   private var iconPointSize: CGFloat { 24 * min(max(iconScale, 1), 1.3) }
   private var iconFrame: CGFloat { 36 * min(max(iconScale, 1), 1.3) }
   /// Optically matched, not frame-matched: a full-bleed saturated avatar at
@@ -56,6 +63,7 @@ struct DashListRow<Accessory: View>: View {
   private var avatarSize: CGFloat { 30 * min(max(iconScale, 1), 1.3) }
   private var resolvedIconColor: Color {
     if let iconColor { return iconColor }
+    if !showsIconPlate { return DashTheme.iconMuted }
     if let feature = featureIdentity {
       return FeatureVisualIdentity.catalogColor(for: feature)
     }
@@ -102,8 +110,15 @@ struct DashListRow<Accessory: View>: View {
         }
       }
     }
+    // Resources `FeatureRow` is also 12 + wrap, but catalog blurbs usually
+    // fill two lines so the row lands taller. Detail Actions carry short
+    // one-liners — reserve the two-line slot so they keep that rhythm
+    // instead of collapsing into a denser stack.
     .padding(.vertical, 12)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .frame(
+      minHeight: subtitle == nil
+        ? DashTheme.Layout.minimumHitTarget : DashTheme.Layout.subtitledListRow
+    )
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
@@ -125,7 +140,11 @@ struct DashListRow<Accessory: View>: View {
       } else if let icon {
         SolarIcon(asset: icon, size: iconPointSize, color: resolvedIconColor)
           .frame(width: iconFrame, height: iconFrame)
-          .background(resolvedIconColor.opacity(0.1), in: Circle())
+          .background {
+            if showsIconPlate {
+              Circle().fill(resolvedIconColor.opacity(0.1))
+            }
+          }
       }
     }
   }
@@ -133,14 +152,21 @@ struct DashListRow<Accessory: View>: View {
   private var labelStack: some View {
     VStack(alignment: .leading, spacing: 2) {
       Text(title)
-        .dashTextStyle(.bodyMedium)
+        .dashTextStyle(.bodySemibold)
         .foregroundStyle(DashTheme.text)
         .lineLimit(isAccessibilitySize ? nil : 1)
       if let subtitle {
-        Text(subtitle)
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.rowSubtitle)
-          .lineLimit(isAccessibilitySize ? nil : 1)
+        Group {
+          if isAccessibilitySize {
+            Text(subtitle)
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.rowSubtitle)
+          } else {
+            // Same wrap as Resources `FeatureRow` — one-line `lineLimit`
+            // made Actions read denser than the catalog even at equal padding.
+            DashGreedyWrapText(text: subtitle)
+          }
+        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -155,7 +181,8 @@ extension DashListRow where Accessory == EmptyView {
     iconColor: Color? = nil,
     avatarSeed: String? = nil,
     trailing: String? = nil,
-    showsChevron: Bool = true
+    showsChevron: Bool = true,
+    showsIconPlate: Bool = true
   ) {
     self.init(
       title: title,
@@ -165,6 +192,7 @@ extension DashListRow where Accessory == EmptyView {
       avatarSeed: avatarSeed,
       trailing: trailing,
       showsChevron: showsChevron,
+      showsIconPlate: showsIconPlate,
       accessory: { EmptyView() })
   }
 }
@@ -551,7 +579,7 @@ struct DashSectionHeader: View {
   /// fragment that needs its subject ("3 minutes ago" → "Updated …").
   var titleAccessibilityLabel: String?
   /// Cold-load stand-in for the title — a short bar that matches section-title
-  /// height so freshness can shimmer in place before the first stamp lands.
+  /// height so freshness lands in place when the first stamp arrives.
   var showsTitleSkeleton = false
   /// Quiet meta copy (freshness, relative time) — footnote + subtle, not the
   /// section-title weight used for real headings.
@@ -629,9 +657,9 @@ struct DashSectionHeader: View {
         .dashHeaderActionHitTarget()
       }
     }
-    // Padding rides the row, not the title, so a decorated header keeps the
-    // plain header's vertical rhythm.
-    .padding(.top, 12)
+    // Bottom only: the scroll already leaves `Spacing.section` under the range
+    // tabs (same as `DashFeatureList`). Another 12pt on top made Watchtower's
+    // freshness + Edit row sit noticeably lower than every other catalog list.
     .padding(.bottom, 6)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -827,6 +855,10 @@ struct DashTextTabs<Selection: Hashable>: View {
         }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
+      // Tight air under the nav / detail header — shared by Watchtower, Inbox,
+      // and every analytics detail. Matches the gap above the separator, not
+      // the larger catalog `section` / Home greeting inset.
+      .padding(.top, DashTheme.Spacing.compact)
       .padding(.bottom, DashTheme.Spacing.compact)
 
       // Same adaptive edge the tray header carries. Tabs themselves stay

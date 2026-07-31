@@ -1,5 +1,4 @@
 import CloudflareAPI
-import SwiftDitherKit
 import SwiftUI
 
 // MARK: - Resources index
@@ -8,7 +7,12 @@ import SwiftUI
 /// routing status when the settings call answers. Row push opens the existing
 /// per-zone Email Routing screen.
 struct EmailRoutingDomainsView: View {
+  /// Caps the settings fan-out so a large zone list does not stampede the API
+  /// (and lose every badge to rate limits) before any row can paint.
+  private static let statusFetchConcurrency = 6
+
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var zones: [CloudflareZone] = []
   @State private var statusByZoneID: [String: StatusToken] = [:]
   @State private var loading = true
@@ -20,29 +24,27 @@ struct EmailRoutingDomainsView: View {
       isLoading: loading,
       error: error,
       hasContent: !zones.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.mailbox,
+        title: "No domains yet",
+        message: "Add a domain to Cloudflare first, then set up Email Routing here."
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if zones.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.inbox,
-          title: "No domains yet",
-          message: "Add a domain to Cloudflare first, then set up Email Routing here."
-        )
-      } else {
-        DashListGroupHeader(title: DashL10n.string("Domains"))
-          .padding(.horizontal, 4)
-          .padding(.bottom, 8)
-        dashListCard {
-          dashListCardRows(items: zones) { zone in
-            DashListGroupLink(value: .zoneEmailRouting(zone.id)) {
-              DashListRow(
-                title: zone.name,
-                subtitle: nil,
-                avatarSeed: zone.name
-              ) {
-                if let token = statusByZoneID[zone.id], token != .disabled {
-                  StatusBadge(token)
-                }
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: zones, reduceMotion: reduceMotion) { zone in
+          let token = statusByZoneID[zone.id]
+          DashListGroupLink(value: .zoneEmailRouting(zone.id)) {
+            DashListRow(
+              title: zone.name,
+              subtitle: nil,
+              avatarSeed: zone.name
+            ) {
+              // Unconfigured stays quiet — most accounts have many zones with
+              // routing never turned on, and "Disabled" on every row is noise.
+              // Ready / misconfigured / unlocked answer the list's question.
+              if let token, token != .disabled {
+                StatusBadge(token)
               }
             }
           }
@@ -51,6 +53,9 @@ struct EmailRoutingDomainsView: View {
     }
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
+    // Detail visits write settings/snapshot into the session cache; merge them
+    // when popping back so a badge does not wait for another full fan-out.
+    .onAppear { mergeCachedStatuses() }
   }
 
   private func load(force: Bool = false) async {
@@ -100,40 +105,71 @@ struct EmailRoutingDomainsView: View {
       }
       zones = collected
       model.featureCache.storeZones(collected, accountID: context.accountID)
+      loading = false
       await loadStatuses(for: collected, force: force)
     } catch {
       guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
+      loading = false
     }
-    loading = false
+  }
+
+  /// Pull any statuses already known from this session (list settings cache or
+  /// a zone screen's full snapshot) into the row badges without waiting on
+  /// the network.
+  private func mergeCachedStatuses() {
+    guard !zones.isEmpty else { return }
+    let cache = model.featureCache
+    var next = statusByZoneID
+    var changed = false
+    for zone in zones {
+      guard let token = EmailRoutingStatusMapping.listToken(zoneID: zone.id, cache: cache)
+      else { continue }
+      if next[zone.id] != token {
+        next[zone.id] = token
+        changed = true
+      }
+    }
+    if changed { statusByZoneID = next }
   }
 
   private func loadStatuses(for zones: [CloudflareZone], force: Bool) async {
     let client = model.client
     let cache = model.featureCache
-    var next: [String: StatusToken] = statusByZoneID
-    await withTaskGroup(of: (String, StatusToken?).self) { group in
-      for zone in zones {
-        let zoneID = zone.id
-        let key = FeatureCacheKey.emailRouting(zoneID)
-        if !force, let cached: EmailRoutingSnapshot = cache.get(key) {
-          next[zoneID] = EmailRoutingStatusMapping.token(for: cached.settings)
-          continue
-        }
-        group.addTask {
-          do {
-            let settings = try await client.getEmailRoutingSettings(zoneID: zoneID)
-            return (zoneID, EmailRoutingStatusMapping.token(for: settings))
-          } catch {
-            return (zoneID, nil)
-          }
-        }
-      }
-      for await (zoneID, token) in group {
-        if let token { next[zoneID] = token }
+    var next = statusByZoneID
+    var pending: [String] = []
+    for zone in zones {
+      if !force, let token = EmailRoutingStatusMapping.listToken(zoneID: zone.id, cache: cache) {
+        next[zone.id] = token
+      } else {
+        pending.append(zone.id)
       }
     }
-    statusByZoneID = next
+    if next != statusByZoneID { statusByZoneID = next }
+    guard !pending.isEmpty else { return }
+
+    for chunkStart in stride(from: 0, to: pending.count, by: Self.statusFetchConcurrency) {
+      if Task.isCancelled { return }
+      let end = min(chunkStart + Self.statusFetchConcurrency, pending.count)
+      let chunk = Array(pending[chunkStart..<end])
+      await withTaskGroup(of: (String, EmailRoutingSettings?).self) { group in
+        for zoneID in chunk {
+          group.addTask {
+            do {
+              return (zoneID, try await client.getEmailRoutingSettings(zoneID: zoneID))
+            } catch {
+              return (zoneID, nil)
+            }
+          }
+        }
+        for await (zoneID, settings) in group {
+          guard let settings else { continue }
+          EmailRoutingStatusMapping.storeListSettings(settings, zoneID: zoneID, cache: cache)
+          next[zoneID] = EmailRoutingStatusMapping.token(for: settings)
+        }
+      }
+      statusByZoneID = next
+    }
   }
 }
 
@@ -175,14 +211,18 @@ let emailRoutingWriteScopes: Set<String> = [
 /// state's single call to action rewrites the zone's apex MX records. Painting
 /// a 404 or a 5xx as "off" would offer a destructive button in answer to an
 /// error.
+///
+/// First paint waits for settings **and** routes / catch-all / addresses, then
+/// commits once. Publishing settings alone used to flip `hasContent` while the
+/// rest was still in flight — skeleton, then a half-empty live body with
+/// Updating…, then the real content.
 struct EmailRoutingView: View {
   static let rulePageSize = 50
 
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
-  @Environment(\.colorScheme) private var colorScheme
-  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
 
   @State private var settings: EmailRoutingSettings?
@@ -208,8 +248,6 @@ struct EmailRoutingView: View {
   @State private var subaddressingUpdating = false
   @State private var catchAllUpdating = false
   @State private var loadedContext: AccountRequestContext?
-  @State private var analytics: EmailRoutingAnalyticsSummary?
-  @State private var analyticsFailed = false
 
   var body: some View {
     DashFeatureList(
@@ -217,17 +255,11 @@ struct EmailRoutingView: View {
       error: error,
       hasContent: settings != nil,
       retry: { Task { await load(force: true) } }
-    ) {
-      if let settings {
-        if Self.isNotSetUp(settings) {
-          notSetUpState(settings)
-        } else {
-          configuredContent(settings)
-        }
-      }
+    ) { mode in
+      emailRoutingBody(mode: mode)
     }
     .detailHeader(
-      icon: .solar(SolarAsset.Content.inbox),
+      icon: .solar(SolarAsset.Content.mailbox),
       title: "Email routing",
       tint: FeatureVisualIdentity.heroColor(for: .emailRouting)
     )
@@ -280,6 +312,42 @@ struct EmailRoutingView: View {
     )
   }
 
+  /// Fuller first-paint reserve for the configured stack. Not-set-up replaces
+  /// the whole body; catch-all / plus addressing / turn-off exit when live
+  /// content omits them.
+  @ViewBuilder
+  private func emailRoutingBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashInfoGroup(title: "Email routing", phase: .loading, placeholderRows: 2) {
+        EmptyView()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Routes") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Destination addresses") {
+        DashListRowPlaceholders(rows: 1)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let settings {
+      if Self.isNotSetUp(settings) {
+        notSetUpState(settings)
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else {
+        configuredContent(settings)
+      }
+    }
+  }
+
   // MARK: Not set up
 
   /// Reachable only from a 200. `unconfigured` is Cloudflare's own word for
@@ -297,7 +365,7 @@ struct EmailRoutingView: View {
         scopes: emailRoutingWriteScopes)
     }
     DashEmptyState(
-      icon: SolarAsset.Content.inbox,
+      icon: SolarAsset.Content.mailbox,
       title: "Email routing is off",
       message:
         "Forward mail sent to addresses at this domain to an inbox you already use. Cloudflare adds the MX and SPF records for you.",
@@ -320,77 +388,25 @@ struct EmailRoutingView: View {
     if !featureAllowsWrites {
       FeatureWriteAccessNotice(
         message: "Read-only — grant Email Routing write access to change routes.",
-        scopes: emailRoutingWriteScopes)
+        scopes: emailRoutingWriteScopes
+      )
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
     statusGroup(settings)
       .dashSectionBoundary(!featureAllowsWrites)
-    if let analytics, !analytics.isEmpty {
-      emailRoutingAnalyticsSection(analytics)
-        .dashSectionBoundary()
-    }
+      .dashBodySlot(reduceMotion: reduceMotion)
     routesSection
+      .dashBodySlot(reduceMotion: reduceMotion)
     catchAllSection
     addressesSection
+      .dashBodySlot(reduceMotion: reduceMotion)
     if settings.supportSubaddress != nil {
       subaddressingSection
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
     if featureAllowsWrites {
       turnOffRow
-    }
-  }
-
-  /// Volume from `emailRoutingAdaptiveGroups`. Hidden when empty or the
-  /// analytics call failed (403 / plan) — same spirit as Workers Builds.
-  private func emailRoutingAnalyticsSection(_ summary: EmailRoutingAnalyticsSummary) -> some View {
-    let seriesData = summary.series.compactMap { point -> DitherDatum? in
-      let parser = ISO8601DateFormatter()
-      parser.formatOptions = [.withInternetDateTime]
-      guard let date = parser.date(from: point.datetime) else { return nil }
-      return DitherDatum(
-        id: date.ISO8601Format(),
-        label: date.formatted(.dateTime.hour().locale(DashL10n.activeLocale)),
-        values: ["mail": Double(point.count)])
-    }
-    let collapsed = CollapsedDitherTrendSeries(values: seriesData.map { $0.values["mail"] ?? 0 })
-    let sparkData = zip(seriesData, collapsed.values).map { point, value in
-      DitherDatum(id: point.id, label: point.label, values: ["mail": value])
-    }
-    return DashSurfaceStack {
-      DashGlassCard {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Last \(summary.hours) hours")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          Text(summary.total.formatted())
-            .dashTextStyle(.sectionTitle)
-            .foregroundStyle(DashTheme.text)
-            .monospacedDigit()
-          Text("Processed messages")
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      if !sparkData.isEmpty {
-        DashCollapsedChartCard(
-          title: "Email volume",
-          summaryValue: summary.total.formatted(.number.locale(DashL10n.activeLocale)),
-          data: sparkData,
-          series: [
-            DitherSeries(
-              id: "mail",
-              label: DashL10n.ui("Messages"),
-              color: DashTheme.DitherChart.negative(
-                colorScheme: colorScheme,
-                contrast: colorSchemeContrast),
-              variant: .gradient)
-          ],
-          valueCeiling: collapsed.valueCeiling,
-          accessibilitySummary: DashL10n.string(
-            "Email Routing volume over the last \(summary.hours) hours. Total \(summary.total.formatted())."
-          )
-        )
-      }
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -414,8 +430,8 @@ struct EmailRoutingView: View {
         )
         if featureAllowsWrites {
           // Repairing re-runs the same apex MX write as first-time setup, so it
-          // goes through the same preview + hold-to-confirm tray rather than
-          // firing straight off a pill.
+          // goes through the same preview + confirm tray rather than firing
+          // straight off a pill.
           DashPillButton(title: "Fix DNS records") {
             enableTarget = EmailRoutingEnableTarget(
               zoneName: settings.name,
@@ -451,7 +467,7 @@ struct EmailRoutingView: View {
         .dashListCardInset()
     } else if rules.isEmpty {
       DashEmptyState(
-        icon: SolarAsset.Content.inbox,
+        icon: SolarAsset.Content.mailbox,
         title: "No routes",
         message: "Add a custom address to start forwarding mail.")
     } else {
@@ -462,7 +478,7 @@ struct EmailRoutingView: View {
           DashListRow(
             title: routeTitle(rule),
             subtitle: routeSubtitle(rule),
-            icon: SolarAsset.Content.inbox,
+            icon: SolarAsset.Content.mailbox,
             iconColor: FeatureVisualIdentity.catalogColor(for: .emailRouting),
             showsChevron: false
           ) {
@@ -537,6 +553,7 @@ struct EmailRoutingView: View {
         }
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -781,10 +798,7 @@ struct EmailRoutingView: View {
       rules = []
       catchAll = nil
       addresses = nil
-      analytics = nil
-      analyticsFailed = false
       pageState.reset()
-      loading = true
       loadMorePhase = .idle
       error = nil
       rulesError = nil
@@ -797,26 +811,36 @@ struct EmailRoutingView: View {
       subaddressingUpdating = false
       catchAllUpdating = false
     }
+    // Cold stays on the skeleton; warm pull-to-refresh keeps content and the
+    // Updating… strip. Never flip `settings` early — `hasContent` follows it,
+    // and a settings-only paint left Routes / Catch-all still loading inside
+    // an already-"live" body.
+    if settings == nil || force { loading = true }
+
     let key = FeatureCacheKey.emailRouting(zoneID)
     if !force, let cached: EmailRoutingSnapshot = model.featureCache.get(key) {
+      let cachedAddresses = await fetchAddresses(force: false, context: context)
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
       apply(cached)
+      if let cachedAddresses { addresses = cachedAddresses }
       loading = false
       error = nil
-      await loadAddresses(force: false, context: context)
-      await loadAnalytics(force: false)
       return
     }
 
     let client = model.client
     let zone = zoneID
     // Settings is the backbone. It is awaited on its own so a throw becomes the
-    // screen's error rather than being folded into a degraded section.
+    // screen's error rather than being folded into a degraded section — but the
+    // value stays local until the rest of the first paint is ready.
+    let fetched: EmailRoutingSettings
     do {
-      let fetched = try await client.getEmailRoutingSettings(zoneID: zone)
+      fetched = try await client.getEmailRoutingSettings(zoneID: zone)
       guard model.isCurrentAccount(context), !Task.isCancelled else { return }
-      settings = fetched
-      subaddressing = fetched.supportSubaddress ?? false
-      error = nil
+      // Settings alone land in the list cache immediately so the domains index
+      // can badge Ready / Misconfigured without waiting on rules / catch-all.
+      EmailRoutingStatusMapping.storeListSettings(
+        fetched, zoneID: zone, cache: model.featureCache)
     } catch {
       guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
         return
@@ -828,21 +852,20 @@ struct EmailRoutingView: View {
       return
     }
 
-    guard let current = settings else {
-      loading = false
-      return
-    }
-    guard !Self.isNotSetUp(current) else {
+    if Self.isNotSetUp(fetched) {
       // Routing is off. There are no routes to show and no catch-all to read;
       // the screen renders the setup call to action and nothing else.
+      settings = fetched
+      subaddressing = fetched.supportSubaddress ?? false
       rules = []
       catchAll = nil
       rulesError = nil
       catchAllError = nil
       pageState.reset()
-      loading = false
+      error = nil
       model.featureCache.set(
-        key, EmailRoutingSnapshot(settings: current, rules: [], catchAll: nil))
+        key, EmailRoutingSnapshot(settings: fetched, rules: [], catchAll: nil))
+      loading = false
       return
     }
 
@@ -853,67 +876,61 @@ struct EmailRoutingView: View {
     async let catchAllResult = Self.fetch {
       try await client.getEmailRoutingCatchAll(zoneID: zone)
     }
-    async let addressesResult: Void = loadAddresses(force: force, context: context)
-    let (rulesOutcome, catchAllOutcome, _) = await (
+    async let addressesResult = fetchAddresses(force: force, context: context)
+    let (rulesOutcome, catchAllOutcome, fetchedAddresses) = await (
       rulesResult, catchAllResult, addressesResult
     )
     guard model.isCurrentAccount(context), !Task.isCancelled else { return }
 
+    var nextRules: [EmailRoutingRule] = []
+    var nextRulesError: String?
     var fetchedRules: [EmailRoutingRule]?
     switch rulesOutcome {
     case .success(let page):
-      rules = page.items
+      nextRules = page.items
       fetchedRules = page.items
-      rulesError = nil
       pageState.reset()
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: page.items.count,
         pageSize: Self.rulePageSize)
     case .failure(let failure):
       guard !failure.dashIsCancellation else { return }
-      rulesError = failure.dashActionableMessage
+      nextRulesError = failure.dashActionableMessage
+      // Keep any previously painted routes on a warm refresh failure.
+      if settings != nil { nextRules = rules }
     }
 
+    var nextCatchAll = catchAll
+    var nextCatchAllError: String?
     switch catchAllOutcome {
     case .success(let rule):
-      catchAll = rule
-      catchAllError = nil
+      nextCatchAll = rule
     case .failure(let failure):
       guard !failure.dashIsCancellation else { return }
-      catchAllError = failure.dashActionableMessage
+      nextCatchAllError = failure.dashActionableMessage
+      if settings == nil { nextCatchAll = nil }
     }
+
+    // One commit: status, routes, catch-all, and address summary land together
+    // so the skeleton never hands off to a half-empty live body.
+    settings = fetched
+    subaddressing = fetched.supportSubaddress ?? false
+    rules = nextRules
+    rulesError = nextRulesError
+    catchAll = nextCatchAll
+    catchAllError = nextCatchAllError
+    if let fetchedAddresses { addresses = fetchedAddresses }
+    error = nil
 
     // Only a complete, successful primary payload is cached. A degraded read
-    // must not become the warm state a later visit trusts.
-    if let fetchedRules, catchAllError == nil {
+    // must not become the warm state a later visit trusts. Settings for the
+    // domains index were already stored when the backbone fetch returned.
+    if let fetchedRules, nextCatchAllError == nil {
       model.featureCache.set(
         key,
-        EmailRoutingSnapshot(settings: current, rules: fetchedRules, catchAll: catchAll))
+        EmailRoutingSnapshot(settings: fetched, rules: fetchedRules, catchAll: nextCatchAll))
     }
-    await loadAnalytics(force: force)
     loading = false
-  }
-
-  private func loadAnalytics(force: Bool) async {
-    let key = FeatureCacheKey.emailRoutingAnalytics(zoneID)
-    if !force, let cached: EmailRoutingAnalyticsSummary = model.featureCache.get(key) {
-      analytics = cached
-      analyticsFailed = false
-      return
-    }
-    do {
-      let fetched = try await model.client.emailRoutingAnalytics(zoneID: zoneID, hours: 24)
-      analytics = fetched.isEmpty ? nil : fetched
-      analyticsFailed = false
-      if !fetched.isEmpty {
-        model.featureCache.set(key, fetched)
-      }
-    } catch {
-      guard !error.dashIsCancellation else { return }
-      // Hide the section; never surface analytics failure over the routes UI.
-      analytics = nil
-      analyticsFailed = true
-    }
   }
 
   private func apply(_ snapshot: EmailRoutingSnapshot) {
@@ -927,23 +944,31 @@ struct EmailRoutingView: View {
     pageState.rehydrate(loaded: snapshot.rules.count, pageSize: Self.rulePageSize)
   }
 
-  private func loadAddresses(force: Bool, context: AccountRequestContext) async {
-    guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+  /// Destination addresses for route badges / delivery pickers. Returns the
+  /// list without writing `@State` so the caller can commit it with the rest
+  /// of the first paint. `nil` means "still unknown" (failed or cancelled) —
+  /// never invent an empty list from a throw.
+  private func fetchAddresses(force: Bool, context: AccountRequestContext) async
+    -> [EmailDestinationAddress]?
+  {
+    guard model.isCurrentAccount(context), !Task.isCancelled else { return nil }
     let key = FeatureCacheKey.emailAddresses(context.accountID)
     if !force, let cached: [EmailDestinationAddress] = model.featureCache.get(key) {
-      addresses = cached
-      return
+      return cached
     }
     do {
       let fetched = try await model.client.listEmailDestinationAddresses(
         accountID: context.accountID)
-      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
-      addresses = fetched
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return nil }
       model.featureCache.set(key, fetched)
+      return fetched
     } catch {
-      // Left exactly as it was: nil if it was never known (so every claim this
-      // list backs stays suppressed rather than guessed), and the last good
-      // answer if there was one. The dedicated screen reports the failure.
+      // Left exactly as it was at the call site: nil if it was never known (so
+      // every claim this list backs stays suppressed rather than guessed), and
+      // the last good answer if the caller keeps it. The dedicated screen
+      // reports the failure.
+      guard !error.dashIsCancellation else { return nil }
+      return nil
     }
   }
 
@@ -1015,8 +1040,15 @@ struct EmailRoutingView: View {
       id: current.id, tag: current.tag, name: current.name, enabled: nextEnabled,
       source: current.source, matchers: current.matchers, actions: nextActions)
     catchAllUpdating = true
+    let verb: DashOptimisticVerb =
+      enabled != nil ? .toggle(nextEnabled) : .setting
+    let op = model.optimistic.begin(verb) {
+      catchAll = previous
+      catchAllUpdating = false
+    }
     Task {
       do {
+        try await model.optimistic.waitForCommit(op)
         let updated = try await model.client.updateEmailRoutingCatchAll(
           zoneID: zoneID,
           input: EmailRoutingCatchAllInput(
@@ -1024,16 +1056,24 @@ struct EmailRoutingView: View {
             actions: nextActions,
             enabled: nextEnabled,
             name: current.name))
-        guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+        guard model.isCurrentAccount(context), !Task.isCancelled else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         catchAll = updated
         cacheSnapshot()
         catchAllUpdating = false
+        model.optimistic.finishSuccess(op)
+      } catch is CancellationError {
+        // Undo during grace already reverted local state.
       } catch {
         guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+          model.optimistic.finishFailure(op)
           return
         }
         catchAll = previous
         catchAllUpdating = false
+        model.optimistic.finishFailure(op)
         model.toasts.error(error.dashActionableMessage)
       }
     }
@@ -1044,21 +1084,34 @@ struct EmailRoutingView: View {
     let previous = subaddressing
     subaddressing = enabled
     subaddressingUpdating = true
+    let op = model.optimistic.begin(.toggle(enabled)) {
+      subaddressing = previous
+      subaddressingUpdating = false
+    }
     Task {
       do {
+        try await model.optimistic.waitForCommit(op)
         let updated = try await model.client.updateEmailRoutingSubaddressing(
           zoneID: zoneID, enabled: enabled)
-        guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+        guard model.isCurrentAccount(context), !Task.isCancelled else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         settings = updated
         subaddressing = updated.supportSubaddress ?? enabled
         cacheSnapshot()
         subaddressingUpdating = false
+        model.optimistic.finishSuccess(op)
+      } catch is CancellationError {
+        // Undo during grace already reverted local state.
       } catch {
         guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+          model.optimistic.finishFailure(op)
           return
         }
         subaddressing = previous
         subaddressingUpdating = false
+        model.optimistic.finishFailure(op)
         model.toasts.error(error.dashActionableMessage)
       }
     }
@@ -1069,6 +1122,7 @@ struct EmailRoutingView: View {
     try await model.client.disableEmailRouting(zoneID: zoneID)
     guard model.isCurrentAccount(context), !Task.isCancelled else { return }
     model.featureCache.remove(FeatureCacheKey.emailRouting(zoneID))
+    model.featureCache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
     model.featureCache.remove(FeatureCacheKey.emailRoutingDNS(zoneID))
     // The zone's apex MX really did change underneath the DNS screen.
     model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
@@ -1104,6 +1158,29 @@ enum EmailRoutingStatusMapping {
     }
   }
 
+  /// Token for the domains index: prefer the settings-only cache the list
+  /// writes, then a zone screen's full snapshot. Never invent ready.
+  @MainActor
+  static func listToken(zoneID: String, cache: FeatureDataCache) -> StatusToken? {
+    if let settings: EmailRoutingSettings = cache.get(
+      FeatureCacheKey.emailRoutingSettings(zoneID))
+    {
+      return token(for: settings)
+    }
+    if let snapshot: EmailRoutingSnapshot = cache.get(FeatureCacheKey.emailRouting(zoneID)) {
+      return token(for: snapshot.settings)
+    }
+    return nil
+  }
+
+  /// Persist settings for the domains index without touching the full snapshot.
+  @MainActor
+  static func storeListSettings(
+    _ settings: EmailRoutingSettings, zoneID: String, cache: FeatureDataCache
+  ) {
+    cache.set(FeatureCacheKey.emailRoutingSettings(zoneID), settings)
+  }
+
   /// Only the states Cloudflare itself calls misconfigured offer the repair
   /// action. `unknown` does not — Dash does not know what is wrong, and the
   /// repair rewrites apex MX records.
@@ -1117,9 +1194,9 @@ enum EmailRoutingStatusMapping {
 
 // MARK: - Enable tray
 
-/// Preview + hold-to-confirm for the one destructive control in this feature:
-/// letting Cloudflare write its DNS plan onto the zone apex, replacing whatever
-/// MX records are there now.
+/// Preview + confirm for the one destructive control in this feature: letting
+/// Cloudflare write its DNS plan onto the zone apex, replacing whatever MX
+/// records are there now.
 ///
 /// Cloudflare reports only what it considers *missing*; it never reports a
 /// conflict. So Dash does the conflict detection itself, from the zone's own
@@ -1127,10 +1204,10 @@ enum EmailRoutingStatusMapping {
 ///
 /// **The three fetches gate the button.** The DNS plan, the MX sweep and the
 /// TXT sweep must all have succeeded before the confirm control is enabled — a
-/// hold-to-confirm without the preview would be a confirmation of nothing.
-/// Any of them throwing puts the section in `.failed` with a Try again, and the
-/// button stays disabled. "Unable to proceed" is an acceptable state here;
-/// "unwarned" is not.
+/// confirm without the preview would be a confirmation of nothing. Any of them
+/// throwing puts the section in `.failed` with a Try again, and the button
+/// stays disabled. "Unable to proceed" is an acceptable state here; "unwarned"
+/// is not.
 struct EmailRoutingEnableTray: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
@@ -1201,7 +1278,6 @@ struct EmailRoutingEnableTray: View {
       DashActionButton(
         title: confirmTitle,
         phase: actionPhase,
-        holdToConfirm: true,
         onSuccessPresentationCompleted: completeEnablePresentation
       ) {
         Task { await enable() }
@@ -1256,6 +1332,7 @@ struct EmailRoutingEnableTray: View {
         return
       }
       model.featureCache.remove(FeatureCacheKey.emailRouting(zoneID))
+      model.featureCache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
       model.featureCache.remove(FeatureCacheKey.emailRoutingDNS(zoneID))
       model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
       DashDelight.celebrateSuccess()

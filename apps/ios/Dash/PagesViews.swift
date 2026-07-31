@@ -6,6 +6,7 @@ import UIKit
 struct PagesProjectsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var projects: [PagesProject] = []
   @State private var loading = true
   @State private var error: String?
@@ -15,29 +16,26 @@ struct PagesProjectsView: View {
       isLoading: loading,
       error: error,
       hasContent: !projects.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.codeCircle,
+        title: DashL10n.string("No Pages projects"),
+        message: DashL10n.string(
+          "Create projects in the dashboard or with Wrangler — manage deployments and domains here."
+        ),
+        actionTitle: "Open Pages docs",
+        action: { openURL(PagesExternalURL.getStarted) }
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if projects.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.codeCircle,
-          title: DashL10n.string("No Pages projects"),
-          message: DashL10n.string(
-            "Create projects in the dashboard or with Wrangler — manage deployments and domains here."
-          ),
-          actionTitle: "Open Pages docs",
-          action: { openURL(PagesExternalURL.getStarted) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: projects) { project in
-            DashListGroupLink(value: .pagesProject(project.name)) {
-              DashListRow(
-                title: project.name,
-                subtitle: pagesProjectSubtitle(project),
-                icon: SolarAsset.Content.codeCircle
-              )
-              .accessibilityLabel(pagesProjectAccessibilityLabel(project))
-            }
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: projects, reduceMotion: reduceMotion) { project in
+          DashListGroupLink(value: .pagesProject(project.name)) {
+            DashListRow(
+              title: project.name,
+              subtitle: pagesProjectSubtitle(project),
+              icon: SolarAsset.Content.codeCircle
+            )
+            .accessibilityLabel(pagesProjectAccessibilityLabel(project))
           }
         }
       }
@@ -90,97 +88,9 @@ struct PagesProjectDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } },
-      skeleton: { pagesProjectDetailSkeleton }
-    ) {
-      DashSurfaceStack {
-        if let project {
-          DashCard {
-            VStack(alignment: .leading, spacing: 8) {
-              Text(project.name)
-                .dashTextStyle(.sheetTitle)
-                .foregroundStyle(DashTheme.text)
-              if let subdomain = project.subdomain {
-                Text(subdomain)
-                  .dashTextStyle(.code)
-                  .foregroundStyle(DashTheme.subtle)
-                  .textSelection(.enabled)
-              }
-              if let latest = project.latestDeployment?.latestStage?.status {
-                StatusBadge(StatusToken(pagesStatus: latest))
-              }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }
-
-        dashListCard {
-          DashListGroupLink(value: .pagesDomains(projectName)) {
-            DashListRow(
-              title: DashL10n.string("Domains"),
-              icon: SolarAsset.Content.globe,
-              iconColor: FeatureVisualIdentity.heroColor(for: .pages)
-            )
-            .accessibilityLabel(DashL10n.string("Domains, Custom domains for this project"))
-          }
-          .dashListCardInset()
-        }
-
-        if !deployments.isEmpty {
-          buildOutcomesCard
-        }
-      }
-
-      // Keep the unbounded deployment ForEach as a direct child of
-      // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
-      // otherwise mount every deployment row at once.
-      DashListGroupHeader(title: DashL10n.ui("Deployments"))
-        .padding(.horizontal, 4)
-        .dashSectionBoundary()
-        .padding(.bottom, 8)
-      if deployments.isEmpty {
-        DashCard {
-          if deploymentsError != nil {
-            // A failed deployments fetch keeps the rows' shape on the ground
-            // and veils the message over it — swapping in a bare notice was
-            // the section popping out of its own frame.
-            DashListRowPlaceholders(rows: 3)
-              .dashSectionFailure(
-                deploymentsError,
-                retry: { Task { await load(force: true) } })
-          } else {
-            Text("No deployments yet.")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }
-        // Replaces DashListGroup's content inset for the empty state.
-        .dashListCardInset()
-      } else {
-        dashListCardRows(items: visibleDeployments) { deployment in
-          let title = pagesDeploymentTitle(deployment)
-          let subtitle = pagesDeploymentSubtitle(deployment)
-          DashListGroupLink(
-            value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
-          ) {
-            DashListRow(
-              title: title,
-              subtitle: subtitle,
-              icon: SolarAsset.Content.codeCircle,
-              iconColor: pagesStatusColor(deployment.latestStage?.status),
-              showsChevron: true
-            )
-            .accessibilityLabel(
-              pagesDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
-            )
-          }
-          .transition(morphTransition)
-          // dashListCardRows supplies the row's existing inset; this one
-          // replaces DashListGroup's former content inset.
-          .dashListCardInset()
-        }
-      }
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      pagesProjectDetailBody(mode: mode)
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.codeCircle),
@@ -199,49 +109,139 @@ struct PagesProjectDetailView: View {
     .refreshable { await load(force: true) }
   }
 
-  /// Summary card, Domains row, build-outcomes panel, then Deployments rows —
-  /// the same first-paint stack the loaded project settles into.
-  private var pagesProjectDetailSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      DashSurfaceStack {
+  /// Fuller first-paint reserve: summary, Domains, build outcomes, deployments.
+  /// Live mode drops empty outcomes; that slot exits upward.
+  @ViewBuilder
+  private func pagesProjectDetailBody(mode: DashBodyMode) -> some View {
+    DashSurfaceStack {
+      if mode.isPlaceholder {
         DashCard {
           VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .dashSkeletonFill(DashSkeletonStyle.strong)
-              .frame(width: 160, height: 18)
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .dashSkeletonFill(DashSkeletonStyle.soft)
-              .frame(width: 200, height: 12)
+            Text(projectName)
+              .dashTextStyle(.sheetTitle)
+              .foregroundStyle(DashTheme.text)
+            Text(verbatim: "project.pages.dev")
+              .dashTextStyle(.code)
+              .foregroundStyle(DashTheme.subtle)
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
-        dashListCard {
-          DashListRowPlaceholders(rows: 1)
-            .dashListCardInset()
+        .dashBodyPlaceholder(true)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      } else if let project {
+        DashCard {
+          VStack(alignment: .leading, spacing: 8) {
+            Text(project.name)
+              .dashTextStyle(.sheetTitle)
+              .foregroundStyle(DashTheme.text)
+            if let subdomain = project.subdomain {
+              Text(subdomain)
+                .dashTextStyle(.code)
+                .foregroundStyle(DashTheme.subtle)
+                .textSelection(.enabled)
+            }
+            if let latest = project.latestDeployment?.latestStage?.status {
+              StatusBadge(StatusToken(pagesStatus: latest))
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .dashBodySlot(reduceMotion: reduceMotion)
+      }
+
+      dashListCard {
+        DashListGroupLink(value: .pagesDomains(projectName)) {
+          DashListRow(
+            title: DashL10n.string("Domains"),
+            icon: SolarAsset.globe,
+            showsIconPlate: false
+          )
+          .accessibilityLabel(DashL10n.string("Domains, Custom domains for this project"))
+        }
+        .dashListCardInset()
+      }
+      .dashBodyPlaceholder(mode.isPlaceholder)
+      .dashBodySlot(reduceMotion: reduceMotion)
+
+      if mode.isPlaceholder {
         DashChartPanelPlaceholder(showsLegend: true)
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else if !deployments.isEmpty {
+        buildOutcomesCard
+          .dashBodySlot(reduceMotion: reduceMotion)
       }
-      DashListGroup(title: "Deployments") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
+
+    // Keep the unbounded deployment ForEach as a direct child of
+    // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
+    // otherwise mount every deployment row at once.
+    DashListGroupHeader(title: DashL10n.ui("Deployments"))
+      .padding(.horizontal, 4)
+      .dashSectionBoundary()
+      .padding(.bottom, 8)
+    if mode.isPlaceholder {
+      dashListCard {
+        DashListRowPlaceholders(rows: 3)
+          .dashListCardInset()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if deployments.isEmpty {
+      DashCard {
+        if deploymentsError != nil {
+          // A failed deployments fetch keeps the rows' shape on the ground
+          // and veils the message over it — swapping in a bare notice was
+          // the section popping out of its own frame.
+          DashListRowPlaceholders(rows: 3)
+            .dashSectionFailure(
+              deploymentsError,
+              retry: { Task { await load(force: true) } })
+        } else {
+          Text("No deployments yet.")
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      // Replaces DashListGroup's content inset for the empty state.
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      dashListCardRows(items: visibleDeployments) { deployment in
+        let title = pagesDeploymentTitle(deployment)
+        let subtitle = pagesDeploymentSubtitle(deployment)
+        DashListGroupLink(
+          value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
+        ) {
+          DashListRow(
+            title: title,
+            subtitle: subtitle,
+            icon: SolarAsset.Content.codeCircle,
+            iconColor: pagesStatusColor(deployment.latestStage?.status),
+            showsChevron: true
+          )
+          .accessibilityLabel(
+            pagesDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
+          )
+        }
+        .transition(morphTransition)
+        // dashListCardRows supplies the row's existing inset; this one
+        // replaces DashListGroup's former content inset.
+        .dashListCardInset()
+      }
+    }
   }
 
   private var buildOutcomesCard: some View {
     // Chart cards stay on the glass surface, not the info-group band — see the
-    // surface split on `DashGlassCard`.
+    // surface split on `DashGlassCard`. No detail chevron: the donut is a filter
+    // control for the list below, and its legend already names every slice, so a
+    // pushed copy would only restate what the card shows.
     DashGlassCard {
       VStack(alignment: .leading, spacing: 12) {
-        HStack(alignment: .center, spacing: 8) {
-          Text("Build outcomes")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          Spacer(minLength: 4)
-          DashChartDetailButton(detail: buildOutcomesDetail)
-        }
+        Text("Build outcomes")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
         DashPieChart(
           slices: outcomeSlices,
           innerRadiusRatio: 0.62,
@@ -263,24 +263,6 @@ struct PagesProjectDetailView: View {
         filterStrip
       }
     }
-  }
-
-  private var buildOutcomesDetail: DashChartDetail {
-    DashChartDetail(
-      title: "Build outcomes",
-      rangeLabel: "Deployments",
-      summaryValue: deployments.count.formatted(
-        .number.locale(DashL10n.activeLocale)),
-      trend: nil,
-      categoryAxisLabel: "Outcome",
-      valueAxisLabel: "Deployments",
-      axisValueFormat: .number(maximumFractionDigits: 0),
-      tableValueFormat: .number(maximumFractionDigits: 0),
-      accessibilitySummary: PagesDeploymentChartModel.chartAccessibilitySummary(
-        buckets: PagesDeploymentChartModel.buckets(deployments)),
-      content: .pie(slices: outcomeSlices),
-      featureID: .pages,
-      readScopes: FeatureID.pages.capability.read)
   }
 
   @ViewBuilder
@@ -392,6 +374,7 @@ struct PagesProjectDetailView: View {
 struct PagesDeploymentDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let projectName: String
   let deploymentID: String
   @State private var deployment: PagesDeployment?
@@ -430,21 +413,9 @@ struct PagesDeploymentDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await refreshManually() } },
-      skeleton: { pagesDeploymentDetailSkeleton }
-    ) {
-      if let deployment {
-        deploymentGroup(deployment)
-        stagesGroup(deployment)
-        if let actionError {
-          DashNotice(kind: .error, message: actionError)
-            .dashItemBoundary()
-        }
-        actions(for: deployment)
-          .dashSectionBoundary(featureAllowsWrites)
-        logsSection
-          .dashSectionBoundary()
-      }
+      retry: { Task { await refreshManually() } }
+    ) { mode in
+      pagesDeploymentDetailBody(mode: mode)
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.codeCircle),
@@ -460,19 +431,35 @@ struct PagesDeploymentDetailView: View {
     }
   }
 
-  /// Deployment + Stages info groups — the bounded fields that paint first.
-  private var pagesDeploymentDetailSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
+  /// Fuller first-paint reserve: Deployment + Stages. Actions and the build
+  /// log stay live-only (log is section-cold after the deployment lands).
+  @ViewBuilder
+  private func pagesDeploymentDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
       DashInfoGroup(title: "Deployment", phase: .loading, placeholderRows: 4) {
         EmptyView()
       }
+      .dashBodySlot(reduceMotion: reduceMotion)
       DashInfoGroup(title: "Stages", phase: .loading, placeholderRows: 3) {
         EmptyView()
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let deployment {
+      deploymentGroup(deployment)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      stagesGroup(deployment)
+      if let actionError {
+        DashNotice(kind: .error, message: actionError)
+          .dashItemBoundary()
+      }
+      actions(for: deployment)
+        .dashSectionBoundary(featureAllowsWrites)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      logsSection
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   /// The commit message is the screen's `detailHeader` title, so it is not
@@ -523,6 +510,7 @@ struct PagesDeploymentDetailView: View {
         }
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -543,10 +531,9 @@ struct PagesDeploymentDetailView: View {
 
             if deployment.environment == "production" {
               DashActionButton(
-                title: confirmingRollback ? "Hold to confirm" : "Rollback to this",
+                title: "Rollback to this",
                 role: .destructive,
                 phase: rollbackPhase,
-                holdToConfirm: confirmingRollback,
                 onSuccessPresentationCompleted: completeRollbackPresentation
               ) {
                 if confirmingRollback {
@@ -841,6 +828,7 @@ struct PagesDeploymentDetailView: View {
 struct PagesDomainsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let projectName: String
   @State private var domains: [PagesDomain] = []
   @State private var loading = true
@@ -855,41 +843,38 @@ struct PagesDomainsView: View {
       isLoading: loading,
       error: error,
       hasContent: !domains.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.globe,
+        title: DashL10n.string("No custom domains"),
+        message: featureAllowsWrites
+          ? DashL10n.string("Attach a hostname from one of this account's zones.")
+          : DashL10n.string("Grant Pages write access to attach a custom domain."),
+        actionTitle: featureAllowsWrites ? DashL10n.string("Add domain") : nil,
+        action: featureAllowsWrites ? { addsDomain = true } : nil
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if domains.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.globe,
-          title: DashL10n.string("No custom domains"),
-          message: featureAllowsWrites
-            ? DashL10n.string("Attach a hostname from one of this account's zones.")
-            : DashL10n.string("Grant Pages write access to attach a custom domain."),
-          actionTitle: featureAllowsWrites ? DashL10n.string("Add domain") : nil,
-          action: featureAllowsWrites ? { addsDomain = true } : nil
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: domains) { domain in
-            // Hoisted out of the row: inlining the lookup inside the builder
-            // pushed this body past the type checker's budget and surfaced as an
-            // "ambiguous use of toolbar" error 20 lines down.
-            let status = DashL10n.ui((domain.status ?? "unknown").capitalized)
-            Button {
-              deleteError = nil
-              selected = domain
-            } label: {
-              DashListRow(
-                title: domain.name,
-                subtitle: status,
-                icon: SolarAsset.Content.globe,
-                iconColor: domain.status == "active"
-                  ? FeatureVisualIdentity.catalogColor(for: .pages) : DashTheme.iconMuted,
-                showsChevron: false
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel("\(domain.name), \(status)")
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: domains, reduceMotion: reduceMotion) { domain in
+          // Hoisted out of the row: inlining the lookup inside the builder
+          // pushed this body past the type checker's budget and surfaced as an
+          // "ambiguous use of toolbar" error 20 lines down.
+          let status = DashL10n.ui((domain.status ?? "unknown").capitalized)
+          Button {
+            deleteError = nil
+            selected = domain
+          } label: {
+            DashListRow(
+              title: domain.name,
+              subtitle: status,
+              icon: SolarAsset.Content.globe,
+              iconColor: domain.status == "active"
+                ? FeatureVisualIdentity.catalogColor(for: .pages) : DashTheme.iconMuted,
+              showsChevron: false
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityLabel("\(domain.name), \(status)")
         }
       }
     }

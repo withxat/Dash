@@ -485,14 +485,13 @@ struct DomainCardColorSelection: Hashable, Sendable {
 enum DomainCardColors {
   static let key = "dash.domain_card_colors"
 
-  /// Former named palette — also used for stable per-domain defaults.
+  /// Built-in card colors shown in the customize grid (4×5), and used for
+  /// stable per-domain defaults until the user picks explicitly.
   static let defaultPalette: [UInt32] = [
-    0x047857,  // emerald
-    0x0369A1,  // ocean
-    0x4F46E5,  // indigo
-    0x7E22CE,  // violet
-    0xBE123C,  // rose
-    0xB45309,  // orange
+    0xEE3B5C, 0xEE4191, 0xDD41F3, 0x8E4EF7, 0x4A43F3,
+    0x2177F8, 0x349DED, 0x37A7FA, 0x3EAFC5, 0x40AE75,
+    0x46BB52, 0x74C330, 0xECA82C, 0xF39328, 0xF0651D,
+    0xEE3B35, 0xCEAC4B, 0xC28144, 0x0E2E5C, 0x1B191F,
   ]
 
   private static let legacyNames: [String: UInt32] = [

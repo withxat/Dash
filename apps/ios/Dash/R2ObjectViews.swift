@@ -374,6 +374,7 @@ struct R2BucketSettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let bucket: String
   @State private var managed: R2ManagedDomain?
   @State private var custom: [R2CustomDomain] = []
@@ -384,6 +385,10 @@ struct R2BucketSettingsView: View {
   @State private var customPhase: DashSectionPhase = .loading
   @State private var loading = true
   @State private var error: String?
+  /// `managedCard` / custom-domains / delete mount even when one half of the
+  /// dual fetch fails or returns empty — gating on `managed != nil || !custom`
+  /// left a managed-fail + empty-custom success stuck on the cold skeleton.
+  @State private var hasPresentedContent = false
   @State private var togglingManaged = false
   @State private var addsDomain = false
   @State private var selectedDomain: R2CustomDomain?
@@ -395,16 +400,10 @@ struct R2BucketSettingsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: managed != nil || !custom.isEmpty,
-      retry: { Task { await load(force: true) } },
-      skeleton: { r2BucketSettingsSkeleton }
-    ) {
-      managedCard
-      customDomainsGroup
-        .dashSectionBoundary()
-      if featureAllowsWrites {
-        deleteBucketRow
-      }
+      hasContent: hasPresentedContent,
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      r2BucketSettingsBody(mode: mode)
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.settings),
@@ -479,19 +478,31 @@ struct R2BucketSettingsView: View {
     }
   }
 
-  /// Public r2.dev toggle row over the Custom domains group.
-  private var r2BucketSettingsSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
+  /// Fuller first-paint reserve: managed URL + custom domains. Delete stays
+  /// live-only (write-gated).
+  @ViewBuilder
+  private func r2BucketSettingsBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
       DashCard {
         DashInfoRowPlaceholders(rows: 1)
       }
+      .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Custom domains") {
         DashListRowPlaceholders(rows: 2)
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      managedCard
+        .dashBodySlot(reduceMotion: reduceMotion)
+      customDomainsGroup
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      if featureAllowsWrites {
+        deleteBucketRow
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   private var managedCard: some View {
@@ -614,6 +625,7 @@ struct R2BucketSettingsView: View {
       customPhase = .content
       loading = false
       error = nil
+      hasPresentedContent = true
       return
     }
     let client = model.client
@@ -630,17 +642,22 @@ struct R2BucketSettingsView: View {
     // custom-list failure with no rows to keep stays in its section instead,
     // veiled over the placeholder rows.
     var failureMessage: String?
+    var managedSettled = false
+    var customSettled = false
     switch managedOutcome {
     case .success(let domain):
       managed = domain
+      managedSettled = true
     case .failure(let failure):
       guard !failure.dashIsCancellation else { break }
       failureMessage = failure.dashActionableMessage
+      managedSettled = true
     }
     switch customOutcome {
     case .success(let domains):
       custom = domains
       customPhase = .content
+      customSettled = true
     case .failure(let failure):
       guard !failure.dashIsCancellation else { break }
       if custom.isEmpty {
@@ -648,12 +665,18 @@ struct R2BucketSettingsView: View {
       } else {
         failureMessage = failure.dashActionableMessage
       }
+      customSettled = true
     }
     error = failureMessage
     // The snapshot feeds Copy public URL across the whole session — a half
     // from a thrown fetch must not be persisted as the settled answer.
     if case .success = managedOutcome, case .success = customOutcome {
       model.featureCache.set(key, R2DomainsSnapshot(managed: managed, custom: custom))
+    }
+    // Promote on any non-cancelled settle so a partial answer (or dual failure
+    // with section veils) owns the content phase instead of the cold skeleton.
+    if managedSettled || customSettled {
+      hasPresentedContent = true
     }
     loading = false
   }
@@ -671,17 +694,25 @@ struct R2BucketSettingsView: View {
     managed = R2ManagedDomain(
       bucketId: current.bucketId, domain: current.domain, enabled: enabled)
     togglingManaged = true
+    let op = model.optimistic.begin(.toggle(enabled)) {
+      managed = previous
+      togglingManaged = false
+    }
     Task {
       defer { togglingManaged = false }
       do {
+        try await model.optimistic.waitForCommit(op)
         managed = try await model.client.setR2ManagedDomain(
           accountID: accountID, bucket: bucket, enabled: enabled)
         model.featureCache.set(
           FeatureCacheKey.r2Domains(accountID: accountID, bucket: bucket),
           R2DomainsSnapshot(managed: managed, custom: custom))
-        DashDelight.celebrateSuccess()
+        model.optimistic.finishSuccess(op)
+      } catch is CancellationError {
+        // Undo during grace already reverted local state.
       } catch {
         managed = previous
+        model.optimistic.finishFailure(op)
         model.toasts.error(error.dashActionableMessage)
       }
     }

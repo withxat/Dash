@@ -1,22 +1,229 @@
 import AppIntents
 import CloudflareAPI
 import CoreTransferable
+import GradientAvatars
 import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
-private enum SettingsListMetrics {
-  static let iconSize: CGFloat = 28
-  static let iconColumn: CGFloat = 40
-  static let featuredLeading: CGFloat = 56
-  static let rowSpacing: CGFloat = 16
+/// Avatar long-press account switcher with in-tray switch and sign-out
+/// confirmations. Tapping the avatar still pushes Settings.
+struct ProfileTrayContent: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Namespace private var actionMorph
+  @State private var phase = ProfileTrayPhase.initial
+
+  /// Shared by the full-width Sign out pill and the half-width confirm pill so
+  /// the enamel face shrinks into the Cancel + Sign out row — same
+  /// `matchedGeometryEffect` path `DashConfirmableActions` uses for danger rows.
+  private static let signOutMorphID = "profile-tray-sign-out"
+
+  var body: some View {
+    ZStack {
+      switch phase {
+      case .accounts:
+        accountList
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      case .switchAccount(let account):
+        accountSwitchConfirmation(account)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      case .signOut:
+        signOutConfirmation
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      }
+    }
+    .dashTrayTitle(phase.title)
+  }
+
+  private var signOutMorphID: String? {
+    reduceMotion ? nil : Self.signOutMorphID
+  }
+
+  private var signOutMorphNamespace: Namespace.ID? {
+    reduceMotion ? nil : actionMorph
+  }
+
+  private var accountList: some View {
+    VStack(spacing: 16) {
+      VStack(spacing: DashTheme.Spacing.itemGap) {
+        ForEach(model.accounts) { account in
+          let isActive = account.id == model.activeAccountID
+          Button {
+            if isActive {
+              dismiss()
+              return
+            }
+            withAnimation(DashTheme.Motion.morph) { phase = .switchAccount(account) }
+          } label: {
+            ProfileTrayAccountRow(account: account, isActive: isActive)
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("profile-account-\(account.id)")
+          .accessibilityLabel(Text(verbatim: account.name))
+          .accessibilityValue(isActive ? DashL10n.string("Active account") : "")
+          .accessibilityHint(isActive ? "" : DashL10n.string("Switch account"))
+          .accessibilityAddTraits(isActive ? .isSelected : [])
+        }
+      }
+
+      DashActionButton(
+        title: "Sign out",
+        role: .destructive,
+        morphID: signOutMorphID,
+        morphNamespace: signOutMorphNamespace
+      ) {
+        withAnimation(DashTheme.Motion.morph) { phase = .signOut }
+      }
+      .accessibilityIdentifier("profile-account-sign-out")
+    }
+  }
+
+  private func accountSwitchConfirmation(_ account: CloudflareAccount) -> some View {
+    VStack(spacing: 16) {
+      Text(
+        DashL10n.string(
+          "Switch to \(account.name)? Cached data and open screens for the current account will reset."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.top, 4)
+
+      DashTrayActionPair {
+        DashTrayCancelButton {
+          withAnimation(DashTheme.Motion.morph) { phase = .accounts }
+        }
+      } primary: {
+        DashActionButton(title: "Switch account") {
+          model.selectAccount(account)
+          dismiss()
+        }
+      }
+    }
+  }
+
+  private var signOutConsequences: String {
+    [
+      DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."),
+      DashL10n.string(
+        "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
+      ),
+    ].joined(separator: "\n\n")
+  }
+
+  private var signOutConfirmation: some View {
+    VStack(spacing: 16) {
+      Text(signOutConsequences)
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+
+      DashTrayActionPair {
+        DashTrayCancelButton {
+          withAnimation(DashTheme.Motion.morphExit) { phase = .accounts }
+        }
+        .disabled(model.signOutActionPhase.isActive)
+      } primary: {
+        DashActionButton(
+          title: "Sign out",
+          role: .destructive,
+          phase: model.signOutActionPhase,
+          morphID: signOutMorphID,
+          morphNamespace: signOutMorphNamespace,
+          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+        ) {
+          Task {
+            await model.signOut(presentsCompletion: true)
+          }
+        }
+      }
+    }
+  }
 }
 
-/// Flat Settings row: white canvas, a bare outline glyph, and a divider that
-/// begins at the text column. It intentionally does not reuse `DashListRow`,
-/// whose tinted icon halo belongs to feature/resource lists.
+private struct ProfileTrayAccountRow: View {
+  let account: CloudflareAccount
+  let isActive: Bool
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  var body: some View {
+    HStack(spacing: 14) {
+      GradientAvatar(
+        seed: account.id,
+        size: 48,
+        pattern: .dither,
+        contentScale: 1.5
+      )
+      .overlay {
+        Circle().stroke(DashTheme.line, lineWidth: 0.5)
+      }
+
+      VStack(alignment: .leading, spacing: 3) {
+        Text(account.name)
+          .dashTextStyle(.bodySemibold)
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+
+        if isActive {
+          Text(DashL10n.string("Active account"))
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.rowSubtitle)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      SolarIcon(
+        asset: isActive ? SolarAsset.checkCircleFill : SolarAsset.circle,
+        size: 22,
+        color: isActive ? DashTheme.brand : DashTheme.placeholder
+      )
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 14)
+    .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+    .background(DashTheme.Sheet.shortcutItem, in: DashTheme.buttonShape)
+    .contentShape(DashTheme.buttonShape)
+  }
+}
+
+enum ProfileTrayPhase: Equatable, Sendable {
+  case accounts
+  case switchAccount(CloudflareAccount)
+  case signOut
+
+  static let initial: Self = .accounts
+
+  var title: String {
+    switch self {
+    case .accounts, .switchAccount: DashL10n.string("Switch account")
+    case .signOut: DashL10n.string("Sign out")
+    }
+  }
+}
+
+private enum SettingsListMetrics {
+  /// Same 24-in-36 slot as `DashListRow` / Resources — plate stays
+  /// transparent; only the outline glyph paints.
+  static let iconSize: CGFloat = 24
+  static let iconColumn: CGFloat = 36
+  static let featuredLeading: CGFloat = 56
+  static let rowSpacing: CGFloat = 12
+}
+
+/// Settings row on the shared list chrome: bare outline `SolarAsset.*` glyph
+/// at `iconMuted` (no catalog tone plate). Keeps Settings-only trailing
+/// affordances (value, menu dots, switch) instead of reusing `DashListRow`
+/// wholesale.
 struct SettingsPlainRow<Accessory: View>: View {
   let title: String
   var subtitle: String?
@@ -29,8 +236,15 @@ struct SettingsPlainRow<Accessory: View>: View {
   private let hasAccessory: Bool
   @ViewBuilder let accessory: () -> Accessory
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @ScaledMetric(relativeTo: .body) private var iconScale: CGFloat = 1
 
   private var usesStackedLayout: Bool { dynamicTypeSize.isAccessibilitySize }
+  private var iconPointSize: CGFloat {
+    SettingsListMetrics.iconSize * min(max(iconScale, 1), 1.3)
+  }
+  private var iconFrame: CGFloat {
+    SettingsListMetrics.iconColumn * min(max(iconScale, 1), 1.3)
+  }
 
   init(
     title: String,
@@ -58,8 +272,8 @@ struct SettingsPlainRow<Accessory: View>: View {
 
   var body: some View {
     HStack(alignment: usesStackedLayout ? .top : .center, spacing: SettingsListMetrics.rowSpacing) {
-      SolarIcon(asset: icon, size: SettingsListMetrics.iconSize, color: iconColor)
-        .frame(width: SettingsListMetrics.iconColumn, height: SettingsListMetrics.iconColumn)
+      SolarIcon(asset: icon, size: iconPointSize, color: iconColor)
+        .frame(width: iconFrame, height: iconFrame)
 
       if usesStackedLayout {
         VStack(alignment: .leading, spacing: 8) {
@@ -74,9 +288,8 @@ struct SettingsPlainRow<Accessory: View>: View {
         trailingContent
       }
     }
-    .padding(.horizontal, DashTheme.Spacing.screen)
-    .padding(.vertical, 13)
-    .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.minimumHitTarget, alignment: .leading)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
   }
@@ -86,7 +299,7 @@ struct SettingsPlainRow<Accessory: View>: View {
   }
 
   private var label: some View {
-    VStack(alignment: .leading, spacing: 3) {
+    VStack(alignment: .leading, spacing: 2) {
       Text(title)
         .dashTextStyle(.bodySemibold)
         .foregroundStyle(textColor)
@@ -106,7 +319,7 @@ struct SettingsPlainRow<Accessory: View>: View {
       accessory()
       if let trailing {
         Text(trailing)
-          .dashTextStyle(.bodyMedium)
+          .dashTextStyle(.supporting)
           .foregroundStyle(DashTheme.subtle)
           .multilineTextAlignment(.trailing)
           .lineLimit(usesStackedLayout ? nil : 1)
@@ -180,41 +393,21 @@ struct SettingsPlainToggleRow: View {
   }
 }
 
-struct SettingsPlainDivider: View {
-  var featured = false
-
-  var body: some View {
-    // A filled rule, not `Divider()`: the system divider paints its own line
-    // under the overlay, so a translucent token stacked on top read darker
-    // than the same token anywhere else. Same 1pt edge `DashTextTabs` draws.
-    Rectangle()
-      .fill(DashTheme.separator)
-      .frame(height: 1)
-      .padding(
-        .leading,
-        DashTheme.Spacing.screen
-          + (featured ? SettingsListMetrics.featuredLeading : SettingsListMetrics.iconColumn)
-          + SettingsListMetrics.rowSpacing
-      )
-      .padding(.trailing, DashTheme.Spacing.screen)
-  }
-}
-
+/// Same title + bare-row column as `DashListGroup` — Settings used to invent
+/// an uppercase caption and hairline-separated list that read as a different app.
 struct SettingsPlainSection<Content: View>: View {
   let title: String
   @ViewBuilder let content: () -> Content
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      Text(DashL10n.ui(title).uppercased())
-        .dashTextStyle(.captionSemibold)
-        .foregroundStyle(DashTheme.placeholder)
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .accessibilityAddTraits(.isHeader)
+      DashListGroupHeader(title: DashL10n.ui(title))
+        .padding(.horizontal, 4)
 
       VStack(alignment: .leading, spacing: 0) {
         content()
       }
+      .padding(.horizontal, DashTheme.Spacing.rowInset)
       .frame(maxWidth: .infinity, alignment: .leading)
     }
   }
@@ -254,7 +447,6 @@ private struct SettingsFeaturedRow<Leading: View>: View {
         color: DashTheme.placeholder
       )
     }
-    .padding(.horizontal, DashTheme.Spacing.screen)
     .padding(.vertical, 14)
     .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
     .contentShape(Rectangle())
@@ -334,7 +526,7 @@ struct SettingsView: View {
 
   var body: some View {
     ScrollView {
-      LazyVStack(spacing: DashTheme.Spacing.panel) {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
         VStack(spacing: 0) {
           DashListGroupLink(value: .profile) {
             SettingsFeaturedRow(
@@ -348,8 +540,6 @@ struct SettingsView: View {
           .accessibilityHint(DashL10n.string("Profile"))
 
           if model.accounts.count > 1 {
-            SettingsPlainDivider(featured: true)
-
             DashListGroupLink(value: .settingsAccounts) {
               SettingsFeaturedRow(
                 title: DashL10n.string("Switch account"),
@@ -357,14 +547,17 @@ struct SettingsView: View {
               ) {
                 SolarIcon(
                   asset: SolarAsset.users,
-                  size: 38,
-                  color: DashTheme.iconMuted
+                  size: 28,
+                  color: DashTheme.brand
                 )
+                .frame(width: 56, height: 56)
+                .background(Circle().fill(DashTheme.brand.opacity(0.1)))
               }
             }
             .accessibilityIdentifier("settings-switch-account")
           }
         }
+        .padding(.horizontal, DashTheme.Spacing.rowInset)
 
         SettingsPlainSection(title: "General") {
           Button {
@@ -379,8 +572,6 @@ struct SettingsView: View {
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityHint(DashL10n.string("Choose English, Simplified Chinese, or System"))
-
-          SettingsPlainDivider()
 
           // Appearance held this one row on its own; a single-row section is a
           // header the page pays for twice.
@@ -397,8 +588,6 @@ struct SettingsView: View {
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityIdentifier("workspace-wash-color")
 
-          SettingsPlainDivider()
-
           Button {
             showsChartStylePicker = true
           } label: {
@@ -411,8 +600,6 @@ struct SettingsView: View {
           }
           .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityIdentifier("chart-style")
-
-          SettingsPlainDivider()
 
           SettingsPlainToggleRow(
             title: DashL10n.string("Haptic feedback"),
@@ -463,11 +650,8 @@ struct SettingsView: View {
                 "Notifications are turned off in iOS Settings. Enable them for Dash to get alerts."
               )
             )
-            .padding(.horizontal, DashTheme.Spacing.screen)
             .padding(.bottom, 8)
           }
-
-          SettingsPlainDivider()
 
           PushAlertsSettingsRows()
         }
@@ -492,8 +676,6 @@ struct SettingsView: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
           }
-
-          SettingsPlainDivider()
 
           DashListGroupLink(value: .filesMount) {
             SettingsPlainRow(
@@ -528,16 +710,12 @@ struct SettingsView: View {
               accessibilityHint: DashL10n.string("Opens your email app")
             )
 
-            SettingsPlainDivider()
-
             externalRow(
               title: DashL10n.string("Privacy Policy"),
               icon: SolarAsset.shieldCheck,
               destination: DashHelpLink.privacy,
               accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
             )
-
-            SettingsPlainDivider()
 
             externalRow(
               title: DashL10n.string("Terms of Use"),
@@ -548,8 +726,6 @@ struct SettingsView: View {
           }
 
           Group {
-            SettingsPlainDivider()
-
             DashListGroupLink(value: .about) {
               SettingsPlainRow(
                 title: DashL10n.string("About Dash"),
@@ -557,8 +733,6 @@ struct SettingsView: View {
                 showsChevron: true
               )
             }
-
-            SettingsPlainDivider()
 
             DashListGroupLink(value: .openSource) {
               SettingsPlainRow(
@@ -569,8 +743,6 @@ struct SettingsView: View {
             }
 
             #if DEBUG
-              SettingsPlainDivider()
-
               DashListGroupLink(value: .debug) {
                 SettingsPlainRow(
                   title: "Debug",
@@ -597,7 +769,9 @@ struct SettingsView: View {
           .accessibilityIdentifier("settings-sign-out")
         }
       }
-      .padding(.vertical, DashTheme.Spacing.section)
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.top, DashTheme.Spacing.section)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .background(DashTheme.canvas.ignoresSafeArea())
     .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
@@ -661,11 +835,7 @@ struct SettingsAccountsView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: 0) {
-        ForEach(Array(model.accounts.enumerated()), id: \.element.id) { index, account in
-          if index > 0 {
-            SettingsPlainDivider()
-          }
-
+        ForEach(model.accounts) { account in
           Button {
             guard account.id != model.activeAccountID else {
               dismiss()
@@ -692,7 +862,10 @@ struct SettingsAccountsView: View {
           .accessibilityAddTraits(account.id == model.activeAccountID ? .isSelected : [])
         }
       }
-      .padding(.vertical, DashTheme.Spacing.section)
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.horizontal, DashTheme.Spacing.rowInset)
+      .padding(.top, DashTheme.Spacing.section)
+      .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .background(DashTheme.canvas.ignoresSafeArea())
     .detailHeader(icon: .solar(SolarAsset.Content.user), title: "Switch account")
@@ -715,9 +888,9 @@ private struct AccountSwitchConfirmationContent: View {
 
   var body: some View {
     DashTrayActionPair {
-      DashTrayTextButton(title: DashL10n.string("Cancel"), action: cancel)
+      DashTrayCancelButton(action: cancel)
     } primary: {
-      DashActionButton(title: DashL10n.string("Switch account")) {
+      DashActionButton(title: "Switch account") {
         model.selectAccount(account)
       }
     }
@@ -747,11 +920,11 @@ private struct SignOutConfirmationContent: View {
 
   var body: some View {
     DashTrayActionPair {
-      DashTrayTextButton(title: DashL10n.string("Cancel"), action: dismiss)
+      DashTrayCancelButton(action: dismiss)
         .disabled(model.signOutActionPhase.isActive)
     } primary: {
       DashActionButton(
-        title: DashL10n.string("Sign out"),
+        title: "Sign out",
         role: .destructive,
         phase: model.signOutActionPhase,
         onSuccessPresentationCompleted: model.completeSignOutActionPresentation
@@ -923,40 +1096,101 @@ private struct LanguagePickerTray: View {
   }
 }
 
-/// About screen (Settings → About): the app icon over the app name, tagline,
-/// and version.
-struct AboutView: View {
-  @ObservedObject private var holoMotion = HoloMotionManager.shared
+private enum AboutDestination {
+  static let github = URL(string: "https://github.com/withxat")!
+  static let x = URL(string: "https://x.com/withxat")!
+}
 
-  private var versionText: String {
-    let info = Bundle.main.infoDictionary
-    let version = info?["CFBundleShortVersionString"] as? String ?? "—"
-    let build = info?["CFBundleVersion"] as? String ?? "—"
-    return "\(version) (\(build))"
+/// About screen (Settings → About): one calm brand lockup followed by the
+/// product, build, privacy, and developer facts people actually come here to
+/// find.
+struct AboutView: View {
+  private var version: String {
+    Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+  }
+
+  private var build: String {
+    Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+  }
+
+  private var copyrightYear: Int {
+    Calendar.current.component(.year, from: .now)
   }
 
   var body: some View {
     ScrollView {
-      VStack(spacing: DashTheme.Spacing.section) {
-        VStack(spacing: 16) {
-          AboutHoloStickerWall(motion: holoMotion)
+      LazyVStack(spacing: DashTheme.Spacing.section) {
+        AboutBrandHero()
 
-          VStack(spacing: 4) {
-            Text("Dash")
-              .dashTextStyle(.sheetTitle)
-              .foregroundStyle(DashTheme.strong)
-            Text("A native Cloudflare client for iPhone")
-              .dashTextStyle(.supporting)
-              .foregroundStyle(DashTheme.subtle)
-              .multilineTextAlignment(.center)
+        DashCard {
+          VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+              SolarIcon(asset: SolarAsset.cloudflare, size: 22, color: DashTheme.accent)
+              Text("Cloudflare, on the phone you already carry.")
+                .dashTextStyle(.sectionTitle)
+                .foregroundStyle(DashTheme.strong)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text(
+              "Purge cache, inspect traffic, roll back deployments, and browse R2. Domains, Workers, Pages, and KV stay native and portrait."
+            )
+            .dashTextStyle(.supporting)
+            .foregroundStyle(DashTheme.subtle)
+            .fixedSize(horizontal: false, vertical: true)
           }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 8)
 
-        DashInfoGroup(title: "Version") {
-          DashInfoRow(value: versionText)
+        DashInfoGroup(title: "App details") {
+          DashInfoRow("Version", value: version)
+            .accessibilityIdentifier("about-version")
+          DashInfoRow("Build", value: build, mono: true)
+            .accessibilityIdentifier("about-build")
+          DashInfoRow("Platform", value: "iPhone")
+          DashInfoRow("Requires", value: DashL10n.string("iOS 17 or later"))
+          DashInfoRow("License", value: "MIT")
         }
+
+        SettingsPlainSection(title: "Developer") {
+          Link(destination: AboutDestination.github) {
+            SettingsPlainRow(
+              title: "GitHub",
+              icon: SolarAsset.code,
+              trailing: "@withxat",
+              showsChevron: true
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("about-github")
+
+          Link(destination: AboutDestination.x) {
+            SettingsPlainRow(
+              title: "X",
+              icon: SolarAsset.globus,
+              trailing: "@withxat",
+              showsChevron: true
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("about-x")
+        }
+
+        DashInfoGroup(title: "Privacy & security") {
+          DashInfoRow("Analytics & tracking", value: DashL10n.string("None"))
+          DashInfoRow("OAuth tokens", value: DashL10n.string("This iPhone’s Keychain"))
+          DashInfoRow("Core account data", value: DashL10n.string("Direct to Cloudflare"))
+          DashInfoRow("Resource cache", value: DashL10n.string("Current session"))
+        }
+
+        Text(
+          verbatim:
+            "\(DashL10n.string("Unofficial Cloudflare client")) · © \(copyrightYear) Xat"
+        )
+        .dashTextStyle(.caption)
+        .foregroundStyle(DashTheme.placeholder)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
       .padding(.vertical, DashTheme.Spacing.section)
@@ -964,74 +1198,36 @@ struct AboutView: View {
     .background(DashTheme.canvas)
     .detailHeader(icon: .solar(SolarAsset.Content.cloud), title: "About")
   }
+
 }
 
-private struct AboutHoloStickerWall: View {
-  @ObservedObject var motion: HoloMotionManager
-
+private struct AboutBrandHero: View {
   var body: some View {
-    ZStack {
-      RadialGradient(
-        colors: [DashTheme.wash.opacity(0.42), DashTheme.wash.opacity(0)],
-        center: .center,
-        startRadius: 8,
-        endRadius: 210
-      )
-      .frame(width: 420, height: 260)
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
+    VStack(spacing: 16) {
+      Image("LoginAppIcon")
+        .resizable()
+        .scaledToFit()
+        .frame(width: 96, height: 96)
+        .dashShadow(
+          .raised,
+          in: RoundedRectangle(cornerRadius: 96 * 0.2237, style: .continuous)
+        )
+        .accessibilityHidden(true)
+        .frame(height: 136)
 
-      HoloStickerView(motion: motion, shape: Circle()) {
-        Circle()
-          .fill(DashTheme.elevated)
-          .overlay {
-            SolarIcon(asset: SolarAsset.cloudflare, size: 30, color: DashTheme.accent)
-          }
+      VStack(spacing: 4) {
+        Text("Dash")
+          .dashTextStyle(.emptyTitle)
+          .foregroundStyle(DashTheme.strong)
+        Text("A native Cloudflare client for iPhone")
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      .frame(width: 66, height: 66)
-      .dashShadow(.raised, in: Circle())
-      .rotationEffect(.degrees(-9))
-      .offset(x: -82, y: 20)
-      .accessibilityHidden(true)
-
-      HoloStickerView(
-        motion: motion,
-        shape: RoundedRectangle(cornerRadius: 104 * 0.2237, style: .continuous)
-      ) {
-        Image("LoginAppIcon")
-          .resizable()
-          .scaledToFit()
-      }
-      .frame(width: 104, height: 104)
-      .dashShadow(
-        .raised,
-        in: RoundedRectangle(cornerRadius: 104 * 0.2237, style: .continuous)
-      )
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("Dash")
-      .zIndex(1)
-
-      HoloStickerView(
-        motion: motion,
-        shape: RoundedRectangle(cornerRadius: 18, style: .continuous)
-      ) {
-        RoundedRectangle(cornerRadius: 18, style: .continuous)
-          .fill(DashTheme.strong)
-          .overlay {
-            SolarIcon(asset: SolarAsset.Content.code, size: 30, color: DashTheme.inverse)
-          }
-      }
-      .frame(width: 66, height: 66)
-      .dashShadow(
-        .raised,
-        in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-      )
-      .rotationEffect(.degrees(10))
-      .offset(x: 82, y: 22)
-      .accessibilityHidden(true)
     }
     .frame(maxWidth: .infinity)
-    .frame(height: 134)
+    .padding(.top, 8)
   }
 }
 
@@ -1057,7 +1253,7 @@ private struct OpenSourceCredit: Identifiable {
       name: "Highlightr", purpose: "Syntax highlighting", author: "Juan Pablo Illanes",
       license: "MIT", url: URL(string: "https://github.com/raspu/Highlightr")!),
     OpenSourceCredit(
-      name: "Paper Shaders", purpose: "Sign-in paper texture", author: "Paper",
+      name: "Paper Shaders", purpose: "Sign-in mesh gradient", author: "Paper",
       license: "Apache-2.0", url: URL(string: "https://github.com/paper-design/shaders")!),
     OpenSourceCredit(
       name: "VariableBlur", purpose: "Progressive header blur", author: "Nikita Starshinov",
@@ -1271,7 +1467,7 @@ struct ProfileView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        // Registered domains used to sit here; it browses as its own catalog
+        // Registrations used to sit here; it browses as its own catalog
         // feature in Resources now, so this group carries the audit log alone.
         DashListGroup(title: "Account") {
           dashListCard {

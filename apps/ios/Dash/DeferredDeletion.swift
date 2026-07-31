@@ -1340,6 +1340,7 @@ final class DeferredDeletionCoordinator {
         accessibilityAnnouncement: count == 1
           ? "\(message) \(DashL10n.string("Undo available."))"
           : "\(message) \(DashL10n.string("Undo all available."))",
+        actionPhase: .loading,
         dismissBehavior: .programmaticOnly),
       announce: shouldAnnounce,
       deferredDeletionOwner: toastOwner)
@@ -1357,6 +1358,7 @@ final class DeferredDeletionCoordinator {
         kind: .warning,
         title: "Deleting",
         message: message,
+        actionPhase: .loading,
         dismissBehavior: .programmaticOnly),
       deferredDeletionOwner: toastOwner)
   }
@@ -1391,7 +1393,8 @@ final class DeferredDeletionCoordinator {
         DashToast(
           id: .deferredDeletionBatch,
           kind: .success,
-          message: message),
+          message: message,
+          actionPhase: .succeeded),
         owner: toastOwner,
         operationIDs: representedOperationIDs,
         onDismiss: { [weak self] in

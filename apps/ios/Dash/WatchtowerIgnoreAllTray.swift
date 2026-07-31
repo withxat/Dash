@@ -11,7 +11,6 @@ struct WatchtowerIgnoreAllTray: View {
     DashActionButton(
       title: DashL10n.string("Ignore all"),
       role: .destructive,
-      holdToConfirm: true,
       action: {
         onConfirm()
         dismiss()

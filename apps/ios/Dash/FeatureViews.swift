@@ -13,7 +13,10 @@ struct FeatureRouterContent: View {
           .environment(\.featureAllowsWrites, accessLevel == .full)
           .environment(\.featureRequiredScopes, feature.capability.read)
           .safeAreaInset(edge: .top, spacing: 0) {
-            if accessLevel == .readOnly {
+            if accessLevel == .readOnly,
+              feature.showsCatalogReadOnlyBanner,
+              !feature.capability.write.isEmpty
+            {
               FeatureReadOnlyBanner(feature: feature)
                 .padding(.horizontal, DashTheme.Spacing.screen)
                 .padding(.bottom, 8)
@@ -58,6 +61,10 @@ struct FeatureReadOnlyBanner: View {
 
 /// Shared read-only affordance for a screen whose primary payload can still be
 /// inspected without its mutation scope.
+///
+/// Demo sessions render nothing: the world is already read-only, Home owns
+/// "Connect your account", and a Grant-access strip on every write-gated
+/// surface is noise.
 struct FeatureWriteAccessNotice: View {
   @Environment(AppModel.self) private var model
   let message: String
@@ -65,21 +72,25 @@ struct FeatureWriteAccessNotice: View {
   @State private var authenticationActionOwner = UUID()
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      DashNotice(kind: .warning, message: message)
-      DashAuthorizationDisclosure()
-      DashPillButton(
-        title: model.isDemoSession ? "Connect your account" : "Grant access",
-        phase: ownedAuthenticationPhase,
-        onSuccessPresentationCompleted: {
-          model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
+    if model.isDemoSession {
+      EmptyView()
+    } else {
+      VStack(alignment: .leading, spacing: 10) {
+        DashNotice(kind: .warning, message: message)
+        DashAuthorizationDisclosure()
+        DashPillButton(
+          title: "Grant access",
+          phase: ownedAuthenticationPhase,
+          onSuccessPresentationCompleted: {
+            model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
+          }
+        ) {
+          model.requestAccess(
+            to: scopes,
+            presentsCompletion: true,
+            presentationOwner: authenticationActionOwner
+          )
         }
-      ) {
-        model.requestAccess(
-          to: scopes,
-          presentsCompletion: true,
-          presentationOwner: authenticationActionOwner
-        )
       }
     }
   }
@@ -190,11 +201,8 @@ func writeScopes(for destination: Destination) -> Set<String> {
     ["zone-settings.write", "email-routing-rule.write"]
   case .emailAddresses:
     ["email-routing-address.write"]
-  // Not on `FeatureID.registrar.capability.write`: only this screen mutates,
-  // and the catalog feature must stay write-free so the index does not wear a
-  // read-only banner for controls it never shows.
   case .registrarDomain:
-    ["registrar-domains.admin"]
+    FeatureID.registrar.capability.write
   case .tunnel:
     []
   case .zoneWAF:

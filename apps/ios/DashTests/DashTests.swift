@@ -447,6 +447,34 @@ struct LocalizationTests {
   #expect(StatusToken(tunnelStatus: "teleporting") == .unknown)
 }
 
+@Test @MainActor func emailRoutingListTokenReadsSettingsCacheBeforeSnapshot() {
+  let cache = FeatureDataCache()
+  let zoneID = "zone-list-status"
+  let settings = EmailRoutingSettings(
+    id: "email-1", name: "example.com", enabled: true, status: "ready")
+  // Settings-only write must not require a full snapshot — that was how the
+  // domains index waited on a detail visit before any row could badge.
+  EmailRoutingStatusMapping.storeListSettings(settings, zoneID: zoneID, cache: cache)
+  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .ready)
+  #expect(cache.get(FeatureCacheKey.emailRouting(zoneID)) as EmailRoutingSnapshot? == nil)
+
+  let misconfigured = EmailRoutingSettings(
+    id: "email-2", name: "docs.example.com", enabled: true, status: "misconfigured")
+  cache.set(
+    FeatureCacheKey.emailRouting(zoneID),
+    EmailRoutingSnapshot(settings: misconfigured, rules: [], catchAll: nil))
+  // Settings cache still wins while present — list fan-out owns that key.
+  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .ready)
+  cache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
+  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .misconfigured)
+  #expect(EmailRoutingStatusMapping.token(for: misconfigured) == .misconfigured)
+  #expect(
+    EmailRoutingStatusMapping.token(
+      for: EmailRoutingSettings(
+        id: "email-3", name: "off.example.com", enabled: false, status: "unconfigured"))
+      == .disabled)
+}
+
 @Test func pushBaseURLStripsPathFromRedirectURI() {
   let configured = AppConfiguration(
     clientID: "client",
@@ -509,11 +537,11 @@ struct LocalizationTests {
   for feature in DashAuthorizationScopes.coreFeatures {
     let access = feature.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly)
-    if feature.capability.write.isEmpty {
-      #expect(access == .full)
-    } else {
-      #expect(access == .readOnly)
-    }
+    // Demo / initial-read grants omit write scopes, so every unlocked core
+    // feature with mutations is Read-only. (None of coreFeatures is
+    // permanently write-free — that pattern is Tunnels.)
+    #expect(!feature.capability.write.isEmpty)
+    #expect(access == .readOnly)
   }
   #expect(
     FeatureID.tunnels.capability.accessLevel(
@@ -558,11 +586,9 @@ struct LocalizationTests {
   for feature in FeatureID.allCases {
     let access = feature.capability.accessLevel(
       grantedScopes: AppModel.demoGrantedScopes)
-    if feature.capability.write.isEmpty {
-      #expect(access == .full)
-    } else {
-      #expect(access == .readOnly)
-    }
+    // Demo never grants write scopes; permanently write-free features
+    // (Tunnels) are Read-only too once unlocked.
+    #expect(access == .readOnly)
   }
 }
 
@@ -680,29 +706,45 @@ struct LocalizationTests {
   #expect(
     DashListPhase.resolve(isLoading: false, error: nil, hasContent: true)
       == .content(banner: nil, refreshing: false))
+  // Settled-empty keeps the placeholder body mounted. Snapshot screens (chart
+  // detail) and details whose chrome is not tied to primary rows (zone settings
+  // alerts/nameservers, R2 bucket settings) must set hasContent after settle —
+  // leaving the default false is a permanent skeleton, not a calm empty.
   #expect(
     DashListPhase.resolve(isLoading: false, error: nil, hasContent: false)
-      == .content(banner: nil, refreshing: false))
+      == .empty)
   #expect(
     DashListPhase.resolve(isLoading: true, error: nil, hasContent: true)
       == .content(banner: nil, refreshing: true))
 }
 
-@Test func coldFailureWashRampFillsAtTheCopyAndClearsAbove() {
+@Test func listPhaseBodyModeStaysLiveAcrossWarmRefresh() {
+  #expect(DashListPhase.loading.bodyMode == .placeholder)
+  #expect(DashListPhase.empty.bodyMode == .placeholder)
+  #expect(DashListPhase.fullScreenError("boom").bodyMode == .placeholder)
+  #expect(
+    DashListPhase.content(banner: nil, refreshing: false).bodyMode == .live)
+  // Warm refresh keeps `.live` so the handoff animation does not replay.
+  #expect(
+    DashListPhase.content(banner: nil, refreshing: true).bodyMode == .live)
+  #expect(
+    DashListPhase.content(banner: "boom", refreshing: true).bodyMode == .live)
+}
+
+@Test func coldFailureWashRampClearsAtTopAndFillsTowardTheCenteredCopy() {
   let stops = DashColdFailureWashRamp.stops
-  // Translucent at the copy's edge, clear at the top of the band: the skeleton
-  // stays readable through the veil and the wash never ends on a hard line.
+  // Clear at the top of the veil so the skeleton peeks through; densest from
+  // mid to bottom so the centred tip sits on readable canvas.
   #expect(stops.first?.location == 0)
-  #expect(stops.first?.opacity == 0.88)
+  #expect(stops.first?.opacity == 0)
   #expect(stops.last?.location == 1)
-  #expect(stops.last?.opacity == 0)
-  // Monotonic in both axes: locations climb away from the copy and opacity only
-  // falls, so the wash can never re-thicken further up the skeleton.
+  #expect(stops.last?.opacity == 0.88)
+  // Monotonic: locations climb top → bottom and opacity only rises, so the
+  // wash never re-thins under the copy.
   for (previous, next) in zip(stops, stops.dropFirst()) {
     #expect(next.location > previous.location)
-    #expect(next.opacity < previous.opacity)
+    #expect(next.opacity >= previous.opacity)
   }
-  #expect(DashColdFailureWashRamp.fadeDepth > 0)
 }
 
 @Test func failurePresentationMapsRecoveryActions() {
@@ -920,7 +962,12 @@ struct LocalizationTests {
   #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
   #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
   #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
-  #expect(FeatureID.registrar.capability.write.isEmpty)
+  #expect(FeatureID.registrar.capability.write == ["registrar-domains.admin"])
+  #expect(!FeatureID.registrar.showsCatalogReadOnlyBanner)
+  #expect(
+    FeatureID.emailRouting.capability.write
+      == ["email-routing-rule.write", "email-routing-address.write"])
+  #expect(!FeatureID.emailRouting.showsCatalogReadOnlyBanner)
   #expect(
     writeScopes(for: .registrarDomain("example.com"))
       == ["registrar-domains.admin"])
@@ -989,6 +1036,18 @@ struct LocalizationTests {
   #expect(!editing.usesDitherChart)
   #expect(normal == .live)
   #expect(normal.usesDitherChart)
+}
+
+@Test func watchtowerExpandedChartSwapUsesFastOpacityProfile() {
+  let expanded = WatchtowerChartVisualSwapProfile.resolved(isExpanded: true)
+  let collapsed = WatchtowerChartVisualSwapProfile.resolved(isExpanded: false)
+
+  #expect(expanded.liveEffect == .opacityOnly)
+  #expect(expanded.placeholderEffect == .opacityOnly)
+  #expect(expanded.totalDuration <= 0.3)
+  #expect(expanded.totalDuration < collapsed.totalDuration)
+  #expect(collapsed.liveEffect == .rich)
+  #expect(collapsed.placeholderEffect == .rich)
 }
 
 @Test func watchtowerChartSwapFinishesOutgoingBeforeIncoming() {
@@ -1130,7 +1189,7 @@ struct LocalizationTests {
   visualState.moveCenter(to: CGPoint(x: 120, y: 240))
   #expect(visualState.presentation?.center == CGPoint(x: 120, y: 240))
 
-  visualState.beginSettling()
+  visualState.settle(to: CGPoint(x: 120, y: 240))
   #expect(visualState.isSettling)
 
   visualState.finish()
@@ -1157,6 +1216,70 @@ struct LocalizationTests {
   #expect(visualState.phase == .tracking)
   #expect(visualState.presentation?.center == CGPoint(x: 220, y: 360))
   #expect(visualState.presentation?.scale == 1)
+}
+
+@Test @MainActor func watchtowerDragKeepsTheLastSwiftUILayoutSlotAcrossRebuilds() {
+  let visualState = WatchtowerMetricDragVisualState()
+  let reference = UIView()
+  let initialFrame = CGRect(x: 0, y: 20, width: 160, height: 220)
+  let destinationFrame = CGRect(x: 0, y: 280, width: 160, height: 220)
+  let neighborFrame = CGRect(x: 172, y: 20, width: 160, height: 120)
+
+  visualState.updateLayoutFrames([
+    .webTraffic: initialFrame,
+    .cpuTime: neighborFrame,
+  ])
+  visualState.beginLift(
+    metric: .webTraffic,
+    size: initialFrame.size,
+    fingerLocation: CGPoint(x: 60, y: 80),
+    sourceCenter: CGPoint(x: initialFrame.midX, y: initialFrame.midY),
+    isExpanded: true,
+    reference: reference,
+    retaining: NSObject(),
+    reduceMotion: false)
+  #expect(visualState.frames(for: [.webTraffic, .cpuTime])[.cpuTime] == neighborFrame)
+
+  visualState.updateLayoutFrames([
+    .webTraffic: destinationFrame,
+    .cpuTime: neighborFrame,
+  ])
+  #expect(
+    visualState.sourceCenter(for: .webTraffic)
+      == CGPoint(x: destinationFrame.midX, y: destinationFrame.midY))
+
+  // A representable can disappear for one update while the flow reorders.
+  // The release target must remain the last real insertion slot, not nil.
+  visualState.updateLayoutFrames([:])
+  let cachedCenter = visualState.sourceCenter(for: .webTraffic)
+  let expectedCenter = CGPoint(x: destinationFrame.midX, y: destinationFrame.midY)
+  #expect(cachedCenter == expectedCenter)
+
+  visualState.settle(to: expectedCenter)
+  #expect(visualState.phase == .settling)
+  #expect(visualState.presentation?.center == expectedCenter)
+}
+
+@Test @MainActor func watchtowerDragSourceRejectsAnOffscreenStaleRegistration() {
+  let visualState = WatchtowerMetricDragVisualState()
+  let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+  let liveSource = UIView(frame: CGRect(x: 24, y: 180, width: 160, height: 120))
+  let staleSource = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+  window.addSubview(liveSource)
+
+  visualState.registerSourceView(liveSource, for: .cpuTime)
+  visualState.registerSourceView(staleSource, for: .cpuTime)
+  visualState.beginLift(
+    metric: .webTraffic,
+    size: CGSize(width: 342, height: 220),
+    fingerLocation: CGPoint(x: 195, y: 100),
+    sourceCenter: CGPoint(x: 195, y: 100),
+    isExpanded: true,
+    reference: window,
+    retaining: NSObject(),
+    reduceMotion: false)
+
+  #expect(visualState.frames(for: [.cpuTime])[.cpuTime] == liveSource.frame)
 }
 
 @Test @MainActor func watchtowerDragPressIgnoresAnOldViewCancellation() {
@@ -1202,7 +1325,9 @@ private let watchtowerDropFrames: [CGRect] = [
 @Test func watchtowerDropTargetingCountsCardsPassedInReadingOrder() {
   func index(_ x: CGFloat, _ y: CGFloat) -> Int {
     WatchtowerMetricDropTargeting.destinationIndex(
-      point: CGPoint(x: x, y: y), otherFrames: watchtowerDropFrames)
+      point: CGPoint(x: x, y: y),
+      otherFrames: watchtowerDropFrames,
+      containerWidth: 372)
   }
 
   // Before everything.
@@ -1214,6 +1339,21 @@ private let watchtowerDropFrames: [CGRect] = [
   // Past the full-width card's centre — the append slot, which is the run-off
   // below the last card that entry-based targeting could never reach.
   #expect(index(180, 400) == 3)
+}
+
+@Test func watchtowerDropTargetingKeepsHalfWidthReadingOrderWithoutAnExpandedPeer() {
+  let collapsedOnly = Array(watchtowerDropFrames.prefix(2))
+
+  #expect(
+    WatchtowerMetricDropTargeting.destinationIndex(
+      point: CGPoint(x: 120, y: 60),
+      otherFrames: collapsedOnly,
+      containerWidth: 372) == 1)
+  #expect(
+    WatchtowerMetricDropTargeting.destinationIndex(
+      point: CGPoint(x: 300, y: 60),
+      otherFrames: collapsedOnly,
+      containerWidth: 372) == 2)
 }
 
 @Test func watchtowerDropTargetingHoldsASlotUntilTheNextCentreIsCrossed() {
@@ -1588,6 +1728,12 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
 }
 
+@Test func profileTrayPhaseTitlesStayLocalizedCatalogKeys() {
+  #expect(ProfileTrayPhase.initial == .accounts)
+  #expect(ProfileTrayPhase.accounts.title == "Switch account")
+  #expect(ProfileTrayPhase.signOut.title == "Sign out")
+}
+
 @Test func accountRenameRequiresItsWriteScope() {
   #expect(ProfileAccountRenameAccess.requiredScopes == ["account-settings.write"])
   #expect(!ProfileAccountRenameAccess.isGranted(nil))
@@ -1869,16 +2015,40 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashHeaderScrimRules.isScrolled(distance: -40, wasScrolled: true))
 }
 
+/// The frost and the glow answer to different things: the frost is chrome and
+/// stays pinned to the window's top edge, the glow belongs to the top of the
+/// content and leaves with it. Same probe, same distance, two behaviours.
+@Test func workspaceGlowRidesTheScrollItIsMeasuredAgainst() {
+  #expect(DashWorkspaceWashRules.lift(for: 0) == 0)
+  #expect(DashWorkspaceWashRules.lift(for: 1) == 1)
+  // Past the frost's own threshold the glow is still just tracking, not
+  // flipping: it has no armed state to hold on to.
+  #expect(DashWorkspaceWashRules.lift(for: DashHeaderScrimMetrics.enter) > 0)
+  #expect(DashWorkspaceWashRules.lift(for: 120) == 120)
+}
+
+/// Clamped at both ends. A rubber-band pull past the top would otherwise push
+/// the light down off its own edge and leave bare canvas above it, and once the
+/// field has travelled its full depth there is nothing left on screen to move.
+@Test func workspaceGlowNeverTravelsBelowItsEdgeOrPastItsDepth() {
+  let depth = DashWorkspaceWashRules.depth
+  #expect(depth > 0)
+  #expect(DashWorkspaceWashRules.lift(for: -1) == 0)
+  #expect(DashWorkspaceWashRules.lift(for: -400) == 0)
+  #expect(DashWorkspaceWashRules.lift(for: depth) == depth)
+  #expect(DashWorkspaceWashRules.lift(for: depth + 800) == depth)
+}
+
 /// Keep the reference implementation's deliberately restrained blur and tint
 /// tuning in one shared contract, so the SwiftUI wrapper cannot quietly drift
 /// back toward the taller, heavier material slab this replaced.
 @Test func headerVariableBlurKeepsReferenceTuning() {
   #expect(DashHeaderScrimMetrics.maxBlurRadius == 5)
   #expect(DashHeaderScrimMetrics.startOffset == 0)
-  #expect(DashHeaderScrimMetrics.tail == 64)
+  #expect(DashHeaderScrimMetrics.tail == 40)
   #expect(DashHeaderScrimMetrics.tintOpacityTop == 0.7)
   #expect(DashHeaderScrimMetrics.tintOpacityMiddle == 0.5)
-  #expect(DashHeaderScrimMetrics.tintMiddleY == 90)
+  #expect(DashHeaderScrimMetrics.tintMiddleY == 56)
 }
 
 /// The conditionally mounted backdrop enters far enough from its final
@@ -2097,7 +2267,9 @@ private let watchtowerDropFrames: [CGRect] = [
   let first = DomainCardColors.defaultHex(for: "example.com")
   #expect(first == DomainCardColors.defaultHex(for: "example.com"))
   #expect(DomainCardColors.defaultPalette.contains(first))
-  #expect(DomainCardColors.prefersLightContent(0x047857))
+  #expect(DomainCardColors.defaultPalette.count == 20)
+  #expect(Set(DomainCardColors.defaultPalette).count == 20)
+  #expect(DomainCardColors.prefersLightContent(0x1B191F))
   #expect(!DomainCardColors.prefersLightContent(0xFDFDFD))
 }
 
@@ -3209,6 +3381,14 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(
     capability.accessLevel(grantedScopes: ["product.read", "product.write"]) == .full
   )
+  // Empty write = Dash never mutates this surface — unlocked means Read-only,
+  // not Full, even when every listed read scope is present.
+  let browseOnly = FeatureCapability(read: ["tunnel.read"], write: [])
+  #expect(browseOnly.accessLevel(grantedScopes: ["tunnel.read"]) == .readOnly)
+  #expect(
+    FeatureID.tunnels.capability.accessLevel(
+      grantedScopes: ["argotunnel.read", "access.read"]) == .readOnly)
+  #expect(!FeatureID.tunnels.showsCatalogReadOnlyBanner)
 }
 
 @Test @MainActor func featureDataCacheStoresAndClearsValues() {

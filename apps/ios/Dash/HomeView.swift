@@ -1336,7 +1336,9 @@ private struct HomeZoneModeAction: View {
     let client = model.client
     actionPhase = .loading
     error = nil
+    let op = model.optimistic.begin(.enabling)
     do {
+      try await model.optimistic.waitForCommit(op)
       let successMessage: String
       switch mode {
       case .development:
@@ -1344,6 +1346,7 @@ private struct HomeZoneModeAction: View {
           zoneID: zone.id, settingID: "development_mode", value: .string("on"))
         guard !Task.isCancelled, model.isCurrentAccount(context) else {
           actionPhase = .idle
+          model.optimistic.finishFailure(op)
           return
         }
         successMessage = DashL10n.string("Development Mode is on for \(zone.name).")
@@ -1355,16 +1358,20 @@ private struct HomeZoneModeAction: View {
           isCurrent: { model.isCurrentAccount(context) })
         guard !Task.isCancelled, model.isCurrentAccount(context) else {
           actionPhase = .idle
+          model.optimistic.finishFailure(op)
           return
         }
         successMessage = DashL10n.string("Under Attack mode is on for \(zone.name).")
       }
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zone.id))
       pendingResult = successMessage
-      model.toasts.success(successMessage)
+      model.optimistic.finishSuccess(op)
       actionPhase = .succeeded
+    } catch is CancellationError {
+      actionPhase = .idle
     } catch {
       actionPhase = .idle
+      model.optimistic.finishFailure(op)
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
       DashDelight.failError()

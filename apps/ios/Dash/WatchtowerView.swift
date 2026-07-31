@@ -17,9 +17,14 @@ struct WatchtowerView: View {
   /// `MainTabView`, so nothing here is needed for cold-launch status.
   @Environment(\.dashTabActive) private var tabActive
   let customization: WatchtowerChartCustomizationState
+  /// Changes when the shared leading header asks this screen to cancel. The
+  /// screen keeps ownership of the staged exit so controls still animate out
+  /// before the chart layout returns to its saved draft.
+  let cancelRequest: Int
+  let commitRequest: Int
+  @Binding var editorInteractionsReady: Bool
   @State private var trafficState = WatchtowerTrafficState()
   @State private var dragVisual = WatchtowerMetricDragVisualState()
-  @State private var editorInteractionsReady = false
   @State private var editorControlsVisible = false
   @State private var editorTransitionGeneration = 0
 
@@ -48,32 +53,6 @@ struct WatchtowerView: View {
     }
     .dashSectionEntrance()
     .dashCatalogScreen()
-    .toolbar {
-      if customization.isEditing {
-        ToolbarItem(placement: .topBarLeading) {
-          DashToolbarIconButton(
-            asset: SolarAsset.editClose,
-            accessibilityLabel: "Cancel",
-            action: cancelCustomization
-          )
-          .accessibilityIdentifier("watchtower-customize-cancel")
-        }
-        .dashSeparateToolbarBackground()
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarActionGroup {
-            addChartMenu
-            DashToolbarIconButton(
-              asset: SolarAsset.unread,
-              accessibilityLabel: "Done",
-              variant: .confirmation,
-              action: commitCustomization
-            )
-            .accessibilityIdentifier("watchtower-customize-done")
-          }
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
     .task(id: LoadKey(context: model.accountRequestContext, active: tabActive)) {
       guard tabActive else { return }
       await load()
@@ -89,6 +68,14 @@ struct WatchtowerView: View {
       editorInteractionsReady = false
       editorControlsVisible = false
     }
+    .onChange(of: cancelRequest) {
+      guard customization.isEditing else { return }
+      cancelCustomization()
+    }
+    .onChange(of: commitRequest) {
+      guard customization.isEditing else { return }
+      commitCustomization()
+    }
   }
 
   private var content: some View {
@@ -103,7 +90,7 @@ struct WatchtowerView: View {
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      // The section header now begins below the fixed range tabs.
+      // Same gap `DashFeatureList` leaves between fixed text tabs and content.
       .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
@@ -132,7 +119,7 @@ struct WatchtowerView: View {
   }
 
   /// Freshness is the section title itself (clock + relative time). Cold loads
-  /// paint a shimmering bar in that slot; a cold failure freezes it. Pull-to-
+  /// paint a pulsing bar in that slot; a cold failure freezes it. Pull-to-
   /// refresh owns reloading, so the charts need neither a Refresh control nor
   /// an inline spinner. The timeline only re-reads the relative wording.
   private var chartsHeader: some View {
@@ -156,32 +143,8 @@ struct WatchtowerView: View {
         actionLabel: DashL10n.string("Edit charts"),
         action: beginCustomization
       )
-      .environment(\.dashSkeletonShimmerActive, !coldFailed)
+      .environment(\.dashSkeletonPulseActive, !coldFailed)
     }
-  }
-
-  private var addChartMenu: some View {
-    Menu {
-      if customization.addableMetrics.isEmpty {
-        Button(DashL10n.string("All charts are shown")) {}
-          .disabled(true)
-      } else {
-        ForEach(customization.addableMetrics) { metric in
-          Button(DashL10n.ui(metric.title)) {
-            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-              customization.add(metric)
-            }
-            DashDelight.selectionChanged()
-          }
-        }
-      }
-    } label: {
-      WatchtowerAddChartToolbarLabel()
-    }
-    .buttonStyle(DashPressButtonStyle())
-    .disabled(!editorInteractionsReady)
-    .accessibilityLabel(DashL10n.string("Add chart"))
-    .accessibilityIdentifier("watchtower-add-chart")
   }
 
   /// The inbox loads its own deliveries; the tab only owns the charts.
@@ -282,23 +245,6 @@ struct WatchtowerView: View {
           customization.cancelEditing()
         }
       }
-    }
-  }
-}
-
-private struct WatchtowerAddChartToolbarLabel: View {
-  var body: some View {
-    if #available(iOS 26.0, *) {
-      DashToolbarActionIcon(asset: SolarAsset.plus)
-        .frame(
-          width: AvatarHeaderMetrics.barSize,
-          height: AvatarHeaderMetrics.barSize
-        )
-        .contentShape(Circle())
-        .glassEffect(.regular.interactive(), in: .circle)
-    } else {
-      DashToolbarActionIcon(asset: SolarAsset.plus)
-        .dashCompactHitTarget()
     }
   }
 }

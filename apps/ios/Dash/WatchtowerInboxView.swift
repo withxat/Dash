@@ -43,6 +43,7 @@ final class WatchtowerInboxScreenState {
 /// policies are the only thing that decides an alert exists.
 struct WatchtowerInboxView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private enum Filter: String, CaseIterable, Identifiable {
     case inbox
@@ -101,8 +102,8 @@ struct WatchtowerInboxView: View {
         )
         .accessibilityIdentifier("watchtower-inbox-filter")
       },
-      content: {
-        filteredContent
+      content: { mode in
+        filteredContent(mode: mode)
       }
     )
     .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alerts")
@@ -188,8 +189,14 @@ struct WatchtowerInboxView: View {
   }
 
   @ViewBuilder
-  private var filteredContent: some View {
-    if visible.isEmpty {
+  private func filteredContent(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      entryGroup(
+        mode: mode,
+        title: " ",
+        entries: [] as [WatchtowerInboxEntry]
+      )
+    } else if visible.isEmpty {
       // Only a settled OK answer earns the empty copy — a failed or denied
       // fetch renders through the error slot above, never as "No unread
       // alerts".
@@ -204,6 +211,7 @@ struct WatchtowerInboxView: View {
       switch filter {
       case .inbox:
         entryGroup(
+          mode: mode,
           title: DashL10n.string("Unread"),
           entries: state.contents.unreadNotifications,
           actionTitle: DashL10n.string("Mark all read"),
@@ -211,10 +219,12 @@ struct WatchtowerInboxView: View {
         )
       case .history:
         entryGroup(
+          mode: mode,
           title: DashL10n.string("Cloudflare history"),
           entries: state.contents.history)
       case .ignored:
         entryGroup(
+          mode: mode,
           title: DashL10n.string("Ignored on this iPhone"),
           entries: state.contents.ignored)
       }
@@ -222,6 +232,7 @@ struct WatchtowerInboxView: View {
   }
 
   private func entryGroup(
+    mode: DashBodyMode,
     title: String,
     entries: [WatchtowerInboxEntry],
     actionTitle: String? = nil,
@@ -232,7 +243,12 @@ struct WatchtowerInboxView: View {
       actionTitle: actionTitle,
       action: action
     ) {
-      ForEach(entries) { entry in
+      dashModeListRows(
+        mode: mode,
+        items: entries,
+        reduceMotion: reduceMotion,
+        inset: false
+      ) { entry in
         Button {
           select(entry)
         } label: {

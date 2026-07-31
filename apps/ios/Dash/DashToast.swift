@@ -7,6 +7,9 @@ struct DashToast: Identifiable, Equatable, Sendable {
   enum ID: Hashable, Sendable {
     case transient(UUID)
     case deferredDeletionBatch
+    /// One optimistic / await-then-toast mutation owned by
+    /// `DashOptimisticOperationCenter`.
+    case optimistic(UUID)
   }
 
   enum Kind: Equatable, Sendable {
@@ -22,11 +25,13 @@ struct DashToast: Identifiable, Equatable, Sendable {
       }
     }
 
+    /// Short dwell so a queued run of automatic toasts advances quickly.
+    /// Persistent (`programmaticOnly`) toasts ignore this and hold the slot.
     var duration: TimeInterval {
       switch self {
-      case .success: 2.4
-      case .warning: 3.2
-      case .error: 3.8
+      case .success: 1.6
+      case .warning: 2.2
+      case .error: 2.6
       }
     }
   }
@@ -35,6 +40,7 @@ struct DashToast: Identifiable, Equatable, Sendable {
     case undoDeferredDeletionBatch
     case retryDeferredDeletion(UUID)
     case retryDeferredDeletions([UUID])
+    case undoOptimistic(UUID)
   }
 
   enum DismissBehavior: Equatable, Sendable {
@@ -51,6 +57,9 @@ struct DashToast: Identifiable, Equatable, Sendable {
   var actionTitle: String?
   var actionAccessibilityLabel: String?
   var accessibilityAnnouncement: String?
+  /// When set, the card leading mark is `DashActionStatusIcon` (ring → check)
+  /// instead of the kind glyph.
+  var actionPhase: DashActionPhase?
   var dismissBehavior: DismissBehavior
 
   init(
@@ -63,6 +72,7 @@ struct DashToast: Identifiable, Equatable, Sendable {
     actionTitle: String? = nil,
     actionAccessibilityLabel: String? = nil,
     accessibilityAnnouncement: String? = nil,
+    actionPhase: DashActionPhase? = nil,
     dismissBehavior: DismissBehavior = .automatic
   ) {
     self.id = id
@@ -74,6 +84,7 @@ struct DashToast: Identifiable, Equatable, Sendable {
     self.actionTitle = actionTitle
     self.actionAccessibilityLabel = actionAccessibilityLabel
     self.accessibilityAnnouncement = accessibilityAnnouncement
+    self.actionPhase = actionPhase
     self.dismissBehavior = dismissBehavior
   }
 
@@ -101,6 +112,10 @@ final class DashToastCenter {
     var deferredDeletionOperationIDs: Set<UUID>
     var onDismiss: (@MainActor @Sendable () -> Void)?
   }
+
+  /// When a new automatic toast arrives behind another automatic one, cut the
+  /// visible dwell short so the queue replaces soon instead of stacking waits.
+  private static let automaticReplaceDelay: TimeInterval = 0.4
 
   private(set) var current: DashToast?
   private var dismissTask: Task<Void, Never>?
@@ -139,25 +154,72 @@ final class DashToastCenter {
     onDismiss: (@MainActor @Sendable () -> Void)? = nil
   ) {
     guard isAuthorized(toPresent: toast, owner: owner) else { return }
-    if current?.id == .deferredDeletionBatch,
-      current?.dismissBehavior == .programmaticOnly,
-      toast.id != .deferredDeletionBatch
-    {
-      let queuedToast = QueuedToast(
-        toast: toast,
+
+    // Same identity refreshes in place (Undo copy, batch count, …).
+    if current?.id == toast.id {
+      present(
+        toast,
+        haptic: haptic,
+        announce: announce,
+        deferredDeletionOperationIDs: deferredDeletionOperationIDs,
+        onDismiss: onDismiss)
+      return
+    }
+
+    // Slot busy: queue. Automatic toasts accelerate so the next one lands soon;
+    // programmatic-only (Undo) holds until the coordinator releases it.
+    if current != nil {
+      enqueue(
+        toast,
         haptic: haptic,
         announce: announce,
         deferredDeletionOwner: owner,
         deferredDeletionOperationIDs: deferredDeletionOperationIDs,
         onDismiss: onDismiss)
-      if let index = queued.firstIndex(where: { $0.toast.id == toast.id }) {
-        queued[index].onDismiss?()
-        queued[index] = queuedToast
-      } else {
-        queued.append(queuedToast)
+      if current?.dismissBehavior == .automatic {
+        scheduleAcceleratedDismiss()
       }
       return
     }
+
+    present(
+      toast,
+      haptic: haptic,
+      announce: announce,
+      deferredDeletionOperationIDs: deferredDeletionOperationIDs,
+      onDismiss: onDismiss)
+  }
+
+  private func enqueue(
+    _ toast: DashToast,
+    haptic: Bool,
+    announce: Bool,
+    deferredDeletionOwner owner: DeferredDeletionOwner?,
+    deferredDeletionOperationIDs: Set<UUID>,
+    onDismiss: (@MainActor @Sendable () -> Void)?
+  ) {
+    let queuedToast = QueuedToast(
+      toast: toast,
+      haptic: haptic,
+      announce: announce,
+      deferredDeletionOwner: owner,
+      deferredDeletionOperationIDs: deferredDeletionOperationIDs,
+      onDismiss: onDismiss)
+    if let index = queued.firstIndex(where: { $0.toast.id == toast.id }) {
+      queued[index].onDismiss?()
+      queued[index] = queuedToast
+    } else {
+      queued.append(queuedToast)
+    }
+  }
+
+  private func present(
+    _ toast: DashToast,
+    haptic: Bool,
+    announce: Bool,
+    deferredDeletionOperationIDs: Set<UUID>,
+    onDismiss: (@MainActor @Sendable () -> Void)?
+  ) {
     dismissTask?.cancel()
     let replacedOnDismiss = currentOnDismiss
     current = toast
@@ -207,10 +269,11 @@ final class DashToastCenter {
 
   func dismiss() {
     guard current?.dismissBehavior != .programmaticOnly else { return }
-    dismissCurrent()
+    dismissCurrent(force: false)
   }
 
-  private func dismissCurrent() {
+  private func dismissCurrent(force: Bool) {
+    if !force, current?.dismissBehavior == .programmaticOnly { return }
     dismissTask?.cancel()
     dismissTask = nil
     let onDismiss = currentOnDismiss
@@ -233,7 +296,7 @@ final class DashToastCenter {
   /// Drops the toast only if it is still the one that scheduled dismissal.
   func dismiss(id: DashToast.ID) {
     guard current?.id == id, current?.dismissBehavior != .programmaticOnly else { return }
-    dismissCurrent()
+    dismissCurrent(force: false)
   }
 
   func releaseDeferredDeletionToast(owner: DeferredDeletionOwner) {
@@ -241,7 +304,19 @@ final class DashToastCenter {
       owner.token == deferredDeletionOwnerToken,
       current?.id == .deferredDeletionBatch
     else { return }
-    dismissCurrent()
+    dismissCurrent(force: true)
+  }
+
+  /// Drops an optimistic toast even while it is `programmaticOnly`.
+  func dismissOptimistic(id: UUID) {
+    let toastID = DashToast.ID.optimistic(id)
+    queued.removeAll {
+      guard $0.toast.id == toastID else { return false }
+      $0.onDismiss?()
+      return true
+    }
+    guard current?.id == toastID else { return }
+    dismissCurrent(force: true)
   }
 
   /// Removes feedback owned by the deletion coordinator during credential
@@ -387,6 +462,20 @@ final class DashToastCenter {
     }
   }
 
+  /// Cuts an automatic toast's remaining dwell so a queued successor can take
+  /// the slot without waiting out the full success/error duration.
+  private func scheduleAcceleratedDismiss() {
+    guard let current, current.dismissBehavior == .automatic else { return }
+    let id = current.id
+    dismissTask?.cancel()
+    let nanoseconds = UInt64(Self.automaticReplaceDelay * 1_000_000_000)
+    dismissTask = Task { [weak self] in
+      try? await Task.sleep(nanoseconds: nanoseconds)
+      guard !Task.isCancelled else { return }
+      self?.dismiss(id: id)
+    }
+  }
+
   private func isAuthorized(
     toPresent toast: DashToast,
     owner: DeferredDeletionOwner?
@@ -404,7 +493,8 @@ final class DashToastCenter {
   }
 }
 
-/// Floating top tray card — same sheet surface + floating margins as bottom trays.
+/// Floating toast host — top edge matches the floated profile avatar numerically
+/// (`AvatarHeaderMetrics.chromeInset` below the status-bar safe area).
 struct DashToastHost: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -417,10 +507,10 @@ struct DashToastHost: View {
       if let toast {
         DashToastCard(toast: toast)
           .padding(.horizontal, DashTheme.Sheet.floatingMargin)
-          // Main canvas ignores the top safe area; keep the card below the
-          // status bar / Dynamic Island the same way floating trays inset.
+          // Main canvas ignores the top safe area; land on the same band as
+          // the floated avatar (safe area + chrome inset), not tray margins.
           .safeAreaPadding(.top)
-          .padding(.top, DashTheme.Sheet.floatingMargin)
+          .padding(.top, AvatarHeaderMetrics.chromeInset)
           .offset(y: min(0, dragOffset))
           .opacity(dragOpacity)
           .gesture(toast.dismissBehavior == .automatic ? dismissDrag : nil)
@@ -449,9 +539,11 @@ struct DashToastHost: View {
     if reduceMotion {
       return .opacity
     }
+    // Drop in from above with spring overshoot — paired with
+    // `DashToastMotion.present`'s under-damped spring.
     return .asymmetric(
-      insertion: .move(edge: .top).combined(with: .opacity),
-      removal: .move(edge: .top).combined(with: .opacity)
+      insertion: .offset(y: -28).combined(with: .opacity),
+      removal: .offset(y: -16).combined(with: .opacity)
     )
   }
 
@@ -487,75 +579,108 @@ struct DashToastHost: View {
   }
 }
 
-/// The toast host shares the tray's floating-surface springs — one present /
-/// release / dismiss set for both, defined in `DashTheme.Motion`.
+/// Toast-only motion: present is springier than trays so the card can settle
+/// with a short bounce. Release / dismiss stay on the shared floating set.
 private enum DashToastMotion {
-  static let present = DashTheme.Motion.present
+  static let present = Animation.spring(
+    response: 0.42, dampingFraction: 0.68, blendDuration: 0.1)
   static let release = DashTheme.Motion.release
   static let dismiss = DashTheme.Motion.dismiss
 }
 
 private struct DashToastCard: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let toast: DashToast
 
-  private var colors: (foreground: Color, tint: Color, icon: String) {
+  private var accent: Color {
     switch toast.kind {
-    case .success:
-      (DashTheme.success, DashTheme.successTint, SolarAsset.Content.checkCircle)
-    case .error:
-      (DashTheme.danger, DashTheme.dangerTint, SolarAsset.Content.danger)
-    case .warning:
-      (DashTheme.warning, DashTheme.warningTint, SolarAsset.Content.danger)
+    case .success: DashTheme.success
+    case .error: DashTheme.danger
+    case .warning: DashTheme.warning
+    }
+  }
+
+  private var kindIcon: String {
+    switch toast.kind {
+    case .success: SolarAsset.Content.checkCircle
+    case .error: SolarAsset.Content.danger
+    case .warning: SolarAsset.Content.danger
     }
   }
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: DashDisplayChrome.floatingRadius, style: .continuous)
+    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
     Group {
       if dynamicTypeSize.isAccessibilitySize {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
           toastCopy
           actionButton
             .frame(maxWidth: .infinity, alignment: .trailing)
         }
       } else {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
           toastCopy
           actionButton
         }
       }
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 14)
+    .padding(.horizontal, 14)
+    .padding(.vertical, 12)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(DashTheme.Sheet.background, in: shape)
-    .dashShadow(.raised, in: shape)
+    .background(DashTheme.homeDomainsSurface, in: shape)
+    // Soft lift only — no ring. `dashShadow` is a 1pt border and would fight
+    // the Domains-plate look.
+    .shadow(
+      color: Color.black.opacity(colorScheme == .dark ? 0.28 : 0.08),
+      radius: 10,
+      x: 0,
+      y: 3
+    )
   }
 
   private var toastCopy: some View {
-    HStack(alignment: .top, spacing: 12) {
-      SolarIcon(asset: colors.icon, size: 22, color: colors.foreground)
-        .frame(width: 36, height: 36)
-        .background(colors.tint, in: Circle())
-        .accessibilityHidden(true)
+    HStack(alignment: .center, spacing: 10) {
+      leadingMark
 
-      VStack(alignment: .leading, spacing: 2) {
-        Text(DashL10n.ui(toast.resolvedTitle))
-          .dashTextStyle(.bodySemibold)
-          .foregroundStyle(DashTheme.strong)
-          .fixedSize(horizontal: false, vertical: true)
-        Text(DashL10n.ui(toast.message))
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
-          .fixedSize(horizontal: false, vertical: true)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
+      Text(DashL10n.ui(toast.message))
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(DashTheme.strong)
+        .contentTransition(reduceMotion ? .opacity : .interpolate)
+        .animation(
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.iconSwap,
+          value: toast.message
+        )
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
-    .accessibilityLabel("\(DashL10n.ui(toast.resolvedTitle)): \(toast.message)")
+    .accessibilityLabel(accessibilityLabel)
+  }
+
+  @ViewBuilder
+  private var leadingMark: some View {
+    if let phase = toast.actionPhase {
+      DashActionStatusIcon(
+        phase: phase,
+        loadingColor: DashTheme.brand,
+        successColor: DashTheme.success,
+        size: 20,
+        lineWidth: 2.5
+      )
+    } else {
+      SolarIcon(asset: kindIcon, size: 20, color: accent)
+        .accessibilityHidden(true)
+    }
+  }
+
+  private var accessibilityLabel: String {
+    if toast.actionPhase != nil {
+      return toast.message
+    }
+    return "\(DashL10n.ui(toast.resolvedTitle)): \(toast.message)"
   }
 
   @ViewBuilder
@@ -570,7 +695,7 @@ private struct DashToastCard: View {
           .contentShape(Rectangle())
       }
       .buttonStyle(DashPressButtonStyle())
-      .foregroundStyle(colors.foreground)
+      .foregroundStyle(accent)
       .accessibilityLabel(
         DashL10n.ui(toast.actionAccessibilityLabel ?? actionTitle)
       )

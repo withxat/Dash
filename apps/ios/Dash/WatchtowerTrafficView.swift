@@ -425,8 +425,17 @@ final class WatchtowerMetricDragVisualState {
   /// the length of one session so move / settle keep measuring against the same
   /// view the lift resolved.
   @ObservationIgnored private(set) weak var activeReference: UIView?
+  @ObservationIgnored private(set) var activeContainerWidth: CGFloat = 0
   @ObservationIgnored private var retainedDelegate: AnyObject?
   @ObservationIgnored private var sourceViews: [WatchtowerAnalyticsMetric: WeakView] = [:]
+  /// SwiftUI owns the card layout, so its measured frames are the stable source
+  /// of truth for both insertion targeting and the release destination. UIKit
+  /// source views are only a fallback while the first preference pass lands.
+  @ObservationIgnored private var layoutFrames: [WatchtowerAnalyticsMetric: CGRect] = [:]
+  /// Last valid frames expressed in `activeReference`. They intentionally
+  /// survive a row reconstruction for the duration of one drag session.
+  @ObservationIgnored private var sessionFrames: [WatchtowerAnalyticsMetric: CGRect] = [:]
+  @ObservationIgnored private var layoutToReferenceOffset = CGSize.zero
 
   private final class WeakView {
     weak var value: UIView?
@@ -494,6 +503,9 @@ final class WatchtowerMetricDragVisualState {
     presentation = nil
     phase = nil
     activeReference = nil
+    activeContainerWidth = 0
+    sessionFrames.removeAll(keepingCapacity: true)
+    layoutToReferenceOffset = .zero
   }
 
   func beginLift(
@@ -509,6 +521,25 @@ final class WatchtowerMetricDragVisualState {
     press = nil
     retainedDelegate = delegate
     activeReference = reference
+    activeContainerWidth = max(
+      reference.bounds.width,
+      layoutFrames.values.map(\.maxX).max() ?? 0)
+    if let sourceFrame = layoutFrames[metric] {
+      layoutToReferenceOffset = CGSize(
+        width: sourceCenter.x - sourceFrame.midX,
+        height: sourceCenter.y - sourceFrame.midY)
+      sessionFrames = adjustedLayoutFrames()
+    } else {
+      layoutToReferenceOffset = .zero
+      sessionFrames.removeAll(keepingCapacity: true)
+    }
+    // The coordinator has this centre directly from the live interaction view,
+    // so release always has at least one deterministic card slot to return to.
+    sessionFrames[metric] = CGRect(
+      x: sourceCenter.x - size.width / 2,
+      y: sourceCenter.y - size.height / 2,
+      width: size.width,
+      height: size.height)
     phase = reduceMotion ? .tracking : .lifting
     presentation = WatchtowerMetricDragPresentation(
       metric: metric,
@@ -551,7 +582,36 @@ final class WatchtowerMetricDragVisualState {
     self.presentation = presentation
   }
 
+  /// Changes both the phase and the animatable offset in one transaction. If
+  /// these land in separate renders SwiftUI may see no animation and execute a
+  /// completion immediately, which makes the ghost appear to snap home.
+  func settle(to center: CGPoint) {
+    guard var presentation else { return }
+    phase = .settling
+    presentation.centerOffset = CGSize(
+      width: center.x - presentation.fingerLocation.x,
+      height: center.y - presentation.fingerLocation.y)
+    self.presentation = presentation
+  }
+
+  func updateLayoutFrames(_ frames: [WatchtowerAnalyticsMetric: CGRect]) {
+    layoutFrames = frames.filter { _, frame in
+      frame.width > 0 && frame.height > 0
+    }
+    guard presentation != nil else { return }
+    sessionFrames.merge(adjustedLayoutFrames(), uniquingKeysWith: { _, new in new })
+  }
+
   func registerSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
+    if let current = sourceViews[metric]?.value,
+      current !== view,
+      current.window != nil,
+      view.window == nil
+    {
+      // SwiftUI can update an outgoing representable after its replacement is
+      // live. Never let that off-window instance steal the metric registration.
+      return
+    }
     sourceViews[metric] = WeakView(view)
   }
 
@@ -560,33 +620,34 @@ final class WatchtowerMetricDragVisualState {
     sourceViews[metric] = nil
   }
 
-  /// Live card frames in the active drag's coordinate space, for the metrics
-  /// that still have a registered source view.
+  /// Card frames in the active drag's coordinate space. Stable SwiftUI layout
+  /// measurements win; live UIKit source views only fill an initial gap.
   func frames(for metrics: [WatchtowerAnalyticsMetric]) -> [WatchtowerAnalyticsMetric: CGRect] {
-    guard let reference = activeReference ?? coordinateView else { return [:] }
-    var result: [WatchtowerAnalyticsMetric: CGRect] = [:]
-    for metric in metrics {
-      guard let view = sourceViews[metric]?.value, view.window != nil else { continue }
-      let frame = view.convert(view.bounds, to: reference)
-      guard frame.width > 0, frame.height > 0 else { continue }
-      result[metric] = frame
+    var result = sessionFrames.filter { metrics.contains($0.key) }
+    if let reference = activeReference ?? coordinateView {
+      for metric in metrics where result[metric] == nil {
+        guard let view = sourceViews[metric]?.value, view.window != nil else { continue }
+        let frame = view.convert(view.bounds, to: reference)
+        guard frame.width > 0, frame.height > 0 else { continue }
+        result[metric] = frame
+        sessionFrames[metric] = frame
+      }
     }
     return result
   }
 
   func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
-    guard
-      let reference = activeReference ?? coordinateView,
-      let view = sourceViews[metric]?.value
+    if let frame = sessionFrames[metric] {
+      return CGPoint(x: frame.midX, y: frame.midY)
+    }
+    guard let reference = activeReference ?? coordinateView,
+      let view = sourceViews[metric]?.value,
+      view.window != nil
     else { return nil }
     let frame = view.convert(view.bounds, to: reference)
     guard frame.width > 0, frame.height > 0 else { return nil }
+    sessionFrames[metric] = frame
     return CGPoint(x: frame.midX, y: frame.midY)
-  }
-
-  func beginSettling() {
-    guard presentation != nil else { return }
-    phase = .settling
   }
 
   func finish() {
@@ -594,7 +655,18 @@ final class WatchtowerMetricDragVisualState {
     presentation = nil
     phase = nil
     activeReference = nil
+    activeContainerWidth = 0
     retainedDelegate = nil
+    sessionFrames.removeAll(keepingCapacity: true)
+    layoutToReferenceOffset = .zero
+  }
+
+  private func adjustedLayoutFrames() -> [WatchtowerAnalyticsMetric: CGRect] {
+    layoutFrames.mapValues { frame in
+      frame.offsetBy(
+        dx: layoutToReferenceOffset.width,
+        dy: layoutToReferenceOffset.height)
+    }
   }
 }
 
@@ -1052,64 +1124,70 @@ struct WatchtowerTrafficView: View {
   @State private var removalSequence = WatchtowerMetricRemovalSequence()
   @State private var layoutMorphingMetric: WatchtowerAnalyticsMetric?
 
-  private var collapsedRaw: String {
-    WatchtowerAnalyticsCardLayout.encode(Set(customization.collapsed.map(\.rawValue)))
-  }
-
-  private var metricRows: [[WatchtowerAnalyticsMetric]] {
-    WatchtowerAnalyticsCardLayout.rows(
-      customization.visibleMetrics,
-      collapsedRaw: collapsedRaw,
-      forceExpanded: dynamicTypeSize.isAccessibilitySize)
+  /// Cold / access / error without overview — same flow layout as live, with
+  /// `WatchtowerMetricSkeletonCard` as the placeholder face.
+  private var paintsPlaceholderCharts: Bool {
+    state.overview == nil
+      && (state.needsAnalyticsAccess || state.isLoadingCurrent || state.currentError != nil)
   }
 
   var body: some View {
     ZStack(alignment: .topLeading) {
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
-        if state.overview == nil,
-          state.needsAnalyticsAccess || state.isLoadingCurrent || state.currentError != nil
-        {
-          // One continuous skeleton across load → access/error. A 403 used to
-          // swap the cards for a status panel; now the saved layout stays and
-          // the failure wash lands on top (shimmer off).
-          chartsSkeleton
-            .dashColdFailure(
-              title: coldFailureTitle,
-              message: coldFailureMessage,
-              actionTitle: coldFailureActionTitle,
-              action: performColdFailureAction
+        if customization.visibleMetrics.isEmpty {
+          statusCard {
+            emptyContent(
+              title: DashL10n.string("No charts"),
+              message: DashL10n.string("Add a chart to rebuild this view.")
             )
-            .dashFailureRemovalTransition()
-        } else if let overview = state.overview, let snapshot = state.snapshot {
-          if customization.visibleMetrics.isEmpty {
-            statusCard {
-              emptyContent(
-                title: DashL10n.string("No charts"),
-                message: DashL10n.string("Add a chart to rebuild this view.")
+          }
+        } else if paintsPlaceholderCharts
+          || (state.overview != nil && state.snapshot != nil)
+        {
+          // One continuous flow across load → access/error → live. A 403 used
+          // to swap the cards for a status panel; now the saved layout stays
+          // and the failure wash lands on top.
+          WatchtowerMetricCardFlowLayout(spacing: DashTheme.Spacing.itemGap) {
+            ForEach(customization.visibleMetrics) { metric in
+              let expanded = isExpanded(metric)
+              Group {
+                if paintsPlaceholderCharts {
+                  WatchtowerMetricSkeletonCard(metric: metric, isExpanded: expanded)
+                } else if let overview = state.overview, let snapshot = state.snapshot {
+                  reorderableMetricCard(
+                    metric,
+                    overview: overview,
+                    snapshot: snapshot,
+                    expanded: expanded
+                  )
+                }
+              }
+              .layoutValue(
+                key: WatchtowerMetricExpandedLayoutKey.self,
+                value: expanded
               )
+              .dashBodySlot(reduceMotion: reduceMotion)
             }
-          } else {
-            WatchtowerMetricCardFlowLayout(spacing: DashTheme.Spacing.itemGap) {
-              ForEach(customization.visibleMetrics) { metric in
-                let expanded = isExpanded(metric)
-                reorderableMetricCard(
-                  metric,
-                  overview: overview,
-                  snapshot: snapshot,
-                  expanded: expanded
-                )
+            if !paintsPlaceholderCharts, let error = state.currentError {
+              DashNotice(kind: .warning, message: error)
                 .layoutValue(
                   key: WatchtowerMetricExpandedLayoutKey.self,
-                  value: expanded)
-              }
-              if let error = state.currentError {
-                DashNotice(kind: .warning, message: error)
-                  .layoutValue(
-                    key: WatchtowerMetricExpandedLayoutKey.self,
-                    value: true)
-              }
+                  value: true
+                )
+                .dashBodySlot(reduceMotion: reduceMotion)
             }
           }
+          .animation(
+            reduceMotion ? DashTheme.Motion.reduced : DashBodyTransition.handoff,
+            value: paintsPlaceholderCharts
+          )
+          .dashColdFailure(
+            title: coldFailureTitle,
+            message: paintsPlaceholderCharts ? coldFailureMessage : nil,
+            actionTitle: coldFailureActionTitle,
+            action: performColdFailureAction
+          )
+          .dashFailureRemovalTransition()
         }
       }
 
@@ -1120,6 +1198,10 @@ struct WatchtowerTrafficView: View {
           range: state.range
         )
       }
+    }
+    .coordinateSpace(name: WatchtowerMetricDragLayout.coordinateSpace)
+    .onPreferenceChange(WatchtowerMetricFramePreferenceKey.self) { frames in
+      dragVisual.updateLayoutFrames(frames)
     }
     // Every lift resolves its coordinates against this view, so it is mounted
     // unconditionally: anything that appears or disappears on `isEditing` gets
@@ -1165,6 +1247,17 @@ struct WatchtowerTrafficView: View {
     let card = metricCard(
       metric, overview: overview, snapshot: snapshot, expanded: expanded)
     card
+      .background {
+        GeometryReader { geometry in
+          Color.clear.preference(
+            key: WatchtowerMetricFramePreferenceKey.self,
+            value: [
+              metric: geometry.frame(
+                in: .named(WatchtowerMetricDragLayout.coordinateSpace))
+            ]
+          )
+        }
+      }
       // Reordering is the one card interaction that intentionally borrows the
       // button press pose: the held object itself is the direct manipulation.
       .scaleEffect(isPressed && !reduceMotion ? 0.97 : 1)
@@ -1364,38 +1457,6 @@ struct WatchtowerTrafficView: View {
     }
   }
 
-  @ViewBuilder
-  private var chartsSkeleton: some View {
-    if customization.visibleMetrics.isEmpty {
-      statusCard {
-        emptyContent(
-          title: DashL10n.string("No charts"),
-          message: DashL10n.string("Add a chart to rebuild this view.")
-        )
-      }
-    } else {
-      VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-        ForEach(metricRows, id: \.rowID) { row in
-          if row.count == 1, let metric = row.first, isExpanded(metric) {
-            WatchtowerMetricSkeletonCard(metric: metric, isExpanded: true)
-          } else {
-            HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
-              ForEach(row) { metric in
-                WatchtowerMetricSkeletonCard(metric: metric, isExpanded: false)
-                  .frame(maxWidth: .infinity)
-              }
-              if row.count == 1 {
-                Color.clear.frame(maxWidth: .infinity)
-              }
-            }
-          }
-        }
-      }
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(DashL10n.ui("Loading"))
-    }
-  }
-
   private func emptyContent(
     title: String,
     message: String,
@@ -1431,6 +1492,38 @@ enum WatchtowerMetricChartRenderingMode: Equatable {
   }
 
   var usesDitherChart: Bool { self == .live }
+}
+
+struct WatchtowerChartVisualSwapProfile: Equatable {
+  enum Effect: Equatable {
+    case rich
+    case opacityOnly
+  }
+
+  let liveEffect: Effect
+  let placeholderEffect: Effect
+  let exitDuration: Double
+  let enterDuration: Double
+
+  var totalDuration: Double { exitDuration + enterDuration }
+
+  static func resolved(isExpanded: Bool) -> Self {
+    if isExpanded {
+      // A full-width chart and placeholder cover roughly four times the pixels
+      // of a collapsed sparkline. Keep their entire handoff within the parent
+      // editor morph and avoid offscreen blur/scale composition on both layers.
+      return Self(
+        liveEffect: .opacityOnly,
+        placeholderEffect: .opacityOnly,
+        exitDuration: 0.12,
+        enterDuration: 0.16)
+    }
+    return Self(
+      liveEffect: .rich,
+      placeholderEffect: .rich,
+      exitDuration: 0.28,
+      enterDuration: 0.28)
+  }
 }
 
 struct WatchtowerChartVisualSwapSequence: Equatable {
@@ -1619,19 +1712,39 @@ enum WatchtowerMetricDropTargeting {
 
   /// Slot for the dragged card, counted over `otherFrames` — the remaining
   /// cards in their current order. Returns `otherFrames.count` when the point
-  /// is past every card, which is the append slot.
-  static func destinationIndex(point: CGPoint, otherFrames: [CGRect]) -> Int {
-    guard let widest = otherFrames.map(\.width).max() else { return 0 }
+  /// is past every card, which is the append slot. Full-width identity comes
+  /// from the flow width, not whichever remaining card happens to be widest.
+  static func destinationIndex(
+    point: CGPoint,
+    otherFrames: [CGRect],
+    containerWidth: CGFloat
+  ) -> Int {
     return otherFrames.filter {
-      precedes($0, point: point, isFullWidth: $0.width >= widest - 1)
+      // A half-width card is always narrower than half the flow after its
+      // inter-column gap is removed. Comparing cards only to one another made
+      // every remaining card look full-width while the sole expanded card was
+      // being dragged, so horizontal movement could never cross a slot.
+      precedes($0, point: point, isFullWidth: $0.width > containerWidth / 2)
     }.count
   }
 }
 
 private enum WatchtowerMetricDragLayout {
+  static let coordinateSpace = "watchtower.metric-drag"
   static let controlsPassthroughSize = CGSize(width: 96, height: 60)
   static let titleTrailingClearance =
     controlsPassthroughSize.width - DashTheme.Spacing.card
+}
+
+private struct WatchtowerMetricFramePreferenceKey: PreferenceKey {
+  static let defaultValue: [WatchtowerAnalyticsMetric: CGRect] = [:]
+
+  static func reduce(
+    value: inout [WatchtowerAnalyticsMetric: CGRect],
+    nextValue: () -> [WatchtowerAnalyticsMetric: CGRect]
+  ) {
+    value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+  }
 }
 
 private struct WatchtowerMetricDropPlaceholder: View {
@@ -1998,9 +2111,9 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       }
     }
 
-    /// Frames are read from live views that are still animating the previous
-    /// reorder, so a settled slot needs a moment before the next hit test is
-    /// meaningful. This is the local stand-in for `reorderingCadence`.
+    /// Layout frames keep changing while the previous reorder animates, so a
+    /// settled slot needs a moment before the next hit test is meaningful. This
+    /// is the local stand-in for `reorderingCadence`.
     private static let reorderCadence: CFTimeInterval = 0.2
 
     private func updateDropTarget() {
@@ -2008,9 +2121,10 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
         let center = visualState.presentation?.center
       else { return }
 
-      // Frames come from live views. Inside the cadence window the previous
-      // reorder is still sliding, so every hit test against them is noise —
-      // for the hover cue as much as for the next move.
+      // Inside the cadence window the previous reorder is still sliding, so
+      // every hit test is noise — for the hover cue as much as for the next
+      // move. The cached layout frames keep this deterministic even when a
+      // representable is rebuilt mid-animation.
       let now = CACurrentMediaTime()
       guard now - lastReorder >= Self.reorderCadence else { return }
 
@@ -2032,7 +2146,9 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       }
 
       let destination = WatchtowerMetricDropTargeting.destinationIndex(
-        point: center, otherFrames: otherFrames)
+        point: center,
+        otherFrames: otherFrames,
+        containerWidth: visualState.activeContainerWidth)
       guard let current = order.firstIndex(of: metric), current != destination else { return }
       lastReorder = now
 
@@ -2065,7 +2181,9 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       didEndWith operation: UIDropOperation
     ) {
       guard active, !settling else { return }
-      completeDrag()
+      // `willEndWith` is the normal path, but a cancelled UIKit session can
+      // arrive here directly. It deserves the same spring, not a snap.
+      settleDrag()
     }
 
     private func settleDrag() {
@@ -2073,24 +2191,30 @@ private struct WatchtowerNativeMetricDragSource: UIViewRepresentable {
       active = false
       settling = true
 
-      guard let targetCenter = visualState.sourceCenter(for: metric) else {
+      // `beginLift` seeds a session frame from the live source and subsequent
+      // SwiftUI layout preferences move it with the dashed insertion slot. A
+      // weak representable disappearing can therefore never erase this target.
+      guard
+        let targetCenter =
+          visualState.sourceCenter(for: metric)
+          ?? visualState.presentation?.center
+      else {
         completeDrag()
         return
       }
 
       let reduceMotion = UIAccessibility.isReduceMotionEnabled
-      visualState.beginSettling()
       if reduceMotion {
-        visualState.moveCenter(to: targetCenter)
+        visualState.settle(to: targetCenter)
         completeDrag()
         return
       }
       let currentDragIdentifier = dragIdentifier
       withAnimation(
-        DashTheme.Motion.morph,
-        completionCriteria: .removed
+        DashTheme.Motion.release,
+        completionCriteria: .logicallyComplete
       ) {
-        visualState.moveCenter(to: targetCenter)
+        visualState.settle(to: targetCenter)
       } completion: { [weak self] in
         guard let self,
           self.settling,
@@ -2211,7 +2335,7 @@ private struct WatchtowerMetricSkeletonCard: View {
           .monospacedDigit()
           .lineLimit(1)
           .redacted(reason: .placeholder)
-          .dashSkeletonShimmer()
+          .dashSkeletonPulse()
         if isExpanded {
           Text(verbatim: " ")
             .dashTextStyle(.caption)
@@ -2256,9 +2380,16 @@ private struct WatchtowerMetricSkeletonCard: View {
 /// its opacity / blur / scale exit before the replacement begins its entrance.
 /// Explicit phases and operation IDs discard stale animation completions when
 /// a rapid target change reverses the active phase.
+///
+/// Collapsed sparklines keep the full dissolve (blur + scale). Expanded charts
+/// and their full-width placeholders use a shorter opacity-only profile: the
+/// whole swap fits inside the parent editor morph and neither large layer pays
+/// for offscreen blur composition. Settled hidden layers also drop blur/scale,
+/// so an invisible placeholder is not carrying a permanent filter.
 private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let renderingMode: WatchtowerMetricChartRenderingMode
+  let profile: WatchtowerChartVisualSwapProfile
   private let placeholder: () -> Placeholder
   private let live: () -> Live
   @State private var sequence: WatchtowerChartVisualSwapSequence
@@ -2267,14 +2398,25 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
 
   init(
     renderingMode: WatchtowerMetricChartRenderingMode,
+    profile: WatchtowerChartVisualSwapProfile,
     @ViewBuilder placeholder: @escaping () -> Placeholder,
     @ViewBuilder live: @escaping () -> Live
   ) {
     self.renderingMode = renderingMode
+    self.profile = profile
     self.placeholder = placeholder
     self.live = live
     _sequence = State(initialValue: WatchtowerChartVisualSwapSequence(mode: renderingMode))
     _keepsLiveMounted = State(initialValue: renderingMode == .live)
+  }
+
+  private var isMorphing: Bool {
+    switch sequence.phase {
+    case .settled:
+      false
+    case .exiting, .entering:
+      true
+    }
   }
 
   var body: some View {
@@ -2283,7 +2425,9 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
         .modifier(
           WatchtowerChartSwapLayer(
             isVisible: sequence.visibleMode == .placeholder,
-            reduceMotion: reduceMotion)
+            isMorphing: isMorphing,
+            reduceMotion: reduceMotion,
+            usesRichMorph: profile.placeholderEffect == .rich)
         )
         .allowsHitTesting(false)
         .accessibilityHidden(true)
@@ -2293,7 +2437,9 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
           .modifier(
             WatchtowerChartSwapLayer(
               isVisible: sequence.visibleMode == .live,
-              reduceMotion: reduceMotion)
+              isMorphing: isMorphing,
+              reduceMotion: reduceMotion,
+              usesRichMorph: profile.liveEffect == .rich)
           )
           .allowsHitTesting(sequence.phase == .settled(.live))
       }
@@ -2328,8 +2474,24 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
   ) {
     operationID += 1
     let currentOperation = operationID
+    let duration: Double = {
+      if reduceMotion { return 0.12 }
+      switch expectedPhase {
+      case .exiting: return profile.exitDuration
+      case .entering: return profile.enterDuration
+      case .settled: return 0
+      }
+    }()
+    let animation: Animation =
+      if reduceMotion {
+        DashTheme.Motion.reduced
+      } else if profile.liveEffect == .rich || profile.placeholderEffect == .rich {
+        DashTheme.Motion.morph
+      } else {
+        Animation.timingCurve(0.23, 1, 0.32, 1, duration: duration)
+      }
     withAnimation(
-      DashTheme.Motion.morph.logicallyComplete(after: reduceMotion ? 0.12 : 0.28),
+      animation.logicallyComplete(after: duration),
       completionCriteria: .logicallyComplete
     ) {
       sequence.begin(step)
@@ -2341,6 +2503,12 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
       switch expectedPhase {
       case .exiting:
         let next = sequence.finishExit(mode)
+        // Drop the live tree as soon as it has faded out. Keeping an expanded
+        // chart mounted through the placeholder entrance was free on collapsed
+        // sparklines and expensive on `DashAreaChart`.
+        if mode == .live {
+          setLiveMounted(false)
+        }
         Task { @MainActor in
           // Commit the replacement's fully hidden baseline before starting its
           // entrance. Running a nested animation in this completion transaction
@@ -2354,9 +2522,6 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
         }
       case .entering:
         let next = sequence.finishEnter(mode)
-        if mode == .placeholder, next == .none {
-          setLiveMounted(false)
-        }
         perform(next)
       case .settled:
         break
@@ -2375,14 +2540,29 @@ private struct WatchtowerChartVisualSwap<Placeholder: View, Live: View>: View {
 
 private struct WatchtowerChartSwapLayer: ViewModifier {
   let isVisible: Bool
+  let isMorphing: Bool
   let reduceMotion: Bool
+  var usesRichMorph = true
 
+  @ViewBuilder
   func body(content: Content) -> some View {
-    content
-      .opacity(isVisible ? 1 : 0)
-      .blur(radius: reduceMotion || isVisible ? 0 : 8)
-      .scaleEffect(reduceMotion || isVisible ? 1 : 0.75)
-      .accessibilityHidden(!isVisible)
+    if usesRichMorph {
+      let richMorph = isMorphing && !reduceMotion
+      content
+        .opacity(isVisible ? 1 : 0)
+        // Blur/scale only while a handoff is in flight. A settled hidden layer
+        // used to keep blur(8) permanently — fine under a sparkline, a steady
+        // tax under every expanded chart.
+        .blur(radius: richMorph && !isVisible ? 8 : 0)
+        .scaleEffect(richMorph && !isVisible ? 0.75 : 1)
+        .accessibilityHidden(!isVisible)
+    } else {
+      // Keep the large expanded layers off the filter/compositing path
+      // entirely instead of retaining no-op blur and scale modifiers.
+      content
+        .opacity(isVisible ? 1 : 0)
+        .accessibilityHidden(!isVisible)
+    }
   }
 }
 
@@ -2656,6 +2836,7 @@ private struct WatchtowerMetricChartCard: View {
   private var chartBody: some View {
     WatchtowerChartVisualSwap(
       renderingMode: renderingMode,
+      profile: .resolved(isExpanded: isExpanded),
       placeholder: { editingPlaceholder },
       live: { liveChartBody }
     )

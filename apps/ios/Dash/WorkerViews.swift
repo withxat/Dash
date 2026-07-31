@@ -5,6 +5,7 @@ import SwiftUI
 struct WorkersView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var workers: [WorkerScript] = []
   @State private var error: String?
   @State private var loading = true
@@ -14,27 +15,24 @@ struct WorkersView: View {
       isLoading: loading,
       error: error,
       hasContent: !workers.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.code,
+        title: DashL10n.string("No Workers yet"),
+        message: DashL10n.string(
+          "Deploy with Wrangler or the dashboard — manage cut-over, domains, and analytics here."
+        ),
+        actionTitle: "Open Workers docs",
+        action: { openURL(FeatureExternalURL.workersGuide) }
+      ),
       retry: { Task { await load() } }
-    ) {
-      if workers.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.code,
-          title: DashL10n.string("No Workers yet"),
-          message: DashL10n.string(
-            "Deploy with Wrangler or the dashboard — manage cut-over, domains, and analytics here."
-          ),
-          actionTitle: "Open Workers docs",
-          action: { openURL(FeatureExternalURL.workersGuide) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: workers) { worker in
-            DashListGroupLink(value: .worker(worker.id)) {
-              DashListRow(title: worker.id, icon: SolarAsset.Content.code)
-                .accessibilityLabel(worker.id)
-            }
-            .accessibilityIdentifier("worker-\(worker.id)")
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: workers, reduceMotion: reduceMotion) { worker in
+          DashListGroupLink(value: .worker(worker.id)) {
+            DashListRow(title: worker.id, icon: SolarAsset.Content.code)
+              .accessibilityLabel(worker.id)
           }
+          .accessibilityIdentifier("worker-\(worker.id)")
         }
       }
     }
@@ -166,6 +164,7 @@ struct WorkerDetailView: View {
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   let name: String
   @State private var analytics: WorkerAnalyticsPayload?
@@ -220,85 +219,9 @@ struct WorkerDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } },
-      skeleton: { workerDetailSkeleton }
-    ) {
-      if let analytics {
-        workerMetricsSection(analytics)
-      } else if analyticsError != nil {
-        workerMetricsFallbackCard
-      }
-      // Builds sit above deployments: a build is what *produces* a deployment,
-      // and it renders nothing at all unless this Worker is repo-connected.
-      WorkerBuildsSection(scriptName: name, refreshID: buildsRefreshID)
-        .dashSectionBoundary(analytics != nil || analyticsError != nil)
-      // Keep the unbounded deployment ForEach as a direct child of
-      // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
-      // otherwise mount every deployment row at once.
-      DashListGroupHeader(title: DashL10n.ui("Deployments"))
-        .padding(.horizontal, 4)
-        .dashSectionBoundary()
-        .padding(.bottom, 8)
-      if deployments.isEmpty {
-        DashCard {
-          if deploymentError != nil {
-            // Failed is not empty: the rows' shape stays and the message
-            // veils over it. "No deployments yet." is reserved for the
-            // settled zero-row answer below.
-            DashListRowPlaceholders(rows: 3)
-              .dashSectionFailure(
-                deploymentError,
-                retry: { Task { await load(force: true) } })
-          } else {
-            Text("No deployments yet.")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .frame(maxWidth: .infinity, alignment: .leading)
-          }
-        }
-        // Replaces DashListGroup's content inset for the empty state.
-        .dashListCardInset()
-      } else {
-        dashListCardRows(items: deployments) { deployment in
-          let isActive = deployment.id == deployments.first?.id
-          let title = workerDeploymentTitle(deployment)
-          let subtitle = workerDeploymentRowSubtitle(deployment, isActive: isActive)
-          Button {
-            activationError = nil
-            confirmingActivation = false
-            selectedDeployment = deployment
-          } label: {
-            DashListRow(
-              title: title,
-              subtitle: subtitle,
-              icon: SolarAsset.Content.code,
-              iconColor: isActive
-                ? FeatureVisualIdentity.catalogColor(for: .workers) : DashTheme.iconMuted,
-              showsChevron: false
-            ) {
-              if isActive { StatusBadge(.current) }
-            }
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityLabel(
-            workerDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
-          )
-          // dashListCardRows supplies the row's existing inset; this one
-          // replaces DashListGroup's former content inset.
-          .dashListCardInset()
-        }
-      }
-      DashToggleRow(
-        title: "workers.dev",
-        subtitle: workersDevSubtitle,
-        isOn: subdomainBinding,
-        isEnabled: loadedSubdomain && featureAllowsWrites,
-        isLoading: subdomainUpdating
-      )
-      .dashSectionBoundary()
-      // No modifier here: padding this TupleView would re-eagerize the route
-      // rows. The section boundary rides domainsGroup's own header instead.
-      domainsGroup
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      workerDetailBody(mode: mode)
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.code),
@@ -530,10 +453,12 @@ struct WorkerDetailView: View {
     )
   }
 
-  /// Cold first paint: totals panel, the Requests / CPU Time collapsed pair,
-  /// then a Deployments row group — so the real sections land without reflow.
-  private var workerDetailSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
+  /// Fuller first-paint reserve: metrics + charts, deployments, workers.dev,
+  /// Domains & Routes. Builds stay live-only (often renders nothing). Empty
+  /// live sections exit upward via `dashBodySlot`.
+  @ViewBuilder
+  private func workerDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
       DashSurfaceStack {
         DashMetricPanelPlaceholder(tiles: 3)
         HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
@@ -543,15 +468,111 @@ struct WorkerDetailView: View {
           }
         }
       }
-      DashListGroup(title: "Deployments") {
-        DashListRowPlaceholders(rows: 3)
-      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let analytics {
+      workerMetricsSection(analytics)
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else if analyticsError != nil {
+      workerMetricsFallbackCard
+        .dashBodySlot(reduceMotion: reduceMotion)
+    }
+
+    if !mode.isPlaceholder {
+      // Builds sit above deployments: a build is what *produces* a deployment,
+      // and it renders nothing at all unless this Worker is repo-connected.
+      WorkerBuildsSection(scriptName: name, refreshID: buildsRefreshID)
+        .dashSectionBoundary(analytics != nil || analyticsError != nil)
+        .dashBodySlot(reduceMotion: reduceMotion)
+    }
+
+    // Keep the unbounded deployment ForEach as a direct child of
+    // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
+    // otherwise mount every deployment row at once.
+    DashListGroupHeader(title: DashL10n.ui("Deployments"))
+      .padding(.horizontal, 4)
       .dashSectionBoundary()
+      .padding(.bottom, 8)
+    if mode.isPlaceholder {
+      dashListCard {
+        DashListRowPlaceholders(rows: 3)
+          .dashListCardInset()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if deployments.isEmpty {
+      DashCard {
+        if deploymentError != nil {
+          // Failed is not empty: the rows' shape stays and the message
+          // veils over it. "No deployments yet." is reserved for the
+          // settled zero-row answer below.
+          DashListRowPlaceholders(rows: 3)
+            .dashSectionFailure(
+              deploymentError,
+              retry: { Task { await load(force: true) } })
+        } else {
+          Text("No deployments yet.")
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      // Replaces DashListGroup's content inset for the empty state.
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      dashListCardRows(items: deployments) { deployment in
+        let isActive = deployment.id == deployments.first?.id
+        let title = workerDeploymentTitle(deployment)
+        let subtitle = workerDeploymentRowSubtitle(deployment, isActive: isActive)
+        Button {
+          activationError = nil
+          confirmingActivation = false
+          selectedDeployment = deployment
+        } label: {
+          DashListRow(
+            title: title,
+            subtitle: subtitle,
+            icon: SolarAsset.Content.code,
+            iconColor: isActive
+              ? FeatureVisualIdentity.catalogColor(for: .workers) : DashTheme.iconMuted,
+            showsChevron: false
+          ) {
+            if isActive { StatusBadge(.current) }
+          }
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel(
+          workerDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
+        )
+        // dashListCardRows supplies the row's existing inset; this one
+        // replaces DashListGroup's former content inset.
+        .dashListCardInset()
+      }
+    }
+
+    if mode.isPlaceholder {
       DashToggleRowPlaceholder()
         .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Domains & Routes") {
+        DashListRowPlaceholders(rows: 2)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      DashToggleRow(
+        title: "workers.dev",
+        subtitle: workersDevSubtitle,
+        isOn: subdomainBinding,
+        isEnabled: loadedSubdomain && featureAllowsWrites,
+        isLoading: subdomainUpdating
+      )
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      // No modifier here: padding this TupleView would re-eagerize the route
+      // rows. The section boundary rides domainsGroup's own header instead.
+      domainsGroup
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   /// The metrics panel's own shape — heading over three stat tiles — holding the
@@ -1140,20 +1161,34 @@ struct WorkerDetailView: View {
     guard let context = model.accountRequestContext else { return }
     let accountID = context.accountID
     subdomainUpdating = true
+    let op = model.optimistic.begin(.toggle(enabled)) {
+      subdomainEnabled = !enabled
+      subdomainUpdating = false
+    }
     defer { subdomainUpdating = false }
     do {
+      try await model.optimistic.waitForCommit(op)
       let result = try await model.client.setWorkerSubdomain(
         accountID: accountID, name: name, enabled: enabled)
       try Task.checkCancellation()
-      guard model.isCurrentAccount(context) else { return }
+      guard model.isCurrentAccount(context) else {
+        model.optimistic.finishFailure(op)
+        return
+      }
       subdomainEnabled = result.enabled
       model.featureCache.set(
         FeatureCacheKey.workerSubdomain(accountID: accountID, name: name), result.enabled)
       invalidateWorkerDetailCache(context)
-      DashDelight.celebrateSuccess()
+      model.optimistic.finishSuccess(op)
+    } catch is CancellationError {
+      // Undo during grace already reverted local state.
     } catch {
-      if error.dashIsCancellation || !model.isCurrentAccount(context) { return }
+      if error.dashIsCancellation || !model.isCurrentAccount(context) {
+        model.optimistic.finishFailure(op)
+        return
+      }
       subdomainEnabled = !enabled
+      model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
     }
   }

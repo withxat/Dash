@@ -13,13 +13,28 @@ private struct AccountScopedRouteRequest {
 struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
     DashWorkspaceWashPreset.defaultPreset.rawValue
+  @Namespace private var workspaceHeaderGlass
   @State private var selection: AppTab = .home
   @State private var homeNavigator = DestinationNavigator()
   @State private var featuresNavigator = DestinationNavigator()
   @State private var watchtowerNavigator = DestinationNavigator()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
+  /// The shared header owns Watchtower's editor buttons, while the screen still
+  /// owns the staged editor-exit choreography. Bumping these tokens asks the
+  /// mounted Watchtower root to run those existing paths.
+  @State private var watchtowerCancelRequest = 0
+  @State private var watchtowerCommitRequest = 0
+  /// Add stays disabled until Watchtower has mounted the drag bridge after the
+  /// editor morph; moving the menu into shared chrome must retain that gate.
+  @State private var watchtowerEditorInteractionsReady = false
+  /// Handed down to the active page and back up to the wash — never read here.
+  /// It carries a per-frame scroll position, and this body owns the navigation
+  /// paths: reading it would re-apply them mid-push and cancel the transition.
+  @State private var washScroll = DashWorkspaceWashScroll()
+  @State private var showsProfile = false
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
@@ -27,10 +42,11 @@ struct MainTabView: View {
 
   init() {}
 
-  /// Every tray style currently over this canvas.
+  /// Every tray style currently over this canvas — the pages' trays plus the
+  /// account switcher (whose preference sits above our reader, so it's OR-ed in).
   private var overlayTrays: DashTrayPresentation {
     DashTrayPresentation(
-      content: showsIgnoreAllAlerts || nestedTray.content,
+      content: showsProfile || showsIgnoreAllAlerts || nestedTray.content,
       large: nestedTray.large)
   }
 
@@ -45,11 +61,15 @@ struct MainTabView: View {
     ) || watchtowerCustomization.isEditing
   }
 
-  private var hidesHeaderAvatar: Bool {
+  private var sharedHeaderIsDisplaced: Bool {
     shouldHideHeaderAvatar(
       overlays: overlayTrays,
       navigationDepth: activeNavigationDepth
-    ) || watchtowerCustomization.isEditing
+    )
+  }
+
+  private var hidesHeaderAvatar: Bool {
+    sharedHeaderIsDisplaced || watchtowerCustomization.isEditing
   }
 
   /// Floated Watchtower inbox — same hide rules as the avatar, Watchtower root only.
@@ -57,6 +77,14 @@ struct MainTabView: View {
     selection == .watchtower
       && model.activeAccountID != nil
       && !hidesHeaderAvatar
+  }
+
+  /// Watchtower editing stays on the root canvas, so all of its header actions
+  /// belong in the same floated layer as the avatar and inbox.
+  private var showsWatchtowerEditorHeader: Bool {
+    selection == .watchtower
+      && watchtowerCustomization.isEditing
+      && !sharedHeaderIsDisplaced
   }
 
   /// Pages swipe only between the tab roots. A pushed feature/detail owns
@@ -204,7 +232,7 @@ struct MainTabView: View {
       }
       .onChange(of: model.activeAccountID) { _, _ in
         // Sign-out clears the account before remote cleanup finishes. Keep the
-        // Settings-owned confirmation tray mounted through its loading and
+        // account-switcher / Settings confirmation tray mounted through its loading and
         // success phases; AppRoot swaps to sign-in after the phase returns idle.
         guard !model.signOutActionPhase.isActive else {
           showsIgnoreAllAlerts = false
@@ -214,11 +242,15 @@ struct MainTabView: View {
         featuresNavigator.reset()
         watchtowerNavigator.reset()
         watchtowerCustomization.cancelEditing()
+        showsProfile = false
         showsIgnoreAllAlerts = false
         if let route = routeAfterAccountSwitch {
           routeAfterAccountSwitch = nil
           openVerifiedRoute(route)
         }
+      }
+      .dashTray(isPresented: $showsProfile, title: DashL10n.string("Switch account")) {
+        ProfileTrayContent()
       }
       .dashTray(
         isPresented: $showsIgnoreAllAlerts,
@@ -281,7 +313,12 @@ struct MainTabView: View {
             navigator: watchtowerNavigator,
             isTabActive: selection == .watchtower
           ) {
-            WatchtowerView(customization: watchtowerCustomization)
+            WatchtowerView(
+              customization: watchtowerCustomization,
+              cancelRequest: watchtowerCancelRequest,
+              commitRequest: watchtowerCommitRequest,
+              editorInteractionsReady: $watchtowerEditorInteractionsReady
+            )
           }
         }
       }
@@ -303,43 +340,7 @@ struct MainTabView: View {
       .animation(nil, value: featuresNavigator.depth)
       .animation(nil, value: watchtowerNavigator.depth)
 
-      // ONE shared avatar above the pager (so it doesn't slide on tab swipes,
-      // and stays a true circle — toolbar items get height-clamped). It sits
-      // over the leading slot of the roots' titleless nav bars and fades on
-      // push exactly where the system back control fades in. Watchtower's
-      // inbox mirror sits on the trailing edge with the same metrics.
-      ZStack {
-        ZStack(alignment: .topLeading) {
-          if !hidesHeaderAvatar {
-            HeaderProfileButton { openOnActiveTab(.settings) }
-              // Tuned against the system back control's measured slot so the
-              // push crossfade reads as the avatar becoming the back button.
-              .padding(.leading, 10)
-              .padding(.top, 10)
-              .transition(.opacity)
-          }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-        ZStack(alignment: .topTrailing) {
-          if showsWatchtowerInboxButton {
-            // Chart editing moved onto the Charts section header; the inbox is
-            // the only floated trailing control left.
-            HeaderInboxButton(
-              count: model.watchtowerUnreadAlertCount ?? 0,
-              action: { watchtowerNavigator.push(.watchtowerInbox) },
-              onLongPress: { showsIgnoreAllAlerts = true }
-            )
-            .padding(.trailing, 10)
-            .padding(.top, 10)
-            .transition(.opacity)
-          }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-      }
-      .animation(tabBarVisibilityAnimation, value: hidesHeaderAvatar)
-      .animation(tabBarVisibilityAnimation, value: showsWatchtowerInboxButton)
-      .allowsHitTesting(!hidesHeaderAvatar || showsWatchtowerInboxButton)
+      sharedHeaderOverlay
 
       // Trays and pushed routes displace the bar; tab roots keep it mounted.
       ZStack(alignment: .bottom) {
@@ -364,17 +365,139 @@ struct MainTabView: View {
     // The workspace canvas and its ONE top light field, painted behind the
     // pager. Every tab root is transparent (`dashCatalogScreen`), so all three
     // share this single wash instead of carrying a copy each: the glow never
-    // rides a tab swipe, and it stays put while pages slide across it.
+    // rides a tab swipe, and it holds still while pages slide across it. It
+    // does ride the active root's *vertical* scroll — see `DashWorkspaceTopWash`.
     .background {
       ZStack(alignment: .top) {
         DashTheme.canvas
         if workspaceWashPreset != .none {
-          DashWorkspaceTopWash(color: DashTheme.workspaceWash(for: workspaceWashPreset))
+          DashWorkspaceTopWash(
+            color: DashTheme.workspaceWash(for: workspaceWashPreset),
+            scroll: washScroll
+          )
         }
       }
       .ignoresSafeArea()
     }
     .dashToastHost()
+  }
+
+  /// ONE header layer above the pager. Normal roots show avatar + Watchtower
+  /// inbox; chart editing hands those exact slots to Cancel + Add/Done. Keeping
+  /// every source and destination inside one Liquid Glass container lets iOS 26
+  /// morph the shapes instead of compositing a second native-toolbar layer.
+  private var sharedHeaderOverlay: some View {
+    Group {
+      if #available(iOS 26.0, *) {
+        GlassEffectContainer(spacing: WorkspaceHeaderMetrics.actionSpacing) {
+          sharedHeaderControls
+        }
+      } else {
+        sharedHeaderControls
+      }
+    }
+    // Pushes and trays do not carry a SwiftUI transaction, so the shared layer
+    // supplies their fade. Tab switches and editor enter/exit already originate
+    // in explicit settle/morph transactions and keep their directional timing.
+    .animation(tabBarVisibilityAnimation, value: sharedHeaderIsDisplaced)
+    // A finger-driven page swipe can update `selection` without the tab bar's
+    // explicit transaction. Give that handoff the same settle curve without
+    // keying off editor visibility, which would replace morph/morphExit.
+    .animation(tabBarVisibilityAnimation, value: selection)
+    .allowsHitTesting(
+      !hidesHeaderAvatar
+        || showsWatchtowerInboxButton
+        || showsWatchtowerEditorHeader)
+  }
+
+  private var sharedHeaderControls: some View {
+    ZStack {
+      ZStack(alignment: .topLeading) {
+        if showsWatchtowerEditorHeader {
+          DashToolbarIconButton(
+            asset: SolarAsset.editClose,
+            accessibilityLabel: "Cancel"
+          ) {
+            watchtowerCancelRequest &+= 1
+          }
+          .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
+          .accessibilityIdentifier("watchtower-customize-cancel")
+          .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
+          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
+          .transition(.opacity)
+        } else if !hidesHeaderAvatar {
+          HeaderProfileButton(
+            action: { openOnActiveTab(.settings) },
+            onLongPress: { showsProfile = true }
+          )
+          .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
+          // Tuned against the system back control's measured slot so the
+          // push crossfade reads as the avatar becoming the back button.
+          .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
+          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
+          .transition(.opacity)
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+      ZStack(alignment: .topTrailing) {
+        if showsWatchtowerEditorHeader {
+          HStack(spacing: WorkspaceHeaderMetrics.actionSpacing) {
+            watchtowerAddChartMenu
+              .workspaceHeaderGlassID(.trailingSecondary, in: workspaceHeaderGlass)
+            DashToolbarIconButton(
+              asset: SolarAsset.unread,
+              accessibilityLabel: "Done",
+              variant: .confirmation
+            ) {
+              watchtowerCommitRequest &+= 1
+            }
+            // Done occupies the inbox's former rightmost slot, so its glass
+            // shape has a stable source while Add separates to the left.
+            .workspaceHeaderGlassID(.trailingPrimary, in: workspaceHeaderGlass)
+            .accessibilityIdentifier("watchtower-customize-done")
+          }
+          .padding(.trailing, WorkspaceHeaderMetrics.edgeInset)
+          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
+          .transition(.opacity)
+        } else if showsWatchtowerInboxButton {
+          HeaderInboxButton(
+            count: model.watchtowerUnreadAlertCount ?? 0,
+            action: { watchtowerNavigator.push(.watchtowerInbox) },
+            onLongPress: { showsIgnoreAllAlerts = true }
+          )
+          .workspaceHeaderGlassID(.trailingPrimary, in: workspaceHeaderGlass)
+          .padding(.trailing, WorkspaceHeaderMetrics.edgeInset)
+          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
+          .transition(.opacity)
+        }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    }
+  }
+
+  private var watchtowerAddChartMenu: some View {
+    Menu {
+      if watchtowerCustomization.addableMetrics.isEmpty {
+        Button(DashL10n.string("All charts are shown")) {}
+          .disabled(true)
+      } else {
+        ForEach(watchtowerCustomization.addableMetrics) { metric in
+          Button(DashL10n.ui(metric.title)) {
+            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+              watchtowerCustomization.add(metric)
+            }
+            DashDelight.selectionChanged()
+          }
+        }
+      }
+    } label: {
+      WatchtowerAddChartToolbarLabel()
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .disabled(!watchtowerEditorInteractionsReady)
+    .accessibilityLabel(DashL10n.string("Add chart"))
+    .accessibilityIdentifier("watchtower-add-chart")
   }
 
   /// One page of the tab pager. Off-screen pages stay mounted for the
@@ -387,6 +510,10 @@ struct MainTabView: View {
   ) -> some View {
     let isActive = selection == tab
     return content()
+      // Only the visible root drives the shared glow. Off-screen pages stay
+      // mounted for the pager and keep probing their own frost, but they must
+      // not push their scroll position into the one wash behind all three.
+      .environment(\.dashWorkspaceWashScroll, isActive ? washScroll : nil)
       .tag(tab)
       .accessibilityHidden(!isActive)
       .accessibilityElement(children: isActive ? .contain : .ignore)
@@ -404,6 +531,53 @@ struct MainTabView: View {
   }
 }
 
+private enum WorkspaceHeaderMetrics {
+  static let edgeInset: CGFloat = AvatarHeaderMetrics.chromeInset
+  static let actionSpacing: CGFloat = 8
+}
+
+private enum WorkspaceHeaderGlassID: Hashable, Sendable {
+  case leading
+  case trailingPrimary
+  case trailingSecondary
+}
+
+extension View {
+  /// Stable Liquid Glass identities for the controls that trade places inside
+  /// `MainTabView.sharedHeaderOverlay`. Earlier systems keep the same aligned
+  /// opacity handoff without adopting iOS 26-only material APIs.
+  @MainActor
+  @ViewBuilder
+  fileprivate func workspaceHeaderGlassID(
+    _ id: WorkspaceHeaderGlassID,
+    in namespace: Namespace.ID
+  ) -> some View {
+    if #available(iOS 26.0, *) {
+      glassEffectID(id, in: namespace)
+        .glassEffectTransition(.matchedGeometry)
+    } else {
+      self
+    }
+  }
+}
+
+private struct WatchtowerAddChartToolbarLabel: View {
+  var body: some View {
+    if #available(iOS 26.0, *) {
+      DashToolbarActionIcon(asset: SolarAsset.plus)
+        .frame(
+          width: AvatarHeaderMetrics.barSize,
+          height: AvatarHeaderMetrics.barSize
+        )
+        .contentShape(Circle())
+        .glassEffect(.regular.interactive(), in: .circle)
+    } else {
+      DashToolbarActionIcon(asset: SolarAsset.plus)
+        .dashCompactHitTarget()
+    }
+  }
+}
+
 /// The workspace's top light field: one continuous wash from the physical top
 /// edge — status bar included — falling off sideways and down into the canvas.
 ///
@@ -416,11 +590,19 @@ struct MainTabView: View {
 /// Behind the pages, never over them, so opaque cards keep a true fill and
 /// scrolled content passes across the light instead of being tinted by it. A
 /// pushed screen covers it with its own opaque canvas plate.
+///
+/// It is not, however, fixed to the window: the glow belongs to the top of the
+/// content, so it rides the active root's scroll 1:1 and leaves with it. Only
+/// the header frost stays pinned up there. Pin both and the two read as one
+/// stuck slab — which is exactly what adding the frost made the glow look like.
 struct DashWorkspaceTopWash: View {
   let color: Color
+  /// The active root's scroll position. Read HERE and nowhere else: it moves
+  /// every frame, and this view is the only thing that should re-render for it.
+  let scroll: DashWorkspaceWashScroll
 
   /// Fall-off distance from the physical top edge.
-  private let depth: CGFloat = 300
+  private let depth = DashWorkspaceWashRules.depth
 
   var body: some View {
     ZStack {
@@ -442,6 +624,7 @@ struct DashWorkspaceTopWash: View {
     }
     .frame(height: depth)
     .frame(maxWidth: .infinity)
+    .offset(y: -DashWorkspaceWashRules.lift(for: scroll.distance))
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }

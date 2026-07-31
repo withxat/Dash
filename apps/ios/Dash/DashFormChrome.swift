@@ -5,7 +5,7 @@ import UIKit
 
 enum DashFormDeletionPresentation: Equatable, Sendable {
   /// Sensitive or irreversible actions keep the shared confirmation morph and
-  /// hold-to-confirm control.
+  /// a second-tap destructive control.
   case confirmThenExecute
   /// Reversible ordinary deletion schedules immediately; the global Toast is
   /// the single confirmation/Undo surface.
@@ -117,7 +117,7 @@ struct DashConfirmMorph<Content: View>: View {
 
       if confirming {
         DashTrayActionPair {
-          DashTrayTextButton(title: DashL10n.string("Cancel")) {
+          DashTrayCancelButton {
             withAnimation(DashTheme.Motion.morphExit) { confirming = false }
           }
           .disabled(actionPhase.isActive)
@@ -126,7 +126,6 @@ struct DashConfirmMorph<Content: View>: View {
             title: confirmingActionTitle,
             role: confirmingActionRole,
             phase: actionPhase,
-            holdToConfirm: true,
             onSuccessPresentationCompleted: onSuccessPresentationCompleted,
             action: action
           )
@@ -136,7 +135,9 @@ struct DashConfirmMorph<Content: View>: View {
         .transition(morphTransition)
       } else if let actionTitle {
         if let secondaryActionTitle, let secondaryAction {
-          DashTrayActionPair {
+          // Not a way out of the primary — an alternative beside it, so it
+          // keeps the stacked relationship rather than sharing the row.
+          DashTrayActionPair(axis: .vertical) {
             DashTrayTextButton(title: secondaryActionTitle, action: secondaryAction)
               .disabled(!secondaryActionEnabled || actionPhase.isActive)
           } primary: {

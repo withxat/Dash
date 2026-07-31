@@ -32,6 +32,7 @@ private enum TunnelExternalURL {
 struct TunnelsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var tunnels: [CloudflareTunnel] = []
   @State private var error: String?
   @State private var loading = true
@@ -42,36 +43,33 @@ struct TunnelsView: View {
       isLoading: loading,
       error: error,
       hasContent: !tunnels.isEmpty,
+      // The whole first-run explanation of what a tunnel *is* lives here and
+      // nowhere else — no explainer card on the detail screen, none in
+      // Settings, none in Watchtower.
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.routing,
+        title: DashL10n.string("No tunnels yet"),
+        message: DashL10n.string(
+          "A Cloudflare Tunnel connects a machine on your own network to Cloudflare without opening a port. Create one with cloudflared or the Zero Trust dashboard — Dash shows its health, hostnames, and routes here."
+        ),
+        actionTitle: DashL10n.string("Open Tunnel docs"),
+        action: { openURL(TunnelExternalURL.guide) }
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if tunnels.isEmpty {
-        // The whole first-run explanation of what a tunnel *is* lives here and
-        // nowhere else — no explainer card on the detail screen, none in
-        // Settings, none in Watchtower.
-        DashEmptyState(
-          icon: SolarAsset.Content.routing,
-          title: DashL10n.string("No tunnels yet"),
-          message: DashL10n.string(
-            "A Cloudflare Tunnel connects a machine on your own network to Cloudflare without opening a port. Create one with cloudflared or the Zero Trust dashboard — Dash shows its health, hostnames, and routes here."
-          ),
-          actionTitle: DashL10n.string("Open Tunnel docs"),
-          action: { openURL(TunnelExternalURL.guide) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: tunnels) { tunnel in
-            DashListGroupLink(value: .tunnel(tunnel.id)) {
-              DashListRow(
-                title: tunnelDisplayName(tunnel),
-                subtitle: tunnelListSubtitle(tunnel),
-                icon: SolarAsset.Content.routing
-              ) {
-                StatusBadge(StatusToken(tunnelStatus: tunnel.statusRaw))
-              }
-              .accessibilityLabel(tunnelRowAccessibilityLabel(tunnel))
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: tunnels, reduceMotion: reduceMotion) { tunnel in
+          DashListGroupLink(value: .tunnel(tunnel.id)) {
+            DashListRow(
+              title: tunnelDisplayName(tunnel),
+              subtitle: tunnelListSubtitle(tunnel),
+              icon: SolarAsset.Content.routing
+            ) {
+              StatusBadge(StatusToken(tunnelStatus: tunnel.statusRaw))
             }
-            .accessibilityIdentifier("tunnel-\(tunnel.id)")
+            .accessibilityLabel(tunnelRowAccessibilityLabel(tunnel))
           }
+          .accessibilityIdentifier("tunnel-\(tunnel.id)")
         }
       }
     }
@@ -166,6 +164,7 @@ enum TunnelListRules {
 struct TunnelDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let tunnelID: String
 
   @State private var tunnel: CloudflareTunnel?
@@ -221,15 +220,9 @@ struct TunnelDetailView: View {
       isLoading: loading,
       error: error,
       hasContent: hasPresentedContent,
-      retry: { Task { await load(force: true) } },
-      skeleton: { tunnelDetailSkeleton }
-    ) {
-      if let tunnel = displayedTunnel {
-        tunnelGroup(tunnel)
-        connectorsGroup()
-        ingressSection()
-        privateNetworksGroup()
-      }
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      tunnelDetailBody(mode: mode)
     }
     .detailHeader(icon: .solar(SolarAsset.Content.routing), title: headerTitle)
     .task(id: model.accountRequestContext) { await load() }
@@ -243,11 +236,37 @@ struct TunnelDetailView: View {
 
   // MARK: Section 1 — Tunnel
 
-  /// The Tunnel info group is the screen's first paint; connectors and ingress
-  /// follow once the payload arrives.
-  private var tunnelDetailSkeleton: some View {
-    DashInfoGroup(title: "Tunnel", phase: .loading, placeholderRows: 5) {
-      EmptyView()
+  /// Fuller first-paint reserve: tunnel, connectors, ingress, private networks.
+  /// Live mode drops empty connectors / ingress / networks; those slots exit
+  /// upward. Private networks stay section-cold (`routesPhase`).
+  @ViewBuilder
+  private func tunnelDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashInfoGroup(title: "Tunnel", phase: .loading, placeholderRows: 5) {
+        EmptyView()
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Connectors") {
+        DashListRowPlaceholders(rows: 2)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Public hostnames") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashInfoGroup(title: "Private networks", phase: .loading, placeholderRows: 2) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let tunnel = displayedTunnel {
+      tunnelGroup(tunnel)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      connectorsGroup()
+      ingressSection()
+      privateNetworksGroup()
     }
   }
 
@@ -314,6 +333,7 @@ struct TunnelDetailView: View {
         }
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -385,6 +405,7 @@ struct TunnelDetailView: View {
         }
       }
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -433,6 +454,7 @@ struct TunnelDetailView: View {
       .dashItemBoundary()
     }
     .dashSectionBoundary()
+    .dashBodySlot(reduceMotion: reduceMotion)
   }
 
   @ViewBuilder private func hostnameTray(_ row: TunnelHostnameRow) -> some View {
@@ -491,6 +513,7 @@ struct TunnelDetailView: View {
         }
       )
       .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 

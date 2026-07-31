@@ -212,6 +212,8 @@ struct DashSecondaryPillButton: View {
     Text(DashL10n.ui(title))
       .dashTextStyle(.buttonBold)
       .foregroundStyle(DashTheme.strong)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
       .frame(maxWidth: .infinity)
       .frame(height: DashTheme.Layout.actionPillHeight)
       .background(DashTheme.recessed, in: DashTheme.pillShape)
@@ -219,9 +221,26 @@ struct DashSecondaryPillButton: View {
   }
 }
 
-/// The full-width text-only secondary action used above a tray's primary pill.
-/// Surfaces that deliberately mirror that hierarchy (such as onboarding) reuse
-/// this control so typography and hit-target metrics cannot drift.
+/// The way out of a confirm step: a recessed pill that shares the footer row
+/// with the primary action, never a text link under it. Cancel and confirm are
+/// one decision — they read as one control pair, and the tray's footer keeps
+/// the same height whichever step it is on.
+///
+/// Titles are catalog keys (`DashSecondaryPillButton` localizes), so pass
+/// `"Cancel"`, not `DashL10n.string("Cancel")`.
+struct DashTrayCancelButton: View {
+  var title = "Cancel"
+  let action: () -> Void
+
+  var body: some View {
+    DashSecondaryPillButton(title: title, action: action)
+      .accessibilityIdentifier("dash.tray.cancel")
+  }
+}
+
+/// The full-width text-only secondary action stacked above a tray's primary
+/// pill, for a secondary that is an *alternative* rather than a way out
+/// (onboarding's "Explore the demo"). A cancel is `DashTrayCancelButton`.
 struct DashTrayTextButton: View {
   let title: String
   let action: () -> Void
@@ -237,24 +256,42 @@ struct DashTrayTextButton: View {
   }
 }
 
-/// The canonical vertical relationship between a tray's secondary text action
-/// and its primary pill. Keep the compact pair inside the wider section rhythm.
+/// The canonical relationship between a tray's secondary action and its
+/// primary pill.
+///
+/// A cancel and a confirm are one decision, so they share one row at the
+/// action-button position — cancel leading, confirm trailing, equal halves —
+/// and the tray's footer stays a single band whichever step it is on. Reach
+/// for `.vertical` only when the secondary is *not* a way out of the primary
+/// (onboarding's "Explore the demo" beside Sign in): stacking states that the
+/// two are alternatives rather than a choice about the same action.
 struct DashTrayActionPair<Secondary: View, Primary: View>: View {
+  var axis: Axis = .horizontal
   private let secondary: Secondary
   private let primary: Primary
 
   init(
+    axis: Axis = .horizontal,
     @ViewBuilder secondary: () -> Secondary,
     @ViewBuilder primary: () -> Primary
   ) {
+    self.axis = axis
     self.secondary = secondary()
     self.primary = primary()
   }
 
   var body: some View {
-    VStack(spacing: 4) {
-      secondary
-      primary
+    switch axis {
+    case .horizontal:
+      HStack(spacing: DashTheme.Spacing.compact) {
+        secondary
+        primary
+      }
+    case .vertical:
+      VStack(spacing: 4) {
+        secondary
+        primary
+      }
     }
   }
 }
@@ -296,9 +333,8 @@ extension AnyTransition {
 /// A single high-risk action presented inside a tray. Tapping its row morphs —
 /// via matchedGeometryEffect — into an inline confirmation step before `perform`
 /// runs. This is the canonical tray danger pattern; reuse it everywhere a
-/// destructive action needs a hold-to-confirm (purge, delete). Confirmation is
-/// always Cancel + a named hold button — never a type-the-name field. Sign out
-/// stays a plain tap — hold is reserved for delete-class business actions.
+/// destructive action needs a second tap (purge, delete). Confirmation is
+/// always Cancel + a named tap button — never a type-the-name field or hold.
 struct DashDangerAction: Identifiable {
   /// Stable across re-renders — it drives the matchedGeometryEffect morph, so it
   /// must NOT be a fresh UUID per render. Defaults to `title`.
@@ -306,7 +342,7 @@ struct DashDangerAction: Identifiable {
   let title: String
   let icon: String
   let message: String
-  /// Hold-confirm footer label. Delete-class actions keep the default; non-delete
+  /// Confirm footer label. Delete-class actions keep the default; non-delete
   /// verbs (purge) pass their own.
   let confirmTitle: String
   /// A thrown error keeps the confirmation open and surfaces the message
@@ -337,8 +373,8 @@ struct DashDangerAction: Identifiable {
 
 /// Tray content that lists destructive actions as menu rows and morphs a tapped
 /// one — via matchedGeometryEffect — into a confirm step (message, Cancel, and
-/// a red hold-to-confirm Delete that the row grows into). No type-the-name
-/// field. Horizontal insets come from the tray card, never from here.
+/// a red Delete that the row grows into). No type-the-name field and no hold.
+/// Horizontal insets come from the tray card, never from here.
 struct DashConfirmableActions: View {
   let actions: [DashDangerAction]
   @Namespace private var morph
@@ -419,7 +455,7 @@ struct DashConfirmableActions: View {
       }
 
       DashTrayActionPair {
-        DashTrayTextButton(title: DashL10n.string("Cancel")) {
+        DashTrayCancelButton {
           errorMessage = nil
           withAnimation(DashTheme.Motion.morphExit) { pending = nil }
         }
@@ -429,7 +465,6 @@ struct DashConfirmableActions: View {
           title: DashL10n.ui(action.confirmTitle),
           role: .destructive,
           phase: actionPhase,
-          holdToConfirm: true,
           morphID: reduceMotion ? nil : action.id,
           morphNamespace: reduceMotion ? nil : morph,
           onSuccessPresentationCompleted: {
@@ -446,9 +481,12 @@ struct DashConfirmableActions: View {
                 try await action.perform()
                 actionPhase = .succeeded
               } catch {
+                actionPhase = .idle
+                // Undo during an optimistic grace window cancels the write —
+                // not a failure toast inside the confirm tray.
+                guard !error.dashIsCancellation else { return }
                 withAnimation(DashTheme.Motion.morph) { errorMessage = error.dashActionableMessage }
                 DashDelight.failError()
-                actionPhase = .idle
               }
             }
           }
@@ -462,148 +500,55 @@ struct DashConfirmableActions: View {
 /// The primary filled pill a tray should use when it has any footer actions —
 /// at least one of these, with reversible extras as `DashTrayPillButton`. Idle
 /// and confirming titles are separate views that cross-dissolve via
-/// `.dashMorph` inside `DashConfirmMorph`.
-///
-/// Pass `holdToConfirm: true` for Confirm / final destructive steps: the pill
-/// keeps its enamel face, and a hard path-cut of primary ink (`#0A0A0A`) wipes
-/// left→right. The action fires only on finger-up after the wipe completes;
-/// dragging past the cancel slop flips the label to “Release to cancel”.
+/// `.dashMorph` inside `DashConfirmMorph`. Destructive confirms are a second
+/// tap after Cancel joins the row — never a sustained hold.
 struct DashActionButton: View {
   let title: String
   /// Optional leading asset-catalog icon (e.g. Cloudflare brand mark).
   var icon: String? = nil
   var role: ButtonRole? = nil
   var phase: DashActionPhase = .idle
-  /// Sustained press with a left-to-right black path-cut; confirms on release.
-  var holdToConfirm = false
-  /// Optional matched-geometry id so a danger row can morph into this pill.
+  /// Optional matched-geometry id so a full-width pill (or danger row fill)
+  /// can shrink into this confirm pill when Cancel joins the row.
   var morphID: String? = nil
   var morphNamespace: Namespace.ID? = nil
   var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   let action: () -> Void
 
-  @Environment(AppModel.self) private var model
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.isEnabled) private var isEnabled
-  @State private var holdProgress: CGFloat = 0
-  @State private var isHolding = false
-  /// Wipe finished while the finger is still down — waiting for release.
-  @State private var holdArmed = false
-  /// Finger dragged past `holdCancelSlop`; release will abort instead of confirm.
-  @State private var holdWillCancel = false
-  @State private var holdTask: Task<Void, Never>?
-  @State private var holdStartedAt: Date?
-
   private var fill: Color { role == .destructive ? DashTheme.danger : DashTheme.strong }
-  /// Fixed primary ink for the hold path-cut — not adaptive, so the wipe stays
-  /// black in both schemes (same stop as light-mode `DashTheme.strong`).
-  private var holdCutFill: Color { Color(hex: 0x0A0A0A) }
-  /// Forced light ink on the cut face — pairs with `holdCutFill` regardless of
-  /// scheme (adaptive `inverse` goes dark in Dark Mode and would vanish).
-  private var holdCutForeground: Color { Color(hex: 0xF5F5F5) }
   /// Danger pills stay white in both schemes — adaptive `inverse` goes dark in
   /// Dark Mode and washes out on red. Non-destructive pills keep `inverse`.
   private var labelForeground: Color {
-    role == .destructive ? holdCutForeground : DashTheme.inverse
-  }
-  private var holdDuration: TimeInterval { reduceMotion ? 0.7 : 1.2 }
-  /// Finger travel (pt) that switches the hold into cancel-on-release.
-  private var holdCancelSlop: CGFloat { 36 }
-  /// Early release past this fraction of the hold earns the “keep holding” toast.
-  private var holdCancelHintThreshold: TimeInterval { holdDuration * 0.2 }
-  /// Generic Confirm pills name the required gesture; named verbs (Sign out,
-  /// Ignore all, …) keep their title and use the accessibility hint.
-  private var displayTitle: String {
-    let isGenericConfirm = title == "Confirm" || title == "Hold to confirm"
-    guard holdToConfirm, isGenericConfirm else { return title }
-    return "Hold to confirm"
-  }
-  private var visibleHoldTitle: String {
-    holdWillCancel ? DashL10n.string("Release to cancel") : displayTitle
+    role == .destructive ? Color(hex: 0xF5F5F5) : DashTheme.inverse
   }
 
   var body: some View {
-    Group {
-      if holdToConfirm {
-        holdButton
-      } else {
-        tapButton
-      }
+    Button(action: action) {
+      label
     }
+    .buttonStyle(DashPressButtonStyle())
     .disabled(phase.isActive)
     .accessibilityValue(phase.accessibilityValue)
     .dashTrayDismissDisabled(phase.isActive)
-    .onDisappear { resetHold(animated: false) }
   }
 
-  private var tapButton: some View {
-    Button(action: action) {
-      label(progress: 0)
-    }
-    .buttonStyle(DashPressButtonStyle())
-  }
-
-  @ViewBuilder
-  private var holdButton: some View {
-    let labeled = label(progress: holdProgress)
-      .scaleEffect(isHolding && !reduceMotion ? 0.97 : 1)
-      .animation(reduceMotion ? nil : DashTheme.Motion.press, value: isHolding)
-      .contentShape(DashTheme.pillShape)
-      .gesture(
-        DragGesture(minimumDistance: 0)
-          .onChanged { value in
-            beginHoldIfNeeded()
-            updateHoldDrag(value)
-          }
-          .onEnded { _ in endHoldGesture() }
-      )
-      .accessibilityAddTraits(.isButton)
-      .accessibilityLabel(DashL10n.ui(displayTitle))
-      .accessibilityAction(.default) {
-        guard isEnabled, phase == .idle else { return }
-        DashDelight.warnImpact()
-        action()
-      }
-    // Named hold verbs keep an explicit hint; the generic label already says it.
-    if displayTitle == "Hold to confirm" {
-      labeled
-    } else {
-      labeled.accessibilityHint(DashL10n.string("Hold to confirm"))
-    }
-  }
-
-  private func label(progress: CGFloat) -> some View {
-    // Dual enamel faces share one silhouette. The cut layer is always mounted
-    // and cropped by width so the hold animates as a hard left→right wipe:
-    // black + white ink over the idle danger/strong face.
-    // Fixed height — not `minHeight`. `GeometryReader` expands to fill any
-    // leftover vertical space; in `.large` trays `DashConfirmMorph` pins the
-    // footer inside an infinitely tall VStack, so a loose min would stretch
+  private var label: some View {
+    // Fixed height — not `minHeight`. In `.large` trays `DashConfirmMorph` pins
+    // the footer inside an infinitely tall VStack, so a loose min would stretch
     // Done into a full-height slab (Edit quick actions).
-    let face = GeometryReader { geo in
-      let cutWidth = max(0, geo.size.width * progress)
-      ZStack(alignment: .leading) {
-        enamelFace(fill: fill, foreground: labelForeground)
-          .frame(width: geo.size.width, height: geo.size.height)
-
-        enamelFace(fill: holdCutFill, foreground: holdCutForeground)
-          .frame(width: geo.size.width, height: geo.size.height)
-          .frame(width: cutWidth, alignment: .leading)
-          .clipped()
-          .allowsHitTesting(false)
+    let face =
+      enamelFace
+      .frame(maxWidth: .infinity)
+      .frame(height: DashTheme.Layout.actionPillHeight)
+      .clipShape(DashTheme.pillShape)
+      .overlay(alignment: .trailing) {
+        DashActionStatusIcon(
+          phase: phase,
+          loadingColor: labelForeground,
+          onSuccessPresentationCompleted: onSuccessPresentationCompleted
+        )
+        .padding(.trailing, 18)
       }
-    }
-    .frame(maxWidth: .infinity)
-    .frame(height: DashTheme.Layout.actionPillHeight)
-    .clipShape(DashTheme.pillShape)
-    .overlay(alignment: .trailing) {
-      DashActionStatusIcon(
-        phase: phase,
-        loadingColor: labelForeground,
-        onSuccessPresentationCompleted: onSuccessPresentationCompleted
-      )
-      .padding(.trailing, 18)
-    }
 
     // Chrome-only emboss so matchedGeometryEffect stays single-instance
     // (full `dashEmbossed` duplicates its content for the press sink).
@@ -617,105 +562,22 @@ struct DashActionButton: View {
     .dashEmbossChrome(.pigmented, shape: DashTheme.pillShape)
   }
 
-  /// Metal-grain pill face — fill + caption/icon painted as one unit so a
-  /// progress crop cuts background and type on the same edge.
-  private func enamelFace(fill: Color, foreground: Color) -> some View {
+  private var enamelFace: some View {
     ZStack {
       DashGrainSurface(color: fill, shape: .capsule, intensity: 0.055)
 
       HStack(spacing: 8) {
         if let icon {
-          SolarIcon(asset: icon, size: 20, color: foreground)
+          SolarIcon(asset: icon, size: 20, color: labelForeground)
         }
-        Text(DashL10n.ui(visibleHoldTitle))
+        Text(DashL10n.ui(title))
           .dashTextStyle(.button)
-          .foregroundStyle(foreground)
+          .foregroundStyle(labelForeground)
+          // Half a row wide when a cancel shares it: a long confirm verb
+          // tightens rather than wrapping inside the fixed pill height.
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
       }
-      .id(visibleHoldTitle)
-      .transition(reduceMotion ? .opacity : .dashMorph)
-    }
-  }
-
-  private func beginHoldIfNeeded() {
-    guard holdToConfirm, isEnabled, phase == .idle, !isHolding else { return }
-    isHolding = true
-    holdArmed = false
-    holdWillCancel = false
-    holdStartedAt = Date()
-    holdProgress = 0
-    withAnimation(.linear(duration: holdDuration)) {
-      holdProgress = 1
-    }
-    holdTask?.cancel()
-    holdTask = Task { @MainActor in
-      // Soft ticks that ease louder toward the end, then a distinct medium hit
-      // when the wipe arms — action still waits for finger-up.
-      let tickCount = reduceMotion ? 4 : 7
-      let tickNanos = UInt64((holdDuration / Double(tickCount)) * 1_000_000_000)
-      let ramp = DashDelight.makeHoldRampGenerator()
-      for tick in 1..<tickCount {
-        // Ease-in so the ramp feels quiet at first, then builds.
-        let t = CGFloat(tick) / CGFloat(tickCount)
-        DashDelight.holdRampImpact(ramp, intensity: 0.18 + 0.72 * (t * t))
-        try? await Task.sleep(nanoseconds: tickNanos)
-        guard !Task.isCancelled else { return }
-      }
-      try? await Task.sleep(nanoseconds: tickNanos)
-      guard !Task.isCancelled else { return }
-      holdArmed = true
-      holdTask = nil
-      DashDelight.warnImpact()
-    }
-  }
-
-  private func updateHoldDrag(_ value: DragGesture.Value) {
-    guard isHolding else { return }
-    let distance = hypot(value.translation.width, value.translation.height)
-    let cancelling = distance >= holdCancelSlop
-    guard cancelling != holdWillCancel else { return }
-    holdWillCancel = cancelling
-    if cancelling {
-      DashDelight.lightImpact()
-    }
-  }
-
-  private func endHoldGesture() {
-    let shouldConfirm = holdArmed && !holdWillCancel
-    let shouldHintKeepHolding =
-      !shouldConfirm && !holdWillCancel && shouldShowHoldCancelHint()
-    if shouldConfirm {
-      DashDelight.warnImpact()
-      action()
-    }
-    resetHold(animated: true)
-    if shouldHintKeepHolding {
-      model.toasts.warning(
-        DashL10n.string("Keep holding to confirm delete."),
-        title: DashL10n.string("Hold to confirm")
-      )
-    }
-  }
-
-  private func shouldShowHoldCancelHint() -> Bool {
-    guard let holdStartedAt else { return false }
-    return Date().timeIntervalSince(holdStartedAt) >= holdCancelHintThreshold
-  }
-
-  private func resetHold(animated: Bool) {
-    holdTask?.cancel()
-    holdTask = nil
-    holdArmed = false
-    holdWillCancel = false
-    holdStartedAt = nil
-    guard isHolding || holdProgress > 0 else { return }
-    if animated {
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick) {
-        holdProgress = 0
-        isHolding = false
-      }
-    } else {
-      holdProgress = 0
-      isHolding = false
     }
   }
 }

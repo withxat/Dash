@@ -22,7 +22,6 @@ struct PushAlertsSettingsRows: View {
     VStack(alignment: .leading, spacing: 0) {
       if !model.hasScopes(PushAlertScopes.all) {
         DashAuthorizationDisclosure()
-          .padding(.horizontal, DashTheme.Spacing.screen)
           .padding(.bottom, 8)
       }
 
@@ -46,19 +45,15 @@ struct PushAlertsSettingsRows: View {
           kind: .warning,
           message: "Push is unavailable until the OAuth redirect URI is configured."
         )
-        .padding(.horizontal, DashTheme.Spacing.screen)
         .padding(.bottom, 8)
       }
 
       if let pushError {
         DashNotice(kind: .error, message: pushError)
-          .padding(.horizontal, DashTheme.Spacing.screen)
           .padding(.bottom, 8)
       }
 
       if pushEnabled, isProvisional {
-        SettingsPlainDivider()
-
         // iOS granted quiet delivery without a dialog. Offer the upgrade here
         // instead of firing the system prompt at toggle time.
         Button {
@@ -67,6 +62,7 @@ struct PushAlertsSettingsRows: View {
           SettingsPlainRow(
             title: DashL10n.string("Deliver alerts prominently"),
             icon: SolarAsset.inbox,
+            iconColor: DashTheme.brand,
             textColor: DashTheme.brand
           )
         }
@@ -75,22 +71,19 @@ struct PushAlertsSettingsRows: View {
       }
 
       if pushEnabled {
-        SettingsPlainDivider()
-
         Button {
           Task { await sendTest() }
         } label: {
           SettingsPlainRow(
             title: DashL10n.string(testBusy ? "Sending…" : "Send test alert"),
             icon: SolarAsset.inbox,
+            iconColor: DashTheme.brand,
             textColor: DashTheme.brand
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
         .disabled(testBusy)
         .accessibilityIdentifier("Send test alert")
-
-        SettingsPlainDivider()
 
         DashListGroupLink(value: .pushAlerts) {
           SettingsPlainRow(
@@ -143,38 +136,62 @@ struct PushAlertsSettingsRows: View {
     }
     pushBusy = true
     pushError = nil
+    let op = model.optimistic.begin(.toggle(enabled)) {
+      pushEnabled = !enabled
+      pushBusy = false
+    }
     defer {
       if model.isCurrentAccount(context) {
         pushBusy = false
       }
     }
     do {
+      try await model.optimistic.waitForCommit(op)
       if enabled {
         let granted = await WatchtowerNotifier.requestAuthorization()
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         guard granted else {
           pushError = "Notifications are turned off in Settings."
           pushEnabled = false
+          model.optimistic.finishFailure(op)
           return
         }
         guard let token = await PushRegistrationService.waitForDeviceToken(in: model) else {
           throw PushRegistrationError.missingDeviceToken
         }
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         try await PushRegistrationService.enable(
           accountID: accountID, client: model.client,
           configuration: model.configuration, deviceToken: token)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         pushEnabled = true
-        model.toasts.success(DashL10n.string("Push alerts enabled."))
+        model.optimistic.finishSuccess(op)
       } else {
         try await PushRegistrationService.disable(accountID: accountID, client: model.client)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          model.optimistic.finishFailure(op)
+          return
+        }
         pushEnabled = false
-        model.toasts.success(DashL10n.string("Push alerts turned off."))
+        model.optimistic.finishSuccess(op)
       }
+    } catch is CancellationError {
+      // Undo during grace already reverted local state.
     } catch {
-      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else {
+        model.optimistic.finishFailure(op)
+        return
+      }
+      model.optimistic.finishFailure(op)
       pushError = error.dashActionableMessage
       syncPushToggle()
       DashDelight.failError()
@@ -226,6 +243,7 @@ struct PushAlertsSettingsRows: View {
 struct PushAlertsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var policies: [NotificationPolicy] = []
   @State private var groups: [AvailableAlertGroup] = []
   @State private var loading = true
@@ -269,19 +287,21 @@ struct PushAlertsView: View {
       error: error,
       hasContent: hasPresentedContent,
       retry: { Task { await load(force: true) } }
-    ) {
-      if !allowsWrites {
-        FeatureWriteAccessNotice(
-          message: "Read-only — grant notification write access to manage alert policies.",
-          scopes: PushAlertScopes.write)
+    ) { mode in
+      if !mode.isPlaceholder {
+        if !allowsWrites {
+          FeatureWriteAccessNotice(
+            message: "Read-only — grant notification write access to manage alert policies.",
+            scopes: PushAlertScopes.write)
+        }
+
+        if let webhookID = storedWebhookID, showsRecommended {
+          recommendedCard(webhookID: webhookID)
+            .dashSectionBoundary(!allowsWrites)
+        }
       }
 
-      if let webhookID = storedWebhookID, showsRecommended {
-        recommendedCard(webhookID: webhookID)
-          .dashSectionBoundary(!allowsWrites)
-      }
-
-      if policies.isEmpty {
+      if !mode.isPlaceholder, policies.isEmpty {
         DashEmptyState(
           icon: SolarAsset.Content.bolt,
           title: "No alert policies",
@@ -293,7 +313,8 @@ struct PushAlertsView: View {
       } else {
         DashListGroup(title: "Policies") {
           dashListCard {
-            dashListCardRows(items: policies) { policy in
+            dashModeListRows(mode: mode, items: policies, reduceMotion: reduceMotion) {
+              policy in
               Button {
                 deleteError = nil
                 detail = policy
@@ -310,7 +331,8 @@ struct PushAlertsView: View {
             }
           }
         }
-        .dashSectionBoundary(showsRecommended || !allowsWrites)
+        .dashSectionBoundary(
+          !mode.isPlaceholder && (showsRecommended || !allowsWrites))
       }
     }
     .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Push alerts")

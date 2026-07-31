@@ -247,29 +247,20 @@ struct ZoneAnalyticsView: View {
       isLoading: isLoadingCurrent,
       error: currentError,
       hasContent: !snapshot.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.chart,
+        title: "No traffic yet",
+        message: "HTTP request analytics for this domain will appear here."
+      ),
       retry: { Task { await loadAll(force: true) } },
-      skeleton: { zoneAnalyticsSkeleton },
       header: {
         DashTextTabs(
           items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
           selection: $range
         )
       }
-    ) {
-      if snapshot.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.chart,
-          title: "No traffic yet",
-          message: "HTTP request analytics for this domain will appear here."
-        )
-      } else {
-        DashSurfaceStack {
-          metricsGrid
-          requestsChartCard
-          if showsVisitors { visitorsChartCard }
-          if totalBytes > 0 { bandwidthChartCard }
-        }
-      }
+    ) { mode in
+      zoneAnalyticsBody(mode: mode)
     }
     .detailHeader(icon: .solar(SolarAsset.Content.chart), title: "HTTP traffic")
     .refreshable { await loadAll(force: true) }
@@ -277,19 +268,40 @@ struct ZoneAnalyticsView: View {
     .task { await loadAll() }
   }
 
-  /// Metric tile grid over the Requests chart panel — the durable first paint
-  /// before optional Visitors / Bandwidth cards appear.
-  private var zoneAnalyticsSkeleton: some View {
+  /// Fuller first-paint reserve: metric tiles + Requests / Visitors / Bandwidth
+  /// chart panels. Live mode drops Visitors / Bandwidth when empty; those
+  /// slots exit upward. Threats ride the Requests chart, not a peer tile.
+  @ViewBuilder
+  private func zoneAnalyticsBody(mode: DashBodyMode) -> some View {
     DashSurfaceStack {
-      LazyVGrid(columns: metricColumns, spacing: DashTheme.Spacing.itemGap) {
-        ForEach(0..<4, id: \.self) { _ in
-          DashMetricTilePlaceholder()
+      if mode.isPlaceholder {
+        LazyVGrid(columns: metricColumns, spacing: DashTheme.Spacing.itemGap) {
+          ForEach(0..<3, id: \.self) { _ in
+            DashMetricTilePlaceholder()
+          }
+        }
+        .dashBodySlot(reduceMotion: reduceMotion)
+        DashChartPanelPlaceholder()
+          .dashBodySlot(reduceMotion: reduceMotion)
+        DashChartPanelPlaceholder()
+          .dashBodySlot(reduceMotion: reduceMotion)
+        DashChartPanelPlaceholder()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else {
+        metricsGrid
+          .dashBodySlot(reduceMotion: reduceMotion)
+        requestsChartCard
+          .dashBodySlot(reduceMotion: reduceMotion)
+        if showsVisitors {
+          visitorsChartCard
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+        if totalBytes > 0 {
+          bandwidthChartCard
+            .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
-      DashChartPanelPlaceholder()
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   private var metricsGrid: some View {
@@ -307,10 +319,6 @@ struct ZoneAnalyticsView: View {
         value: cacheHitRatio.formatted(
           .percent.precision(.fractionLength(0)).locale(DashL10n.activeLocale)),
         numericValue: cacheHitRatio)
-      metricCard(
-        title: "Threats",
-        value: totalThreats.formatted(),
-        numericValue: Double(totalThreats))
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel(DashL10n.ui(range.totalsHeading))

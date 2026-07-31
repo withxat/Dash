@@ -575,6 +575,20 @@ struct NetworkTests {
     try await client.triggerZoneActivationCheck(zoneID: "z1")
   }
 
+  @Test func deleteZoneDeletesZonePath() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "DELETE")
+      #expect(request.url?.path == "/zones/z1")
+      return (200, Data(#"{"success":true,"result":{"id":"z1"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.deleteZone(zoneID: "z1")
+  }
+
   @Test func activationCheckSurfacesRateLimitMessage() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in

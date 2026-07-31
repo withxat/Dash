@@ -23,9 +23,10 @@ struct FilesMountView: View {
     ScrollView {
       LazyVStack(spacing: 0) {
         if model.isDemoSession {
-          FeatureWriteAccessNotice(
-            message: "Show R2 buckets in the Files app",
-            scopes: FeatureID.r2.capability.all
+          // Demo has no File Provider mount; Home already offers Connect.
+          DashNotice(
+            kind: .info,
+            message: "Connect your account to show R2 buckets in the Files app."
           )
         } else {
           filesInformation
@@ -127,7 +128,7 @@ struct FilesMountView: View {
       ForEach(model.accounts) { account in
         accountRow(account, isMounted: false, isLoading: true)
           .redacted(reason: .placeholder)
-          .dashSkeletonShimmer()
+          .dashSkeletonPulse()
           .allowsHitTesting(false)
           .accessibilityHidden(true)
       }
@@ -175,6 +176,10 @@ struct FilesMountView: View {
     let previousAccountIDs = mountedAccountIDs
     inFlightAccountID = account.id
     mountedAccountIDs.insert(account.id)
+    let op = model.optimistic.begin(.enabling) {
+      mountedAccountIDs = previousAccountIDs
+      inFlightAccountID = nil
+    }
 
     Task { @MainActor in
       defer { inFlightAccountID = nil }
@@ -183,10 +188,12 @@ struct FilesMountView: View {
         model.accounts.contains(where: { $0.id == account.id })
       else {
         mountedAccountIDs = previousAccountIDs
+        model.optimistic.finishFailure(op)
         return
       }
 
       do {
+        try await model.optimistic.waitForCommit(op)
         let accountIDs = try await FileProviderDomains.addDomain(for: account)
         guard
           model.canModifyFileProviderDomains,
@@ -197,11 +204,16 @@ struct FilesMountView: View {
           } else {
             mountedAccountIDs.remove(account.id)
           }
+          model.optimistic.finishFailure(op)
           return
         }
         mountedAccountIDs = accountIDs
+        model.optimistic.finishSuccess(op)
+      } catch is CancellationError {
+        // Undo during grace already reverted local state.
       } catch {
         mountedAccountIDs = previousAccountIDs
+        model.optimistic.finishFailure(op)
         model.toasts.error(DashL10n.string("Couldn't update the Files mount."))
       }
     }
@@ -228,12 +240,21 @@ struct FilesMountView: View {
     let previousAccountIDs = mountedAccountIDs
     inFlightAccountID = account.id
     mountedAccountIDs.remove(account.id)
+    let op = model.optimistic.begin(.disabling) {
+      mountedAccountIDs = previousAccountIDs
+      inFlightAccountID = nil
+    }
     defer { inFlightAccountID = nil }
 
     do {
+      try await model.optimistic.waitForCommit(op)
       mountedAccountIDs = try await FileProviderDomains.removeDomain(accountID: account.id)
+      model.optimistic.finishSuccess(op)
+    } catch is CancellationError {
+      throw CancellationError()
     } catch {
       mountedAccountIDs = previousAccountIDs
+      model.optimistic.finishFailure(op)
       throw FilesMountUpdateError()
     }
   }

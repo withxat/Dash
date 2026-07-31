@@ -95,6 +95,11 @@ struct DestinationStackHost<Root: View>: View {
             // even when a destination's own content doesn't fill it.
             .dashDetailCanvasChrome()
             .background(DashTheme.canvas.ignoresSafeArea())
+            // A destination covers the workspace glow with the plate above, so
+            // it must not also drive it: its own scroll would drag the light
+            // around behind the transparent root that is still sliding away.
+            // The root keeps the position it left; a pop reveals it unchanged.
+            .environment(\.dashWorkspaceWashScroll, nil)
         }
     }
     // No host plate: the stack is transparent so its tab root shows the

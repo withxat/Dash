@@ -960,6 +960,11 @@ private struct MetricsWidgetSystemSparkline: View {
     .chartXAxis(.hidden)
     .chartYAxis(.hidden)
     .chartLegend(.hidden)
+    .chartPlotStyle { plotArea in
+      plotArea.padding(
+        .top,
+        CollapsedSystemChartPlotMetrics.topInset(existingTop: 0))
+    }
     .chartXScale(domain: 0...max(0, values.count - 1))
     .metricsWidgetYScale(ceiling: valueCeiling)
   }

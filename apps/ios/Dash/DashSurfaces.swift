@@ -604,8 +604,7 @@ struct DashListGroupLink<Label: View>: View {
 struct DashListGroupDivider: View {
   /// A filled rule, not `Divider()`: the system divider paints its own line
   /// under the overlay, so a translucent token stacked on top read darker than
-  /// the same token anywhere else. Same 1pt edge `DashTextTabs` and
-  /// `SettingsPlainDivider` draw.
+  /// the same token anywhere else. Same 1pt edge `DashTextTabs` draws.
   var body: some View {
     Rectangle()
       .fill(DashTheme.panelLine)
@@ -673,6 +672,68 @@ func dashListCardRows<Item: Identifiable, Row: View>(
   }
 }
 
+/// `DashTwoToneListGroup` (Home's Shortcuts / Recently used, and every
+/// `DashInfoGroup`) split into lazily emitted pieces: a header band and rows
+/// that each paint their own slice of the plate.
+///
+/// The component itself owns an eager stack, which is right for the handful of
+/// fields an info group holds. A chart's exact-value table is the same frame
+/// over a few hundred rows — worker analytics alone is 288 five-minute buckets
+/// — so it emits header and rows straight into `DashFeatureList`'s `LazyVStack`
+/// instead, and only onscreen rows are built. Pair the two: the header rounds
+/// the top of the plate and the last row rounds the bottom.
+@MainActor
+@ViewBuilder
+func dashTwoToneGroupHeader(title: String) -> some View {
+  DashListGroupHeader(title: DashL10n.ui(title))
+    .padding(.horizontal, 16)
+    .padding(.vertical, 12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(DashTheme.listGroupHeaderSurface)
+    .clipShape(
+      .rect(
+        topLeadingRadius: DashTheme.Radius.card,
+        topTrailingRadius: DashTheme.Radius.card,
+        style: .continuous))
+}
+
+/// Rows for `dashTwoToneGroupHeader`. Insets and radii mirror
+/// `DashTwoToneListGroup` exactly — 14pt of row padding over the 2pt plate
+/// margin lands rows on the header title's 16, and the inner card's radius is
+/// one step per point of inset so the two shapes stay concentric.
+@MainActor
+@ViewBuilder
+func dashTwoToneCardRows<Item: Identifiable, Row: View>(
+  items: [Item],
+  @ViewBuilder row: @escaping (Item) -> Row
+) -> some View {
+  let lastIndex = items.count - 1
+  ForEach(Array(items.enumerated()), id: \.element.id) { entry in
+    let isFirst = entry.offset == 0
+    let isLast = entry.offset == lastIndex
+    row(entry.element)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.horizontal, 14)
+      .background(DashTheme.homeCardSurface)
+      .clipShape(
+        .rect(
+          topLeadingRadius: isFirst ? DashTheme.Radius.card - 2 : 0,
+          bottomLeadingRadius: isLast ? DashTheme.Radius.card - 2 : 0,
+          bottomTrailingRadius: isLast ? DashTheme.Radius.card - 2 : 0,
+          topTrailingRadius: isFirst ? DashTheme.Radius.card - 2 : 0,
+          style: .continuous)
+      )
+      .padding(.horizontal, 2)
+      .padding(.bottom, isLast ? 2 : 0)
+      .background(DashTheme.listGroupHeaderSurface)
+      .clipShape(
+        .rect(
+          bottomLeadingRadius: isLast ? DashTheme.Radius.card : 0,
+          bottomTrailingRadius: isLast ? DashTheme.Radius.card : 0,
+          style: .continuous))
+  }
+}
+
 /// Feature drill-down shell: fixed chrome above scrollable content.
 struct DashFeatureScreen<Chrome: View, Content: View>: View {
   @ViewBuilder var chrome: () -> Chrome
@@ -707,14 +768,21 @@ extension DashFeatureScreen where Chrome == EmptyView {
 /// What a feature list should render for a given load/error/content state.
 ///
 /// Loading contract (lists):
-/// - **Cold** (`loading`): no cached primary payload → skeleton only (the
-///   optional `DashFeatureList` skeleton slot, defaulting to `DashListSkeleton`
-///   for catalog/list screens; detail screens pass a placeholder that matches
-///   their first-paint shape). Never paint an empty shell with “Updating…”.
-/// - **Warm** (`content` + `refreshing`): rows/shell already visible → keep
-///   content and show the inline “Updating…” strip (and optional error banner).
-/// - **Empty settled** (`content`, not refreshing, zero items): `DashEmptyState`
-///   inside `content`, not a separate phase.
+/// - **Cold** (`loading`): no cached primary payload → one feature body in
+///   `DashBodyMode.placeholder` (same structure as live; redacted / geometric
+///   stand-ins). Never paint an empty shell with “Updating…”.
+/// - **Warm** (`content` + `refreshing`): body stays in `.live` with the inline
+///   “Updating…” strip (and optional error banner). Refresh never remounts
+///   placeholder mode.
+/// - **Empty settled** (`empty`): zero items after a successful load → the same
+///   placeholder body stays mounted and empty copy lands on the cold wash
+///   (same mount as failure — never swap in a bare `DashEmptyState` that tears
+///   the bars down). Nested empties inside an already-loaded detail stay in
+///   live content.
+/// - **Handoff**: the first cold → live transition animates with
+///   `DashBodyTransition` — surplus placeholder slots recede (scale 0.97 +
+///   blur + fade), extra live slots insert; index-aligned slots replace in
+///   place. Navigation push and warm refresh must not add a second reveal.
 /// - **Section cold** (not this enum): secondary fetches inside an already-loaded
 ///   detail (build log, traffic chart, preview) may use a local ring + short copy.
 ///
@@ -722,6 +790,7 @@ extension DashFeatureScreen where Chrome == EmptyView {
 enum DashListPhase: Equatable {
   case loading
   case fullScreenError(String)
+  case empty
   case content(banner: String?, refreshing: Bool)
 
   static func resolve(isLoading: Bool, error: String?, hasContent: Bool) -> DashListPhase {
@@ -730,43 +799,141 @@ enum DashListPhase: Equatable {
     }
     if isLoading { return .loading }
     if let error { return .fullScreenError(error) }
-    return .content(banner: nil, refreshing: false)
+    // Settled with nothing to show. Call sites that always paint chrome
+    // (chart detail snapshots, settings screens with alerts/nameservers,
+    // dual-fetch pages where one half can be empty) must pass
+    // `hasContent: true` / `hasPresentedContent` after settle — the default
+    // `false` leaves the skeleton up forever, with or without `empty:`.
+    return .empty
+  }
+
+  /// Placeholder body for cold / empty / failure; live body once `hasContent`.
+  var bodyMode: DashBodyMode {
+    switch self {
+    case .loading, .fullScreenError, .empty: return .placeholder
+    case .content: return .live
+    }
   }
 }
 
-/// Shared feature list: loading/error slots, grouped list chrome.
+/// Paint mode for a feature body's single structure tree.
+enum DashBodyMode: Equatable, Sendable {
+  /// Cold / empty / failure — same layout as live, non-interactive stand-ins.
+  case placeholder
+  /// Settled primary payload — real values and controls.
+  case live
+
+  var isPlaceholder: Bool { self == .placeholder }
+}
+
+/// Soft blur stand-in for body-slot removal (same device as tray `.dashMorph`).
+private struct DashBodyBlurModifier: ViewModifier, Animatable {
+  var radius: CGFloat
+
+  nonisolated var animatableData: CGFloat {
+    get { radius }
+    set { radius = newValue }
+  }
+
+  func body(content: Content) -> some View {
+    content.blur(radius: radius)
+  }
+}
+
+/// Slot insert/remove transitions for placeholder ↔ live count deltas.
+enum DashBodyTransition {
+  /// Surplus placeholders recede in place (scale to 0.97 + blur + fade); new
+  /// live slots fade in. No slide — that fought the navigation push and read
+  /// as an upward exit. Isolation-free so `dashModeListRows` can apply it from
+  /// a `@ViewBuilder` free function.
+  nonisolated static func content(_ reduceMotion: Bool) -> AnyTransition {
+    if reduceMotion { return .opacity }
+    let dissolve = AnyTransition.opacity.combined(
+      with: .modifier(
+        active: DashBodyBlurModifier(radius: 3),
+        identity: DashBodyBlurModifier(radius: 0)))
+    return .asymmetric(
+      insertion: .opacity,
+      removal: dissolve.combined(with: .scale(scale: 0.97))
+    )
+  }
+
+  /// Animation applied when `DashBodyMode` flips cold → live once. Slower than
+  /// `Motion.morph` so the scale/blur/fade on surplus slots can read.
+  @MainActor
+  static var handoff: Animation {
+    UIAccessibility.isReduceMotionEnabled
+      ? DashTheme.Motion.reduced
+      : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.48)
+  }
+}
+
+/// Reserved placeholder counts for fuller cold paint (over-reserve; extras exit).
+enum DashBodyPlaceholderDepth {
+  static let listRows = 4
+  static let domainCards = 6
+  static let infoRows = 4
+}
+
+/// Settled-empty copy for a `DashFeatureList` — lands on the same placeholder
+/// body + wash as a cold failure, with the call site's mark and an optional CTA.
+struct DashFeatureEmpty {
+  var icon: String
+  var title: String
+  var message: String
+  var actionTitle: String? = nil
+  var action: (() -> Void)? = nil
+}
+
+/// Shared feature list: loading/error/empty slots, grouped list chrome.
 ///
-/// Cold loads paint `skeleton` (default `DashListSkeleton`). Catalog screens
-/// keep that row group; pushed details pass a placeholder whose panels and
-/// groups match the real first paint so arriving data lands in place.
-struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
+/// One `@ViewBuilder` body receives `DashBodyMode` so cold and live share
+/// structure. Settled empty and cold failure keep that same body in
+/// `.placeholder` under the wash. The first flip to `.live` uses
+/// `DashBodyTransition.handoff`; warm refresh stays on `.live`.
+struct DashFeatureList<Header: View, Content: View>: View {
   var isLoading: Bool = false
   var error: String?
+  /// Whether the content phase may paint. Defaults to `false` for cold lists;
+  /// snapshot screens and details whose body mounts chrome independent of the
+  /// primary rows must set this once settled (`true` or `hasPresentedContent`),
+  /// never derive it only from a subset of optional rows.
   var hasContent: Bool = false
+  /// Primary-list empty (zero items after a successful load). Detail screens
+  /// that never settle empty may omit it; the empty phase then shows the
+  /// placeholder body alone until a call site supplies copy — and forever if
+  /// `hasContent` was left false by mistake.
+  var empty: DashFeatureEmpty? = nil
   var retry: () -> Void
-  @ViewBuilder var skeleton: () -> Skeleton
   @ViewBuilder var header: () -> Header
-  @ViewBuilder var content: () -> Content
+  @ViewBuilder var content: (DashBodyMode) -> Content
   @Environment(AppModel.self) private var model
   @Environment(\.featureRequiredScopes) private var featureRequiredScopes
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(
     isLoading: Bool = false,
     error: String? = nil,
     hasContent: Bool = false,
+    empty: DashFeatureEmpty? = nil,
     retry: @escaping () -> Void = {},
-    @ViewBuilder skeleton: @escaping () -> Skeleton,
     @ViewBuilder header: @escaping () -> Header,
-    @ViewBuilder content: @escaping () -> Content
+    @ViewBuilder content: @escaping (DashBodyMode) -> Content
   ) {
     self.isLoading = isLoading
     self.error = error
     self.hasContent = hasContent
+    self.empty = empty
     self.retry = retry
-    self.skeleton = skeleton
     self.header = header
     self.content = content
   }
+
+  private var phase: DashListPhase {
+    DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent)
+  }
+
+  private var bodyMode: DashBodyMode { phase.bodyMode }
 
   var body: some View {
     DashFeatureScreen(chrome: header) {
@@ -776,20 +943,7 @@ struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
         // (Workers/Pages looked sparse vs Resources' DashListGroup VStack(0)).
         // Pad chrome blocks (Updating… / error banner) explicitly instead.
         LazyVStack(spacing: 0) {
-          switch DashListPhase.resolve(isLoading: isLoading, error: error, hasContent: hasContent) {
-          case .loading, .fullScreenError:
-            // One continuous skeleton identity across loading → failure. Swapping
-            // to a separate ErrorStateView used to tear the bars down and remount
-            // them under the wash — the placeholder looked like it vanished.
-            skeleton()
-              .dashColdFailure(
-                message: coldFailureMessage,
-                actionTitle: coldFailureActionTitle,
-                extent: .scrollViewport,
-                action: coldFailureAction
-              )
-              .dashFailureRemovalTransition()
-          case .content(let banner, let refreshing):
+          if case .content(let banner, let refreshing) = phase {
             if refreshing {
               HStack(spacing: DashTheme.Spacing.compact) {
                 DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
@@ -806,11 +960,19 @@ struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
               failureBanner(banner)
                 .padding(.bottom, DashTheme.Spacing.itemGap)
             }
-            // No entrance reveal here: pushed feature screens arrive via the
-            // navigation transition; content should simply be there.
-            content()
           }
+
+          // One body identity across loading → failure/empty → live. Mode flips
+          // drive slot replace / recede / append; the wash only veils
+          // placeholder. Warm refresh never remounts `.placeholder`.
+          content(bodyMode)
+            .dashColdOverlay(copy: coldOverlayCopy, extent: .scrollViewport)
+            .dashFailureRemovalTransition()
         }
+        .animation(
+          reduceMotion ? DashTheme.Motion.reduced : DashBodyTransition.handoff,
+          value: bodyMode
+        )
         .padding(.horizontal, DashTheme.Spacing.screen)
         // This gap belongs to the scroll content. Putting it on
         // DashFeatureScreen turns it into fixed header chrome.
@@ -819,6 +981,33 @@ struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
       }
       .scrollDismissesKeyboard(.interactively)
       .modifier(DashScrollEdgeEffectsHidden())
+    }
+  }
+
+  private var coldOverlayCopy: DashColdOverlayCopy? {
+    switch phase {
+    case .loading:
+      return nil
+    case .fullScreenError:
+      guard let message = coldFailureMessage else { return nil }
+      return DashColdOverlayCopy(
+        icon: SolarAsset.Content.danger,
+        title: "Couldn’t load",
+        message: message,
+        actionTitle: coldFailureActionTitle,
+        action: coldFailureAction
+      )
+    case .empty:
+      guard let empty else { return nil }
+      return DashColdOverlayCopy(
+        icon: empty.icon,
+        title: empty.title,
+        message: empty.message,
+        actionTitle: empty.actionTitle,
+        action: empty.action
+      )
+    case .content:
+      return nil
     }
   }
 
@@ -880,65 +1069,82 @@ struct DashFeatureList<Header: View, Content: View, Skeleton: View>: View {
   }
 }
 
-extension DashFeatureList where Skeleton == DashListSkeleton {
-  init(
-    isLoading: Bool = false,
-    error: String? = nil,
-    hasContent: Bool = false,
-    retry: @escaping () -> Void = {},
-    @ViewBuilder header: @escaping () -> Header,
-    @ViewBuilder content: @escaping () -> Content
-  ) {
-    self.init(
-      isLoading: isLoading,
-      error: error,
-      hasContent: hasContent,
-      retry: retry,
-      skeleton: { DashListSkeleton() },
-      header: header,
-      content: content
-    )
-  }
-}
-
-extension DashFeatureList where Header == EmptyView, Skeleton == DashListSkeleton {
-  init(
-    isLoading: Bool = false,
-    error: String? = nil,
-    hasContent: Bool = false,
-    retry: @escaping () -> Void = {},
-    @ViewBuilder content: @escaping () -> Content
-  ) {
-    self.init(
-      isLoading: isLoading,
-      error: error,
-      hasContent: hasContent,
-      retry: retry,
-      skeleton: { DashListSkeleton() },
-      header: { EmptyView() },
-      content: content
-    )
-  }
-}
-
 extension DashFeatureList where Header == EmptyView {
   init(
     isLoading: Bool = false,
     error: String? = nil,
     hasContent: Bool = false,
+    empty: DashFeatureEmpty? = nil,
     retry: @escaping () -> Void = {},
-    @ViewBuilder skeleton: @escaping () -> Skeleton,
-    @ViewBuilder content: @escaping () -> Content
+    @ViewBuilder content: @escaping (DashBodyMode) -> Content
   ) {
     self.init(
       isLoading: isLoading,
       error: error,
       hasContent: hasContent,
+      empty: empty,
       retry: retry,
-      skeleton: skeleton,
       header: { EmptyView() },
       content: content
     )
+  }
+}
+
+/// Redact + pulse + freeze interaction while a shared body is in placeholder mode.
+extension View {
+  @ViewBuilder
+  func dashBodyPlaceholder(_ active: Bool) -> some View {
+    if active {
+      self
+        .redacted(reason: .placeholder)
+        .dashSkeletonPulse()
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    } else {
+      self
+    }
+  }
+
+  nonisolated func dashBodySlot(reduceMotion: Bool) -> some View {
+    transition(DashBodyTransition.content(reduceMotion))
+  }
+}
+
+/// Index-stable catalog rows: placeholder count → live count with receding
+/// surplus slots (scale + blur + fade) and in-place replace for overlap.
+@MainActor
+@ViewBuilder
+func dashModeListRows<Item: Identifiable, Row: View>(
+  mode: DashBodyMode,
+  items: [Item],
+  placeholderRows: Int = DashBodyPlaceholderDepth.listRows,
+  reduceMotion: Bool,
+  inset: Bool = true,
+  @ViewBuilder row: @escaping (Item) -> Row
+) -> some View {
+  let count = mode.isPlaceholder ? max(placeholderRows, 1) : items.count
+  ForEach(0..<count, id: \.self) { index in
+    Group {
+      if mode.isPlaceholder {
+        DashListRowPlaceholder()
+      } else {
+        row(items[index])
+      }
+    }
+    .modifier(DashListCardInsetModifier(enabled: inset))
+    .dashBodySlot(reduceMotion: reduceMotion)
+  }
+}
+
+private struct DashListCardInsetModifier: ViewModifier {
+  var enabled: Bool
+
+  func body(content: Content) -> some View {
+    if enabled {
+      content.dashListCardInset()
+    } else {
+      content
+    }
   }
 }
 
@@ -1127,6 +1333,11 @@ struct DashInfoGroup<Content: View>: View {
   /// cross-dissolve in place rather than a reflow.
   var placeholderRows: Int = 3
   var retry: (() -> Void)?
+  /// Optional trailing header control — same chrome as Home Shortcuts' Edit
+  /// (`DashListGroupHeader` icon action on the two-tone band).
+  var actionTitle: String? = nil
+  var actionIcon: String? = nil
+  var action: (() -> Void)? = nil
   @ViewBuilder var content: () -> Content
 
   private var showsContent: Bool {
@@ -1140,7 +1351,12 @@ struct DashInfoGroup<Content: View>: View {
   }
 
   var body: some View {
-    DashTwoToneListGroup(title: title) {
+    DashTwoToneListGroup(
+      title: title,
+      actionTitle: actionTitle,
+      actionIcon: actionIcon,
+      action: action
+    ) {
       ZStack {
         Group {
           if showsContent {
@@ -1152,9 +1368,9 @@ struct DashInfoGroup<Content: View>: View {
             .transition(.opacity)
           } else {
             DashInfoRowPlaceholders(rows: placeholderRows)
-              // Failure freezes the bars under the veil (same contract as
-              // `dashColdFailure`).
-              .environment(\.dashSkeletonShimmerActive, failureMessage == nil)
+              // Failure freezes the breath under the veil (same contract as
+              // `dashColdOverlay`).
+              .environment(\.dashSkeletonPulseActive, failureMessage == nil)
               .allowsHitTesting(false)
               .accessibilityHidden(failureMessage != nil)
               .transition(.opacity)
@@ -1395,7 +1611,7 @@ private struct DashSectionFailureModifier: ViewModifier {
   func body(content: Content) -> some View {
     ZStack {
       content
-        .environment(\.dashSkeletonShimmerActive, message == nil)
+        .environment(\.dashSkeletonPulseActive, message == nil)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
           placeholderHeight = height
         }
@@ -1861,127 +2077,55 @@ enum DashDelight {
     UISelectionFeedbackGenerator().selectionChanged()
   }
 
-  /// Soft generator for a hold-to-confirm ramp. Call `prepare` then
-  /// `holdRampImpact` with rising intensity; finish with `warnImpact`.
-  static func makeHoldRampGenerator() -> UIImpactFeedbackGenerator? {
-    guard DashInteractionPreferences.hapticsEnabled else { return nil }
-    let generator = UIImpactFeedbackGenerator(style: .soft)
-    generator.prepare()
-    return generator
-  }
-
-  /// One tick in a hold ramp. `intensity` is clamped to 0…1.
-  static func holdRampImpact(
-    _ generator: UIImpactFeedbackGenerator?,
-    intensity: CGFloat
-  ) {
-    guard DashInteractionPreferences.hapticsEnabled, let generator else { return }
-    let clamped = min(max(intensity, 0), 1)
-    generator.impactOccurred(intensity: clamped)
-    generator.prepare()
-  }
 }
 
-// MARK: - Skeleton shimmer
+// MARK: - Skeleton pulse
 
-/// Cold-load placeholders shimmer until a failure freezes them. Flip this off
-/// under `dashColdFailure` / section failure veils so the washed-out chrome
-/// stops breathing the moment the error lands.
-private struct DashSkeletonShimmerActiveKey: EnvironmentKey {
+/// Cold-load placeholders breathe (opacity dips, then restores) until a
+/// failure or settled-empty overlay freezes them. Flip this off under
+/// `dashColdFailure` / section failure veils so the washed-out chrome stops
+/// the moment copy lands.
+private struct DashSkeletonPulseActiveKey: EnvironmentKey {
   static let defaultValue = true
 }
 
 extension EnvironmentValues {
-  var dashSkeletonShimmerActive: Bool {
-    get { self[DashSkeletonShimmerActiveKey.self] }
-    set { self[DashSkeletonShimmerActiveKey.self] = newValue }
+  var dashSkeletonPulseActive: Bool {
+    get { self[DashSkeletonPulseActiveKey.self] }
+    set { self[DashSkeletonPulseActiveKey.self] = newValue }
   }
 }
 
+/// Opacity steps for cold-load bars / circles / capsules, plus the shared
+/// breath timing. Every placeholder reads the same phase so the screen pulses
+/// as one field, not a crowd of independent blinks.
 enum DashSkeletonStyle {
   static let strong: Double = 0.42
   static let mid: Double = 0.34
   static let soft: Double = 0.28
-  /// Slow enough to feel like light, not a strobe.
-  static let period: TimeInterval = 1.9
-
-  /// Quiet white lift — barely there, never a bright stripe.
-  static var highlightPeak: Color {
-    Color(
-      uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-          ? UIColor.white.withAlphaComponent(0.06)
-          : UIColor.white.withAlphaComponent(0.22)
-      })
-  }
-
-  static var highlightMid: Color {
-    Color(
-      uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-          ? UIColor.white.withAlphaComponent(0.025)
-          : UIColor.white.withAlphaComponent(0.1)
-      })
-  }
+  /// One full dip-and-restore cycle.
+  static let period: TimeInterval = 1.35
+  /// Multiplier at the trough — peak is `1`. Soft enough to read as light
+  /// breathing, not a strobe.
+  static let pulseFloor: Double = 0.58
 }
 
-/// Soft light band that *lifts* the placeholder. Never tint with
-/// `Color.primary` — in light mode that is black and reads as a dirty smear.
-private struct DashSkeletonShimmerHighlight: View {
-  let phase: Double
-
-  var body: some View {
-    GeometryReader { geo in
-      let width = max(geo.size.width * 0.7, 64)
-      LinearGradient(
-        stops: [
-          .init(color: .clear, location: 0),
-          .init(color: DashSkeletonStyle.highlightMid, location: 0.32),
-          .init(color: DashSkeletonStyle.highlightPeak, location: 0.5),
-          .init(color: DashSkeletonStyle.highlightMid, location: 0.68),
-          .init(color: .clear, location: 1),
-        ],
-        startPoint: .leading,
-        endPoint: .trailing
-      )
-      .frame(width: width)
-      .frame(maxHeight: .infinity)
-      .offset(
-        x: dashSkeletonShimmerOffset(
-          phase: phase,
-          travel: geo.size.width,
-          highlight: width)
-      )
-      .blendMode(.plusLighter)
-    }
-    .allowsHitTesting(false)
-  }
-}
-
-/// Shared fill for every cold-load bar / circle / capsule. The highlight sweep
-/// is date-driven so every placeholder on screen stays in phase, and Reduce
-/// Motion (or a failure env flip) lands on the resting fill immediately.
+/// Shared fill for every cold-load bar / circle / capsule.
 struct DashSkeletonShape<S: Shape>: View {
   var shape: S
   var opacity: Double = DashSkeletonStyle.strong
-  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+  @Environment(\.dashSkeletonPulseActive) private var pulseActive
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var animating: Bool { shimmerActive && !reduceMotion }
+  private var animating: Bool { pulseActive && !reduceMotion }
 
   var body: some View {
     TimelineView(
       .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
     ) { context in
-      shape.fill(DashTheme.fill.opacity(opacity))
-        .overlay {
-          if animating {
-            DashSkeletonShimmerHighlight(
-              phase: dashSkeletonShimmerPhase(at: context.date))
-          }
-        }
-        .clipShape(shape)
-        .compositingGroup()
+      shape.fill(
+        DashTheme.fill.opacity(
+          opacity * (animating ? dashSkeletonPulseFactor(at: context.date) : 1)))
     }
   }
 }
@@ -1995,77 +2139,60 @@ extension Shape {
 /// Full-bleed plot / hero stand-in. Callers own the clip shape.
 struct DashSkeletonBand: View {
   var opacity: Double = DashSkeletonStyle.soft
-  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+  @Environment(\.dashSkeletonPulseActive) private var pulseActive
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var animating: Bool { shimmerActive && !reduceMotion }
+  private var animating: Bool { pulseActive && !reduceMotion }
 
   var body: some View {
     TimelineView(
       .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
     ) { context in
-      DashTheme.fill.opacity(opacity)
-        .overlay {
-          if animating {
-            DashSkeletonShimmerHighlight(
-              phase: dashSkeletonShimmerPhase(at: context.date))
-          }
-        }
-        .compositingGroup()
+      DashTheme.fill.opacity(
+        opacity * (animating ? dashSkeletonPulseFactor(at: context.date) : 1))
     }
   }
 }
 
-/// The same light sweep for `.redacted` text stand-ins (no dark opacity pulse).
-struct DashSkeletonShimmerModifier: ViewModifier {
-  @Environment(\.dashSkeletonShimmerActive) private var shimmerActive
+/// The same breath for `.redacted` text stand-ins (and any non-shape chrome
+/// that still needs to pulse with the bars).
+struct DashSkeletonPulseModifier: ViewModifier {
+  @Environment(\.dashSkeletonPulseActive) private var pulseActive
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  private var animating: Bool { shimmerActive && !reduceMotion }
+  private var animating: Bool { pulseActive && !reduceMotion }
 
   func body(content: Content) -> some View {
     TimelineView(
       .animation(minimumInterval: 1.0 / 30.0, paused: !animating)
     ) { context in
-      content
-        .overlay {
-          if animating {
-            DashSkeletonShimmerHighlight(
-              phase: dashSkeletonShimmerPhase(at: context.date))
-          }
-        }
-        .compositingGroup()
+      content.opacity(animating ? dashSkeletonPulseFactor(at: context.date) : 1)
     }
   }
 }
 
 extension View {
-  func dashSkeletonShimmer() -> some View {
-    modifier(DashSkeletonShimmerModifier())
+  func dashSkeletonPulse() -> some View {
+    modifier(DashSkeletonPulseModifier())
   }
 }
 
-private func dashSkeletonShimmerPhase(at date: Date) -> Double {
-  date.timeIntervalSinceReferenceDate
+/// `1` at the peak, `pulseFloor` at the trough, cosine so the turnaround is soft.
+private func dashSkeletonPulseFactor(at date: Date) -> Double {
+  let phase =
+    date.timeIntervalSinceReferenceDate
     .truncatingRemainder(dividingBy: DashSkeletonStyle.period)
     / DashSkeletonStyle.period
+  let wave = 0.5 + 0.5 * cos(phase * 2 * Double.pi)
+  return DashSkeletonStyle.pulseFloor
+    + (1 - DashSkeletonStyle.pulseFloor) * wave
 }
 
-private func dashSkeletonShimmerOffset(
-  phase: Double, travel: CGFloat, highlight: CGFloat
-) -> CGFloat {
-  // Ease the travel slightly so the band eases in/out of the edges.
-  let t = phase
-  let eased = t * t * (3 - 2 * t)
-  return -highlight + CGFloat(eased) * (travel + highlight)
-}
-
-/// Placeholder rows that match `DashListRow` / recessed card geometry so first
-/// paint keeps catalog structure instead of a blank 420pt spinner. Default cold
-/// skeleton for catalog/list screens (`DashFeatureList` →
-/// `DashListPhase.loading`); detail screens pass a shape-matched slot instead.
+/// Placeholder rows that match `DashListRow` / recessed card geometry. Prefer
+/// `dashModeListRows` inside a mode-aware `DashFeatureList` body so cold and
+/// live share one card; this group remains for section-cold veils.
 struct DashListSkeleton: View {
-  var rows: Int = 4
+  var rows: Int = DashBodyPlaceholderDepth.listRows
 
   var body: some View {
     DashListGroup(title: " ") {
@@ -2076,34 +2203,47 @@ struct DashListSkeleton: View {
   }
 }
 
-/// The `DashListSkeleton` row shape (icon circle + two bars) without the group
-/// chrome: the placeholder for a *section* of list rows — deployments, domains
-/// — that fetches on its own and veils failures with `dashSectionFailure`.
+/// One catalog row stand-in for index-stable handoff — same 36pt tone plate +
+/// title/subtitle column as `DashListRow` / `CatalogFeatureIcon.list` /
+/// Resources and detail Actions rows.
+struct DashListRowPlaceholder: View {
+  var body: some View {
+    HStack(spacing: 12) {
+      Circle()
+        .dashSkeletonFill(DashSkeletonStyle.strong)
+        .frame(width: 36, height: 36)
+      VStack(alignment: .leading, spacing: 2) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.strong)
+          .frame(height: 14)
+          .frame(maxWidth: 160)
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.soft)
+          .frame(height: 11)
+          .frame(maxWidth: 220)
+      }
+      Spacer(minLength: 0)
+    }
+    .padding(.vertical, 12)
+    // Match subtitled `DashListRow` (Actions / catalog-like rows).
+    .frame(
+      maxWidth: .infinity, minHeight: DashTheme.Layout.subtitledListRow,
+      alignment: .leading
+    )
+    .accessibilityHidden(true)
+  }
+}
+
+/// The `DashListSkeleton` row shape without the group chrome: the placeholder
+/// for a *section* of list rows — deployments, domains — that fetches on its
+/// own and veils failures with `dashSectionFailure`.
 struct DashListRowPlaceholders: View {
   var rows: Int = 3
 
   var body: some View {
     VStack(spacing: 0) {
       ForEach(0..<max(rows, 1), id: \.self) { _ in
-        HStack(spacing: 12) {
-          Circle()
-            .dashSkeletonFill(DashSkeletonStyle.strong)
-            .frame(width: 44, height: 44)
-          VStack(alignment: .leading, spacing: 8) {
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .dashSkeletonFill(DashSkeletonStyle.strong)
-              .frame(height: 14)
-              .frame(maxWidth: 160)
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-              .dashSkeletonFill(DashSkeletonStyle.soft)
-              .frame(height: 11)
-              .frame(maxWidth: 220)
-          }
-          Spacer(minLength: 0)
-        }
-        .padding(.vertical, 12)
-        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-        .accessibilityHidden(true)
+        DashListRowPlaceholder()
       }
     }
     .frame(maxWidth: .infinity)
@@ -2156,7 +2296,7 @@ struct DashMetricTilePlaceholder: View {
           .monospacedDigit()
           .lineLimit(1)
           .redacted(reason: .placeholder)
-          .dashSkeletonShimmer()
+          .dashSkeletonPulse()
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -2307,14 +2447,44 @@ enum DashColdFailureExtent {
   case skeleton
 }
 
+/// Copy that lands on the cold skeleton wash — failure or settled empty.
+struct DashColdOverlayCopy: Equatable {
+  var icon: String
+  var title: String
+  var message: String
+  var actionTitle: String? = nil
+  /// Compared by title only; the closure itself is not part of equality.
+  var action: (() -> Void)? = nil
+
+  static func == (lhs: DashColdOverlayCopy, rhs: DashColdOverlayCopy) -> Bool {
+    lhs.icon == rhs.icon
+      && lhs.title == rhs.title
+      && lhs.message == rhs.message
+      && lhs.actionTitle == rhs.actionTitle
+      && (lhs.action != nil) == (rhs.action != nil)
+  }
+}
+
 extension View {
+  /// Lands copy *over* this skeleton instead of replacing it — cold failure and
+  /// settled empty share the mount so loading → overlay never remounts the bars.
+  ///
+  /// When `copy` is `nil`, the skeleton keeps breathing (cold load). When copy
+  /// arrives, the same skeleton stays mounted under a viewport-tall veil — the
+  /// pulse freezes, a top-clear canvas wash settles over it, and the copy is
+  /// centred in that veil (not pinned under the bars). Hit testing and
+  /// VoiceOver both belong to the copy once it is up.
+  func dashColdOverlay(
+    copy: DashColdOverlayCopy?,
+    extent: DashColdFailureExtent = .skeleton
+  ) -> some View {
+    modifier(DashColdOverlayModifier(copy: copy, extent: extent))
+  }
+
   /// Fails *over* this skeleton instead of replacing it.
   ///
-  /// When `message` is `nil`, the skeleton keeps shimmering (cold load). When a
-  /// message arrives, the same skeleton stays mounted — shimmer freezes, a
-  /// translucent canvas wash settles over it, and the copy staggers up from
-  /// the bottom. Hit testing and VoiceOver both belong to the copy once the
-  /// failure is up, so nothing announces “Loading” after a failure.
+  /// Thin wrapper over `dashColdOverlay` that keeps the danger mark and a
+  /// required action (Try again / Grant access / Sign in again).
   func dashColdFailure(
     title: String = "Couldn’t load",
     message: String?,
@@ -2322,55 +2492,50 @@ extension View {
     extent: DashColdFailureExtent = .skeleton,
     action: @escaping () -> Void
   ) -> some View {
-    modifier(
-      DashColdFailureModifier(
-        title: title,
-        message: message,
-        actionTitle: actionTitle,
-        extent: extent,
-        action: action))
+    dashColdOverlay(
+      copy: message.map {
+        DashColdOverlayCopy(
+          icon: SolarAsset.Content.danger,
+          title: title,
+          message: $0,
+          actionTitle: actionTitle,
+          action: action)
+      },
+      extent: extent)
   }
 }
 
-private struct DashColdFailureModifier: ViewModifier {
-  let title: String
-  let message: String?
-  let actionTitle: String
+private struct DashColdOverlayModifier: ViewModifier {
+  let copy: DashColdOverlayCopy?
   let extent: DashColdFailureExtent
-  let action: () -> Void
 
   func body(content: Content) -> some View {
-    ZStack(alignment: .bottom) {
-      if message != nil {
-        DashColdFailureExtentFloor(extent: extent)
-      }
-
+    ZStack {
       // Top-pinned: the skeleton must stay exactly where the loading phase left
-      // it, whatever height the layer grows to — the point of the treatment is
-      // that nothing moves when the failure arrives.
+      // it — the veil grows over it; the bars themselves never jump.
       VStack(spacing: 0) {
         content
-          .environment(\.dashSkeletonShimmerActive, message == nil)
+          .environment(\.dashSkeletonPulseActive, copy == nil)
         Spacer(minLength: 0)
       }
-      .allowsHitTesting(message == nil)
-      .accessibilityHidden(message != nil)
+      .allowsHitTesting(copy == nil)
+      .accessibilityHidden(copy != nil)
 
-      if let message {
-        DashColdFailureCopy(
-          title: title,
-          message: message,
-          actionTitle: actionTitle,
-          action: action
-        )
+      if let copy {
+        // Floor + centred copy: one viewport-tall (or skeleton-tall) layer so
+        // the tip is not appended under the bars and never forces a scroll.
+        ZStack {
+          DashColdFailureExtentFloor(extent: extent)
+          DashColdOverlayCopyView(copy: copy)
+        }
         .transition(.opacity)
       }
     }
-    .animation(DashTheme.Motion.content, value: message != nil)
+    .animation(DashTheme.Motion.content, value: copy != nil)
   }
 }
 
-/// Height *floor* for the layer, never a cap: a `ZStack` takes its tallest
+/// Height *floor* for the veil, never a cap: a `ZStack` takes its tallest
 /// child, so the copy can still grow the layer past the viewport at
 /// accessibility type sizes instead of being clipped out of reach.
 private struct DashColdFailureExtentFloor: View {
@@ -2394,28 +2559,20 @@ private struct DashColdFailureExtentFloor: View {
   }
 }
 
-/// The translucent canvas wash a cold failure lands on: densest behind the
-/// copy, then a fill → clear ramp climbing `fadeDepth` above it, so the
-/// frozen skeleton stays readable through the veil instead of being painted out.
-///
-/// The ramp is measured in points from the copy's top edge, not as a fraction of
-/// the layer: the copy grows with Dynamic Type and the skeleton under it can be
-/// four list rows or a screenful of chart cards, so a fractional band would
-/// either starve the copy of contrast or wipe out the whole placeholder.
+/// The translucent canvas wash a cold failure / empty tip lands on: clear at
+/// the top so the frozen skeleton still peeks through, densest from mid to
+/// bottom so the centred copy sits on readable canvas.
 enum DashColdFailureWashRamp {
-  /// How far above the copy the wash keeps dissolving the placeholder.
-  static let fadeDepth: CGFloat = 240
-
-  /// Peak opacity behind the copy — translucent on purpose so the skeleton
-  /// still reads through. Clear (`fadeDepth` above it). Eased, not linear.
+  /// Full-bleed stops, `location` 0 = top of the veil, 1 = bottom.
+  /// Peak opacity is translucent on purpose so bars still read through.
   static let stops: [(location: CGFloat, opacity: Double)] = [
-    (0, 0.88),
-    (0.15, 0.72),
-    (0.32, 0.52),
-    (0.5, 0.32),
-    (0.68, 0.16),
-    (0.85, 0.05),
-    (1, 0),
+    (0, 0),
+    (0.18, 0.05),
+    (0.36, 0.22),
+    (0.5, 0.55),
+    (0.62, 0.78),
+    (0.78, 0.88),
+    (1, 0.88),
   ]
 
   static var fade: LinearGradient {
@@ -2423,69 +2580,64 @@ enum DashColdFailureWashRamp {
       stops: stops.map {
         Gradient.Stop(color: DashTheme.canvas.opacity($0.opacity), location: $0.location)
       },
-      startPoint: .bottom,
-      endPoint: .top)
+      startPoint: .top,
+      endPoint: .bottom)
   }
 }
 
 private struct DashColdFailureWash: View {
   var body: some View {
-    VStack(spacing: 0) {
-      DashColdFailureWashRamp.fade
-        .frame(height: DashColdFailureWashRamp.fadeDepth)
-      DashTheme.canvas.opacity(DashColdFailureWashRamp.stops.first?.opacity ?? 0.88)
-    }
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
+    DashColdFailureWashRamp.fade
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 }
 
-private struct DashColdFailureCopy: View {
-  let title: String
-  let message: String
-  let actionTitle: String
-  let action: () -> Void
+private struct DashColdOverlayCopyView: View {
+  let copy: DashColdOverlayCopy
   /// Drives the bottom → top stagger; flipped on appear so the reveal always
-  /// plays when a failure lands on an already-mounted skeleton.
+  /// plays when copy lands on an already-mounted skeleton.
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+  private var hasAction: Bool { copy.actionTitle != nil && copy.action != nil }
+
   var body: some View {
-    // Rise from below, staggered bottom → top so the action leads and the
-    // mark settles last — the wash is already underfoot when the copy lands.
-    VStack(spacing: DashTheme.Spacing.comfortable) {
-      SolarIcon(asset: SolarAsset.Content.danger, size: 34, color: DashTheme.strong)
-        .frame(width: 72, height: 72)
-        .background(DashTheme.recessed, in: Circle())
-        .dashReveal(3, shown: revealed)
-      Text(DashL10n.ui(title))
-        .dashTextStyle(.emptyTitle)
-        .foregroundStyle(DashTheme.strong)
-        .multilineTextAlignment(.center)
-        .dashReveal(2, shown: revealed)
-      Text(DashL10n.ui(message))
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .dashReveal(1, shown: revealed)
-      DashSecondaryPillButton(title: actionTitle, action: action)
-        .padding(.top, 6)
-        .dashReveal(0, shown: revealed)
-    }
-    .frame(maxWidth: 440)
-    .padding(DashTheme.Spacing.panel)
-    .frame(maxWidth: .infinity)
-    // Hoisted above its host so the ramp overhangs the copy's top edge; the
-    // densest half stays exactly behind the copy at any type size.
-    .background(alignment: .bottom) {
+    // Fill the veil, centre the tip. Wash is full-bleed behind so the top stays
+    // open over the skeleton and the mid/bottom carries the copy.
+    ZStack {
       DashColdFailureWash()
-        .padding(.top, -DashColdFailureWashRamp.fadeDepth)
         .opacity(revealed || reduceMotion ? 1 : 0)
         .animation(
           reduceMotion ? nil : DashTheme.Motion.content,
           value: revealed)
+
+      VStack(spacing: DashTheme.Spacing.comfortable) {
+        SolarIcon(asset: copy.icon, size: 34, color: DashTheme.strong)
+          .frame(width: 72, height: 72)
+          .background(DashTheme.recessed, in: Circle())
+          .dashReveal(hasAction ? 3 : 2, shown: revealed)
+        Text(DashL10n.ui(copy.title))
+          .dashTextStyle(.emptyTitle)
+          .foregroundStyle(DashTheme.strong)
+          .multilineTextAlignment(.center)
+          .dashReveal(hasAction ? 2 : 1, shown: revealed)
+        Text(DashL10n.ui(copy.message))
+          .dashTextStyle(.supporting)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .dashReveal(hasAction ? 1 : 0, shown: revealed)
+        if let actionTitle = copy.actionTitle, let action = copy.action {
+          DashSecondaryPillButton(title: actionTitle, action: action)
+            .padding(.top, 6)
+            .dashReveal(0, shown: revealed)
+        }
+      }
+      .frame(maxWidth: 440)
+      .padding(DashTheme.Spacing.panel)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .onAppear {
       // Next run-loop beat so the hidden pose (offset + blur) commits before
       // `shown` flips — otherwise the stagger lands already at rest.
@@ -2494,9 +2646,9 @@ private struct DashColdFailureCopy: View {
   }
 }
 
-/// Cold-load failure for a feature list: the same skeleton the loading phase
-/// painted stays on screen and the failure lands on a wash over it
-/// (`dashColdFailure`). Prefer keeping the skeleton mounted in the caller
+/// Cold-load failure for a feature list: the same placeholder body the loading
+/// phase painted stays on screen and the failure lands on a wash over it
+/// (`dashColdFailure`). Prefer keeping that body mounted in the caller
 /// (see `DashFeatureList`) so loading → error never remounts the bars; this
 /// type remains for one-off call sites that already own a discrete failure view.
 struct ErrorStateView<Skeleton: View>: View {

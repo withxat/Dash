@@ -66,19 +66,15 @@ enum DashAuthorizationScopes {
 
   /// Mutating operations that are not represented by a FeatureID. They remain
   /// explicit so `core` audits the complete real-account authorization.
-  ///
-  /// `registrar-domains.admin` is here rather than on `FeatureID.registrar`
-  /// because only the per-domain screen mutates; the catalog index would
-  /// otherwise render a read-only banner over a screen with no controls.
+  /// Registrar / Email Routing writes live on those features' capabilities
+  /// (Resources Read-only badge); the browse-only indexes suppress the catalog
+  /// banner via `FeatureID.showsCatalogReadOnlyBanner`.
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
     "dns.write",
     "cache.purge",
     "notifications.write",
-    "email-routing-rule.write",
-    "email-routing-address.write",
-    "registrar-domains.admin",
   ]
 
   /// Read-only profile retained for Demo and capability-gating tests.

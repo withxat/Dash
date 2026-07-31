@@ -195,6 +195,7 @@ final class AppModel {
   /// Top-of-screen action feedback. Prefer this over sticky inline notices for
   /// completed / failed mutations; keep `DashNotice` for persistent state.
   let toasts = DashToastCenter()
+  let optimistic: DashOptimisticOperationCenter
   let deferredDeletions: DeferredDeletionCoordinator
   var accounts: [CloudflareAccount] = [] {
     didSet {
@@ -289,6 +290,7 @@ final class AppModel {
     selectedScopes = DashAuthorizationScopes.core
     self.tokenStore = tokenStore
     authenticatedSession = session
+    optimistic = DashOptimisticOperationCenter(toasts: toasts)
     let apiClient = CloudflareClient(
       clientID: configuration.clientID, tokenStore: tokenStore, session: session)
     client = apiClient
@@ -322,6 +324,8 @@ final class AppModel {
       deferredDeletions.retry(operationID)
     case .retryDeferredDeletions(let operationIDs):
       deferredDeletions.retryFailures(operationIDs)
+    case .undoOptimistic(let operationID):
+      optimistic.undo(rawID: operationID)
     }
   }
 

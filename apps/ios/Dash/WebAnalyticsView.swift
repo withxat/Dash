@@ -304,6 +304,7 @@ struct WebAnalyticsView: View {
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   private let zoneID: String
 
   @State private var range: AnalyticsRange = .week
@@ -321,14 +322,22 @@ struct WebAnalyticsView: View {
   private var snapshot: WebAnalyticsMetricsSnapshot { snapshotsByRange[range] ?? .empty }
   private var isLoadingCurrent: Bool { !siteResolved || loadingRanges.contains(range) }
   private var currentError: String? { errorByRange[range] }
+  /// Beacon off is a product CTA in content, not a zero-row list empty.
+  private var isBeaconOff: Bool {
+    siteResolved && (site == nil || (site?.isCollecting == false && snapshot.isEmpty))
+  }
 
   var body: some View {
     DashFeatureList(
       isLoading: isLoadingCurrent,
       error: currentError,
-      hasContent: !snapshot.isEmpty,
+      hasContent: !snapshot.isEmpty || isBeaconOff,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.graph,
+        title: "No page loads yet",
+        message: "Web Analytics reports a page view once a real browser loads a page."
+      ),
       retry: { Task { await load(force: true) } },
-      skeleton: { webAnalyticsSkeleton },
       header: {
         if site != nil {
           DashTextTabs(
@@ -337,43 +346,46 @@ struct WebAnalyticsView: View {
           )
         }
       }
-    ) {
-      if site == nil || (site?.isCollecting == false && snapshot.isEmpty) {
-        beaconMissingState
-      } else if snapshot.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.graph,
-          title: "No page loads yet",
-          message: "Web Analytics reports a page view once a real browser loads a page."
-        )
-      } else {
-        cardGrid(visibleMetrics) { metric in
-          metricCard(metric)
-        }
-      }
+    ) { mode in
+      webAnalyticsBody(mode: mode)
     }
     .detailHeader(icon: .solar(SolarAsset.Content.graph), title: "Web analytics")
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
   }
 
-  /// Core Web Vitals only exist on sites whose beacon collects them, so they
-  /// join the grid rather than reserving three permanently empty cards.
+  /// Core Web Vitals only exist on sites whose beacon collects them. Placeholder
+  /// reserves every metric so extras recede when the beacon has none.
   private var visibleMetrics: [WebAnalyticsChartMetric] {
     snapshot.hasWebVitals
       ? WebAnalyticsChartMetric.allCases
       : WebAnalyticsChartMetric.headline
   }
 
-  /// Cold: the three headline metrics in the same paired collapsed shape the
-  /// loaded screen paints, so the arriving cards land in place. Web Vitals stay
-  /// out — whether the beacon reports them is only known once the payload lands.
-  private var webAnalyticsSkeleton: some View {
-    cardGrid(WebAnalyticsChartMetric.headline) { metric in
-      DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
+  /// Shared card grid for cold + live. Placeholder paints allCases; live keeps
+  /// headline (and vitals when present) so surplus cards recede.
+  /// Beacon-off replaces the grid.
+  @ViewBuilder
+  private func webAnalyticsBody(mode: DashBodyMode) -> some View {
+    if !mode.isPlaceholder, isBeaconOff {
+      beaconMissingState
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      let metrics =
+        mode.isPlaceholder
+        ? Array(WebAnalyticsChartMetric.allCases)
+        : visibleMetrics
+      cardGrid(metrics) { metric in
+        Group {
+          if mode.isPlaceholder {
+            DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
+          } else {
+            metricCard(metric)
+          }
+        }
+        .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   /// Collapsed cards pair into half-width rows, the same pose as Watchtower's

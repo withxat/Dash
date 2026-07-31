@@ -8,6 +8,7 @@ struct R2BucketsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var buckets: [R2Bucket] = []
   @State private var error: String?
   @State private var loading = true
@@ -18,33 +19,30 @@ struct R2BucketsView: View {
       isLoading: loading,
       error: error,
       hasContent: !buckets.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.box,
+        title: DashL10n.string("No buckets yet"),
+        message: featureAllowsWrites
+          ? DashL10n.string("Create a bucket to store objects in R2.")
+          : DashL10n.string("Create buckets in the Cloudflare dashboard or with Wrangler."),
+        actionTitle: featureAllowsWrites
+          ? DashL10n.string("Create bucket")
+          : DashL10n.string("Open R2 docs"),
+        action: featureAllowsWrites
+          ? { showsCreateBucket = true }
+          : { openURL(StorageExternalURL.r2BucketsGuide) }
+      ),
       retry: { Task { await load() } }
-    ) {
-      if buckets.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.box,
-          title: DashL10n.string("No buckets yet"),
-          message: featureAllowsWrites
-            ? DashL10n.string("Create a bucket to store objects in R2.")
-            : DashL10n.string("Create buckets in the Cloudflare dashboard or with Wrangler."),
-          actionTitle: featureAllowsWrites
-            ? DashL10n.string("Create bucket")
-            : DashL10n.string("Open R2 docs"),
-          action: featureAllowsWrites
-            ? { showsCreateBucket = true }
-            : { openURL(StorageExternalURL.r2BucketsGuide) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: buckets) { bucket in
-            DashListGroupLink(value: .r2Bucket(bucket.name, prefix: "")) {
-              DashListRow(
-                title: bucket.name,
-                subtitle: r2BucketCreationText(bucket.creationDate),
-                icon: SolarAsset.Content.box
-              )
-              .accessibilityLabel(r2BucketAccessibilityLabel(bucket))
-            }
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: buckets, reduceMotion: reduceMotion) { bucket in
+          DashListGroupLink(value: .r2Bucket(bucket.name, prefix: "")) {
+            DashListRow(
+              title: bucket.name,
+              subtitle: r2BucketCreationText(bucket.creationDate),
+              icon: SolarAsset.Content.box
+            )
+            .accessibilityLabel(r2BucketAccessibilityLabel(bucket))
           }
         }
       }
@@ -177,13 +175,28 @@ struct R2BucketView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: !objects.isEmpty || !folders.isEmpty,
+      // An in-flight upload keeps the content phase so its progress card is not
+      // buried under the empty wash.
+      hasContent: !objects.isEmpty || !folders.isEmpty || uploadingFileName != nil,
+      empty: DashFeatureEmpty(
+        icon: folderPrefix.isEmpty ? SolarAsset.Content.box : SolarAsset.Content.folder,
+        title: folderPrefix.isEmpty ? "Empty bucket" : "Empty folder",
+        message: folderPrefix.isEmpty
+          ? (featureAllowsWrites
+            ? DashL10n.string("Upload a file to get started.")
+            : DashL10n.string("This bucket has no objects."))
+          : (featureAllowsWrites
+            ? DashL10n.string("Upload a file into this folder.")
+            : DashL10n.string("This virtual folder has no objects.")),
+        actionTitle: featureAllowsWrites ? DashL10n.string("Upload file") : nil,
+        action: featureAllowsWrites ? { importsFile = true } : nil
+      ),
       retry: {
         let request = requestIdentity
         Task { await load(for: request) }
       }
-    ) {
-      if let uploadingFileName {
+    ) { mode in
+      if !mode.isPlaceholder, let uploadingFileName {
         DashSurfaceStack {
           uploadProgressCard(uploadingFileName)
         }
@@ -193,20 +206,21 @@ struct R2BucketView: View {
       // dashListCard wrapping both. A shared card would make Content a
       // TupleView, and `.dashListCardInset()` on that tuple re-eagerizes
       // every object row (thumbnail stampede).
-      ForEach(folders, id: \.self) { folder in
-        DashListGroupLink(value: .r2Bucket(bucket, prefix: folder)) {
-          DashListRow(
-            title: folderName(folder),
-            subtitle: DashL10n.string("Virtual folder"),
-            icon: SolarAsset.Content.folder
-          )
-          .accessibilityLabel("\(folderName(folder)), \(DashL10n.string("Virtual folder"))")
+      if !mode.isPlaceholder {
+        ForEach(folders, id: \.self) { folder in
+          DashListGroupLink(value: .r2Bucket(bucket, prefix: folder)) {
+            DashListRow(
+              title: folderName(folder),
+              icon: SolarAsset.Content.folder
+            )
+          }
+          .dashListCardInset()
+          .dashBodySlot(reduceMotion: reduceMotion)
         }
-        .dashListCardInset()
       }
-      if !objects.isEmpty {
+      if mode.isPlaceholder || !objects.isEmpty {
         dashListCard {
-          dashListCardRows(items: objects) { object in
+          dashModeListRows(mode: mode, items: objects, reduceMotion: reduceMotion) { object in
             R2ObjectRow(
               bucket: bucket,
               object: object,
@@ -233,22 +247,7 @@ struct R2BucketView: View {
           }
         }
       }
-      if folders.isEmpty && objects.isEmpty {
-        DashEmptyState(
-          icon: folderPrefix.isEmpty ? SolarAsset.Content.box : SolarAsset.Content.folder,
-          title: folderPrefix.isEmpty ? "Empty bucket" : "Empty folder",
-          message: folderPrefix.isEmpty
-            ? (featureAllowsWrites
-              ? DashL10n.string("Upload a file to get started.")
-              : DashL10n.string("This bucket has no objects."))
-            : (featureAllowsWrites
-              ? DashL10n.string("Upload a file into this folder.")
-              : DashL10n.string("This virtual folder has no objects.")),
-          actionTitle: featureAllowsWrites ? DashL10n.string("Upload file") : nil,
-          action: featureAllowsWrites ? { importsFile = true } : nil
-        )
-      }
-      if canLoadMore || loadMorePhase.isActive {
+      if !mode.isPlaceholder, canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: folders.count + objects.count,
           noun: "items",
@@ -504,7 +503,8 @@ struct R2BucketView: View {
             title: DashL10n.string("Create folder"),
             subtitle: DashL10n.string("Groups objects under a key prefix"),
             icon: SolarAsset.Content.folder,
-            showsChevron: false
+            showsChevron: false,
+            showsIconPlate: false
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
@@ -528,7 +528,8 @@ struct R2BucketView: View {
               ? DashL10n.string("Nothing to select in this folder")
               : DashL10n.string("Or drag with two fingers on the list"),
             icon: SolarAsset.checkCircle,
-            showsChevron: false
+            showsChevron: false,
+            showsIconPlate: false
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
@@ -551,7 +552,8 @@ struct R2BucketView: View {
         DashListRow(
           title: DashL10n.string("Bucket settings"),
           subtitle: DashL10n.string("Public access and custom domains"),
-          icon: SolarAsset.settings
+          icon: SolarAsset.settings,
+          showsIconPlate: false
         )
       }
       .buttonStyle(DashSurfaceButtonStyle())
@@ -569,7 +571,8 @@ struct R2BucketView: View {
             subtitle: DashL10n.string("This folder is empty"),
             icon: SolarAsset.trash,
             iconColor: DashTheme.danger,
-            showsChevron: false
+            showsChevron: false,
+            showsIconPlate: false
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
@@ -1203,6 +1206,7 @@ private final class R2BucketWork {
 struct KVNamespacesView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
@@ -1214,28 +1218,26 @@ struct KVNamespacesView: View {
       isLoading: loading,
       error: error,
       hasContent: !namespaces.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.pinList,
+        title: DashL10n.string("No namespaces"),
+        message: DashL10n.string("Create a namespace in the dashboard or with Wrangler."),
+        actionTitle: "Open KV docs",
+        action: { openURL(StorageExternalURL.kvGuide) }
+      ),
       retry: { Task { await load() } }
-    ) {
-      if namespaces.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.pinList,
-          title: DashL10n.string("No namespaces"),
-          message: DashL10n.string("Create a namespace in the dashboard or with Wrangler."),
-          actionTitle: "Open KV docs",
-          action: { openURL(StorageExternalURL.kvGuide) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: namespaces) { namespace in
-            // The namespace screen only ever sees the id, so the human title
-            // has to enter the recents here, at the navigation boundary.
-            DashListGroupLink(
-              value: .kvNamespace(namespace.id),
-              onNavigate: { recordRecent(namespace) }
-            ) {
-              DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
-                .accessibilityLabel("\(namespace.title), KV namespace")
-            }
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: namespaces, reduceMotion: reduceMotion) {
+          namespace in
+          // The namespace screen only ever sees the id, so the human title
+          // has to enter the recents here, at the navigation boundary.
+          DashListGroupLink(
+            value: .kvNamespace(namespace.id),
+            onNavigate: { recordRecent(namespace) }
+          ) {
+            DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
+              .accessibilityLabel("\(namespace.title), KV namespace")
           }
         }
       }
@@ -1306,6 +1308,7 @@ struct KVNamespaceView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.openURL) private var openURL
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let namespaceID: String
   @State private var keys: [KVKey] = []
   @State private var cursor: String?
@@ -1332,31 +1335,28 @@ struct KVNamespaceView: View {
       isLoading: loading,
       error: error,
       hasContent: !keys.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.key,
+        title: "No keys",
+        message: featureAllowsWrites
+          ? DashL10n.string("Create a key to store a value in this namespace.")
+          : DashL10n.string("Create keys in the Cloudflare dashboard or with Wrangler."),
+        actionTitle: featureAllowsWrites
+          ? DashL10n.string("Create key") : DashL10n.string("Open KV docs"),
+        action: featureAllowsWrites
+          ? { showsCreateKey = true } : { openURL(StorageExternalURL.kvGuide) }
+      ),
       retry: { Task { await load() } }
-    ) {
-      if keys.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.key,
-          title: "No keys",
-          message: featureAllowsWrites
-            ? DashL10n.string("Create a key to store a value in this namespace.")
-            : DashL10n.string("Create keys in the Cloudflare dashboard or with Wrangler."),
-          actionTitle: featureAllowsWrites
-            ? DashL10n.string("Create key") : DashL10n.string("Open KV docs"),
-          action: featureAllowsWrites
-            ? { showsCreateKey = true } : { openURL(StorageExternalURL.kvGuide) }
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: keys) { key in
-            DashListGroupLink(value: .kvKey(namespaceID: namespaceID, key: key.name)) {
-              DashListRow(title: key.name, icon: SolarAsset.Content.key)
-            }
-            .accessibilityLabel(key.name)
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: keys, reduceMotion: reduceMotion) { key in
+          DashListGroupLink(value: .kvKey(namespaceID: namespaceID, key: key.name)) {
+            DashListRow(title: key.name, icon: SolarAsset.Content.key)
           }
+          .accessibilityLabel(key.name)
         }
       }
-      if canLoadMore || loadMorePhase.isActive {
+      if !mode.isPlaceholder, canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
           loaded: keys.count,
           noun: "keys",

@@ -137,10 +137,15 @@ struct DashChartDataPoint: Hashable, Sendable, Identifiable {
 
 /// A render-ready chart snapshot. It intentionally contains values and visual
 /// series rather than a loader so a pushed detail exactly matches its source.
+///
+/// Time series only. Donuts (DNS record types, Pages build outcomes) are filter
+/// controls for the list under them, not metrics with a history worth pushing:
+/// their legend already names every slice and the filter strip already states
+/// the count, so a detail screen would restate the card and hand the user a
+/// second, unfiltered copy of the same selection.
 enum DashChartDetailContent: Hashable, Sendable {
   case area(points: [DashChartDataPoint], series: [DitherSeries])
   case line(points: [DashChartDataPoint], series: [DitherSeries])
-  case pie(slices: [DitherSlice], innerRadiusRatio: Double = 0.62)
 }
 
 /// One time-range payload inside a chart detail. Shared title / axis formats
@@ -169,7 +174,7 @@ struct DashChartDetail: Hashable, Sendable {
   let featureID: FeatureID?
   let readScopes: Set<String>
   /// When two or more, the detail screen shows time tabs. Empty means a single
-  /// frozen snapshot (pie charts, worker 24h, etc.).
+  /// frozen snapshot (worker 24h, etc.).
   let ranges: [DashChartDetailRange]
   /// Initial tab when `ranges` is non-empty — matches the outer screen's
   /// current time dimension at the moment of the push.
@@ -346,25 +351,28 @@ struct DashChartDetailView: View {
   }
 
   var body: some View {
-    DashFeatureList {
-      summaryHeader
-      chart
-        .frame(height: chartHeight)
-        // The plot is the page here, not an inset card: it runs to both screen
-        // edges and the range selector sits under it like a caption.
-        .padding(.horizontal, -DashTheme.Spacing.screen)
-        .dashSectionBoundary()
-      if detail.showsRangeTabs {
-        DashChartRangeSelector(
-          items: detail.ranges.map { ($0.range.title, $0.range) },
-          selection: $range
-        )
-        .dashSectionBoundary()
+    // Render-ready snapshot — never refetches. Without `hasContent`, the list
+    // phase settles empty and the default skeleton stays up forever.
+    DashFeatureList(
+      hasContent: true,
+      header: {
+        if detail.showsRangeTabs {
+          DashTextTabs(
+            items: detail.ranges.map { ($0.range.title, $0.range) },
+            selection: $range
+          )
+        }
       }
-      DashListGroupHeader(title: DashL10n.ui("Details"))
-        .padding(.horizontal, DashTheme.Spacing.rowInset)
+    ) { _ in
+      summaryHeader
+      chartPanel
         .dashSectionBoundary()
-      dashListCardRows(items: tableRows) { row in
+      // Home's Shortcuts / Recently used frame, emitted lazily: the table can
+      // run to a few hundred rows, which is more than the eager
+      // `DashInfoGroup` stack should hold.
+      dashTwoToneGroupHeader(title: "Details")
+        .dashSectionBoundary()
+      dashTwoToneCardRows(items: tableRows) { row in
         DashChartTableRow(row: row)
       }
     }
@@ -380,9 +388,12 @@ struct DashChartDetailView: View {
     return DashChartDetailActiveSnapshot(detail: detail)
   }
 
-  /// Value first, comparison opposite it, the range named underneath — the
-  /// whole block sits on the page rather than in a card, so the plot below can
-  /// reach both screen edges without a frame cutting across it.
+  private var panelShape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  /// Value first, comparison opposite it, the range named underneath — on the
+  /// page above the glass panel, not inside it. The panel below is only plot.
   private var summaryHeader: some View {
     VStack(alignment: .leading, spacing: 4) {
       if active.summaryValue != nil || active.trend?.formattedPercentage != nil {
@@ -406,6 +417,22 @@ struct DashChartDetailView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
+  /// Same enamel as an expanded Watchtower card, but the panel holds only the
+  /// plot — metrics stay on the page above. Clip the fill alone (not the chart):
+  /// axis labels live in the plot gutters, and a content clipShape eats the ones
+  /// that land in the continuous corner radius.
+  private var chartPanel: some View {
+    chart
+      .frame(maxWidth: .infinity)
+      .frame(height: chartHeight)
+      .padding(DashTheme.Spacing.card)
+      .background {
+        DashTheme.homeCardSurface
+          .clipShape(panelShape)
+      }
+      .dashEmbossChrome(shape: panelShape)
+  }
+
   @ViewBuilder
   private var chart: some View {
     switch active.content {
@@ -413,29 +440,22 @@ struct DashChartDetailView: View {
       DashAreaChart(
         data: points.map(\.datum),
         series: series,
-        options: cartesianOptions(series: series))
+        options: cartesianOptions)
     case .line(let points, let series):
       DashLineChart(
         data: points.map(\.datum),
         series: series,
-        options: cartesianOptions(series: series))
-    case .pie(let slices, let innerRadiusRatio):
-      DashPieChart(
-        slices: slices,
-        innerRadiusRatio: innerRadiusRatio,
-        options: DitherPolarOptions(
-          bloom: .off,
-          interactive: true,
-          showsLegend: true,
-          showsTooltip: true,
-          valueFormat: detail.axisValueFormat.ditherValueFormat,
-          accessibility: chartAccessibility))
+        options: cartesianOptions)
     }
   }
 
-  private func cartesianOptions(series: [DitherSeries]) -> DitherCartesianOptions {
+  /// Same plot chrome as an expanded card — coordinate grid and axis gutters —
+  /// inside the glass panel. The legend stays off: every detail is a single
+  /// series the header already names. Metrics stay on the page above; the series
+  /// keeps whatever fill the source chose (area stays area).
+  private var cartesianOptions: DitherCartesianOptions {
     DashTheme.DitherChart.options(
-      showsLegend: series.count > 1,
+      showsLegend: false,
       accessibility: chartAccessibility,
       valueFormat: detail.axisValueFormat.ditherValueFormat,
       leadingMargin: detail.axisValueFormat.leadingMargin)
@@ -449,18 +469,10 @@ struct DashChartDetailView: View {
       valueAxisLabel: DashL10n.ui(detail.valueAxisLabel))
   }
 
+  /// The detail keeps the coordinate grid but no legend, so the plot gets the
+  /// whole panel.
   private var chartHeight: CGFloat {
-    let showsLegend =
-      switch active.content {
-      case .area(_, let series), .line(_, let series):
-        series.count > 1
-      case .pie:
-        true
-      }
-    if dynamicTypeSize.isAccessibilitySize {
-      return showsLegend ? 360 : 332
-    }
-    return showsLegend ? 308 : 284
+    dynamicTypeSize.isAccessibilitySize ? 332 : 284
   }
 
   private var tableRows: [DashChartTableRowModel] {
@@ -477,19 +489,6 @@ struct DashChartDetailView: View {
               value: detail.tableValueFormat.tableString(point.datum[series.id]),
               color: series.color)
           })
-      }
-    case .pie(let slices, _):
-      return slices.map { slice in
-        DashChartTableRowModel(
-          id: slice.id,
-          label: slice.label,
-          values: [
-            DashChartTableValue(
-              id: slice.id,
-              label: detail.valueAxisLabel,
-              value: detail.tableValueFormat.tableString(slice.value),
-              color: slice.color)
-          ])
       }
     }
   }
@@ -531,47 +530,6 @@ extension String {
       break
     }
     return text
-  }
-}
-
-/// Evenly divided time-range control under the plot: the selection is a filled
-/// capsule that slides between segments. Distinct from `DashTextTabs`, which is
-/// leading-aligned page chrome above a screen's content.
-private struct DashChartRangeSelector<Selection: Hashable>: View {
-  let items: [(title: String, value: Selection)]
-  @Binding var selection: Selection
-  @Namespace private var namespace
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    HStack(spacing: 0) {
-      ForEach(items.indices, id: \.self) { index in
-        let item = items[index]
-        let isSelected = selection == item.value
-        Button {
-          withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick) {
-            selection = item.value
-          }
-        } label: {
-          Text(DashL10n.ui(item.title))
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(isSelected ? DashTheme.strong : DashTheme.placeholder)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity)
-            .frame(height: DashTheme.Layout.minimumHitTarget)
-            .background {
-              if isSelected {
-                Capsule(style: .continuous)
-                  .fill(DashTheme.recessed)
-                  .matchedGeometryEffect(id: "dashChartRangeSelection", in: namespace)
-              }
-            }
-            .contentShape(Capsule(style: .continuous))
-        }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-      }
-    }
   }
 }
 
@@ -625,13 +583,37 @@ private struct DashChartTableRow: View {
     Group {
       if dynamicTypeSize.isAccessibilitySize || row.values.count > 2 {
         accessibleLayout
+      } else if row.values.count == 1, let value = row.values.first {
+        singleValueLayout(value)
       } else {
         compactLayout
       }
     }
-    .padding(.vertical, 12)
+    // The 44pt floor is the row rhythm the two-tone card carries everywhere
+    // (`DashInfoRow`, Home's Recently used); only the taller two-series cells
+    // need padding of their own.
+    .padding(.vertical, row.values.count == 1 ? 0 : 6)
     .frame(minHeight: DashTheme.Layout.minimumHitTarget)
     .accessibilityElement(children: .combine)
+  }
+
+  /// One series: the plain spec-sheet row — category leading, value trailing.
+  /// Naming the series on every row would just repeat the chart's one value
+  /// axis, and its color has nothing to be told apart from.
+  private func singleValueLayout(_ value: DashChartTableValue) -> some View {
+    HStack(spacing: 12) {
+      Text(verbatim: row.label)
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .lineLimit(1)
+      Spacer(minLength: 0)
+      Text(verbatim: value.value)
+        .dashTextStyle(.supporting)
+        .monospacedDigit()
+        .foregroundStyle(DashTheme.text)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+    }
   }
 
   private var compactLayout: some View {
@@ -715,6 +697,7 @@ extension DashChartTrend {
 }
 
 extension DashChartValueFormat {
+  /// Leading gutter so Y-axis labels ("17.4 MB", "12.5 ms") are not clipped.
   fileprivate var leadingMargin: CGFloat {
     switch self {
     case .byteCount:

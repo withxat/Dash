@@ -115,11 +115,20 @@ struct CachePurgeView: View {
   }
 
   private func performPurge(files: [String]?) async throws {
-    try await model.client.purgeCache(zoneID: zoneID, files: files)
-    try Task.checkCancellation()
-    status = DashL10n.string("Cache purged.")
-    failed = false
-    model.toasts.success(DashL10n.string("Cache purged."))
+    let op = model.optimistic.begin(.operating)
+    do {
+      try await model.optimistic.waitForCommit(op)
+      try await model.client.purgeCache(zoneID: zoneID, files: files)
+      try Task.checkCancellation()
+      status = DashL10n.string("Cache purged.")
+      failed = false
+      model.optimistic.finishSuccess(op)
+    } catch is CancellationError {
+      throw CancellationError()
+    } catch {
+      model.optimistic.finishFailure(op)
+      throw error
+    }
   }
 }
 
@@ -169,11 +178,16 @@ private let zoneSettingCaptions: [String: String] = [
 struct ZoneSettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
   @State private var settings: [ZoneSetting] = []
   @State private var error: String?
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
+  /// Nameservers + `ZoneAlertsSection` mount even when the plan omits every
+  /// curated setting — do not gate the list phase on `curated` alone or a
+  /// successful empty curated answer stays on the bare skeleton forever.
+  @State private var hasPresentedContent = false
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .zoneSettings(zoneID))
@@ -193,42 +207,58 @@ struct ZoneSettingsView: View {
 
   var body: some View {
     DashFeatureList(
-      isLoading: loading, error: error, hasContent: !curated.isEmpty,
+      isLoading: loading,
+      error: error,
+      hasContent: hasPresentedContent,
       retry: { Task { await load() } }
-    ) {
+    ) { mode in
+      zoneSettingsBody(mode: mode)
+    }
+    .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
+    .refreshable { await load(force: true) }
+    .task { await load() }
+  }
+
+  /// Fuller first-paint reserve: curated setting rows + alerts. Nameservers and
+  /// the write notice appear only when live content warrants them.
+  @ViewBuilder
+  private func zoneSettingsBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashSurfaceStack {
+        ForEach(0..<curatedZoneSettings.count, id: \.self) { _ in
+          DashToggleRowPlaceholder()
+        }
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Alerts") {
+        DashListRowPlaceholders(rows: ZoneAlertKind.all.count)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
       if !allowsWrites {
         FeatureWriteAccessNotice(
           message: "Read-only — grant zone settings write access to make changes.",
-          scopes: requiredWriteScopes)
+          scopes: requiredWriteScopes
+        )
+        .dashBodySlot(reduceMotion: reduceMotion)
       }
       if !nameservers.isEmpty {
         ZoneNameserversGroup(servers: nameservers)
           .dashSectionBoundary(!allowsWrites)
+          .dashBodySlot(reduceMotion: reduceMotion)
       }
-      DashCard {
-        Text(
-          DashL10n.string(
-            "Removing a domain isn't available in Dash. Use the Cloudflare dashboard."
-          )
-        )
-        .dashTextStyle(.footnote)
-        .foregroundStyle(DashTheme.subtle)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .dashSectionBoundary(!allowsWrites || !nameservers.isEmpty)
       DashSurfaceStack {
         ForEach(curated) { setting in
           settingRow(setting)
         }
       }
-      .dashSectionBoundary()
+      .dashSectionBoundary(!allowsWrites || !nameservers.isEmpty)
+      .dashBodySlot(reduceMotion: reduceMotion)
       ZoneAlertsSection(zoneID: zoneID)
         .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
-    .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
-    .refreshable { await load(force: true) }
-    .task { await load() }
   }
 
   /// `curatedZoneSettings` order, not response order, and silently short when a
@@ -296,6 +326,7 @@ struct ZoneSettingsView: View {
       settings = cached
       error = nil
       loading = false
+      hasPresentedContent = true
       return
     }
     defer { loading = false }
@@ -303,6 +334,7 @@ struct ZoneSettingsView: View {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
       model.featureCache.set(key, settings)
       error = nil
+      hasPresentedContent = true
     } catch {
       guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
@@ -325,21 +357,45 @@ struct ZoneSettingsView: View {
   }
 
   private func commitUpdate(settingID: String, value: JSONValue, previous: ZoneSetting) async {
+    let verb = zoneSettingOptimisticVerb(value)
+    let op = model.optimistic.begin(verb) {
+      if let latest = settings.firstIndex(where: { $0.id == settingID }) {
+        settings[latest] = previous
+      }
+      updatingSettingIDs.remove(settingID)
+    }
     do {
+      try await model.optimistic.waitForCommit(op)
       let updated = try await model.client.updateZoneSetting(
         zoneID: zoneID, settingID: settingID, value: value)
       if let latest = settings.firstIndex(where: { $0.id == settingID }) {
         settings[latest] = updated
       }
       model.featureCache.set(FeatureCacheKey.zoneSettings(zoneID), settings)
-      DashDelight.celebrateSuccess()
+      model.optimistic.finishSuccess(op)
+    } catch is CancellationError {
+      // Undo during grace already reverted local state.
     } catch {
       if let latest = settings.firstIndex(where: { $0.id == settingID }) {
         settings[latest] = previous
       }
+      model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
     }
     updatingSettingIDs.remove(settingID)
+  }
+
+  private func zoneSettingOptimisticVerb(_ value: JSONValue) -> DashOptimisticVerb {
+    switch value {
+    case .bool(let enabled):
+      .toggle(enabled)
+    case .string(let raw) where raw == "on" || raw == "off":
+      .toggle(raw == "on")
+    case .string:
+      .setting
+    default:
+      .updating
+    }
   }
 }
 
@@ -377,6 +433,7 @@ extension JSONValue {
 
 struct AuditLogView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var entries: [AuditLogEntry] = []
   @State private var loading = true
   @State private var error: String?
@@ -386,24 +443,21 @@ struct AuditLogView: View {
       isLoading: loading,
       error: error,
       hasContent: !entries.isEmpty,
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.shieldCheck,
+        title: "No audit events",
+        message: "Account activity from the last seven days will show up here."
+      ),
       retry: { Task { await load(force: true) } }
-    ) {
-      if entries.isEmpty {
-        DashEmptyState(
-          icon: SolarAsset.Content.shieldCheck,
-          title: "No audit events",
-          message: "Account activity from the last seven days will show up here."
-        )
-      } else {
-        dashListCard {
-          dashListCardRows(items: entries) { entry in
-            DashListRow(
-              title: DashL10n.ui(entry.title),
-              subtitle: auditSubtitle(entry),
-              icon: SolarAsset.Content.shieldCheck,
-              showsChevron: false
-            )
-          }
+    ) { mode in
+      dashListCard {
+        dashModeListRows(mode: mode, items: entries, reduceMotion: reduceMotion) { entry in
+          DashListRow(
+            title: DashL10n.ui(entry.title),
+            subtitle: auditSubtitle(entry),
+            icon: SolarAsset.Content.shieldCheck,
+            showsChevron: false
+          )
         }
       }
     }
@@ -875,6 +929,7 @@ struct WAFEventsView: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
   @State private var selectedCountryCode: String?
   @State private var globeCamera = GlobeCamera(longitude: 0, latitude: 15)
@@ -912,9 +967,55 @@ struct WAFEventsView: View {
       isLoading: loading,
       error: error,
       hasContent: summary != nil || securityLoaded,
-      retry: { Task { await load(force: true) } },
-      skeleton: { wafDetailSkeleton }
-    ) {
+      retry: { Task { await load(force: true) } }
+    ) { mode in
+      wafDetailBody(mode: mode)
+    }
+    .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
+    .refreshable { await load(force: true) }
+    .task(id: model.grantedScopes) { await load() }
+  }
+
+  /// Fuller first-paint reserve: blocked metric, under-attack toggle, countries,
+  /// rules. Live mode drops empty chart / unavailable security / empty buckets;
+  /// those slots exit upward.
+  @ViewBuilder
+  private func wafDetailBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashGlassCard {
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Last 24 hours")
+            .dashTextStyle(.footnoteSemibold)
+            .foregroundStyle(DashTheme.subtle)
+          Text(verbatim: "888,888")
+            .dashTextStyle(.sectionTitle)
+            .foregroundStyle(DashTheme.text)
+            .monospacedDigit()
+          Text("Blocked requests")
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.subtle)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .dashBodyPlaceholder(true)
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashCollapsedChartPlaceholder(title: "Blocked requests", showsMetricHeader: true)
+        .dashItemBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Top countries") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashListGroup(title: "Top rules") {
+        DashListRowPlaceholders(rows: 3)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
       if let summary {
         // A metric tile — the surface `DashGlassCard` exists for.
         DashGlassCard {
@@ -932,6 +1033,7 @@ struct WAFEventsView: View {
           }
           .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .dashBodySlot(reduceMotion: reduceMotion)
         let seriesData = WAFChartModel.seriesData(summary.series)
         if !seriesData.isEmpty {
           let collapsed = CollapsedDitherTrendSeries(
@@ -960,6 +1062,7 @@ struct WAFEventsView: View {
               blocked: summary.blocked, hours: summary.hours)
           )
           .dashItemBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
       if securityAvailable {
@@ -973,12 +1076,14 @@ struct WAFEventsView: View {
           isLoading: securityUpdating
         )
         .dashSectionBoundary(summary != nil)
+        .dashBodySlot(reduceMotion: reduceMotion)
         if !canToggleSecurity {
           FeatureWriteAccessNotice(
             message: "Read-only — grant zone settings write access to change Under Attack mode.",
             scopes: requiredWriteScopes
           )
           .dashItemBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
       if let summary {
@@ -988,53 +1093,17 @@ struct WAFEventsView: View {
             title: "Top countries", buckets: summary.countries, labelsAreRegionCodes: true
           )
           .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
         } else {
           countriesGlobeGroup(topCountries, totalBlocked: summary.blocked)
             .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
         }
         wafBucketGroup(title: "Top rules", buckets: summary.rules)
           .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
-    .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
-    .refreshable { await load(force: true) }
-    .task(id: model.grantedScopes) { await load() }
-  }
-
-  /// Blocked-requests metric panel, Under Attack toggle, then Top countries /
-  /// Top rules row groups.
-  private var wafDetailSkeleton: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      DashGlassCard {
-        VStack(alignment: .leading, spacing: 8) {
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .dashSkeletonFill(DashSkeletonStyle.strong)
-            .frame(width: 96, height: 12)
-          Text(verbatim: "888,888")
-            .dashTextStyle(.sectionTitle)
-            .monospacedDigit()
-            .lineLimit(1)
-            .redacted(reason: .placeholder)
-            .dashSkeletonShimmer()
-          RoundedRectangle(cornerRadius: 4, style: .continuous)
-            .dashSkeletonFill(DashSkeletonStyle.soft)
-            .frame(width: 112, height: 11)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-      DashListGroup(title: "Top countries") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-      DashListGroup(title: "Top rules") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
   }
 
   /// The GraphQL country dimension is an ISO 3166 alpha-2 code — show the
@@ -1305,8 +1374,13 @@ struct WAFEventsView: View {
     }
     guard let context = model.accountRequestContext else { return }
     securityUpdating = true
+    let op = model.optimistic.begin(.toggle(enabled)) {
+      underAttack = !enabled
+      securityUpdating = false
+    }
     defer { securityUpdating = false }
     do {
+      try await model.optimistic.waitForCommit(op)
       let outcome = try await ZoneSecurityLevelOperation.setUnderAttack(
         zoneID: zoneID,
         enabled: enabled,
@@ -1314,10 +1388,16 @@ struct WAFEventsView: View {
         isCurrent: { model.isCurrentAccount(context) })
       underAttack = outcome.isUnderAttack
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
-      DashDelight.celebrateSuccess()
+      model.optimistic.finishSuccess(op)
+    } catch is CancellationError {
+      // Undo during grace already reverted local state.
     } catch {
-      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else {
+        model.optimistic.finishFailure(op)
+        return
+      }
       underAttack = !enabled
+      model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
     }
   }

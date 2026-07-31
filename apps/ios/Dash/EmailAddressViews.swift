@@ -15,6 +15,7 @@ let emailAddressWriteScopes: Set<String> = ["email-routing-address.write"]
 struct EmailDestinationAddressesView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   @State private var addresses: [EmailDestinationAddress] = []
   @State private var loading = true
@@ -34,22 +35,26 @@ struct EmailDestinationAddressesView: View {
       error: error,
       hasContent: loaded,
       retry: { Task { await load(force: true) } }
-    ) {
-      if !featureAllowsWrites {
-        FeatureWriteAccessNotice(
-          message: "Read-only — grant Email Routing write access to change routes.",
-          scopes: emailAddressWriteScopes)
+    ) { mode in
+      if !mode.isPlaceholder {
+        if !featureAllowsWrites {
+          FeatureWriteAccessNotice(
+            message: "Read-only — grant Email Routing write access to change routes.",
+            scopes: emailAddressWriteScopes)
+        }
+        if !unverified.isEmpty {
+          DashNotice(
+            kind: .warning,
+            message:
+              "Mail forwarded to an unverified address is dropped. Open the confirmation email Cloudflare sent to it."
+          )
+          .dashSectionBoundary(!featureAllowsWrites)
+        }
       }
-      if !unverified.isEmpty {
-        DashNotice(
-          kind: .warning,
-          message:
-            "Mail forwarded to an unverified address is dropped. Open the confirmation email Cloudflare sent to it."
-        )
-        .dashSectionBoundary(!featureAllowsWrites)
+      addressesSection(mode: mode)
+      if !mode.isPlaceholder {
+        removalNote
       }
-      addressesSection
-      removalNote
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.user),
@@ -78,18 +83,18 @@ struct EmailDestinationAddressesView: View {
   /// and the rows follow as its sibling — not a `DashListGroup`, whose eager
   /// `VStack` would mount every address at once.
   @ViewBuilder
-  private var addressesSection: some View {
+  private func addressesSection(mode: DashBodyMode) -> some View {
     DashListGroupHeader(
       title: DashL10n.ui("Addresses"),
-      actionTitle: featureAllowsWrites ? DashL10n.ui("Add") : nil,
-      actionIcon: featureAllowsWrites ? SolarAsset.plus : nil,
-      action: featureAllowsWrites ? { addsAddress = true } : nil
+      actionTitle: !mode.isPlaceholder && featureAllowsWrites ? DashL10n.ui("Add") : nil,
+      actionIcon: !mode.isPlaceholder && featureAllowsWrites ? SolarAsset.plus : nil,
+      action: !mode.isPlaceholder && featureAllowsWrites ? { addsAddress = true } : nil
     )
     .padding(.horizontal, 4)
     .dashSectionBoundary()
     .padding(.bottom, 8)
 
-    if addresses.isEmpty {
+    if !mode.isPlaceholder, addresses.isEmpty {
       DashEmptyState(
         icon: SolarAsset.Content.user,
         title: "No destination addresses",
@@ -98,7 +103,7 @@ struct EmailDestinationAddressesView: View {
         actionTitle: featureAllowsWrites ? "Add a destination address" : nil,
         action: featureAllowsWrites ? { addsAddress = true } : nil)
     } else {
-      dashListCardRows(items: addresses) { address in
+      dashModeListRows(mode: mode, items: addresses, reduceMotion: reduceMotion) { address in
         Button {
           selected = address
         } label: {

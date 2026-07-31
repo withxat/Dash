@@ -99,11 +99,11 @@
 		B00000000000000000000126 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
 		B00000000000000000000191 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
 		B00000000000000000000192 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000126 /* Localizable.xcstrings */; };
-		B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000A /* BlossomColorPickerCore */; };
 		B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000143 /* WatchtowerInboxStore.swift */; };
 		B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000144 /* WatchtowerInboxView.swift */; };
 		B00000000000000000000146 /* DashToast.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000145 /* DashToast.swift */; };
 		B00000000000000000000190 /* DeferredDeletion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000190 /* DeferredDeletion.swift */; };
+		B000000000000000000001D2 /* DashOptimisticOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001D2 /* DashOptimisticOperations.swift */; };
 		B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */; };
 		B00000000000000000000148 /* DebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000147 /* DebugView.swift */; };
 		B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000150 /* PerformanceDiagnostics.swift */; };
@@ -136,6 +136,7 @@
 		B00000000000000000000176 /* AlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000176 /* AlertRoutingTests.swift */; };
 		B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B4 /* WorkerBuildActivityTests.swift */; };
 		B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B5 /* DeferredDeletionTests.swift */; };
+		B000000000000000000001FD /* OptimisticOperationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001FD /* OptimisticOperationTests.swift */; };
 		B000000000000000000001B6 /* ICloudPreferencesSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B6 /* ICloudPreferencesSync.swift */; };
 		B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */; };
 		B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B8 /* EmailRoutingViews.swift */; };
@@ -159,7 +160,6 @@
 		B000000000000000000001CA /* DashFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000026 /* DashFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		B000000000000000000001CB /* FileProviderDomainsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CB /* FileProviderDomainsTests.swift */; };
 		B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
-		B000000000000000000001CD /* HoloStickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CD /* HoloStickerView.swift */; };
 		B000000000000000000001CF /* ChartDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CF /* ChartDetailView.swift */; };
 		B000000000000000000001D1 /* DashCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001D1 /* DashCharts.swift */; };
 		B000000000000000000001D0 /* VariableBlur in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000014 /* VariableBlur */; };
@@ -228,7 +228,6 @@
 		F00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F0000000000000000000012B /* DemoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBackend.swift; sourceTree = "<group>"; };
 		F00000000000000000000005 /* DashTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
-		F000000000000000000001CD /* HoloStickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoloStickerView.swift; sourceTree = "<group>"; };
 		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
 		F00000000000000000000008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -293,6 +292,7 @@
 		F00000000000000000000143 /* WatchtowerInboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000144 /* WatchtowerInboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerInboxView.swift; sourceTree = "<group>"; };
 		F00000000000000000000145 /* DashToast.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashToast.swift; sourceTree = "<group>"; };
+		F000000000000000000001D2 /* DashOptimisticOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashOptimisticOperations.swift; sourceTree = "<group>"; };
 		F00000000000000000000190 /* DeferredDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletion.swift; sourceTree = "<group>"; };
 		F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerIgnoreAllTray.swift; sourceTree = "<group>"; };
 		F00000000000000000000147 /* DebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugView.swift; sourceTree = "<group>"; };
@@ -325,6 +325,7 @@
 		F00000000000000000000176 /* AlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRoutingTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B5 /* DeferredDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTests.swift; sourceTree = "<group>"; };
+		F000000000000000000001FD /* OptimisticOperationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticOperationTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B6 /* ICloudPreferencesSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSync.swift; sourceTree = "<group>"; };
 		F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSyncTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B8 /* EmailRoutingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailRoutingViews.swift; sourceTree = "<group>"; };
@@ -366,7 +367,6 @@
 			files = (
 				B00000000000000000000014 /* CloudflareAPI in Frameworks */,
 				B00000000000000000000117 /* GradientAvatars in Frameworks */,
-				B00000000000000000000127 /* BlossomColorPickerCore in Frameworks */,
 				B00000000000000000000115 /* SwiftDitherKit in Frameworks */,
 				B00000000000000000000163 /* SwiftGlobeKit in Frameworks */,
 				B00000000000000000000142 /* CodeEditor in Frameworks */,
@@ -458,7 +458,6 @@
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000150 /* PerformanceDiagnostics.swift */,
 				F00000000000000000000005 /* DashTheme.swift */,
-				F000000000000000000001CD /* HoloStickerView.swift */,
 				F0000000000000000000015D /* DashSurfaces.swift */,
 				F0000000000000000000015E /* DashControls.swift */,
 				F00000000000000000000006 /* Catalog.swift */,
@@ -528,6 +527,7 @@
 				F00000000000000000000146 /* WatchtowerIgnoreAllTray.swift */,
 				F00000000000000000000147 /* DebugView.swift */,
 				F00000000000000000000145 /* DashToast.swift */,
+				F000000000000000000001D2 /* DashOptimisticOperations.swift */,
 				F00000000000000000000190 /* DeferredDeletion.swift */,
 				F00000000000000000000112 /* DashAuthorizationScopes.swift */,
 				F00000000000000000000114 /* DashWorkspace.swift */,
@@ -556,6 +556,7 @@
 				F00000000000000000000176 /* AlertRoutingTests.swift */,
 				F000000000000000000001B4 /* WorkerBuildActivityTests.swift */,
 				F000000000000000000001B5 /* DeferredDeletionTests.swift */,
+				F000000000000000000001FD /* OptimisticOperationTests.swift */,
 				F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */,
 				F000000000000000000001CB /* FileProviderDomainsTests.swift */,
 			);
@@ -684,7 +685,6 @@
 			packageProductDependencies = (
 				P00000000000000000000001 /* CloudflareAPI */,
 				P00000000000000000000008 /* GradientAvatars */,
-				P0000000000000000000000A /* BlossomColorPickerCore */,
 				P00000000000000000000006 /* SwiftDitherKit */,
 				P00000000000000000000010 /* SwiftGlobeKit */,
 				P0000000000000000000000E /* CodeEditor */,
@@ -857,7 +857,6 @@
 			packageReferences = (
 				P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */,
 				P00000000000000000000007 /* XCLocalSwiftPackageReference "../../packages/gradient-avatars" */,
-				P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */,
 				P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */,
 				P0000000000000000000000F /* XCLocalSwiftPackageReference "../../packages/SwiftGlobeKit" */,
 				P0000000000000000000000D /* XCRemoteSwiftPackageReference "CodeEditor" */,
@@ -957,7 +956,6 @@
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
 				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
-				B000000000000000000001CD /* HoloStickerView.swift in Sources */,
 				B0000000000000000000015D /* DashSurfaces.swift in Sources */,
 				B0000000000000000000015E /* DashControls.swift in Sources */,
 				B00000000000000000000006 /* Catalog.swift in Sources */,
@@ -1025,6 +1023,7 @@
 				B00000000000000000000147 /* WatchtowerIgnoreAllTray.swift in Sources */,
 				B00000000000000000000148 /* DebugView.swift in Sources */,
 				B00000000000000000000146 /* DashToast.swift in Sources */,
+				B000000000000000000001D2 /* DashOptimisticOperations.swift in Sources */,
 				B00000000000000000000190 /* DeferredDeletion.swift in Sources */,
 				B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */,
 				B00000000000000000000114 /* DashWorkspace.swift in Sources */,
@@ -1055,6 +1054,7 @@
 				B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */,
 				B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */,
 				B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */,
+				B000000000000000000001FD /* OptimisticOperationTests.swift in Sources */,
 				B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1596,10 +1596,6 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = "../../packages/gradient-avatars";
 		};
-		P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../../packages/BlossomColorPicker;
-		};
 		P0000000000000000000000C /* XCLocalSwiftPackageReference "../../packages/SwiftDitherKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../../packages/SwiftDitherKit;
@@ -1649,11 +1645,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = P00000000000000000000002 /* XCLocalSwiftPackageReference "../../packages/cloudflare-api" */;
 			productName = CloudflareAPI;
-		};
-		P0000000000000000000000A /* BlossomColorPickerCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = P0000000000000000000000B /* XCLocalSwiftPackageReference "../../packages/BlossomColorPicker" */;
-			productName = BlossomColorPickerCore;
 		};
 		P0000000000000000000000E /* CodeEditor */ = {
 			isa = XCSwiftPackageProductDependency;

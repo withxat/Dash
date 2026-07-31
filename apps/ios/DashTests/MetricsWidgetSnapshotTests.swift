@@ -81,6 +81,17 @@ import Testing
   #expect(empty.valueCeiling == 1)
 }
 
+@Test func collapsedSystemChartsReservePeakHeadroom() {
+  #expect(CollapsedSystemChartPlotMetrics.topInset(existingTop: 0) == 4)
+  #expect(CollapsedSystemChartPlotMetrics.topInset(existingTop: 8) == 8)
+  // Axes-on (expanded detail / Watchtower cards): no plot-style padding —
+  // otherwise Swift Charts shifts marks below the X axis.
+  #expect(
+    CollapsedSystemChartPlotMetrics.plotStyleTopInset(showsAxes: true, existingTop: 8) == 0)
+  #expect(
+    CollapsedSystemChartPlotMetrics.plotStyleTopInset(showsAxes: false, existingTop: 0) == 4)
+}
+
 @Test func metricsWidgetStoreScopesLookupsAndDeepLinksByAccount() throws {
   let accountA = MetricsWidgetAccount(id: "account-a", name: "Account A")
   let accountB = MetricsWidgetAccount(id: "account-b", name: "Account B")

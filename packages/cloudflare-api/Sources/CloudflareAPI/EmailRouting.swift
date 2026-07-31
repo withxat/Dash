@@ -309,9 +309,9 @@ public struct EmailRoutingDNSRecord: Codable, Hashable, Sendable {
 /// array of records **or** `{ "errors": [{ "code", "missing" }], "record": [...] }`.
 /// Both shapes decode. **Anything else throws** — it must not degrade to empty
 /// arrays. An empty plan renders "Records Cloudflare will add: (nothing)" beside
-/// an armed hold-to-confirm that replaces the zone's apex MX, and the
-/// client-side conflict check compares against the plan, so an empty plan flags
-/// either nothing or everything. Empty and failed are different answers.
+/// an armed confirm that replaces the zone's apex MX, and the client-side
+/// conflict check compares against the plan, so an empty plan flags either
+/// nothing or everything. Empty and failed are different answers.
 public struct EmailRoutingDNSPlan: Decodable, Hashable, Sendable {
   public let records: [EmailRoutingDNSRecord]
   public let missing: [EmailRoutingDNSRecord]

@@ -231,6 +231,17 @@ private struct DashSystemCartesianChart: View {
           selection: xSelection)
       )
       .modifier(DashSystemChartTapModifier(onTap: options.interactive ? nil : onTap))
+      // Sparkline-only headroom — see `CollapsedSystemChartPlotMetrics`.
+      .chartPlotStyle { plotArea in
+        let inset = CollapsedSystemChartPlotMetrics.plotStyleTopInset(
+          showsAxes: options.showsAxes,
+          existingTop: options.margins.top)
+        if inset > 0 {
+          plotArea.padding(.top, inset)
+        } else {
+          plotArea
+        }
+      }
       .padding(.leading, options.showsAxes ? max(0, options.margins.leading - 38) : 0)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(options.accessibility.title ?? "")
@@ -292,7 +303,15 @@ private struct DashSystemCartesianChart: View {
           )
           .foregroundStyle(point.color)
           .symbolSize(48)
-          .annotation(position: .top, spacing: 6) {
+          // Fit the bubble inside the chart instead of letting Swift Charts
+          // resolve the overflow by padding the value scale: that default
+          // rescales the plot the moment a scrub reaches the top of the
+          // series, so the line visibly drops away under the finger.
+          .annotation(
+            position: .top,
+            spacing: 6,
+            overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))
+          ) {
             Text(
               verbatim: point.value.formatted(
                 .number
@@ -404,7 +423,36 @@ private struct DashSystemPieChart: View {
   let options: DitherPolarOptions
   var selection: Binding<String?>? = nil
 
+  /// Same stack as `DitherPieChart`: plot over a tappable legend. A `SectorMark`
+  /// styled by a resolved color rather than `by:` produces no Swift Charts
+  /// legend at all, so the donut Dash uses as a filter shipped without the
+  /// control that names its slices — the plot alone can only be aimed at.
   var body: some View {
+    VStack(spacing: 6) {
+      chart
+      if options.showsLegend, !slices.isEmpty {
+        DashSystemChartLegend(
+          entries: slices.map {
+            DashSystemLegendEntry(id: $0.id, label: $0.label, color: Color(dither: $0.color))
+          },
+          selectedID: selection?.wrappedValue,
+          onSelect: select(id:))
+      }
+    }
+    .accessibilityElement(children: .contain)
+    // A selection naming a slice the data no longer carries would filter the
+    // list below down to nothing with no way back, so it clears itself — the
+    // same guarantee `DitherPieChart` makes, which is what lets Load more widen
+    // the data without the screen resetting its own filter.
+    .onChange(of: slices.map(\.id), initial: true) { _, ids in
+      guard let selection, let selected = selection.wrappedValue, !ids.contains(selected) else {
+        return
+      }
+      selection.wrappedValue = nil
+    }
+  }
+
+  private var chart: some View {
     Chart(slices) { slice in
       SectorMark(
         angle: .value(slice.label, max(0, slice.value)),
@@ -415,12 +463,21 @@ private struct DashSystemPieChart: View {
       .opacity(selectionOpacity(for: slice.id))
       .cornerRadius(3)
     }
-    .chartLegend(options.showsLegend ? .automatic : .hidden)
+    .chartLegend(.hidden)
     .chartBackground { _ in Color.clear }
     .chartAngleSelection(value: selectionAngleBinding)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(options.accessibility.title ?? "")
     .accessibilityValue(options.accessibility.summary ?? "")
+  }
+
+  /// Legend taps toggle, so the entry that engaged a filter also clears it.
+  /// Sector taps only ever select: `chartAngleSelection` keeps writing while a
+  /// finger moves across the donut, and a toggle there would flicker the filter
+  /// on and off under the same gesture.
+  private func select(id: String) {
+    guard let selection else { return }
+    selection.wrappedValue = selection.wrappedValue == id ? nil : id
   }
 
   private func selectionOpacity(for id: String) -> Double {
@@ -449,5 +506,80 @@ private struct DashSystemPieChart: View {
         }
         selection.wrappedValue = match?.id
       })
+  }
+}
+
+private struct DashSystemLegendEntry: Identifiable, Hashable {
+  let id: String
+  let label: String
+  let color: Color
+}
+
+/// The Swift Charts counterpart to `DitherLegend`: one chip per slice, the
+/// selected chip lit and the rest dimmed, laid out in a row that scrolls
+/// sideways only when the labels stop fitting.
+private struct DashSystemChartLegend: View {
+  let entries: [DashSystemLegendEntry]
+  let selectedID: String?
+  let onSelect: (String) -> Void
+
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      row
+      ScrollView(.horizontal) {
+        row
+          .padding(.horizontal, 2)
+      }
+      .scrollIndicators(.hidden)
+    }
+    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+  }
+
+  private var row: some View {
+    HStack(spacing: 8) {
+      ForEach(entries) { entry in
+        Button {
+          onSelect(entry.id)
+        } label: {
+          HStack(spacing: 5) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+              .fill(entry.color)
+              .frame(width: 10, height: 10)
+              .accessibilityHidden(true)
+            Text(verbatim: entry.label)
+              .dashTextStyle(.caption)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+          }
+          .padding(.horizontal, 8)
+          .padding(.vertical, 5)
+          .background(
+            isLit(entry.id) ? DashTheme.recessed : Color.clear,
+            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+          )
+          .opacity(isLit(entry.id) ? 1 : 0.45)
+          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+          .contentShape(Rectangle())
+        }
+        // A legend chip is a small text action, not a row or a card, so it
+        // takes the press shrink.
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(
+          selectedID == entry.id
+            ? DashL10n.string("Deselect \(entry.label)")
+            : DashL10n.string("Select \(entry.label)")
+        )
+        .accessibilityValue(
+          selectedID == entry.id ? DashL10n.ui("Selected") : DashL10n.ui("Not selected")
+        )
+        .accessibilityAddTraits(selectedID == entry.id ? .isSelected : [])
+      }
+    }
+  }
+
+  /// Nothing selected reads as "all of it", so every chip stays lit until one
+  /// of them owns the filter.
+  private func isLit(_ id: String) -> Bool {
+    selectedID == nil || selectedID == id
   }
 }

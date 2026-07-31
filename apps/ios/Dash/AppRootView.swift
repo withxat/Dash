@@ -456,7 +456,9 @@ private struct OnboardingView: View {
 
       // App Review's path past the OAuth wall (and anyone's no-account tour):
       // a read-only session served from in-app fixtures by DemoBackend.
-      DashTrayActionPair {
+      // The demo is an alternative to signing in, not a way out of it, so the
+      // two stay stacked instead of sharing a confirm row.
+      DashTrayActionPair(axis: .vertical) {
         DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
           model.enterDemo()
         }
@@ -911,73 +913,85 @@ private struct OnboardingPermissionButtonStyle: ButtonStyle {
 
 // MARK: - Login background
 
-/// Sign-in backdrop: a drifting warm mesh gradient (iOS 18+) under a static
-/// Metal film grain (`LoginGrain.metal`). iOS 17 and Reduce Motion get the
-/// still gradient with the same grain — never a frozen mid-animation frame.
+/// Sign-in backdrop: Paper Design's animated mesh gradient
+/// (`loginMeshGradient` in `LoginGrain.metal`). Reduce Motion keeps the still
+/// wash — never a frozen mid-animation frame.
+///
+/// `loginPaperTexture` + `PaperNoise` remain in the target for a later pass;
+/// re-apply with `.colorEffect` on this stack when ready.
 private struct LoginBackground: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    Group {
-      if #available(iOS 18.0, *), !reduceMotion {
-        LoginMeshGradient(dark: colorScheme == .dark)
-      } else {
-        LoginStaticGradient(dark: colorScheme == .dark)
+    GeometryReader { geo in
+      Group {
+        if reduceMotion {
+          LoginStaticGradient(dark: colorScheme == .dark)
+        } else {
+          LoginMeshGradient(dark: colorScheme == .dark, size: geo.size)
+        }
       }
+      .frame(width: geo.size.width, height: geo.size.height)
     }
-    .colorEffect(ShaderLibrary.surfaceGrain(.float(0.12)))
     .ignoresSafeArea()
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
 }
 
-@available(iOS 18.0, *)
+/// Paper Mesh Gradient. Params match the shared demo (`distortion=0.8`,
+/// `swirl=0.1`, `speed=1`, `scale=1`); colors come from
+/// `DashTheme.LoginBackdrop.meshSpots`.
+///
+/// Time is seconds since this view appeared — Paper's `u_time` is a small
+/// running clock. Feeding `timeIntervalSinceReferenceDate` (~1e9) makes
+/// every `sin`/`cos` lose float32 precision, so the spots freeze into a
+/// flat wash.
 private struct LoginMeshGradient: View {
   let dark: Bool
+  let size: CGSize
+  @State private var startedAt = Date()
 
   var body: some View {
     TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-      mesh(at: context.date.timeIntervalSinceReferenceDate)
+      Rectangle()
+        .fill(Color.black)
+        .colorEffect(
+          Self.meshShader(
+            time: context.date.timeIntervalSince(startedAt),
+            dark: dark,
+            size: size
+          )
+        )
     }
   }
 
-  private func mesh(at t: TimeInterval) -> MeshGradient {
-    MeshGradient(
-      width: 3, height: 3,
-      points: Self.points(at: t),
-      colors: Self.colors(at: t, dark: dark)
+  private static func meshShader(time: TimeInterval, dark: Bool, size: CGSize)
+    -> Shader
+  {
+    let spots = DashTheme.LoginBackdrop.meshSpots(dark: dark)
+    return ShaderLibrary.loginMeshGradient(
+      .float(Float(time)),  // Paper u_time (seconds at speed=1)
+      .float(0.8),  // distortion
+      .float(0.1),  // swirl
+      .float(0),  // grainMixer
+      .float(0),  // grainOverlay
+      .float(1),  // scale
+      .float2(Float(size.width), Float(size.height)),
+      Self.float4Argument(spots[0]),
+      Self.float4Argument(spots[1]),
+      Self.float4Argument(spots[2]),
+      Self.float4Argument(spots[3])
     )
   }
 
-  /// Every vertex breathes between the airy and deep keyframe palettes on its
-  /// own phase, so somewhere on the canvas is always mid-shift — the color
-  /// change reads even when a single vertex happens to rest.
-  private static func colors(at t: TimeInterval, dark: Bool) -> [Color] {
-    DashTheme.LoginBackdrop.meshColors(dark: dark) { index in
-      0.5 + 0.5 * sin(t * 0.8 + Double(index) * 1.9)
-    }
+  private static func float4Argument(_ v: SIMD4<Float>) -> Shader.Argument {
+    .float4(v.x, v.y, v.z, v.w)
   }
-
-  /// Edge points keep their pinned axis so the mesh always covers the canvas;
-  /// the free axes and the center drift on slow, unsynchronized waves.
-  private static func points(at t: TimeInterval) -> [SIMD2<Float>] {
-    func wave(_ speed: Double, _ phase: Double, _ amplitude: Double) -> Float {
-      Float(0.5 + amplitude * sin(t * speed + phase))
-    }
-    return [
-      [0, 0], [wave(0.85, 0.0, 0.34), 0], [1, 0],
-      [0, wave(0.70, 1.3, 0.32)],
-      [wave(0.95, 2.1, 0.38), wave(0.60, 4.2, 0.36)],
-      [1, wave(0.65, 5.1, 0.32)],
-      [0, 1], [wave(0.80, 3.4, 0.34), 1], [1, 1],
-    ]
-  }
-
 }
 
-/// iOS 17 fallback: the same warm palette as a still diagonal wash.
+/// Reduce Motion: the same warm palette as a still diagonal wash.
 private struct LoginStaticGradient: View {
   let dark: Bool
 
