@@ -295,11 +295,7 @@ struct SettingsView: View {
   @Environment(\.openURL) private var openURL
   @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var watchtowerNotifications = false
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system.rawValue
-  @AppStorage(DashTimeFormatPreference.storageKey) private var timeFormatRaw =
-    DashTimeFormatPreference.system.rawValue
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
-  @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
-    true
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
     DashWorkspaceWashPreset.defaultPreset.rawValue
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
@@ -307,17 +303,12 @@ struct SettingsView: View {
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
-  @State private var showsTimeFormatPicker = false
   @State private var showsWorkspaceWashPicker = false
   @State private var showsChartStylePicker = false
   @State private var showsSignOutConfirmation = false
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
-  }
-
-  private var selectedTimeFormat: DashTimeFormatPreference {
-    DashTimeFormatPreference.resolved(stored: timeFormatRaw)
   }
 
   private var selectedChartStyle: DashChartStylePreference {
@@ -385,22 +376,6 @@ struct SettingsView: View {
 
           SettingsPlainDivider()
 
-          Button {
-            showsTimeFormatPicker = true
-          } label: {
-            SettingsPlainRow(
-              title: DashL10n.string("Time format"),
-              icon: SolarAsset.clock,
-              trailing: selectedTimeFormat.displayName,
-              trailingIcon: SolarAsset.menuDots
-            )
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityHint(
-            DashL10n.string("Choose System, 12-hour, 24-hour, or ISO"))
-
-          SettingsPlainDivider()
-
           // Appearance held this one row on its own; a single-row section is a
           // header the page pays for twice.
           Button {
@@ -444,17 +419,6 @@ struct SettingsView: View {
           .onChange(of: hapticsEnabled) { _, enabled in
             if enabled { DashDelight.lightImpact() }
           }
-
-          SettingsPlainDivider()
-
-          SettingsPlainToggleRow(
-            title: DashL10n.string("Hold to confirm"),
-            subtitle: DashL10n.string(
-              "Require a long press to confirm deletes and other irreversible actions."
-            ),
-            icon: SolarAsset.lock,
-            isOn: $holdToConfirmEnabled
-          )
         }
 
         SettingsPlainSection(title: "iCloud") {
@@ -641,12 +605,6 @@ struct SettingsView: View {
       title: DashL10n.string("Language")
     ) {
       LanguagePickerTray(languageRaw: $languageRaw)
-    }
-    .dashTray(
-      isPresented: $showsTimeFormatPicker,
-      title: DashL10n.string("Time format")
-    ) {
-      TimeFormatPickerTray(timeFormatRaw: $timeFormatRaw)
     }
     .dashTray(
       isPresented: $showsWorkspaceWashPicker,
@@ -962,55 +920,6 @@ private struct LanguagePickerTray: View {
     .dashTrayDescription(
       DashL10n.string(
         "System follows the iPhone language, including Settings → Dash → Language.")
-    )
-  }
-}
-
-private struct TimeFormatPickerTray: View {
-  @Binding var timeFormatRaw: String
-  @Environment(\.dashTrayDismiss) private var dismiss
-
-  var body: some View {
-    VStack(spacing: 12) {
-      ForEach(DashTimeFormatPreference.allCases) { preference in
-        let isSelected = timeFormatRaw == preference.rawValue
-        Button {
-          guard timeFormatRaw != preference.rawValue else {
-            dismiss()
-            return
-          }
-          timeFormatRaw = preference.rawValue
-          DashDelight.selectionChanged()
-          dismiss()
-        } label: {
-          HStack(spacing: 12) {
-            Text(preference.displayName)
-              .dashTextStyle(.bodyMedium)
-              .foregroundStyle(DashTheme.text)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            SolarIcon(
-              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-              size: 22,
-              color: isSelected ? DashTheme.brand : DashTheme.placeholder
-            )
-          }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-          .background(DashTheme.Sheet.shortcutItem)
-          .clipShape(DashTheme.buttonShape)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-      }
-    }
-    .dashTrayDescription(
-      DashL10n.string(
-        "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged."
-      )
     )
   }
 }

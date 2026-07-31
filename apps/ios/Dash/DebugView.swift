@@ -8,8 +8,6 @@
   struct DebugView: View {
     @Environment(AppModel.self) private var model
     @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
-    @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
-      true
     @State private var holdDemoPhase: DashActionPhase = .idle
     @State private var probeRunning = false
     @State private var probeResult: String?
@@ -326,19 +324,8 @@
 
     private var holdSection: some View {
       DashListGroup(title: "Hold to confirm") {
-        DashToggleRow(
-          title: "Hold to confirm",
-          subtitle: "Same Settings → General toggle.",
-          isOn: $holdToConfirmEnabled
-        )
-
         dashListCard {
           VStack(alignment: .leading, spacing: 12) {
-            Text("Hold the button below. When the setting is off it fires on tap.")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .fixedSize(horizontal: false, vertical: true)
-
             DashActionButton(
               title: "Hold to confirm",
               role: .destructive,

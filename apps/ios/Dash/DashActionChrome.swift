@@ -485,8 +485,6 @@ struct DashActionButton: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.isEnabled) private var isEnabled
-  @AppStorage(DashInteractionPreferences.holdToConfirmKey) private var holdToConfirmEnabled =
-    true
   @State private var holdProgress: CGFloat = 0
   @State private var isHolding = false
   /// Wipe finished while the finger is still down — waiting for release.
@@ -513,13 +511,12 @@ struct DashActionButton: View {
   private var holdCancelSlop: CGFloat { 36 }
   /// Early release past this fraction of the hold earns the “keep holding” toast.
   private var holdCancelHintThreshold: TimeInterval { holdDuration * 0.2 }
-  private var usesHoldConfirm: Bool { holdToConfirm && holdToConfirmEnabled }
-  /// Generic Confirm / Hold to confirm pills follow the Settings toggle; named
-  /// verbs (Sign out, Ignore all, …) keep their title and use the a11y hint.
+  /// Generic Confirm pills name the required gesture; named verbs (Sign out,
+  /// Ignore all, …) keep their title and use the accessibility hint.
   private var displayTitle: String {
     let isGenericConfirm = title == "Confirm" || title == "Hold to confirm"
     guard holdToConfirm, isGenericConfirm else { return title }
-    return usesHoldConfirm ? "Hold to confirm" : "Confirm"
+    return "Hold to confirm"
   }
   private var visibleHoldTitle: String {
     holdWillCancel ? DashL10n.string("Release to cancel") : displayTitle
@@ -527,7 +524,7 @@ struct DashActionButton: View {
 
   var body: some View {
     Group {
-      if usesHoldConfirm {
+      if holdToConfirm {
         holdButton
       } else {
         tapButton

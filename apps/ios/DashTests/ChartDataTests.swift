@@ -176,6 +176,18 @@ import Testing
   #expect(allZero.percentChange == 0)
 }
 
+@Test func chartTrendColorConventionFollowsLanguage() {
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "zh-Hans"))
+      == .redUpGreenDown)
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "zh-Hant-TW"))
+      == .redUpGreenDown)
+  #expect(
+    DashChartTrendColorConvention.resolved(locale: Locale(identifier: "en"))
+      == .greenUpRedDown)
+}
+
 @Test func webMetricsUseCompleteUTCWindowsAndExactPageLoadTrend() {
   // window = 2: the two complete UTC days before `now` are current. Today is
   // intentionally present in the fixture and must be excluded.

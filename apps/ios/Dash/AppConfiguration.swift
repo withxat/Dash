@@ -128,18 +128,13 @@ enum DashL10n {
   #endif
 }
 
-/// Interaction toggles (Settings → General). Defaults are on; absent keys read
-/// as enabled so a fresh install keeps haptics and hold-to-confirm.
+/// Haptic preference (Settings → General). Absent keys read as enabled so a
+/// fresh install keeps interaction feedback.
 enum DashInteractionPreferences {
   static let hapticsKey = "dash.haptics_enabled"
-  static let holdToConfirmKey = "dash.hold_to_confirm_enabled"
 
   static var hapticsEnabled: Bool {
     UserDefaults.standard.object(forKey: hapticsKey) as? Bool ?? true
-  }
-
-  static var holdToConfirmEnabled: Bool {
-    UserDefaults.standard.object(forKey: holdToConfirmKey) as? Bool ?? true
   }
 }
 
@@ -171,39 +166,6 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
 
   static func resolved(stored raw: String) -> DashWorkspaceWashPreset {
     DashWorkspaceWashPreset(rawValue: raw) ?? defaultPreset
-  }
-}
-
-/// Absolute timestamp presentation (Settings → Time format). Relative ages
-/// ("2 hours ago") stay on their own formatters; this preference only drives
-/// `DashDateFormatting`. Device-local — not mirrored through iCloud.
-enum DashTimeFormatPreference: String, CaseIterable, Identifiable, Sendable {
-  case system
-  case twelveHour = "12-hour"
-  case twentyFourHour = "24-hour"
-  case iso
-
-  static let storageKey = "dash.time_format"
-
-  var id: String { rawValue }
-
-  var displayName: String {
-    switch self {
-    case .system: DashL10n.string("System")
-    case .twelveHour: DashL10n.string("12-hour")
-    case .twentyFourHour: DashL10n.string("24-hour")
-    case .iso: DashL10n.string("ISO")
-    }
-  }
-
-  static func resolved(stored raw: String) -> DashTimeFormatPreference {
-    DashTimeFormatPreference(rawValue: raw) ?? .system
-  }
-
-  /// Current device-local choice for non-View formatters.
-  static var current: DashTimeFormatPreference {
-    resolved(
-      stored: UserDefaults.standard.string(forKey: storageKey) ?? system.rawValue)
   }
 }
 

@@ -319,6 +319,20 @@ struct DashGlassCard<Content: View>: View {
   }
 }
 
+extension View {
+  /// One invariant for the prominent value above every chart. The primary
+  /// figure keeps its Dynamic Type size; a neighboring trend label yields
+  /// horizontal space first instead of shrinking this value per card.
+  func dashChartPrimaryMetricValue() -> some View {
+    dashTextStyle(.emptyTitle)
+      .monospacedDigit()
+      .foregroundStyle(DashTheme.strong)
+      .lineLimit(1)
+      .allowsTightening(true)
+      .layoutPriority(1)
+  }
+}
+
 /// A chart in its collapsed state: a title band over a sparkline flush to the
 /// card's bottom edge, on the same embossed enamel as `DashGlassCard`. Sized so
 /// two of them share one row (Watchtower's collapsed metric cards are the same
@@ -359,10 +373,14 @@ struct DashCollapsedChartCard: View {
   }
 
   private var combinedAccessibilityLabel: String {
+    let change =
+      trend?.formattedPercentage.map {
+        " \(DashL10n.ui("Change")): \($0)."
+      } ?? ""
     if let summaryValue {
-      return "\(DashL10n.ui(title)), \(summaryValue). \(accessibilitySummary)"
+      return "\(DashL10n.ui(title)), \(summaryValue).\(change) \(accessibilitySummary)"
     }
-    return "\(DashL10n.ui(title)). \(accessibilitySummary)"
+    return "\(DashL10n.ui(title)).\(change) \(accessibilitySummary)"
   }
 
   var body: some View {
@@ -421,16 +439,12 @@ struct DashCollapsedChartCard: View {
         .lineLimit(showsMetricHeader ? 2 : 1, reservesSpace: true)
         .minimumScaleFactor(showsMetricHeader ? 0.85 : 0.7)
       if showsMetricHeader {
-        HStack(alignment: .lastTextBaseline, spacing: 8) {
+        HStack(alignment: .center, spacing: 6) {
           if let summaryValue {
             Text(verbatim: summaryValue)
-              .dashTextStyle(.emptyTitle)
-              .monospacedDigit()
-              .foregroundStyle(DashTheme.strong)
-              .lineLimit(1)
-              .minimumScaleFactor(0.7)
+              .dashChartPrimaryMetricValue()
           }
-          DashChartTrendLabel(trend: trend)
+          DashCollapsedChartTrendLabel(trend: trend)
           Spacer(minLength: 4)
         }
       }

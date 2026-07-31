@@ -20,6 +20,8 @@ const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/packag
 
 /** Solid Solar icons used throughout content surfaces. */
 const FILL_ICONS = {
+	SolarArrowRightDownBold: 'arrows/Bold/ArrowRightDown',
+	SolarArrowRightUpBold: 'arrows/Bold/ArrowRightUp',
 	SolarBoltFill: 'ui/Bold/Bolt',
 	SolarBoxMinimalisticFill: 'ui/Bold/BoxMinimalistic',
 	SolarCloudFill: 'weather/Bold/Cloud',

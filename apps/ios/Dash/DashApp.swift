@@ -138,8 +138,6 @@ private struct RootWithSplash: View {
   @Environment(\.scenePhase) private var scenePhase
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system
     .rawValue
-  @AppStorage(DashTimeFormatPreference.storageKey) private var timeFormatRaw =
-    DashTimeFormatPreference.system.rawValue
   @State private var phase: Phase = .holding
   /// Layout size of the magnified overlay lockup; the position/scale math
   /// needs it to keep the icon's center on target through every phase.
@@ -199,10 +197,10 @@ private struct RootWithSplash: View {
       .environment(\.dynamicTypeSize, effectiveDynamicTypeSize)
       .environment(\.dashSplashLifted, phase != .holding)
       .environment(\.dashLoginIconCloaked, phase != .done)
-      // `DashL10n` resolves against the in-app locale; rebinding identity
-      // rebuilds the tree so Settings → Language / Time format apply without
+      // `DashL10n` and absolute date/time formatting resolve against the
+      // in-app locale; rebinding identity applies a language change without
       // relaunching.
-      .id("\(languageRaw)|\(timeFormatRaw)")
+      .id(languageRaw)
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
       }

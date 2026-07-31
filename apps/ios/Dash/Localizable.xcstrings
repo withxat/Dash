@@ -686,40 +686,6 @@
         }
       }
     },
-    "12-hour" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "12-hour"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "12 小时制"
-          }
-        }
-      }
-    },
-    "24-hour" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24-hour"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "24 小时制"
-          }
-        }
-      }
-    },
     "24h" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2715,23 +2681,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请在 Dash 中选择首页快捷操作。"
-          }
-        }
-      }
-    },
-    "Choose System, 12-hour, 24-hour, or ISO" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose System, 12-hour, 24-hour, or ISO"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "选择跟随系统、12 小时制、24 小时制或 ISO"
           }
         }
       }
@@ -6932,17 +6881,6 @@
         }
       }
     },
-    "Hold the button below. When the setting is off it fires on tap." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "按住下方按钮。该设置关闭时，点击即触发。"
-          }
-        }
-      }
-    },
     "Hold to confirm" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7401,23 +7339,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "过去 24 小时的调用图表。共 %@ 次请求。"
-          }
-        }
-      }
-    },
-    "ISO" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ISO"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ISO"
           }
         }
       }
@@ -11342,23 +11263,6 @@
         }
       }
     },
-    "Require a long press to confirm deletes and other irreversible actions." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Require a long press to confirm deletes and other irreversible actions."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除等不可逆操作需要长按确认。"
-          }
-        }
-      }
-    },
     "Resource" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -12525,23 +12429,6 @@
         }
       }
     },
-    "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "System follows the iPhone’s 24-Hour Time setting. Absolute timestamps only — relative ages stay unchanged."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "“跟随系统”使用 iPhone 的“24 小时制”。只影响绝对时间，相对时间不变。"
-          }
-        }
-      }
-    },
     "Tabs" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12979,23 +12866,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "时间"
-          }
-        }
-      }
-    },
-    "Time format" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Time format"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "时间格式"
           }
         }
       }

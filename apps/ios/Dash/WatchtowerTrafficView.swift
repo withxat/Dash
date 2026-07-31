@@ -2618,17 +2618,20 @@ private struct WatchtowerMetricChartCard: View {
           renderingMode == .placeholder
             ? WatchtowerMetricDragLayout.titleTrailingClearance
             : (isExpanded && detail != nil) ? DashTheme.Layout.minimumHitTarget : 0)
-      HStack(alignment: .lastTextBaseline, spacing: 8) {
+      HStack(
+        alignment: isExpanded ? .lastTextBaseline : .center,
+        spacing: isExpanded ? 8 : 6
+      ) {
         Text(total.text)
-          .dashTextStyle(.emptyTitle)
-          .monospacedDigit()
-          .foregroundStyle(DashTheme.strong)
-          .lineLimit(1)
-          .minimumScaleFactor(0.7)
+          .dashChartPrimaryMetricValue()
           .contentTransition(
             reduceMotion ? .opacity : .numericText(value: total.numeric)
           )
-        DashChartTrendLabel(trend: trend)
+        if isExpanded {
+          DashChartTrendLabel(trend: trend)
+        } else {
+          DashCollapsedChartTrendLabel(trend: trend)
+        }
         Spacer(minLength: 4)
       }
       if isExpanded {

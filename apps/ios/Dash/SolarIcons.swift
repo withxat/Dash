@@ -46,6 +46,8 @@ enum SolarAsset {
     ]
   }
 
+  static let arrowRightUpBold = "SolarArrowRightUpBold"
+  static let arrowRightDownBold = "SolarArrowRightDownBold"
   static let chevronRight = "SolarAltArrowRightOutline"
   static let chevronLeft = "SolarAltArrowLeftOutline"
   static let cloud = "SolarCloudOutline"

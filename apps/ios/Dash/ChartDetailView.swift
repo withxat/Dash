@@ -3,8 +3,9 @@ import SwiftDitherKit
 import SwiftUI
 
 /// A period-over-period change calculated from the values already loaded for
-/// a chart. Direction is always numeric; polarity only decides whether that
-/// direction is good, bad, or deliberately neutral in the presentation.
+/// a chart. Direction is always numeric. Polarity preserves whether higher or
+/// lower is favorable as metric metadata; the visible red / green convention
+/// follows the active language instead.
 struct DashChartTrend: Hashable, Sendable {
   enum Direction: Hashable, Sendable {
     case up
@@ -46,6 +47,28 @@ struct DashChartTrend: Hashable, Sendable {
     } else {
       let comparison = (current - previous) / abs(previous)
       percentChange = comparison.isFinite ? comparison : nil
+    }
+  }
+}
+
+enum DashChartTrendColorConvention: Hashable, Sendable {
+  case redUpGreenDown
+  case greenUpRedDown
+
+  static func resolved(locale: Locale) -> Self {
+    locale.language.languageCode?.identifier == "zh"
+      ? .redUpGreenDown
+      : .greenUpRedDown
+  }
+
+  fileprivate func foreground(for direction: DashChartTrend.Direction) -> Color {
+    switch (self, direction) {
+    case (_, .flat):
+      DashTheme.subtle
+    case (.redUpGreenDown, .up), (.greenUpRedDown, .down):
+      DashTheme.danger
+    case (.redUpGreenDown, .down), (.greenUpRedDown, .up):
+      DashTheme.success
     }
   }
 }
@@ -222,11 +245,34 @@ struct DashChartTrendLabel: View {
         .dashTextStyle(.captionSemibold)
         .monospacedDigit()
         .lineLimit(1)
-        .fixedSize(horizontal: true, vertical: false)
+        .allowsTightening(true)
+        .minimumScaleFactor(0.75)
         .foregroundStyle(trend.foreground)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
           "\(DashL10n.ui("Change")): \(percentage)")
+    }
+  }
+}
+
+/// The compact direction-only trend used beside a collapsed chart's primary
+/// value. The full signed percentage remains available to VoiceOver and on the
+/// expanded card / detail screen.
+struct DashCollapsedChartTrendLabel: View {
+  let trend: DashChartTrend?
+
+  var body: some View {
+    if let trend,
+      let percentage = trend.formattedPercentage,
+      let asset = trend.compactDirectionAsset
+    {
+      ZStack {
+        SolarIcon(asset: asset, size: 16, color: trend.foreground)
+      }
+      .frame(width: 16, height: 16)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(
+        "\(DashL10n.ui("Change")): \(percentage)")
     }
   }
 }
@@ -368,11 +414,7 @@ struct DashChartDetailView: View {
           HStack(alignment: .lastTextBaseline, spacing: 8) {
             if let summaryValue = active.summaryValue {
               Text(verbatim: summaryValue)
-                .dashTextStyle(.emptyTitle)
-                .monospacedDigit()
-                .foregroundStyle(DashTheme.strong)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .dashChartPrimaryMetricValue()
             }
             DashChartTrendLabel(trend: active.trend)
             Spacer(minLength: 4)
@@ -594,7 +636,15 @@ private struct DashChartTableRow: View {
 }
 
 extension DashChartTrend {
-  fileprivate var formattedPercentage: String? {
+  fileprivate var compactDirectionAsset: String? {
+    switch direction {
+    case .up: SolarAsset.arrowRightUpBold
+    case .down: SolarAsset.arrowRightDownBold
+    case .flat: nil
+    }
+  }
+
+  var formattedPercentage: String? {
     guard let percentChange else { return nil }
     let magnitude = abs(percentChange).formatted(
       .percent
@@ -608,29 +658,10 @@ extension DashChartTrend {
   }
 
   fileprivate var foreground: Color {
-    switch sentiment {
-    case .positive: DashTheme.success
-    case .negative: DashTheme.danger
-    case .neutral: DashTheme.subtle
-    }
+    DashChartTrendColorConvention
+      .resolved(locale: DashL10n.activeLocale)
+      .foreground(for: direction)
   }
-
-  private var sentiment: DashChartTrendSentiment {
-    switch (polarity, direction) {
-    case (.higherIsBetter, .up), (.lowerIsBetter, .down):
-      .positive
-    case (.higherIsBetter, .down), (.lowerIsBetter, .up):
-      .negative
-    case (.neutral, _), (_, .flat):
-      .neutral
-    }
-  }
-}
-
-private enum DashChartTrendSentiment {
-  case positive
-  case negative
-  case neutral
 }
 
 extension DashChartValueFormat {
