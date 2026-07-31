@@ -117,6 +117,13 @@ function catalogSerializationIssues(actual, xcodeSerialized) {
   return issues;
 }
 
+function serializationProbeCatalog(catalogContents) {
+  // Sync the intact document. Removing and restoring a key makes
+  // `xcstringstool` reorder the full catalog even when an ordinary Xcode sync
+  // would leave it alone, turning the probe itself into the reported drift.
+  return catalogContents;
+}
+
 function addSites(target, key, sites) {
   if (!target.has(key)) target.set(key, new Set());
   for (const site of sites) target.get(key).add(site);
@@ -383,10 +390,8 @@ function extractProductionKeys(catalogContents, catalog) {
     }
 
     const syncedCatalog = join(scratch, "Localizable.xcstrings");
-    const syncedDocument = JSON.parse(catalogContents);
     const probeKey = serializationProbe.tables.Localizable[0].key;
-    delete syncedDocument.strings[probeKey];
-    writeFileSync(syncedCatalog, JSON.stringify(syncedDocument));
+    writeFileSync(syncedCatalog, serializationProbeCatalog(catalogContents));
     const probeFile = join(scratch, "serialization-probe.stringsdata");
     writeFileSync(probeFile, JSON.stringify(serializationProbe));
     try {
@@ -496,6 +501,13 @@ function runSelfTests() {
       'key "Second" at index 0 would be reordered to "First"',
       "the trailing newline differs from xcstringstool output",
     ]
+  );
+  const intactProbeCatalog =
+    '{\n  "strings" : {\n    "First" : {},\n    "Second" : {}\n  }\n}\n';
+  assert.equal(
+    serializationProbeCatalog(intactProbeCatalog),
+    intactProbeCatalog,
+    "the serialization probe must not manufacture catalog changes"
   );
 
   const catalog = {
@@ -701,7 +713,7 @@ function main() {
   }
 
   if (serializationIssues.length > 0) {
-    console.error("  Catalog differs from Xcode serialization:");
+    console.error("  Catalog changes during a normal Xcode sync:");
     for (const issue of serializationIssues) console.error(`    ${issue}`);
     console.error("");
   }
