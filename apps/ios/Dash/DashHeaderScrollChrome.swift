@@ -219,23 +219,38 @@ private enum DashPageChromeHeightKey: PreferenceKey {
 /// navigation bar's title and back control: no fill of its own, never softened
 /// by the blur tail. Owns the frost for this screen so the outer
 /// `dashHeaderScrim()` wrapper can stand down.
+///
+/// `isChromeVisible` hides chrome without unmounting its measured subtree, so a
+/// caller can animate the reserved inset away in the same transaction as the
+/// content below it.
 struct DashPageChromeHost<Chrome: View, Content: View>: View {
+  let isChromeVisible: Bool
   @ViewBuilder var chrome: () -> Chrome
   @ViewBuilder var content: () -> Content
   @State private var scroll = DashHeaderScrollState()
   @State private var chromeHeight: CGFloat = 0
 
+  init(
+    isChromeVisible: Bool = true,
+    @ViewBuilder chrome: @escaping () -> Chrome,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.isChromeVisible = isChromeVisible
+    self.chrome = chrome
+    self.content = content
+  }
+
   var body: some View {
     content()
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .padding(.top, chromeHeight)
+      .padding(.top, isChromeVisible ? chromeHeight : 0)
       // Frost first, chrome second: the band still reaches the status bar, but
       // the tabs paint above it like UIKit's bar items.
       .overlay(alignment: .top) { DashHeaderScrim(scroll: scroll) }
       .overlay(alignment: .top) {
-        // ZStack + fixedSize so an empty chrome branch (editing, unresolved
-        // site) still reports height 0 instead of leaving the last measured
-        // inset stranded under the bar.
+        // Keep the fixed-size chrome mounted while it is visually hidden: its
+        // measured height then stays stable while the caller animates the
+        // content inset to zero instead of snapping through a later preference.
         ZStack(alignment: .top) {
           chrome()
             .padding(.horizontal, DashTheme.Spacing.screen)
@@ -250,6 +265,9 @@ struct DashPageChromeHost<Chrome: View, Content: View>: View {
             )
           }
         }
+        .opacity(isChromeVisible ? 1 : 0)
+        .allowsHitTesting(isChromeVisible)
+        .accessibilityHidden(!isChromeVisible)
       }
       .onPreferenceChange(DashPageChromeHeightKey.self) { chromeHeight = $0 }
       .background {

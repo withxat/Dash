@@ -32,19 +32,16 @@ struct WatchtowerView: View {
 
   var body: some View {
     @Bindable var trafficState = trafficState
-    // Freshness + range tabs sit in `DashPageChromeHost` above the header
-    // frost (same stacking as the nav bar). Inside the scroll they would sit
-    // in the blur tail and go soft.
-    DashPageChromeHost {
-      if model.activeAccountID != nil, !customization.isEditing {
-        VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
-          chartsHeader
-          DashTextTabs(
-            items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
-            selection: $trafficState.range
-          )
-        }
-        .transition(.opacity)
+    // The range tabs stay mounted for measurement but fade away while editing,
+    // so their inset collapses in the same morph transaction instead of jumping
+    // through a later preference update. Freshness + Edit live in the scrolling
+    // chart section below and leave alongside them.
+    DashPageChromeHost(isChromeVisible: !customization.isEditing) {
+      if model.activeAccountID != nil {
+        DashTextTabs(
+          items: [("24h", AnalyticsRange.day), ("7d", .week), ("30d", .month)],
+          selection: $trafficState.range
+        )
       }
     } content: {
       content
@@ -101,19 +98,12 @@ struct WatchtowerView: View {
           accountUnavailableCard
             .dashSectionReveal()
         } else {
-          WatchtowerTrafficView(
-            state: trafficState,
-            customization: customization,
-            dragVisual: dragVisual,
-            isEditing: customization.isEditing,
-            editorControlsVisible: editorControlsVisible,
-            usesPlaceholderCharts: customization.isEditing
-          )
-          .dashSectionContentReveal()
+          chartsSection
+            .dashSectionContentReveal()
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
-      // Match the old in-scroll gap between range tabs and the first chart.
+      // The section header now begins below the fixed range tabs.
       .padding(.top, DashTheme.Spacing.section)
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
@@ -121,6 +111,23 @@ struct WatchtowerView: View {
     .refreshable {
       guard !customization.isEditing else { return }
       await load(force: true)
+    }
+  }
+
+  private var chartsSection: some View {
+    VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+      if !customization.isEditing {
+        chartsHeader
+          .transition(.opacity)
+      }
+      WatchtowerTrafficView(
+        state: trafficState,
+        customization: customization,
+        dragVisual: dragVisual,
+        isEditing: customization.isEditing,
+        editorControlsVisible: editorControlsVisible,
+        usesPlaceholderCharts: customization.isEditing
+      )
     }
   }
 
