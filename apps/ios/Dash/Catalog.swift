@@ -100,6 +100,17 @@ enum Destination: Hashable {
   case kvKey(namespaceID: String, key: String)
 }
 
+extension DashExperimentalFeatures {
+  /// Whether a catalog feature should appear in Resources / Home shortcuts.
+  /// Experimental features stay hidden until their Settings toggle is on.
+  static func isCatalogVisible(_ feature: FeatureID, tunnelsEnabled: Bool) -> Bool {
+    if DashAuthorizationScopes.experimentalFeatures.contains(feature) {
+      return feature == .tunnels && tunnelsEnabled
+    }
+    return true
+  }
+}
+
 enum FeatureCatalog {
   static let descriptors: [FeatureDescriptor] = [
     // Domains & DNS
@@ -148,7 +159,9 @@ enum FeatureCatalog {
       .kv, "KV", "Namespaces, keys, and values", "list.bullet.rectangle",
       "SolarKeyMinimalisticFill", "SolarKeyMinimalisticOutline", "Storage & Data",
       read: ["workers-kv-storage.read"], write: ["workers-kv-storage.write"]),
-    // Networks
+    // Networks — experimental. Hidden from Resources until Settings →
+    // Experimental opts it in; scopes stay out of `core` and are requested
+    // when the locked row's Grant access runs.
     feature(
       .tunnels, "Tunnels", "Connectors, hostnames, and private routes",
       "point.3.connected.trianglepath.dotted", "SolarRoutingFill", "SolarRoutingOutline",

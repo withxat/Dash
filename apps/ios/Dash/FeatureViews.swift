@@ -277,7 +277,7 @@ private struct FeatureAccessRequiredView: View {
             }
           ) {
             model.requestAccess(
-              to: feature.capability.read,
+              to: DashAuthorizationScopes.authorizationScopes(for: feature),
               presentsCompletion: true,
               presentationOwner: authenticationActionOwner
             )

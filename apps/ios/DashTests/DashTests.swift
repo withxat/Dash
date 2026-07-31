@@ -336,7 +336,7 @@ struct LocalizationTests {
   /// Dash ships. The string-typed badge failed this silently: it localized
   /// `text.capitalized`, and `"Read-only".capitalized` is `"Read-Only"`, which
   /// is not a catalog key — so the badge stayed English on a Chinese row while
-  /// its `Locked` sibling two lines away translated fine.
+  /// its `Needs authorization` sibling two lines away translated fine.
   @Test func everyStatusTokenIsTranslatedInSimplifiedChinese() {
     let previous = DashL10n.localeOverrideForTesting
     defer { DashL10n.localeOverrideForTesting = previous }
@@ -489,12 +489,24 @@ struct LocalizationTests {
   }
 }
 
-/// The Demo's read-only profile must keep every catalog feature browsable
-/// without allowing mutations. A new FeatureID belongs in `coreFeatures` at
-/// the same time it gets a descriptor, or it does not ship.
-@Test func everyFeatureIsBrowsableWithTheReadOnlyProfile() {
-  #expect(DashAuthorizationScopes.coreFeatures == Set(FeatureID.allCases))
-  for feature in FeatureID.allCases {
+/// Core features stay browsable on the Demo / read-only profile. Experimental
+/// features stay out of `coreFeatures` and out of sign-in; Demo still carries
+/// their read scopes so an opted-in Resources row can open without a fake
+/// connection wall.
+@Test func everyCoreFeatureIsBrowsableWithTheReadOnlyProfile() {
+  #expect(
+    DashAuthorizationScopes.coreFeatures
+      .union(DashAuthorizationScopes.experimentalFeatures)
+      == Set(FeatureID.allCases))
+  #expect(
+    DashAuthorizationScopes.coreFeatures.isDisjoint(
+      with: DashAuthorizationScopes.experimentalFeatures))
+  #expect(!DashAuthorizationScopes.core.contains("argotunnel.read"))
+  #expect(!DashAuthorizationScopes.core.contains("access.read"))
+  #expect(
+    DashAuthorizationScopes.authorizationScopes(for: .tunnels)
+      == ["argotunnel.read", "access.read"])
+  for feature in DashAuthorizationScopes.coreFeatures {
     let access = feature.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly)
     if feature.capability.write.isEmpty {
@@ -503,13 +515,16 @@ struct LocalizationTests {
       #expect(access == .readOnly)
     }
   }
+  #expect(
+    FeatureID.tunnels.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
 }
 
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 20)
-  #expect(DashAuthorizationScopes.core.count == 34)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
+  #expect(DashAuthorizationScopes.core.count == 32)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -534,8 +549,10 @@ struct LocalizationTests {
   #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
 }
 
-@Test @MainActor func demoUsesTheSameReadOnlyGrantAndRoutesWritesToConnection() {
-  #expect(AppModel.demoGrantedScopes == DashAuthorizationScopes.initialReadOnly)
+@Test @MainActor func demoUsesReadOnlyGrantPlusExperimentalReads() {
+  #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: AppModel.demoGrantedScopes))
+  #expect(AppModel.demoGrantedScopes.contains("argotunnel.read"))
+  #expect(AppModel.demoGrantedScopes.contains("access.read"))
   #expect(!AppModel.demoAccessRequiresConnection(["dns.read"]))
   #expect(AppModel.demoAccessRequiresConnection(["dns.write"]))
   for feature in FeatureID.allCases {
@@ -547,6 +564,33 @@ struct LocalizationTests {
       #expect(access == .readOnly)
     }
   }
+}
+
+@Test func experimentalTunnelsStayHiddenUntilOptedIn() {
+  #expect(
+    !DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: false))
+  #expect(
+    DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: true))
+  #expect(
+    DashExperimentalFeatures.isCatalogVisible(.zones, tunnelsEnabled: false))
+
+  let coreOnly = FeatureCatalogFiltering.enabledFeatures(
+    tunnelsExperimentalEnabled: false)
+  #expect(coreOnly == DashAuthorizationScopes.coreFeatures)
+  #expect(!coreOnly.contains(.tunnels))
+
+  let withTunnels = FeatureCatalogFiltering.enabledFeatures(
+    tunnelsExperimentalEnabled: true)
+  #expect(withTunnels == Set(FeatureID.allCases))
+
+  let lockedCatalog = FeatureCatalogFiltering.features(
+    filter: .all,
+    grantedScopes: DashAuthorizationScopes.initialReadOnly,
+    enabled: withTunnels)
+  #expect(lockedCatalog.contains(.tunnels))
+  #expect(
+    FeatureID.tunnels.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
 }
 
 @Test func processExternalMutationsFailClosedWithoutWriteScopes() {
@@ -775,20 +819,25 @@ struct LocalizationTests {
   #expect(snapshot.isStale(now: now.addingTimeInterval(301), ttl: 300))
 }
 
-/// The Resources tab treats read-only features as available to browse, while
-/// an unknown grant fails closed. AppRoot does not mount the catalog until
-/// bootstrap has restored the scope mirror or its conservative fallback.
+/// The Resources tab lists every enabled feature, including locked
+/// experimental ones, while an unknown grant fails closed. AppRoot does not
+/// mount the catalog until bootstrap has restored the scope mirror or its
+/// conservative fallback.
 @MainActor
-@Test func featureCatalogDefaultFilterListsEveryReadableFeature() {
-  #expect(FeatureCatalogView.defaultFilter == .available)
+@Test func featureCatalogDefaultFilterListsEveryEnabledFeature() {
+  #expect(FeatureCatalogView.defaultFilter == .all)
   let unknown = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
     grantedScopes: nil)
   #expect(unknown.isEmpty)
+  let coreEnabled = FeatureCatalogFiltering.enabledFeatures(
+    tunnelsExperimentalEnabled: false)
   let initialGrant = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
-    grantedScopes: DashAuthorizationScopes.initialReadOnly)
-  #expect(initialGrant.count == FeatureCatalog.all.count)
+    grantedScopes: DashAuthorizationScopes.initialReadOnly,
+    enabled: coreEnabled)
+  #expect(initialGrant.count == DashAuthorizationScopes.coreFeatures.count)
+  #expect(!initialGrant.contains(.tunnels))
 }
 
 @Test func featureCatalogFilteringRespectsAccess() {

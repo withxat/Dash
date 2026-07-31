@@ -11,7 +11,7 @@ enum FeatureAccessFilter: String, CaseIterable, Hashable {
     case .all: "All"
     case .available: "Available"
     case .readOnly: "Read-only"
-    case .locked: "Locked"
+    case .locked: "Needs authorization"
     }
   }
 
@@ -29,30 +29,44 @@ enum FeatureAccessFilter: String, CaseIterable, Hashable {
 enum FeatureCatalogFiltering {
   static func features(
     filter: FeatureAccessFilter,
-    grantedScopes: Set<String>?
+    grantedScopes: Set<String>?,
+    enabled: Set<FeatureID> = Set(FeatureID.allCases)
   ) -> [FeatureID] {
-    FeatureCatalog.all.filter { feature in
-      filter.matches(feature.capability.accessLevel(grantedScopes: grantedScopes))
+    // Unknown grant fails closed — AppRoot does not mount the catalog until
+    // bootstrap restores the scope mirror or its conservative fallback.
+    guard grantedScopes != nil else { return [] }
+    return FeatureCatalog.all.filter { feature in
+      enabled.contains(feature)
+        && filter.matches(feature.capability.accessLevel(grantedScopes: grantedScopes))
     }
+  }
+
+  static func enabledFeatures(tunnelsExperimentalEnabled: Bool) -> Set<FeatureID> {
+    Set(
+      FeatureID.allCases.filter {
+        DashExperimentalFeatures.isCatalogVisible(
+          $0, tunnelsEnabled: tunnelsExperimentalEnabled)
+      })
   }
 }
 
 struct FeatureCatalogView: View {
-  /// The catalog lists what this account can browse, including read-only
-  /// features, and omits permission walls. Scopes unknown
-  /// (`grantedScopes == nil`) fail closed; bootstrap restores the conservative
-  /// read-only profile for older tokens before the authenticated catalog mounts.
-  ///
-  /// Not user-adjustable: with five features and no locked ones, a filter tray
-  /// would be a control with nothing to control.
-  static let defaultFilter: FeatureAccessFilter = .available
+  /// Lists every enabled catalog feature, including locked experimental ones
+  /// so Resources can show the Needs authorization badge and route into Grant
+  /// access. Core features stay granted by sign-in; experimental ones opt in
+  /// via Settings and authorize on demand.
+  static let defaultFilter: FeatureAccessFilter = .all
 
   @Environment(AppModel.self) private var model
+  @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
+    false
 
   private var visibleFeatures: [FeatureID] {
     FeatureCatalogFiltering.features(
       filter: Self.defaultFilter,
-      grantedScopes: model.grantedScopes)
+      grantedScopes: model.grantedScopes,
+      enabled: FeatureCatalogFiltering.enabledFeatures(
+        tunnelsExperimentalEnabled: tunnelsExperimentalEnabled))
   }
 
   private var grouped: [(String, [FeatureID])] {

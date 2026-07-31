@@ -5,6 +5,9 @@ import Foundation
 /// catalog; Dash owns which capabilities its mobile operations workflow asks
 /// for by default.
 enum DashAuthorizationScopes {
+  /// Features requested on every real-account sign-in. Experimental catalog
+  /// features stay out of this set — they appear in Resources only after an
+  /// opt-in, and their scopes are appended when the user grants that feature.
   static let coreFeatures: Set<FeatureID> = [
     .zones,
     .registrar,
@@ -13,19 +16,26 @@ enum DashAuthorizationScopes {
     .pages,
     .r2,
     .kv,
-    .tunnels,
+  ]
+
+  /// Catalog features gated behind Settings → Experimental. Not part of
+  /// `core` / sign-in; enabling one only reveals the Resources row (usually
+  /// locked) until the user authorizes it.
+  static let experimentalFeatures: Set<FeatureID> = [
+    .tunnels
   ]
 
   /// Read scopes used by nested screens that are not represented by a
   /// standalone FeatureID. These keep the Demo's read-only profile able to load
-  /// every catalog surface without mutation permission.
+  /// every core catalog surface without mutation permission.
   ///
-  /// Tunnels list/detail calls `argotunnel.read`; its positive Protected badge
-  /// calls `access.read`. Email Routing rules and destination addresses
-  /// call their matching read scopes. The removed load-balancing, health-check,
-  /// and SSL scopes remain absent because no current screen calls them. Do not
-  /// add a scope without a screen that calls the endpoint — the sign-in sheet
-  /// is the user's only view of what Dash can reach.
+  /// Email Routing rules and destination addresses call their matching read
+  /// scopes. Tunnels' `argotunnel.read` / `access.read` live on the
+  /// experimental feature (and its Grant access request), not here. The removed
+  /// load-balancing, health-check, and SSL scopes remain absent because no
+  /// current screen calls them. Do not add a scope without a screen that calls
+  /// the endpoint — the sign-in sheet is the user's only view of what Dash can
+  /// reach.
   ///
   /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
   /// lives only in a feature's capability disappears from the OAuth request
@@ -40,8 +50,19 @@ enum DashAuthorizationScopes {
     "analytics.read",
     "email-routing-rule.read",
     "email-routing-address.read",
-    "access.read",
   ]
+
+  /// Scopes requested when unlocking an experimental (or otherwise locked)
+  /// feature. Tunnels list/detail need `argotunnel.read`; the positive
+  /// Protected badge also needs `access.read`, so one Grant access covers both.
+  static func authorizationScopes(for feature: FeatureID) -> Set<String> {
+    switch feature {
+    case .tunnels:
+      feature.capability.read.union(["access.read"])
+    default:
+      feature.capability.read
+    }
+  }
 
   /// Mutating operations that are not represented by a FeatureID. They remain
   /// explicit so `core` audits the complete real-account authorization.

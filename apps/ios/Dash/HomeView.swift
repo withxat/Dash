@@ -12,6 +12,8 @@ struct HomeView: View {
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
   @AppStorage(HomeEducation.dismissalsKey) private var educationDismissalsRaw = ""
+  @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
+    false
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoading = true
   @State private var zonesError: String?
@@ -37,7 +39,10 @@ struct HomeView: View {
   }
 
   private var shortcuts: [FeatureID] {
-    HomeShortcuts.decode(shortcutsRaw)
+    HomeShortcuts.decode(shortcutsRaw).filter {
+      DashExperimentalFeatures.isCatalogVisible(
+        $0, tunnelsEnabled: tunnelsExperimentalEnabled)
+    }
   }
 
   private var quickActions: [HomeActionID] {
@@ -866,14 +871,23 @@ private struct HomeShortcutsSection: View {
 private struct EditShortcutsView: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   @Binding var selectionRaw: String
+  @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
+    false
 
   private var selected: Set<FeatureID> {
     Set(HomeShortcuts.decode(selectionRaw))
   }
 
+  private var catalogItems: [FeatureID] {
+    FeatureCatalog.all.filter {
+      DashExperimentalFeatures.isCatalogVisible(
+        $0, tunnelsEnabled: tunnelsExperimentalEnabled)
+    }
+  }
+
   var body: some View {
     DashFormSheet(saveTitle: DashL10n.string("Done"), onSave: dismiss) {
-      HomeEditSelectionList(items: FeatureCatalog.all) { feature in
+      HomeEditSelectionList(items: catalogItems) { feature in
         HomeEditSelectionRow(
           title: feature.title,
           subtitle: feature.subtitle,
@@ -2557,8 +2571,8 @@ struct FeatureRow: View {
   private var accessAccessibilityValue: String {
     switch accessLevel {
     case .full: "Available"
-    case .readOnly: "Read-only"
-    case .locked: "Locked"
+    case .readOnly: StatusToken.readOnly.label
+    case .locked: StatusToken.locked.label
     }
   }
 }

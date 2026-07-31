@@ -138,6 +138,21 @@ enum DashInteractionPreferences {
   }
 }
 
+/// Opt-in catalog surfaces that stay out of `core` OAuth and Resources until
+/// the user enables them under Settings → Experimental. Absent keys read as
+/// off so a fresh install never shows an unfinished feature.
+///
+/// Preference keys live here because Share / File Provider also compile
+/// `AppConfiguration`; catalog visibility helpers stay on `FeatureCatalog`
+/// with the rest of the feature registry.
+enum DashExperimentalFeatures {
+  static let tunnelsKey = "dash.experimental.tunnels_enabled"
+
+  static var tunnelsEnabled: Bool {
+    UserDefaults.standard.bool(forKey: tunnelsKey)
+  }
+}
+
 /// Device-local color preference for the one shared light field behind the
 /// Home, Resources, and Watchtower roots. Persist the preset identity rather
 /// than a color value so every choice can keep following Kumo's adaptive

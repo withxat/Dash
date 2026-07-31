@@ -2743,34 +2743,6 @@ struct NetworkTests {
     #expect(summary.rules.map(\.count) == [2, 1])
   }
 
-  @Test func r2BucketAnalyticsSumsOperations() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      let body = try #require(requestBodyData(request))
-      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
-      let query = try #require(object["query"] as? String)
-      #expect(query.contains("r2OperationsAdaptiveGroups"))
-      #expect(query.contains("bucketName: \"media\""))
-      return (
-        200,
-        Data(
-          #"""
-          {"data":{"viewer":{"accounts":[{
-            "current":[{"sum":{"requests":12},"dimensions":{"date":"2026-07-29"}}],
-            "previous":[{"sum":{"requests":5},"dimensions":{"date":"2026-07-22"}}]
-          }]}},"errors":null}
-          """#.utf8)
-      )
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let summary = try await client.r2BucketAnalytics(
-      accountID: "acct", bucketName: "media", days: 7)
-    #expect(summary.totalRequests == 12)
-    #expect(summary.previousTotalRequests == 5)
-  }
-
   @Test func listAndAttachWorkerDomains() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

@@ -753,14 +753,6 @@ final class DemoBackend: URLProtocol {
     if query.contains("emailRoutingAdaptiveGroups") {
       return Reply(json: DemoWorld.emailRoutingAnalytics(scale: scale))
     }
-    if query.contains("r2OperationsAdaptiveGroups") {
-      return Reply(
-        json: DemoWorld.storageOperationsAnalytics(days: limit(in: query) ?? 7, scale: scale))
-    }
-    if query.contains("kvOperationsAdaptiveGroups") {
-      return Reply(
-        json: DemoWorld.storageOperationsAnalytics(days: limit(in: query) ?? 7, scale: scale))
-    }
     return Reply(json: #"{"data":null,"errors":null}"#)
   }
 
@@ -1703,26 +1695,6 @@ private enum DemoWorld {
     return #"""
       {"data":{"viewer":{"zones":[{
         "emailRoutingAdaptiveGroups":[\#(series.joined(separator: ","))]
-      }]}},"errors":null}
-      """#
-  }
-
-  static func storageOperationsAnalytics(days: Int, scale: Double) -> String {
-    let count = max(days, 1)
-    let current = (0..<count).map { day -> String in
-      let requests = max(1, scaled(180 + wave(day, base: 0, swing: 120), scale))
-      return
-        #"{"sum":{"requests":\#(requests)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
-    }
-    let previous = (0..<count).map { day -> String in
-      let requests = max(1, scaled(140 + wave(day, base: 1, swing: 90), scale))
-      return
-        #"{"sum":{"requests":\#(requests)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count * 2 - day))"}}"#
-    }
-    return #"""
-      {"data":{"viewer":{"accounts":[{
-        "current":[\#(current.joined(separator: ","))],
-        "previous":[\#(previous.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }

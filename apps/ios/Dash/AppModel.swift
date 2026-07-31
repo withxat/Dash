@@ -168,7 +168,17 @@ enum WatchtowerRemoteRefreshInvalidationStore {
 @MainActor
 @Observable
 final class AppModel {
-  static let demoGrantedScopes = DashAuthorizationScopes.initialReadOnly
+  /// Demo keeps every core surface browsable, plus experimental feature reads
+  /// so flipping Settings → Experimental → Tunnels can explore DemoBackend
+  /// tunnels without a fake "Connect your account" wall.
+  static let demoGrantedScopes: Set<String> = {
+    let experimentalReads = DashAuthorizationScopes.experimentalFeatures.reduce(
+      into: Set<String>()
+    ) {
+      $0.formUnion(DashAuthorizationScopes.authorizationScopes(for: $1))
+    }
+    return DashAuthorizationScopes.initialReadOnly.union(experimentalReads)
+  }()
 
   let configuration: AppConfiguration
   let tokenStore: any TokenStore

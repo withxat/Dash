@@ -301,6 +301,8 @@ struct SettingsView: View {
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
     DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
+  @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
+    false
   @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceWashPicker = false
@@ -509,6 +511,18 @@ struct SettingsView: View {
               showsChevron: true
             )
           }
+        }
+
+        SettingsPlainSection(title: "Experimental") {
+          SettingsPlainToggleRow(
+            title: DashL10n.string("Tunnels"),
+            subtitle: DashL10n.string(
+              "Show Tunnels in Resources. Authorization is requested when you open it."
+            ),
+            icon: SolarAsset.routing,
+            isOn: $tunnelsExperimentalEnabled
+          )
+          .accessibilityIdentifier("settings-experimental-tunnels")
         }
 
         // Help, legal, and About were three-row and two-row sections stacked at
@@ -1057,6 +1071,9 @@ private struct OpenSourceCredit: Identifiable {
     OpenSourceCredit(
       name: "Highlightr", purpose: "Syntax highlighting", author: "Juan Pablo Illanes",
       license: "MIT", url: URL(string: "https://github.com/raspu/Highlightr")!),
+    OpenSourceCredit(
+      name: "Paper Shaders", purpose: "Sign-in paper texture", author: "Paper",
+      license: "Apache-2.0", url: URL(string: "https://github.com/paper-design/shaders")!),
     OpenSourceCredit(
       name: "VariableBlur", purpose: "Progressive header blur", author: "Nikita Starshinov",
       license: "MIT", url: URL(string: "https://github.com/nikstar/VariableBlur")!),

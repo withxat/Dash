@@ -1631,7 +1631,7 @@ enum StatusToken: String, CaseIterable, Sendable {
     case .current: DashL10n.string("Current")
     case .route: DashL10n.string("Route")
     case .readOnly: DashL10n.string("Read-only")
-    case .locked: DashL10n.string("Locked")
+    case .locked: DashL10n.string("Needs authorization")
     case .unread: DashL10n.string("Unread")
     case .success: DashL10n.string("Success")
     case .failed: DashL10n.string("Failed")
