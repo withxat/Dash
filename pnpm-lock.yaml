@@ -92,6 +92,9 @@ importers:
       lefthook:
         specifier: catalog:devtool
         version: 2.1.9
+      mingcute_icon:
+        specifier: 2.9.72
+        version: 2.9.72
       sharp:
         specifier: ^0.35.3
         version: 0.35.3
@@ -3623,6 +3626,10 @@ packages:
     resolution: {integrity: sha512-x0Vn8spI+wuJ1O6S7gnbaQg8Pxh4NNHb7KSINmEWKiPE4RKOplvijn+NkmYmmRgP68mc70j2EbeTFRsrswaQeg==}
     engines: {node: '>=4'}
     hasBin: true
+
+  mingcute_icon@2.9.72:
+    resolution: {integrity: sha512-pOw6b1tzQ1JXJP7XefmGhK3nh6GHRaQzi6YjcIu5VfAfr3lN70C6Hc9tC1v/+aNRL9RvbDMaciP18q71HklQgQ==}
+    deprecated: This package has moved to @mingcute/svg and @mingcute/font. Please install @mingcute/svg and @mingcute/font for the latest updates and continued support.
 
   miniflare@4.20260710.0:
     resolution: {integrity: sha512-x1LLRkU6o1p7hiKrB0TRnL0MJn6xFOT+/vrlEQINz5cRDKLP8ru4hBqWTIvXAetzr1acKAnmAaG84pQ4W/K14g==}
@@ -8246,6 +8253,8 @@ snapshots:
       mime-db: 1.54.0
 
   mime@1.6.0: {}
+
+  mingcute_icon@2.9.72: {}
 
   miniflare@4.20260710.0:
     dependencies:

@@ -114,6 +114,10 @@ enum SolarAsset {
   static let pen = "SolarPenNewSquareOutline"
   /// Not a Solar glyph: the Cloudflare brand mark (Simple Icons, filled).
   static let cloudflare = "CloudflareLogo"
+  /// MingCute `github_line` — About → Developer.
+  static let github = "MingCuteGithubLine"
+  /// MingCute `social_x_line` — About → Developer.
+  static let socialX = "MingCuteSocialXLine"
 }
 
 struct SolarIcon: View {

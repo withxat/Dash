@@ -12555,6 +12555,23 @@
         }
       }
     },
+    "Social icons" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Social icons"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "社交图标"
+          }
+        }
+      }
+    },
     "Some deletions failed." : {
       "localizations" : {
         "zh-Hans" : {

@@ -1169,7 +1169,7 @@ struct AboutView: View {
           Link(destination: AboutDestination.github) {
             SettingsPlainRow(
               title: "GitHub",
-              icon: SolarAsset.code,
+              icon: SolarAsset.github,
               trailing: "@withxat",
               showsExternalLink: true
             )
@@ -1180,7 +1180,7 @@ struct AboutView: View {
           Link(destination: AboutDestination.x) {
             SettingsPlainRow(
               title: "X",
-              icon: SolarAsset.globus,
+              icon: SolarAsset.socialX,
               trailing: "@withxat",
               showsExternalLink: true
             )
@@ -1283,6 +1283,10 @@ private struct OpenSourceCredit: Identifiable {
     OpenSourceCredit(
       name: "Hugeicons", purpose: "File-type icons", author: "Hugeicons",
       license: "MIT", url: URL(string: "https://github.com/hugeicons/hugeicons")!),
+    OpenSourceCredit(
+      name: "MingCute", purpose: "Social icons", author: "MingCute Design",
+      license: "Apache-2.0",
+      url: URL(string: "https://github.com/mingcute-design/mingcute-icons")!),
   ]
 }
 

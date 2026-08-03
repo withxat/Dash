@@ -12,7 +12,7 @@
 		"build": "pnpm build:js && pnpm ios:build",
 		"build:js": "turbo build",
 		"ios:oauth-audit": "node apps/ios/scripts/audit-cloudflare-oauth-client.mjs",
-		"ios:icons": "node apps/ios/scripts/generate-solar-icons.mjs && node apps/ios/scripts/generate-file-icons.mjs",
+		"ios:icons": "node apps/ios/scripts/generate-solar-icons.mjs && node apps/ios/scripts/generate-file-icons.mjs && node apps/ios/scripts/generate-social-icons.mjs",
 		"ios:build": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -allowProvisioningUpdates build",
 		"ios:device": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -configuration Debug -destination 'generic/platform=iOS' -allowProvisioningUpdates build",
 		"ios:test": "xcodebuild -project apps/ios/Dash.xcodeproj -scheme Dash -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -allowProvisioningUpdates -parallel-testing-enabled NO test",
@@ -34,6 +34,7 @@
 	"devDependencies": {
 		"@hugeicons/core-free-icons": "^4.2.2",
 		"@solar-icons/react-native": "^1.1.1",
+		"mingcute_icon": "2.9.72",
 		"@withxat/eslint-config": "catalog:devtool",
 		"@withxat/tsconfig": "catalog:devtool",
 		"eslint": "catalog:devtool",
