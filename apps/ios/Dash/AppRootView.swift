@@ -54,10 +54,23 @@ struct AppRootView: View {
         // ready — never flash a blank intermediate frame.
         Color("LaunchBackground").ignoresSafeArea()
           .overlay {
-            Image("LoginAppIcon")
-              .resizable()
-              .scaledToFit()
-              .frame(width: 96, height: 96)
+            if let message = model.errorMessage {
+              ContentUnavailableView {
+                Label("Couldn’t load", systemImage: "exclamationmark.triangle")
+              } description: {
+                Text(message)
+              } actions: {
+                Button("Try again") {
+                  Task { await model.bootstrap() }
+                }
+                .buttonStyle(.borderedProminent)
+              }
+            } else {
+              Image("LoginAppIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 96, height: 96)
+            }
           }
       }
     }

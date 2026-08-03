@@ -147,9 +147,37 @@ struct MetricsWidgetDomainEntity: AppEntity, Identifiable {
 }
 
 private enum MetricsWidgetStoreReader {
+  static func baseline() -> MetricsWidgetRefreshBaseline? {
+    guard let url = MetricsWidgetSnapshotStore.containerFileURL,
+      let state = try? MetricsWidgetSnapshotRepository.read(at: url)
+    else { return nil }
+    return MetricsWidgetRefreshBaseline(
+      store: state.store,
+      generation: state.generation,
+      mode: state.mode)
+  }
+
   static func load() -> MetricsWidgetSnapshotStore? {
+    baseline()?.store
+  }
+
+  static func refreshBaseline() async -> MetricsWidgetRefreshBaseline? {
     guard let url = MetricsWidgetSnapshotStore.containerFileURL else { return nil }
-    return try? MetricsWidgetSnapshotStore.load(from: url)
+    for attempt in 0..<4 {
+      do {
+        let state = try MetricsWidgetSnapshotRepository.read(at: url)
+        return MetricsWidgetRefreshBaseline(
+          store: state.store,
+          generation: state.generation,
+          mode: state.mode)
+      } catch MetricsWidgetSnapshotRepository.RepositoryError.lockUnavailable {
+        guard attempt < 3 else { return nil }
+        try? await Task.sleep(for: .milliseconds(10))
+      } catch {
+        return nil
+      }
+    }
+    return nil
   }
 }
 
@@ -303,6 +331,7 @@ struct MetricsWidgetPresentation {
   enum Availability {
     case available
     case missing
+    case requiresApp
   }
 
   let title: String
@@ -320,8 +349,10 @@ struct MetricsWidgetPresentation {
   let availability: Availability
 
   func isStale(at date: Date) -> Bool {
-    guard let fetchedAt else { return false }
-    return max(0, date.timeIntervalSince(fetchedAt)) > 24 * 60 * 60
+    MetricsWidgetRefreshPolicy.needsRefresh(
+      fetchedAt: fetchedAt,
+      range: range,
+      now: date)
   }
 
   static func missing(
@@ -344,6 +375,49 @@ struct MetricsWidgetPresentation {
       color: color,
       availability: .missing)
   }
+
+  static func requiresApp(
+    title: String,
+    scope: String,
+    range: MetricsWidgetRange,
+    color: MetricsWidgetTrendColor
+  ) -> MetricsWidgetPresentation {
+    MetricsWidgetPresentation(
+      title: title,
+      scope: scope,
+      total: "—",
+      trendText: nil,
+      trendDirection: nil,
+      values: [],
+      range: range,
+      fetchedAt: nil,
+      deepLinkURL: nil,
+      color: color,
+      availability: .requiresApp)
+  }
+}
+
+private func reloadMetricsWidgetTimelinesAfterCredentialInvalidation() {
+  WidgetCenter.shared.reloadTimelines(ofKind: MetricsWidgetKind.account)
+  WidgetCenter.shared.reloadTimelines(ofKind: MetricsWidgetKind.domain)
+}
+
+private func metricsWidgetTimelinePolicy(
+  for entry: MetricsWidgetEntry,
+  range: MetricsWidgetRange,
+  seed: String
+) -> TimelineReloadPolicy {
+  guard entry.presentation.availability != .requiresApp else {
+    // App activation explicitly reloads both kinds. Spending WidgetKit budget
+    // polling a signed-out/local-only empty session cannot discover new data.
+    return .never
+  }
+  return .after(
+    MetricsWidgetRefreshPolicy.nextReloadDate(
+      after: entry.date,
+      fetchedAt: entry.presentation.fetchedAt,
+      range: range,
+      seed: seed))
 }
 
 struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
@@ -368,36 +442,108 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
     for configuration: AccountMetricsWidgetIntent,
     in context: Context
   ) async -> MetricsWidgetEntry {
-    entry(for: configuration, now: .now)
+    entry(
+      for: configuration,
+      now: .now,
+      baseline: await MetricsWidgetStoreReader.refreshBaseline())
   }
 
   func timeline(
     for configuration: AccountMetricsWidgetIntent,
     in context: Context
   ) async -> Timeline<MetricsWidgetEntry> {
+    let startedAt = Date.now
+    let baseline = await MetricsWidgetStoreReader.refreshBaseline()
+    let target = refreshTarget(for: configuration, store: baseline?.store)
+    var outcome = MetricsWidgetRefreshOutcome.fallback
+    if let target, let baseline {
+      outcome = await MetricsWidgetRemoteRefreshCoordinator.live.refreshIfNeeded(
+        target,
+        baseline: baseline,
+        now: startedAt)
+    }
+    if outcome == .credentialInvalidated {
+      reloadMetricsWidgetTimelinesAfterCredentialInvalidation()
+    }
+    // Never turn a pre-network in-memory snapshot into a new Timeline unless a
+    // post-network read proves its generation and mode are still current. If
+    // that proof is temporarily unavailable, a generic retrying entry is safer
+    // than either old account data or a synthetic `.never` tombstone that could
+    // race a newly activated session's reload.
+    let displayBaseline = await MetricsWidgetStoreReader.refreshBaseline()
     let now = Date.now
+    let currentEntry = entry(
+      for: configuration,
+      now: now,
+      baseline: displayBaseline)
     return Timeline(
-      entries: [entry(for: configuration, now: now)],
-      policy: .after(now.addingTimeInterval(30 * 60)))
+      entries: [currentEntry],
+      policy: metricsWidgetTimelinePolicy(
+        for: currentEntry,
+        range: configuration.range,
+        seed: target?.stableJitterSeed ?? "account:\(configuration.range.rawValue)"))
+  }
+
+  private func refreshTarget(
+    for configuration: AccountMetricsWidgetIntent,
+    store: MetricsWidgetSnapshotStore?
+  ) -> MetricsWidgetRefreshTarget? {
+    let account =
+      configuration.account
+      ?? store?.activeAccountID.flatMap { activeAccountID in
+        store?.account(id: activeAccountID).map(MetricsWidgetAccountEntity.init)
+      }
+    guard let account else { return nil }
+    let metadata = store?.account(id: account.id)
+    return .account(
+      accountID: account.id,
+      accountName: metadata?.name ?? account.name,
+      range: configuration.range,
+      resolvesMetadata: metadata == nil)
   }
 
   private func entry(
     for configuration: AccountMetricsWidgetIntent,
-    now: Date
+    now: Date,
+    baseline: MetricsWidgetRefreshBaseline?
   ) -> MetricsWidgetEntry {
     let title = localizedTitle(configuration.metric)
     let color = MetricsWidgetTrendColor(configuration.metric)
-    guard let store = MetricsWidgetStoreReader.load() else {
+    guard let baseline else {
       return MetricsWidgetEntry(
         date: now,
         presentation: .missing(
           title: title,
-          scope: configuration.account?.name ?? String(localized: "Account"),
+          scope: String(localized: "Account"),
           range: configuration.range,
-          deepLinkURL: configuration.account.flatMap {
-            AccountMetricsWidgetSnapshot.deepLinkURL(accountID: $0.id)
-          },
+          deepLinkURL: nil,
           color: color))
+    }
+    if baseline.mode == .invalidated {
+      return MetricsWidgetEntry(
+        date: now,
+        presentation: .requiresApp(
+          title: title,
+          scope: String(localized: "Account"),
+          range: configuration.range,
+          color: color))
+    }
+    guard let store = baseline.store else {
+      return MetricsWidgetEntry(
+        date: now,
+        presentation:
+          baseline.mode == .localOnly
+          ? .requiresApp(
+            title: title,
+            scope: String(localized: "Account"),
+            range: configuration.range,
+            color: color)
+          : .missing(
+            title: title,
+            scope: String(localized: "Account"),
+            range: configuration.range,
+            deepLinkURL: nil,
+            color: color))
     }
 
     let account =
@@ -411,13 +557,14 @@ struct AccountMetricsWidgetProvider: AppIntentTimelineProvider {
       let snapshot = store.accountSnapshot(accountID: account.id, range: configuration.range),
       let metric = snapshot.metric(configuration.metric)
     else {
+      let currentAccount = account.flatMap { store.account(id: $0.id) }
       return MetricsWidgetEntry(
         date: now,
         presentation: .missing(
           title: title,
-          scope: account?.name ?? String(localized: "Account"),
+          scope: currentAccount?.name ?? String(localized: "Account"),
           range: configuration.range,
-          deepLinkURL: account.flatMap {
+          deepLinkURL: currentAccount.flatMap {
             AccountMetricsWidgetSnapshot.deepLinkURL(accountID: $0.id)
           },
           color: color))
@@ -465,38 +612,107 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
     for configuration: DomainMetricsWidgetIntent,
     in context: Context
   ) async -> MetricsWidgetEntry {
-    entry(for: configuration, now: .now)
+    entry(
+      for: configuration,
+      now: .now,
+      baseline: await MetricsWidgetStoreReader.refreshBaseline())
   }
 
   func timeline(
     for configuration: DomainMetricsWidgetIntent,
     in context: Context
   ) async -> Timeline<MetricsWidgetEntry> {
+    let startedAt = Date.now
+    let baseline = await MetricsWidgetStoreReader.refreshBaseline()
+    let target = refreshTarget(for: configuration, store: baseline?.store)
+    var outcome = MetricsWidgetRefreshOutcome.fallback
+    if let target, let baseline {
+      outcome = await MetricsWidgetRemoteRefreshCoordinator.live.refreshIfNeeded(
+        target,
+        baseline: baseline,
+        now: startedAt)
+    }
+    if outcome == .credentialInvalidated {
+      reloadMetricsWidgetTimelinesAfterCredentialInvalidation()
+    }
+    let displayBaseline = await MetricsWidgetStoreReader.refreshBaseline()
     let now = Date.now
+    let currentEntry = entry(
+      for: configuration,
+      now: now,
+      baseline: displayBaseline)
     return Timeline(
-      entries: [entry(for: configuration, now: now)],
-      policy: .after(now.addingTimeInterval(30 * 60)))
+      entries: [currentEntry],
+      policy: metricsWidgetTimelinePolicy(
+        for: currentEntry,
+        range: configuration.range,
+        seed: target?.stableJitterSeed ?? "domain:\(configuration.range.rawValue)"))
+  }
+
+  private func refreshTarget(
+    for configuration: DomainMetricsWidgetIntent,
+    store: MetricsWidgetSnapshotStore?
+  ) -> MetricsWidgetRefreshTarget? {
+    let domain =
+      configuration.domain
+      ?? store?.activeAccountID.flatMap { activeAccountID in
+        store?.domains.first(where: { $0.accountID == activeAccountID })
+          .map(MetricsWidgetDomainEntity.init)
+      }
+    guard let domain else { return nil }
+    let accountMetadata = store?.account(id: domain.accountID)
+    let domainMetadata = store?.domain(id: domain.domainID, accountID: domain.accountID)
+    return .domain(
+      accountID: domain.accountID,
+      accountName: accountMetadata?.name ?? domain.accountName,
+      domainID: domain.domainID,
+      domainName: domainMetadata?.name ?? domain.name,
+      range: configuration.range,
+      resolvesMetadata: accountMetadata == nil || domainMetadata == nil)
   }
 
   private func entry(
     for configuration: DomainMetricsWidgetIntent,
-    now: Date
+    now: Date,
+    baseline: MetricsWidgetRefreshBaseline?
   ) -> MetricsWidgetEntry {
     let title = localizedTitle(configuration.metric)
     let color = MetricsWidgetTrendColor(configuration.metric)
-    guard let store = MetricsWidgetStoreReader.load() else {
+    guard let baseline else {
       return MetricsWidgetEntry(
         date: now,
         presentation: .missing(
           title: title,
-          scope: configuration.domain?.name ?? String(localized: "Domain"),
+          scope: String(localized: "Domain"),
           range: configuration.range,
-          deepLinkURL: configuration.domain.flatMap {
-            DomainMetricsWidgetSnapshot.deepLinkURL(
-              accountID: $0.accountID,
-              domainID: $0.domainID)
-          },
+          deepLinkURL: nil,
           color: color))
+    }
+    if baseline.mode == .invalidated {
+      return MetricsWidgetEntry(
+        date: now,
+        presentation: .requiresApp(
+          title: title,
+          scope: String(localized: "Domain"),
+          range: configuration.range,
+          color: color))
+    }
+    guard let store = baseline.store else {
+      return MetricsWidgetEntry(
+        date: now,
+        presentation:
+          baseline.mode == .localOnly
+          ? .requiresApp(
+            title: title,
+            scope: String(localized: "Domain"),
+            range: configuration.range,
+            color: color)
+          : .missing(
+            title: title,
+            scope: String(localized: "Domain"),
+            range: configuration.range,
+            deepLinkURL: nil,
+            color: color))
     }
 
     let domain =
@@ -513,16 +729,19 @@ struct DomainMetricsWidgetProvider: AppIntentTimelineProvider {
         range: configuration.range),
       let metric = snapshot.metric(configuration.metric)
     else {
+      let currentDomain = domain.flatMap {
+        store.domain(id: $0.domainID, accountID: $0.accountID)
+      }
       return MetricsWidgetEntry(
         date: now,
         presentation: .missing(
           title: title,
-          scope: domain?.name ?? String(localized: "Domain"),
+          scope: currentDomain?.name ?? String(localized: "Domain"),
           range: configuration.range,
-          deepLinkURL: domain.flatMap {
+          deepLinkURL: currentDomain.flatMap {
             DomainMetricsWidgetSnapshot.deepLinkURL(
               accountID: $0.accountID,
-              domainID: $0.domainID)
+              domainID: $0.id)
           },
           color: color))
     }
@@ -703,8 +922,8 @@ private struct MetricsWidgetView: View {
   }
 
   private var showsFreshness: Bool {
-    entry.presentation.availability != .available
-      || entry.presentation.isStale(at: entry.date)
+    entry.presentation.availability == .available
+      && entry.presentation.isStale(at: entry.date)
   }
 
   private var metricAccessibilityLabel: String {
@@ -795,6 +1014,18 @@ private struct MetricsWidgetView: View {
       .opacity(entry.presentation.isStale(at: entry.date) ? 0.58 : 1)
       .allowsHitTesting(false)
       .accessibilityHidden(true)
+    } else if entry.presentation.availability == .missing {
+      Text("Refreshing")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    } else if entry.presentation.availability == .requiresApp {
+      Text("Open Dash")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     } else {
       Text("No data in this range")
         .font(.caption)
@@ -805,13 +1036,17 @@ private struct MetricsWidgetView: View {
   }
 
   private var freshnessText: String {
-    guard entry.presentation.availability == .available else {
-      return String(localized: "Open Dash to refresh.")
+    guard let fetchedAt = entry.presentation.fetchedAt else { return "" }
+    let relative: String
+    if entry.date.timeIntervalSince(fetchedAt) < 1 {
+      relative = String(localized: "just now")
+    } else {
+      let formatter = RelativeDateTimeFormatter()
+      formatter.locale = DashWidgetBridges.mirroredLocale()
+      formatter.unitsStyle = .abbreviated
+      relative = formatter.localizedString(for: fetchedAt, relativeTo: entry.date)
     }
-    if entry.presentation.isStale(at: entry.date) {
-      return String(localized: "Stale — open Dash to refresh.")
-    }
-    return String(localized: "Open Dash to refresh.")
+    return String(localized: "Updated \(relative)")
   }
 }
 

@@ -10,6 +10,28 @@ import WidgetKit
 /// belongs to the widget so totals and trend points always share one unit.
 @MainActor
 enum MetricsWidgetPublisher {
+  @discardableResult
+  static func activateRemote(
+    accounts: [CloudflareAccount],
+    activeAccountID: String?
+  ) -> Bool {
+    activate(
+      mode: .remoteEnabled,
+      accounts: accounts,
+      activeAccountID: activeAccountID)
+  }
+
+  @discardableResult
+  static func activateLocalOnly(
+    accounts: [CloudflareAccount],
+    activeAccountID: String?
+  ) -> Bool {
+    activate(
+      mode: .localOnly,
+      accounts: accounts,
+      activeAccountID: activeAccountID)
+  }
+
   static func syncAccounts(
     _ accounts: [CloudflareAccount],
     activeAccountID: String?
@@ -129,10 +151,35 @@ enum MetricsWidgetPublisher {
     }
   }
 
-  static func clear() {
-    guard let url = MetricsWidgetSnapshotStore.containerFileURL else { return }
-    MetricsWidgetSnapshotStore.clear(at: url)
+  @discardableResult
+  static func clear(expectedGeneration: UInt64? = nil) -> Bool {
+    guard let url = MetricsWidgetSnapshotStore.containerFileURL else { return false }
+    guard
+      MetricsWidgetSnapshotStore.clear(
+        at: url,
+        expectedGeneration: expectedGeneration)
+    else { return false }
     reloadTimelines(for: [MetricsWidgetKind.account, MetricsWidgetKind.domain])
+    return true
+  }
+
+  private static func activate(
+    mode: MetricsWidgetSessionMode,
+    accounts: [CloudflareAccount],
+    activeAccountID: String?
+  ) -> Bool {
+    guard let url = MetricsWidgetSnapshotStore.containerFileURL else { return false }
+    let store = MetricsWidgetSnapshotStore(
+      activeAccountID: activeAccountID,
+      accounts: accounts.map { MetricsWidgetAccount(id: $0.id, name: $0.name) })
+    guard
+      (try? MetricsWidgetSnapshotRepository.activate(
+        at: url,
+        mode: mode,
+        store: store)) != nil
+    else { return false }
+    reloadTimelines(for: [MetricsWidgetKind.account, MetricsWidgetKind.domain])
+    return true
   }
 
   private static func updateStore(
@@ -157,11 +204,9 @@ enum MetricsWidgetPublisher {
     reload: ([String]) -> Void,
     update: (inout MetricsWidgetSnapshotStore) -> Void
   ) -> Bool {
-    let original = (try? MetricsWidgetSnapshotStore.load(from: url)) ?? .empty
-    var store = original
-    update(&store)
-    guard store != original else { return false }
-    guard (try? store.write(to: url)) != nil else { return false }
+    guard
+      (try? MetricsWidgetSnapshotRepository.update(at: url, update)) == true
+    else { return false }
     reload(kinds)
     return true
   }

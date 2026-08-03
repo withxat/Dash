@@ -3907,7 +3907,6 @@
       }
     },
     "Couldn’t load" : {
-      "extractionState" : "stale",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {

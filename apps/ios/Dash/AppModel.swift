@@ -13,6 +13,81 @@ enum AuthenticationState: Sendable, Equatable {
   case unauthenticated
 }
 
+private enum MetricsWidgetSessionLifecycleError: Error, LocalizedError, Sendable {
+  case transitionFailed
+
+  var errorDescription: String? {
+    DashL10n.string("Cloudflare couldn’t complete this request. Try again.")
+  }
+}
+
+private enum OAuthCredentialReplacement: Sendable {
+  case keychain(KeychainCredentialReplacement)
+  /// Non-Keychain stores are process-local test/demo implementations. Their
+  /// protocol fallback can safely use the pre-mutation snapshot.
+  case protocolStore(previousCredential: TokenSet?)
+}
+
+/// Once sign-out atomically removes the shared Keychain credential, remote
+/// webhook cleanup still gets one best-effort chance. This detached store can
+/// rotate the captured refresh token without ever republishing it to Widget,
+/// Share, Files, or the app's normal client.
+private actor SignOutCleanupTokenStore: TokenStore {
+  private var accessToken: String?
+  private var refreshToken: String?
+  private var scopes: Set<String>?
+
+  init(accessToken: String?, refreshToken: String?, scopes: Set<String>?) {
+    self.accessToken = accessToken
+    self.refreshToken = refreshToken
+    self.scopes = scopes
+  }
+
+  func clear() {
+    accessToken = nil
+    refreshToken = nil
+    scopes = nil
+  }
+
+  func getAccessToken() -> String? { accessToken }
+  func getRefreshToken() -> String? { refreshToken }
+  func getGrantedScopes() -> Set<String>? { scopes }
+  func setGrantedScopes(_ scopes: Set<String>) { self.scopes = scopes }
+
+  func setTokens(_ tokens: TokenSet) {
+    if let refreshToken = tokens.refreshToken { self.refreshToken = refreshToken }
+    if let scope = tokens.scope {
+      scopes = Set(scope.split(separator: " ").map(String.init))
+    }
+    accessToken = tokens.accessToken
+  }
+
+  func replaceTokens(
+    _ tokens: TokenSet,
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) -> Bool {
+    guard
+      accessToken == expectedAccessToken,
+      refreshToken == expectedRefreshToken
+    else { return false }
+    setTokens(tokens)
+    return true
+  }
+
+  func clearTokens(
+    ifCurrentAccessToken expectedAccessToken: String?,
+    refreshToken expectedRefreshToken: String?
+  ) -> Bool {
+    guard
+      accessToken == expectedAccessToken,
+      refreshToken == expectedRefreshToken
+    else { return false }
+    clear()
+    return true
+  }
+}
+
 /// A background-task completion can arrive after a newer lease has replaced
 /// it. Binding every expiration/waiter to a generation prevents an older
 /// callback from ending the newer task.
@@ -221,7 +296,6 @@ final class AppModel {
     didSet {
       syncNotificationAccountAuthorization()
       if authState == .unauthenticated {
-        MetricsWidgetPublisher.clear()
         clearWatchtowerWidgetSnapshot()
       } else if authState == .authenticated {
         scheduleFileProviderDomainReconciliation()
@@ -244,6 +318,11 @@ final class AppModel {
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
   var identityStale = false
+  /// Set only when an OAuth replacement could neither restore the prior
+  /// credential nor conclusively clear the new one. Until Cloudflare identity
+  /// succeeds, the in-memory account catalog must not be paired with that
+  /// unverified shared credential.
+  private var requiresVerifiedIdentityBeforeAuthentication = false
   /// Unread Cloudflare deliveries, minus locally ignored rows. History never
   /// increments this shared Watchtower tab / floating inbox badge; nil until
   /// the first fetch completes for the active account.
@@ -268,6 +347,17 @@ final class AppModel {
   var pendingDeviceToken: String?
 
   private var authSession: ASWebAuthenticationSession?
+  /// Every OAuth browser hand-off owns one generation. Signing out advances
+  /// it before waiting for the callback, so a late code exchange can never
+  /// reinstall a credential after the local sign-out commit.
+  private var authenticationAttemptGeneration: UInt64 = 0
+  /// The callback task cannot be cancelled reliably once URLSession or
+  /// Keychain work is in flight. Sign-out therefore invalidates its generation
+  /// and waits for it to cross the next guarded suspension point before
+  /// clearing the shared credential.
+  private var activeAuthenticationCallbackGeneration: UInt64?
+  private var authenticationCallbackOwnsCredentialMutation = false
+  private var authenticationCallbackWaiters: [CheckedContinuation<Void, Never>] = []
   private var pushReconcileTask: Task<Void, Never>?
   private var fileProviderReconcileTask: Task<Void, Never>?
   private var fileProviderReconcileGeneration: UInt64 = 0
@@ -735,21 +825,23 @@ final class AppModel {
       }
     #endif
 
+    // A retry from the launch failure surface re-enters the complete boundary
+    // check; never carry the previous attempt's diagnostic into a success.
+    errorMessage = nil
     do {
       guard try await tokenStore.getAccessToken() != nil else {
-        let removedFileProviderDomains = await removeAllFileProviderDomains()
-        if !removedFileProviderDomains {
-          errorMessage = DashL10n.string(
-            "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
-          )
-        }
-        deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+        // A successful Keychain read with no access token is a definitive
+        // credential boundary. Invalidate any Widget request that started for
+        // the previous session before onboarding is shown.
+        guard await prepareForUnauthenticatedPresentation() else { return }
+        requiresVerifiedIdentityBeforeAuthentication = false
         authState = .unauthenticated
         return
       }
     } catch {
-      deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
-      authState = .unauthenticated
+      // A Keychain read error is not proof that no shared credential exists.
+      // Keep the launch boundary closed and let the user retry.
+      appendErrorMessage(error.localizedDescription)
       return
     }
     // Older installs can have a valid token without a scope mirror. Unknown is
@@ -759,16 +851,28 @@ final class AppModel {
     selectedScopes = DashAuthorizationScopes.core
     do {
       try await loadIdentity()
+      identityStale = false
+      requiresVerifiedIdentityBeforeAuthentication = false
+      activateRemoteMetricsWidgetSession()
       authState = .authenticated
     } catch {
       let outcome = Self.authOutcome(afterIdentityError: error)
       identityStale = outcome.stale
-      if outcome.state == .unauthenticated,
-        !(await removeAllFileProviderDomains())
+      if outcome.state == .authenticated,
+        requiresVerifiedIdentityBeforeAuthentication
       {
-        errorMessage = DashL10n.string(
-          "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
-        )
+        appendErrorMessage(error.localizedDescription)
+        authState = .loading
+        return
+      }
+      if outcome.state == .unauthenticated {
+        // Only a 401 reaches this branch. Transient Keychain, network, and
+        // service failures deliberately retain the Widget's last-good data.
+        guard await prepareForUnauthenticatedPresentation() else {
+          authState = .loading
+          return
+        }
+        requiresVerifiedIdentityBeforeAuthentication = false
       }
       authState = outcome.state
     }
@@ -793,11 +897,20 @@ final class AppModel {
     defer { isRetryingIdentity = false }
     do {
       try await loadIdentity()
+      activateRemoteMetricsWidgetSession()
       identityStale = false
+      requiresVerifiedIdentityBeforeAuthentication = false
       scheduleFileProviderDomainReconciliation()
     } catch {
       if (error as? CloudflareAPIError)?.isUnauthorized == true {
-        await signOut()
+        do {
+          try invalidateMetricsWidgetSession()
+        } catch {
+          errorMessage = error.localizedDescription
+          toasts.error(error.localizedDescription)
+          return
+        }
+        await signOut(metricsWidgetSessionAlreadyInvalidated: true)
       }
     }
   }
@@ -824,7 +937,7 @@ final class AppModel {
       guard Self.demoAccessRequiresConnection(scopes) else { return }
       Task { @MainActor [weak self] in
         guard let self else { return }
-        await exitDemo()
+        guard await exitDemo() else { return }
         await Task.yield()
         await R2TemporaryFile.removeAllFiles()
       }
@@ -870,6 +983,58 @@ final class AppModel {
     return desired
   }
 
+  private func beginAuthenticationAttempt() -> UInt64 {
+    authenticationAttemptGeneration &+= 1
+    return authenticationAttemptGeneration
+  }
+
+  private func isCurrentAuthenticationAttempt(_ generation: UInt64) -> Bool {
+    authenticationAttemptGeneration == generation && isAuthenticating && !isSigningOut
+  }
+
+  private func beginAuthenticationCallback(_ generation: UInt64) -> Bool {
+    guard isCurrentAuthenticationAttempt(generation) else { return false }
+    guard activeAuthenticationCallbackGeneration == nil else { return false }
+    activeAuthenticationCallbackGeneration = generation
+    authenticationCallbackOwnsCredentialMutation = false
+    return true
+  }
+
+  private func finishAuthenticationCallback(_ generation: UInt64) {
+    guard activeAuthenticationCallbackGeneration == generation else { return }
+    activeAuthenticationCallbackGeneration = nil
+    authenticationCallbackOwnsCredentialMutation = false
+    let waiters = authenticationCallbackWaiters
+    authenticationCallbackWaiters.removeAll()
+    for waiter in waiters { waiter.resume() }
+  }
+
+  private func waitForAuthenticationCallbackToFinish() async {
+    while activeAuthenticationCallbackGeneration != nil,
+      authenticationCallbackOwnsCredentialMutation
+    {
+      await withCheckedContinuation { continuation in
+        authenticationCallbackWaiters.append(continuation)
+      }
+    }
+  }
+
+  private func invalidateAuthenticationAttempt(cancelSession: Bool = true) {
+    authenticationAttemptGeneration &+= 1
+    if cancelSession { authSession?.cancel() }
+    authSession = nil
+    isAuthenticating = false
+    cancelAuthenticationPresentationFallback()
+    authenticationActionPhase = .idle
+    authenticationActionOwner = nil
+    grantedScopesPendingPresentation = nil
+  }
+
+  private func finishAuthenticationAttempt(_ generation: UInt64) {
+    guard authenticationAttemptGeneration == generation else { return }
+    invalidateAuthenticationAttempt(cancelSession: false)
+  }
+
   func hasScopes(_ scopes: Set<String>) -> Bool {
     guard let grantedScopes else { return false }
     return scopes.isSubset(of: grantedScopes)
@@ -881,7 +1046,7 @@ final class AppModel {
     presentsCompletion: Bool,
     presentationOwner: UUID?
   ) {
-    guard !isAuthenticating, !isEnteringDemo else { return }
+    guard !isAuthenticating, !isEnteringDemo, !isSigningOut else { return }
     guard configuration.isConfigured else {
       errorMessage = "Add DASH_CLIENT_ID and DASH_REDIRECT_URI to Config/Secrets.xcconfig."
       return
@@ -898,6 +1063,7 @@ final class AppModel {
       pkce: pkce,
       scopes: requestedScopes.sorted()
     )
+    let authenticationAttempt = beginAuthenticationAttempt()
     isAuthenticating = true
     cancelAuthenticationPresentationFallback()
     authenticationActionPhase = .loading
@@ -908,71 +1074,91 @@ final class AppModel {
       url: authorizationURL, callbackURLScheme: configuration.callbackScheme
     ) { [weak self] url, error in
       Task { @MainActor [weak self] in
-        guard let self else { return }
+        guard
+          let self,
+          self.beginAuthenticationCallback(authenticationAttempt)
+        else { return }
+        defer { self.finishAuthenticationCallback(authenticationAttempt) }
         if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
-          isAuthenticating = false
-          authenticationActionPhase = .idle
-          authenticationActionOwner = nil
+          finishAuthenticationAttempt(authenticationAttempt)
           return
         }
         guard error == nil, let url,
           let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         else {
-          isAuthenticating = false
-          authenticationActionPhase = .idle
-          authenticationActionOwner = nil
+          finishAuthenticationAttempt(authenticationAttempt)
           errorMessage = error?.localizedDescription ?? "OAuth callback was invalid."
           return
         }
         let values = Dictionary(
           uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
         guard values["state"] == state, let code = values["code"] else {
-          isAuthenticating = false
-          authenticationActionPhase = .idle
-          authenticationActionOwner = nil
+          finishAuthenticationAttempt(authenticationAttempt)
           errorMessage = values["error_description"] ?? values["error"] ?? "OAuth state mismatch."
           return
         }
         let previousScopes = grantedScopes
         let previousProfileID = user?.id
+        let previousAccounts = accounts
         let previousAccountIDs = Set(accounts.map(\.id))
+        let previousActiveAccountID = activeAccountID
         let previousTokens: TokenSet?
         do {
-          if preservesExistingSession,
+          if preservesExistingSession, !(tokenStore is KeychainTokenStore) {
             let accessToken = try await tokenStore.getAccessToken()
-          {
-            previousTokens = TokenSet(
-              accessToken: accessToken,
-              refreshToken: try await tokenStore.getRefreshToken(),
-              scope: previousScopes?.sorted().joined(separator: " ")
-            )
+            guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+            if let accessToken {
+              let refreshToken = try await tokenStore.getRefreshToken()
+              guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+              previousTokens = TokenSet(
+                accessToken: accessToken,
+                refreshToken: refreshToken,
+                scope: previousScopes?.sorted().joined(separator: " ")
+              )
+            } else {
+              previousTokens = nil
+            }
           } else {
             previousTokens = nil
           }
         } catch {
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
           // If the old credential cannot be snapshotted completely, leave it
           // untouched instead of beginning a replacement we cannot roll back.
-          isAuthenticating = false
-          authenticationActionPhase = .idle
-          authenticationActionOwner = nil
+          finishAuthenticationAttempt(authenticationAttempt)
           errorMessage = error.localizedDescription
           return
         }
         var credentialReplacementPrepared = false
+        var credentialReplacement: OAuthCredentialReplacement?
         do {
           let tokens = try await OAuth.exchangeCode(
             clientID: configuration.clientID, code: code, verifier: pkce.verifier,
             redirectURI: configuration.redirectURI, session: DashAPISession.shared
           )
-          // Keep the old token installed until every already-started deletion
-          // has finished or entered read-only reconciliation.
-          await deferredDeletions.prepareForCredentialReplacement()
-          credentialReplacementPrepared = true
-          try await replaceStoredTokens(with: tokens)
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+          authenticationCallbackOwnsCredentialMutation = true
           let granted =
             tokens.scope.map { Set($0.split(separator: " ").map(String.init)) }
             ?? requestedScopes
-          try await tokenStore.setGrantedScopes(granted)
+          // Keep the old token installed until every already-started deletion
+          // has finished or entered read-only reconciliation.
+          await deferredDeletions.prepareForCredentialReplacement()
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+          credentialReplacementPrepared = true
+          // Every OAuth result is a new credential generation, including a
+          // permission upgrade that happens to keep the same profile. Persist
+          // the Widget tombstone before replacing Keychain values so a late
+          // response from the prior generation can never repopulate cache.
+          try invalidateMetricsWidgetSession()
+          if !(tokenStore is KeychainTokenStore) {
+            credentialReplacement = .protocolStore(previousCredential: previousTokens)
+          }
+          credentialReplacement = try await replaceStoredTokens(
+            with: tokens,
+            grantedScopes: granted,
+            previousProtocolCredential: previousTokens)
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
           if preservesExistingSession, presentsCompletion {
             // Keep the initiating permission action mounted through its success
             // swap; publishing the wider grant first removes that UI.
@@ -983,6 +1169,10 @@ final class AppModel {
           selectedScopes = granted
           resetAccountScopedWork()
           try await loadIdentity()
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+          identityStale = false
+          requiresVerifiedIdentityBeforeAuthentication = false
+          activateRemoteMetricsWidgetSession()
           if preservesExistingSession {
             // A legacy grant upgrade stays on the current screen so the user
             // can retry the action that led them to the consent sheet.
@@ -990,44 +1180,55 @@ final class AppModel {
               authenticationActionPhase = .succeeded
               armAuthenticationPresentationFallback()
             } else {
-              isAuthenticating = false
-              authenticationActionPhase = .idle
-              authenticationActionOwner = nil
+              finishAuthenticationAttempt(authenticationAttempt)
             }
           } else {
             // AppRoot holds the onboarding surface until the shared success
             // icon swap reports logical completion. First let the system
             // browser sheet finish dismissing so that swap remains visible.
             try? await Task.sleep(for: .milliseconds(280))
+            guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
             authenticationActionPhase = .succeeded
             armAuthenticationPresentationFallback()
             authState = .authenticated
           }
         } catch {
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+          authenticationCallbackOwnsCredentialMutation = true
           authenticationActionPhase = .idle
           authenticationActionOwner = nil
           grantedScopesPendingPresentation = nil
           let restoredPreviousCredential =
-            await handleCredentialReplacementFailure(
+            await handleOAuthCredentialReplacementFailure(
               replacementPrepared: credentialReplacementPrepared,
+              replacement: credentialReplacement,
+              replacementFailure: error,
               preservesExistingSession: preservesExistingSession,
-              previousTokens: previousTokens,
               previousScopes: previousScopes,
               previousProfileID: previousProfileID,
-              previousAccountIDs: previousAccountIDs)
-          errorMessage = error.localizedDescription
-          if !preservesExistingSession || !restoredPreviousCredential {
-            if !(await removeAllFileProviderDomains()) {
-              errorMessage = [
-                error.localizedDescription,
-                DashL10n.string(
-                  "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
-                ),
-              ].joined(separator: "\n")
-            }
-            authState = .unauthenticated
+              previousAccountIDs: previousAccountIDs,
+              previousAccounts: previousAccounts,
+              previousActiveAccountID: previousActiveAccountID)
+          guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+          if errorMessage == nil {
+            errorMessage = error.localizedDescription
           }
-          isAuthenticating = false
+          if !preservesExistingSession || !restoredPreviousCredential {
+            let boundaryReady = await prepareForUnauthenticatedPresentation()
+            guard isCurrentAuthenticationAttempt(authenticationAttempt) else { return }
+            if boundaryReady {
+              requiresVerifiedIdentityBeforeAuthentication = false
+              authState = .unauthenticated
+            } else {
+              // The UI identity and the surviving shared credential can no
+              // longer be proven to describe the same Cloudflare profile.
+              // Close both the old catalog and onboarding until retry reaches
+              // a conclusive credential boundary.
+              requiresVerifiedIdentityBeforeAuthentication = true
+              authState = .loading
+            }
+          }
+          finishAuthenticationAttempt(authenticationAttempt)
         }
       }
     }
@@ -1040,11 +1241,13 @@ final class AppModel {
       // The ring is already showing (isAuthenticating), and the sheet's own
       // presentation latency hides this wait.
       try? await Task.sleep(for: DashPressButtonStyle.pulseSettle)
-      guard let self, self.authSession === session else { return }
+      guard
+        let self,
+        self.isCurrentAuthenticationAttempt(authenticationAttempt),
+        self.authSession === session
+      else { return }
       if !session.start() {
-        self.isAuthenticating = false
-        self.authenticationActionPhase = .idle
-        self.authenticationActionOwner = nil
+        self.finishAuthenticationAttempt(authenticationAttempt)
         self.errorMessage = "Could not start the sign-in session."
       }
     }
@@ -1057,13 +1260,10 @@ final class AppModel {
 
   private func finalizeAuthenticationActionPresentation() {
     guard authenticationActionPhase == .succeeded else { return }
-    cancelAuthenticationPresentationFallback()
-    authenticationActionPhase = .idle
-    authenticationActionOwner = nil
-    isAuthenticating = false
-    if let grantedScopesPendingPresentation {
-      self.grantedScopesPendingPresentation = nil
-      grantedScopes = grantedScopesPendingPresentation
+    let pendingScopes = grantedScopesPendingPresentation
+    invalidateAuthenticationAttempt(cancelSession: false)
+    if let pendingScopes {
+      grantedScopes = pendingScopes
     }
   }
 
@@ -1089,12 +1289,238 @@ final class AppModel {
     authenticationPresentationFallbackTask = nil
   }
 
-  private func replaceStoredTokens(with tokens: TokenSet) async throws {
+  private func replaceStoredTokens(
+    with tokens: TokenSet,
+    grantedScopes: Set<String>,
+    previousProtocolCredential: TokenSet?
+  ) async throws -> OAuthCredentialReplacement {
     // `TokenStore.setTokens` intentionally preserves a refresh token omitted
     // by a normal refresh response. An OAuth identity replacement is
-    // different: clear first so fields from two people can never be mixed.
+    // different: the real Keychain store clears and installs under one flock
+    // so a Widget refresh cannot interleave fields from two identities. Test
+    // stores retain the protocol-level fallback.
+    if let keychainStore = tokenStore as? KeychainTokenStore {
+      return .keychain(
+        try await keychainStore.replaceCredential(
+          with: tokens,
+          grantedScopes: grantedScopes))
+    } else {
+      try await tokenStore.clear()
+      try await tokenStore.setTokens(tokens)
+      try await tokenStore.setGrantedScopes(grantedScopes)
+      return .protocolStore(previousCredential: previousProtocolCredential)
+    }
+  }
+
+  private func removeStoredCredentialForSignOut() async throws
+    -> KeychainStoredCredentialSnapshot?
+  {
+    if let keychainStore = tokenStore as? KeychainTokenStore {
+      return try await keychainStore.removeCredential()
+    }
+    // Protocol stores used by tests are process-local, so no sibling can
+    // rotate between these reads and the clear.
+    let accessToken = try await tokenStore.getAccessToken()
+    let refreshToken = try await tokenStore.getRefreshToken()
+    let scopes = try await tokenStore.getGrantedScopes()
     try await tokenStore.clear()
-    try await tokenStore.setTokens(tokens)
+    guard let accessToken else { return nil }
+    return KeychainStoredCredentialSnapshot(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      rawExpirationTimestamp: nil,
+      rawGrantedScopes: scopes?.sorted().joined(separator: " "))
+  }
+
+  private func invalidateMetricsWidgetSession() throws {
+    guard MetricsWidgetPublisher.clear() else {
+      throw MetricsWidgetSessionLifecycleError.transitionFailed
+    }
+  }
+
+  /// Onboarding is a disclosure boundary, not merely a navigation state. It
+  /// may become visible only after both shared consumers have been cut off:
+  /// Widget metadata is tombstoned and every Keychain capability is gone.
+  /// Files follows the same rule because a mounted domain can retain
+  /// downloaded account data even after the app itself forgets the identity.
+  private func prepareForUnauthenticatedPresentation() async -> Bool {
+    do {
+      try invalidateMetricsWidgetSession()
+    } catch {
+      appendErrorMessage(error.localizedDescription)
+      return false
+    }
+    do {
+      try await tokenStore.clear()
+    } catch {
+      appendErrorMessage(error.localizedDescription)
+      return false
+    }
+    guard await removeAllFileProviderDomains() else {
+      appendErrorMessage(
+        DashL10n.string(
+          "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+        ))
+      return false
+    }
+    deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+    return true
+  }
+
+  private func appendErrorMessage(_ message: String) {
+    guard errorMessage?.contains(message) != true else { return }
+    errorMessage = [errorMessage, message]
+      .compactMap { $0 }
+      .joined(separator: "\n")
+  }
+
+  @discardableResult
+  private func activateRemoteMetricsWidgetSession() -> Bool {
+    activateRemoteMetricsWidgetSession(
+      accounts: accounts,
+      activeAccountID: activeAccountID)
+  }
+
+  @discardableResult
+  private func activateRemoteMetricsWidgetSession(
+    accounts: [CloudflareAccount],
+    activeAccountID: String?,
+    reportsFailure: Bool = true
+  ) -> Bool {
+    let activated = MetricsWidgetPublisher.activateRemote(
+      accounts: accounts,
+      activeAccountID: activeAccountID)
+    if !activated, reportsFailure {
+      reportMetricsWidgetSessionActivationFailure()
+    }
+    return activated
+  }
+
+  @discardableResult
+  private func activateLocalMetricsWidgetSession() -> Bool {
+    let activated = MetricsWidgetPublisher.activateLocalOnly(
+      accounts: accounts,
+      activeAccountID: activeAccountID)
+    if !activated {
+      reportMetricsWidgetSessionActivationFailure()
+    }
+    return activated
+  }
+
+  private func reportMetricsWidgetSessionActivationFailure() {
+    let message = MetricsWidgetSessionLifecycleError.transitionFailed.localizedDescription
+    errorMessage = message
+    toasts.error(message)
+  }
+
+  @discardableResult
+  private func handleOAuthCredentialReplacementFailure(
+    replacementPrepared: Bool,
+    replacement: OAuthCredentialReplacement?,
+    replacementFailure: Error,
+    preservesExistingSession: Bool,
+    previousScopes: Set<String>?,
+    previousProfileID: String?,
+    previousAccountIDs: Set<String>,
+    previousAccounts: [CloudflareAccount],
+    previousActiveAccountID: String?
+  ) async -> Bool {
+    guard replacementPrepared else {
+      // Code exchange failed before the coordinator, Widget session, or
+      // credential changed.
+      return preservesExistingSession
+    }
+
+    switch replacement {
+    case .keychain(let receipt):
+      guard let keychainStore = tokenStore as? KeychainTokenStore else { return false }
+      do {
+        guard try await keychainStore.restoreCredential(from: receipt) else {
+          deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+          return false
+        }
+        guard !isSigningOut else { return false }
+        return bindRestoredCredentialState(
+          previousScopes: previousScopes,
+          previousProfileID: previousProfileID,
+          previousAccountIDs: previousAccountIDs,
+          previousAccounts: previousAccounts,
+          previousActiveAccountID: previousActiveAccountID)
+      } catch {
+        appendErrorMessage(error.localizedDescription)
+        toasts.error(error.localizedDescription)
+        deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+        return false
+      }
+
+    case .protocolStore(let previousCredential):
+      return await handleCredentialReplacementFailure(
+        replacementPrepared: true,
+        preservesExistingSession: preservesExistingSession,
+        previousTokens: previousCredential,
+        previousScopes: previousScopes,
+        previousProfileID: previousProfileID,
+        previousAccountIDs: previousAccountIDs,
+        previousAccounts: previousAccounts,
+        previousActiveAccountID: previousActiveAccountID)
+
+    case nil:
+      // `replaceCredential` either never began or restored its exact pre-call
+      // snapshot before throwing. Only `credentialStateUncertain` means that
+      // invariant itself failed and forbids rebinding work to the old profile.
+      if tokenStore is KeychainTokenStore {
+        if let coordinationError = replacementFailure
+          as? KeychainCredentialCoordinationError,
+          case .credentialStateUncertain = coordinationError
+        {
+          deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+          return false
+        }
+        guard preservesExistingSession, !isSigningOut else {
+          deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+          return false
+        }
+        return bindRestoredCredentialState(
+          previousScopes: previousScopes,
+          previousProfileID: previousProfileID,
+          previousAccountIDs: previousAccountIDs,
+          previousAccounts: previousAccounts,
+          previousActiveAccountID: previousActiveAccountID)
+      }
+      return await handleCredentialReplacementFailure(
+        replacementPrepared: true,
+        preservesExistingSession: preservesExistingSession,
+        previousTokens: nil,
+        previousScopes: previousScopes,
+        previousProfileID: previousProfileID,
+        previousAccountIDs: previousAccountIDs,
+        previousAccounts: previousAccounts,
+        previousActiveAccountID: previousActiveAccountID)
+    }
+  }
+
+  @discardableResult
+  private func bindRestoredCredentialState(
+    previousScopes: Set<String>?,
+    previousProfileID: String?,
+    previousAccountIDs: Set<String>,
+    previousAccounts: [CloudflareAccount],
+    previousActiveAccountID: String?
+  ) -> Bool {
+    guard let previousProfileID else {
+      deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+      return false
+    }
+    grantedScopes = previousScopes
+    selectedScopes = previousScopes ?? selectedScopes
+    requiresVerifiedIdentityBeforeAuthentication = false
+    deferredDeletions.activateCredential(
+      profileID: previousProfileID,
+      availableAccountIDs: previousAccountIDs)
+    activateRemoteMetricsWidgetSession(
+      accounts: previousAccounts,
+      activeAccountID: previousActiveAccountID)
+    return true
   }
 
   @discardableResult
@@ -1104,7 +1530,9 @@ final class AppModel {
     previousTokens: TokenSet?,
     previousScopes: Set<String>?,
     previousProfileID: String?,
-    previousAccountIDs: Set<String>
+    previousAccountIDs: Set<String>,
+    previousAccounts: [CloudflareAccount]? = nil,
+    previousActiveAccountID: String? = nil
   ) async -> Bool {
     guard replacementPrepared else {
       // Code exchange failed before any token/coordinator mutation. The
@@ -1116,9 +1544,16 @@ final class AppModel {
         previousTokens: previousTokens,
         previousScopes: previousScopes,
         previousProfileID: previousProfileID,
-        previousAccountIDs: previousAccountIDs)
+        previousAccountIDs: previousAccountIDs,
+        previousAccounts: previousAccounts,
+        previousActiveAccountID: previousActiveAccountID)
     }
-    try? await tokenStore.clear()
+    do {
+      try await tokenStore.clear()
+    } catch {
+      errorMessage = error.localizedDescription
+      toasts.error(error.localizedDescription)
+    }
     deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
     return false
   }
@@ -1128,27 +1563,58 @@ final class AppModel {
     previousTokens: TokenSet,
     previousScopes: Set<String>?,
     previousProfileID: String?,
-    previousAccountIDs: Set<String>
+    previousAccountIDs: Set<String>,
+    previousAccounts: [CloudflareAccount]? = nil,
+    previousActiveAccountID: String? = nil
   ) async -> Bool {
+    // The real shared store must restore only from its lock-issued receipt;
+    // accepting a caller-supplied TokenSet here would reintroduce the stale
+    // refresh-token rollback this path exists to prevent.
+    guard !(tokenStore is KeychainTokenStore) else {
+      deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+      return false
+    }
     do {
-      try await replaceStoredTokens(with: previousTokens)
+      try await tokenStore.clear()
+      try await tokenStore.setTokens(previousTokens)
       if let previousScopes {
         try await tokenStore.setGrantedScopes(previousScopes)
       }
       grantedScopes = previousScopes
       selectedScopes = previousScopes ?? selectedScopes
       guard let previousProfileID else {
+        do {
+          try await tokenStore.clear()
+        } catch {
+          errorMessage = error.localizedDescription
+          toasts.error(error.localizedDescription)
+        }
         deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
         return false
       }
       deferredDeletions.activateCredential(
         profileID: previousProfileID,
         availableAccountIDs: previousAccountIDs)
+      if let previousAccounts {
+        activateRemoteMetricsWidgetSession(
+          accounts: previousAccounts,
+          activeAccountID: previousActiveAccountID)
+      } else {
+        activateRemoteMetricsWidgetSession()
+      }
       return true
-    } catch {
+    } catch let restorationError {
       // The keychain may now contain no credential or only part of one.
       // Never bind coordinator work to a guessed identity in that state.
-      try? await tokenStore.clear()
+      do {
+        try await tokenStore.clear()
+      } catch {
+        errorMessage = error.localizedDescription
+        toasts.error(error.localizedDescription)
+      }
+      if errorMessage == nil {
+        errorMessage = restorationError.localizedDescription
+      }
       deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
       return false
     }
@@ -1190,6 +1656,15 @@ final class AppModel {
         !self.isAuthenticating
       else { return }
       self.toasts.clearAll()
+      // Demo account identifiers must never coexist with retained real-account
+      // Widget metadata or an in-flight real-account refresh.
+      do {
+        try self.invalidateMetricsWidgetSession()
+      } catch {
+        self.errorMessage = error.localizedDescription
+        self.toasts.error(error.localizedDescription)
+        return
+      }
       self.resetAccountScopedWork()
       self.pendingLegacyNotificationRoute = nil
       self.isDemoSession = true
@@ -1203,12 +1678,22 @@ final class AppModel {
       do {
         try await self.loadIdentity()
         guard self.isDemoSession else { return }
+        self.identityStale = false
+        self.requiresVerifiedIdentityBeforeAuthentication = false
+        self.activateLocalMetricsWidgetSession()
         self.authState = .authenticated
       } catch {
         guard self.isDemoSession else { return }
-        await self.exitDemo()
-        self.errorMessage = error.localizedDescription
-        self.toasts.error(error.localizedDescription)
+        let identityErrorMessage = error.localizedDescription
+        let exited = await self.exitDemo()
+        let message =
+          exited
+          ? identityErrorMessage
+          : [identityErrorMessage, self.errorMessage]
+            .compactMap { $0 }
+            .joined(separator: "\n")
+        self.errorMessage = message
+        self.toasts.error(message)
       }
     }
   }
@@ -1216,7 +1701,15 @@ final class AppModel {
   /// Tears down the demo session: restores the real client and returns to
   /// onboarding. No keychain, push, or revocation work — the demo never
   /// touched any of it.
-  private func exitDemo(setsAuthenticationState: Bool = true) async {
+  @discardableResult
+  private func exitDemo(setsAuthenticationState: Bool = true) async -> Bool {
+    do {
+      try invalidateMetricsWidgetSession()
+    } catch {
+      errorMessage = error.localizedDescription
+      toasts.error(error.localizedDescription)
+      return false
+    }
     let pendingFileProviderReconcile = fileProviderReconcileTask
     fileProviderReconcileTask?.cancel()
     await pendingFileProviderReconcile?.value
@@ -1237,25 +1730,32 @@ final class AppModel {
     grantedScopesPendingPresentation = nil
     selectedScopes = DashAuthorizationScopes.core
     identityStale = false
+    requiresVerifiedIdentityBeforeAuthentication = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
     pendingLegacyNotificationRoute = nil
     WatchtowerNotificationBaselineStore.clearAll()
-    MetricsWidgetPublisher.clear()
     toasts.clearAll()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
     if setsAuthenticationState {
       authState = .unauthenticated
     }
+    return true
   }
 
-  func signOut(presentsCompletion: Bool = false) async {
+  func signOut(
+    presentsCompletion: Bool = false,
+    metricsWidgetSessionAlreadyInvalidated: Bool = false
+  ) async {
     if isDemoSession {
       cancelSignOutPresentationFallback()
       signOutActionPhase = presentsCompletion ? .loading : .idle
-      await exitDemo(setsAuthenticationState: !presentsCompletion)
+      guard await exitDemo(setsAuthenticationState: !presentsCompletion) else {
+        signOutActionPhase = .idle
+        return
+      }
       await Task.yield()
       await R2TemporaryFile.removeAllFiles()
       if presentsCompletion {
@@ -1269,61 +1769,136 @@ final class AppModel {
     cancelSignOutPresentationFallback()
     isSigningOut = true
     signOutActionPhase = presentsCompletion ? .loading : .idle
-    defer { isSigningOut = false }
-    isAuthenticating = false
-    cancelAuthenticationPresentationFallback()
-    authenticationActionPhase = .idle
-    authenticationActionOwner = nil
-    grantedScopesPendingPresentation = nil
+    defer {
+      isSigningOut = false
+      syncNotificationAccountAuthorization()
+      scheduleFileProviderDomainReconciliation()
+    }
+    invalidateAuthenticationAttempt()
+    await waitForAuthenticationCallbackToFinish()
 
-    // Removing a replicated domain is the only sign-out cleanup that owns
-    // downloaded account data on this device. Do it before mutating any other
-    // session state so a system IPC failure leaves Dash truthfully signed in
-    // and lets the user retry instead of creating a half-signed-out replica.
-    fileProviderReconcileGeneration &+= 1
-    let pendingFileProviderReconcile = fileProviderReconcileTask
-    fileProviderReconcileTask?.cancel()
-    fileProviderReconcileTask = nil
-    await pendingFileProviderReconcile?.value
-    guard await removeAllFileProviderDomains() else {
+    let retainedAccounts = accounts
+    let retainedActiveAccountID = activeAccountID
+    let retainedProfileID = user?.id
+    if !metricsWidgetSessionAlreadyInvalidated {
+      do {
+        // Stop new Widget requests before any long-running cleanup. The
+        // generation tombstone also rejects a response already in flight.
+        try invalidateMetricsWidgetSession()
+      } catch {
+        signOutActionPhase = .idle
+        errorMessage = error.localizedDescription
+        toasts.error(error.localizedDescription)
+        return
+      }
+    }
+
+    let pushAccountIDs = Set(accounts.map(\.id))
+      .union(PushRegistrationService.enabledAccountIDs())
+      .union(PushRegistrationService.pendingCleanupAccountIDs())
+
+    // Freeze deferred work before the local commit. Nothing below this await
+    // has removed Files data, disabled a webhook, or changed notification
+    // authorization, so a Keychain lock failure can still preserve the whole
+    // signed-in experience.
+    await deferredDeletions.prepareForCredentialReplacement()
+    let removedCredential: KeychainStoredCredentialSnapshot?
+    do {
+      // This lock-held capture + clear is the local sign-out commit. No shared
+      // process can rotate the token between the snapshot and its removal.
+      removedCredential = try await removeStoredCredentialForSignOut()
+    } catch {
+      var messages = [error.localizedDescription]
+      if metricsWidgetSessionAlreadyInvalidated {
+        // A terminal 401 already proved this credential dead. Keep recovery
+        // frozen and the Widget tombstoned; never resurrect either from the
+        // failed cleanup attempt.
+        deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+      } else {
+        if let retainedProfileID {
+          deferredDeletions.activateCredential(
+            profileID: retainedProfileID,
+            availableAccountIDs: Set(retainedAccounts.map(\.id)))
+        } else {
+          deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
+        }
+        let restored = activateRemoteMetricsWidgetSession(
+          accounts: retainedAccounts,
+          activeAccountID: retainedActiveAccountID,
+          reportsFailure: false)
+        if !restored {
+          messages.append(
+            MetricsWidgetSessionLifecycleError.transitionFailed.localizedDescription)
+        }
+      }
+      let message = messages.joined(separator: "\n")
       signOutActionPhase = .idle
-      let message = DashL10n.string(
-        "Files couldn't remove all downloaded copies from this iPhone. Try signing out again."
-      )
       errorMessage = message
       toasts.error(message)
       return
     }
 
-    // This handshake runs before token revocation so an in-flight DELETE never
-    // resumes under a replacement credential.
-    await deferredDeletions.prepareForCredentialReplacement()
-    let pushAccountIDs = Set(accounts.map(\.id))
-      .union(PushRegistrationService.enabledAccountIDs())
-      .union(PushRegistrationService.pendingCleanupAccountIDs())
-    // Invalidate user-started enable work before it can mint/store a webhook
-    // after our initial enabled-id snapshot. Each disable below then waits on
-    // the same per-account lock, so revocation cannot overtake remote cleanup.
+    // From this point onward the shared credential is conclusively gone. A
+    // cleanup failure is reported but can no longer roll the app back to an
+    // authenticated state. The detached store may rotate only its private
+    // copy while finishing remote teardown.
+    let cleanupStore = SignOutCleanupTokenStore(
+      accessToken: removedCredential?.accessToken,
+      refreshToken: removedCredential?.refreshToken,
+      scopes: removedCredential?.grantedScopes)
+    let cleanupClient = CloudflareClient(
+      clientID: configuration.clientID,
+      tokenStore: cleanupStore,
+      session: authenticatedSession)
+    var cleanupMessages: [String] = []
+
+    fileProviderReconcileGeneration &+= 1
+    let pendingFileProviderReconcile = fileProviderReconcileTask
+    fileProviderReconcileTask?.cancel()
+    fileProviderReconcileTask = nil
+    await pendingFileProviderReconcile?.value
+    if !(await removeAllFileProviderDomains()) {
+      cleanupMessages.append(
+        DashL10n.string(
+          "Files couldn't remove all downloaded copies from this iPhone. Reopen Dash to try again."
+        ))
+    }
+
+    // Invalidate user-started enable work before waiting on each account's
+    // mutation lock. If an enable crossed the Keychain commit, disable sees
+    // its persisted webhook or leaves a durable cleanup tombstone.
     PushRegistrationService.prepareForSignOut(accountIDs: pushAccountIDs)
     let pendingPushReconcile = pushReconcileTask
-    resetAccountScopedWork()
-    activeAccountID = nil
-    // Close the Lock Screen disclosure boundary immediately. Remote webhook
-    // cleanup is best-effort and can outlive this local sign-out.
+    pushReconcileTask?.cancel()
+    pushReconcileTask = nil
     NotificationAccountAuthorizationStore.clear()
-    MetricsWidgetPublisher.clear()
     await pendingPushReconcile?.value
 
-    // Push webhooks live in the user's Cloudflare accounts — delete them
-    // before revoking the token, or the client can no longer authenticate.
     var pushCleanupFailureCount = 0
     for accountID in pushAccountIDs.sorted() {
       do {
-        try await PushRegistrationService.disable(accountID: accountID, client: client)
+        try await PushRegistrationService.disable(
+          accountID: accountID,
+          client: cleanupClient)
       } catch {
         pushCleanupFailureCount += 1
       }
     }
+    if pushCleanupFailureCount > 0 {
+      cleanupMessages.append(
+        "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
+      )
+    }
+
+    // Push cleanup can refresh and rotate the detached credential. Revoke the
+    // latest access token it actually used, never the pre-cleanup snapshot.
+    if let cleanupAccessToken = await cleanupStore.getAccessToken() {
+      try? await OAuth.revoke(
+        clientID: configuration.clientID, token: cleanupAccessToken,
+        session: DashAPISession.shared)
+    }
+    resetAccountScopedWork()
+    activeAccountID = nil
     UIApplication.shared.unregisterForRemoteNotifications()
     // Locally-scheduled domain reminders name a specific domain in a specific
     // account. Left behind, one would announce a domain the app can no longer
@@ -1332,11 +1907,6 @@ final class AppModel {
     // Watchtower's local "Notify on new issues" preference is intentionally
     // kept — it has no server-side side effects.
 
-    if let token = try? await tokenStore.getAccessToken() {
-      try? await OAuth.revoke(
-        clientID: configuration.clientID, token: token, session: DashAPISession.shared)
-    }
-    try? await tokenStore.clear()
     deferredDeletions.discardCredentialState()
     avatars.clearMemory()
     await r2Thumbnails.clear()
@@ -1345,6 +1915,7 @@ final class AppModel {
     grantedScopes = nil
     selectedScopes = DashAuthorizationScopes.core
     identityStale = false
+    requiresVerifiedIdentityBeforeAuthentication = false
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
@@ -1358,7 +1929,6 @@ final class AppModel {
     UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
     UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     clearWatchtowerWidgetSnapshot()
-    MetricsWidgetPublisher.clear()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
     if presentsCompletion {
@@ -1366,12 +1936,6 @@ final class AppModel {
       armSignOutPresentationFallback()
     }
     authState = .unauthenticated
-    var cleanupMessages: [String] = []
-    if pushCleanupFailureCount > 0 {
-      cleanupMessages.append(
-        "\(DashL10n.string("Push alerts")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
-      )
-    }
     errorMessage = cleanupMessages.isEmpty ? nil : cleanupMessages.joined(separator: "\n")
     // Let SwiftUI tear down account-scoped views and cancel their transfers
     // before removing the session's temporary R2 files.

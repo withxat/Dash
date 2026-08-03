@@ -474,6 +474,12 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
   }
 
   mutating func upsert(accountSnapshot: AccountMetricsWidgetSnapshot) {
+    if let existing = self.accountSnapshot(
+      accountID: accountSnapshot.accountID,
+      range: accountSnapshot.range
+    ), existing.fetchedAt >= accountSnapshot.fetchedAt {
+      return
+    }
     accountSnapshots.removeAll {
       $0.accountID == accountSnapshot.accountID && $0.range == accountSnapshot.range
     }
@@ -482,6 +488,13 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
   }
 
   mutating func upsert(domainSnapshot: DomainMetricsWidgetSnapshot) {
+    if let existing = self.domainSnapshot(
+      accountID: domainSnapshot.accountID,
+      domainID: domainSnapshot.domainID,
+      range: domainSnapshot.range
+    ), existing.fetchedAt >= domainSnapshot.fetchedAt {
+      return
+    }
     domainSnapshots.removeAll {
       $0.accountID == domainSnapshot.accountID
         && $0.domainID == domainSnapshot.domainID
@@ -492,6 +505,28 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
   }
 
   static func load(from url: URL) throws -> MetricsWidgetSnapshotStore {
+    guard let store = try MetricsWidgetSnapshotRepository.read(at: url).store else {
+      throw CocoaError(
+        .fileReadNoSuchFile,
+        userInfo: [NSFilePathErrorKey: url.path])
+    }
+    return store
+  }
+
+  func write(to url: URL) throws {
+    _ = try MetricsWidgetSnapshotRepository.replace(at: url, with: self)
+  }
+
+  @discardableResult
+  static func clear(at url: URL, expectedGeneration: UInt64? = nil) -> Bool {
+    (try? MetricsWidgetSnapshotRepository.invalidateAndClear(
+      at: url,
+      expectedGeneration: expectedGeneration)) != nil
+  }
+
+  fileprivate static func loadUncoordinated(from url: URL) throws
+    -> MetricsWidgetSnapshotStore
+  {
     var store = try JSONDecoder().decode(
       MetricsWidgetSnapshotStore.self,
       from: Data(contentsOf: url))
@@ -499,7 +534,7 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
     return store
   }
 
-  func write(to url: URL) throws {
+  fileprivate func writeUncoordinated(to url: URL) throws {
     var store = self
     store.normalize()
     let encoder = JSONEncoder()
@@ -507,8 +542,12 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
     try encoder.encode(store).write(to: url, options: .atomic)
   }
 
-  static func clear(at url: URL) {
-    try? FileManager.default.removeItem(at: url)
+  fileprivate mutating func preserveNewerSnapshots(
+    from existing: MetricsWidgetSnapshotStore
+  ) {
+    accountSnapshots.append(contentsOf: existing.accountSnapshots)
+    domainSnapshots.append(contentsOf: existing.domainSnapshots)
+    normalize()
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -599,6 +638,343 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
         MetricsWidgetDomain.scopedID(accountID: $0.accountID, domainID: $0.domainID))
     }
     domainSnapshots.sort(by: domainSnapshotSort)
+  }
+}
+
+enum MetricsWidgetSessionMode: String, Codable, Hashable, Sendable {
+  case remoteEnabled
+  case localOnly
+  case invalidated
+}
+
+/// Cross-process repository shared by the containing app and Widget extension.
+///
+/// A persistent sidecar file owns a BSD `flock`; opportunistic reads and
+/// refresh writes fail fast while session transitions make a bounded series of
+/// short attempts. Writers only read the JSON after obtaining that lock, then
+/// atomically replace it. A separate session sidecar survives snapshot deletion
+/// so a request that started before sign-out cannot recreate account data after
+/// sign-out.
+struct MetricsWidgetSnapshotRepository {
+  struct State: Sendable {
+    var store: MetricsWidgetSnapshotStore?
+    var generation: UInt64
+    var mode: MetricsWidgetSessionMode
+  }
+
+  enum RepositoryError: Error, Equatable, Sendable {
+    case lockUnavailable
+    case invalidSessionState
+    case generationMismatch(expected: UInt64, actual: UInt64)
+    case sessionInvalidated
+    case remoteRefreshDisabled
+    case invalidActivationMode
+  }
+
+  private struct SessionRecord: Codable, Equatable, Sendable {
+    var generation: UInt64
+    var mode: MetricsWidgetSessionMode
+  }
+
+  private struct LoadedSession {
+    var record: SessionRecord
+    var needsMigration: Bool
+  }
+
+  static func read(at url: URL) throws -> State {
+    try withFileLock(at: url, operation: LOCK_SH) {
+      let session = try loadSession(at: url).record
+      return State(
+        store: session.mode == .invalidated ? nil : try loadStoreIfPresent(at: url),
+        generation: session.generation,
+        mode: session.mode)
+    }
+  }
+
+  static func sessionGeneration(at url: URL) throws -> UInt64 {
+    try withFileLock(at: url, operation: LOCK_SH) {
+      try loadSession(at: url).record.generation
+    }
+  }
+
+  /// Replaces metadata while preserving any on-disk snapshot newer than the
+  /// candidate. This keeps direct serialization callers from regressing a
+  /// range that another process refreshed first.
+  @discardableResult
+  static func replace(
+    at url: URL,
+    with candidate: MetricsWidgetSnapshotStore,
+    expectedGeneration: UInt64? = nil,
+    requiresRemoteEnabled: Bool = false
+  ) throws -> Bool {
+    try withFileLock(at: url, operation: LOCK_EX) {
+      let session = try loadSession(at: url)
+      try validate(expectedGeneration: expectedGeneration, actual: session.record.generation)
+      try validateWrite(
+        mode: session.record.mode,
+        requiresRemoteEnabled: requiresRemoteEnabled)
+      let original = try loadStoreIfPresent(at: url)
+      var merged = candidate
+      if let original {
+        merged.preserveNewerSnapshots(from: original)
+      }
+      let changed = merged != original
+      if changed {
+        try merged.writeUncoordinated(to: url)
+      }
+      if session.needsMigration {
+        try writeSession(session.record, at: url)
+      }
+      return changed
+    }
+  }
+
+  /// Performs one coordinated read-modify-write. A missing file is the only
+  /// state that starts from `.empty`; malformed JSON is surfaced to the caller
+  /// and left untouched.
+  @discardableResult
+  static func update(
+    at url: URL,
+    expectedGeneration: UInt64? = nil,
+    requiresRemoteEnabled: Bool = false,
+    _ update: (inout MetricsWidgetSnapshotStore) -> Void
+  ) throws -> Bool {
+    try withFileLock(at: url, operation: LOCK_EX) {
+      let session = try loadSession(at: url)
+      try validate(expectedGeneration: expectedGeneration, actual: session.record.generation)
+      try validateWrite(
+        mode: session.record.mode,
+        requiresRemoteEnabled: requiresRemoteEnabled)
+      let original = try loadStoreIfPresent(at: url) ?? .empty
+      var store = original
+      update(&store)
+      let changed = store != original
+      if changed {
+        try store.writeUncoordinated(to: url)
+      }
+      if session.needsMigration {
+        try writeSession(session.record, at: url)
+      }
+      return changed
+    }
+  }
+
+  /// Starts a verified app-owned session with a fresh configuration catalog.
+  /// A tombstone is persisted before replacing the JSON and the active mode is
+  /// written last, so a process death at any intermediate point remains
+  /// fail-closed.
+  @discardableResult
+  static func activate(
+    at url: URL,
+    mode: MetricsWidgetSessionMode,
+    store: MetricsWidgetSnapshotStore
+  ) throws -> State {
+    guard mode != .invalidated else { throw RepositoryError.invalidActivationMode }
+    return try withFileLock(
+      at: url,
+      operation: LOCK_EX,
+      maximumAttempts: sessionTransitionLockAttempts
+    ) {
+      let currentSession: SessionRecord?
+      var currentSessionNeedsMigration = false
+      do {
+        let loadedSession = try loadSession(at: url)
+        currentSession = loadedSession.record
+        currentSessionNeedsMigration = loadedSession.needsMigration
+      } catch RepositoryError.invalidSessionState {
+        // Only a verified activation may repair a malformed session sidecar.
+        currentSession = nil
+      }
+
+      if let currentSession, currentSession.mode == mode,
+        let existingStore = try? loadStoreIfPresent(at: url)
+      {
+        var mergedStore = existingStore
+        mergedStore.setAccounts(
+          store.accounts,
+          activeAccountID: store.activeAccountID)
+        if mergedStore != existingStore {
+          try mergedStore.writeUncoordinated(to: url)
+        }
+        if currentSessionNeedsMigration {
+          try writeSession(currentSession, at: url)
+        }
+        return State(
+          store: mergedStore,
+          generation: currentSession.generation,
+          mode: mode)
+      }
+
+      let generation: UInt64
+      if let currentSession {
+        generation =
+          currentSession.mode == .invalidated
+          ? currentSession.generation
+          : currentSession.generation &+ 1
+      } else {
+        generation = UInt64.random(in: 1...UInt64.max)
+      }
+      let tombstone = SessionRecord(generation: generation, mode: .invalidated)
+      try writeSession(tombstone, at: url)
+      try quarantineMalformedStoreIfNeeded(at: url)
+      try store.writeUncoordinated(to: url)
+      let activeSession = SessionRecord(generation: generation, mode: mode)
+      try writeSession(activeSession, at: url)
+      return State(store: store, generation: generation, mode: mode)
+    }
+  }
+
+  /// Invalidates requests already in flight before deleting the snapshot. The
+  /// tombstone write intentionally happens first so even a deletion failure
+  /// cannot let an older network response become current again. An existing
+  /// tombstone is idempotent and only retries cleanup.
+  @discardableResult
+  static func invalidateAndClear(
+    at url: URL,
+    expectedGeneration: UInt64? = nil
+  ) throws -> UInt64 {
+    try withFileLock(
+      at: url,
+      operation: LOCK_EX,
+      maximumAttempts: sessionTransitionLockAttempts
+    ) {
+      let currentSession = try loadSession(at: url).record
+      try validate(
+        expectedGeneration: expectedGeneration,
+        actual: currentSession.generation)
+      let invalidatedSession: SessionRecord
+      if currentSession.mode == .invalidated {
+        invalidatedSession = currentSession
+      } else {
+        invalidatedSession = SessionRecord(
+          generation: currentSession.generation &+ 1,
+          mode: .invalidated)
+        try writeSession(invalidatedSession, at: url)
+      }
+      try removeSnapshotAndQuarantine(at: url)
+      return invalidatedSession.generation
+    }
+  }
+
+  static func lockFileURL(for url: URL) -> URL {
+    url.appendingPathExtension("lock")
+  }
+
+  static func generationFileURL(for url: URL) -> URL {
+    url.appendingPathExtension("generation")
+  }
+
+  static func corruptSnapshotFileURL(for url: URL) -> URL {
+    url.appendingPathExtension("corrupt")
+  }
+
+  private static func loadStoreIfPresent(
+    at url: URL
+  ) throws -> MetricsWidgetSnapshotStore? {
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return try MetricsWidgetSnapshotStore.loadUncoordinated(from: url)
+  }
+
+  private static func loadSession(at url: URL) throws -> LoadedSession {
+    let sessionURL = generationFileURL(for: url)
+    guard FileManager.default.fileExists(atPath: sessionURL.path) else {
+      return LoadedSession(
+        record: SessionRecord(generation: 0, mode: .remoteEnabled),
+        needsMigration: true)
+    }
+    let data = try Data(contentsOf: sessionURL)
+    if let rawValue = String(data: data, encoding: .utf8),
+      let legacyGeneration = UInt64(
+        rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
+    {
+      return LoadedSession(
+        record: SessionRecord(
+          generation: legacyGeneration,
+          mode: .remoteEnabled),
+        needsMigration: true)
+    }
+    guard
+      let record = try? JSONDecoder().decode(SessionRecord.self, from: data)
+    else {
+      throw RepositoryError.invalidSessionState
+    }
+    return LoadedSession(record: record, needsMigration: false)
+  }
+
+  private static func writeSession(_ session: SessionRecord, at url: URL) throws {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    try encoder.encode(session)
+      .write(to: generationFileURL(for: url), options: .atomic)
+  }
+
+  private static func quarantineMalformedStoreIfNeeded(at url: URL) throws {
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    do {
+      _ = try MetricsWidgetSnapshotStore.loadUncoordinated(from: url)
+    } catch {
+      try Data(contentsOf: url)
+        .write(to: corruptSnapshotFileURL(for: url), options: .atomic)
+    }
+  }
+
+  private static func removeSnapshotAndQuarantine(at url: URL) throws {
+    for candidate in [url, corruptSnapshotFileURL(for: url)]
+    where FileManager.default.fileExists(atPath: candidate.path) {
+      try FileManager.default.removeItem(at: candidate)
+    }
+  }
+
+  private static func validate(
+    expectedGeneration: UInt64?,
+    actual: UInt64
+  ) throws {
+    guard let expectedGeneration, expectedGeneration != actual else { return }
+    throw RepositoryError.generationMismatch(
+      expected: expectedGeneration,
+      actual: actual)
+  }
+
+  private static func validateWrite(
+    mode: MetricsWidgetSessionMode,
+    requiresRemoteEnabled: Bool
+  ) throws {
+    guard mode != .invalidated else { throw RepositoryError.sessionInvalidated }
+    guard !requiresRemoteEnabled || mode == .remoteEnabled else {
+      throw RepositoryError.remoteRefreshDisabled
+    }
+  }
+
+  private static let sessionTransitionLockAttempts = 11
+  private static let lockRetryDelayMicroseconds: useconds_t = 25_000
+
+  private static func withFileLock<Result>(
+    at url: URL,
+    operation: Int32,
+    maximumAttempts: Int = 3,
+    _ body: () throws -> Result
+  ) throws -> Result {
+    let lockURL = lockFileURL(for: url)
+    let descriptor = lockURL.path.withCString {
+      open($0, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+    }
+    guard descriptor >= 0 else {
+      throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    defer { _ = close(descriptor) }
+
+    var attempt = 1
+    while flock(descriptor, operation | LOCK_NB) != 0 {
+      let code = errno
+      guard code == EWOULDBLOCK || code == EAGAIN else {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+      }
+      guard attempt < maximumAttempts else { throw RepositoryError.lockUnavailable }
+      attempt += 1
+      usleep(lockRetryDelayMicroseconds)
+    }
+    defer { _ = flock(descriptor, LOCK_UN) }
+    return try body()
   }
 }
 

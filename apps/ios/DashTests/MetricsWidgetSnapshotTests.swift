@@ -412,6 +412,412 @@ import Testing
       .account(id: account.id)?.name == "Renamed")
 }
 
+@Test @MainActor func metricsWidgetPublisherKeepsNewerSnapshotFromAnotherProcess() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-newest-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+
+  let newSnapshot = makeAccountSnapshot(
+    account: account,
+    range: .day,
+    total: 200,
+    fetchedAt: Date(timeIntervalSince1970: 200))
+  try MetricsWidgetSnapshotStore(
+    accounts: [account],
+    accountSnapshots: [newSnapshot]
+  ).write(to: fileURL)
+  var reloads: [[String]] = []
+
+  let changed = MetricsWidgetPublisher.updateStore(
+    at: fileURL,
+    reloading: [MetricsWidgetKind.account],
+    reload: { reloads.append($0) },
+    update: {
+      $0.upsert(
+        accountSnapshot: makeAccountSnapshot(
+          account: account,
+          range: .day,
+          total: 100,
+          fetchedAt: Date(timeIntervalSince1970: 100)))
+    })
+
+  #expect(!changed)
+  #expect(reloads.isEmpty)
+  #expect(
+    try MetricsWidgetSnapshotStore.load(from: fileURL)
+      .accountSnapshot(accountID: account.id, range: .day)?
+      .metric(.webTraffic)?.total == 200)
+}
+
+@Test @MainActor func metricsWidgetPublisherDoesNotReplaceMalformedStore() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-corrupt-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  let malformedData = Data("{not-json".utf8)
+  try malformedData.write(to: fileURL, options: .atomic)
+  var reloads: [[String]] = []
+
+  let changed = MetricsWidgetPublisher.updateStore(
+    at: fileURL,
+    reloading: [MetricsWidgetKind.account],
+    reload: { reloads.append($0) },
+    update: {
+      $0.setAccounts(
+        [MetricsWidgetAccount(id: "account-a", name: "Account A")],
+        activeAccountID: "account-a")
+    })
+
+  #expect(!changed)
+  #expect(reloads.isEmpty)
+  #expect(try Data(contentsOf: fileURL) == malformedData)
+}
+
+@Test @MainActor func metricsWidgetRepositoryDoesNotWaitForCompetingProcessLock() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-lock-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  try MetricsWidgetSnapshotStore(accounts: [account]).write(to: fileURL)
+  let originalData = try Data(contentsOf: fileURL)
+
+  let lockURL = MetricsWidgetSnapshotRepository.lockFileURL(for: fileURL)
+  let descriptor = lockURL.path.withCString {
+    open($0, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
+  }
+  #expect(descriptor >= 0)
+  guard descriptor >= 0 else { return }
+  defer { _ = close(descriptor) }
+  #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+  defer { _ = flock(descriptor, LOCK_UN) }
+
+  let changed = MetricsWidgetPublisher.updateStore(
+    at: fileURL,
+    reloading: [MetricsWidgetKind.account],
+    reload: { _ in Issue.record("A failed update must not reload timelines") },
+    update: {
+      $0.setAccounts(
+        [MetricsWidgetAccount(id: account.id, name: "Renamed")],
+        activeAccountID: account.id)
+    })
+
+  #expect(!changed)
+  expectMetricsWidgetRepositoryError(.lockUnavailable) {
+    _ = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
+  }
+  #expect(try Data(contentsOf: fileURL) == originalData)
+}
+
+@Test func metricsWidgetRepositoryMigratesLegacyNumericSessionState() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-legacy-session-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  try MetricsWidgetSnapshotStore(accounts: [account]).write(to: fileURL)
+  try Data("41\n".utf8).write(
+    to: MetricsWidgetSnapshotRepository.generationFileURL(for: fileURL),
+    options: .atomic)
+
+  let legacy = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(legacy.generation == 41)
+  #expect(legacy.mode == .remoteEnabled)
+  #expect(legacy.store?.accounts == [account])
+
+  let changed = try MetricsWidgetSnapshotRepository.update(at: fileURL) { _ in }
+  #expect(!changed)
+  let migratedData = try Data(
+    contentsOf: MetricsWidgetSnapshotRepository.generationFileURL(for: fileURL))
+  #expect(String(decoding: migratedData, as: UTF8.self).hasPrefix("{"))
+  let migrated = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(migrated.generation == 41)
+  #expect(migrated.mode == .remoteEnabled)
+}
+
+@Test func metricsWidgetRepositoryInvalidationHidesStoreAndIsIdempotent() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-generation-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  try MetricsWidgetSnapshotStore(accounts: [account]).write(to: fileURL)
+
+  let capturedGeneration = try MetricsWidgetSnapshotRepository.sessionGeneration(at: fileURL)
+  let currentGeneration = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
+  #expect(currentGeneration == capturedGeneration + 1)
+  #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+
+  do {
+    _ = try MetricsWidgetSnapshotRepository.update(
+      at: fileURL,
+      expectedGeneration: capturedGeneration
+    ) {
+      $0.setAccounts([account], activeAccountID: account.id)
+    }
+    Issue.record("A response from the invalidated session must not recreate the store")
+  } catch let error as MetricsWidgetSnapshotRepository.RepositoryError {
+    #expect(
+      error
+        == .generationMismatch(
+          expected: capturedGeneration,
+          actual: currentGeneration))
+  }
+  #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+
+  // Even if deletion had failed after the tombstone write, readers must not
+  // disclose the physical JSON and ordinary writes must not revive it.
+  try JSONEncoder().encode(MetricsWidgetSnapshotStore(accounts: [account]))
+    .write(to: fileURL, options: .atomic)
+  let hidden = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(hidden.mode == .invalidated)
+  #expect(hidden.generation == currentGeneration)
+  #expect(hidden.store == nil)
+  expectMetricsWidgetRepositoryError(.sessionInvalidated) {
+    _ = try MetricsWidgetSnapshotRepository.update(
+      at: fileURL,
+      expectedGeneration: currentGeneration
+    ) {
+      $0.setAccounts([account], activeAccountID: account.id)
+    }
+  }
+
+  let repeatedGeneration = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
+  #expect(repeatedGeneration == currentGeneration)
+  #expect(!FileManager.default.fileExists(atPath: fileURL.path))
+}
+
+@Test func metricsWidgetRepositoryOldGenerationCannotDisableNewSession() throws {
+  let firstAccount = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let nextAccount = MetricsWidgetAccount(id: "account-b", name: "Account B")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-stale-clear-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+
+  let firstSession = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .remoteEnabled,
+    store: MetricsWidgetSnapshotStore(accounts: [firstAccount]))
+  _ = try MetricsWidgetSnapshotRepository.invalidateAndClear(
+    at: fileURL,
+    expectedGeneration: firstSession.generation)
+  let nextSession = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .remoteEnabled,
+    store: MetricsWidgetSnapshotStore(accounts: [nextAccount]))
+
+  expectMetricsWidgetRepositoryError(
+    .generationMismatch(
+      expected: firstSession.generation,
+      actual: nextSession.generation)
+  ) {
+    _ = try MetricsWidgetSnapshotRepository.invalidateAndClear(
+      at: fileURL,
+      expectedGeneration: firstSession.generation)
+  }
+
+  let current = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(current.mode == .remoteEnabled)
+  #expect(current.generation == nextSession.generation)
+  #expect(current.store?.accounts == [nextAccount])
+}
+
+@Test func metricsWidgetRepositoryRepeatedActivationPreservesGenerationAndSnapshots() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-repeat-activation-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+
+  let first = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .remoteEnabled,
+    store: MetricsWidgetSnapshotStore(
+      activeAccountID: account.id,
+      accounts: [account]))
+  _ = try MetricsWidgetSnapshotRepository.update(
+    at: fileURL,
+    expectedGeneration: first.generation
+  ) {
+    $0.upsert(
+      accountSnapshot: makeAccountSnapshot(
+        account: account,
+        range: .day,
+        total: 99))
+  }
+
+  let renamed = MetricsWidgetAccount(id: account.id, name: "Renamed")
+  let repeated = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .remoteEnabled,
+    store: MetricsWidgetSnapshotStore(
+      activeAccountID: renamed.id,
+      accounts: [renamed]))
+
+  #expect(repeated.generation == first.generation)
+  #expect(repeated.mode == .remoteEnabled)
+  #expect(repeated.store?.account(id: account.id)?.name == "Renamed")
+  #expect(
+    repeated.store?
+      .accountSnapshot(accountID: account.id, range: .day)?
+      .metric(.webTraffic)?.total == 99)
+  #expect(
+    repeated.store?
+      .accountSnapshot(accountID: account.id, range: .day)?
+      .accountName == "Renamed")
+}
+
+@Test func metricsWidgetRepositoryLocalOnlyAllowsAppWritesButRejectsRemoteWrites() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-local-session-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+
+  let session = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .localOnly,
+    store: MetricsWidgetSnapshotStore(accounts: [account]))
+  let appChanged = try MetricsWidgetSnapshotRepository.update(
+    at: fileURL,
+    expectedGeneration: session.generation
+  ) {
+    $0.setAccounts(
+      [MetricsWidgetAccount(id: account.id, name: "Local update")],
+      activeAccountID: account.id)
+  }
+  #expect(appChanged)
+
+  expectMetricsWidgetRepositoryError(.remoteRefreshDisabled) {
+    _ = try MetricsWidgetSnapshotRepository.update(
+      at: fileURL,
+      expectedGeneration: session.generation,
+      requiresRemoteEnabled: true
+    ) {
+      $0.setAccounts(
+        [MetricsWidgetAccount(id: account.id, name: "Remote update")],
+        activeAccountID: account.id)
+    }
+  }
+  let current = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(current.mode == .localOnly)
+  #expect(current.store?.account(id: account.id)?.name == "Local update")
+}
+
+@Test func metricsWidgetRepositoryActivationQuarantinesMalformedSnapshot() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-quarantine-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  let malformedData = Data("{not-json".utf8)
+  try malformedData.write(to: fileURL, options: .atomic)
+
+  let activated = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .localOnly,
+    store: MetricsWidgetSnapshotStore(
+      activeAccountID: account.id,
+      accounts: [account]))
+
+  #expect(activated.mode == .localOnly)
+  #expect(activated.store?.activeAccountID == account.id)
+  #expect(
+    try Data(
+      contentsOf: MetricsWidgetSnapshotRepository.corruptSnapshotFileURL(for: fileURL))
+      == malformedData)
+  #expect(try MetricsWidgetSnapshotStore.load(from: fileURL).accounts == [account])
+}
+
+@Test func metricsWidgetRepositoryOnlyVerifiedActivationRepairsMalformedSession() throws {
+  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
+  let directory = FileManager.default.temporaryDirectory
+    .appending(
+      path: "dash-metrics-widget-malformed-session-tests-\(UUID().uuidString)",
+      directoryHint: .isDirectory)
+  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  try FileManager.default.createDirectory(
+    at: directory,
+    withIntermediateDirectories: true)
+  try JSONEncoder().encode(MetricsWidgetSnapshotStore(accounts: [account]))
+    .write(to: fileURL, options: .atomic)
+  try Data("{bad-session".utf8).write(
+    to: MetricsWidgetSnapshotRepository.generationFileURL(for: fileURL),
+    options: .atomic)
+
+  expectMetricsWidgetRepositoryError(.invalidSessionState) {
+    _ = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  }
+  expectMetricsWidgetRepositoryError(.invalidSessionState) {
+    _ = try MetricsWidgetSnapshotRepository.update(at: fileURL) { _ in }
+  }
+  expectMetricsWidgetRepositoryError(.invalidSessionState) {
+    _ = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
+  }
+
+  let activated = try MetricsWidgetSnapshotRepository.activate(
+    at: fileURL,
+    mode: .remoteEnabled,
+    store: MetricsWidgetSnapshotStore(
+      activeAccountID: account.id,
+      accounts: [account]))
+  #expect(activated.mode == .remoteEnabled)
+  #expect(activated.generation != 0)
+  let repaired = try MetricsWidgetSnapshotRepository.read(at: fileURL)
+  #expect(repaired.mode == .remoteEnabled)
+  #expect(repaired.generation == activated.generation)
+  #expect(repaired.store?.accounts == [account])
+}
+
 @Test func metricsWidgetStoreKeepsNewestThirtyTwoDomainScopesAndAllTheirRanges() {
   let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
   var snapshots = (0..<35).map { index in
@@ -470,6 +876,20 @@ private func makeAccountSnapshot(
         points: [])
     ],
     fetchedAt: fetchedAt)
+}
+
+private func expectMetricsWidgetRepositoryError(
+  _ expected: MetricsWidgetSnapshotRepository.RepositoryError,
+  performing operation: () throws -> Void
+) {
+  do {
+    try operation()
+    Issue.record("Expected repository error \(expected)")
+  } catch let error as MetricsWidgetSnapshotRepository.RepositoryError {
+    #expect(error == expected)
+  } catch {
+    Issue.record("Expected repository error \(expected), got \(error)")
+  }
 }
 
 private func makeDomain(

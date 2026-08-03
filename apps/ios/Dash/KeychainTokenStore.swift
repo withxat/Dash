@@ -3,6 +3,52 @@ import Darwin
 import Foundation
 import Security
 
+/// The exact fields Dash persists for one Cloudflare credential.
+///
+/// Expiry remains an absolute, raw timestamp here. Converting it back through
+/// `TokenSet.expiresIn` during rollback would silently extend or shorten the
+/// old credential, so recovery writes these values back byte-for-byte.
+struct KeychainStoredCredentialSnapshot: Equatable, Sendable {
+  let accessToken: String?
+  let refreshToken: String?
+  let rawExpirationTimestamp: String?
+  let rawGrantedScopes: String?
+
+  var grantedScopes: Set<String>? {
+    rawGrantedScopes.map { Set($0.split(separator: " ").map(String.init)) }
+  }
+
+  /// Suitable for a short-lived client that only needs to finish cleanup with
+  /// a credential already removed from the shared Keychain. Exact restoration
+  /// must use the raw snapshot instead.
+  var tokenSet: TokenSet? {
+    guard let accessToken else { return nil }
+    return TokenSet(
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+      scope: rawGrantedScopes)
+  }
+
+  static let empty = KeychainStoredCredentialSnapshot(
+    accessToken: nil,
+    refreshToken: nil,
+    rawExpirationTimestamp: nil,
+    rawGrantedScopes: nil)
+}
+
+/// Receipt for an OAuth credential replacement that actually committed.
+/// Keeping the installed snapshot beside the removed one turns rollback into
+/// a full compare-and-swap rather than permission to overwrite a credential a
+/// sibling process may have rotated or a later OAuth flow may have installed.
+struct KeychainCredentialReplacement: Equatable, Sendable {
+  let previousCredential: KeychainStoredCredentialSnapshot
+  let installedCredential: KeychainStoredCredentialSnapshot
+
+  func permitsRestoration(over current: KeychainStoredCredentialSnapshot) -> Bool {
+    current == installedCredential
+  }
+}
+
 actor KeychainTokenStore: TokenStore {
   private enum Key {
     static let access = "dash.access_token"
@@ -50,10 +96,20 @@ actor KeychainTokenStore: TokenStore {
   }
 
   func clear() async throws {
-    try delete(Key.access)
-    try delete(Key.refresh)
-    try delete(Key.expiry)
-    try delete(Key.scopes)
+    _ = try await removeCredential()
+  }
+
+  /// Removes and returns the credential that was actually present while the
+  /// cross-process lock was held. A missing access token still clears orphaned
+  /// refresh, expiry, and scope fields, but returns `nil` because there is no
+  /// usable credential for post-sign-out cleanup.
+  func removeCredential() async throws -> KeychainStoredCredentialSnapshot? {
+    try await withExclusiveRefreshAccess { [self] isExclusive in
+      guard isExclusive else {
+        throw KeychainCredentialCoordinationError.exclusiveAccessUnavailable
+      }
+      return try await removeCredentialWhileLocked()
+    }
   }
 
   func getAccessToken() async throws -> String? { try read(Key.access) }
@@ -68,7 +124,59 @@ actor KeychainTokenStore: TokenStore {
   }
 
   func setTokens(_ tokens: TokenSet) async throws {
-    try store(tokens)
+    try await withExclusiveRefreshAccess { [self] isExclusive in
+      guard isExclusive else {
+        throw KeychainCredentialCoordinationError.exclusiveAccessUnavailable
+      }
+      try await storeWhileLocked(tokens)
+    }
+  }
+
+  /// Installs a browser-authorized identity as one cross-process transaction.
+  /// A Widget refresh that started with the prior rotating token either
+  /// finishes before this critical section or loses its later CAS; it can
+  /// never interleave individual Keychain writes from two identities.
+  @discardableResult
+  func replaceCredential(with tokens: TokenSet) async throws -> KeychainCredentialReplacement {
+    try await replaceCredential(with: tokens, overridingGrantedScopes: nil)
+  }
+
+  /// The OAuth caller already knows the effective grant when the response
+  /// omits `scope`. Installing it in this transaction keeps the receipt's full
+  /// snapshot stable for a later compare-and-swap restoration.
+  @discardableResult
+  func replaceCredential(
+    with tokens: TokenSet,
+    grantedScopes: Set<String>
+  ) async throws -> KeychainCredentialReplacement {
+    try await replaceCredential(with: tokens, overridingGrantedScopes: grantedScopes)
+  }
+
+  /// Restores the exact credential removed by `replaceCredential`, but only if
+  /// no field of the installed credential has changed since. In particular, a
+  /// Widget token rotation or a later OAuth replacement makes this return
+  /// `false` instead of overwriting that newer credential.
+  func restoreCredential(from replacement: KeychainCredentialReplacement) async throws -> Bool {
+    try await withExclusiveRefreshAccess { [self] isExclusive in
+      guard isExclusive else {
+        throw KeychainCredentialCoordinationError.exclusiveAccessUnavailable
+      }
+      return try await restoreCredentialWhileLocked(from: replacement)
+    }
+  }
+
+  private func replaceCredential(
+    with tokens: TokenSet,
+    overridingGrantedScopes grantedScopes: Set<String>?
+  ) async throws -> KeychainCredentialReplacement {
+    try await withExclusiveRefreshAccess { [self] isExclusive in
+      guard isExclusive else {
+        throw KeychainCredentialCoordinationError.exclusiveAccessUnavailable
+      }
+      return try await replaceCredentialWhileLocked(
+        with: tokens,
+        overridingGrantedScopes: grantedScopes)
+    }
   }
 
   func replaceTokens(
@@ -180,7 +288,11 @@ actor KeychainTokenStore: TokenStore {
   }
 
   private func store(_ tokens: TokenSet) throws {
-    try write(tokens.accessToken, key: Key.access)
+    // Cloudflare rotates the refresh token as soon as the token endpoint
+    // succeeds. Persist it before publishing the matching access token so a
+    // process termination between keychain writes leaves the old access token
+    // paired with the new, still-spendable refresh token. The next 401 can then
+    // recover normally instead of retrying a refresh token Cloudflare retired.
     if let refresh = tokens.refreshToken { try write(refresh, key: Key.refresh) }
     if let scope = tokens.scope {
       try write(
@@ -193,13 +305,125 @@ actor KeychainTokenStore: TokenStore {
         String(Date().addingTimeInterval(TimeInterval(expiresIn)).timeIntervalSince1970),
         key: Key.expiry)
     }
+    // Treat the access token as the commit marker for the credential set.
+    try write(tokens.accessToken, key: Key.access)
   }
 
   private func clearStoredCredential() throws {
-    try delete(Key.access)
+    // A refresh token can mint a replacement access token. Remove that
+    // capability first and delete access last as the credential's invalidation
+    // commit marker; interruption can leave a short-lived access token, but
+    // never a refresh-only credential that an extension silently resurrects.
     try delete(Key.refresh)
-    try delete(Key.expiry)
     try delete(Key.scopes)
+    try delete(Key.expiry)
+    try delete(Key.access)
+  }
+
+  private func storeWhileLocked(_ tokens: TokenSet) throws {
+    try store(tokens)
+  }
+
+  private func removeCredentialWhileLocked() throws -> KeychainStoredCredentialSnapshot? {
+    let removed = try readStoredCredential()
+    guard removed != .empty else { return nil }
+    try transitionStoredCredential(to: .empty, rollingBackTo: removed)
+    return removed.accessToken == nil ? nil : removed
+  }
+
+  private func replaceCredentialWhileLocked(
+    with tokens: TokenSet,
+    overridingGrantedScopes grantedScopes: Set<String>?
+  ) throws -> KeychainCredentialReplacement {
+    let previous = try readStoredCredential()
+    let installed = replacementSnapshot(
+      for: tokens,
+      overridingGrantedScopes: grantedScopes)
+    try transitionStoredCredential(to: installed, rollingBackTo: previous)
+    return KeychainCredentialReplacement(
+      previousCredential: previous,
+      installedCredential: installed)
+  }
+
+  private func restoreCredentialWhileLocked(
+    from replacement: KeychainCredentialReplacement
+  ) throws -> Bool {
+    let current = try readStoredCredential()
+    guard replacement.permitsRestoration(over: current) else { return false }
+    try transitionStoredCredential(
+      to: replacement.previousCredential,
+      rollingBackTo: current)
+    return true
+  }
+
+  private func replacementSnapshot(
+    for tokens: TokenSet,
+    overridingGrantedScopes grantedScopes: Set<String>?
+  ) -> KeychainStoredCredentialSnapshot {
+    let rawGrantedScopes =
+      grantedScopes.map(Self.encodeScopes)
+      ?? tokens.scope.map(Self.normalizeScopes)
+    let rawExpirationTimestamp = tokens.expiresIn.map {
+      String(Date().addingTimeInterval(TimeInterval($0)).timeIntervalSince1970)
+    }
+    return KeychainStoredCredentialSnapshot(
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      rawExpirationTimestamp: rawExpirationTimestamp,
+      rawGrantedScopes: rawGrantedScopes)
+  }
+
+  private func readStoredCredential() throws -> KeychainStoredCredentialSnapshot {
+    try KeychainStoredCredentialSnapshot(
+      accessToken: read(Key.access),
+      refreshToken: read(Key.refresh),
+      rawExpirationTimestamp: read(Key.expiry),
+      rawGrantedScopes: read(Key.scopes))
+  }
+
+  private func store(_ snapshot: KeychainStoredCredentialSnapshot) throws {
+    if let refreshToken = snapshot.refreshToken {
+      try write(refreshToken, key: Key.refresh)
+    }
+    if let rawGrantedScopes = snapshot.rawGrantedScopes {
+      try write(rawGrantedScopes, key: Key.scopes)
+    }
+    if let rawExpirationTimestamp = snapshot.rawExpirationTimestamp {
+      try write(rawExpirationTimestamp, key: Key.expiry)
+    }
+    if let accessToken = snapshot.accessToken {
+      try write(accessToken, key: Key.access)
+    }
+  }
+
+  /// Keychain has no multi-item transaction. If a delete or write fails, put
+  /// the exact pre-mutation snapshot back before releasing the flock. A second
+  /// failure means the credential cannot be proven and is surfaced distinctly
+  /// so callers fail closed instead of binding work to a guessed identity.
+  private func transitionStoredCredential(
+    to desired: KeychainStoredCredentialSnapshot,
+    rollingBackTo previous: KeychainStoredCredentialSnapshot
+  ) throws {
+    do {
+      try clearStoredCredential()
+      try store(desired)
+    } catch let mutationError {
+      do {
+        try clearStoredCredential()
+        try store(previous)
+      } catch {
+        throw KeychainCredentialCoordinationError.credentialStateUncertain
+      }
+      throw mutationError
+    }
+  }
+
+  private static func normalizeScopes(_ value: String) -> String {
+    encodeScopes(Set(value.split(separator: " ").map(String.init)))
+  }
+
+  private static func encodeScopes(_ scopes: Set<String>) -> String {
+    scopes.sorted().joined(separator: " ")
   }
 
   private func query(_ key: String) -> [String: Any] {
@@ -245,6 +469,15 @@ actor KeychainTokenStore: TokenStore {
     guard status == errSecSuccess || status == errSecItemNotFound else {
       throw KeychainError(status)
     }
+  }
+}
+
+enum KeychainCredentialCoordinationError: Error, LocalizedError, Sendable {
+  case exclusiveAccessUnavailable
+  case credentialStateUncertain
+
+  var errorDescription: String? {
+    DashL10n.string("Cloudflare couldn’t complete this request. Try again.")
   }
 }
 
