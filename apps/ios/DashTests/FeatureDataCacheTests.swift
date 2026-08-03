@@ -193,6 +193,117 @@ import Testing
   #expect(model.isCurrentAccount(secondA))
 }
 
+@Test @MainActor func persistenceRoundTripsAcrossRelaunch() async throws {
+  let dir = dashPersistenceTempDir("roundtrip")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let persistence = FeatureCachePersistence(directory: dir)
+  let cache = FeatureDataCache(persistence: persistence)
+  cache.setPersistenceAccount("acc-a")
+  cache.set("sample", 42)
+  await dashPersistenceSettle()
+  await persistence.flushNow()
+
+  // Simulate a relaunch: a fresh cache + fresh actor reading the same directory.
+  let relaunched = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  relaunched.setPersistenceAccount("acc-a")
+  await dashPersistenceSettle()
+  let value: Int? = relaunched.get("sample")
+  #expect(value == 42)
+}
+
+@Test @MainActor func persistenceIsolationBetweenAccounts() async throws {
+  let dir = dashPersistenceTempDir("isolation")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let persistence = FeatureCachePersistence(directory: dir)
+  let cache = FeatureDataCache(persistence: persistence)
+  cache.setPersistenceAccount("acc-a")
+  cache.set("sample", 1)
+  cache.clear()
+  cache.setPersistenceAccount("acc-b")
+  cache.set("sample", 2)
+  cache.clear()
+  await dashPersistenceSettle()
+  await persistence.flushNow()
+
+  cache.setPersistenceAccount("acc-a")
+  await dashPersistenceSettle()
+  let a: Int? = cache.get("sample")
+  #expect(a == 1)
+
+  cache.setPersistenceAccount("acc-b")
+  await dashPersistenceSettle()
+  let b: Int? = cache.get("sample")
+  #expect(b == 2)
+}
+
+@Test @MainActor func persistenceStaleFallbackReturnsExpiredValue() async throws {
+  let dir = dashPersistenceTempDir("stale")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let persistence = FeatureCachePersistence(directory: dir)
+  let cache = FeatureDataCache(persistence: persistence)
+  cache.setPersistenceAccount("acc-a")
+  cache.set("sample", 42, ttl: 0)
+  await dashPersistenceSettle()
+
+  // Expired: the fresh read refuses it…
+  let fresh: Int? = cache.get("sample")
+  #expect(fresh == nil)
+  // …but the offline fallback still returns the last-known value.
+  let stale: Int? = cache.getStale("sample")
+  #expect(stale == 42)
+}
+
+@Test @MainActor func persistenceSkipsNonCodableValues() async throws {
+  struct NonCodable: Sendable { let x: Int }
+  let dir = dashPersistenceTempDir("noncodable")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let persistence = FeatureCachePersistence(directory: dir)
+  let cache = FeatureDataCache(persistence: persistence)
+  cache.setPersistenceAccount("acc-a")
+  cache.set("noncodable", NonCodable(x: 1))
+  await dashPersistenceSettle()
+  await persistence.flushNow()
+
+  // A relaunch never sees the value: it was never writable to disk.
+  let relaunched = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  relaunched.setPersistenceAccount("acc-a")
+  await dashPersistenceSettle()
+  let stale: NonCodable? = relaunched.getStale("noncodable")
+  #expect(stale == nil)
+}
+
+@Test @MainActor func clearAllPersistenceDeletesEveryAccountFile() async throws {
+  let dir = dashPersistenceTempDir("clearall")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let persistence = FeatureCachePersistence(directory: dir)
+  let cache = FeatureDataCache(persistence: persistence)
+  cache.setPersistenceAccount("acc-a")
+  cache.set("sample", 1)
+  cache.clear()
+  cache.setPersistenceAccount("acc-b")
+  cache.set("sample", 2)
+  await dashPersistenceSettle()
+  await persistence.flushNow()
+
+  cache.clearAllPersistence()
+  await dashPersistenceSettle()
+  await persistence.flushNow()
+
+  let relaunched = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  relaunched.setPersistenceAccount("acc-a")
+  await dashPersistenceSettle()
+  let a: Int? = relaunched.get("sample")
+  #expect(a == nil)
+}
+
 private enum FeatureLoadTestError: Error {
   case expected
 }

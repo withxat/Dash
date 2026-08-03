@@ -26,10 +26,10 @@ struct DashApp: App {
           session: DeferredDeletionUITestBackend.session,
           deferredDeletionPersistence: nil)
       } else {
-        model = AppModel()
+        model = AppModel(featureCachePersistence: FeatureCachePersistence())
       }
     #else
-      let model = AppModel()
+      let model = AppModel(featureCachePersistence: FeatureCachePersistence())
     #endif
     _model = State(initialValue: model)
     if ICloudPreferencesSync.shouldStartForCurrentProcess {

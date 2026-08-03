@@ -75,6 +75,11 @@ struct R2BucketsView: View {
       error = nil
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if buckets.isEmpty, let stale: [R2Bucket] = model.featureCache.getStale(key) {
+      buckets = stale
+      loading = true
+    }
     if buckets.isEmpty { loading = true }
     do {
       buckets = try await model.client.listR2Buckets(accountID: id)
@@ -1278,6 +1283,12 @@ struct KVNamespacesView: View {
       loading = false
       error = nil
       return
+    }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if namespaces.isEmpty, let stale: [KVNamespace] = model.featureCache.getStale(key) {
+      guard model.isCurrentAccount(context) else { return }
+      namespaces = stale
+      loading = true
     }
     if namespaces.isEmpty { loading = true }
     let client = model.client

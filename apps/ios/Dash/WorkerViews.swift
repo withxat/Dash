@@ -59,6 +59,12 @@ struct WorkersView: View {
       error = nil
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place
+    // so an offline relaunch shows last-known data instead of a skeleton.
+    if workers.isEmpty, let stale: [WorkerScript] = model.featureCache.getStale(key) {
+      workers = stale
+      loading = true
+    }
     if workers.isEmpty { loading = true }
     error = nil
     do {

@@ -81,6 +81,11 @@ struct EmailRoutingDomainsView: View {
       await loadStatuses(for: cached, force: force)
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
+      zones = stale
+      loading = true
+    }
     if zones.isEmpty { loading = true }
     error = nil
     do {

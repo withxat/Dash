@@ -53,6 +53,11 @@ struct PagesProjectsView: View {
       error = nil
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if projects.isEmpty, let stale: [PagesProject] = model.featureCache.getStale(key) {
+      projects = stale
+      loading = true
+    }
     if projects.isEmpty { loading = true }
     error = nil
     do {

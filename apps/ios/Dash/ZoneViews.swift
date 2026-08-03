@@ -158,6 +158,14 @@ struct ZonesView: View {
       error = nil
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place
+    // so an offline relaunch shows last-known data instead of a skeleton. The
+    // failure path below then becomes a banner over this stale data.
+    if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
+      zones = stale
+      pageState.rehydrate(loaded: stale.count, pageSize: Self.pageSize)
+      loading = true
+    }
     if zones.isEmpty { loading = true }
     error = nil
     defer { loading = false }

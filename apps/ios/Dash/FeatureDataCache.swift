@@ -189,6 +189,24 @@ final class FeatureDataCache {
   private var storage: [String: Entry] = [:]
   private var inFlight: [String: any InFlightTaskBox] = [:]
 
+  /// Optional disk-backed mirror. `nil` (the default) keeps the cache purely
+  /// in-memory — the unit-test and preview path. `AppModel` installs a real
+  /// persistence so relaunches can repaint without a network round-trip.
+  private let persistence: FeatureCachePersistence?
+  /// The account currently eligible for disk writes. `nil` disables persistence
+  /// (sign-out, demo). Set via `setPersistenceAccount`.
+  private var persistenceAccountID: String?
+  /// Sync mirror of the persisted entries for the active account. The actor
+  /// holds the authoritative copy; this is the in-memory mirror used for
+  /// immediate reads so a cold screen never awaits a file load.
+  private var persistedEntries: [String: FeatureCachePersistedEntry] = [:]
+  /// Loads the active account's entries off the main actor after `setPersistenceAccount`.
+  private var persistenceLoadTask: Task<Void, Never>?
+
+  init(persistence: FeatureCachePersistence? = nil) {
+    self.persistence = persistence
+  }
+
   func get<T>(_ key: String, maxAge: TimeInterval? = nil) -> T? {
     getWithFetchedAt(key, maxAge: maxAge)?.value
   }
@@ -197,14 +215,27 @@ final class FeatureDataCache {
     _ key: String,
     maxAge: TimeInterval? = nil
   ) -> (value: T, fetchedAt: Date)? {
-    guard let entry = storage[key] else { return nil }
-    let limit = maxAge ?? entry.ttl
-    if let limit, Date().timeIntervalSince(entry.fetchedAt) > limit {
-      storage.removeValue(forKey: key)
-      return nil
+    if let entry = storage[key] {
+      let limit = maxAge ?? entry.ttl
+      if let limit, Date().timeIntervalSince(entry.fetchedAt) > limit {
+        storage.removeValue(forKey: key)
+      } else {
+        guard let value = entry.value as? T else { return nil }
+        return (value, entry.fetchedAt)
+      }
     }
-    guard let value = entry.value as? T else { return nil }
-    return (value, entry.fetchedAt)
+    return getFromDisk(key, maxAge: maxAge)
+  }
+
+  /// Returns a value even when it is past its freshness window — the offline /
+  /// cold-relaunch fallback. Prefers memory, then disk (which also repopulates
+  /// memory so a subsequent read is synchronous).
+  func getStale<T>(_ key: String) -> T? {
+    if let entry = storage[key], let value = entry.value as? T { return value }
+    guard let persisted = persistedEntries[key], let value: T = decodeIfCodable(persisted.data)
+    else { return nil }
+    storage[key] = Entry(value: value, fetchedAt: persisted.fetchedAt, ttl: persisted.ttl)
+    return value
   }
 
   func set<T>(
@@ -215,6 +246,7 @@ final class FeatureDataCache {
   ) {
     storage[key] = Entry(value: value, fetchedAt: fetchedAt, ttl: ttl)
     trimIfNeeded()
+    persist(key: key, value: value, fetchedAt: fetchedAt, ttl: ttl)
   }
 
   /// Joins concurrent work for one logical cache key. The operation deliberately
@@ -304,6 +336,12 @@ final class FeatureDataCache {
   func remove(_ key: String) {
     storage.removeValue(forKey: key)
     inFlight.removeValue(forKey: key)?.cancel()
+    persistedEntries.removeValue(forKey: key)
+    if let persistence, let accountID = persistenceAccountID {
+      Task { [persistence] in
+        await persistence.remove(key: key, accountID: accountID)
+      }
+    }
   }
 
   /// Drops every entry under a key prefix (e.g. every cached listing of one
@@ -314,11 +352,87 @@ final class FeatureDataCache {
     for key in matchingLoads {
       inFlight.removeValue(forKey: key)?.cancel()
     }
+    persistedEntries = persistedEntries.filter { !$0.key.hasPrefix(prefix) }
+    if let persistence, let accountID = persistenceAccountID {
+      Task { [persistence] in
+        await persistence.remove(prefix: prefix, accountID: accountID)
+      }
+    }
   }
 
   func clear() {
     storage.removeAll()
     cancelAllLoads()
+    persistedEntries.removeAll()
+    persistenceLoadTask?.cancel()
+  }
+
+  /// Activates on-disk persistence for one account. Call as the active account
+  /// changes; `nil` disables persistence (sign-out, demo). The mirror is loaded
+  /// off the main actor and only lands if the account is still active.
+  func setPersistenceAccount(_ accountID: String?) {
+    persistenceAccountID = accountID
+    persistedEntries.removeAll()
+    persistenceLoadTask?.cancel()
+    guard let persistence, let accountID else { return }
+    persistenceLoadTask = Task { [weak self] in
+      let entries = await persistence.load(accountID: accountID)
+      guard let self, self.persistenceAccountID == accountID else { return }
+      self.persistedEntries = entries
+    }
+  }
+
+  /// Deletes every persisted account file (sign-out) and disables persistence
+  /// until the next account is activated.
+  func clearAllPersistence() {
+    persistenceAccountID = nil
+    persistedEntries.removeAll()
+    persistenceLoadTask?.cancel()
+    guard let persistence else { return }
+    Task { [persistence] in
+      await persistence.clearAll()
+    }
+  }
+
+  private func persist<T>(
+    key: String,
+    value: T,
+    fetchedAt: Date,
+    ttl: TimeInterval?
+  ) {
+    guard let persistence, let accountID = persistenceAccountID else { return }
+    guard let data = encodeIfCodable(value) else { return }
+    let entry = FeatureCachePersistedEntry(data: data, fetchedAt: fetchedAt, ttl: ttl)
+    persistedEntries[key] = entry
+    Task { [persistence] in
+      await persistence.upsert(entry, key: key, accountID: accountID)
+    }
+  }
+
+  private func getFromDisk<T>(
+    _ key: String,
+    maxAge: TimeInterval?
+  ) -> (value: T, fetchedAt: Date)? {
+    guard let persisted = persistedEntries[key] else { return nil }
+    let limit = maxAge ?? persisted.ttl
+    if let limit, Date().timeIntervalSince(persisted.fetchedAt) > limit { return nil }
+    guard let value: T = decodeIfCodable(persisted.data) else { return nil }
+    storage[key] = Entry(value: value, fetchedAt: persisted.fetchedAt, ttl: persisted.ttl)
+    return (value, persisted.fetchedAt)
+  }
+
+  /// Type-erased Codable encode: only values that are actually `Encodable` are
+  /// persisted; everything else (e.g. `WatchtowerSnapshot`, `CursorPageSnapshot`)
+  /// is silently skipped, exactly as a `T: Codable` constraint would demand.
+  private func encodeIfCodable<T>(_ value: T) -> Data? {
+    guard let encodable = value as? any Encodable else { return nil }
+    return try? JSONEncoder().encode(encodable)
+  }
+
+  private func decodeIfCodable<T>(_ data: Data) -> T? {
+    guard let decodableType = T.self as? any Decodable.Type else { return nil }
+    guard let value = try? JSONDecoder().decode(decodableType, from: data) else { return nil }
+    return value as? T
   }
 
   /// Drops everything except Watchtower snapshots when memory is tight.

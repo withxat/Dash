@@ -264,7 +264,7 @@ final class AppModel {
   /// the OAuth wall). Sign-out becomes a lightweight demo exit.
   private(set) var isDemoSession = false
   private(set) var isEnteringDemo = false
-  let featureCache = FeatureDataCache()
+  let featureCache: FeatureDataCache
   let avatars = AvatarStore()
   let r2Thumbnails = R2ThumbnailStore()
   /// Top-of-screen action feedback. Prefer this over sticky inline notices for
@@ -290,6 +290,7 @@ final class AppModel {
       WidgetCenter.shared.reloadTimelines(ofKind: QuickActionsWidgetKind.id)
       guard oldValue != activeAccountID else { return }
       clearWatchtowerWidgetSnapshot()
+      featureCache.setPersistenceAccount(activeAccountID)
     }
   }
   var authState: AuthenticationState = .loading {
@@ -374,9 +375,11 @@ final class AppModel {
     configuration: AppConfiguration = .current,
     tokenStore: any TokenStore = KeychainTokenStore(),
     session: URLSession = DashAPISession.shared,
-    deferredDeletionPersistence: UserDefaults? = .standard
+    deferredDeletionPersistence: UserDefaults? = .standard,
+    featureCachePersistence: FeatureCachePersistence? = nil
   ) {
     self.configuration = configuration
+    featureCache = FeatureDataCache(persistence: featureCachePersistence)
     selectedScopes = DashAuthorizationScopes.core
     self.tokenStore = tokenStore
     authenticatedSession = session
@@ -401,6 +404,7 @@ final class AppModel {
     // Property observers don't fire during init — mirror explicitly so the
     // share extension works without waiting for an account switch.
     R2ShareDestination.setActiveAccountID(activeAccountID)
+    featureCache.setPersistenceAccount(activeAccountID)
     installMemoryWarningObserver()
   }
 
@@ -1666,6 +1670,7 @@ final class AppModel {
         return
       }
       self.resetAccountScopedWork()
+      self.featureCache.clearAllPersistence()
       self.pendingLegacyNotificationRoute = nil
       self.isDemoSession = true
       self.errorMessage = nil
@@ -1899,6 +1904,9 @@ final class AppModel {
     }
     resetAccountScopedWork()
     activeAccountID = nil
+    // The active credential is conclusively gone; drop every account's disk
+    // cache so a relaunch cannot resurrect a signed-out account's data.
+    featureCache.clearAllPersistence()
     UIApplication.shared.unregisterForRemoteNotifications()
     // Locally-scheduled domain reminders name a specific domain in a specific
     // account. Left behind, one would announce a domain the app can no longer

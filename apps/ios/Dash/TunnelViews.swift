@@ -114,6 +114,11 @@ struct TunnelsView: View {
       error = nil
       return
     }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if tunnels.isEmpty, let stale: [CloudflareTunnel] = model.featureCache.getStale(key) {
+      tunnels = stale
+      loading = true
+    }
     if tunnels.isEmpty { loading = true }
     error = nil
     do {
