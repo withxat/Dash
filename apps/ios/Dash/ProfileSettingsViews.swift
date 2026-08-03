@@ -14,13 +14,7 @@ struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Namespace private var actionMorph
-  @State private var phase = ProfileTrayPhase.initial
-
-  /// Shared by the full-width Sign out pill and the half-width confirm pill so
-  /// the enamel face shrinks into the Cancel + Sign out row — same
-  /// `matchedGeometryEffect` path `DashConfirmableActions` uses for danger rows.
-  private static let signOutMorphID = "profile-tray-sign-out"
+  @Binding var phase: ProfileTrayPhase
 
   var body: some View {
     ZStack {
@@ -29,84 +23,52 @@ struct ProfileTrayContent: View {
         accountList
           .transition(reduceMotion ? .opacity : .dashMorph)
       case .switchAccount(let account):
-        accountSwitchConfirmation(account)
+        accountSwitchMessage(account)
           .transition(reduceMotion ? .opacity : .dashMorph)
       case .signOut:
-        signOutConfirmation
+        signOutMessage
           .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
+    .frame(maxWidth: .infinity)
     .dashTrayTitle(phase.title)
   }
 
-  private var signOutMorphID: String? {
-    reduceMotion ? nil : Self.signOutMorphID
-  }
-
-  private var signOutMorphNamespace: Namespace.ID? {
-    reduceMotion ? nil : actionMorph
-  }
-
   private var accountList: some View {
-    VStack(spacing: 16) {
-      VStack(spacing: DashTheme.Spacing.itemGap) {
-        ForEach(model.accounts) { account in
-          let isActive = account.id == model.activeAccountID
-          Button {
-            if isActive {
-              dismiss()
-              return
-            }
-            withAnimation(DashTheme.Motion.morph) { phase = .switchAccount(account) }
-          } label: {
-            ProfileTrayAccountRow(account: account, isActive: isActive)
+    VStack(spacing: DashTheme.Spacing.itemGap) {
+      ForEach(model.accounts) { account in
+        let isActive = account.id == model.activeAccountID
+        Button {
+          if isActive {
+            dismiss()
+            return
           }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityIdentifier("profile-account-\(account.id)")
-          .accessibilityLabel(Text(verbatim: account.name))
-          .accessibilityValue(isActive ? DashL10n.string("Active account") : "")
-          .accessibilityHint(isActive ? "" : DashL10n.string("Switch account"))
-          .accessibilityAddTraits(isActive ? .isSelected : [])
+          withAnimation(DashTheme.Motion.morph) { phase = .switchAccount(account) }
+        } label: {
+          ProfileTrayAccountRow(account: account, isActive: isActive)
         }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("profile-account-\(account.id)")
+        .accessibilityLabel(Text(verbatim: account.name))
+        .accessibilityValue(isActive ? DashL10n.string("Active account") : "")
+        .accessibilityHint(isActive ? "" : DashL10n.string("Switch account"))
+        .accessibilityAddTraits(isActive ? .isSelected : [])
       }
-
-      DashActionButton(
-        title: "Sign out",
-        role: .destructive,
-        morphID: signOutMorphID,
-        morphNamespace: signOutMorphNamespace
-      ) {
-        withAnimation(DashTheme.Motion.morph) { phase = .signOut }
-      }
-      .accessibilityIdentifier("profile-account-sign-out")
     }
   }
 
-  private func accountSwitchConfirmation(_ account: CloudflareAccount) -> some View {
-    VStack(spacing: 16) {
-      Text(
-        DashL10n.string(
-          "Switch to \(account.name)? Cached data and open screens for the current account will reset."
-        )
+  private func accountSwitchMessage(_ account: CloudflareAccount) -> some View {
+    Text(
+      DashL10n.string(
+        "Switch to \(account.name)? Cached data and open screens for the current account will reset."
       )
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.top, 4)
-
-      DashTrayActionPair {
-        DashTrayCancelButton {
-          withAnimation(DashTheme.Motion.morph) { phase = .accounts }
-        }
-      } primary: {
-        DashActionButton(title: "Switch account") {
-          model.selectAccount(account)
-          dismiss()
-        }
-      }
-    }
+    )
+    .dashTextStyle(.supporting)
+    .foregroundStyle(DashTheme.subtle)
+    .multilineTextAlignment(.center)
+    .fixedSize(horizontal: false, vertical: true)
+    .frame(maxWidth: .infinity)
+    .padding(.top, 4)
   }
 
   private var signOutConsequences: String {
@@ -118,33 +80,99 @@ struct ProfileTrayContent: View {
     ].joined(separator: "\n\n")
   }
 
-  private var signOutConfirmation: some View {
-    VStack(spacing: 16) {
-      Text(signOutConsequences)
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
+  private var signOutMessage: some View {
+    Text(signOutConsequences)
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.top, 4)
+  }
+}
 
-      DashTrayActionPair {
-        DashTrayCancelButton {
-          withAnimation(DashTheme.Motion.morphExit) { phase = .accounts }
-        }
-        .disabled(model.signOutActionPhase.isActive)
-      } primary: {
-        DashActionButton(
-          title: "Sign out",
-          role: .destructive,
-          phase: model.signOutActionPhase,
-          morphID: signOutMorphID,
-          morphNamespace: signOutMorphNamespace,
-          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-        ) {
-          Task {
-            await model.signOut(presentsCompletion: true)
-          }
+/// Fixed footer for `ProfileTrayContent`. Its height never participates in the
+/// body's fitted-height animation, so the shared Sign out hero has one stable
+/// global destination while account rows and confirmation copy morph above it.
+struct ProfileTrayFooter: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Binding var phase: ProfileTrayPhase
+  @Namespace private var actionMorph
+
+  /// Shared by the full-width Sign out pill and the half-width confirm pill so
+  /// the enamel face shrinks into the Cancel + Sign out row — same
+  /// `matchedGeometryEffect` path `DashConfirmableActions` uses for danger rows.
+  private static let signOutMorphID = "profile-tray-sign-out"
+
+  var body: some View {
+    ZStack {
+      switch phase {
+      case .accounts:
+        signOutSource
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      case .switchAccount(let account):
+        accountSwitchActions(account)
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      case .signOut:
+        signOutConfirmationActions
+          .transition(reduceMotion ? .opacity : .dashMorph)
+      }
+    }
+    .frame(maxWidth: .infinity)
+  }
+
+  private var signOutMorphID: String? {
+    reduceMotion ? nil : Self.signOutMorphID
+  }
+
+  private var signOutMorphNamespace: Namespace.ID? {
+    reduceMotion ? nil : actionMorph
+  }
+
+  private var signOutSource: some View {
+    DashActionButton(
+      title: "Sign out",
+      role: .destructive,
+      morphID: signOutMorphID,
+      morphNamespace: signOutMorphNamespace
+    ) {
+      withAnimation(DashTheme.Motion.morph) { phase = .signOut }
+    }
+    .accessibilityIdentifier("profile-account-sign-out")
+  }
+
+  private func accountSwitchActions(_ account: CloudflareAccount) -> some View {
+    DashTrayActionPair {
+      DashTrayCancelButton {
+        withAnimation(DashTheme.Motion.morph) { phase = .accounts }
+      }
+    } primary: {
+      DashActionButton(title: "Switch account") {
+        model.selectAccount(account)
+        dismiss()
+      }
+    }
+  }
+
+  private var signOutConfirmationActions: some View {
+    DashTrayActionPair {
+      DashTrayCancelButton {
+        withAnimation(DashTheme.Motion.morphExit) { phase = .accounts }
+      }
+      .disabled(model.signOutActionPhase.isActive)
+    } primary: {
+      DashActionButton(
+        title: "Sign out",
+        role: .destructive,
+        phase: model.signOutActionPhase,
+        morphID: signOutMorphID,
+        morphNamespace: signOutMorphNamespace,
+        onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+      ) {
+        Task {
+          await model.signOut(presentsCompletion: true)
         }
       }
     }

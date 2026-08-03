@@ -35,6 +35,7 @@ struct MainTabView: View {
   /// paths: reading it would re-apply them mid-push and cancel the transition.
   @State private var washScroll = DashWorkspaceWashScroll()
   @State private var showsProfile = false
+  @State private var profileTrayPhase = ProfileTrayPhase.initial
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
@@ -249,9 +250,16 @@ struct MainTabView: View {
           openVerifiedRoute(route)
         }
       }
-      .dashTray(isPresented: $showsProfile, title: DashL10n.string("Switch account")) {
-        ProfileTrayContent()
-      }
+      .dashTray(
+        isPresented: $showsProfile,
+        title: DashL10n.string("Switch account"),
+        content: {
+          ProfileTrayContent(phase: $profileTrayPhase)
+        },
+        footer: {
+          ProfileTrayFooter(phase: $profileTrayPhase)
+        }
+      )
       .dashTray(
         isPresented: $showsIgnoreAllAlerts,
         title: DashL10n.string("Ignore all alerts")
@@ -428,7 +436,13 @@ struct MainTabView: View {
         } else if !hidesHeaderAvatar {
           HeaderProfileButton(
             action: { openOnActiveTab(.settings) },
-            onLongPress: { showsProfile = true }
+            onLongPress: {
+              // The phase used to live inside the freshly mounted tray body.
+              // Reset before presentation so an exit never swaps its content
+              // back to Accounts while the card is still animating away.
+              profileTrayPhase = .initial
+              showsProfile = true
+            }
           )
           .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
           // Tuned against the system back control's measured slot so the

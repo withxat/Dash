@@ -7,8 +7,17 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
 const WATCHTOWER_PATH = join(ROOT, "apps/ios/Dash/WatchtowerView.swift");
+const DASH_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashChrome.swift");
+const PROFILE_SETTINGS_PATH = join(
+  ROOT,
+  "apps/ios/Dash/ProfileSettingsViews.swift",
+);
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const watchtower = stripSwiftComments(readFileSync(WATCHTOWER_PATH, "utf8"));
+const dashChrome = stripSwiftComments(readFileSync(DASH_CHROME_PATH, "utf8"));
+const profileSettings = stripSwiftComments(
+  readFileSync(PROFILE_SETTINGS_PATH, "utf8"),
+);
 const issues = [];
 
 const editorControlIDs = [
@@ -265,6 +274,77 @@ if (!sharedControls || !addChartMenu) {
   }
 }
 
+const sheetCard = declarationBody(
+  dashChrome,
+  "private struct DashSheetCard<Header: View, Body: View, Footer: View>: View",
+);
+const sheetCardBody = sheetCard
+  ? declarationBody(sheetCard, "var body: some View")
+  : null;
+const sheetCardStack = sheetCardBody
+  ? declarationBody(sheetCardBody, "VStack(spacing: 0)")
+  : null;
+if (!sheetCardStack) {
+  issues.push("Could not locate DashSheetCard's header/body/footer stack.");
+} else {
+  const headerIndex = topLevelTokenIndex(sheetCardStack, "header()");
+  const bodyIndex = topLevelTokenIndex(sheetCardStack, "DashFadedScrollView(");
+  const footerIndex = topLevelTokenIndex(
+    sheetCardStack,
+    "if hasFooter",
+  );
+  if (
+    headerIndex === -1 ||
+    bodyIndex === -1 ||
+    footerIndex === -1 ||
+    !(headerIndex < bodyIndex && bodyIndex < footerIndex)
+  ) {
+    issues.push(
+      "DashSheetCard must keep fixed header, scrolling body, and fixed footer as ordered top-level siblings.",
+    );
+  }
+  if (!sheetCard.includes("maxCardHeight - headerHeight - footerHeight")) {
+    issues.push(
+      "DashSheetCard must reserve fixed footer height before sizing its scrolling body.",
+    );
+  }
+}
+
+const profileTrayContent = declarationBody(
+  profileSettings,
+  "struct ProfileTrayContent: View",
+);
+const profileTrayFooter = declarationBody(
+  profileSettings,
+  "struct ProfileTrayFooter: View",
+);
+if (!profileTrayContent || !profileTrayFooter) {
+  issues.push("Could not locate the split Profile tray body and footer.");
+} else {
+  const misplacedSignOutTokens = [
+    '"profile-tray-sign-out"',
+    '"profile-account-sign-out"',
+    "morphID: signOutMorphID",
+  ].filter((token) => profileTrayContent.includes(token));
+  if (misplacedSignOutTokens.length > 0) {
+    issues.push(
+      "ProfileTrayContent must not own the Sign out morph; both endpoints belong to the fixed ProfileTrayFooter.",
+    );
+  }
+  if (!profileTrayFooter.includes('"profile-tray-sign-out"')) {
+    issues.push("ProfileTrayFooter must own the stable Sign out morph identity.");
+  }
+  if (occurrences(profileTrayFooter, "morphID: signOutMorphID") !== 2) {
+    issues.push(
+      "ProfileTrayFooter must keep both Sign out morph endpoints inside the fixed footer.",
+    );
+  }
+}
+
+if (occurrences(mainTab, "ProfileTrayFooter(phase:") !== 1) {
+  issues.push("MainTabView must mount ProfileTrayFooter exactly once in tray chrome.");
+}
+
 if (issues.length > 0) {
   console.error("check-ios-ui-architecture: failed");
   for (const issue of issues) console.error(`- ${issue}`);
@@ -272,5 +352,5 @@ if (issues.length > 0) {
 }
 
 console.log(
-  "check-ios-ui-architecture: Watchtower editor controls are owned by the shared header overlay",
+  "check-ios-ui-architecture: shared Watchtower header and Profile tray footer ownership are valid",
 );

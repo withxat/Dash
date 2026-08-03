@@ -101,9 +101,27 @@ extension View {
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     modifier(
-      DashTrayModifier<EmptyView, Content>(
+      DashTrayModifier<EmptyView, Content, EmptyView>(
         isPresented: isPresented, title: title, sizing: sizing,
-        showsMenuButtons: showsMenuButtons, hero: nil, trayContent: content))
+        showsMenuButtons: showsMenuButtons, hero: nil,
+        trayContent: content, footer: { EmptyView() }, hasFooter: false))
+  }
+
+  /// A floating content tray with three stable chrome regions: fixed header,
+  /// independently scrolling body, and fixed action footer. Use this when a
+  /// multi-step body morphs above controls that must retain one screen position.
+  func dashTray<Content: View, Footer: View>(
+    isPresented: Binding<Bool>,
+    title: String,
+    showsMenuButtons: Bool = true,
+    @ViewBuilder content: @escaping () -> Content,
+    @ViewBuilder footer: @escaping () -> Footer
+  ) -> some View {
+    modifier(
+      DashTrayModifier<EmptyView, Content, Footer>(
+        isPresented: isPresented, title: title, sizing: .content,
+        showsMenuButtons: showsMenuButtons, hero: nil,
+        trayContent: content, footer: footer, hasFooter: true))
   }
 
   /// A `.content` tray whose top is a full-bleed hero — an image spanning the
@@ -119,9 +137,10 @@ extension View {
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     modifier(
-      DashTrayModifier(
+      DashTrayModifier<Hero, Content, EmptyView>(
         isPresented: isPresented, title: title, sizing: .content,
-        showsMenuButtons: showsMenuButtons, hero: hero, trayContent: content))
+        showsMenuButtons: showsMenuButtons, hero: hero,
+        trayContent: content, footer: { EmptyView() }, hasFooter: false))
   }
 
   func dashTray<Item: Identifiable & Equatable, Content: View>(
@@ -169,6 +188,13 @@ private struct DashSheetHeaderHeightKey: PreferenceKey {
 }
 
 private struct DashSheetBodyIdealKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+private struct DashSheetFooterHeightKey: PreferenceKey {
   static let defaultValue: CGFloat = 0
   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
     value = max(value, nextValue())
@@ -505,7 +531,7 @@ private struct DashSheetHeroHeader<Hero: View>: View {
 /// content morphs resize smoothly — there's no native detent to clip or snap.
 /// The dim fades and the card slides up from the bottom (and dismisses the
 /// same way), independently of the cover (see DashTrayModifier).
-private struct DashCustomSheet<Hero: View, Content: View>: View {
+private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   let title: String
   var showsMenuButtons = true
   /// Full-bleed view replacing the title header; nil keeps the standard header.
@@ -513,6 +539,8 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
   /// Removes the cover once the exit animation has finished.
   let onDismiss: () -> Void
   @ViewBuilder var content: () -> Content
+  @ViewBuilder var footer: () -> Footer
+  let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var progress: CGFloat = 0
   @State private var drag: CGFloat = 0
@@ -543,7 +571,8 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
       // that has to run under the keyboard.
       GeometryReader { proxy in
         DashSheetCard(
-          maxCardHeight: proxy.size.height - bottomLift(proxy) - 24
+          maxCardHeight: proxy.size.height - bottomLift(proxy) - 24,
+          hasFooter: hasFooter
         ) {
           // Drag-to-dismiss lives on the header (or hero) only, so the
           // scrollable body keeps its own vertical scroll.
@@ -552,6 +581,8 @@ private struct DashCustomSheet<Hero: View, Content: View>: View {
             .gesture(dragGesture, including: dismissDisabled ? .none : .all)
         } content: {
           content()
+        } footer: {
+          footer()
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, DashTheme.Sheet.floatingMargin)
@@ -950,16 +981,21 @@ enum DashDisplayChrome {
 /// but caps at the available height (`maxCardHeight`, which shrinks with the
 /// keyboard) and scrolls beyond it, so a form never squeezes or overflows.
 /// Paints its own canvas fill, top corners, and safe-area extension.
-private struct DashSheetCard<Header: View, Body: View>: View {
+private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   let maxCardHeight: CGFloat
+  let hasFooter: Bool
   @ViewBuilder let header: () -> Header
   @ViewBuilder let content: () -> Body
+  @ViewBuilder let footer: () -> Footer
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var headerHeight: CGFloat = 0
+  @State private var footerHeight: CGFloat = 0
   @State private var bodyIdeal: CGFloat = 0
   @State private var bodyDisplay: CGFloat = 0
 
-  private var maxBodyHeight: CGFloat { max(80, maxCardHeight - headerHeight) }
+  private var maxBodyHeight: CGFloat {
+    max(80, maxCardHeight - headerHeight - footerHeight)
+  }
 
   var body: some View {
     VStack(spacing: 0) {
@@ -981,7 +1017,10 @@ private struct DashSheetCard<Header: View, Body: View>: View {
           .frame(maxWidth: .infinity, alignment: .top)
           .padding(.horizontal, DashTheme.Sheet.content)
           .padding(.top, DashTheme.Sheet.bodyVertical)
-          .padding(.bottom, DashTheme.Sheet.bodyBottom)
+          .padding(
+            .bottom,
+            hasFooter ? DashTheme.Sheet.bodyVertical : DashTheme.Sheet.bodyBottom
+          )
           .background {
             GeometryReader { proxy in
               Color.clear.preference(key: DashSheetBodyIdealKey.self, value: proxy.size.height)
@@ -989,6 +1028,21 @@ private struct DashSheetCard<Header: View, Body: View>: View {
           }
       }
       .frame(height: bodyDisplay > 0 ? bodyDisplay : nil)
+
+      if hasFooter {
+        footer()
+          .frame(maxWidth: .infinity)
+          .padding(.horizontal, DashTheme.Sheet.content)
+          .padding(.bottom, DashTheme.Sheet.bodyBottom)
+          .background {
+            GeometryReader { proxy in
+              Color.clear.preference(
+                key: DashSheetFooterHeightKey.self,
+                value: proxy.size.height
+              )
+            }
+          }
+      }
     }
     .frame(maxWidth: .infinity)
     // A floating card: every corner rounded, concentric with the display, and
@@ -1006,6 +1060,7 @@ private struct DashSheetCard<Header: View, Body: View>: View {
       }
     }
     .onPreferenceChange(DashSheetHeaderHeightKey.self) { headerHeight = $0 }
+    .onPreferenceChange(DashSheetFooterHeightKey.self) { footerHeight = $0 }
     .onPreferenceChange(DashSheetBodyIdealKey.self) { ideal in
       bodyIdeal = ideal
       applyBody(animated: bodyDisplay != 0)
@@ -1036,13 +1091,15 @@ private func dashPresentWithoutAnimation(_ apply: () -> Void) {
   withTransaction(transaction, apply)
 }
 
-private struct DashTrayModifier<Hero: View, TrayContent: View>: ViewModifier {
+private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: ViewModifier {
   @Binding var isPresented: Bool
   let title: String
   var sizing: DashSheetSizing = .content
   var showsMenuButtons = true
   var hero: (() -> Hero)?
   @ViewBuilder var trayContent: () -> TrayContent
+  @ViewBuilder var footer: () -> Footer
+  let hasFooter: Bool
   @State private var covered = false
 
   @ViewBuilder
@@ -1059,7 +1116,8 @@ private struct DashTrayModifier<Hero: View, TrayContent: View>: ViewModifier {
         if sizing == .content {
           DashCustomSheet(
             title: title, showsMenuButtons: showsMenuButtons, hero: hero,
-            onDismiss: { isPresented = false }, content: trayContent)
+            onDismiss: { isPresented = false }, content: trayContent,
+            footer: footer, hasFooter: hasFooter)
         } else {
           DashExpandableSheet(
             title: title, showsMenuButtons: showsMenuButtons,
@@ -1094,10 +1152,11 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
       }
       .fullScreenCover(item: $coveredItem) { value in
         if sizing == .content {
-          DashCustomSheet(
+          DashCustomSheet<Hero, TrayContent, EmptyView>(
             title: title(value), showsMenuButtons: showsMenuButtons,
             hero: hero.map { hero in { hero(value) } },
-            onDismiss: { item = nil }, content: { trayContent(value) })
+            onDismiss: { item = nil }, content: { trayContent(value) },
+            footer: { EmptyView() }, hasFooter: false)
         } else {
           DashExpandableSheet(
             title: title(value), showsMenuButtons: showsMenuButtons,
