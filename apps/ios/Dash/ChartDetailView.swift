@@ -365,7 +365,9 @@ struct DashChartDetailView: View {
       }
     ) { _ in
       summaryHeader
-      chartPanel
+      chart
+        .frame(maxWidth: .infinity)
+        .frame(height: chartHeight)
         .dashSectionBoundary()
       // Home's Shortcuts / Recently used frame, emitted lazily: the table can
       // run to a few hundred rows, which is more than the eager
@@ -388,12 +390,9 @@ struct DashChartDetailView: View {
     return DashChartDetailActiveSnapshot(detail: detail)
   }
 
-  private var panelShape: RoundedRectangle {
-    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-  }
-
-  /// Value first, comparison opposite it, the range named underneath — on the
-  /// page above the glass panel, not inside it. The panel below is only plot.
+  /// Value first, comparison opposite it, the range named underneath — page
+  /// chrome above the plot. The chart sits directly in the scroll stack, not
+  /// inside a card panel.
   private var summaryHeader: some View {
     VStack(alignment: .leading, spacing: 4) {
       if active.summaryValue != nil || active.trend?.formattedPercentage != nil {
@@ -417,22 +416,6 @@ struct DashChartDetailView: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// Same enamel as an expanded Watchtower card, but the panel holds only the
-  /// plot — metrics stay on the page above. Clip the fill alone (not the chart):
-  /// axis labels live in the plot gutters, and a content clipShape eats the ones
-  /// that land in the continuous corner radius.
-  private var chartPanel: some View {
-    chart
-      .frame(maxWidth: .infinity)
-      .frame(height: chartHeight)
-      .padding(DashTheme.Spacing.card)
-      .background {
-        DashTheme.homeCardSurface
-          .clipShape(panelShape)
-      }
-      .dashEmbossChrome(shape: panelShape)
-  }
-
   @ViewBuilder
   private var chart: some View {
     switch active.content {
@@ -449,10 +432,9 @@ struct DashChartDetailView: View {
     }
   }
 
-  /// Same plot chrome as an expanded card — coordinate grid and axis gutters —
-  /// inside the glass panel. The legend stays off: every detail is a single
-  /// series the header already names. Metrics stay on the page above; the series
-  /// keeps whatever fill the source chose (area stays area).
+  /// Coordinate grid and axis gutters, no legend — every detail is a single
+  /// series the header already names. Metrics stay above; the series keeps
+  /// whatever fill the source chose (area stays area).
   private var cartesianOptions: DitherCartesianOptions {
     DashTheme.DitherChart.options(
       showsLegend: false,
@@ -469,8 +451,7 @@ struct DashChartDetailView: View {
       valueAxisLabel: DashL10n.ui(detail.valueAxisLabel))
   }
 
-  /// The detail keeps the coordinate grid but no legend, so the plot gets the
-  /// whole panel.
+  /// No legend, so the plot can take the full reserved height.
   private var chartHeight: CGFloat {
     dynamicTypeSize.isAccessibilitySize ? 332 : 284
   }
