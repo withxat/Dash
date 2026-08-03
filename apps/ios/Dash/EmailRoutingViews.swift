@@ -671,7 +671,7 @@ struct EmailRoutingView: View {
       || (rule.actions.count == 1 && Self.isEditableDeliveryAction(rule.actions[0]))
     guard supportedMatchers, supportedActions else {
       return
-        "This catch-all uses a configuration Dash doesn't edit yet. Change it in the Cloudflare dashboard."
+        "Dash can only change a catch-all that forwards or drops all mail. Edit this one in the Cloudflare dashboard."
     }
     return nil
   }
@@ -1654,7 +1654,7 @@ struct EmailRoutingRuleEditor: View {
       return "This route is managed by a Worker. Change it where the Worker is configured."
     }
     return
-      "This route uses a configuration Dash doesn't edit yet. Change it in the Cloudflare dashboard."
+      "Dash can only change simple address to forward or drop routes. Edit this one in the Cloudflare dashboard."
   }
 
   private func readOnlyFields(_ rule: EmailRoutingRule) -> [DashDetailField] {

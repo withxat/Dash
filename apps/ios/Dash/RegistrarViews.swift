@@ -365,9 +365,11 @@ struct RegistrarRegistrationRows: View {
     }
     // Read-only by decision D2: nobody has confirmed what `privacy_mode`
     // returns when WHOIS privacy is off, and a switch whose value silently
-    // reverts on reload is worse than no switch.
+    // reverts on reload is worse than no switch. Surface the status and point
+    // privacy changes at the Cloudflare dashboard.
     if let privacy = summary.privacyLabel {
       DashInfoRow("WHOIS privacy", value: privacy)
+      DashInfoRow("Privacy settings", value: DashL10n.string("Cloudflare dashboard"))
     }
   }
 }

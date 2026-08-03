@@ -4,11 +4,17 @@ import SwiftUI
 /// Workers Builds history on the Worker detail screen, and the driver for the
 /// build Live Activity.
 ///
-/// Renders nothing at all when the Worker has no builds. Most Workers are
-/// deployed with `wrangler deploy` and are not connected to a repository, so an
-/// empty "No builds yet" card would be permanent furniture on the majority of
-/// Worker screens — and a Workers Builds 403/404 on an account without the
-/// feature must not make the rest of the screen look broken either.
+/// Three answers, same contract as Tunnel private routes:
+///
+///   * Empty builds, a Builds 403/404, no script tag, or Demo → hide the
+///     section. Most Workers ship via `wrangler deploy` and are not
+///     repo-connected, so an empty "No builds yet" card would be permanent
+///     furniture; an account without the feature must not make the rest of
+///     the screen look broken either.
+///   * Any other cold failure (5xx, timeout, decode, offline) → keep the
+///     Builds group mounted and veil Try again over placeholders.
+///   * Warm reload failures with history already on screen → inline
+///     `actionError` notice; content never vanishes over a polling error.
 struct WorkerBuildsSection: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -23,6 +29,7 @@ struct WorkerBuildsSection: View {
   @State private var latest: WorkerBuild?
   @State private var unavailable = false
   @State private var loaded = false
+  @State private var loadError: String?
   @State private var cancelPhase: DashActionPhase = .idle
   @State private var actionError: String?
 
@@ -48,6 +55,15 @@ struct WorkerBuildsSection: View {
           if let actionError {
             DashNotice(kind: .warning, message: actionError)
               .dashItemBoundary()
+          }
+        }
+      } else if !unavailable, loaded, loadError != nil {
+        DashListGroup(title: "Builds") {
+          DashCard {
+            DashListRowPlaceholders(rows: 3)
+              .dashSectionFailure(
+                loadError,
+                retry: { Task { await resolveTagAndLoad() } })
           }
         }
       }
@@ -148,6 +164,7 @@ struct WorkerBuildsSection: View {
     guard let context = model.accountRequestContext, !model.isDemoSession else {
       loaded = true
       unavailable = true
+      loadError = nil
       return
     }
     let accountID = context.accountID
@@ -167,6 +184,7 @@ struct WorkerBuildsSection: View {
     guard let tag, !tag.isEmpty else {
       // No tag means no Workers Builds for this Worker. Not an error.
       unavailable = true
+      loadError = nil
       loaded = true
       return
     }
@@ -185,13 +203,24 @@ struct WorkerBuildsSection: View {
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
       builds = page.items
       latest = page.items.first
+      loadError = nil
       unavailable = page.items.isEmpty
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
-      if builds.isEmpty {
-        // An account without Workers Builds answers 403/404 here. Staying
-        // silent is the whole point — the Worker's own screen is unaffected.
-        unavailable = true
+      if error.dashIsResourceAbsent {
+        if builds.isEmpty {
+          // An account without Workers Builds answers 403/404 here. Staying
+          // silent is the whole point — the Worker's own screen is unaffected.
+          unavailable = true
+          loadError = nil
+        } else {
+          actionError = error.dashActionableMessage
+        }
+      } else if builds.isEmpty {
+        // Cold transport/server failure: keep the section and offer retry.
+        // Vanishing here used to swallow 5xx/timeout as "no Builds feature".
+        unavailable = false
+        loadError = error.dashActionableMessage
       } else {
         // Warm re-load (a watched build finished, or pull-to-refresh): the
         // history the user is looking at stays mounted, the failure rides the

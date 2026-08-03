@@ -18,9 +18,7 @@ import UIKit
 //     (`DashSectionPhase.failed`).
 //
 // Empty and forbidden collapse into "there is nothing here". Broken never does.
-// (`WorkerBuildsSection` currently swallows all three into one `unavailable`
-// flag, so a transient 500 makes its card vanish. That is a latent bug in the
-// precedent, not a pattern to copy here.)
+// (`WorkerBuildsSection` follows the same split.)
 
 private enum TunnelExternalURL {
   static let guide = URL(
