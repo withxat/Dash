@@ -2018,7 +2018,9 @@ struct StatusBadge: View {
     .accessibilityLabel(StatusBadge.accessibilityText(for: token))
   }
 
-  static func accessibilityText(for token: StatusToken) -> String {
+  /// Pure catalog string — safe off the main actor so free helpers (registrar
+  /// row labels, tests) can call it without hopping through a View.
+  nonisolated static func accessibilityText(for token: StatusToken) -> String {
     DashL10n.string("Status, \(token.label)")
   }
 }
