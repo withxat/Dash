@@ -213,6 +213,25 @@ struct DashChartDetail: Hashable, Sendable {
   }
 
   var showsRangeTabs: Bool { ranges.count >= 2 }
+
+  /// Multi-range details freeze whatever windows are warm at push time and
+  /// never refetch. Block the push only while an expected window is still
+  /// in flight with no snapshot yet — a failed or empty settle must not keep
+  /// the chevron locked, and a warm refresh that already has last-good data
+  /// stays open.
+  static func areSourceRangesSettled(
+    expected: some Sequence<AnalyticsRange>,
+    loaded: some Sequence<AnalyticsRange>,
+    loading: Set<AnalyticsRange>
+  ) -> Bool {
+    let loadedSet = Set(loaded)
+    for range in expected {
+      if loading.contains(range), !loadedSet.contains(range) {
+        return false
+      }
+    }
+    return true
+  }
 }
 
 /// The relative magnitude shown immediately after a chart's primary value. A
@@ -265,6 +284,9 @@ struct DashCollapsedChartTrendLabel: View {
 /// card.
 struct DashChartDetailButton: View {
   let detail: DashChartDetail
+  /// False while sibling time windows are still loading into the frozen
+  /// multi-range payload — keeps the plate seated so the title does not jump.
+  var isEnabled: Bool = true
   var accessibilityIdentifier: String? = nil
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -286,11 +308,13 @@ struct DashChartDetailButton: View {
 
   private var button: some View {
     Button {
+      guard isEnabled else { return }
       navigator?.push(.chartDetail(detail))
     } label: {
       plate
     }
     .buttonStyle(DashPressButtonStyle())
+    .disabled(!isEnabled)
     .accessibilityLabel(
       "\(DashL10n.ui(detail.title)), \(DashL10n.ui("Details"))"
     )

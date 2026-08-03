@@ -276,6 +276,33 @@ import Testing
   #expect(detail.previousPageLoadTimeP50Ms != nil)
 }
 
+@Test func chartDetailWaitsOnlyForInFlightRangesWithoutSnapshots() {
+  // Cold: current window painted, siblings still loading — block the push.
+  #expect(
+    !DashChartDetail.areSourceRangesSettled(
+      expected: AnalyticsRange.allCases,
+      loaded: [AnalyticsRange.day],
+      loading: [.week, .month]))
+  // Warm refresh: last-good snapshots stay open even while ranges reload.
+  #expect(
+    DashChartDetail.areSourceRangesSettled(
+      expected: AnalyticsRange.allCases,
+      loaded: AnalyticsRange.allCases,
+      loading: Set(AnalyticsRange.allCases)))
+  // Settled failure: a missing window that is no longer loading must not lock
+  // the chevron forever — the push freezes whatever succeeded.
+  #expect(
+    DashChartDetail.areSourceRangesSettled(
+      expected: AnalyticsRange.allCases,
+      loaded: [.day, .week],
+      loading: []))
+  #expect(
+    DashChartDetail.areSourceRangesSettled(
+      expected: [AnalyticsRange.week, .month],
+      loaded: [.week, .month],
+      loading: []))
+}
+
 @Test func chartSnapshotsAreSendable() {
   requireSendable(WatchtowerAnalyticsChartModel.Snapshot.self)
   requireSendable(WatchtowerAnalyticsChartModel.MetricSnapshot.self)

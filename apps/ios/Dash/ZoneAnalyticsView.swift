@@ -344,6 +344,15 @@ struct ZoneAnalyticsView: View {
     .accessibilityElement(children: .combine)
   }
 
+  /// Detail freezes every warm window at push; wait out in-flight ranges that
+  /// have not landed yet so a first tap cannot omit a still-loading 30d tab.
+  private var areChartDetailRangesSettled: Bool {
+    DashChartDetail.areSourceRangesSettled(
+      expected: AnalyticsRange.allCases,
+      loaded: snapshotsByRange.keys,
+      loading: loadingRanges)
+  }
+
   private func chartCard<Chart: View>(
     detail: DashChartDetail,
     @ViewBuilder chart: () -> Chart
@@ -355,7 +364,9 @@ struct ZoneAnalyticsView: View {
             .dashTextStyle(.footnoteSemibold)
             .foregroundStyle(DashTheme.subtle)
           Spacer(minLength: 4)
-          DashChartDetailButton(detail: detail)
+          DashChartDetailButton(
+            detail: detail,
+            isEnabled: areChartDetailRangesSettled)
         }
         chart()
       }

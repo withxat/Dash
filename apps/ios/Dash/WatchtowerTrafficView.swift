@@ -1341,6 +1341,7 @@ struct WatchtowerTrafficView: View {
       chart: snapshot.charts[metric] ?? .empty,
       range: state.range,
       snapshotsByRange: state.snapshots,
+      loadingRanges: state.loadingRanges,
       isExpanded: expanded,
       showsEditingControls: editorControlsVisible,
       renderingMode: WatchtowerMetricChartRenderingMode.resolved(
@@ -2583,6 +2584,9 @@ private struct WatchtowerMetricChartCard: View {
   /// Warm snapshots for every time tab so the pushed detail can switch ranges
   /// without refetching.
   var snapshotsByRange: [AnalyticsRange: WatchtowerAnalyticsChartModel.Snapshot] = [:]
+  /// In-flight windows. Detail push waits until each expected range has either
+  /// landed or finished trying, so a first tap cannot omit a still-loading 30d.
+  var loadingRanges: Set<AnalyticsRange> = []
   let isExpanded: Bool
   let showsEditingControls: Bool
   let renderingMode: WatchtowerMetricChartRenderingMode
@@ -2607,8 +2611,16 @@ private struct WatchtowerMetricChartCard: View {
       polarity: metric.trendPolarity)
   }
 
+  private var areDetailRangesSettled: Bool {
+    DashChartDetail.areSourceRangesSettled(
+      expected: AnalyticsRange.allCases,
+      loaded: snapshotsByRange.keys,
+      loading: loadingRanges)
+  }
+
   private var opensDetailOnTap: Bool {
     !isExpanded && !showsEditingControls && detail != nil && renderingMode == .live
+      && areDetailRangesSettled
   }
 
   private var detail: DashChartDetail? {
@@ -2767,6 +2779,7 @@ private struct WatchtowerMetricChartCard: View {
         if let detail, isExpanded, renderingMode == .live, !showsEditingControls {
           DashChartDetailButton(
             detail: detail,
+            isEnabled: areDetailRangesSettled,
             accessibilityIdentifier: "watchtower-chart-detail-\(metric.rawValue)"
           )
           .padding(8)

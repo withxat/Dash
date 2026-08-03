@@ -440,6 +440,15 @@ struct WebAnalyticsView: View {
     )
   }
 
+  /// Detail freezes every warm window at push; wait out in-flight ranges that
+  /// have not landed yet so a first tap cannot omit a still-loading 30d tab.
+  private var areChartDetailRangesSettled: Bool {
+    DashChartDetail.areSourceRangesSettled(
+      expected: [.week, .month],
+      loaded: snapshotsByRange.keys,
+      loading: loadingRanges)
+  }
+
   /// One collapsed chart per metric: title, the window's figure and its trend
   /// over a sparkline flush to the card's bottom edge, and the whole surface
   /// pushes the interactive detail.
@@ -469,7 +478,9 @@ struct WebAnalyticsView: View {
       // screens read alike and no new catalog key is needed.
       accessibilitySummary: DashL10n.string(
         "\(DashL10n.ui(metric.title)) for \(DashL10n.ui(range.totalsHeading)). Total \(value)."),
-      detail: chartDetail(for: metric),
+      // Nil until sibling windows settle — the card stays visible, just not a
+      // navigation target, so an early tap cannot freeze a partial tab set.
+      detail: areChartDetailRangesSettled ? chartDetail(for: metric) : nil,
       detailAccessibilityIdentifier: "web-analytics-chart-detail-\(metric.rawValue)")
   }
 
@@ -498,7 +509,7 @@ struct WebAnalyticsView: View {
     }
   }
 
-  /// The pushed detail carries both loaded windows, so its 7d / 30d tabs swap
+  /// The pushed detail carries both settled windows, so its 7d / 30d tabs swap
   /// already-fetched points. It plots the real values, not the lifted ones.
   private func chartDetail(for metric: WebAnalyticsChartMetric) -> DashChartDetail {
     let plotSeries = series(for: metric)
