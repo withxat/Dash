@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/dash-icon.png" alt="Dash" width="120" height="120">
+</p>
+
 # Dash for Cloudflare
 
 [English](README.md) | [简体中文](README.zh-CN.md)
@@ -6,21 +10,24 @@ Dash is a native iPhone Cloudflare client built with SwiftUI. It signs in with O
 
 The installed app is named **Dash**. Its bundle identifier is `sh.xat.dash.app`, its callback is `dash://oauth/callback`, and its App Store name is **Dash for Cloudflare**.
 
-## MVP features
+## Features
 
-Five resource surfaces, plus the shell that makes them usable:
+Resource surfaces in the catalog, plus the shell that makes them usable:
 
 | Feature | What you can do |
 | --- | --- |
-| **Domains** | Zones, DNS, cache purge, domain settings, zone analytics |
-| **Workers** | View scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics |
-| **Pages** | View projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
+| **Domains** | Zones, DNS, cache purge, domain settings, traffic / WAF / Web Analytics |
+| **Registrations** | Registrar domains you own, status and expiry |
+| **Email Routing** | Per-domain routes, settings, destination addresses |
+| **Workers** | Scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics, Workers Builds |
+| **Pages** | Projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
 | **R2** | Buckets, browse/upload/preview, public URLs, Files integration, share extension and Shortcuts |
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
+| **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Settings (push alerts, About), multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Account / Domain Metrics widgets, Settings (push alerts, integrations, About), multi-account OAuth, and iPhone-only single-stack navigation.
 
-Out of MVP scope: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
+Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
 ## Workspace
 
