@@ -475,6 +475,58 @@ struct LocalizationTests {
       == .disabled)
 }
 
+@Test func emailRoutingHasEditableShapeAllowsWildcardLocalParts() {
+  let zone = "example.com"
+  func rule(
+    address: String,
+    actions: [EmailRoutingRuleAction] = [EmailRoutingRuleAction(type: "drop")],
+    matchers: [EmailRoutingRuleMatcher]? = nil
+  ) -> EmailRoutingRule {
+    EmailRoutingRule(
+      id: "r1",
+      matchers: matchers
+        ?? [EmailRoutingRuleMatcher(type: "literal", field: "to", value: address)],
+      actions: actions)
+  }
+
+  #expect(EmailRoutingView.hasEditableShape(rule(address: "hi@example.com"), zoneName: zone))
+  #expect(EmailRoutingView.hasEditableShape(rule(address: "*@example.com"), zoneName: zone))
+  #expect(EmailRoutingView.hasEditableShape(rule(address: "sales*@example.com"), zoneName: zone))
+  #expect(EmailRoutingView.hasEditableShape(rule(address: "*desk@example.com"), zoneName: zone))
+  #expect(
+    EmailRoutingView.hasEditableShape(
+      rule(
+        address: "*@example.com",
+        actions: [EmailRoutingRuleAction(type: "forward", value: ["inbox@example.net"])]),
+      zoneName: zone))
+
+  #expect(!EmailRoutingView.hasEditableShape(rule(address: "@example.com"), zoneName: zone))
+  #expect(!EmailRoutingView.hasEditableShape(rule(address: "hi@other.com"), zoneName: zone))
+  #expect(
+    !EmailRoutingView.hasEditableShape(
+      rule(
+        address: "hi@example.com",
+        actions: [EmailRoutingRuleAction(type: "worker", value: ["mail-worker"])]),
+      zoneName: zone))
+  #expect(
+    !EmailRoutingView.hasEditableShape(
+      rule(
+        address: "hi@example.com",
+        actions: [
+          EmailRoutingRuleAction(type: "forward", value: ["a@example.net", "b@example.net"])
+        ]),
+      zoneName: zone))
+  #expect(
+    !EmailRoutingView.hasEditableShape(
+      rule(
+        address: "hi@example.com",
+        matchers: [
+          EmailRoutingRuleMatcher(type: "literal", field: "to", value: "hi@example.com"),
+          EmailRoutingRuleMatcher(type: "literal", field: "to", value: "bye@example.com"),
+        ]),
+      zoneName: zone))
+}
+
 @Test func pushBaseURLStripsPathFromRedirectURI() {
   let configured = AppConfiguration(
     clientID: "client",
@@ -795,6 +847,7 @@ struct LocalizationTests {
   #expect(zoneSettingDisplayTitle("ssl") == "SSL")
   #expect(zoneSettingDisplayTitle("always_use_https") == "Always Use HTTPS")
   #expect(zoneSettingDisplayTitle("min_tls_version") == "Minimum TLS version")
+  #expect(zoneSettingDisplayTitle("http3") == "HTTP/3")
   #expect(zoneSettingDisplayTitle("development_mode") == "Development Mode")
 }
 

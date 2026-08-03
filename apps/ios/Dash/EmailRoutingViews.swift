@@ -703,6 +703,25 @@ struct EmailRoutingView: View {
     }
   }
 
+  /// Single literal `to` on the zone domain with one forward/drop action.
+  /// Wildcard local parts (`*@zone`, `prefix*@zone`, `*suffix@zone`) are editable;
+  /// worker, multi-matcher, and multi-forward stay read-only.
+  static func hasEditableShape(_ rule: EmailRoutingRule, zoneName: String) -> Bool {
+    guard rule.matchers.count == 1, let matcher = rule.matchers.first,
+      matcher.type == "literal", matcher.field == "to", let address = matcher.value,
+      rule.actions.count == 1, let action = rule.actions.first
+    else {
+      return false
+    }
+    let addressParts = address.split(separator: "@", omittingEmptySubsequences: false)
+    guard addressParts.count == 2, !addressParts[0].isEmpty,
+      String(addressParts[1]).caseInsensitiveCompare(zoneName) == .orderedSame
+    else {
+      return false
+    }
+    return isEditableDeliveryAction(action)
+  }
+
   /// Drop plus every **verified** address. Unverified ones are omitted: the
   /// server rejects them, and offering one would look like a working choice
   /// that silently drops mail.
@@ -1585,23 +1604,8 @@ struct EmailRoutingRuleEditor: View {
 
   private var isReadOnly: Bool {
     guard let rule else { return false }
-    return !featureAllowsWrites || rule.isWranglerManaged || !hasEditableShape(rule)
-  }
-
-  private func hasEditableShape(_ rule: EmailRoutingRule) -> Bool {
-    guard rule.matchers.count == 1, let matcher = rule.matchers.first,
-      matcher.type == "literal", matcher.field == "to", let address = matcher.value,
-      rule.actions.count == 1, let action = rule.actions.first
-    else {
-      return false
-    }
-    let addressParts = address.split(separator: "@", omittingEmptySubsequences: false)
-    guard addressParts.count == 2, !addressParts[0].isEmpty, !addressParts[0].contains("*"),
-      String(addressParts[1]).caseInsensitiveCompare(zoneName) == .orderedSame
-    else {
-      return false
-    }
-    return EmailRoutingView.isEditableDeliveryAction(action)
+    return !featureAllowsWrites || rule.isWranglerManaged
+      || !EmailRoutingView.hasEditableShape(rule, zoneName: zoneName)
   }
 
   private var verifiedOptions: [String] {
@@ -1614,10 +1618,8 @@ struct EmailRoutingRuleEditor: View {
     return "\(local)@\(zoneName)"
   }
 
-  private var usesWildcard: Bool { localPart.contains("*") }
-
   private var canSave: Bool {
-    featureAllowsWrites && !composedAddress.isEmpty && !usesWildcard && !actionPhase.isActive
+    featureAllowsWrites && !composedAddress.isEmpty && !actionPhase.isActive
   }
 
   var body: some View {
@@ -1706,12 +1708,6 @@ struct EmailRoutingRuleEditor: View {
           Text(verbatim: "@\(zoneName)")
             .dashTextStyle(.footnote)
             .foregroundStyle(DashTheme.subtle)
-
-          if usesWildcard {
-            DashNotice(
-              kind: .warning,
-              message: "Use the catch-all control below the routes list for every other address.")
-          }
 
           if verifiedOptions.isEmpty {
             DashNotice(

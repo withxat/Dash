@@ -114,6 +114,7 @@
 		B00000000000000000000154 /* PagesBuildMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000154 /* PagesBuildMonitorTests.swift */; };
 		B00000000000000000000155 /* R2TransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000155 /* R2TransferTests.swift */; };
 		B00000000000000000000220 /* R2ShareDestinationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000220 /* R2ShareDestinationTests.swift */; };
+		B00000000000000000000221 /* TunnelHostMatchingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000221 /* TunnelHostMatchingTests.swift */; };
 		B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000156 /* WorkerWatchtowerTests.swift */; };
 		B00000000000000000000157 /* ChartDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000157 /* ChartDataTests.swift */; };
 		B00000000000000000000158 /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000158 /* MainTabView.swift */; };
@@ -313,6 +314,7 @@
 		F00000000000000000000154 /* PagesBuildMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildMonitorTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000155 /* R2TransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2TransferTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000220 /* R2ShareDestinationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ShareDestinationTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000221 /* TunnelHostMatchingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelHostMatchingTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000156 /* WorkerWatchtowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerWatchtowerTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000157 /* ChartDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartDataTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000158 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
@@ -569,6 +571,7 @@
 				F00000000000000000000154 /* PagesBuildMonitorTests.swift */,
 				F00000000000000000000155 /* R2TransferTests.swift */,
 				F00000000000000000000220 /* R2ShareDestinationTests.swift */,
+				F00000000000000000000221 /* TunnelHostMatchingTests.swift */,
 				F00000000000000000000156 /* WorkerWatchtowerTests.swift */,
 				F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */,
 				F00000000000000000000211 /* MetricsWidgetRefreshingTests.swift */,
@@ -1071,6 +1074,7 @@
 				B00000000000000000000154 /* PagesBuildMonitorTests.swift in Sources */,
 				B00000000000000000000155 /* R2TransferTests.swift in Sources */,
 				B00000000000000000000220 /* R2ShareDestinationTests.swift in Sources */,
+				B00000000000000000000221 /* TunnelHostMatchingTests.swift in Sources */,
 				B00000000000000000000156 /* WorkerWatchtowerTests.swift in Sources */,
 				B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */,
 				B00000000000000000000215 /* MetricsWidgetRefreshingTests.swift in Sources */,

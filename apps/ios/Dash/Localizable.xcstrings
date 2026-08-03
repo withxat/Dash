@@ -3526,17 +3526,6 @@
         }
       }
     },
-    "Create a namespace in the dashboard or with Wrangler." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "请在控制台或使用 Wrangler 创建命名空间。"
-          }
-        }
-      }
-    },
     "Create alert policy" : {
       "localizations" : {
         "en" : {
@@ -3639,6 +3628,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请在 Cloudflare 控制台或用 Wrangler 创建 key。"
+          }
+        }
+      }
+    },
+    "Create namespaces in the Cloudflare dashboard or with Wrangler, then manage keys here." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请在 Cloudflare 控制台或使用 Wrangler 创建命名空间，然后在此管理键。"
           }
         }
       }
@@ -5929,6 +5929,17 @@
         }
       }
     },
+    "HTTP/3" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HTTP/3"
+          }
+        }
+      }
+    },
     "Haptic feedback" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6859,6 +6870,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "毫秒"
+          }
+        }
+      }
+    },
+    "Minimum TLS version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最低 TLS 版本"
           }
         }
       }
@@ -11845,17 +11867,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "请使用小写字母、数字和连字符。"
-          }
-        }
-      }
-    },
-    "Use the catch-all control below the routes list for every other address." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他所有地址请使用路由列表下方的兜底转发设置。"
           }
         }
       }

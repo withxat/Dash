@@ -1240,7 +1240,9 @@ struct KVNamespacesView: View {
       empty: DashFeatureEmpty(
         icon: SolarAsset.Content.pinList,
         title: DashL10n.string("No namespaces"),
-        message: DashL10n.string("Create a namespace in the dashboard or with Wrangler."),
+        message: DashL10n.string(
+          "Create namespaces in the Cloudflare dashboard or with Wrangler, then manage keys here."
+        ),
         actionTitle: "Open KV docs",
         action: { openURL(StorageExternalURL.kvGuide) }
       ),

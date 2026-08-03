@@ -432,7 +432,10 @@ final class DemoBackend: URLProtocol {
         ? [
           #"""
           {"id":"access-app-demo","name":"Demo app","domain":"app.example.com","type":"self_hosted","aud":"demo-aud-app","destinations":[{"type":"public","uri":"https://app.example.com"}]}
-          """#
+          """#,
+          #"""
+          {"id":"access-app-wildcard","name":"Demo wildcard","domain":"*.example.com","type":"self_hosted","aud":"demo-aud-wildcard","destinations":[{"type":"public","uri":"*.example.com"}]}
+          """#,
         ] : []
       return ok(
         "[\(applications.joined(separator: ","))]",
@@ -1560,6 +1563,7 @@ private enum DemoWorld {
       {"id":"always_use_https","value":"on","editable":true},
       {"id":"advanced_ddos","value":"on","editable":false},
       {"id":"min_tls_version","value":"1.2","editable":true},
+      {"id":"http3","value":"on","editable":true},
       {"id":"browser_cache_ttl","value":14400,"editable":true}
     ]
     """#

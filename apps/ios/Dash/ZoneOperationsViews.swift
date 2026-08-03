@@ -149,6 +149,8 @@ private let curatedZoneSettings: [String] = [
   "ssl",
   "always_online",
   "always_use_https",
+  "min_tls_version",
+  "http3",
 ]
 
 /// Enum-valued settings the API accepts as plain strings; everything listed here
@@ -167,6 +169,7 @@ private let curatedZoneSettings: [String] = [
 let zoneSettingOptions: [String: [String]] = [
   "ssl": ["off", "flexible", "full", "strict"],
   "security_level": ["off", "essentially_off", "low", "medium", "high"],
+  "min_tls_version": ["1.0", "1.1", "1.2", "1.3"],
 ]
 
 /// Names the control that owns a value the menu above cannot offer, so the
@@ -410,6 +413,7 @@ func zoneSettingDisplayTitle(_ id: String) -> String {
   case "ssl": "SSL"
   case "always_use_https": "Always Use HTTPS"
   case "min_tls_version": "Minimum TLS version"
+  case "http3": "HTTP/3"
   default: id.replacingOccurrences(of: "_", with: " ").capitalized
   }
 }

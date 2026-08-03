@@ -696,6 +696,7 @@ final class AppModel {
               {"id":"always_use_https","value":"off","editable":true},
               {"id":"advanced_ddos","value":"on","editable":false},
               {"id":"min_tls_version","value":"1.2","editable":true},
+              {"id":"http3","value":"on","editable":true},
               {"id":"browser_cache_ttl","value":14400,"editable":true},
               {"id":"transformations","value":[{"a":1},{"b":2}],"editable":false}
             ]

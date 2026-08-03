@@ -841,7 +841,7 @@ struct TunnelHostnameRow: Identifiable, Hashable, Sendable {
     // says nothing, the default is inherited. Either source alone is enough,
     // which is what keeps the Access lookup a two-line cut.
     let inherited = rule.originRequest?.access?.required ?? tunnelRequiresAccess
-    let matched = TunnelHostMatching.normalizedHost(host).map(accessHosts.contains) ?? false
+    let matched = TunnelHostMatching.covers(ingressHost: host, accessHosts: accessHosts)
     self.isProtected = !host.isEmpty && (inherited || matched)
   }
 
@@ -892,9 +892,10 @@ struct TunnelHostnameRow: Identifiable, Hashable, Sendable {
 // MARK: - Access matching
 
 enum TunnelHostMatching {
-  /// Every hostname the account's Access applications cover, normalized for a
-  /// literal comparison. No wildcard-subdomain matching in v1 — a missed match
-  /// costs a badge, which is the safe direction for a positive-only claim.
+  /// Every hostname the account's Access applications cover, normalized for
+  /// `covers`. Patterns like `*.example.com` stay intact so wildcard matching
+  /// can claim a Protected badge; a missed match still costs only a badge,
+  /// which is the safe direction for a positive-only claim.
   static func hosts(in applications: [AccessApplication]) -> Set<String> {
     var hosts: Set<String> = []
     for application in applications {
@@ -904,6 +905,37 @@ enum TunnelHostMatching {
       }
     }
     return hosts
+  }
+
+  /// Whether an ingress hostname is covered by any Access host in the set.
+  ///
+  /// True on literal membership after normalization, or when Access holds a
+  /// `*.suffix` pattern and the ingress is a proper subdomain of `suffix`
+  /// (`api.example.com` ← `*.example.com`; apex `example.com` does not).
+  /// Empty hosts and ingress wildcards never invent coverage — an ingress that
+  /// is itself `*.…` matches only an equal Access pattern.
+  static func covers(ingressHost: String, accessHosts: Set<String>) -> Bool {
+    guard let host = normalizedHost(ingressHost) else { return false }
+    if accessHosts.contains(host) { return true }
+    // Ingress wildcards are not expanded; equal membership already returned.
+    if host.contains("*") { return false }
+    for pattern in accessHosts {
+      guard let suffix = wildcardSuffix(pattern) else { continue }
+      let boundary = "." + suffix
+      if host.count > boundary.count, host.hasSuffix(boundary) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /// `*.example.com` → `example.com`. Anything else (bare `*`, nested `*`) is
+  /// refused so weird Access spellings cannot widen the positive claim.
+  private static func wildcardSuffix(_ pattern: String) -> String? {
+    guard pattern.hasPrefix("*.") else { return nil }
+    let suffix = String(pattern.dropFirst(2))
+    guard !suffix.isEmpty, !suffix.contains("*") else { return nil }
+    return suffix
   }
 
   /// Access spells a hostname several ways — `app.example.com`,
