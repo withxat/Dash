@@ -76,7 +76,7 @@ struct FilesMountView: View {
       )
       DashInfoRow(
         "New folder",
-        value: DashL10n.string("Create empty folders in Dash. Files cannot create them.")
+        value: DashL10n.string("Supported. Delete folders in Dash.")
       )
       DashInfoRow(
         "Previews",

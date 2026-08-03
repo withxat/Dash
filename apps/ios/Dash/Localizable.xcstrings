@@ -3589,17 +3589,6 @@
         }
       }
     },
-    "Create empty folders in Dash. Files cannot create them." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Dash 中创建空文件夹。“文件”无法创建。"
-          }
-        }
-      }
-    },
     "Create folder" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12641,6 +12630,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "遭受攻击"
+          }
+        }
+      }
+    },
+    "Supported. Delete folders in Dash." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "支持。请在 Dash 中删除文件夹。"
           }
         }
       }

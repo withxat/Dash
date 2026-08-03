@@ -151,16 +151,24 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
 
         let template = itemTemplate.value
         let isDirectory = template.contentType?.conforms(to: .folder) == true
-        // R2 has no directories. A Files "New Folder" would manufacture a
-        // zero-byte prefix marker, a distinct remote object that v1 cannot
-        // rename or delete safely, so only whole-file uploads are supported.
-        guard !isDirectory else {
-          throw FileProviderErrorMapping.featureUnsupported
-        }
         let path = try self.destinationPath(
           parentIdentifier: template.parentItemIdentifier,
           filename: template.filename,
-          isDirectory: false)
+          isDirectory: isDirectory)
+
+        if isDirectory {
+          // Same zero-byte `…/` markers Dash and the Cloudflare dashboard write.
+          // Delete stays unsupported here: empty-only folder delete is Dash's
+          // surface until Files can mirror that guard safely.
+          try await self.createFolder(at: path)
+          try Task.checkCancellation()
+          completion.value(
+            R2FileProviderItem.directory(path: path, allowsWriting: true),
+            [],
+            false,
+            nil)
+          return
+        }
 
         // Cloudflare's REST object PUT has no If-None-Match. This preflight
         // gives Files its normal "report 2.pdf" collision behavior, but there
@@ -403,11 +411,52 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
       throw FileProviderErrorMapping.featureUnsupported
     }
 
-    var key = "\(parentPrefix)\(filename)"
     if isDirectory {
-      key.append("/")
+      // Single path component only — Files' New Folder UI does not nest with `/`.
+      guard
+        R2FolderMarker.nameProblem(parentPrefix: parentPrefix, name: filename) == nil,
+        let key = R2FolderMarker.markerKey(parentPrefix: parentPrefix, name: filename)
+      else {
+        throw FileProviderErrorMapping.featureUnsupported
+      }
+      return R2ObjectPath(bucket: bucket, key: key)
     }
-    return R2ObjectPath(bucket: bucket, key: key)
+
+    return R2ObjectPath(bucket: bucket, key: "\(parentPrefix)\(filename)")
+  }
+
+  /// Writes Cloudflare/Dash folder markers after the same collision checks the
+  /// file upload path uses, so a name cannot hide a sibling object or folder.
+  private func createFolder(at path: R2ObjectPath) async throws {
+    let fileKey = String(path.key.dropLast())
+    guard !fileKey.isEmpty else {
+      throw FileProviderErrorMapping.featureUnsupported
+    }
+    if try await client.getR2ObjectMetadata(
+      accountID: accountID, bucket: path.bucket, key: fileKey) != nil
+    {
+      throw FileProviderErrorMapping.filenameCollision
+    }
+    if try await client.getR2ObjectMetadata(
+      accountID: accountID, bucket: path.bucket, key: path.key) != nil
+    {
+      throw FileProviderErrorMapping.filenameCollision
+    }
+    let listing = try await client.listR2Objects(
+      accountID: accountID,
+      bucket: path.bucket,
+      prefix: path.key,
+      delimiter: "/",
+      perPage: 1)
+    let hasChildren =
+      listing.objects.contains { !R2FolderMarker.isMarker(key: $0.key) }
+      || !listing.commonPrefixes.isEmpty
+    if hasChildren {
+      throw FileProviderErrorMapping.filenameCollision
+    }
+
+    try await client.createR2Folder(
+      accountID: accountID, bucket: path.bucket, key: path.key)
   }
 
   private func validateUploadSize(_ fileURL: URL) throws -> Int? {
