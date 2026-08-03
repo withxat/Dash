@@ -406,6 +406,8 @@ struct DeferredDeletionCoordinatorCoverageTests {
     let secondID = coordinator.schedule(command)!
     #expect(coordinator.operations[firstID] == nil)
     #expect(coordinator.operations[secondID]?.state == .pending)
+    // A new destructive grace period must expose Undo immediately instead of
+    // waiting behind unrelated finite feedback.
     #expect(toasts.current?.action == .undoDeferredDeletionBatch)
 
     await executor.setExecutionOutcome(.success, for: "queued-same-resource")

@@ -166,6 +166,24 @@ final class DashToastCenter {
       return
     }
 
+    // A fresh destructive grace period must expose Undo immediately. It may
+    // preempt finite automatic feedback, while another protected operation
+    // still holds the slot until its owner releases it.
+    if toast.id == .deferredDeletionBatch,
+      toast.action == .undoDeferredDeletionBatch,
+      toast.dismissBehavior == .programmaticOnly,
+      current?.dismissBehavior == .automatic
+    {
+      discardQueuedPendingDeletionToast()
+      present(
+        toast,
+        haptic: haptic,
+        announce: announce,
+        deferredDeletionOperationIDs: deferredDeletionOperationIDs,
+        onDismiss: onDismiss)
+      return
+    }
+
     // Slot busy: queue. Automatic toasts accelerate so the next one lands soon;
     // programmatic-only (Undo) holds until the coordinator releases it.
     if current != nil {
@@ -210,6 +228,21 @@ final class DashToastCenter {
       queued[index] = queuedToast
     } else {
       queued.append(queuedToast)
+    }
+  }
+
+  /// A pending deletion can first queue behind another protected operation,
+  /// then become eligible to preempt after that operation turns automatic.
+  /// Drop the stale queued copy before presenting the latest deadline/count.
+  private func discardQueuedPendingDeletionToast() {
+    queued.removeAll { item in
+      guard
+        item.toast.id == .deferredDeletionBatch,
+        item.toast.action == .undoDeferredDeletionBatch,
+        item.toast.dismissBehavior == .programmaticOnly
+      else { return false }
+      item.onDismiss?()
+      return true
     }
   }
 

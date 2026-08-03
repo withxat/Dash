@@ -3711,7 +3711,7 @@ private actor ZoneSecurityLevelTestLatch {
   }
 }
 
-@Test @MainActor func toastCenterReplacesAndDismissesCurrentToast() {
+@Test @MainActor func toastCenterQueuesAndPromotesAutomaticToasts() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.toasts.current == nil)
 
@@ -3722,6 +3722,9 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(first?.duration == DashToast.Kind.success.duration)
 
   model.toasts.error("Permission denied.", title: "R2", haptic: false)
+  #expect(model.toasts.current?.id == first?.id)
+
+  model.toasts.dismiss(id: first!.id)
   let second = model.toasts.current
   #expect(second?.id != first?.id)
   #expect(second?.kind == .error)
@@ -3733,6 +3736,55 @@ private actor ZoneSecurityLevelTestLatch {
 
   model.toasts.dismiss()
   #expect(model.toasts.current == nil)
+}
+
+@Test @MainActor func deferredDeletionUndoPreemptsAutomaticWithoutRevivingQueuedUndo() {
+  let toasts = DashToastCenter()
+  let owner = toasts.claimDeferredDeletionOwner()
+  let optimisticID = DashToast.ID.optimistic(UUID())
+  toasts.show(
+    DashToast(
+      id: optimisticID,
+      kind: .warning,
+      message: "Saving settings…",
+      dismissBehavior: .programmaticOnly),
+    haptic: false,
+    announce: false)
+
+  let later = DashToast(kind: .success, message: "Later feedback.")
+  toasts.show(later, haptic: false, announce: false)
+  toasts.show(
+    DashToast(
+      id: .deferredDeletionBatch,
+      kind: .warning,
+      message: "First deletion deadline.",
+      action: .undoDeferredDeletionBatch,
+      dismissBehavior: .programmaticOnly),
+    haptic: false,
+    announce: false,
+    deferredDeletionOwner: owner)
+  #expect(toasts.current?.id == optimisticID)
+
+  toasts.update(
+    DashToast(id: optimisticID, kind: .success, message: "Settings saved."),
+    haptic: false,
+    announce: false)
+  toasts.update(
+    DashToast(
+      id: .deferredDeletionBatch,
+      kind: .warning,
+      message: "Latest deletion deadline.",
+      action: .undoDeferredDeletionBatch,
+      dismissBehavior: .programmaticOnly),
+    haptic: false,
+    announce: false,
+    deferredDeletionOwner: owner)
+  #expect(toasts.current?.message == "Latest deletion deadline.")
+
+  toasts.releaseDeferredDeletionToast(owner: owner)
+  #expect(toasts.current?.id == later.id)
+  toasts.dismiss(id: later.id)
+  #expect(toasts.current == nil)
 }
 
 @Test func toastDurationsPreferShorterSuccessWindows() {
