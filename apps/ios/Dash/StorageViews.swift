@@ -50,7 +50,10 @@ struct R2BucketsView: View {
     .refreshable { await load(force: true) }
     .task { await load() }
     .onAppear { reloadIfInvalidated() }
-    .dashTray(isPresented: $showsCreateBucket, title: DashL10n.string("Create bucket")) {
+    .dashTray(
+      isPresented: $showsCreateBucket, title: DashL10n.string("Create bucket"),
+      tone: FeatureVisualIdentity.tone(for: .r2)
+    ) {
       R2CreateBucketSheet {
         guard let id = model.activeAccountID else { return }
         model.featureCache.remove(FeatureCacheKey.r2Buckets(id))
@@ -143,10 +146,12 @@ struct R2BucketView: View {
   @State private var selectedKeys: Set<String> = []
   @State private var confirmsBatchDelete = false
   @State private var showsBucketActions = false
-  /// Steps of the Actions tray. A second `dashTray` on this screen would have to
-  /// present while the first is still animating out, so the create form and the
-  /// folder-delete confirmation morph inside the tray that is already open.
-  @State private var bucketActionsStep = R2BucketActionsStep.menu
+  /// Steps of the Actions tray, as a route stack over the `.menu` root. A
+  /// second `dashTray` on this screen would have to present while the first is
+  /// still animating out, so the create form and the folder-delete
+  /// confirmation push inside the tray that is already open, and the header's
+  /// ✕→← back control pops them.
+  @State private var bucketActionsPath: [R2BucketActionsStep] = []
   /// Whether this prefix has its own zero-byte `…/` marker object. It is the
   /// only thing "delete this empty folder" can remove — a folder that exists
   /// purely because objects sit under it disappears on its own once they go.
@@ -369,14 +374,17 @@ struct R2BucketView: View {
       title: "Delete objects",
       actions: [batchDeleteAction]
     )
-    .dashTray(isPresented: $showsBucketActions, title: "Actions") {
+    .dashTray(
+      isPresented: $showsBucketActions, title: "Actions",
+      tone: FeatureVisualIdentity.tone(for: .r2)
+    ) {
       r2BucketActionsTray
     }
     // `isPresented` flips only after the tray's exit animation, so resetting the
-    // step here never morphs the content back while it is still on screen.
+    // path here never morphs the content back while it is still on screen.
     .onChange(of: showsBucketActions) { _, presented in
       guard !presented else { return }
-      bucketActionsStep = .menu
+      bucketActionsPath = []
     }
     // Settings may have changed the domains while this screen stayed mounted
     // below it — resync from the shared cache on return. A visit that finds
@@ -435,7 +443,7 @@ struct R2BucketView: View {
     selectedKeys = []
     confirmsBatchDelete = false
     showsBucketActions = false
-    bucketActionsStep = .menu
+    bucketActionsPath = []
     hasFolderMarker = false
     domains = nil
     objectFrameStore.clear()
@@ -471,8 +479,10 @@ struct R2BucketView: View {
     Button {
       confirmsBatchDelete = true
     } label: {
-      Text(
-        selectedKeys.isEmpty
+      // "Delete" stays planted while the live count morphs beside it
+      // (Family's "Add N wallets" move).
+      DashMorphingLabel(
+        text: selectedKeys.isEmpty
           ? DashL10n.string("Delete") : DashL10n.string("Delete \(selectedKeys.count)")
       )
       .dashTextStyle(.button)
@@ -490,10 +500,10 @@ struct R2BucketView: View {
   }
 
   /// One tray, three steps: the action menu, the create-folder form, and the
-  /// folder-delete confirmation. Each step transitions in place, the way
-  /// `AddDomainSheet` morphs its form into the name-server step.
+  /// folder-delete confirmation. The form and the confirmation push over the
+  /// menu; the header's ← pops back to it in place.
   @ViewBuilder private var r2BucketActionsTray: some View {
-    DashTrayFlow(route: bucketActionsStep, role: bucketActionsStep.trayRole) { step in
+    DashTrayFlow(root: .menu, path: $bucketActionsPath, role: \.trayRole) { step in
       switch step {
       case .createFolder:
         R2CreateFolderSheet(
@@ -509,14 +519,14 @@ struct R2BucketView: View {
         r2BucketActionsMenu
       }
     }
-    .dashTrayTitle(bucketActionsStep.title)
+    .dashTrayTitle((bucketActionsPath.last ?? .menu).title)
   }
 
   @ViewBuilder private var r2BucketActionsMenu: some View {
     dashListCard {
       if featureAllowsWrites {
         Button {
-          bucketActionsStep = .createFolder
+          bucketActionsPath.append(.createFolder)
         } label: {
           DashListRow(
             title: DashL10n.string("Create folder"),
@@ -583,7 +593,7 @@ struct R2BucketView: View {
         DashListGroupDivider()
 
         Button {
-          bucketActionsStep = .deleteFolder
+          bucketActionsPath.append(.deleteFolder)
         } label: {
           DashListRow(
             title: DashL10n.string("Delete folder"),
@@ -610,7 +620,7 @@ struct R2BucketView: View {
       message: DashL10n.string(
         "Deletes the empty \(currentFolderName) folder from \(bucket). This can't be undone."),
       onSuccessPresentationCompleted: {
-        bucketActionsStep = .menu
+        bucketActionsPath = []
         // The parent listing is stale by exactly this folder; its own
         // `reloadIfInvalidated` refetches when the cache comes back cold.
         navigator?.pop()
@@ -1417,7 +1427,10 @@ struct KVNamespaceView: View {
     }
     .refreshable { await load(force: true) }
     .onAppear { reloadIfKeysInvalidated() }
-    .dashTray(isPresented: $showsCreateKey, title: DashL10n.string("Create key")) {
+    .dashTray(
+      isPresented: $showsCreateKey, title: DashL10n.string("Create key"),
+      tone: FeatureVisualIdentity.tone(for: .kv)
+    ) {
       KVCreateKeySheet(namespaceID: namespaceID) {
         invalidateKeys()
         Task { await load(force: true) }
@@ -1531,6 +1544,8 @@ struct R2CreateBucketSheet: View {
   @State private var name = ""
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
+  /// The success toast this tray's check flight may land on.
+  @State private var successToastID: DashToast.ID?
 
   var body: some View {
     DashFormSheet(
@@ -1549,6 +1564,11 @@ struct R2CreateBucketSheet: View {
       }
     )
     .dashTrayDescription(DashL10n.string("Use lowercase letters, numbers, and hyphens."))
+    // The one production instance of the success-check → toast flight (the
+    // result-destination exploration). Keep it single until the feel is
+    // proven; see AGENTS.md's tray section.
+    .dashTraySuccessFlight()
+    .dashTraySuccessFlightTarget(successToastID)
   }
 
   private func create() async {
@@ -1563,7 +1583,7 @@ struct R2CreateBucketSheet: View {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Created successfully."))
+      successToastID = model.toasts.success(DashL10n.string("Created successfully."))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle

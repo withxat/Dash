@@ -902,7 +902,10 @@ struct PagesDomainsView: View {
     }
     .refreshable { await load(force: true) }
     .task { await load() }
-    .dashTray(isPresented: $addsDomain, title: "Add custom domain") {
+    .dashTray(
+      isPresented: $addsDomain, title: "Add custom domain",
+      tone: FeatureVisualIdentity.tone(for: .pages)
+    ) {
       PagesAddDomainForm(projectName: projectName) {
         await load(force: true)
       }
@@ -910,6 +913,7 @@ struct PagesDomainsView: View {
     .dashTray(
       item: $selected,
       title: { $0.name },
+      tone: FeatureVisualIdentity.tone(for: .pages),
       content: { domain in
         DashDetailTray(
           fields: [

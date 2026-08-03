@@ -1763,6 +1763,199 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(ProfileTrayPhase.signOut.trayRole == .destructive)
 }
 
+@Test @MainActor func trayFlowStackDrivesRouteAndRoleFromThePathTail() throws {
+  let account = try JSONDecoder().decode(
+    CloudflareAccount.self,
+    from: Data(#"{"id":"account-1","name":"Example"}"#.utf8)
+  )
+  var path: [ProfileTrayPhase] = []
+  let binding = Binding(get: { path }, set: { path = $0 })
+
+  let atRoot = DashTrayFlow(root: .accounts, path: binding, role: \.trayRole) { _ in
+    EmptyView()
+  }
+  #expect(atRoot.route == .accounts)
+  #expect(atRoot.role == .root)
+
+  path = [.switchAccount(account), .signOut]
+  let pushed = DashTrayFlow(root: .accounts, path: binding, role: \.trayRole) { _ in
+    EmptyView()
+  }
+  #expect(pushed.route == .signOut)
+  #expect(pushed.role == .destructive)
+}
+
+@Test func sheetHeaderActionsDefaultToTheDestructiveCircle() {
+  // Every pre-tone header action was the fixed danger circle; the tone work
+  // must not silently recolor them. Only an explicit non-destructive role
+  // opts an action into `\.dashTrayTone`.
+  let action = DashSheetHeaderAction(
+    id: "delete", icon: "TrashBinTrashOutline", accessibilityLabel: "Delete"
+  ) {}
+  #expect(action.role == .destructive)
+}
+
+@Test func morphingLabelSegmentsShareCharacterAffixes() {
+  // Family's Continue → Confirm: the shared "Con" stays planted.
+  let verb = DashMorphingLabelSegments(from: "Continue", to: "Confirm")
+  #expect(verb.prefix == "Con")
+  #expect(verb.changed == "firm")
+  #expect(verb.suffix.isEmpty)
+
+  // A count appearing after a stable verb — only the count run morphs.
+  let count = DashMorphingLabelSegments(from: "Delete", to: "Delete 3")
+  #expect(count.prefix == "Delete")
+  #expect(count.changed == " 3")
+  #expect(count.suffix.isEmpty)
+
+  // Character-level diffing keeps CJK affixes intact around the number.
+  let cjk = DashMorphingLabelSegments(from: "删除 3 个对象", to: "删除 12 个对象")
+  #expect(cjk.prefix == "删除 ")
+  #expect(cjk.changed == "12")
+  #expect(cjk.suffix == " 个对象")
+
+  // The prefix and suffix scans must never claim the same characters.
+  let overlap = DashMorphingLabelSegments(from: "aa", to: "aba")
+  #expect(overlap.prefix == "a")
+  #expect(overlap.changed == "b")
+  #expect(overlap.suffix == "a")
+
+  // Rebuilding the segments always yields the new string verbatim.
+  for split in [verb, count, cjk, overlap] {
+    #expect(split.joined == split.prefix + split.changed + split.suffix)
+  }
+  #expect(cjk.joined == "删除 12 个对象")
+
+  // Resting state: everything is the changeable run, so the first morph can
+  // keep whatever the next string happens to share.
+  let resting = DashMorphingLabelSegments(text: "Delete")
+  #expect(resting.prefix.isEmpty)
+  #expect(resting.changed == "Delete")
+  #expect(resting.suffix.isEmpty)
+}
+
+@Test func accentTrayPillsKeepDarkInkOnTheOrangeFill() {
+  // Adaptive `inverse` is near-white in light mode — ~2.4:1 on brand orange
+  // `#F6821F` — so `.accent` (the R2 / storage tray tone) pins its submit-pill
+  // label near-black instead. Every other tone keeps the adaptive pair.
+  #expect(FeatureVisualTone.accent.vividLabel == Color(hex: 0x171717))
+  #expect(FeatureVisualTone.success.vividLabel == DashTheme.inverse)
+  #expect(FeatureVisualTone.brand.vividLabel == DashTheme.inverse)
+}
+
+@Test func trayBackActionEqualityIsDepthOnly() {
+  var performed = 0
+  let first = DashTrayBackAction(depth: 1) { performed += 1 }
+  let sameDepth = DashTrayBackAction(depth: 1) {}
+  let deeper = DashTrayBackAction(depth: 2) {}
+
+  #expect(first == sameDepth)
+  #expect(first != deeper)
+  first.perform()
+  #expect(performed == 1)
+}
+
+@Test func trayAnchorTransformMapsTheCardOntoTheSourceRect() {
+  let card = CGRect(x: 20, y: 400, width: 350, height: 300)
+  let source = CGRect(x: 24, y: 620, width: 118, height: 88)
+
+  // Progress 0: the whole card renders scaled and translated onto the source —
+  // its center lands on the source center at the source's proportions.
+  let start = DashTrayAnchorMath.transform(source: source, card: card, progress: 0)
+  #expect(abs(start.scaleX - source.width / card.width) < 0.0001)
+  #expect(abs(start.scaleY - source.height / card.height) < 0.0001)
+  #expect(abs(start.offsetX - (source.midX - card.midX)) < 0.0001)
+  #expect(abs(start.offsetY - (source.midY - card.midY)) < 0.0001)
+
+  // Progress 1: exact identity, so handing off to the slide modifier (which
+  // also renders identity at 1) can never jump.
+  let end = DashTrayAnchorMath.transform(source: source, card: card, progress: 1)
+  #expect(end == DashTrayAnchorMath.Transform(scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0))
+
+  // An unmeasured card (first frame) must not divide by zero.
+  let unmeasured = DashTrayAnchorMath.transform(source: source, card: .zero, progress: 0)
+  #expect(unmeasured == DashTrayAnchorMath.Transform(scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0))
+
+  // The card fades in over the first third and is opaque from there on.
+  #expect(DashTrayAnchorMath.opacity(progress: 0) == 0)
+  #expect(DashTrayAnchorMath.opacity(progress: 1.0 / 3.0) == 1)
+  #expect(DashTrayAnchorMath.opacity(progress: 1) == 1)
+}
+
+@Test @MainActor func trayAnchorSourcesMustBeOnScreenAndControlSized() {
+  let bounds = CGRect(x: 0, y: 0, width: 393, height: 852)
+
+  // A quick-action tile: anchorable.
+  #expect(
+    DashTraySourceRegistry.isPresentableSource(
+      CGRect(x: 16, y: 300, width: 120, height: 90), in: bounds))
+
+  // Scrolled fully off screen, collapsed, or oversized (a scroll container or
+  // near-full-screen surface would read as a zoom glitch): bottom reveal.
+  #expect(
+    !DashTraySourceRegistry.isPresentableSource(
+      CGRect(x: 16, y: -400, width: 120, height: 90), in: bounds))
+  #expect(
+    !DashTraySourceRegistry.isPresentableSource(
+      CGRect(x: 16, y: 300, width: 0, height: 0), in: bounds))
+  #expect(
+    !DashTraySourceRegistry.isPresentableSource(
+      CGRect(x: 0, y: 0, width: 393, height: 852), in: bounds))
+  #expect(
+    !DashTraySourceRegistry.isPresentableSource(
+      CGRect(x: 16, y: 300, width: 120, height: 90), in: .zero))
+}
+
+@Test func successCheckFlightArcsBetweenItsEndpointsWithALateDissolve() {
+  let from = CGPoint(x: 300, y: 700)
+  let to = CGPoint(x: 60, y: 120)
+
+  // The quadratic bezier is pinned to its endpoints…
+  #expect(DashTrayFlightMath.point(from: from, to: to, progress: 0) == from)
+  #expect(DashTrayFlightMath.point(from: from, to: to, progress: 1) == to)
+
+  // …and its midpoint rises above the straight line: the control point sits
+  // `apexLift` above the higher endpoint, so at t = 0.5 the arc is half a
+  // lift above the chord's midpoint minus the endpoint spread's pull.
+  let mid = DashTrayFlightMath.point(from: from, to: to, progress: 0.5)
+  #expect(mid.x == (from.x + to.x) / 2)
+  #expect(mid.y < (from.y + to.y) / 2)
+
+  // Size interpolates start → landing; a degenerate start stays untouched.
+  #expect(DashTrayFlightMath.scale(from: 20, to: 10, progress: 0) == 1)
+  #expect(abs(DashTrayFlightMath.scale(from: 20, to: 10, progress: 1) - 0.5) < 0.0001)
+  #expect(DashTrayFlightMath.scale(from: 0, to: 10, progress: 0.5) == 1)
+
+  // Fully visible for three quarters of the travel, then dissolving into the
+  // toast mark it lands on.
+  #expect(DashTrayFlightMath.opacity(0) == 1)
+  #expect(DashTrayFlightMath.opacity(0.75) == 1)
+  #expect(abs(DashTrayFlightMath.opacity(0.875) - 0.5) < 0.0001)
+  #expect(DashTrayFlightMath.opacity(1) == 0)
+
+  // The ink → green crossfade is pinned to pill ink at liftoff and toast
+  // green well before touchdown, ramping through the middle of the travel.
+  #expect(DashTrayFlightMath.colorBlend(0) == 0)
+  #expect(abs(DashTrayFlightMath.colorBlend(0.5) - 0.5) < 0.0001)
+  #expect(DashTrayFlightMath.colorBlend(0.7) == 1)
+  #expect(DashTrayFlightMath.colorBlend(1) == 1)
+}
+
+@Test @MainActor func toastCenterSuccessReturnsThePresentedIdentity() {
+  // The flight's landing match depends on `success` returning the identity
+  // of the toast it actually enqueued — with an empty queue, that toast is
+  // presented immediately.
+  let center = DashToastCenter()
+  let id = center.success("Created successfully.", haptic: false)
+  #expect(center.current?.id == id)
+
+  // A second success while the first holds the slot queues instead — its ID
+  // must still name the *new* toast, not the visible one.
+  let queued = center.success("Another one.", haptic: false)
+  #expect(queued != id)
+  #expect(center.current?.id == id)
+}
+
 @Test func accountRenameRequiresItsWriteScope() {
   #expect(ProfileAccountRenameAccess.requiredScopes == ["account-settings.write"])
   #expect(!ProfileAccountRenameAccess.isGranted(nil))

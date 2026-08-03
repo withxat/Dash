@@ -133,8 +133,13 @@ final class DashToastCenter {
     return owner
   }
 
-  func success(_ message: String, title: String? = nil, haptic: Bool = true) {
-    show(DashToast(kind: .success, title: title, message: message), haptic: haptic)
+  /// Returns the new toast's identity so callers that animate toward it (the
+  /// tray success-check flight) can require an exact landing match.
+  @discardableResult
+  func success(_ message: String, title: String? = nil, haptic: Bool = true) -> DashToast.ID {
+    let toast = DashToast(kind: .success, title: title, message: message)
+    show(toast, haptic: haptic)
+    return toast.id
   }
 
   func error(_ message: String, title: String? = nil, haptic: Bool = true) {
@@ -695,17 +700,31 @@ private struct DashToastCard: View {
 
   @ViewBuilder
   private var leadingMark: some View {
-    if let phase = toast.actionPhase {
-      DashActionStatusIcon(
-        phase: phase,
-        loadingColor: DashTheme.brand,
-        successColor: DashTheme.success,
-        size: 20,
-        lineWidth: 2.5
-      )
-    } else {
-      SolarIcon(asset: kindIcon, size: 20, color: accent)
-        .accessibilityHidden(true)
+    Group {
+      if let phase = toast.actionPhase {
+        DashActionStatusIcon(
+          phase: phase,
+          loadingColor: DashTheme.brand,
+          successColor: DashTheme.success,
+          size: 20,
+          lineWidth: 2.5
+        )
+      } else {
+        SolarIcon(asset: kindIcon, size: 20, color: accent)
+          .accessibilityHidden(true)
+      }
+    }
+    // Landing mark for the tray host's success-check flight; unobserved on
+    // the main canvas host. The toast identity rides along so a flight can
+    // never land on an unrelated success toast holding the slot.
+    .background {
+      if toast.kind == .success {
+        GeometryReader { proxy in
+          Color.clear.preference(
+            key: DashToastLeadingMarkPreferenceKey.self,
+            value: DashToastLeadingMark(id: toast.id, frame: proxy.frame(in: .global)))
+        }
+      }
     }
   }
 

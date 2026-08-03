@@ -13,10 +13,10 @@ import UserNotifications
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
-  @Binding var phase: ProfileTrayPhase
+  @Binding var path: [ProfileTrayPhase]
 
   var body: some View {
-    DashTrayFlow(route: phase, role: phase.trayRole) { phase in
+    DashTrayFlow(root: .accounts, path: $path, role: \.trayRole) { phase in
       switch phase {
       case .accounts:
         accountList
@@ -27,7 +27,7 @@ struct ProfileTrayContent: View {
       }
     }
     .frame(maxWidth: .infinity)
-    .dashTrayTitle(phase.title)
+    .dashTrayTitle((path.last ?? .accounts).title)
   }
 
   private var accountList: some View {
@@ -39,7 +39,7 @@ struct ProfileTrayContent: View {
             dismiss()
             return
           }
-          phase = .switchAccount(account)
+          path.append(.switchAccount(account))
         } label: {
           ProfileTrayAccountRow(account: account, isActive: isActive)
         }
@@ -94,16 +94,17 @@ struct ProfileTrayFooter: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Binding var phase: ProfileTrayPhase
+  @Binding var path: [ProfileTrayPhase]
   @Namespace private var actionMorph
 
-  /// Shared by the full-width Sign out pill and the half-width confirm pill so
-  /// the enamel face shrinks into the Cancel + Sign out row — same
-  /// `matchedGeometryEffect` path `DashConfirmableActions` uses for danger rows.
+  /// Shared by the idle Sign out pill and the confirming pill so the enamel
+  /// face travels between steps — same `matchedGeometryEffect` path
+  /// `DashConfirmableActions` uses for danger rows. Cancel is gone from these
+  /// footers: the header's ✕→← back control owns the way out of a step.
   private static let signOutMorphID = "profile-tray-sign-out"
 
   var body: some View {
-    DashTrayFlow(route: phase, role: phase.trayRole) { phase in
+    DashTrayFlow(root: .accounts, path: $path, role: \.trayRole) { phase in
       switch phase {
       case .accounts:
         signOutSource
@@ -120,6 +121,12 @@ struct ProfileTrayFooter: View {
     reduceMotion ? nil : Self.signOutMorphID
   }
 
+  /// Companion id for the title run: both endpoints say "Sign out", so the
+  /// pinned label rides the surface morph instead of cross-fading in place.
+  private var signOutLabelMorphID: String? {
+    reduceMotion ? nil : "\(Self.signOutMorphID).label"
+  }
+
   private var signOutMorphNamespace: Namespace.ID? {
     reduceMotion ? nil : actionMorph
   }
@@ -129,44 +136,33 @@ struct ProfileTrayFooter: View {
       title: "Sign out",
       role: .destructive,
       morphID: signOutMorphID,
+      labelMorphID: signOutLabelMorphID,
       morphNamespace: signOutMorphNamespace
     ) {
-      phase = .signOut
+      path.append(.signOut)
     }
     .accessibilityIdentifier("profile-account-sign-out")
   }
 
   private func accountSwitchActions(_ account: CloudflareAccount) -> some View {
-    DashTrayActionPair {
-      DashTrayCancelButton {
-        phase = .accounts
-      }
-    } primary: {
-      DashActionButton(title: "Switch account") {
-        model.selectAccount(account)
-        dismiss()
-      }
+    DashActionButton(title: "Switch account") {
+      model.selectAccount(account)
+      dismiss()
     }
   }
 
   private var signOutConfirmationActions: some View {
-    DashTrayActionPair {
-      DashTrayCancelButton {
-        phase = .accounts
-      }
-      .disabled(model.signOutActionPhase.isActive)
-    } primary: {
-      DashActionButton(
-        title: "Sign out",
-        role: .destructive,
-        phase: model.signOutActionPhase,
-        morphID: signOutMorphID,
-        morphNamespace: signOutMorphNamespace,
-        onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-      ) {
-        Task {
-          await model.signOut(presentsCompletion: true)
-        }
+    DashActionButton(
+      title: "Sign out",
+      role: .destructive,
+      phase: model.signOutActionPhase,
+      morphID: signOutMorphID,
+      labelMorphID: signOutLabelMorphID,
+      morphNamespace: signOutMorphNamespace,
+      onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+    ) {
+      Task {
+        await model.signOut(presentsCompletion: true)
       }
     }
   }

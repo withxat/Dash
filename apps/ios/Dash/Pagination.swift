@@ -105,13 +105,22 @@ struct DashLoadMoreFooter: View {
   let phase: DashActionPhase
   var onSuccessPresentationCompleted: (@MainActor () -> Void)?
   let action: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     VStack(spacing: 12) {
       if let text = caption ?? defaultCaption {
+        // "Showing X of Y" — the counts roll as pages land instead of the
+        // whole caption hard-swapping.
         Text(text)
           .font(.caption)
+          .monospacedDigit()
           .foregroundStyle(DashTheme.subtle)
+          .contentTransition(
+            reduceMotion ? .opacity : .numericText(value: Double(loaded)))
+          .animation(
+            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph,
+            value: loaded)
       }
       DashPillButton(
         title: "Load more",

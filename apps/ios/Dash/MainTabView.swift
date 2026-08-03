@@ -35,7 +35,7 @@ struct MainTabView: View {
   /// paths: reading it would re-apply them mid-push and cancel the transition.
   @State private var washScroll = DashWorkspaceWashScroll()
   @State private var showsProfile = false
-  @State private var profileTrayPhase = ProfileTrayPhase.initial
+  @State private var profileTrayPath: [ProfileTrayPhase] = []
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
@@ -253,10 +253,10 @@ struct MainTabView: View {
         isPresented: $showsProfile,
         title: DashL10n.string("Switch account"),
         content: {
-          ProfileTrayContent(phase: $profileTrayPhase)
+          ProfileTrayContent(path: $profileTrayPath)
         },
         footer: {
-          ProfileTrayFooter(phase: $profileTrayPhase)
+          ProfileTrayFooter(path: $profileTrayPath)
         }
       )
       .dashTray(
@@ -436,10 +436,10 @@ struct MainTabView: View {
           HeaderProfileButton(
             action: { openOnActiveTab(.settings) },
             onLongPress: {
-              // The phase used to live inside the freshly mounted tray body.
+              // The path used to live inside the freshly mounted tray body.
               // Reset before presentation so an exit never swaps its content
               // back to Accounts while the card is still animating away.
-              profileTrayPhase = .initial
+              profileTrayPath = []
               showsProfile = true
             }
           )

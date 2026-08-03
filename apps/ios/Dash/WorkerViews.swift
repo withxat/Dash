@@ -246,11 +246,15 @@ struct WorkerDetailView: View {
     .dashTray(
       item: $selectedDeployment,
       title: { workerDeploymentTitle($0) },
+      tone: FeatureVisualIdentity.tone(for: .workers),
       content: { deployment in
         workerDeploymentTray(deployment)
       }
     )
-    .dashTray(isPresented: $addsDomain, title: "Add custom domain") {
+    .dashTray(
+      isPresented: $addsDomain, title: "Add custom domain",
+      tone: FeatureVisualIdentity.tone(for: .workers)
+    ) {
       WorkerAddDomainForm(service: name) {
         await loadDomains(force: true)
       }
@@ -258,6 +262,7 @@ struct WorkerDetailView: View {
     .dashTray(
       item: $selectedRoute,
       title: { $0.pattern },
+      tone: FeatureVisualIdentity.tone(for: .workers),
       content: { route in
         DashDetailTray(
           fields: [
@@ -271,6 +276,7 @@ struct WorkerDetailView: View {
     .dashTray(
       item: $selectedDomain,
       title: { $0.hostname },
+      tone: FeatureVisualIdentity.tone(for: .workers),
       content: { domain in
         DashDetailTray(
           fields: [

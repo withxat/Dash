@@ -141,14 +141,24 @@ struct HomeView: View {
     .onChange(of: model.accountRequestContext) { _, context in
       resetZones(for: context)
     }
-    .dashTray(isPresented: $showsAddDomain, title: DashL10n.string("Add domain")) {
+    .dashTray(
+      isPresented: $showsAddDomain, title: DashL10n.string("Add domain"),
+      tone: FeatureVisualIdentity.tone(for: .zones)
+    ) {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
         model.featureCache.remove(FeatureCacheKey.zones(accountID))
         Task { await loadZones(force: true) }
       }
     }
-    .dashTray(isPresented: $showsR2Upload, title: DashL10n.string("Upload to R2")) {
+    // Quick-action trays grow out of their tiles (`sourceID` pairs with the
+    // tile's `.dashTraySource`). Add Domain stays unanchored: the Domains
+    // section opens the same tray, so it has no single source of truth.
+    .dashTray(
+      isPresented: $showsR2Upload, title: DashL10n.string("Upload to R2"),
+      tone: FeatureVisualIdentity.tone(for: .r2),
+      sourceID: HomeActionID.uploadR2.accessibilityIdentifier
+    ) {
       HomeR2UploadSheet { bucket in
         guard let accountID = model.activeAccountID else { return }
         recentsRaw = RecentResources.recording(
@@ -157,7 +167,11 @@ struct HomeView: View {
           in: recentsRaw)
       }
     }
-    .dashTray(isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache")) {
+    .dashTray(
+      isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache"),
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      sourceID: HomeActionID.purgeCache.accessibilityIdentifier
+    ) {
       HomePurgeCachePicker(zones: zones) { zone in
         guard zonesContext == model.accountRequestContext else {
           showsPurgeCache = false
@@ -166,28 +180,52 @@ struct HomeView: View {
         navigator?.push(.cache(zone.id))
       }
     }
-    .dashTray(isPresented: $showsAddDNSRecord, title: DashL10n.string("Add DNS record")) {
+    .dashTray(
+      isPresented: $showsAddDNSRecord, title: DashL10n.string("Add DNS record"),
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      sourceID: HomeActionID.addDNSRecord.accessibilityIdentifier
+    ) {
       HomeDNSRecordAction(zones: zones)
     }
-    .dashTray(isPresented: $showsCreateKVKey, title: DashL10n.string("Create KV key")) {
+    .dashTray(
+      isPresented: $showsCreateKVKey, title: DashL10n.string("Create KV key"),
+      tone: FeatureVisualIdentity.tone(for: .kv),
+      sourceID: HomeActionID.createKVKey.accessibilityIdentifier
+    ) {
       HomeCreateKVKeyAction()
     }
-    .dashTray(isPresented: $showsCreateR2Bucket, title: DashL10n.string("Create R2 bucket")) {
+    .dashTray(
+      isPresented: $showsCreateR2Bucket, title: DashL10n.string("Create R2 bucket"),
+      tone: FeatureVisualIdentity.tone(for: .r2),
+      sourceID: HomeActionID.createR2Bucket.accessibilityIdentifier
+    ) {
       R2CreateBucketSheet(onCreated: {})
     }
-    .dashTray(isPresented: $showsAddPagesDomain, title: DashL10n.string("Add Pages domain")) {
+    .dashTray(
+      isPresented: $showsAddPagesDomain, title: DashL10n.string("Add Pages domain"),
+      tone: FeatureVisualIdentity.tone(for: .pages),
+      sourceID: HomeActionID.addPagesDomain.accessibilityIdentifier
+    ) {
       HomePagesDomainAction()
     }
-    .dashTray(isPresented: $showsAddWorkerDomain, title: DashL10n.string("Attach Worker domain")) {
+    .dashTray(
+      isPresented: $showsAddWorkerDomain, title: DashL10n.string("Attach Worker domain"),
+      tone: FeatureVisualIdentity.tone(for: .workers),
+      sourceID: HomeActionID.addWorkerDomain.accessibilityIdentifier
+    ) {
       HomeWorkerDomainAction()
     }
     .dashTray(
-      isPresented: $showsEnableDevelopmentMode, title: DashL10n.string("Development mode")
+      isPresented: $showsEnableDevelopmentMode, title: DashL10n.string("Development mode"),
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      sourceID: HomeActionID.enableDevelopmentMode.accessibilityIdentifier
     ) {
       HomeZoneModeAction(zones: zones, mode: .development)
     }
     .dashTray(
-      isPresented: $showsEnableUnderAttackMode, title: DashL10n.string("Under Attack mode")
+      isPresented: $showsEnableUnderAttackMode, title: DashL10n.string("Under Attack mode"),
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      sourceID: HomeActionID.enableUnderAttackMode.accessibilityIdentifier
     ) {
       HomeZoneModeAction(zones: zones, mode: .underAttack)
     }
@@ -657,6 +695,9 @@ private struct HomeQuickActionsSection: View {
         .buttonStyle(DashPressButtonStyle())
         .accessibilityIdentifier(action.accessibilityIdentifier)
         .frame(maxWidth: .infinity)
+        // Anchor for the tray's grow-out-of-the-tile reveal; the tray pairs
+        // with this tile through the same stable identifier.
+        .dashTraySource(id: action.accessibilityIdentifier)
       }
     }
   }

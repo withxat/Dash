@@ -60,6 +60,7 @@ struct FilesMountView: View {
     .dashTray(
       item: $pendingUnmountAccount,
       title: { _ in "Files" },
+      tone: FeatureVisualIdentity.tone(for: .r2),
       content: { account in
         DashConfirmableActions(actions: [unmountAction(for: account)])
       }

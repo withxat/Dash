@@ -357,6 +357,43 @@ final class DashUITests: XCTestCase {
         .waitForExistence(timeout: 5))
   }
 
+  func testProfileTrayStackMorphsCloseIntoBack() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let profile = app.buttons["header-profile-button"]
+    XCTAssertTrue(profile.waitForExistence(timeout: 5))
+    profile.press(forDuration: 0.8)
+
+    // Root step: the tray's dismissal circle is a close button.
+    let close = app.buttons["dash.tray.close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["dash.tray.back"].exists)
+
+    // Push the switch-account detail step.
+    let inactiveAccount = app.buttons["profile-account-demo-account-studio"]
+    XCTAssertTrue(Self.waitForHittable(inactiveAccount))
+    inactiveAccount.tap()
+
+    // Detail step: same circle, now a back control — and no footer Cancel
+    // whose only job is going back.
+    let back = app.buttons["dash.tray.back"]
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["dash.tray.close"].exists)
+    XCTAssertFalse(app.buttons["Cancel"].exists)
+
+    // Back pops to the root step; the tray stays presented.
+    back.tap()
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["profile-account-sign-out"].waitForExistence(timeout: 5))
+
+    // Close on the root dismisses the whole tray.
+    close.tap()
+    let dismissed = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == false"), object: close)
+    XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 5), .completed)
+  }
+
   func testDomainCardColorCanBeCustomized() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])

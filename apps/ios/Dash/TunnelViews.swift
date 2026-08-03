@@ -233,6 +233,7 @@ struct TunnelDetailView: View {
     .dashTray(
       item: $selectedHostname,
       title: { $0.trayTitle },
+      tone: FeatureVisualIdentity.tone(for: .tunnels),
       content: { row in hostnameTray(row) }
     )
   }
