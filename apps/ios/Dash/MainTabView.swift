@@ -43,12 +43,11 @@ struct MainTabView: View {
 
   init() {}
 
-  /// Every tray style currently over this canvas — the pages' trays plus the
-  /// account switcher (whose preference sits above our reader, so it's OR-ed in).
+  /// Every compact tray currently over this canvas — the pages' trays plus the
+  /// account switcher (whose preference sits above our reader, so it is OR-ed in).
   private var overlayTrays: DashTrayPresentation {
     DashTrayPresentation(
-      content: showsProfile || showsIgnoreAllAlerts || nestedTray.content,
-      large: nestedTray.large)
+      presented: showsProfile || showsIgnoreAllAlerts || nestedTray.presented)
   }
 
   private var workspaceWashPreset: DashWorkspaceWashPreset {

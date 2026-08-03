@@ -8,6 +8,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
 const WATCHTOWER_PATH = join(ROOT, "apps/ios/Dash/WatchtowerView.swift");
 const DASH_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashChrome.swift");
+const DASH_THEME_PATH = join(ROOT, "apps/ios/Dash/DashTheme.swift");
 const PROFILE_SETTINGS_PATH = join(
   ROOT,
   "apps/ios/Dash/ProfileSettingsViews.swift",
@@ -15,10 +16,26 @@ const PROFILE_SETTINGS_PATH = join(
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const watchtower = stripSwiftComments(readFileSync(WATCHTOWER_PATH, "utf8"));
 const dashChrome = stripSwiftComments(readFileSync(DASH_CHROME_PATH, "utf8"));
+const dashTheme = stripSwiftComments(readFileSync(DASH_THEME_PATH, "utf8"));
 const profileSettings = stripSwiftComments(
   readFileSync(PROFILE_SETTINGS_PATH, "utf8"),
 );
 const issues = [];
+
+for (const token of [
+  "DashSheetSizing",
+  "DashExpandableSheet",
+  "dashTrayPinsFooter",
+]) {
+  if (dashChrome.includes(token)) {
+    issues.push(`Dash tray must remain compact-only; remove legacy token ${token}.`);
+  }
+}
+for (const token of ["floatingMaxWidth", "floatingDetentFraction"]) {
+  if (dashTheme.includes(token)) {
+    issues.push(`Dash tray shell must retain its original geometry; remove ${token}.`);
+  }
+}
 
 const editorControlIDs = [
   "watchtower-customize-cancel",
@@ -352,5 +369,5 @@ if (issues.length > 0) {
 }
 
 console.log(
-  "check-ios-ui-architecture: shared Watchtower header and Profile tray footer ownership are valid",
+  "check-ios-ui-architecture: shared Watchtower header, compact Tray, and Profile footer ownership are valid",
 );

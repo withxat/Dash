@@ -284,7 +284,6 @@ struct EmailRoutingView: View {
     .dashTray(
       item: $enableTarget,
       title: { $0.title },
-      sizing: .large,
       content: { target in
         EmailRoutingEnableTray(
           zoneID: zoneID,

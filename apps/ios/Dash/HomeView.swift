@@ -192,7 +192,7 @@ struct HomeView: View {
       HomeZoneModeAction(zones: zones, mode: .underAttack)
     }
     .dashTray(
-      isPresented: $showsEditActions, title: DashL10n.string("Edit quick actions"), sizing: .large
+      isPresented: $showsEditActions, title: DashL10n.string("Edit quick actions")
     ) {
       EditHomeActionsView(selectionRaw: $actionsRaw)
     }
@@ -744,8 +744,7 @@ private struct EditHomeActionsView: View {
   }
 
   var body: some View {
-    // `.large` tray + shared selection rows. Expandable sheet supplies the
-    // same Sheet.content / bodyBottom insets as `.content` Edit shortcuts.
+    // Quick actions and shortcuts share the same compact tray and selection rows.
     DashFormSheet(saveTitle: DashL10n.string("Done"), onSave: dismiss) {
       HomeEditSelectionList(items: Array(HomeActionID.allCases)) { action in
         let isSelected = selection.contains(action)

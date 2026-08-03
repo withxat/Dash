@@ -543,9 +543,8 @@ struct DashActionButton: View {
   }
 
   private var label: some View {
-    // Fixed height — not `minHeight`. In `.large` trays `DashConfirmMorph` pins
-    // the footer inside an infinitely tall VStack, so a loose min would stretch
-    // Done into a full-height slab (Edit quick actions).
+    // Fixed height — not `minHeight` — so the primary action never stretches
+    // when its content sits inside a bounded, scrolling compact tray.
     let face =
       enamelFace
       .frame(maxWidth: .infinity)

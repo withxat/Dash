@@ -1669,124 +1669,28 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(SolarAsset.Content.all.allSatisfy { $0.hasSuffix("Fill") })
 }
 
-@Test func contentTrayDragDecisionUsesRelativeDistanceVelocityAndIntentFloor() {
-  let trayHeight: CGFloat = 400
-
+@Test func compactTrayDragDecisionUsesOriginalProjectionThresholds() {
   #expect(
-    TrayDragDecision.content(
-      translation: 99, predictedEndTranslation: 99, velocity: 0, trayHeight: trayHeight
-    ) == .settle)
+    TrayDragDecision.content(translation: 40, predictedEndTranslation: 40) == .settle)
   #expect(
-    TrayDragDecision.content(
-      translation: 100, predictedEndTranslation: 100, velocity: 0, trayHeight: trayHeight
-    ) == .dismiss)
+    TrayDragDecision.content(translation: 120, predictedEndTranslation: 120) == .settle)
   #expect(
-    TrayDragDecision.content(
-      translation: 8, predictedEndTranslation: 200, velocity: 399, trayHeight: trayHeight
-    ) == .settle)
+    TrayDragDecision.content(translation: 121, predictedEndTranslation: 121) == .dismiss)
   #expect(
-    TrayDragDecision.content(
-      translation: 8, predictedEndTranslation: 200, velocity: 400, trayHeight: trayHeight
-    ) == .dismiss)
+    TrayDragDecision.content(translation: 32, predictedEndTranslation: 161) == .dismiss)
   #expect(
-    TrayDragDecision.content(
-      translation: 7, predictedEndTranslation: 1_000, velocity: 2_000, trayHeight: trayHeight
-    ) == .settle)
+    TrayDragDecision.content(translation: 31, predictedEndTranslation: 1_000) == .settle)
 }
 
-@Test func contentTrayDragOffsetTracksDownwardAndDampensUpward() {
-  #expect(TrayDragDecision.contentOffset(translation: 42) == 42)
-
-  let shallow = TrayDragDecision.contentOffset(translation: -8)
-  let deep = TrayDragDecision.contentOffset(translation: -80)
-  #expect(abs(shallow - (-8 * CGFloat(log1p(Double(1))))) < 0.001)
-  #expect(deep < shallow)
-  #expect(deep > -80)
+@Test func compactTrayUpwardDragUsesOriginalFixedFrictionRubberBand() {
+  #expect(TrayDragDecision.rubberBand(cardTop: -100, expandedTop: 0) == -15)
+  #expect(TrayDragDecision.rubberBand(cardTop: 42, expandedTop: 0) == 42)
 }
 
-@Test func contentTrayScrimFollowsPresentationAndDownwardDrag() {
-  #expect(
-    TrayDragDecision.scrimProgress(presentation: 1, drag: 0, trayHeight: 400) == 1)
-  #expect(
-    TrayDragDecision.scrimProgress(presentation: 1, drag: 100, trayHeight: 400) == 0.75)
-  #expect(
-    TrayDragDecision.scrimProgress(presentation: 0.5, drag: 100, trayHeight: 400) == 0.375)
-  #expect(
-    TrayDragDecision.scrimProgress(presentation: 1, drag: 400, trayHeight: 400) == 0)
-  #expect(
-    TrayDragDecision.scrimProgress(presentation: 1, drag: -40, trayHeight: 400) == 1)
-}
-
-@Test func contentTraySpringVelocityIsNormalizedTowardItsTarget() {
-  #expect(
-    TrayDragDecision.normalizedSpringVelocity(
-      pointsPerSecond: 500, from: 100, to: 0
-    ) == -5)
-  #expect(
-    TrayDragDecision.normalizedSpringVelocity(
-      pointsPerSecond: 500, from: 100, to: 400
-    ) == 5.0 / 3.0)
-  #expect(
-    TrayDragDecision.normalizedSpringVelocity(
-      pointsPerSecond: 500, from: 100, to: 100
-    ) == 0)
-}
-
-@Test func floatingTrayGeometryUsesFamilyWidthAndPhysicalEdgeMargin() {
-  #expect(DashTrayGeometry.floatingWidth(containerWidth: 393) == 361)
-  #expect(DashTrayGeometry.floatingHorizontalMargin(containerWidth: 393) == 16)
-  #expect(DashTrayGeometry.floatingWidth(containerWidth: 430) == 361)
-  #expect(DashTrayGeometry.floatingHorizontalMargin(containerWidth: 430) == 34.5)
-  #expect(DashTrayGeometry.bottomLift(safeAreaBottom: 0) == 16)
-  #expect(DashTrayGeometry.bottomLift(safeAreaBottom: 34) == -18)
-}
-
-@Test func expandableTraySlowSmallDragsDoNotDismiss() {
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .expanded, translation: 60, predictedEndTranslation: 140, velocity: 320,
-      expandedTop: 80, floatingTop: 400
-    ) == .settleExpanded(true))
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .floating, translation: 60, predictedEndTranslation: 140, velocity: 320,
-      expandedTop: 80, floatingTop: 400
-    ) == .settleExpanded(false))
-}
-
-@Test func expandableTrayFastFlickUsesStartingDetent() {
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .floating, translation: 40, predictedEndTranslation: 300, velocity: 1_040,
-      expandedTop: 80, floatingTop: 400
-    ) == .dismiss)
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .expanded, translation: 40, predictedEndTranslation: 300, velocity: 1_040,
-      expandedTop: 80, floatingTop: 400
-    ) == .settleExpanded(false))
-}
-
-@Test func expandableTrayDeliberatePullUsesDistancePastFloatingDetent() {
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .floating, translation: 130, predictedEndTranslation: 130, velocity: 0,
-      expandedTop: 80, floatingTop: 400
-    ) == .dismiss)
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .expanded, translation: 130, predictedEndTranslation: 430, velocity: 1_200,
-      expandedTop: 80, floatingTop: 400
-    ) == .settleExpanded(false))
-  #expect(
-    TrayDragDecision.expandable(
-      startDetent: .expanded, translation: 450, predictedEndTranslation: 450, velocity: 0,
-      expandedTop: 80, floatingTop: 400
-    ) == .dismiss)
-}
-
-@Test func trayDragRubberBandsAboveExpandedDetent() {
-  #expect(TrayDragDecision.rubberBand(cardTop: 50, expandedTop: 80) == 75.5)
+@Test func compactTrayRestoresOriginalShellTokens() {
+  #expect(DashTheme.Sheet.floatingMargin == 12)
+  #expect(DashTheme.Sheet.floatingBottomTuck == 6)
+  #expect(DashTheme.Sheet.scrimOpacity == 0.35)
 }
 
 @Test func profileTrayPhaseTitlesStayLocalizedCatalogKeys() {
@@ -3580,35 +3484,25 @@ private actor ZoneSecurityLevelTestLatch {
   // Any open tray displaces the dock so the card can slide up cleanly.
   #expect(
     shouldHideTabBar(
-      overlays: DashTrayPresentation(content: true), navigationDepth: 0))
-  #expect(
-    shouldHideTabBar(
-      overlays: DashTrayPresentation(large: true), navigationDepth: 0))
+      overlays: DashTrayPresentation(presented: true), navigationDepth: 0))
   #expect(shouldHideTabBar(overlays: DashTrayPresentation(), navigationDepth: 1))
   #expect(
     shouldHideTabBar(
-      overlays: DashTrayPresentation(content: true), navigationDepth: 2))
+      overlays: DashTrayPresentation(presented: true), navigationDepth: 2))
   #expect(!shouldHideTabBar(overlays: DashTrayPresentation(), navigationDepth: 0))
 }
 
 @Test func headerAvatarHidesForAnyOverlayOrPush() {
   #expect(
     shouldHideHeaderAvatar(
-      overlays: DashTrayPresentation(content: true), navigationDepth: 0))
-  #expect(
-    shouldHideHeaderAvatar(
-      overlays: DashTrayPresentation(large: true), navigationDepth: 0))
+      overlays: DashTrayPresentation(presented: true), navigationDepth: 0))
   #expect(shouldHideHeaderAvatar(overlays: DashTrayPresentation(), navigationDepth: 1))
   #expect(!shouldHideHeaderAvatar(overlays: DashTrayPresentation(), navigationDepth: 0))
 }
 
-@Test func trayPresentationMergesStylesFromSizing() {
-  let content = DashTrayPresentation(sizing: .content, isPresented: true)
-  #expect(content.content && !content.large && content.presented)
-  let large = DashTrayPresentation(sizing: .large, isPresented: true)
-  #expect(large.large && !large.content && large.presented)
-  let closed = DashTrayPresentation(sizing: .content, isPresented: false)
-  #expect(!closed.presented)
+@Test func trayPresentationHasOneCompactState() {
+  #expect(DashTrayPresentation(presented: true).presented)
+  #expect(!DashTrayPresentation().presented)
 }
 
 @MainActor

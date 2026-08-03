@@ -91,26 +91,12 @@ struct DashConfirmMorph<Content: View>: View {
   var headerDelete = false
   var headerDeleteAction: (() -> Void)? = nil
   @ViewBuilder var content: () -> Content
-  @Environment(\.dashTrayPinsFooter) private var pinsFooter
 
   private var stepRole: DashTrayStepRole { confirming ? .destructive : .root }
 
   var body: some View {
     VStack(spacing: 0) {
-      Group {
-        if pinsFooter {
-          DashFadedScrollView(
-            surface: DashTheme.Sheet.background,
-            bounceBasedOnSize: true
-          ) {
-            bodyContent
-              .frame(maxWidth: .infinity, alignment: .top)
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        } else {
-          bodyContent
-        }
-      }
+      bodyContent
 
       // Keep the route host alive even when a detail tray has no idle footer.
       // Its root route is zero-height, but retaining it lets Delete animate in
@@ -118,11 +104,7 @@ struct DashConfirmMorph<Content: View>: View {
       actionContent
         .padding(.top, confirming || actionTitle != nil ? 16 : 0)
     }
-    .frame(
-      maxWidth: .infinity,
-      maxHeight: pinsFooter ? .infinity : nil,
-      alignment: .top
-    )
+    .frame(maxWidth: .infinity, alignment: .top)
     .dashTrayHeaderAction(
       headerDelete && !confirming && !actionPhase.isActive
         ? DashSheetHeaderAction(
