@@ -103,6 +103,8 @@ const OUTLINE_ICONS = {
 	SolarSettingsMinimalisticOutline: 'settings/Linear/SettingsMinimalistic',
 	SolarAltArrowRightOutline: 'arrows/Linear/AltArrowRight',
 	SolarAltArrowLeftOutline: 'arrows/Linear/AltArrowLeft',
+	/// External-destination affordance (Settings privacy / terms / feedback).
+	SolarArrowRightUpOutline: 'arrows/Linear/ArrowRightUp',
 	SolarDangerTriangleOutline: 'ui/Linear/DangerTriangle',
 	SolarCodeCircleOutline: 'it/Linear/CodeCircle',
 	/// Bare `</>` brackets — no square frame (Home Workers quick action).
@@ -125,6 +127,9 @@ const OUTLINE_ICONS = {
 
 const OUTLINE_STROKE_WIDTHS = {
 	SolarAltArrowRightOutline: '2.5',
+	// Match the row chevron's heavier stroke so the external mark sits at the
+	// same visual weight as the in-app disclosure arrow it replaces.
+	SolarArrowRightUpOutline: '2.5',
 }
 
 /**

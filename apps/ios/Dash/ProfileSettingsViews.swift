@@ -233,6 +233,8 @@ struct SettingsPlainRow<Accessory: View>: View {
   var trailing: String?
   var trailingIcon: String?
   var showsChevron = false
+  /// Leaves the app (Safari / Mail) — arrow-right-up, not the in-app chevron.
+  var showsExternalLink = false
   private let hasAccessory: Bool
   @ViewBuilder let accessory: () -> Accessory
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -255,6 +257,7 @@ struct SettingsPlainRow<Accessory: View>: View {
     trailing: String? = nil,
     trailingIcon: String? = nil,
     showsChevron: Bool = false,
+    showsExternalLink: Bool = false,
     hasAccessory: Bool = true,
     @ViewBuilder accessory: @escaping () -> Accessory
   ) {
@@ -266,6 +269,7 @@ struct SettingsPlainRow<Accessory: View>: View {
     self.trailing = trailing
     self.trailingIcon = trailingIcon
     self.showsChevron = showsChevron
+    self.showsExternalLink = showsExternalLink
     self.hasAccessory = hasAccessory
     self.accessory = accessory
   }
@@ -296,6 +300,7 @@ struct SettingsPlainRow<Accessory: View>: View {
 
   private var hasTrailingContent: Bool {
     hasAccessory || trailing != nil || trailingIcon != nil || showsChevron
+      || showsExternalLink
   }
 
   private var label: some View {
@@ -326,6 +331,12 @@ struct SettingsPlainRow<Accessory: View>: View {
       }
       if let trailingIcon {
         SolarIcon(asset: trailingIcon, size: 20, color: DashTheme.placeholder)
+      } else if showsExternalLink {
+        SolarIcon(
+          asset: SolarAsset.arrowRightUp,
+          size: DashTheme.Chevron.row,
+          color: DashTheme.placeholder
+        )
       } else if showsChevron {
         SolarIcon(
           asset: SolarAsset.chevronRight,
@@ -350,7 +361,8 @@ extension SettingsPlainRow where Accessory == EmptyView {
     textColor: Color = DashTheme.text,
     trailing: String? = nil,
     trailingIcon: String? = nil,
-    showsChevron: Bool = false
+    showsChevron: Bool = false,
+    showsExternalLink: Bool = false
   ) {
     self.init(
       title: title,
@@ -361,6 +373,7 @@ extension SettingsPlainRow where Accessory == EmptyView {
       trailing: trailing,
       trailingIcon: trailingIcon,
       showsChevron: showsChevron,
+      showsExternalLink: showsExternalLink,
       hasAccessory: false,
       accessory: { EmptyView() }
     )
@@ -820,7 +833,7 @@ struct SettingsView: View {
       SettingsPlainRow(
         title: title,
         icon: icon,
-        showsChevron: true
+        showsExternalLink: true
       )
     }
     .buttonStyle(DashSurfaceButtonStyle())
@@ -1158,7 +1171,7 @@ struct AboutView: View {
               title: "GitHub",
               icon: SolarAsset.code,
               trailing: "@withxat",
-              showsChevron: true
+              showsExternalLink: true
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())
@@ -1169,7 +1182,7 @@ struct AboutView: View {
               title: "X",
               icon: SolarAsset.globus,
               trailing: "@withxat",
-              showsChevron: true
+              showsExternalLink: true
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())
@@ -1283,8 +1296,8 @@ private struct OpenSourceLicenseBadge: View {
   }
 }
 
-/// One tappable credit row: name + "purpose · author", a license badge, and a
-/// chevron. Tapping opens the repository in the browser.
+/// One tappable credit row: name + "purpose · author", a license badge, and an
+/// external-link mark. Tapping opens the repository in the browser.
 private struct OpenSourceCreditRow: View {
   let credit: OpenSourceCredit
   @Environment(\.openURL) private var openURL
@@ -1295,9 +1308,17 @@ private struct OpenSourceCreditRow: View {
     } label: {
       DashListRow(
         title: credit.name,
-        subtitle: "\(DashL10n.ui(credit.purpose)) · \(credit.author)"
+        subtitle: "\(DashL10n.ui(credit.purpose)) · \(credit.author)",
+        showsChevron: false
       ) {
-        OpenSourceLicenseBadge(license: credit.license)
+        HStack(spacing: 8) {
+          OpenSourceLicenseBadge(license: credit.license)
+          SolarIcon(
+            asset: SolarAsset.arrowRightUp,
+            size: DashTheme.Chevron.row,
+            color: DashTheme.placeholder
+          )
+        }
       }
     }
     .buttonStyle(DashSurfaceButtonStyle())

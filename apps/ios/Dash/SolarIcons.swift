@@ -49,6 +49,8 @@ enum SolarAsset {
 
   static let arrowRightUpBold = "SolarArrowRightUpBold"
   static let arrowRightDownBold = "SolarArrowRightDownBold"
+  /// Linear external-link mark (Settings rows that leave the app).
+  static let arrowRightUp = "SolarArrowRightUpOutline"
   static let chevronRight = "SolarAltArrowRightOutline"
   static let chevronLeft = "SolarAltArrowLeftOutline"
   static let cloud = "SolarCloudOutline"
