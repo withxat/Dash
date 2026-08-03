@@ -416,7 +416,7 @@ struct MainTabView: View {
         if showsWatchtowerEditorHeader {
           DashToolbarIconButton(
             asset: SolarAsset.editClose,
-            accessibilityLabel: "Cancel"
+            accessibilityLabel: DashL10n.string("Cancel")
           ) {
             watchtowerCancelRequest &+= 1
           }
@@ -447,7 +447,7 @@ struct MainTabView: View {
               .workspaceHeaderGlassID(.trailingSecondary, in: workspaceHeaderGlass)
             DashToolbarIconButton(
               asset: SolarAsset.unread,
-              accessibilityLabel: "Done",
+              accessibilityLabel: DashL10n.string("Done"),
               variant: .confirmation
             ) {
               watchtowerCommitRequest &+= 1

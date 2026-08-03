@@ -47,6 +47,7 @@ struct EmailRoutingDomainsView: View {
                 StatusBadge(token)
               }
             }
+            .accessibilityLabel(emailRoutingDomainAccessibilityLabel(zone: zone, token: token))
           }
         }
       }
@@ -170,6 +171,16 @@ struct EmailRoutingDomainsView: View {
       }
       statusByZoneID = next
     }
+  }
+
+  private func emailRoutingDomainAccessibilityLabel(
+    zone: CloudflareZone, token: StatusToken?
+  ) -> String {
+    var parts = [zone.name, DashL10n.string("Email routing")]
+    if let token, token != .disabled {
+      parts.append(StatusBadge.accessibilityText(for: token))
+    }
+    return parts.joined(separator: ", ")
   }
 }
 
@@ -488,6 +499,7 @@ struct EmailRoutingView: View {
           }
         }
         .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel(emailRoutingRouteAccessibilityLabel(rule))
       }
       if pageState.canLoadMore || loadMorePhase.isActive {
         DashLoadMoreFooter(
@@ -519,6 +531,28 @@ struct EmailRoutingView: View {
     default:
       return nil
     }
+  }
+
+  private func emailRoutingRouteAccessibilityLabel(_ rule: EmailRoutingRule) -> String {
+    var parts = [routeTitle(rule)]
+    if let subtitle = routeSubtitle(rule) {
+      parts.append(subtitle)
+    }
+    if let token = routeBadge(rule) {
+      parts.append(StatusBadge.accessibilityText(for: token))
+    }
+    return parts.joined(separator: ", ")
+  }
+
+  private func manageAddressesAccessibilityLabel() -> String {
+    var parts = [DashL10n.string("Manage addresses")]
+    if let subtitle = addressesSubtitle {
+      parts.append(subtitle)
+    }
+    if unverifiedAddressCount > 0 {
+      parts.append(StatusBadge.accessibilityText(for: .unverified))
+    }
+    return parts.joined(separator: ", ")
   }
 
   /// Badge precedence, decided here and nowhere else: ownership beats state,
@@ -691,6 +725,7 @@ struct EmailRoutingView: View {
             StatusBadge(.unverified)
           }
         }
+        .accessibilityLabel(manageAddressesAccessibilityLabel())
       }
     }
     .dashSectionBoundary()

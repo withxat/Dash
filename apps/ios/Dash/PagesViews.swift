@@ -886,7 +886,9 @@ struct PagesDomainsView: View {
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         if featureAllowsWrites {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "Add domain") {
+          DashToolbarIconButton(
+            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("Add domain")
+          ) {
             addsDomain = true
           }
         }

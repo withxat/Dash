@@ -511,4 +511,92 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["User ID"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Registered"].waitForExistence(timeout: 5))
   }
+
+  func testResourcesR2OpensBucketListAndPopsBack() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let r2 = app.buttons["feature-r2"]
+    XCTAssertTrue(Self.waitForHittable(r2))
+    r2.tap()
+
+    let assetsBucket = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH[c] %@", "assets,")
+    ).firstMatch
+    XCTAssertTrue(assetsBucket.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+
+    let back = app.buttons["Back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+  }
+
+  func testSettingsExperimentalShowsTunnelsToggle() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let profile = app.buttons["header-profile-button"]
+    XCTAssertTrue(profile.waitForExistence(timeout: 5))
+    profile.tap()
+
+    let tunnelsToggle = app.switches["settings-experimental-tunnels"]
+    for _ in 0..<6 where !tunnelsToggle.exists {
+      app.swipeUp()
+    }
+    XCTAssertTrue(tunnelsToggle.waitForExistence(timeout: 5))
+    XCTAssertTrue(Self.waitForHittable(tunnelsToggle))
+  }
+
+  func testResourcesRegistrarCatalogOpens() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let registrar = app.buttons["feature-registrar"]
+    XCTAssertTrue(Self.waitForHittable(registrar))
+    registrar.tap()
+
+    let exampleDomain = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+
+    let back = app.buttons["Back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+  }
+
+  func testResourcesEmailRoutingCatalogOpens() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let emailRouting = app.buttons["feature-emailRouting"]
+    XCTAssertTrue(Self.waitForHittable(emailRouting))
+    emailRouting.tap()
+
+    let exampleDomain = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+
+    let back = app.buttons["Back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+  }
 }

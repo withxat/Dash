@@ -340,7 +340,7 @@ struct PushAlertsView: View {
       ToolbarItem(placement: .topBarTrailing) {
         if allowsWrites, storedWebhookID != nil {
           DashToolbarIconButton(
-            asset: SolarAsset.plus, accessibilityLabel: "Create alert policy"
+            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("Create alert policy")
           ) {
             creatingPolicy = true
           }

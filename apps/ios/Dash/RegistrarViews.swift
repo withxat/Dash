@@ -426,6 +426,7 @@ struct RegistrarDomainsView: View {
                 StatusBadge(token)
               }
             }
+            .accessibilityLabel(registrarDomainAccessibilityLabel(domain))
           }
         }
       }
@@ -1012,6 +1013,17 @@ enum RegistryStatusVocabulary {
 /// a single catalog key localizes it — and so the zone screen's Registration
 /// card and the registrar screen's Registry status never spell the same code two
 /// ways.
+private func registrarDomainAccessibilityLabel(_ domain: RegistrarDomainSummary) -> String {
+  var parts = [domain.name]
+  if let subtitle = domain.expiresSubtitle {
+    parts.append(subtitle)
+  }
+  if let token = domain.statusToken, token != .registered {
+    parts.append(StatusBadge.accessibilityText(for: token))
+  }
+  return parts.joined(separator: ", ")
+}
+
 func rdapStatusLabel(_ raw: String) -> String {
   if let known = RegistryStatusVocabulary.labels[RegistryStatusVocabulary.key(raw)] {
     return DashL10n.ui(known)

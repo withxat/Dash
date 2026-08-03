@@ -269,7 +269,7 @@ struct R2BucketView: View {
           if selecting {
             DashToolbarIconButton(
               asset: SolarAsset.close,
-              accessibilityLabel: "Done selecting"
+              accessibilityLabel: DashL10n.string("Done selecting")
             ) {
               withAnimation(DashTheme.Motion.morph) {
                 selecting = false
@@ -282,7 +282,7 @@ struct R2BucketView: View {
             // button and shoves the principal title left.
             if featureAllowsWrites {
               DashToolbarIconButton(
-                asset: SolarAsset.upload, accessibilityLabel: "Upload file"
+                asset: SolarAsset.upload, accessibilityLabel: DashL10n.string("Upload file")
               ) {
                 importsFile = true
               }
@@ -1237,7 +1237,7 @@ struct KVNamespacesView: View {
             onNavigate: { recordRecent(namespace) }
           ) {
             DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
-              .accessibilityLabel("\(namespace.title), KV namespace")
+              .accessibilityLabel(DashL10n.string("\(namespace.title), KV namespace"))
           }
         }
       }
@@ -1353,7 +1353,7 @@ struct KVNamespaceView: View {
           DashListGroupLink(value: .kvKey(namespaceID: namespaceID, key: key.name)) {
             DashListRow(title: key.name, icon: SolarAsset.Content.key)
           }
-          .accessibilityLabel(key.name)
+          .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
         }
       }
       if !mode.isPlaceholder, canLoadMore || loadMorePhase.isActive {
@@ -1747,6 +1747,7 @@ struct KVCreateKeySheet: View {
             }
             .buttonStyle(DashPressButtonStyle())
             .disabled(!canFormat)
+            .accessibilityLabel(DashL10n.string("Format"))
           }
         }
         .disabled(actionPhase.isActive)
@@ -1911,7 +1912,7 @@ struct KVKeyDetailView: View {
                 // failure has something to veil over.
                 editorSkeleton(height: editorHeight(in: geo))
                   .accessibilityElement(children: .ignore)
-                  .accessibilityLabel("Loading")
+                  .accessibilityLabel(DashL10n.string("Loading"))
               }
             }
 
@@ -1976,6 +1977,7 @@ struct KVKeyDetailView: View {
           withAnimation(DashTheme.Motion.morph) { copied = false }
         }
       }
+      .accessibilityLabel(copied ? DashL10n.string("Copied") : DashL10n.string("Copy"))
     case .editing:
       HStack(spacing: 10) {
         Button {
@@ -1991,6 +1993,7 @@ struct KVKeyDetailView: View {
             .frame(maxWidth: .infinity, minHeight: 44)
         }
         .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(DashL10n.string("Cancel"))
 
         Button {
           if let pretty = KVJSONFormatting.prettyPrintedForDisplay(value) {
@@ -2004,6 +2007,7 @@ struct KVKeyDetailView: View {
         }
         .buttonStyle(DashPressButtonStyle())
         .disabled(!canFormat)
+        .accessibilityLabel(DashL10n.string("Format"))
       }
     }
   }

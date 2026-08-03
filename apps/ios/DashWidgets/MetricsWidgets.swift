@@ -16,50 +16,54 @@ private func widgetIntentVerbatim(_ value: String) -> LocalizedStringResource {
 
 extension MetricsWidgetRange: AppEnum {
   static var typeDisplayRepresentation: TypeDisplayRepresentation {
-    TypeDisplayRepresentation(name: "Range")
+    TypeDisplayRepresentation(name: LocalizedStringResource("Range"))
   }
 
   static var caseDisplayRepresentations: [MetricsWidgetRange: DisplayRepresentation] {
     [
-      .day: "24h",
-      .week: "7d",
-      .month: "30d",
+      .day: DisplayRepresentation(title: LocalizedStringResource("24h")),
+      .week: DisplayRepresentation(title: LocalizedStringResource("7d")),
+      .month: DisplayRepresentation(title: LocalizedStringResource("30d")),
     ]
   }
 }
 
 extension AccountMetricsWidgetMetric: AppEnum {
   static var typeDisplayRepresentation: TypeDisplayRepresentation {
-    TypeDisplayRepresentation(name: "Metric")
+    TypeDisplayRepresentation(name: LocalizedStringResource("Metric"))
   }
 
   static var caseDisplayRepresentations: [AccountMetricsWidgetMetric: DisplayRepresentation] {
     [
-      .workerInvocations: "Worker Invocations",
-      .workerErrors: "Workers Errors",
-      .cpuTime: "CPU Time",
-      .webTraffic: "Web Traffic",
-      .totalBandwidth: "Total Bandwidth",
-      .cacheRate: "Cache Rate",
-      .clientRequestErrors: "Client Request Errors",
-      .encryptedRequestsRate: "Encrypted Requests Rate",
-      .encryptedBandwidth: "Encrypted Bandwidth",
+      .workerInvocations: DisplayRepresentation(
+        title: LocalizedStringResource("Worker Invocations")),
+      .workerErrors: DisplayRepresentation(title: LocalizedStringResource("Workers Errors")),
+      .cpuTime: DisplayRepresentation(title: LocalizedStringResource("CPU Time")),
+      .webTraffic: DisplayRepresentation(title: LocalizedStringResource("Web Traffic")),
+      .totalBandwidth: DisplayRepresentation(title: LocalizedStringResource("Total Bandwidth")),
+      .cacheRate: DisplayRepresentation(title: LocalizedStringResource("Cache Rate")),
+      .clientRequestErrors: DisplayRepresentation(
+        title: LocalizedStringResource("Client Request Errors")),
+      .encryptedRequestsRate: DisplayRepresentation(
+        title: LocalizedStringResource("Encrypted Requests Rate")),
+      .encryptedBandwidth: DisplayRepresentation(
+        title: LocalizedStringResource("Encrypted Bandwidth")),
     ]
   }
 }
 
 extension DomainMetricsWidgetMetric: AppEnum {
   static var typeDisplayRepresentation: TypeDisplayRepresentation {
-    TypeDisplayRepresentation(name: "Metric")
+    TypeDisplayRepresentation(name: LocalizedStringResource("Metric"))
   }
 
   static var caseDisplayRepresentations: [DomainMetricsWidgetMetric: DisplayRepresentation] {
     [
-      .requests: "Requests",
-      .bandwidth: "Bandwidth",
-      .cacheRate: "Cache Rate",
-      .threats: "Threats",
-      .uniqueVisitors: "Unique visitors",
+      .requests: DisplayRepresentation(title: LocalizedStringResource("Requests")),
+      .bandwidth: DisplayRepresentation(title: LocalizedStringResource("Bandwidth")),
+      .cacheRate: DisplayRepresentation(title: LocalizedStringResource("Cache Rate")),
+      .threats: DisplayRepresentation(title: LocalizedStringResource("Threats")),
+      .uniqueVisitors: DisplayRepresentation(title: LocalizedStringResource("Unique visitors")),
     ]
   }
 }

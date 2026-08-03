@@ -60,7 +60,7 @@ struct ZonesView: View {
         ToolbarItem(placement: .topBarTrailing) {
           DashToolbarIconButton(
             asset: SolarAsset.plus,
-            accessibilityLabel: "Add domain"
+            accessibilityLabel: DashL10n.string("Add domain")
           ) {
             beginAddDomain()
           }
@@ -341,7 +341,7 @@ struct ZoneDetailView: View {
         ToolbarItem(placement: .topBarLeading) {
           DashToolbarIconButton(
             asset: SolarAsset.editClose,
-            accessibilityLabel: "Cancel",
+            accessibilityLabel: DashL10n.string("Cancel"),
             action: cancelCardCustomize
           )
           .disabled(isExitingCardCustomize)
@@ -351,7 +351,7 @@ struct ZoneDetailView: View {
         ToolbarItem(placement: .topBarTrailing) {
           DashToolbarIconButton(
             asset: SolarAsset.unread,
-            accessibilityLabel: "Done",
+            accessibilityLabel: DashL10n.string("Done"),
             variant: .confirmation,
             action: saveCardCustomize
           )
@@ -1444,7 +1444,9 @@ struct DNSRecordsView: View {
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         if featureAllowsWrites {
-          DashToolbarIconButton(asset: SolarAsset.plus, accessibilityLabel: "New DNS record") {
+          DashToolbarIconButton(
+            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("New DNS record")
+          ) {
             createsRecord = true
           }
         }

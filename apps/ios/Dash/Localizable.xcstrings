@@ -35,6 +35,22 @@
         }
       }
     },
+    "%@ · …%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · …%2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · …%2$@"
+          }
+        }
+      }
+    },
     "%@ days" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -150,6 +166,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ 超过了 100 MB 上传限制。"
+          }
+        }
+      }
+    },
+    "%@ is over the 50 MB share-sheet limit. Upload it from Dash instead." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ is over the 50 MB share-sheet limit. Upload it from Dash instead."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ 超过 50 MB 共享表单限制。请在 Dash 中上传。"
           }
         }
       }
@@ -285,6 +317,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@，KV 命名空间"
+          }
+        }
+      }
+    },
+    "%@, KV key" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@, KV key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@，KV 键"
           }
         }
       }
@@ -990,6 +1038,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "账户 ID，%@"
+          }
+        }
+      }
+    },
+    "Account …%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account …%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "账户 …%1$@"
           }
         }
       }
@@ -2968,7 +3032,6 @@
       }
     },
     "Close" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2991,6 +3054,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cloudflare"
+          }
+        }
+      }
+    },
+    "Cloudflare account" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare account"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare 账户"
           }
         }
       }
@@ -4130,7 +4209,6 @@
       }
     },
     "Create alert policy" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4484,6 +4562,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dash 暂时无法确认结果，将在回到前台后再次检查。"
+          }
+        }
+      }
+    },
+    "Dash couldn't prepare the shared files." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash couldn't prepare the shared files."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 无法准备共享的文件。"
           }
         }
       }
@@ -5749,7 +5843,6 @@
       }
     },
     "Done selecting" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8476,7 +8569,6 @@
       }
     },
     "New DNS record" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -8806,6 +8898,22 @@
         }
       }
     },
+    "No R2 buckets found in this account." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No R2 buckets found in this account."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此账户中未找到 R2 存储桶。"
+          }
+        }
+      }
+    },
     "No registered domains" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8965,6 +9073,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "提示"
+          }
+        }
+      }
+    },
+    "Nothing Dash can upload was shared." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing Dash can upload was shared."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未共享 Dash 可上传的内容。"
           }
         }
       }
@@ -12344,6 +12468,22 @@
         }
       }
     },
+    "Sign in to Dash first, then share again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to Dash first, then share again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先登录 Dash，然后再次共享。"
+          }
+        }
+      }
+    },
     "Sign out" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12870,6 +13010,70 @@
         }
       }
     },
+    "The active Cloudflare account changed while this sheet was open. Close it and share again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The active Cloudflare account changed while this sheet was open. Close it and share again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此表单打开期间活跃 Cloudflare 账户已变更。请关闭后重新共享。"
+          }
+        }
+      }
+    },
+    "The active Cloudflare account changed, so Dash stopped after %lld file. Check %@ before sharing again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The active Cloudflare account changed, so Dash stopped after %1$lld file. Check %2$@ before sharing again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活跃 Cloudflare 账户已变更，Dash 在上传 %1$lld 个文件后停止。请确认 %2$@ 后再共享。"
+          }
+        }
+      }
+    },
+    "The active Cloudflare account changed, so Dash stopped after %lld files. Check %@ before sharing again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The active Cloudflare account changed, so Dash stopped after %1$lld files. Check %2$@ before sharing again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活跃 Cloudflare 账户已变更，Dash 在上传 %1$lld 个文件后停止。请确认 %2$@ 后再共享。"
+          }
+        }
+      }
+    },
+    "The active Cloudflare account changed. Close this sheet and share again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The active Cloudflare account changed. Close this sheet and share again."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "活跃 Cloudflare 账户已变更。请关闭此表单后重新共享。"
+          }
+        }
+      }
+    },
     "The active account changed before the upload finished." : {
       "localizations" : {
         "zh-Hans" : {
@@ -12979,6 +13183,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "首页中的三个快捷操作，现可从主屏幕直接使用。"
+          }
+        }
+      }
+    },
+    "This batch is over the 100 MB share-sheet limit. Share fewer images at a time." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This batch is over the 100 MB share-sheet limit. Share fewer images at a time."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此批次超过 100 MB 共享表单限制。请一次共享更少图片。"
           }
         }
       }

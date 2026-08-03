@@ -74,9 +74,11 @@ final class ShareUploadModel {
   var accountName = ""
 
   var accountLabel: String {
-    guard let accountID else { return "Cloudflare account" }
+    guard let accountID else { return DashL10n.string("Cloudflare account") }
     let suffix = String(accountID.suffix(8))
-    return accountName.isEmpty ? "Account …\(suffix)" : "\(accountName) · …\(suffix)"
+    return accountName.isEmpty
+      ? DashL10n.string("Account …\(suffix)")
+      : DashL10n.string("\(accountName) · …\(suffix)")
   }
 
   private let tokenStore = KeychainTokenStore()
@@ -133,7 +135,7 @@ final class ShareUploadModel {
       prefix = destination.prefix
     }
     guard let stagingDirectory = Self.makeStagingDirectory() else {
-      phase = .failed("Dash couldn't prepare the shared files.")
+      phase = .failed(DashL10n.string("Dash couldn't prepare the shared files."))
       return
     }
     self.stagingDirectory = stagingDirectory
@@ -148,18 +150,20 @@ final class ShareUploadModel {
     if let oversizedName = loaded.oversizedNames.first {
       cleanupStaging()
       phase = .failed(
-        "\(oversizedName) is over the 50 MB share-sheet limit. Upload it from Dash instead.")
+        DashL10n.string(
+          "\(oversizedName) is over the 50 MB share-sheet limit. Upload it from Dash instead."))
       return
     }
     if loaded.exceedsTotalLimit {
       cleanupStaging()
       phase = .failed(
-        "This batch is over the 100 MB share-sheet limit. Share fewer images at a time.")
+        DashL10n.string(
+          "This batch is over the 100 MB share-sheet limit. Share fewer images at a time."))
       return
     }
     if attachments.isEmpty {
       cleanupStaging()
-      phase = .failed("Nothing Dash can upload was shared.")
+      phase = .failed(DashL10n.string("Nothing Dash can upload was shared."))
       return
     }
     accountName =
@@ -175,14 +179,16 @@ final class ShareUploadModel {
     guard R2ShareDestination.isActiveAccount(accountID) else {
       cleanupStaging()
       phase = .failed(
-        "The active Cloudflare account changed while this sheet was open. Close it and share again."
+        DashL10n.string(
+          "The active Cloudflare account changed while this sheet was open. Close it and share again."
+        )
       )
       return
     }
     if bucket.isEmpty { bucket = buckets.first?.name ?? "" }
     if bucket.isEmpty {
       cleanupStaging()
-      phase = .failed("No R2 buckets found in this account.")
+      phase = .failed(DashL10n.string("No R2 buckets found in this account."))
     } else {
       phase = .ready
     }
@@ -257,7 +263,8 @@ final class ShareUploadModel {
       guard item.size <= Self.perItemSizeLimit else {
         cleanupStaging()
         phase = .failed(
-          "\(item.filename) is over the 50 MB share-sheet limit. Upload it from Dash instead.")
+          DashL10n.string(
+            "\(item.filename) is over the 50 MB share-sheet limit. Upload it from Dash instead."))
         return
       }
       var key = cleanPrefix + item.filename
@@ -316,8 +323,15 @@ final class ShareUploadModel {
     cleanupStaging()
     phase = .failed(
       uploadedCount == 0
-        ? "The active Cloudflare account changed. Close this sheet and share again."
-        : "The active Cloudflare account changed, so Dash stopped after \(uploadedCount) \(uploadedCount == 1 ? "file" : "files"). Check \(accountLabel) before sharing again."
+        ? DashL10n.string(
+          "The active Cloudflare account changed. Close this sheet and share again.")
+        : uploadedCount == 1
+          ? DashL10n.string(
+            "The active Cloudflare account changed, so Dash stopped after \(uploadedCount) file. Check \(accountLabel) before sharing again."
+          )
+          : DashL10n.string(
+            "The active Cloudflare account changed, so Dash stopped after \(uploadedCount) files. Check \(accountLabel) before sharing again."
+          )
     )
   }
 
@@ -541,19 +555,19 @@ struct ShareUploadView: View {
   var body: some View {
     NavigationStack {
       content
-        .navigationTitle("Upload to R2")
+        .navigationTitle(DashL10n.string("Upload to R2"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
           ToolbarItem(placement: .cancellationAction) {
-            Button("Cancel") { model.cancel() }
+            Button(DashL10n.string("Cancel")) { model.cancel() }
           }
           ToolbarItem(placement: .confirmationAction) {
             switch model.phase {
             case .ready:
-              Button("Upload") { showsUploadConfirmation = true }
+              Button(DashL10n.string("Upload")) { showsUploadConfirmation = true }
                 .fontWeight(.semibold)
             case .done:
-              Button("Done") { model.finish() }
+              Button(DashL10n.string("Done")) { model.finish() }
                 .fontWeight(.semibold)
             default:
               EmptyView()
@@ -561,17 +575,17 @@ struct ShareUploadView: View {
           }
         }
         .alert(
-          "Upload to \(model.accountLabel)?",
+          DashL10n.string("Upload to \(model.accountLabel)?"),
           isPresented: $showsUploadConfirmation
         ) {
-          Button("Cancel", role: .cancel) {}
-          Button("Upload") { model.startUpload() }
+          Button(DashL10n.string("Cancel"), role: .cancel) {}
+          Button(DashL10n.string("Upload")) { model.startUpload() }
         } message: {
           let folder = model.normalizedPrefix
           Text(
             folder.isEmpty
-              ? "The files will be written to \(model.bucket)."
-              : "The files will be written to \(model.bucket)/\(folder)."
+              ? DashL10n.string("The files will be written to \(model.bucket).")
+              : DashL10n.string("The files will be written to \(model.bucket)/\(folder).")
           )
         }
     }
@@ -581,27 +595,29 @@ struct ShareUploadView: View {
   private var content: some View {
     switch model.phase {
     case .loading:
-      ProgressView("Preparing…")
+      ProgressView(DashL10n.string("Preparing…"))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     case .signedOut:
       centered(
         systemImage: "person.crop.circle.badge.exclamationmark",
-        message: "Sign in to Dash first, then share again.")
+        message: DashL10n.string("Sign in to Dash first, then share again."))
     case .authorizationRequired:
       VStack(spacing: 16) {
         Image(systemName: "lock.shield")
           .font(.system(size: 40))
           .foregroundStyle(.secondary)
-        Text("R2 write access is required.")
+        Text(DashL10n.string("R2 write access is required."))
           .font(.headline)
         Text(
-          "Open Dash and connect your Cloudflare account, then share these files again."
+          DashL10n.string(
+            "Open Dash and connect your Cloudflare account, then share these files again."
+          )
         )
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
         .padding(.horizontal, 24)
-        Button("Open Dash") {
+        Button(DashL10n.string("Open Dash")) {
           model.openWriteAccessSettings()
         }
         .buttonStyle(.borderedProminent)
@@ -610,8 +626,12 @@ struct ShareUploadView: View {
     case .failed(let text):
       centered(systemImage: "exclamationmark.triangle", message: text)
     case .uploading(let current, let total):
-      ProgressView(total > 1 ? "Uploading \(current) of \(total)…" : "Uploading…")
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      ProgressView(
+        total > 1
+          ? DashL10n.string("Uploading \(current) of \(total)…")
+          : DashL10n.string("Uploading…")
+      )
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
     case .done:
       VStack(spacing: 12) {
         Image(systemName: "checkmark.circle.fill")
@@ -619,12 +639,12 @@ struct ShareUploadView: View {
           .foregroundStyle(.green)
         Text(
           model.attachments.count == 1
-            ? "Uploaded \(model.attachments[0].filename)"
-            : "Uploaded \(model.attachments.count) files"
+            ? DashL10n.string("Uploaded \(model.attachments[0].filename)")
+            : DashL10n.string("Uploaded \(model.attachments.count) files")
         )
         .font(.headline)
         if model.copiedURL != nil {
-          Text("Public URL copied to the clipboard.")
+          Text(DashL10n.string("Public URL copied to the clipboard."))
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }
@@ -637,7 +657,7 @@ struct ShareUploadView: View {
 
   private var form: some View {
     Form {
-      Section("Files") {
+      Section(DashL10n.string("Files")) {
         ForEach(model.attachments) { attachment in
           LabeledContent(attachment.filename) {
             Text(
@@ -646,18 +666,18 @@ struct ShareUploadView: View {
           }
         }
       }
-      Section("Destination") {
-        LabeledContent("Account", value: model.accountLabel)
+      Section(DashL10n.string("Destination")) {
+        LabeledContent(DashL10n.string("Account"), value: model.accountLabel)
         if model.buckets.isEmpty {
-          LabeledContent("Bucket", value: model.bucket)
+          LabeledContent(DashL10n.string("Bucket"), value: model.bucket)
         } else {
-          Picker("Bucket", selection: $model.bucket) {
+          Picker(DashL10n.string("Bucket"), selection: $model.bucket) {
             ForEach(model.buckets) { bucket in
               Text(bucket.name).tag(bucket.name)
             }
           }
         }
-        TextField("Folder (optional)", text: $model.prefix)
+        TextField(DashL10n.string("Folder (optional)"), text: $model.prefix)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
       }

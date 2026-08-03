@@ -128,6 +128,39 @@ import Testing
   #expect(await probe.started == 0)
 }
 
+@Test func metricsWidgetRefreshCoordinatorServesCachedDemoWithoutNetworking() async {
+  let probe = MetricsWidgetRefreshProbe()
+  let account = MetricsWidgetAccount(id: "demo-account-studio", name: "Foxglove Studio")
+  let now = Date(timeIntervalSince1970: 10_000)
+  let store = MetricsWidgetSnapshotStore(
+    accounts: [account],
+    accountSnapshots: [
+      makeRemoteAccountWidgetSnapshot(
+        account: account,
+        range: .day,
+        fetchedAt: now.addingTimeInterval(-60))
+    ])
+  let coordinator = MetricsWidgetRemoteRefreshCoordinator(
+    loader: { target in
+      await probe.begin()
+      await probe.end()
+      return makeRemoteAccountPayload(for: target)
+    },
+    persister: { _, _ in })
+
+  let outcome = await coordinator.refreshIfNeeded(
+    .account(
+      accountID: account.id,
+      accountName: account.name,
+      range: .day,
+      resolvesMetadata: false),
+    baseline: MetricsWidgetRefreshBaseline(store: store, generation: 2, mode: .remoteEnabled),
+    now: now)
+
+  #expect(outcome == .fresh)
+  #expect(await probe.started == 0)
+}
+
 @Test func metricsWidgetRefreshCoordinatorSingleFlightsIdenticalScopes() async {
   let probe = MetricsWidgetRefreshProbe()
   let target = MetricsWidgetRefreshTarget.account(
@@ -577,6 +610,70 @@ import Testing
 
   #expect(outcome == .fallback)
   #expect(await generations.values.isEmpty)
+}
+
+@Test func transientWidgetKeychainFailureDuringPresenceCheckKeepsFreshTimeline() async {
+  let reader = MetricsWidgetTokenReader([.failure])
+  let generations = MetricsWidgetGenerationRecorder()
+  let probe = MetricsWidgetRefreshProbe()
+  let account = MetricsWidgetAccount(id: "account", name: "Account")
+  let now = Date(timeIntervalSince1970: 10_000)
+  let store = MetricsWidgetSnapshotStore(
+    accounts: [account],
+    accountSnapshots: [
+      makeRemoteAccountWidgetSnapshot(
+        account: account,
+        range: .day,
+        fetchedAt: now.addingTimeInterval(-60))
+    ])
+  let coordinator = MetricsWidgetRemoteRefreshCoordinator(
+    credentialValidator: MetricsWidgetCredentialValidator(
+      readAccessToken: { try await reader.read() },
+      invalidate: { generation in await generations.record(generation) }),
+    loader: { target in
+      await probe.begin()
+      await probe.end()
+      return makeRemoteAccountPayload(for: target)
+    },
+    persister: { _, _ in })
+
+  let outcome = await coordinator.refreshIfNeeded(
+    .account(
+      accountID: account.id,
+      accountName: account.name,
+      range: .day,
+      resolvesMetadata: false),
+    baseline: MetricsWidgetRefreshBaseline(store: store, generation: 32),
+    now: now)
+
+  #expect(outcome == .fresh)
+  #expect(await generations.values.isEmpty)
+  #expect(await probe.started == 0)
+}
+
+@Test func terminalUnauthorizedAfterConcurrentSignOutInvalidatesGeneration() async {
+  let reader = MetricsWidgetTokenReader([.token("old"), .token(nil)])
+  let generations = MetricsWidgetGenerationRecorder()
+  let coordinator = MetricsWidgetRemoteRefreshCoordinator(
+    credentialValidator: MetricsWidgetCredentialValidator(
+      readAccessToken: { try await reader.read() },
+      invalidate: { generation in await generations.record(generation) }),
+    loader: { _ in
+      throw CloudflareAPIError.request(status: 401, errors: [])
+    },
+    persister: { _, _ in })
+
+  let outcome = await coordinator.refreshIfNeeded(
+    .account(
+      accountID: "account",
+      accountName: "Account",
+      range: .day,
+      resolvesMetadata: false),
+    baseline: MetricsWidgetRefreshBaseline(store: nil, generation: 33),
+    now: .now)
+
+  #expect(outcome == .credentialInvalidated)
+  #expect(await generations.values == [33])
 }
 
 @Test func queuedWidgetRefreshRevalidatesRemoteSessionBeforeNetworking() async {
