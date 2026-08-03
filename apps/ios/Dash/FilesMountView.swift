@@ -72,11 +72,11 @@ struct FilesMountView: View {
       DashInfoRow("Maximum upload", value: "300 MB")
       DashInfoRow(
         "Rename & move",
-        value: DashL10n.string("Not available. R2 has no rename API")
+        value: DashL10n.string("Not available. R2 has no rename or move API")
       )
       DashInfoRow(
         "New folder",
-        value: DashL10n.string("Create folders in Dash, not in Files")
+        value: DashL10n.string("Create empty folders in Dash. Files cannot create them.")
       )
       DashInfoRow(
         "Previews",

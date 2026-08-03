@@ -929,9 +929,6 @@ private struct OnboardingPermissionButtonStyle: ButtonStyle {
 /// Sign-in backdrop: Paper Design's animated mesh gradient
 /// (`loginMeshGradient` in `LoginGrain.metal`). Reduce Motion keeps the still
 /// wash — never a frozen mid-animation frame.
-///
-/// `loginPaperTexture` + `PaperNoise` remain in the target for a later pass;
-/// re-apply with `.colorEffect` on this stack when ready.
 private struct LoginBackground: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.colorScheme) private var colorScheme

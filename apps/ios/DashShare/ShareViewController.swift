@@ -69,6 +69,10 @@ final class ShareUploadModel {
   var buckets: [R2Bucket] = []
   var bucket = ""
   var prefix = ""
+  /// True when prepare found a remembered `R2ShareDestination` for the active
+  /// account. False means the sheet fell back to the first listed bucket and
+  /// should show first-time destination guidance.
+  var hadRememberedDestination = false
   var phase: Phase = .loading
   var copiedURL: URL?
   var accountName = ""
@@ -130,7 +134,9 @@ final class ShareUploadModel {
       phase = .authorizationRequired
       return
     }
-    if let destination = R2ShareDestination.destination(accountID: accountID) {
+    let remembered = R2ShareDestination.destination(accountID: accountID)
+    hadRememberedDestination = remembered != nil
+    if let destination = remembered {
       bucket = destination.bucket
       prefix = destination.prefix
     }
@@ -666,7 +672,7 @@ struct ShareUploadView: View {
           }
         }
       }
-      Section(DashL10n.string("Destination")) {
+      Section {
         LabeledContent(DashL10n.string("Account"), value: model.accountLabel)
         if model.buckets.isEmpty {
           LabeledContent(DashL10n.string("Bucket"), value: model.bucket)
@@ -680,6 +686,14 @@ struct ShareUploadView: View {
         TextField(DashL10n.string("Folder (optional)"), text: $model.prefix)
           .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
+      } header: {
+        Text(DashL10n.string("Destination"))
+      } footer: {
+        if !model.hadRememberedDestination {
+          Text(
+            DashL10n.string(
+              "No previous upload for this account. Pick a bucket. Folder is optional."))
+        }
       }
     }
   }

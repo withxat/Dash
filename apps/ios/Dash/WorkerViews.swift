@@ -30,7 +30,7 @@ struct WorkersView: View {
         dashModeListRows(mode: mode, items: workers, reduceMotion: reduceMotion) { worker in
           DashListGroupLink(value: .worker(worker.id)) {
             DashListRow(title: worker.id, icon: SolarAsset.Content.code)
-              .accessibilityLabel(worker.id)
+              .accessibilityLabel(workerRowAccessibilityLabel(worker))
           }
           .accessibilityIdentifier("worker-\(worker.id)")
         }
@@ -1423,6 +1423,10 @@ private enum WorkerDeploymentDateFormatting {
     }
     return formatter.localizedString(for: date, relativeTo: now)
   }
+}
+
+private func workerRowAccessibilityLabel(_ worker: WorkerScript) -> String {
+  DashL10n.string("\(worker.id), Worker")
 }
 
 @MainActor
