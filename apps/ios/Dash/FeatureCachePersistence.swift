@@ -68,18 +68,21 @@ actor FeatureCachePersistence {
   }
 
   func upsert(_ entry: FeatureCachePersistedEntry, key: String, accountID: String) {
+    _ = load(accountID: accountID)
     stores[accountID, default: [:]][key] = entry
     dirtyAccounts.insert(accountID)
     scheduleFlush()
   }
 
   func remove(key: String, accountID: String) {
+    _ = load(accountID: accountID)
     guard stores[accountID]?.removeValue(forKey: key) != nil else { return }
     dirtyAccounts.insert(accountID)
     scheduleFlush()
   }
 
   func remove(prefix: String, accountID: String) {
+    _ = load(accountID: accountID)
     guard var store = stores[accountID] else { return }
     let before = store.count
     store = store.filter { !$0.key.hasPrefix(prefix) }

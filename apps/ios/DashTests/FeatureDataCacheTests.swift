@@ -201,14 +201,13 @@ import Testing
   let cache = FeatureDataCache(persistence: persistence)
   cache.setPersistenceAccount("acc-a")
   cache.set("sample", 42)
-  await dashPersistenceSettle()
-  await persistence.flushNow()
+  await cache.flushPersistence()
 
   // Simulate a relaunch: a fresh cache + fresh actor reading the same directory.
   let relaunched = FeatureDataCache(
     persistence: FeatureCachePersistence(directory: dir))
   relaunched.setPersistenceAccount("acc-a")
-  await dashPersistenceSettle()
+  await relaunched.flushPersistence()
   let value: Int? = relaunched.get("sample")
   #expect(value == 42)
 }
@@ -225,16 +224,15 @@ import Testing
   cache.setPersistenceAccount("acc-b")
   cache.set("sample", 2)
   cache.clear()
-  await dashPersistenceSettle()
-  await persistence.flushNow()
+  await cache.flushPersistence()
 
   cache.setPersistenceAccount("acc-a")
-  await dashPersistenceSettle()
+  await cache.flushPersistence()
   let a: Int? = cache.get("sample")
   #expect(a == 1)
 
   cache.setPersistenceAccount("acc-b")
-  await dashPersistenceSettle()
+  await cache.flushPersistence()
   let b: Int? = cache.get("sample")
   #expect(b == 2)
 }
@@ -247,7 +245,7 @@ import Testing
   let cache = FeatureDataCache(persistence: persistence)
   cache.setPersistenceAccount("acc-a")
   cache.set("sample", 42, ttl: 0)
-  await dashPersistenceSettle()
+  await cache.flushPersistence()
 
   // Expired: the fresh read refuses it…
   let fresh: Int? = cache.get("sample")
@@ -266,16 +264,42 @@ import Testing
   let cache = FeatureDataCache(persistence: persistence)
   cache.setPersistenceAccount("acc-a")
   cache.set("noncodable", NonCodable(x: 1))
-  await dashPersistenceSettle()
-  await persistence.flushNow()
+  await cache.flushPersistence()
 
   // A relaunch never sees the value: it was never writable to disk.
   let relaunched = FeatureDataCache(
     persistence: FeatureCachePersistence(directory: dir))
   relaunched.setPersistenceAccount("acc-a")
-  await dashPersistenceSettle()
+  await relaunched.flushPersistence()
   let stale: NonCodable? = relaunched.getStale("noncodable")
   #expect(stale == nil)
+}
+
+@Test @MainActor func persistenceLoadDoesNotResurrectImmediateRemoval() async throws {
+  let dir = dashPersistenceTempDir("remove-during-load")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let seed = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  seed.setPersistenceAccount("acc-a")
+  seed.set("sample", 42)
+  await seed.flushPersistence()
+
+  let cache = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  cache.setPersistenceAccount("acc-a")
+  cache.remove("sample")
+  await cache.flushPersistence()
+
+  let current: Int? = cache.getStale("sample")
+  #expect(current == nil)
+
+  let relaunched = FeatureDataCache(
+    persistence: FeatureCachePersistence(directory: dir))
+  relaunched.setPersistenceAccount("acc-a")
+  await relaunched.flushPersistence()
+  let persisted: Int? = relaunched.getStale("sample")
+  #expect(persisted == nil)
 }
 
 @Test @MainActor func clearAllPersistenceDeletesEveryAccountFile() async throws {
@@ -289,17 +313,16 @@ import Testing
   cache.clear()
   cache.setPersistenceAccount("acc-b")
   cache.set("sample", 2)
-  await dashPersistenceSettle()
-  await persistence.flushNow()
 
+  // Clear immediately: queued account writes must finish before deletion so a
+  // late upsert cannot recreate signed-out data.
   cache.clearAllPersistence()
-  await dashPersistenceSettle()
-  await persistence.flushNow()
+  await cache.flushPersistence()
 
   let relaunched = FeatureDataCache(
     persistence: FeatureCachePersistence(directory: dir))
   relaunched.setPersistenceAccount("acc-a")
-  await dashPersistenceSettle()
+  await relaunched.flushPersistence()
   let a: Int? = relaunched.get("sample")
   #expect(a == nil)
 }
@@ -309,13 +332,6 @@ private func dashPersistenceTempDir(_ label: String) -> URL {
     "DashFeatureCacheTests-\(label)-\(UUID().uuidString)",
     isDirectory: true
   )
-}
-
-/// `FeatureDataCache` deliberately hands disk work to unstructured tasks so UI
-/// writes stay synchronous. Yield the main actor long enough for those tasks to
-/// enqueue on `FeatureCachePersistence` before a test flushes or reads it.
-@MainActor private func dashPersistenceSettle() async {
-  for _ in 0..<20 { await Task.yield() }
 }
 
 private enum FeatureLoadTestError: Error {

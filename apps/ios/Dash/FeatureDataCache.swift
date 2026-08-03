@@ -202,6 +202,16 @@ final class FeatureDataCache {
   private var persistedEntries: [String: FeatureCachePersistedEntry] = [:]
   /// Loads the active account's entries off the main actor after `setPersistenceAccount`.
   private var persistenceLoadTask: Task<Void, Never>?
+  /// Serializes every actor call in the same order the main-actor cache made
+  /// it. Retaining the tail also gives tests and teardown paths a real barrier
+  /// instead of guessing when an unstructured task reached the actor.
+  private var persistenceOperationTask: Task<Void, Never>?
+  /// Mutations made synchronously while the active account is still loading.
+  /// The late disk snapshot fills untouched keys only; these overlays keep it
+  /// from resurrecting a removed value or replacing a newer write.
+  private var persistenceLoadTouchedKeys: Set<String> = []
+  private var persistenceLoadRemovedPrefixes: [String] = []
+  private var persistenceLoadGeneration: UInt = 0
 
   init(persistence: FeatureCachePersistence? = nil) {
     self.persistence = persistence
@@ -337,8 +347,11 @@ final class FeatureDataCache {
     storage.removeValue(forKey: key)
     inFlight.removeValue(forKey: key)?.cancel()
     persistedEntries.removeValue(forKey: key)
-    if let persistence, let accountID = persistenceAccountID {
-      Task { [persistence] in
+    if persistenceLoadTask != nil {
+      persistenceLoadTouchedKeys.insert(key)
+    }
+    if let accountID = persistenceAccountID {
+      enqueuePersistenceOperation { persistence in
         await persistence.remove(key: key, accountID: accountID)
       }
     }
@@ -353,8 +366,11 @@ final class FeatureDataCache {
       inFlight.removeValue(forKey: key)?.cancel()
     }
     persistedEntries = persistedEntries.filter { !$0.key.hasPrefix(prefix) }
-    if let persistence, let accountID = persistenceAccountID {
-      Task { [persistence] in
+    if persistenceLoadTask != nil {
+      persistenceLoadRemovedPrefixes.append(prefix)
+    }
+    if let accountID = persistenceAccountID {
+      enqueuePersistenceOperation { persistence in
         await persistence.remove(prefix: prefix, accountID: accountID)
       }
     }
@@ -365,20 +381,34 @@ final class FeatureDataCache {
     cancelAllLoads()
     persistedEntries.removeAll()
     persistenceLoadTask?.cancel()
+    persistenceLoadTask = nil
+    persistenceLoadGeneration &+= 1
+    persistenceLoadTouchedKeys.removeAll()
+    persistenceLoadRemovedPrefixes.removeAll()
   }
 
   /// Activates on-disk persistence for one account. Call as the active account
   /// changes; `nil` disables persistence (sign-out, demo). The mirror is loaded
   /// off the main actor and only lands if the account is still active.
   func setPersistenceAccount(_ accountID: String?) {
+    if persistenceAccountID != accountID {
+      storage.removeAll()
+      cancelAllLoads()
+    }
     persistenceAccountID = accountID
     persistedEntries.removeAll()
     persistenceLoadTask?.cancel()
-    guard let persistence, let accountID else { return }
-    persistenceLoadTask = Task { [weak self] in
+    persistenceLoadTask = nil
+    persistenceLoadGeneration &+= 1
+    persistenceLoadTouchedKeys.removeAll()
+    persistenceLoadRemovedPrefixes.removeAll()
+    guard persistence != nil, let accountID else { return }
+    let generation = persistenceLoadGeneration
+    persistenceLoadTask = enqueuePersistenceOperation { [weak self] persistence in
       let entries = await persistence.load(accountID: accountID)
-      guard let self, self.persistenceAccountID == accountID else { return }
-      self.persistedEntries = entries
+      guard !Task.isCancelled else { return }
+      self?.finishPersistenceLoad(
+        entries, accountID: accountID, generation: generation)
     }
   }
 
@@ -386,12 +416,26 @@ final class FeatureDataCache {
   /// until the next account is activated.
   func clearAllPersistence() {
     persistenceAccountID = nil
+    storage.removeAll()
+    cancelAllLoads()
     persistedEntries.removeAll()
     persistenceLoadTask?.cancel()
-    guard let persistence else { return }
-    Task { [persistence] in
+    persistenceLoadTask = nil
+    persistenceLoadGeneration &+= 1
+    persistenceLoadTouchedKeys.removeAll()
+    persistenceLoadRemovedPrefixes.removeAll()
+    enqueuePersistenceOperation { persistence in
       await persistence.clearAll()
     }
+  }
+
+  /// Waits for every persistence operation already issued by this cache, then
+  /// forces the actor's debounced writes to disk. This is an ordering barrier,
+  /// not a timing heuristic.
+  func flushPersistence() async {
+    let pendingOperation = persistenceOperationTask
+    await pendingOperation?.value
+    await persistence?.flushNow()
   }
 
   private func persist<T>(
@@ -404,9 +448,48 @@ final class FeatureDataCache {
     guard let data = encodeIfCodable(value) else { return }
     let entry = FeatureCachePersistedEntry(data: data, fetchedAt: fetchedAt, ttl: ttl)
     persistedEntries[key] = entry
-    Task { [persistence] in
+    if persistenceLoadTask != nil {
+      persistenceLoadTouchedKeys.insert(key)
+    }
+    enqueuePersistenceOperation { persistence in
       await persistence.upsert(entry, key: key, accountID: accountID)
     }
+  }
+
+  private func finishPersistenceLoad(
+    _ entries: [String: FeatureCachePersistedEntry],
+    accountID: String,
+    generation: UInt
+  ) {
+    guard persistenceAccountID == accountID, persistenceLoadGeneration == generation else {
+      return
+    }
+    var resolved = entries
+    for prefix in persistenceLoadRemovedPrefixes {
+      resolved = resolved.filter { !$0.key.hasPrefix(prefix) }
+    }
+    for key in persistenceLoadTouchedKeys {
+      resolved[key] = persistedEntries[key]
+    }
+    persistedEntries = resolved
+    persistenceLoadTouchedKeys.removeAll()
+    persistenceLoadRemovedPrefixes.removeAll()
+    persistenceLoadTask = nil
+  }
+
+  @discardableResult
+  private func enqueuePersistenceOperation(
+    _ operation: @escaping @MainActor @Sendable (FeatureCachePersistence) async -> Void
+  ) -> Task<Void, Never>? {
+    guard let persistence else { return nil }
+    let previous = persistenceOperationTask
+    let task = Task { @MainActor [persistence] in
+      await previous?.value
+      guard !Task.isCancelled else { return }
+      await operation(persistence)
+    }
+    persistenceOperationTask = task
+    return task
   }
 
   private func getFromDisk<T>(
