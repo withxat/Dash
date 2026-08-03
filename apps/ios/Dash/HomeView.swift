@@ -1893,15 +1893,23 @@ private struct HomePurgeCachePicker: View {
 /// Shared with the Domains catalog empty state, which offers the same flow
 /// so a zero-domain account isn't a dead end there.
 struct AddDomainSheet: View {
+  private enum Route: Hashable, Sendable {
+    case form
+    case created(String)
+  }
+
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let onCreated: () -> Void
   @State private var name = ""
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
   @State private var created: CloudflareZone?
   @State private var pendingCreated: CloudflareZone?
+
+  private var route: Route {
+    created.map { .created($0.id) } ?? .form
+  }
 
   var body: some View {
     DashFormSheet(
@@ -1917,13 +1925,14 @@ struct AddDomainSheet: View {
         }
       }
     ) {
-      Group {
+      DashTrayFlow(
+        route: route,
+        role: created == nil ? .root : .detail
+      ) { _ in
         if let created {
           successContent(created)
-            .transition(reduceMotion ? .opacity : .dashMorph)
         } else {
           formContent
-            .transition(reduceMotion ? .opacity : .dashMorph)
         }
       }
     }
@@ -2010,9 +2019,7 @@ struct AddDomainSheet: View {
 
   private func completeCreatePresentation() {
     guard actionPhase == .succeeded, let pendingCreated else { return }
-    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
-      created = pendingCreated
-    }
+    created = pendingCreated
     self.pendingCreated = nil
     actionPhase = .idle
   }

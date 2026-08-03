@@ -304,6 +304,20 @@ import Testing
   #expect(a == nil)
 }
 
+private func dashPersistenceTempDir(_ label: String) -> URL {
+  FileManager.default.temporaryDirectory.appendingPathComponent(
+    "DashFeatureCacheTests-\(label)-\(UUID().uuidString)",
+    isDirectory: true
+  )
+}
+
+/// `FeatureDataCache` deliberately hands disk work to unstructured tasks so UI
+/// writes stay synchronous. Yield the main actor long enough for those tasks to
+/// enqueue on `FeatureCachePersistence` before a test flushes or reads it.
+@MainActor private func dashPersistenceSettle() async {
+  for _ in 0..<20 { await Task.yield() }
+}
+
 private enum FeatureLoadTestError: Error {
   case expected
 }

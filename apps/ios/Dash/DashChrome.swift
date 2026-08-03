@@ -1,4 +1,5 @@
 import Combine
+import Foundation
 import SwiftUI
 import UIKit
 
@@ -258,6 +259,105 @@ private struct DashTrayDescriptionKey: PreferenceKey {
   }
 }
 
+/// Semantic position inside a multi-step Tray. Callers describe where the
+/// current route sits; the Tray owns timing, chrome insets, and target-height
+/// measurement.
+enum DashTrayStepRole: Int, Equatable, Sendable {
+  case root
+  case detail
+  case destructive
+
+  fileprivate var isDetail: Bool { self != .root }
+
+  fileprivate var transitionAnimation: Animation {
+    switch self {
+    case .root: DashTheme.Motion.trayStepReturn
+    case .detail: DashTheme.Motion.trayStep
+    case .destructive: DashTheme.Motion.trayStepDestructive
+    }
+  }
+}
+
+private struct DashTrayStepRoleKey: PreferenceKey {
+  static let defaultValue = DashTrayStepRole.root
+
+  static func reduce(value: inout DashTrayStepRole, nextValue: () -> DashTrayStepRole) {
+    let next = nextValue()
+    if next.rawValue > value.rawValue { value = next }
+  }
+}
+
+private struct DashTrayRouteLayoutKey<Route: Hashable & Sendable>: LayoutValueKey {
+  static var defaultValue: Route? { nil }
+}
+
+/// SwiftUI counterpart to a pop-layout presence transition: outgoing and
+/// incoming routes remain visual siblings, but only the active route contributes
+/// the layout size. The enclosing card can therefore begin moving to the target
+/// height on the first frame instead of waiting for the old route to disappear.
+private struct DashTrayPopLayout<Route: Hashable & Sendable>: Layout {
+  let activeRoute: Route
+
+  func sizeThatFits(
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) -> CGSize {
+    guard let active = activeSubview(in: subviews) else { return .zero }
+    return active.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+  }
+
+  func placeSubviews(
+    in bounds: CGRect,
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) {
+    let childProposal = ProposedViewSize(width: bounds.width, height: nil)
+    for subview in subviews {
+      subview.place(
+        at: CGPoint(x: bounds.midX, y: bounds.minY),
+        anchor: .top,
+        proposal: childProposal
+      )
+    }
+  }
+
+  private func activeSubview(in subviews: Subviews) -> LayoutSubview? {
+    subviews.first { $0[DashTrayRouteLayoutKey<Route>.self] == activeRoute } ?? subviews.last
+  }
+}
+
+/// Canonical multi-step Tray content. Business views provide a stable route and
+/// its semantic role; this view keeps the outgoing route alive for its visual
+/// exit while handing layout ownership to the target route immediately.
+struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
+  let route: Route
+  let role: DashTrayStepRole
+  @ViewBuilder let content: (Route) -> Content
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    DashTrayPopLayout(activeRoute: route) {
+      content(route)
+        .frame(maxWidth: .infinity, alignment: .top)
+        .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: route)
+        .id(route)
+        .transition(
+          reduceMotion
+            ? .opacity
+            : .opacity.combined(with: .scale(scale: 0.96, anchor: .center))
+        )
+    }
+    .frame(maxWidth: .infinity, alignment: .top)
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : role.transitionAnimation,
+      value: route
+    )
+    .preference(key: DashTrayStepRoleKey.self, value: role)
+  }
+}
+
 /// Pure dismiss / settle decisions for tray drag gestures — shared by content and
 /// expandable trays so velocity thresholds stay testable.
 enum TrayDragOutcome: Equatable, Sendable {
@@ -272,26 +372,64 @@ enum TrayDragStartDetent: Equatable, Sendable {
 }
 
 enum TrayDragDecision {
-  /// Content tray: a deliberate pull can dismiss on distance, while a fling
-  /// must first travel far enough to establish downward intent. This keeps a
-  /// tiny, fast wobble from being amplified into a dismissal by SwiftUI's
-  /// projected endpoint.
+  /// Content tray: the physical card size sets the distance threshold, while a
+  /// downward flick may dismiss early. A small intent floor keeps a stray touch
+  /// from turning a noisy velocity sample into data loss on a form.
   static func content(
     translation: CGFloat,
     predictedEndTranslation: CGFloat,
-    distanceThreshold: CGFloat = 120,
-    projectedThreshold: CGFloat = 160,
-    minimumFlingDistance: CGFloat = 32
+    velocity: CGFloat,
+    trayHeight: CGFloat,
+    distanceFraction: CGFloat = 0.25,
+    velocityThreshold: CGFloat = 400,
+    minimumFlingDistance: CGFloat = 8
   ) -> TrayDragOutcome {
+    let distanceThreshold = max(0, trayHeight) * distanceFraction
+    let crossedDistance = trayHeight > 0 && translation >= distanceThreshold
     let hasDownwardMomentum = predictedEndTranslation > translation
     let isDeliberateFling =
       translation >= minimumFlingDistance
-      && predictedEndTranslation > projectedThreshold
+      && velocity >= velocityThreshold
       && hasDownwardMomentum
-    if translation > distanceThreshold || isDeliberateFling {
+    if crossedDistance || isDeliberateFling {
       return .dismiss
     }
     return .settle
+  }
+
+  /// Downward movement tracks the finger exactly. Upward movement remains
+  /// continuous but becomes progressively more resistant instead of hitting a
+  /// hard clamp or following a fixed fraction forever.
+  static func contentOffset(translation: CGFloat, resistance: CGFloat = 8) -> CGFloat {
+    guard translation < 0, resistance > 0 else { return translation }
+    return -resistance * CGFloat(log1p(Double(-translation / resistance)))
+  }
+
+  /// The backdrop and card share one dismissal progress. The dim therefore
+  /// follows a downward drag frame-for-frame instead of staying fully opaque
+  /// until release.
+  static func scrimProgress(
+    presentation: CGFloat,
+    drag: CGFloat,
+    trayHeight: CGFloat
+  ) -> CGFloat {
+    let presented = min(max(presentation, 0), 1)
+    guard trayHeight > 0 else { return presented }
+    let dismissed = min(max(drag / trayHeight, 0), 1)
+    return presented * (1 - dismissed)
+  }
+
+  /// SwiftUI spring velocity is relative to the animated [from, to] range,
+  /// not raw points per second. A negative result means the gesture is moving
+  /// away from its target; zero distance cannot carry meaningful momentum.
+  static func normalizedSpringVelocity(
+    pointsPerSecond: CGFloat,
+    from: CGFloat,
+    to: CGFloat
+  ) -> Double {
+    let distance = to - from
+    guard abs(distance) > .ulpOfOne else { return 0 }
+    return Double(pointsPerSecond / distance)
   }
 
   /// Expandable tray: projection chooses a detent, while dismissal requires
@@ -334,14 +472,38 @@ enum TrayDragDecision {
   }
 }
 
-/// Tray motion, split by job: presentation arrives with only a whisper of
-/// settle, a finger-driven release gets a little elasticity, and dismissal
-/// leaves fast with no bounce. The values live once in `DashTheme.Motion`
-/// (shared with the toast host); this is the tray-named handle for them.
+/// Tray motion, split by job. Only a finger-driven release is a spring; drawer
+/// presentation, target-height changes, and dismissal use the timing curves in
+/// the Tray-specific theme vocabulary.
 private enum DashTrayMotion {
-  static let present = DashTheme.Motion.present
-  static let release = DashTheme.Motion.release
-  static let dismiss = DashTheme.Motion.dismiss
+  static let present = DashTheme.Motion.trayPresent
+  static let resize = DashTheme.Motion.trayResize
+  static let release = DashTheme.Motion.trayRelease
+  static let dismiss = DashTheme.Motion.trayDismiss
+
+  /// A cancelled dismissal keeps the gesture's point velocity, so the card
+  /// first follows the release direction and then settles instead of starting
+  /// a disconnected zero-velocity spring.
+  static func release(initialVelocity: Double) -> Animation {
+    .interpolatingSpring(
+      mass: 1,
+      stiffness: 340,
+      damping: 30,
+      initialVelocity: initialVelocity
+    )
+  }
+
+  /// A completed drag hands its downward velocity to presentation progress.
+  /// Programmatic closes retain the reference drawer curve above; this physical
+  /// path is only for a surface already under the user's finger.
+  static func gestureDismiss(initialVelocity: Double) -> Animation {
+    .interpolatingSpring(
+      mass: 1,
+      stiffness: 100,
+      damping: 20,
+      initialVelocity: initialVelocity
+    )
+  }
 }
 
 /// The trailing button cluster — optional action circle plus close — shared by
@@ -370,6 +532,7 @@ private struct DashSheetMenuButtons: View {
         .accessibilityIdentifier("dash-tray-header-\(trailingAction.id)")
       }
       DashCloseButton { dismiss() }
+        .accessibilityIdentifier("dash.tray.close")
     }
     .disabled(isDisabled)
     .opacity(isDisabled ? 0.45 : 1)
@@ -394,6 +557,7 @@ private struct DashSheetHeader: View {
   var description: String? = nil
   var showsGrabBar = false
   var showsMenuButtons = true
+  var stepRole = DashTrayStepRole.root
   var trailingAction: DashSheetHeaderAction? = nil
   var menuButtonsDisabled = false
   let dismiss: () -> Void
@@ -426,7 +590,8 @@ private struct DashSheetHeader: View {
           .minimumScaleFactor(0.85)
           .contentTransition(reduceMotion ? .identity : .opacity)
           .animation(
-            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph, value: displayedTitle
+            reduceMotion ? DashTheme.Motion.reduced : stepRole.transitionAnimation,
+            value: displayedTitle
           )
           .id(displayedTitle)
           .accessibilityAddTraits(.isHeader)
@@ -440,15 +605,30 @@ private struct DashSheetHeader: View {
           )
         }
       }
-      .padding(.leading, DashTheme.Sheet.content)
+      .padding(.leading, DashTheme.Sheet.headerHorizontal)
       // The close circle is 32pt inside a centered 44pt hit target. Let the
-      // invisible 6pt trailing half extend into the inset so the visible circle
-      // aligns with the title's 28pt leading edge.
-      .padding(.trailing, showsMenuButtons ? DashTheme.Sheet.content - 6 : DashTheme.Sheet.content)
-      .padding(.top, showsGrabBar ? 12 : DashTheme.Sheet.headerTop)
+      // invisible 6pt trailing half extend into the inset so the visible face
+      // animates from 28pt on a root step to 32pt on a detail step.
+      .padding(
+        .trailing,
+        showsMenuButtons
+          ? (stepRole.isDetail ? 32 : DashTheme.Sheet.headerHorizontal) - 6
+          : DashTheme.Sheet.headerHorizontal
+      )
+      .padding(
+        .top,
+        showsGrabBar
+          ? 12
+          : (stepRole.isDetail ? DashTheme.Sheet.detailHeaderTop : DashTheme.Sheet.headerTop)
+      )
       .padding(
         .bottom,
-        displayedDescription == nil ? DashTheme.Sheet.headerBottom : Self.descriptionGap)
+        displayedDescription == nil ? DashTheme.Sheet.headerBottom : Self.descriptionGap
+      )
+      .animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.resize,
+        value: stepRole
+      )
 
       if let displayedDescription {
         // Full width: the menu buttons are on the row above, not beside this.
@@ -463,12 +643,12 @@ private struct DashSheetHeader: View {
           .frame(maxWidth: .infinity, alignment: .leading)
           .contentTransition(reduceMotion ? .identity : .opacity)
           .animation(
-            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph,
+            reduceMotion ? DashTheme.Motion.reduced : stepRole.transitionAnimation,
             value: displayedDescription
           )
           .padding(.horizontal, DashTheme.Sheet.content)
           // Leaves the same gap to the body the separator did.
-          .padding(.bottom, DashTheme.Sheet.headerBottom)
+          .padding(.bottom, DashTheme.Sheet.descriptionBottom)
       } else {
         Rectangle()
           .fill(DashTheme.separator)
@@ -496,10 +676,12 @@ private struct DashSheetHeader: View {
 private struct DashSheetHeroHeader<Hero: View>: View {
   let title: String
   var showsMenuButtons = true
+  var stepRole = DashTrayStepRole.root
   var trailingAction: DashSheetHeaderAction? = nil
   var menuButtonsDisabled = false
   let dismiss: () -> Void
   @ViewBuilder var hero: () -> Hero
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var displayedTitle: String { DashL10n.ui(title) }
 
@@ -514,8 +696,18 @@ private struct DashSheetHeroHeader<Hero: View>: View {
             isDisabled: menuButtonsDisabled,
             dismiss: dismiss
           )
-          .padding(.top, DashTheme.Sheet.headerTop)
-          .padding(.trailing, DashTheme.Sheet.content - 6)
+          .padding(
+            .top,
+            stepRole.isDetail ? DashTheme.Sheet.detailHeaderTop : DashTheme.Sheet.headerTop
+          )
+          .padding(
+            .trailing,
+            (stepRole.isDetail ? 32 : DashTheme.Sheet.headerHorizontal) - 6
+          )
+          .animation(
+            reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.resize,
+            value: stepRole
+          )
         }
       }
       .accessibilityElement(children: .contain)
@@ -527,7 +719,7 @@ private struct DashSheetHeroHeader<Hero: View>: View {
 }
 
 /// `.content` trays: a full-screen transparent cover with our own dim and a
-/// bottom-pinned card. The card springs its own height (DashSheetCard) so
+/// bottom-pinned card. The card animates its own target height (DashSheetCard) so
 /// content morphs resize smoothly — there's no native detent to clip or snap.
 /// The dim fades and the card slides up from the bottom (and dismisses the
 /// same way), independently of the cover (see DashTrayModifier).
@@ -545,21 +737,26 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @State private var progress: CGFloat = 0
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
+  @State private var revealOffset: CGFloat = 0
+  @State private var presentationStarted = false
+  @State private var presentationCompleted = false
   @State private var keyboardHeight: CGFloat = 0
   @State private var headerAction: DashSheetHeaderAction?
   @State private var contentTitle: String?
   @State private var contentDescription: String?
+  @State private var stepRole = DashTrayStepRole.root
   @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
 
   var body: some View {
     ZStack(alignment: .bottom) {
-      Color.black.opacity(progress * DashTheme.Sheet.scrimOpacity)
+      Color.black.opacity(scrimProgress * DashTheme.Sheet.scrimOpacity)
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture { requestClose() }
         .accessibilityLabel("Dismiss")
+        .accessibilityIdentifier("dash.tray.scrim")
         .accessibilityAddTraits(.isButton)
         .accessibilityHidden(dismissDisabled)
 
@@ -570,6 +767,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       // lift is plain outer padding — there's no longer an edge-to-edge fill
       // that has to run under the keyboard.
       GeometryReader { proxy in
+        let cardWidth = DashTrayGeometry.floatingWidth(containerWidth: proxy.size.width)
         DashSheetCard(
           maxCardHeight: proxy.size.height - bottomLift(proxy) - 24,
           hasFooter: hasFooter
@@ -584,11 +782,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
         } footer: {
           footer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, DashTheme.Sheet.floatingMargin)
+        .frame(width: cardWidth)
+        .accessibilityIdentifier("dash.tray.card")
         .padding(.bottom, bottomLift(proxy))
-        // Bottom-pinned slide: a bounded fraction of the card height plus
-        // opacity, blur, and scale — tall trays never shoot in from far away.
+        // The card is independently sized, then centered in the modal host.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .modifier(
           DashTrayCardReveal(
@@ -598,11 +795,13 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       .ignoresSafeArea(.keyboard)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .environment(\.dashTrayDismiss, close)
-    .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
+    .accessibilityAddTraits(.isModal)
+    .environment(\.dashTrayDismiss, { close() })
+    .onPreferenceChange(DashSheetFittedHeightKey.self, perform: updateCardHeight)
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
+    .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
@@ -621,11 +820,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
     .presentationBackground(.clear)
     .dashToastHost()
-    .onAppear {
-      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present) {
-        progress = 1
-      }
-    }
   }
 
   /// A hero replaces the title row outright, so it has nowhere to seat a
@@ -634,21 +828,46 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     if let hero {
       DashSheetHeroHeader(
         title: resolvedTitle, showsMenuButtons: showsMenuButtons,
+        stepRole: stepRole,
         trailingAction: headerAction, menuButtonsDisabled: dismissDisabled,
-        dismiss: requestClose, hero: hero)
+        dismiss: { requestClose() }, hero: hero)
     } else {
       DashSheetHeader(
         title: resolvedTitle, description: contentDescription,
-        showsMenuButtons: showsMenuButtons,
+        showsMenuButtons: showsMenuButtons, stepRole: stepRole,
         trailingAction: headerAction, menuButtonsDisabled: dismissDisabled,
-        dismiss: requestClose)
+        dismiss: { requestClose() })
     }
   }
 
-  /// A bounded travel distance keeps tall trays from shooting through hundreds
-  /// of points. Fade, blur, and a tiny bottom-anchored scale carry the rest.
-  private var revealOffset: CGFloat {
-    min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
+  /// Presentation begins only after the real card exists. The hidden endpoint
+  /// is captured for the whole entrance, then may follow later route heights
+  /// while fully shown; changing it mid-flight would bend the arrival path.
+  private func updateCardHeight(_ height: CGFloat) {
+    guard height > 0 else { return }
+    cardHeight = height
+
+    if !presentationStarted {
+      presentationStarted = true
+      revealOffset = height * 1.1
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present) {
+        progress = 1
+      } completion: {
+        guard progress == 1 else { return }
+        presentationCompleted = true
+        revealOffset = cardHeight * 1.1
+      }
+    } else if presentationCompleted, progress == 1 {
+      revealOffset = height * 1.1
+    }
+  }
+
+  private var scrimProgress: CGFloat {
+    TrayDragDecision.scrimProgress(
+      presentation: progress,
+      drag: drag,
+      trayHeight: cardHeight
+    )
   }
 
   /// How far to lift the card above the keyboard, in the GeometryReader's space.
@@ -660,17 +879,32 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   }
 
   /// Bottom gap under the floating card: the keyboard plus a margin while
-  /// typing. At rest, tuck the card slightly into the home-indicator safe area
-  /// so it does not appear to float too high above the screen edge.
+  /// typing. At rest, move into the home-indicator safe area just enough to keep
+  /// the same physical screen-edge gap as square-bottom devices.
   private func bottomLift(_ proxy: GeometryProxy) -> CGFloat {
     let keyboard = keyboardInset(proxy)
     if keyboard > 0 { return keyboard + DashTheme.Sheet.floatingMargin }
-    return proxy.safeAreaInsets.bottom > 0
-      ? -DashTheme.Sheet.floatingBottomTuck : DashTheme.Sheet.floatingMargin
+    return DashTrayGeometry.bottomLift(safeAreaBottom: proxy.safeAreaInsets.bottom)
   }
 
-  private func close() {
-    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.dismiss) {
+  private func close(releaseVelocity: CGFloat? = nil) {
+    let animation: Animation
+    if reduceMotion {
+      animation = DashTheme.Motion.reduced
+    } else if let releaseVelocity {
+      animation = DashTrayMotion.gestureDismiss(
+        initialVelocity: TrayDragDecision.normalizedSpringVelocity(
+          pointsPerSecond: max(0, releaseVelocity),
+          from: drag,
+          // The reveal modifier guarantees at least 48pt of remaining travel
+          // even after a pull beyond the nominal hidden endpoint.
+          to: max(revealOffset, drag + 48)
+        )
+      )
+    } else {
+      animation = DashTrayMotion.dismiss
+    }
+    withAnimation(animation) {
       progress = 0
     } completion: {
       drag = 0
@@ -678,9 +912,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
 
-  private func requestClose() {
+  private func requestClose(releaseVelocity: CGFloat? = nil) {
     guard !dismissDisabled else { return }
-    close()
+    close(releaseVelocity: releaseVelocity)
   }
 
   private var dragGesture: some Gesture {
@@ -690,28 +924,39 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       .onChanged { value in
         let raw = value.translation.height
         // Upward overshoot rubber-bands; downward follows 1:1 for dismiss.
-        drag = raw < 0 ? TrayDragDecision.rubberBand(cardTop: raw, expandedTop: 0) : raw
+        drag = TrayDragDecision.contentOffset(translation: raw)
       }
       .onEnded { value in
         switch TrayDragDecision.content(
           translation: value.translation.height,
-          predictedEndTranslation: value.predictedEndTranslation.height
+          predictedEndTranslation: value.predictedEndTranslation.height,
+          velocity: value.velocity.height,
+          trayHeight: cardHeight
         ) {
         case .dismiss:
-          requestClose()
+          requestClose(releaseVelocity: value.velocity.height)
         case .settle, .settleExpanded:
           if reduceMotion {
             drag = 0
           } else {
-            withAnimation(DashTrayMotion.release) { drag = 0 }
+            withAnimation(
+              DashTrayMotion.release(
+                initialVelocity: TrayDragDecision.normalizedSpringVelocity(
+                  pointsPerSecond: value.velocity.height,
+                  from: drag,
+                  to: 0
+                )
+              )
+            ) { drag = 0 }
           }
         }
       }
   }
 }
 
-/// Slide reveal for the `.content` card: a bounded rise with fade, blur, and
-/// a whisper of bottom-anchored scale, driven by one continuous progress.
+/// Slide reveal for the `.content` card. Presentation progress and direct drag
+/// share one animatable vector so releases and retargeting keep the card and
+/// scrim coherent instead of letting one dimension snap independently.
 private struct DashTrayCardReveal: ViewModifier, Animatable {
   var progress: CGFloat
   var drag: CGFloat
@@ -721,9 +966,12 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
   // Nonisolated: `Animatable` is a nonisolated protocol while `ViewModifier`
   // infers main-actor isolation onto the type; the accessors only touch
   // Sendable stored properties, which SE-0434 leaves nonisolated.
-  nonisolated var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
+  nonisolated var animatableData: AnimatablePair<CGFloat, CGFloat> {
+    get { AnimatablePair(progress, drag) }
+    set {
+      progress = newValue.first
+      drag = newValue.second
+    }
   }
 
   @ViewBuilder
@@ -735,9 +983,7 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
     } else {
       content
         .offset(y: drag + (1 - progress) * (max(revealOffset, drag + 48) - drag))
-        .scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)
         .opacity(progress)
-        .blur(radius: 4 * (1 - progress))
     }
   }
 }
@@ -745,7 +991,7 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
 /// `.large` trays: a custom two-detent sheet. It presents expanded — full
 /// width, edge-to-edge at the bottom, native-sheet top corners — and the grab
 /// bar or header drags it down to a floating detent styled exactly like a
-/// `.content` tray (screen-edge margins, concentric all-corner radius).
+/// `.content` tray (screen-edge margins and the shared all-corner radius).
 /// Margins and radii interpolate continuously with the drag; past the floating
 /// detent it dismisses. Native sheet behavior, our chrome.
 private struct DashExpandableSheet<Content: View>: View {
@@ -760,6 +1006,7 @@ private struct DashExpandableSheet<Content: View>: View {
   @State private var drag: CGFloat = 0
   @State private var contentTitle: String?
   @State private var contentDescription: String?
+  @State private var stepRole = DashTrayStepRole.root
   @State private var dismissDisabled = false
 
   private var resolvedTitle: String { contentTitle ?? title }
@@ -798,9 +1045,11 @@ private struct DashExpandableSheet<Content: View>: View {
       .ignoresSafeArea(edges: .bottom)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .accessibilityAddTraits(.isModal)
     .environment(\.dashTrayDismiss, close)
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
+    .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .presentationBackground(.clear)
     .dashToastHost()
@@ -826,7 +1075,7 @@ private struct DashExpandableSheet<Content: View>: View {
     return VStack(spacing: 0) {
       DashSheetHeader(
         title: resolvedTitle, description: contentDescription, showsGrabBar: true,
-        showsMenuButtons: showsMenuButtons,
+        showsMenuButtons: showsMenuButtons, stepRole: stepRole,
         menuButtonsDisabled: dismissDisabled,
         dismiss: requestClose
       )
@@ -857,9 +1106,9 @@ private struct DashExpandableSheet<Content: View>: View {
   private func metrics(in proxy: GeometryProxy) -> Metrics {
     let safeBottom = proxy.safeAreaInsets.bottom
     let expandedTop = DashTheme.Sheet.expandedTopGap
-    let floatingBottomMargin = max(
-      safeBottom - DashTheme.Sheet.floatingBottomTuck,
-      DashTheme.Sheet.floatingMargin)
+    let floatingBottomMargin = DashTheme.Sheet.floatingMargin
+    let floatingHorizontalMargin = DashTrayGeometry.floatingHorizontalMargin(
+      containerWidth: proxy.size.width)
     let floatingHeight = proxy.size.height * DashTheme.Sheet.floatingDetentFraction
     let floatingTop = proxy.size.height - floatingBottomMargin - floatingHeight
 
@@ -873,7 +1122,7 @@ private struct DashExpandableSheet<Content: View>: View {
     return Metrics(
       cardTop: cardTop,
       height: max(120, proxy.size.height - cardTop - bottomMargin),
-      horizontalMargin: lerp(0, DashTheme.Sheet.floatingMargin),
+      horizontalMargin: lerp(0, floatingHorizontalMargin),
       bottomMargin: bottomMargin,
       topRadius: lerp(DashTheme.Sheet.expandedTopRadius, DashDisplayChrome.floatingRadius),
       bottomRadius: lerp(DashDisplayChrome.cornerRadius, DashDisplayChrome.floatingRadius),
@@ -953,8 +1202,34 @@ private struct DashSheetGrabBar: View {
   }
 }
 
-/// Physical display metrics so floating trays run concentric with the
-/// hardware corners.
+/// Pure floating-card geometry shared by content trays, collapsed large trays,
+/// and unit tests.
+enum DashTrayGeometry {
+  static func floatingWidth(containerWidth: CGFloat) -> CGFloat {
+    min(
+      DashTheme.Sheet.floatingMaxWidth,
+      max(0, containerWidth - DashTheme.Sheet.floatingMargin * 2)
+    )
+  }
+
+  static func floatingHorizontalMargin(containerWidth: CGFloat) -> CGFloat {
+    max(
+      DashTheme.Sheet.floatingMargin,
+      (containerWidth - DashTheme.Sheet.floatingMaxWidth) / 2
+    )
+  }
+
+  /// The content GeometryReader ends above the home-indicator safe area. Move
+  /// the card into that inset just far enough to preserve a physical 16pt gap
+  /// from the display edge; square-bottom devices simply use 16pt padding.
+  static func bottomLift(safeAreaBottom: CGFloat) -> CGFloat {
+    guard safeAreaBottom > 0 else { return DashTheme.Sheet.floatingMargin }
+    return DashTheme.Sheet.floatingMargin - safeAreaBottom
+  }
+}
+
+/// Physical display metrics retained for the edge-to-edge bottom corners of an
+/// expanded `.large` tray.
 @MainActor
 enum DashDisplayChrome {
   /// The display's corner radius; 0 on square-cornered devices.
@@ -965,18 +1240,15 @@ enum DashDisplayChrome {
     return (screen?.value(forKey: key) as? CGFloat) ?? 0
   }()
 
-  /// All-corner radius for a floating tray inset by `floatingMargin`:
-  /// concentric with the display when its radius is known, the sheet token
-  /// otherwise.
+  /// Floating trays share one product radius across devices. This also makes a
+  /// collapsed `.large` tray geometrically identical to a `.content` tray.
   static var floatingRadius: CGFloat {
-    cornerRadius > 0
-      ? max(cornerRadius - DashTheme.Sheet.floatingMargin, DashTheme.Radius.card)
-      : DashTheme.Radius.sheet
+    DashTheme.Radius.sheet
   }
 }
 
 /// The visible card of a `.content` tray, at the bottom of a full-screen
-/// transparent cover: a fixed header over a body that springs its height to fit
+/// transparent cover: a fixed header over a body that animates its height to fit
 /// its content — so a morph resizes smoothly with no detent to clip or snap —
 /// but caps at the available height (`maxCardHeight`, which shrinks with the
 /// keyboard) and scrolls beyond it, so a form never squeezes or overflows.
@@ -1045,8 +1317,8 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
       }
     }
     .frame(maxWidth: .infinity)
-    // A floating card: every corner rounded, concentric with the display, and
-    // nothing extends past the card — the gaps around it are the design.
+    // A floating card: one stable all-corner radius, and nothing extends past
+    // the card — the gaps around it are the design.
     .background {
       RoundedRectangle(cornerRadius: DashDisplayChrome.floatingRadius, style: .continuous)
         .fill(DashTheme.Sheet.background)
@@ -1072,7 +1344,7 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
     let target = min(bodyIdeal, maxBodyHeight)
     guard target > 0 else { return }
     if animated, !reduceMotion {
-      withAnimation(DashTheme.Motion.morph) { bodyDisplay = target }
+      withAnimation(DashTrayMotion.resize) { bodyDisplay = target }
     } else {
       var transaction = Transaction()
       transaction.disablesAnimations = reduceMotion

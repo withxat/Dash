@@ -1669,15 +1669,76 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(SolarAsset.Content.all.allSatisfy { $0.hasSuffix("Fill") })
 }
 
-@Test func contentTrayDragDecisionUsesProjectionAndVelocity() {
+@Test func contentTrayDragDecisionUsesRelativeDistanceVelocityAndIntentFloor() {
+  let trayHeight: CGFloat = 400
+
   #expect(
-    TrayDragDecision.content(translation: 40, predictedEndTranslation: 40) == .settle)
+    TrayDragDecision.content(
+      translation: 99, predictedEndTranslation: 99, velocity: 0, trayHeight: trayHeight
+    ) == .settle)
   #expect(
-    TrayDragDecision.content(translation: 130, predictedEndTranslation: 130) == .dismiss)
+    TrayDragDecision.content(
+      translation: 100, predictedEndTranslation: 100, velocity: 0, trayHeight: trayHeight
+    ) == .dismiss)
   #expect(
-    TrayDragDecision.content(translation: 40, predictedEndTranslation: 200) == .dismiss)
+    TrayDragDecision.content(
+      translation: 8, predictedEndTranslation: 200, velocity: 399, trayHeight: trayHeight
+    ) == .settle)
   #expect(
-    TrayDragDecision.content(translation: 40, predictedEndTranslation: 1000) == .dismiss)
+    TrayDragDecision.content(
+      translation: 8, predictedEndTranslation: 200, velocity: 400, trayHeight: trayHeight
+    ) == .dismiss)
+  #expect(
+    TrayDragDecision.content(
+      translation: 7, predictedEndTranslation: 1_000, velocity: 2_000, trayHeight: trayHeight
+    ) == .settle)
+}
+
+@Test func contentTrayDragOffsetTracksDownwardAndDampensUpward() {
+  #expect(TrayDragDecision.contentOffset(translation: 42) == 42)
+
+  let shallow = TrayDragDecision.contentOffset(translation: -8)
+  let deep = TrayDragDecision.contentOffset(translation: -80)
+  #expect(abs(shallow - (-8 * CGFloat(log1p(Double(1))))) < 0.001)
+  #expect(deep < shallow)
+  #expect(deep > -80)
+}
+
+@Test func contentTrayScrimFollowsPresentationAndDownwardDrag() {
+  #expect(
+    TrayDragDecision.scrimProgress(presentation: 1, drag: 0, trayHeight: 400) == 1)
+  #expect(
+    TrayDragDecision.scrimProgress(presentation: 1, drag: 100, trayHeight: 400) == 0.75)
+  #expect(
+    TrayDragDecision.scrimProgress(presentation: 0.5, drag: 100, trayHeight: 400) == 0.375)
+  #expect(
+    TrayDragDecision.scrimProgress(presentation: 1, drag: 400, trayHeight: 400) == 0)
+  #expect(
+    TrayDragDecision.scrimProgress(presentation: 1, drag: -40, trayHeight: 400) == 1)
+}
+
+@Test func contentTraySpringVelocityIsNormalizedTowardItsTarget() {
+  #expect(
+    TrayDragDecision.normalizedSpringVelocity(
+      pointsPerSecond: 500, from: 100, to: 0
+    ) == -5)
+  #expect(
+    TrayDragDecision.normalizedSpringVelocity(
+      pointsPerSecond: 500, from: 100, to: 400
+    ) == 5.0 / 3.0)
+  #expect(
+    TrayDragDecision.normalizedSpringVelocity(
+      pointsPerSecond: 500, from: 100, to: 100
+    ) == 0)
+}
+
+@Test func floatingTrayGeometryUsesFamilyWidthAndPhysicalEdgeMargin() {
+  #expect(DashTrayGeometry.floatingWidth(containerWidth: 393) == 361)
+  #expect(DashTrayGeometry.floatingHorizontalMargin(containerWidth: 393) == 16)
+  #expect(DashTrayGeometry.floatingWidth(containerWidth: 430) == 361)
+  #expect(DashTrayGeometry.floatingHorizontalMargin(containerWidth: 430) == 34.5)
+  #expect(DashTrayGeometry.bottomLift(safeAreaBottom: 0) == 16)
+  #expect(DashTrayGeometry.bottomLift(safeAreaBottom: 34) == -18)
 }
 
 @Test func expandableTraySlowSmallDragsDoNotDismiss() {
@@ -1732,6 +1793,17 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(ProfileTrayPhase.initial == .accounts)
   #expect(ProfileTrayPhase.accounts.title == "Switch account")
   #expect(ProfileTrayPhase.signOut.title == "Sign out")
+}
+
+@Test func profileTrayPhaseMapsRoutesToSemanticRoles() throws {
+  let account = try JSONDecoder().decode(
+    CloudflareAccount.self,
+    from: Data(#"{"id":"account-1","name":"Example"}"#.utf8)
+  )
+
+  #expect(ProfileTrayPhase.accounts.trayRole == .root)
+  #expect(ProfileTrayPhase.switchAccount(account).trayRole == .detail)
+  #expect(ProfileTrayPhase.signOut.trayRole == .destructive)
 }
 
 @Test func accountRenameRequiresItsWriteScope() {

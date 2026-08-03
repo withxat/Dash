@@ -283,7 +283,7 @@ struct DashTrayActionPair<Secondary: View, Primary: View>: View {
   var body: some View {
     switch axis {
     case .horizontal:
-      HStack(spacing: DashTheme.Spacing.compact) {
+      HStack(spacing: DashTheme.Sheet.actionGap) {
         secondary
         primary
       }
@@ -376,6 +376,11 @@ struct DashDangerAction: Identifiable {
 /// a red Delete that the row grows into). No type-the-name field and no hold.
 /// Horizontal insets come from the tray card, never from here.
 struct DashConfirmableActions: View {
+  private enum Route: Hashable, Sendable {
+    case menu
+    case confirmation(String)
+  }
+
   let actions: [DashDangerAction]
   @Namespace private var morph
   @State private var pending: DashDangerAction?
@@ -384,14 +389,19 @@ struct DashConfirmableActions: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayDismiss) private var dismiss
 
+  private var route: Route {
+    pending.map { .confirmation($0.id) } ?? .menu
+  }
+
   var body: some View {
-    ZStack {
+    DashTrayFlow(
+      route: route,
+      role: pending == nil ? .root : .destructive
+    ) { _ in
       if let pending {
         confirmation(pending)
-          .transition(reduceMotion ? .opacity : .dashMorph)
       } else {
         menu
-          .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
   }
@@ -401,7 +411,7 @@ struct DashConfirmableActions: View {
       ForEach(actions) { action in
         Button {
           errorMessage = nil
-          withAnimation(DashTheme.Motion.morph) { pending = action }
+          pending = action
         } label: {
           dangerRow(action)
         }
@@ -457,7 +467,7 @@ struct DashConfirmableActions: View {
       DashTrayActionPair {
         DashTrayCancelButton {
           errorMessage = nil
-          withAnimation(DashTheme.Motion.morphExit) { pending = nil }
+          pending = nil
         }
         .disabled(actionPhase.isActive)
       } primary: {
@@ -499,9 +509,9 @@ struct DashConfirmableActions: View {
 
 /// The primary filled pill a tray should use when it has any footer actions —
 /// at least one of these, with reversible extras as `DashTrayPillButton`. Idle
-/// and confirming titles are separate views that cross-dissolve via
-/// `.dashMorph` inside `DashConfirmMorph`. Destructive confirms are a second
-/// tap after Cancel joins the row — never a sustained hold.
+/// and confirming titles are separate views replaced by `DashTrayFlow` inside
+/// `DashConfirmMorph`. Destructive confirms are a second tap after Cancel joins
+/// the row — never a sustained hold.
 struct DashActionButton: View {
   let title: String
   /// Optional leading asset-catalog icon (e.g. Cloudflare brand mark).

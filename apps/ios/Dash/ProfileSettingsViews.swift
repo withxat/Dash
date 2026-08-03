@@ -13,21 +13,17 @@ import UserNotifications
 struct ProfileTrayContent: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var phase: ProfileTrayPhase
 
   var body: some View {
-    ZStack {
+    DashTrayFlow(route: phase, role: phase.trayRole) { phase in
       switch phase {
       case .accounts:
         accountList
-          .transition(reduceMotion ? .opacity : .dashMorph)
       case .switchAccount(let account):
         accountSwitchMessage(account)
-          .transition(reduceMotion ? .opacity : .dashMorph)
       case .signOut:
         signOutMessage
-          .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
     .frame(maxWidth: .infinity)
@@ -43,7 +39,7 @@ struct ProfileTrayContent: View {
             dismiss()
             return
           }
-          withAnimation(DashTheme.Motion.morph) { phase = .switchAccount(account) }
+          phase = .switchAccount(account)
         } label: {
           ProfileTrayAccountRow(account: account, isActive: isActive)
         }
@@ -107,17 +103,14 @@ struct ProfileTrayFooter: View {
   private static let signOutMorphID = "profile-tray-sign-out"
 
   var body: some View {
-    ZStack {
+    DashTrayFlow(route: phase, role: phase.trayRole) { phase in
       switch phase {
       case .accounts:
         signOutSource
-          .transition(reduceMotion ? .opacity : .dashMorph)
       case .switchAccount(let account):
         accountSwitchActions(account)
-          .transition(reduceMotion ? .opacity : .dashMorph)
       case .signOut:
         signOutConfirmationActions
-          .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
     .frame(maxWidth: .infinity)
@@ -138,7 +131,7 @@ struct ProfileTrayFooter: View {
       morphID: signOutMorphID,
       morphNamespace: signOutMorphNamespace
     ) {
-      withAnimation(DashTheme.Motion.morph) { phase = .signOut }
+      phase = .signOut
     }
     .accessibilityIdentifier("profile-account-sign-out")
   }
@@ -146,7 +139,7 @@ struct ProfileTrayFooter: View {
   private func accountSwitchActions(_ account: CloudflareAccount) -> some View {
     DashTrayActionPair {
       DashTrayCancelButton {
-        withAnimation(DashTheme.Motion.morph) { phase = .accounts }
+        phase = .accounts
       }
     } primary: {
       DashActionButton(title: "Switch account") {
@@ -159,7 +152,7 @@ struct ProfileTrayFooter: View {
   private var signOutConfirmationActions: some View {
     DashTrayActionPair {
       DashTrayCancelButton {
-        withAnimation(DashTheme.Motion.morphExit) { phase = .accounts }
+        phase = .accounts
       }
       .disabled(model.signOutActionPhase.isActive)
     } primary: {
@@ -224,7 +217,7 @@ private struct ProfileTrayAccountRow: View {
   }
 }
 
-enum ProfileTrayPhase: Equatable, Sendable {
+enum ProfileTrayPhase: Hashable, Sendable {
   case accounts
   case switchAccount(CloudflareAccount)
   case signOut
@@ -235,6 +228,14 @@ enum ProfileTrayPhase: Equatable, Sendable {
     switch self {
     case .accounts, .switchAccount: DashL10n.string("Switch account")
     case .signOut: DashL10n.string("Sign out")
+    }
+  }
+
+  var trayRole: DashTrayStepRole {
+    switch self {
+    case .accounts: .root
+    case .switchAccount: .detail
+    case .signOut: .destructive
     }
   }
 }

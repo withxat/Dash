@@ -539,7 +539,7 @@ struct DashToastHost: View {
     Group {
       if let toast {
         DashToastCard(toast: toast)
-          .padding(.horizontal, DashTheme.Sheet.floatingMargin)
+          .padding(.horizontal, DashTheme.Toast.horizontalMargin)
           // Main canvas ignores the top safe area; land on the same band as
           // the floated avatar (safe area + chrome inset), not tray margins.
           .safeAreaPadding(.top)

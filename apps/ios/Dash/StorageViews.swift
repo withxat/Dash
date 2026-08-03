@@ -99,6 +99,24 @@ struct R2BucketRequestIdentity: Hashable, Sendable {
   let folderPrefix: String
 }
 
+private enum R2BucketActionsStep: Hashable, Sendable {
+  case menu
+  case createFolder
+  case deleteFolder
+
+  var trayRole: DashTrayStepRole {
+    self == .menu ? .root : .detail
+  }
+
+  var title: String {
+    switch self {
+    case .menu: "Actions"
+    case .createFolder: "Create folder"
+    case .deleteFolder: "Delete folder"
+    }
+  }
+}
+
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -128,8 +146,7 @@ struct R2BucketView: View {
   /// Steps of the Actions tray. A second `dashTray` on this screen would have to
   /// present while the first is still animating out, so the create form and the
   /// folder-delete confirmation morph inside the tray that is already open.
-  @State private var createsFolder = false
-  @State private var confirmsFolderDelete = false
+  @State private var bucketActionsStep = R2BucketActionsStep.menu
   /// Whether this prefix has its own zero-byte `…/` marker object. It is the
   /// only thing "delete this empty folder" can remove — a folder that exists
   /// purely because objects sit under it disappears on its own once they go.
@@ -359,8 +376,7 @@ struct R2BucketView: View {
     // step here never morphs the content back while it is still on screen.
     .onChange(of: showsBucketActions) { _, presented in
       guard !presented else { return }
-      createsFolder = false
-      confirmsFolderDelete = false
+      bucketActionsStep = .menu
     }
     // Settings may have changed the domains while this screen stayed mounted
     // below it — resync from the shared cache on return. A visit that finds
@@ -419,8 +435,7 @@ struct R2BucketView: View {
     selectedKeys = []
     confirmsBatchDelete = false
     showsBucketActions = false
-    createsFolder = false
-    confirmsFolderDelete = false
+    bucketActionsStep = .menu
     hasFolderMarker = false
     domains = nil
     objectFrameStore.clear()
@@ -478,8 +493,9 @@ struct R2BucketView: View {
   /// folder-delete confirmation. Each step transitions in place, the way
   /// `AddDomainSheet` morphs its form into the name-server step.
   @ViewBuilder private var r2BucketActionsTray: some View {
-    ZStack {
-      if createsFolder {
+    DashTrayFlow(route: bucketActionsStep, role: bucketActionsStep.trayRole) { step in
+      switch step {
+      case .createFolder:
         R2CreateFolderSheet(
           bucket: bucket,
           folderPrefix: folderPrefix,
@@ -487,22 +503,20 @@ struct R2BucketView: View {
           siblingObjectKeys: objects.map(\.key),
           onCreated: { await invalidateAndReload() }
         )
-        .transition(reduceMotion ? .opacity : .dashMorph)
-      } else if confirmsFolderDelete {
+      case .deleteFolder:
         DashConfirmableActions(actions: [deleteFolderAction])
-          .transition(reduceMotion ? .opacity : .dashMorph)
-      } else {
+      case .menu:
         r2BucketActionsMenu
-          .transition(reduceMotion ? .opacity : .dashMorph)
       }
     }
+    .dashTrayTitle(bucketActionsStep.title)
   }
 
   @ViewBuilder private var r2BucketActionsMenu: some View {
     dashListCard {
       if featureAllowsWrites {
         Button {
-          withAnimation(DashTheme.Motion.morph) { createsFolder = true }
+          bucketActionsStep = .createFolder
         } label: {
           DashListRow(
             title: DashL10n.string("Create folder"),
@@ -569,7 +583,7 @@ struct R2BucketView: View {
         DashListGroupDivider()
 
         Button {
-          withAnimation(DashTheme.Motion.morph) { confirmsFolderDelete = true }
+          bucketActionsStep = .deleteFolder
         } label: {
           DashListRow(
             title: DashL10n.string("Delete folder"),
@@ -596,7 +610,7 @@ struct R2BucketView: View {
       message: DashL10n.string(
         "Deletes the empty \(currentFolderName) folder from \(bucket). This can't be undone."),
       onSuccessPresentationCompleted: {
-        confirmsFolderDelete = false
+        bucketActionsStep = .menu
         // The parent listing is stale by exactly this folder; its own
         // `reloadIfInvalidated` refetches when the cache comes back cold.
         navigator?.pop()

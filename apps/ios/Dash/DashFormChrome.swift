@@ -65,11 +65,11 @@ struct DashFormSheet<Content: View>: View {
 }
 
 /// The shared body/confirm morph: a body that swaps to a centered message, a
-/// Cancel that dissolves in while confirming, and a primary `DashActionButton`
-/// that dissolves with the same `.dashMorph` blur (idle Save/Make active ↔
-/// Delete) instead of staying sharp while the body blurs. A header trash
-/// button flips `confirming`. Reused by editor and detail trays so the whole
-/// app shares one "primary action + optional sub-actions" interaction.
+/// Cancel that joins while confirming, and a primary `DashActionButton` that
+/// follows the same route-driven replacement as the body (idle Save/Make active
+/// ↔ Delete). A header trash button flips `confirming`. Reused by editor and
+/// detail trays so the whole app shares one "primary action + optional
+/// sub-actions" interaction.
 struct DashConfirmMorph<Content: View>: View {
   @Binding var confirming: Bool
   var message: String?
@@ -91,15 +91,12 @@ struct DashConfirmMorph<Content: View>: View {
   var headerDelete = false
   var headerDeleteAction: (() -> Void)? = nil
   @ViewBuilder var content: () -> Content
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTrayPinsFooter) private var pinsFooter
 
-  private var morphTransition: AnyTransition {
-    reduceMotion ? .opacity : .dashMorph
-  }
+  private var stepRole: DashTrayStepRole { confirming ? .destructive : .root }
 
   var body: some View {
-    VStack(spacing: 16) {
+    VStack(spacing: 0) {
       Group {
         if pinsFooter {
           DashFadedScrollView(
@@ -115,12 +112,39 @@ struct DashConfirmMorph<Content: View>: View {
         }
       }
 
-      if confirming {
-        DashTrayActionPair {
-          DashTrayCancelButton {
-            withAnimation(DashTheme.Motion.morphExit) { confirming = false }
+      // Keep the route host alive even when a detail tray has no idle footer.
+      // Its root route is zero-height, but retaining it lets Delete animate in
+      // and back out instead of mounting the flow after the route already won.
+      actionContent
+        .padding(.top, confirming || actionTitle != nil ? 16 : 0)
+    }
+    .frame(
+      maxWidth: .infinity,
+      maxHeight: pinsFooter ? .infinity : nil,
+      alignment: .top
+    )
+    .dashTrayHeaderAction(
+      headerDelete && !confirming && !actionPhase.isActive
+        ? DashSheetHeaderAction(
+          id: "delete", icon: SolarAsset.trash,
+          accessibilityLabel: DashL10n.string("Delete")
+        ) {
+          if let headerDeleteAction {
+            headerDeleteAction()
+          } else {
+            confirming = true
           }
-          .disabled(actionPhase.isActive)
+        }
+        : nil
+    )
+  }
+
+  private var actionContent: some View {
+    DashTrayFlow(route: confirming, role: stepRole) { isConfirming in
+      if isConfirming {
+        DashTrayActionPair {
+          DashTrayCancelButton { confirming = false }
+            .disabled(actionPhase.isActive)
         } primary: {
           DashActionButton(
             title: confirmingActionTitle,
@@ -132,7 +156,6 @@ struct DashConfirmMorph<Content: View>: View {
           .disabled(!actionEnabled)
           .opacity(actionEnabled ? 1 : 0.45)
         }
-        .transition(morphTransition)
       } else if let actionTitle {
         if let secondaryActionTitle, let secondaryAction {
           // Not a way out of the primary — an alternative beside it, so it
@@ -151,7 +174,6 @@ struct DashConfirmMorph<Content: View>: View {
             .disabled(!actionEnabled)
             .opacity(actionEnabled ? 1 : 0.45)
           }
-          .transition(morphTransition)
         } else {
           DashActionButton(
             title: actionTitle,
@@ -162,35 +184,14 @@ struct DashConfirmMorph<Content: View>: View {
           )
           .disabled(!actionEnabled)
           .opacity(actionEnabled ? 1 : 0.45)
-          .transition(morphTransition)
         }
       }
     }
-    .frame(
-      maxWidth: .infinity,
-      maxHeight: pinsFooter ? .infinity : nil,
-      alignment: .top
-    )
-    .dashTrayHeaderAction(
-      headerDelete && !confirming && !actionPhase.isActive
-        ? DashSheetHeaderAction(
-          id: "delete", icon: SolarAsset.trash,
-          accessibilityLabel: DashL10n.string("Delete")
-        ) {
-          if let headerDeleteAction {
-            headerDeleteAction()
-          } else {
-            withAnimation(DashTheme.Motion.morph) { confirming = true }
-          }
-        }
-        : nil
-    )
   }
 
-  @ViewBuilder
   private var bodyContent: some View {
-    ZStack {
-      if confirming, let message {
+    DashTrayFlow(route: confirming, role: stepRole) { isConfirming in
+      if isConfirming, let message {
         VStack(spacing: 12) {
           Text(DashL10n.ui(message))
             .dashTextStyle(.supporting)
@@ -203,10 +204,8 @@ struct DashConfirmMorph<Content: View>: View {
             DashNotice(kind: .error, message: errorMessage)
           }
         }
-        .transition(morphTransition)
       } else {
         content()
-          .transition(morphTransition)
       }
     }
   }

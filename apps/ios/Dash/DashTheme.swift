@@ -14,7 +14,7 @@ enum DashTheme {
     static let subtitledListRow: CGFloat = 72
     /// Fixed height for every primary / secondary tray pill. Never `minHeight`
     /// alone — pills must not grow with Dynamic Type or leftover tray space.
-    static let actionPillHeight: CGFloat = 52
+    static let actionPillHeight: CGFloat = 48
   }
 
   enum DitherChart {
@@ -345,11 +345,31 @@ enum DashTheme {
       isReduced ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.9)
     }
 
-    // MARK: Floating surfaces — trays use this present / release / dismiss set
-    // (`DashTrayMotion`). Toasts keep a springier present of their own so the
-    // card can bounce; they still share `release` / `dismiss`. Raw springs:
-    // call sites gate reduce-motion, and some deliberately skip the gate to
-    // keep a drag-release physical.
+    // MARK: Tray
+
+    /// Drawer arrival / departure. The strong ease-out answers immediately and
+    /// then lands without the overshoot a content-driven height change must not
+    /// inherit.
+    static let trayPresent = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.5)
+    static let trayDismiss = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.5)
+    /// The card shell follows the active step's measured height, independently
+    /// of the content crossfade inside it.
+    static let trayResize = Animation.timingCurve(0.25, 1, 0.5, 1, duration: 0.27)
+    /// Step replacement paces. Returning to a root menu is a little quicker;
+    /// destructive confirmations arrive fastest so the warning reads promptly
+    /// while the shell continues its own 270ms settle.
+    static let trayStep = Animation.timingCurve(0.26, 0.08, 0.25, 1, duration: 0.27)
+    static let trayStepReturn = Animation.timingCurve(0.26, 0.08, 0.25, 1, duration: 0.22)
+    static let trayStepDestructive = Animation.timingCurve(
+      0.26, 0.08, 0.25, 1, duration: 0.15)
+    /// Only a finger-driven release keeps a spring, so it can inherit and
+    /// redirect momentum. Programmatic presentation and resizing stay timed.
+    static let trayRelease = Animation.spring(
+      response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
+
+    // MARK: Floating surfaces — Toast and free-moving interaction vocabulary.
+    // Raw springs: call sites gate reduce-motion, and some deliberately skip the
+    // gate to keep a drag-release physical.
     static let present = Animation.spring(
       response: 0.35, dampingFraction: 0.88, blendDuration: 0.12)
     static let release = Animation.spring(
@@ -359,13 +379,23 @@ enum DashTheme {
   }
 
   enum Sheet {
-    static let content: CGFloat = Spacing.panel
-    static let headerTop: CGFloat = Spacing.panel
-    static let headerBottom: CGFloat = Spacing.comfortable
+    /// Body and footer inset inside a floating content tray.
+    static let content: CGFloat = 24
+    /// Header chrome is optically wider than the body. A 44pt close target has
+    /// a 32pt visible face, so these values put that face at 28pt on a root step
+    /// and 32pt on a detail step.
+    static let headerHorizontal: CGFloat = 28
+    static let headerTop: CGFloat = 22
+    static let detailHeaderTop: CGFloat = 26
+    static let headerBottom: CGFloat = 6
+    static let descriptionBottom: CGFloat = Spacing.comfortable
     static let bodyVertical: CGFloat = 16
-    static let bodyBottom: CGFloat = 32
-    /// `color-kumo-base`
-    static let background = adaptive(light: 0xFFFFFF, dark: 0x0F0F0F)
+    static let bodyBottom: CGFloat = 24
+    static let actionGap: CGFloat = 16
+    /// Near-white keeps the floating face distinct from a pure-white canvas;
+    /// Dark Mode retains Dash's established surface instead of copying a
+    /// light-only web demo.
+    static let background = adaptive(light: 0xFEFFFE, dark: 0x0F0F0F)
     static let grabBarWidth: CGFloat = 36
     static let grabBarHeight: CGFloat = 5
     static let grabBarTop: CGFloat = Spacing.compact
@@ -376,11 +406,12 @@ enum DashTheme {
     static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
-    static let scrimOpacity: CGFloat = 0.35
+    static let scrimOpacity: CGFloat = 0.30
     /// Gap between a floating tray and the screen edges.
-    static let floatingMargin: CGFloat = 12
-    /// Lets floating trays sit slightly inside the home-indicator safe area.
-    static let floatingBottomTuck: CGFloat = 6
+    static let floatingMargin: CGFloat = 16
+    /// A content tray stops growing horizontally at the reference width; small
+    /// iPhones still preserve `floatingMargin` on both sides.
+    static let floatingMaxWidth: CGFloat = 361
     /// Native-sheet-like top corners while an expandable tray is expanded.
     static let expandedTopRadius: CGFloat = 12
     /// Gap kept below the top safe area while expanded.
@@ -388,6 +419,12 @@ enum DashTheme {
     /// Share of the screen an expandable tray keeps when collapsed to its
     /// floating detent.
     static let floatingDetentFraction: CGFloat = 0.62
+  }
+
+  enum Toast {
+    /// Toasts keep their established, slightly wider footprint; Tray margins
+    /// are an independent Family-system geometry token.
+    static let horizontalMargin: CGFloat = 12
   }
 
   // Palette mirrors https://kumo-ui.com/colors/ token reference (sRGB hex
