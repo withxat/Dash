@@ -463,7 +463,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Purge URL"].waitForExistence(timeout: 5))
   }
 
-  func testProfileTrayStackMorphsCloseIntoBack() {
+  func testProfileTrayStackRetargetsCloseControlToBack() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -481,8 +481,9 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(Self.waitForHittable(inactiveAccount))
     inactiveAccount.tap()
 
-    // Detail step: same circle, now a back control — and no footer Cancel
-    // whose only job is going back.
+    // Detail step: the same circle wearing the same ✕, now doing the back
+    // job (only the label and identifier say so) — and no footer Cancel whose
+    // only job is going back.
     let back = app.buttons["dash.tray.back"]
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["dash.tray.close"].exists)

@@ -427,8 +427,8 @@ private struct DashTrayDescriptionKey: PreferenceKey {
 
 /// Back navigation for a stack-driven multi-step tray: published by
 /// `DashTrayFlow`'s `root:path:` form whenever the path is non-empty, consumed
-/// by the tray header, which morphs its close circle from ✕ into ← and pops one
-/// step instead of dismissing. Equality is depth-only, matching
+/// by the tray header, whose ✕ circle then pops one step instead of dismissing
+/// (same glyph, different job). Equality is depth-only, matching
 /// `DashSheetHeaderAction`'s id-only pattern: the pop closure is semantically
 /// identical at any given depth, so preference plumbing never churns on
 /// closure identity.
@@ -565,11 +565,12 @@ private struct DashTrayStepSlide: ViewModifier, Animatable {
 ///   replacement. For two-state morphs (confirm affordances) and terminal
 ///   replacements where "back" would reopen a committed step.
 /// - `root:path:role:` — a route stack. Forward is `path.append`, and the flow
-///   publishes the header back control: at any depth the tray's ✕ morphs into ←
-///   and pops one step. Steps gain a directional slide (`trayStepSlide`) so
-///   progression and return read as travel, not teleport. Terminal success
-///   steps must *replace* the stack (`path = [.done]`), never push — a back
-///   control over a committed action would reopen its form.
+///   publishes the header back control: at any depth the tray's ✕ pops one step
+///   instead of dismissing (the glyph stays ✕ — see `DashTrayDismissButton`).
+///   Steps gain a directional slide (`trayStepSlide`) so progression and return
+///   read as travel, not teleport. Terminal success steps must *replace* the
+///   stack (`path = [.done]`), never push — a back control over a committed
+///   action would reopen its form.
 struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
   let route: Route
   let role: DashTrayStepRole
@@ -753,22 +754,20 @@ private struct DashSheetMenuButtons: View {
   }
 }
 
-/// The tray's one dismissal circle, in two poses: ✕ closes the tray on a root
-/// step; when a stack flow publishes a back action, the same circle morphs
-/// into ← and pops one step instead. One control, two meanings — the morph is
-/// what tells the user the button's job changed (Family's chevron rule).
-/// Drag and scrim are unaffected: they always dismiss the whole tray.
+/// The tray's one dismissal circle. Its glyph is always ✕ — deliberately, at
+/// every depth: a tray is one modal surface, and the mark in that corner is
+/// the mark that takes you out of the step you are in. Swapping it for a ←
+/// made the corner a control the eye has to re-read on every push, so only the
+/// button's *job* changes with depth — a stack flow's back action pops one
+/// step instead of dismissing, and the accessibility label and identifier are
+/// what report that (`dash.tray.back` / `dash.tray.close`). Do not reintroduce
+/// a glyph morph here. Drag and scrim are unaffected: they always dismiss the
+/// whole tray.
 private struct DashTrayDismissButton: View {
   let backAction: DashTrayBackAction?
   let dismiss: () -> Void
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.layoutDirection) private var layoutDirection
 
   private var isBack: Bool { backAction != nil }
-  private var backAsset: String {
-    layoutDirection == .rightToLeft ? SolarAsset.chevronRight : SolarAsset.chevronLeft
-  }
-  private var morphDirection: Double { layoutDirection == .rightToLeft ? 1 : -1 }
 
   var body: some View {
     Button {
@@ -778,21 +777,10 @@ private struct DashTrayDismissButton: View {
         dismiss()
       }
     } label: {
-      ZStack {
-        SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
-          .opacity(isBack ? 0 : 1)
-          .rotationEffect(.degrees(reduceMotion ? 0 : (isBack ? 90 * morphDirection : 0)))
-        SolarIcon(asset: backAsset, size: 22, color: DashTheme.Sheet.closeIcon)
-          .opacity(isBack ? 1 : 0)
-          .rotationEffect(.degrees(reduceMotion ? 0 : (isBack ? 0 : -90 * morphDirection)))
-      }
-      .frame(width: 32, height: 32)
-      .background(DashTheme.recessed, in: Circle())
-      .dashCompactHitTarget()
-      .animation(
-        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.iconSwap,
-        value: isBack
-      )
+      SolarIcon(asset: SolarAsset.close, size: 22, color: DashTheme.Sheet.closeIcon)
+        .frame(width: 32, height: 32)
+        .background(DashTheme.recessed, in: Circle())
+        .dashCompactHitTarget()
     }
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(isBack ? DashL10n.string("Back") : DashL10n.string("Close"))

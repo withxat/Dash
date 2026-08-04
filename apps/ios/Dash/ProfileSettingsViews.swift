@@ -7,6 +7,118 @@ import UIKit
 import UniformTypeIdentifiers
 import UserNotifications
 
+// MARK: - Account decisions
+
+/// Switch account and Sign out are each asked in two places — the Profile
+/// tray, where they are stack steps (copy in the body, controls in the fixed
+/// footer), and Settings → Switch account, where each is a one-step tray
+/// holding both halves. The decision itself is defined once here: same copy,
+/// same controls, same rule about who gets a Cancel. Only the way *out*
+/// differs, so every host passes its own `cancel`, and only the Profile footer
+/// passes the morph identity its Sign out pill travels on.
+enum AccountDecisionCopy {
+  /// Two consequences, two paragraphs — kept as separate catalog keys and
+  /// joined here, because the Files sentence is only true of this app's mounts
+  /// and must stay translatable on its own.
+  static var signOutConsequences: String {
+    [
+      DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."),
+      DashL10n.string(
+        "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
+      ),
+    ].joined(separator: "\n\n")
+  }
+
+  static func switchMessage(for account: CloudflareAccount) -> String {
+    DashL10n.string(
+      "Switch to \(account.name)? Cached data and open screens for the current account will reset."
+    )
+  }
+}
+
+/// The centred supporting copy a confirmation step shows above its controls.
+/// Only the Profile tray needs it: there the text belongs to one step and
+/// changes as the flow moves, which is content. Settings hands the same string
+/// to `dashTrayDescription` instead, because a one-step tray's copy is that
+/// tray's standing explanation of itself. Same words, two honest positions.
+struct AccountDecisionMessage: View {
+  let text: String
+
+  var body: some View {
+    Text(text)
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity)
+      .padding(.horizontal, 4)
+      .padding(.top, 4)
+  }
+}
+
+/// Commit control for the account switch. It states no Cancel on purpose: the
+/// switch is reversible, so the tray's ✕ is the whole way out — popping the
+/// step in the Profile tray, dismissing the one-step tray in Settings, which
+/// is the same "not this" either way.
+struct AccountSwitchConfirmationActions: View {
+  let confirm: () -> Void
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+
+  var body: some View {
+    DashActionButton(title: "Switch account") {
+      dismissAfter(confirm)
+    }
+  }
+}
+
+/// Sign out is destructive, so it always pairs its danger pill with a Cancel:
+/// the header circle wears the same ✕ at every depth, and a step one tap from
+/// an irreversible action must state that backing out is still possible.
+/// `cancel` is that step's own way back — a pop in the Profile tray, a
+/// dismissal in Settings.
+struct SignOutConfirmationActions: View {
+  let cancel: () -> Void
+  /// Each host names its own confirm pill; the shared component cannot, and a
+  /// container identifier would not answer a `buttons[…]` query.
+  var confirmIdentifier: String? = nil
+  /// The surface the idle control on the previous step grows from — the
+  /// Profile footer's full-width pill, Settings' red row.
+  var morphID: String? = nil
+  var labelMorphID: String? = nil
+  var morphNamespace: Namespace.ID? = nil
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    DashTrayActionPair {
+      DashTrayCancelButton(action: cancel)
+        .disabled(model.signOutActionPhase.isActive)
+    } primary: {
+      confirmButton
+    }
+  }
+
+  @ViewBuilder private var confirmButton: some View {
+    let button = DashActionButton(
+      title: "Sign out",
+      role: .destructive,
+      phase: model.signOutActionPhase,
+      morphID: morphID,
+      labelMorphID: labelMorphID,
+      morphNamespace: morphNamespace,
+      onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+    ) {
+      Task {
+        await model.signOut(presentsCompletion: true)
+      }
+    }
+    if let confirmIdentifier {
+      button.accessibilityIdentifier(confirmIdentifier)
+    } else {
+      button
+    }
+  }
+}
+
 /// Avatar long-press account switcher with in-tray switch and sign-out
 /// confirmations. Tapping the avatar still pushes Settings.
 struct ProfileTrayContent: View {
@@ -53,36 +165,11 @@ struct ProfileTrayContent: View {
   }
 
   private func accountSwitchMessage(_ account: CloudflareAccount) -> some View {
-    Text(
-      DashL10n.string(
-        "Switch to \(account.name)? Cached data and open screens for the current account will reset."
-      )
-    )
-    .dashTextStyle(.supporting)
-    .foregroundStyle(DashTheme.subtle)
-    .multilineTextAlignment(.center)
-    .fixedSize(horizontal: false, vertical: true)
-    .frame(maxWidth: .infinity)
-    .padding(.top, 4)
-  }
-
-  private var signOutConsequences: String {
-    [
-      DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."),
-      DashL10n.string(
-        "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
-      ),
-    ].joined(separator: "\n\n")
+    AccountDecisionMessage(text: AccountDecisionCopy.switchMessage(for: account))
   }
 
   private var signOutMessage: some View {
-    Text(signOutConsequences)
-      .dashTextStyle(.supporting)
-      .foregroundStyle(DashTheme.subtle)
-      .multilineTextAlignment(.center)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity)
-      .padding(.top, 4)
+    AccountDecisionMessage(text: AccountDecisionCopy.signOutConsequences)
   }
 }
 
@@ -90,8 +177,6 @@ struct ProfileTrayContent: View {
 /// body's fitted-height animation, so the shared Sign out hero has one stable
 /// global destination while account rows and confirmation copy morph above it.
 struct ProfileTrayFooter: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var path: [ProfileTrayPhase]
   let onSwitchAccount: (CloudflareAccount) -> Void
@@ -99,8 +184,9 @@ struct ProfileTrayFooter: View {
 
   /// Shared by the idle Sign out pill and the confirming pill so the enamel
   /// face travels between steps — same `matchedGeometryEffect` path
-  /// `DashConfirmableActions` uses for danger rows. Cancel is gone from these
-  /// footers: the header's ✕→← back control owns the way out of a step.
+  /// `DashConfirmableActions` uses for danger rows. The account-switch step
+  /// carries no footer Cancel — the header's ✕ owns the way out of it; the
+  /// destructive sign-out step is the deliberate exception (see below).
   private static let signOutMorphID = "profile-tray-sign-out"
 
   var body: some View {
@@ -145,25 +231,27 @@ struct ProfileTrayFooter: View {
   }
 
   private func accountSwitchActions(_ account: CloudflareAccount) -> some View {
-    DashActionButton(title: "Switch account") {
-      dismissAfter { onSwitchAccount(account) }
-    }
+    AccountSwitchConfirmationActions { onSwitchAccount(account) }
   }
 
+  /// The one stack step that keeps a footer Cancel, because it is the one that
+  /// is destructive — the shared control states why. Here its way back is a
+  /// one-step pop, and both morph endpoints stay inside this fixed footer so
+  /// the enamel face travels between them.
   private var signOutConfirmationActions: some View {
-    DashActionButton(
-      title: "Sign out",
-      role: .destructive,
-      phase: model.signOutActionPhase,
+    SignOutConfirmationActions(
+      cancel: popStep,
       morphID: signOutMorphID,
       labelMorphID: signOutLabelMorphID,
-      morphNamespace: signOutMorphNamespace,
-      onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-    ) {
-      Task {
-        await model.signOut(presentsCompletion: true)
-      }
-    }
+      morphNamespace: signOutMorphNamespace
+    )
+  }
+
+  /// Exactly the pop the header control performs — Cancel is a second door
+  /// onto the previous step, never a dismissal of the whole tray.
+  private func popStep() {
+    guard !path.isEmpty else { return }
+    path.removeLast()
   }
 }
 
@@ -894,25 +982,18 @@ struct SettingsAccountsView: View {
   }
 }
 
+/// Settings asks the same two decisions as the Profile tray, but one step at a
+/// time: the shared copy becomes the tray's description — a one-step tray has a
+/// standing explanation of itself rather than a step's content — and the shared
+/// controls sit in the body, cancelling by dismissing because there is no
+/// previous step to pop to.
 private struct AccountSwitchConfirmationContent: View {
-  @Environment(\.dashTrayDismiss) private var dismiss
-  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let account: CloudflareAccount
   let confirm: () -> Void
 
   var body: some View {
-    DashTrayActionPair {
-      DashTrayCancelButton(action: dismiss)
-    } primary: {
-      DashActionButton(title: "Switch account") {
-        dismissAfter(confirm)
-      }
-    }
-    .dashTrayDescription(
-      DashL10n.string(
-        "Switch to \(account.name)? Cached data and open screens for the current account will reset."
-      )
-    )
+    AccountSwitchConfirmationActions(confirm: confirm)
+      .dashTrayDescription(AccountDecisionCopy.switchMessage(for: account))
   }
 }
 
@@ -941,7 +1022,6 @@ enum SignOutTrayStep: Hashable, Sendable {
 /// pill's success check reports back through `completeSignOutActionPresentation`.
 /// The row itself is the shared `DashDangerMenuRow`.
 private struct SignOutConfirmationContent: View {
-  @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var step: SignOutTrayStep = .intro
   @Namespace private var actionMorph
@@ -949,18 +1029,6 @@ private struct SignOutConfirmationContent: View {
   /// Shared by the red row and the confirm pill so the enamel face travels
   /// between steps — the same `matchedGeometryEffect` path danger rows take.
   private static let signOutMorphID = "settings-sign-out"
-
-  /// Two consequences, two paragraphs — kept as separate catalog keys and
-  /// joined here, because the Files sentence is only true of this app's mounts
-  /// and must stay translatable on its own.
-  private var consequences: String {
-    [
-      DashL10n.string("You'll need to reconnect your Cloudflare account to use Dash again."),
-      DashL10n.string(
-        "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone."
-      ),
-    ].joined(separator: "\n\n")
-  }
 
   var body: some View {
     DashTrayFlow(route: step, role: step.trayRole) { route in
@@ -1006,35 +1074,17 @@ private struct SignOutConfirmationContent: View {
 
   private var confirmation: some View {
     VStack(spacing: 16) {
-      Text(consequences)
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 4)
-        .padding(.top, 4)
+      AccountDecisionMessage(text: AccountDecisionCopy.signOutConsequences)
 
-      DashTrayActionPair {
-        // Cancel steps back to the row, not out of the tray: on a route morph
-        // the header's ✕ stays a dismissal, so this is the way back.
-        DashTrayCancelButton { step = .intro }
-          .disabled(model.signOutActionPhase.isActive)
-      } primary: {
-        DashActionButton(
-          title: "Sign out",
-          role: .destructive,
-          phase: model.signOutActionPhase,
-          morphID: morphID,
-          labelMorphID: labelMorphID,
-          morphNamespace: morphNamespace,
-          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-        ) {
-          Task {
-            await model.signOut(presentsCompletion: true)
-          }
-        }
-        .accessibilityIdentifier("settings-sign-out-confirm")
-      }
+      // Cancel steps back to the row, not out of the tray: on a route morph
+      // the header's ✕ stays a dismissal, so this is the way back.
+      SignOutConfirmationActions(
+        cancel: { step = .intro },
+        confirmIdentifier: "settings-sign-out-confirm",
+        morphID: morphID,
+        labelMorphID: labelMorphID,
+        morphNamespace: morphNamespace
+      )
     }
   }
 }

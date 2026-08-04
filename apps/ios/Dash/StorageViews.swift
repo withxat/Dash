@@ -167,7 +167,7 @@ struct R2BucketView: View {
   /// second `dashTray` on this screen would have to present while the first is
   /// still animating out, so the create form and the folder-delete
   /// confirmation push inside the tray that is already open, and the header's
-  /// ✕→← back control pops them.
+  /// ✕ pops them instead of dismissing.
   @State private var bucketActionsPath: [R2BucketActionsStep] = []
   /// Whether this prefix has its own zero-byte `…/` marker object. It is the
   /// only thing "delete this empty folder" can remove — a folder that exists
@@ -517,7 +517,7 @@ struct R2BucketView: View {
 
   /// One tray, three steps: the action menu, the create-folder form, and the
   /// folder-delete confirmation. The form and the confirmation push over the
-  /// menu; the header's ← pops back to it in place.
+  /// menu; the header's ✕ pops back to it in place.
   @ViewBuilder private var r2BucketActionsTray: some View {
     DashTrayFlow(root: .menu, path: $bucketActionsPath, role: \.trayRole) { step in
       switch step {
