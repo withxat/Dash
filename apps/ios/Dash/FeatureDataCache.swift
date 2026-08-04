@@ -145,7 +145,7 @@ struct WatchtowerSnapshot: Sendable {
 }
 
 /// Accumulated cursor-paginated rows plus the cursor to continue from, so a
-/// revisited screen keeps both its rows and its Load more button.
+/// revisited screen keeps both its rows and infinite-scroll continuation.
 struct CursorPageSnapshot<Item: Sendable>: Sendable {
   var items: [Item]
   var cursor: String?

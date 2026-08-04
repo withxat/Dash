@@ -152,7 +152,7 @@ struct R2BucketView: View {
   @State private var cursor: String?
   @State private var error: String?
   @State private var loading = true
-  @State private var loadMorePhase: DashActionPhase = .idle
+  @State private var isLoadingMore = false
   @State private var importsFile = false
   @State private var selectedObject: R2Object?
   /// Survives folder/settings pushes (view merely disappears). Cancels in
@@ -291,13 +291,12 @@ struct R2BucketView: View {
           }
         }
       }
-      if !mode.isPlaceholder, canLoadMore || loadMorePhase.isActive {
-        DashLoadMoreFooter(
+      if !mode.isPlaceholder, canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
           loaded: folders.count + objects.count,
-          noun: "items",
-          phase: loadMorePhase,
-          onSuccessPresentationCompleted: { loadMorePhase = .idle }
+          isLoading: isLoadingMore
         ) {
+          guard error == nil else { return }
           Task { await loadMore() }
         }
       }
@@ -453,7 +452,7 @@ struct R2BucketView: View {
     cursor = nil
     error = nil
     loading = request.context != nil
-    loadMorePhase = .idle
+    isLoadingMore = false
     importsFile = false
     selectedObject = nil
     selecting = false
@@ -887,6 +886,7 @@ struct R2BucketView: View {
       loading = false
       return
     }
+    isLoadingMore = false
     do {
       let page = try await model.client.listR2Objects(
         accountID: id, bucket: bucket, prefix: folderPrefix.nilIfEmpty, delimiter: "/")
@@ -921,14 +921,14 @@ struct R2BucketView: View {
       let context = request.context,
       canCommit(request),
       canLoadMore,
-      loadMorePhase == .idle
+      !isLoadingMore
     else { return }
     let id = context.accountID
     let requestedCursor = cursor
-    loadMorePhase = .loading
+    isLoadingMore = true
     defer {
-      if matchesCurrentRequest(request), loadMorePhase == .loading {
-        loadMorePhase = .idle
+      if matchesCurrentRequest(request) {
+        isLoadingMore = false
       }
     }
     // The user can hop folders while this request flies; appending the old
@@ -953,7 +953,6 @@ struct R2BucketView: View {
           objects: objects, commonPrefixes: folders, cursor: cursor,
           hasFolderMarker: hasFolderMarker))
       error = nil
-      loadMorePhase = .succeeded
     } catch {
       guard canCommit(request), !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
@@ -1366,7 +1365,7 @@ struct KVNamespaceView: View {
   @State private var showsCreateKey = false
   @State private var error: String?
   @State private var loading = true
-  @State private var loadMorePhase: DashActionPhase = .idle
+  @State private var isLoadingMore = false
   @State private var loadedContext: AccountRequestContext?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
@@ -1407,13 +1406,12 @@ struct KVNamespaceView: View {
           .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
         }
       }
-      if !mode.isPlaceholder, canLoadMore || loadMorePhase.isActive {
-        DashLoadMoreFooter(
+      if !mode.isPlaceholder, canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
           loaded: keys.count,
-          noun: "keys",
-          phase: loadMorePhase,
-          onSuccessPresentationCompleted: { loadMorePhase = .idle }
+          isLoading: isLoadingMore
         ) {
+          guard error == nil else { return }
           Task { await loadMore() }
         }
       }
@@ -1484,6 +1482,7 @@ struct KVNamespaceView: View {
       loading = false
       return
     }
+    isLoadingMore = false
     let client = model.client
     do {
       let page = try await client.listKVKeys(
@@ -1504,14 +1503,14 @@ struct KVNamespaceView: View {
     guard
       let context = model.accountRequestContext,
       canLoadMore,
-      loadMorePhase == .idle
+      !isLoadingMore
     else { return }
     let requestedCursor = cursor
     let client = model.client
-    loadMorePhase = .loading
+    isLoadingMore = true
     defer {
-      if model.isCurrentAccount(context), loadMorePhase == .loading {
-        loadMorePhase = .idle
+      if model.isCurrentAccount(context) {
+        isLoadingMore = false
       }
     }
     do {
@@ -1525,7 +1524,6 @@ struct KVNamespaceView: View {
           accountID: context.accountID, namespaceID: namespaceID, prefix: ""),
         CursorPageSnapshot(items: keys, cursor: cursor))
       error = nil
-      loadMorePhase = .succeeded
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
@@ -1540,7 +1538,7 @@ struct KVNamespaceView: View {
     cursor = nil
     error = nil
     loading = context != nil
-    loadMorePhase = .idle
+    isLoadingMore = false
     showsCreateKey = false
   }
 }

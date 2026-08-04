@@ -252,7 +252,7 @@ struct EmailRoutingView: View {
   @State private var addresses: [EmailDestinationAddress]?
   @State private var pageState = DashPageState()
   @State private var loading = true
-  @State private var loadMorePhase: DashActionPhase = .idle
+  @State private var isLoadingMore = false
   @State private var error: String?
   @State private var rulesError: String?
   @State private var catchAllError: String?
@@ -505,15 +505,13 @@ struct EmailRoutingView: View {
         .buttonStyle(DashSurfaceButtonStyle())
         .accessibilityLabel(emailRoutingRouteAccessibilityLabel(rule))
       }
-      if pageState.canLoadMore || loadMorePhase.isActive {
-        DashLoadMoreFooter(
+      if pageState.canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
           loaded: rules.count,
-          total: pageState.totalCount,
-          noun: "routes",
-          phase: loadMorePhase,
-          onSuccessPresentationCompleted: { loadMorePhase = .idle },
-          action: { Task { await loadMoreRules() } }
-        )
+          isLoading: isLoadingMore
+        ) {
+          Task { await loadMoreRules() }
+        }
       }
     }
   }
@@ -857,7 +855,7 @@ struct EmailRoutingView: View {
       catchAll = nil
       addresses = nil
       pageState.reset()
-      loadMorePhase = .idle
+      isLoadingMore = false
       error = nil
       rulesError = nil
       catchAllError = nil
@@ -874,6 +872,7 @@ struct EmailRoutingView: View {
     // and a settings-only paint left Routes / Catch-all still loading inside
     // an already-"live" body.
     if settings == nil || force { loading = true }
+    if force { isLoadingMore = false }
 
     let key = FeatureCacheKey.emailRouting(zoneID)
     if !force, let cached: EmailRoutingSnapshot = model.featureCache.get(key) {
@@ -1031,24 +1030,25 @@ struct EmailRoutingView: View {
   }
 
   private func loadMoreRules() async {
-    guard let context = model.accountRequestContext, loadMorePhase == .idle else { return }
-    loadMorePhase = .loading
+    guard
+      let context = model.accountRequestContext,
+      !isLoadingMore,
+      pageState.canLoadMore
+    else { return }
+    let pageNumber = pageState.nextPage
+    isLoadingMore = true
+    defer { isLoadingMore = false }
     do {
       let page = try await model.client.listEmailRoutingRules(
-        zoneID: zoneID, page: pageState.nextPage, perPage: Self.rulePageSize)
-      guard model.isCurrentAccount(context), !Task.isCancelled else {
-        loadMorePhase = .idle
-        return
-      }
+        zoneID: zoneID, page: pageNumber, perPage: Self.rulePageSize)
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
       let existing = Set(rules.map(\.id))
       rules.append(contentsOf: page.items.filter { !existing.contains($0.id) })
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: rules.count,
         pageSize: Self.rulePageSize)
       cacheSnapshot()
-      loadMorePhase = .succeeded
     } catch {
-      loadMorePhase = .idle
       guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
         return
       }

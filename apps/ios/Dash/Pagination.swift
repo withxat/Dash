@@ -95,50 +95,36 @@ struct DashPageState: Equatable {
   }
 }
 
-/// Footer for paginated lists: a "Showing X of Y" caption when the total is
-/// known plus the Load more pill. Callers show it only while more remain.
-struct DashLoadMoreFooter: View {
+/// Footer for lists that append the next page as the user scrolls near the
+/// end. A centered loading ring while a page is in flight; otherwise a 1pt
+/// sentinel so LazyVStack still materializes the trigger.
+///
+/// Identity tracks `loaded` so a page that lands while this footer is still
+/// on-screen re-arms `onAppear` and keeps fetching until the catalog ends or
+/// the footer scrolls out of view. Callers must no-op when a fetch is already
+/// running (and should skip while a load-more error is still showing).
+struct DashInfiniteScrollFooter: View {
   let loaded: Int
-  var total: Int?
-  var noun: String = "items"
-  var caption: String?
-  let phase: DashActionPhase
-  var onSuccessPresentationCompleted: (@MainActor () -> Void)?
-  let action: () -> Void
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  var isLoading: Bool
+  let onNeedMore: () -> Void
 
   var body: some View {
-    VStack(spacing: 12) {
-      if let text = caption ?? defaultCaption {
-        // "Showing X of Y" — the counts roll as pages land instead of the
-        // whole caption hard-swapping.
-        Text(text)
-          .font(.caption)
-          .monospacedDigit()
-          .foregroundStyle(DashTheme.subtle)
-          .contentTransition(
-            reduceMotion ? .opacity : .numericText(value: Double(loaded))
-          )
-          .animation(
-            reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph,
-            value: loaded)
+    Group {
+      if isLoading {
+        DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+          .accessibilityLabel("Loading")
+      } else {
+        Color.clear.frame(height: 1)
       }
-      DashPillButton(
-        title: "Load more",
-        phase: phase,
-        onSuccessPresentationCompleted: onSuccessPresentationCompleted,
-        action: action
-      )
     }
     .frame(maxWidth: .infinity)
-    // Feature lists keep LazyVStack spacing at 0 for virtualized rows; the
-    // footer opts into the same item gap used between adjacent surfaces.
     .dashItemBoundary()
-  }
-
-  private var defaultCaption: String? {
-    guard let total, total > loaded else { return nil }
-    let localizedNoun = DashL10n.ui(noun)
-    return DashL10n.string("Showing \(loaded) of \(total) \(localizedNoun)")
+    // Re-identity after each append so a still-visible footer can request the
+    // next page without waiting for the user to scroll away and back.
+    .id(loaded)
+    .onAppear {
+      guard !isLoading else { return }
+      onNeedMore()
+    }
   }
 }

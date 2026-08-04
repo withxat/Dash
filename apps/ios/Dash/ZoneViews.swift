@@ -15,7 +15,10 @@ struct ZonesView: View {
   @State private var zones: [CloudflareZone] = []
   @State private var error: String?
   @State private var loading = true
-  @State private var loadMorePhase: DashActionPhase = .idle
+  @State private var isLoadingMore = false
+  /// Bumped on every fresh `load` so an in-flight `loadMore` cannot append
+  /// onto a list that was just reset / replaced.
+  @State private var listGeneration = 0
   @State private var showsAddDomain = false
   @State private var pageState = DashPageState()
 
@@ -43,14 +46,16 @@ struct ZonesView: View {
       retry: { Task { await load() } }
     ) { mode in
       domainCardGrid(mode: mode)
-      if !mode.isPlaceholder, pageState.canLoadMore || loadMorePhase.isActive {
-        DashLoadMoreFooter(
+      if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
           loaded: zones.count,
-          total: pageState.totalCount,
-          noun: "domains",
-          phase: loadMorePhase,
-          onSuccessPresentationCompleted: { loadMorePhase = .idle }
-        ) { Task { await loadMore() } }
+          isLoading: isLoadingMore
+        ) {
+          // A failed page leaves the list banner up; don't spin the same
+          // request until the user retries (pull-to-refresh / Try again).
+          guard error == nil else { return }
+          Task { await loadMore() }
+        }
       }
     }
     .refreshable { await load(force: true) }.task { await load() }
@@ -171,11 +176,15 @@ struct ZonesView: View {
     }
     if zones.isEmpty { loading = true }
     error = nil
+    isLoadingMore = false
+    listGeneration += 1
+    let generation = listGeneration
     defer { loading = false }
     do {
       pageState.reset()
       let page = try await model.client.listZones(
         accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
+      guard generation == listGeneration, model.activeAccountID == accountID else { return }
       zones = page.items
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
@@ -188,20 +197,23 @@ struct ZonesView: View {
         replacesCatalog: !pageState.canLoadMore)
     } catch {
       guard !error.dashIsCancellation else { return }
+      guard generation == listGeneration, model.activeAccountID == accountID else { return }
       self.error = error.dashActionableMessage
     }
   }
 
   private func loadMore() async {
-    guard let accountID = model.activeAccountID, loadMorePhase == .idle else { return }
-    loadMorePhase = .loading
+    guard let accountID = model.activeAccountID, !isLoadingMore, pageState.canLoadMore
+    else { return }
+    let generation = listGeneration
+    let pageNumber = pageState.nextPage
+    isLoadingMore = true
+    defer { isLoadingMore = false }
     do {
       let page = try await model.client.listZones(
-        accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
-      guard !Task.isCancelled, model.activeAccountID == accountID else {
-        loadMorePhase = .idle
-        return
-      }
+        accountID: accountID, page: pageNumber, perPage: Self.pageSize)
+      guard !Task.isCancelled else { return }
+      guard generation == listGeneration, model.activeAccountID == accountID else { return }
       zones += page.items
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
@@ -213,10 +225,9 @@ struct ZonesView: View {
         accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
         replacesCatalog: !pageState.canLoadMore)
       error = nil
-      loadMorePhase = .succeeded
     } catch {
-      loadMorePhase = .idle
-      guard !error.dashIsCancellation, model.activeAccountID == accountID else { return }
+      guard !error.dashIsCancellation else { return }
+      guard generation == listGeneration, model.activeAccountID == accountID else { return }
       self.error = error.dashActionableMessage
     }
   }
@@ -1356,7 +1367,7 @@ struct DNSRecordsView: View {
   @State private var lockedRecord: DNSRecord?
   @State private var createsRecord = false
   @State private var loading = true
-  @State private var loadMorePhase: DashActionPhase = .idle
+  @State private var isLoadingMore = false
   @State private var reloading = false
   @State private var activeRequestID: UUID?
   @State private var pageState = DashPageState()
@@ -1371,10 +1382,6 @@ struct DNSRecordsView: View {
 
   var body: some View {
     let displayedRecords = displayRecords
-    let hiddenRecordCount = records.count - displayedRecords.count
-    let displayedTotal = pageState.totalCount.map {
-      max(displayedRecords.count, $0 - hiddenRecordCount)
-    }
     let buckets = DNSChartModel.buckets(displayedRecords)
     let selectedBucket = DNSChartModel.bucket(in: buckets, withID: selectedSliceID)
     let visibleRecords = visibleRecords(in: displayedRecords, buckets: buckets)
@@ -1436,18 +1443,14 @@ struct DNSRecordsView: View {
           .transition(morphTransition)
         }
       }
-      if !mode.isPlaceholder, pageState.canLoadMore || loadMorePhase.isActive {
-        DashLoadMoreFooter(
+      if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
           loaded: displayedRecords.count,
-          total: displayedTotal,
-          noun: "records",
-          caption: filterCaption(
-            selectedBucket: selectedBucket,
-            visibleRecordCount: visibleRecords.count,
-            displayedRecordCount: displayedRecords.count),
-          phase: loadMorePhase,
-          onSuccessPresentationCompleted: { loadMorePhase = .idle }
-        ) { Task { await loadMore() } }
+          isLoading: isLoadingMore
+        ) {
+          guard error == nil else { return }
+          Task { await loadMore() }
+        }
       }
     }
     .refreshable { await load(force: true) }
@@ -1650,19 +1653,6 @@ struct DNSRecordsView: View {
     DNSChartModel.records(displayedRecords, in: selectedSliceID, buckets: buckets)
   }
 
-  /// A filtered list would make the footer's default "Showing X of Y" caption
-  /// describe rows that are not on screen. Name the narrowed subset instead —
-  /// Load more still fetches whole pages, not more of the selected type.
-  private func filterCaption(
-    selectedBucket: DNSChartModel.Bucket?,
-    visibleRecordCount: Int,
-    displayedRecordCount: Int
-  ) -> String? {
-    guard selectedBucket != nil else { return nil }
-    return DashL10n.string(
-      "Filtered to \(visibleRecordCount) of \(displayedRecordCount) loaded records")
-  }
-
   /// Filtered-out rows dissolve with the same blur the tray morph uses, so the
   /// list reads as collapsing rather than blinking; survivors glide into their
   /// new slots on the shared transaction. Only onscreen rows are realized in
@@ -1711,7 +1701,7 @@ struct DNSRecordsView: View {
     let requestID = UUID()
     activeRequestID = requestID
     reloading = true
-    loadMorePhase = .idle
+    isLoadingMore = false
     defer {
       if activeRequestID == requestID {
         reloading = false
@@ -1764,10 +1754,11 @@ struct DNSRecordsView: View {
   }
 
   private func loadMore() async {
-    guard loadMorePhase == .idle, !reloading else { return }
+    guard !isLoadingMore, !reloading, pageState.canLoadMore else { return }
     let requestID = UUID()
     activeRequestID = requestID
-    loadMorePhase = .loading
+    let pageNumber = pageState.nextPage
+    isLoadingMore = true
     let requestScope = model.activeAccountID.map {
       DeferredDeletionScope(accountID: $0, zoneID: zoneID)
     }
@@ -1775,13 +1766,13 @@ struct DNSRecordsView: View {
       model.deferredDeletions.beginDNSLoad(for: $0)
     }
     defer {
-      if activeRequestID == requestID, loadMorePhase == .loading {
-        loadMorePhase = .idle
+      if activeRequestID == requestID {
+        isLoadingMore = false
       }
     }
     do {
       let page = try await model.client.listDNSRecords(
-        zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+        zoneID: zoneID, page: pageNumber, perPage: Self.pageSize)
       guard
         activeRequestID == requestID,
         acceptsDNSResponse(
@@ -1795,7 +1786,6 @@ struct DNSRecordsView: View {
       reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(FeatureCacheKey.dnsRecords(zoneID), records)
       error = nil
-      loadMorePhase = .succeeded
     } catch {
       guard
         activeRequestID == requestID,

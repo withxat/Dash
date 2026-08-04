@@ -62,7 +62,6 @@
     "KV keys",
     "Key",
     "Libraries",
-    "Load more",
     "Mail server",
     "Make active",
     "Managed by",
@@ -127,7 +126,6 @@
     "enabled",
     "items",
     "keys",
-    "records",
     "unknown",
     "workers.dev",
     "wrangler or the zone's Workers Routes"

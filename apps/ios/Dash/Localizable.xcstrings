@@ -6219,17 +6219,6 @@
         }
       }
     },
-    "Filtered to %lld of %lld loaded records" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已从 %2$lld 条已加载记录中筛选出 %1$lld 条"
-          }
-        }
-      }
-    },
     "Finished" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7387,23 +7376,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "负载均衡健康度"
-          }
-        }
-      }
-    },
-    "Load more" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Load more"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "加载更多"
           }
         }
       }
@@ -11381,22 +11353,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "以点阵趋势图展示一个 Cloudflare 域名的分析指标。"
-          }
-        }
-      }
-    },
-    "Showing %lld of %lld %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Showing %lld of %lld %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "已显示 %lld / %lld %@"
           }
         }
       }
