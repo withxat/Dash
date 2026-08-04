@@ -1,7 +1,9 @@
 // swift-tools-version: 6.0
 // Vendored from https://github.com/MarkUnthank/SwiftDitherKit (0.1.0)
 // Patch: chart tooltips use Liquid Glass on iOS 26+ / macOS 26+.
-// Patch: cartesian tooltips size to content and stay above the mark (may overflow).
+// Patch: one tooltip for every chart — `DitherTooltip` sizes to its content, is
+// public so a host renderer can present the same bubble, and every chart places
+// it through `DitherTooltipPlacement`, clamped against both edges of the chart.
 // Patch: every plot shares one hold-to-engage gesture (`DitherHoldInteraction`)
 // that claims the enclosing scroll/pager/pop recognizers until the finger lifts.
 

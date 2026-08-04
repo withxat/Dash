@@ -296,6 +296,10 @@ private struct DitherPiePlot: View {
   let onHoverChange: ((Int?) -> Void)?
   let onSelectIndex: (Int) -> Void
 
+  /// Measured bubble size; positioning falls back to a short single-series
+  /// guess until the first preference pass lands.
+  @State private var tooltipSize: CGSize = CGSize(width: 160, height: 52)
+
   var body: some View {
     GeometryReader { proxy in
       let plotRect = makePlotRect(in: proxy.size)
@@ -357,6 +361,10 @@ private struct DitherPiePlot: View {
           .transition(.scale(scale: 0.98, anchor: .bottom).combined(with: .opacity))
         }
       }
+      .onPreferenceChange(DitherTooltipSizeKey.self) { size in
+        guard size.width > 0, size.height > 0 else { return }
+        tooltipSize = size
+      }
       .animation(DitherMotion.feedback, value: hoverIndex != nil)
     }
   }
@@ -370,19 +378,26 @@ private struct DitherPiePlot: View {
     )
   }
 
+  /// The bubble marks a point inside the hovered sector, then takes the shared
+  /// placement. It used to clamp against a hard-coded 80 × 42 half-size, which
+  /// is smaller than the bubble it was placing — a wide tooltip hung out of the
+  /// chart and over whatever the donut card sat next to.
   private func tooltipPosition(index: Int, plotRect: CGRect, container: CGSize) -> CGPoint {
     let geometry = DitherPieGeometry(slices)
     guard geometry.slices.indices.contains(index) else {
-      return CGPoint(x: container.width / 2, y: 48)
+      return DitherGeometry.tooltipCenter(
+        markX: container.width / 2,
+        markY: 0,
+        container: container,
+        tooltipSize: tooltipSize)
     }
     let angle = geometry.slices[index].middle
     let radius = min(plotRect.width, plotRect.height) * 0.24
-    let rawX = plotRect.midX + cos(angle) * radius
-    let rawY = plotRect.midY + sin(angle) * radius
-    return CGPoint(
-      x: min(max(80, rawX), max(80, container.width - 80)),
-      y: min(max(42, rawY), max(42, container.height - 42))
-    )
+    return DitherGeometry.tooltipCenter(
+      markX: plotRect.midX + cos(angle) * radius,
+      markY: plotRect.midY + sin(angle) * radius,
+      container: container,
+      tooltipSize: tooltipSize)
   }
 }
 
@@ -395,6 +410,10 @@ private struct DitherRadarPlot: View {
   let selectedSeriesID: String?
   @Binding var hoverAxisIndex: Int?
   let onHoverChange: ((Int?) -> Void)?
+
+  /// Measured bubble size; positioning falls back to a short single-series
+  /// guess until the first preference pass lands.
+  @State private var tooltipSize: CGSize = CGSize(width: 160, height: 52)
 
   var body: some View {
     GeometryReader { proxy in
@@ -454,12 +473,22 @@ private struct DitherRadarPlot: View {
             valueFormat: options.valueFormat,
             locale: locale
           )
+          // A radar has no single mark to sit above, so the bubble stays at the
+          // top of the chart — placed by the shared rule so its own measured
+          // size, not a guess, decides where the top is.
           .position(
-            x: min(max(80, proxy.size.width / 2), max(80, proxy.size.width - 80)),
-            y: 48
+            DitherGeometry.tooltipCenter(
+              markX: proxy.size.width / 2,
+              markY: 0,
+              container: proxy.size,
+              tooltipSize: tooltipSize)
           )
           .transition(.scale(scale: 0.98, anchor: .bottom).combined(with: .opacity))
         }
+      }
+      .onPreferenceChange(DitherTooltipSizeKey.self) { size in
+        guard size.width > 0, size.height > 0 else { return }
+        tooltipSize = size
       }
       .animation(DitherMotion.feedback, value: hoverAxisIndex != nil)
     }

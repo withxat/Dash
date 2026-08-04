@@ -70,6 +70,11 @@ enum DitherGeometry {
   /// and a bubble that overflows the chart lands on whatever the chart is
   /// stacked under. Neither placement fitting means the container is shorter
   /// than the bubble; center it then rather than choose an overflow.
+  ///
+  /// Both placements are clamped against *both* edges, not just the one they
+  /// lean away from: a mark at the floor of the plot (a zero value, or a slice
+  /// centroid in the lower half of a donut) sits low enough that even sitting
+  /// above it pushes the bubble's bottom past the chart.
   static func tooltipCenterY(
     markY: CGFloat,
     containerHeight: CGFloat,
@@ -78,14 +83,32 @@ enum DitherGeometry {
     gutter: CGFloat = 8
   ) -> CGFloat {
     let half = max(tooltipHeight, 1) / 2
-    let above = markY - gap - half
-    if above - half >= gutter { return above }
-    let below = markY + gap + half
-    if below + half <= containerHeight - gutter { return below }
     let minimum = half + gutter
     let maximum = containerHeight - half - gutter
     guard maximum > minimum else { return containerHeight / 2 }
+    let above = markY - gap - half
+    if above >= minimum { return min(above, maximum) }
+    let below = markY + gap + half
+    if below <= maximum { return max(below, minimum) }
     return min(max(minimum, above), maximum)
+  }
+
+  /// Center for a tooltip bubble marking a point at `markX` / `markY`.
+  static func tooltipCenter(
+    markX: CGFloat,
+    markY: CGFloat,
+    container: CGSize,
+    tooltipSize: CGSize
+  ) -> CGPoint {
+    CGPoint(
+      x: tooltipCenterX(
+        markX: markX,
+        containerWidth: container.width,
+        tooltipWidth: tooltipSize.width),
+      y: tooltipCenterY(
+        markY: markY,
+        containerHeight: container.height,
+        tooltipHeight: tooltipSize.height))
   }
 
   static func barBand(index: Int, count: Int, width: CGFloat) -> (x: CGFloat, width: CGFloat) {
@@ -251,6 +274,29 @@ enum DitherGeometry {
 
     if minimum == 0, maximum == 0 { maximum = 1 }
     return DitherBandResult(bands: output, minimum: minimum, maximum: maximum)
+  }
+}
+
+/// Where a `DitherTooltip` bubble's center goes for a mark inside a chart.
+///
+/// Public so a plot this package did not draw places the shared bubble by the
+/// same rule: above the mark when there is room, below it when there is not,
+/// and never outside the chart's own bounds. `container` is the space the
+/// bubble is positioned in (the chart, not the plot — a chart drawn to a
+/// screen's edges has no card margin to spill into), and `tooltipSize` is the
+/// size the bubble published through `DitherTooltipSizeKey`.
+public enum DitherTooltipPlacement {
+  public static func center(
+    markX: CGFloat,
+    markY: CGFloat,
+    container: CGSize,
+    tooltipSize: CGSize
+  ) -> CGPoint {
+    DitherGeometry.tooltipCenter(
+      markX: markX,
+      markY: markY,
+      container: container,
+      tooltipSize: tooltipSize)
   }
 }
 

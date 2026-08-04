@@ -570,19 +570,12 @@ private struct DitherCartesianPlot: View {
             locale: locale
           )
           .position(
-            x: tooltipX(
-              index: index,
-              plotRect: plotRect,
-              containerWidth: proxy.size.width,
-              tooltipWidth: tooltipSize.width
-            ),
-            y: tooltipY(
+            tooltipCenter(
               index: index,
               bands: bands,
               scale: scale,
               plotRect: plotRect,
-              containerHeight: proxy.size.height,
-              tooltipHeight: tooltipSize.height
+              container: proxy.size
             )
           )
           .transition(.scale(scale: 0.98, anchor: .bottom).combined(with: .opacity))
@@ -619,12 +612,13 @@ private struct DitherCartesianPlot: View {
     return min(data.count - 1, max(0, marker))
   }
 
-  private func tooltipX(
+  private func tooltipCenter(
     index: Int,
+    bands: DitherBandResult,
+    scale: DitherLinearScale,
     plotRect: CGRect,
-    containerWidth: CGFloat,
-    tooltipWidth: CGFloat
-  ) -> CGFloat {
+    container: CGSize
+  ) -> CGPoint {
     let localX: CGFloat
     if kind == .bar {
       let band = DitherGeometry.barBand(index: index, count: data.count, width: plotRect.width)
@@ -632,26 +626,13 @@ private struct DitherCartesianPlot: View {
     } else {
       localX = DitherGeometry.xCenter(index: index, count: data.count, width: plotRect.width)
     }
-    return DitherGeometry.tooltipCenterX(
-      markX: plotRect.minX + localX,
-      containerWidth: containerWidth,
-      tooltipWidth: tooltipWidth)
-  }
-
-  private func tooltipY(
-    index: Int,
-    bands: DitherBandResult,
-    scale: DitherLinearScale,
-    plotRect: CGRect,
-    containerHeight: CGFloat,
-    tooltipHeight: CGFloat
-  ) -> CGFloat {
     let candidates = series.compactMap { bands.bands[$0.id]?[safe: index]?.upper }
     let highest = candidates.max() ?? scale.upperBound
-    return DitherGeometry.tooltipCenterY(
+    return DitherGeometry.tooltipCenter(
+      markX: plotRect.minX + localX,
       markY: plotRect.minY + scale.y(for: highest),
-      containerHeight: containerHeight,
-      tooltipHeight: tooltipHeight)
+      container: container,
+      tooltipSize: tooltipSize)
   }
 }
 

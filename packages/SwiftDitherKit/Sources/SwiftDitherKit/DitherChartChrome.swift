@@ -101,21 +101,42 @@ private struct DitherLegendSwatch: View {
   }
 }
 
-struct DitherTooltipItem: Identifiable, Hashable {
-  let id: String
-  let label: String
-  let value: Double
-  let color: DitherColor
+/// One series row inside a `DitherTooltip`.
+public struct DitherTooltipItem: Identifiable, Hashable, Sendable {
+  public let id: String
+  public let label: String
+  public let value: Double
+  public let color: DitherColor
+
+  public init(id: String, label: String, value: Double, color: DitherColor) {
+    self.id = id
+    self.label = label
+    self.value = value
+    self.color = color
+  }
 }
 
-struct DitherTooltipSizeKey: PreferenceKey {
-  static let defaultValue: CGSize = .zero
-  static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+/// The bubble's measured size, published by `DitherTooltip` itself.
+///
+/// Placement needs the real size: a guessed width is exactly what lets a bubble
+/// hang off the edge of its chart.
+public struct DitherTooltipSizeKey: PreferenceKey {
+  public static let defaultValue: CGSize = .zero
+  public static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
     value = nextValue()
   }
 }
 
-struct DitherTooltip: View {
+/// The scrub tooltip: a category heading over one row per series, each row a
+/// colour swatch, the series name, and its value in the chart's own format.
+///
+/// Public because it is the *only* chart tooltip — a host that draws its plots
+/// with something other than this package (Dash's Swift Charts style) presents
+/// this same bubble rather than inventing a second one. Position it with
+/// `DitherTooltipPlacement` and the size it publishes through
+/// `DitherTooltipSizeKey`; a renderer's own annotation-overflow resolution is
+/// not a substitute, because it knows the plot but not the page around it.
+public struct DitherTooltip: View {
   let heading: String
   let items: [DitherTooltipItem]
   let valueFormat: DitherValueFormat
@@ -124,7 +145,19 @@ struct DitherTooltip: View {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-  var body: some View {
+  public init(
+    heading: String,
+    items: [DitherTooltipItem],
+    valueFormat: DitherValueFormat,
+    locale: Locale
+  ) {
+    self.heading = heading
+    self.items = items
+    self.valueFormat = valueFormat
+    self.locale = locale
+  }
+
+  public var body: some View {
     let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
     VStack(alignment: .leading, spacing: 4) {
       Text(verbatim: heading)

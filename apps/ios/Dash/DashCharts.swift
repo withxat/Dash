@@ -180,7 +180,12 @@ private struct DashSystemCartesianChart: View {
   var onHoverChange: ((Int?) -> Void)? = nil
   var onTap: (() -> Void)? = nil
 
+  @Environment(\.locale) private var locale
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var selectedIndex: Int?
+  /// Measured tooltip size; positioning falls back to a short single-series
+  /// guess until the first preference pass lands.
+  @State private var tooltipSize = CGSize(width: 160, height: 52)
 
   private var points: [DashSystemPlotPoint] {
     data.enumerated().flatMap { index, datum in
@@ -243,6 +248,19 @@ private struct DashSystemCartesianChart: View {
         }
       }
       .padding(.leading, options.showsAxes ? max(0, options.margins.leading - 38) : 0)
+      // Last, so the bubble is clamped against the chart as it finally lays out
+      // — including the axis gutter it is allowed to cover.
+      .chartOverlay { proxy in
+        GeometryReader { geometry in
+          tooltip(proxy: proxy, geometry: geometry)
+        }
+        .allowsHitTesting(false)
+        .animation(reduceMotion ? nil : DashTheme.Motion.quick, value: selectedIndex)
+      }
+      .onPreferenceChange(DitherTooltipSizeKey.self) { size in
+        guard size.width > 0, size.height > 0 else { return }
+        tooltipSize = size
+      }
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(options.accessibility.title ?? "")
       .accessibilityValue(options.accessibility.summary ?? "")
@@ -291,43 +309,65 @@ private struct DashSystemCartesianChart: View {
         }
       }
 
+      // Marks only. The bubble itself is `DitherTooltip`, floated over the whole
+      // chart in `tooltip(proxy:geometry:)` — a Swift Charts annotation can only
+      // resolve its overflow against the plot it belongs to, which is how the
+      // value capsule ended up hanging past the page margin. Off the marks
+      // entirely, it also stops being something the value scale can pad around:
+      // that default rescaled the plot the moment a scrub reached the top of the
+      // series, dropping the line away under the finger.
       if let selectedIndex, selectedIndex == point.index, options.showsTooltip {
-        RuleMark(x: .value("Category", point.index))
-          .foregroundStyle(DashTheme.separator)
-          .lineStyle(StrokeStyle(lineWidth: 1))
-          .zIndex(-1)
         if point.seriesID == series.first?.id {
-          PointMark(
-            x: .value("Category", point.index),
-            y: .value("Value", point.value)
-          )
-          .foregroundStyle(point.color)
-          .symbolSize(48)
-          // Fit the bubble inside the chart instead of letting Swift Charts
-          // resolve the overflow by padding the value scale: that default
-          // rescales the plot the moment a scrub reaches the top of the
-          // series, so the line visibly drops away under the finger.
-          .annotation(
-            position: .top,
-            spacing: 6,
-            overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))
-          ) {
-            Text(
-              verbatim: point.value.formatted(
-                .number
-                  .notation(.compactName)
-                  .precision(.fractionLength(0...1))
-                  .locale(DashL10n.activeLocale))
-            )
-            .dashTextStyle(.captionSemibold)
-            .monospacedDigit()
-            .foregroundStyle(DashTheme.strong)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(DashTheme.homeCardSurface, in: Capsule())
-          }
+          RuleMark(x: .value("Category", point.index))
+            .foregroundStyle(DashTheme.separator)
+            .lineStyle(StrokeStyle(lineWidth: 1))
+            .zIndex(-1)
         }
+        PointMark(
+          x: .value("Category", point.index),
+          y: .value("Value", point.value)
+        )
+        .foregroundStyle(point.color)
+        .symbolSize(48)
       }
+    }
+  }
+
+  /// The same tooltip the dithered charts show, over the same chart-wide
+  /// container: heading, one row per series, values in the chart's own format —
+  /// and `DitherTooltipPlacement` keeping all of it inside the chart's bounds.
+  @ViewBuilder
+  private func tooltip(proxy: ChartProxy, geometry: GeometryProxy) -> some View {
+    if options.showsTooltip,
+      let index = selectedIndex,
+      data.indices.contains(index),
+      let plotFrame = proxy.plotFrame
+    {
+      let plot = geometry[plotFrame]
+      // Above the tallest series at that category, matching the dithered plot's
+      // own marker — a bubble anchored to one series would sit under the line
+      // of another.
+      let peak = series.map { data[index][$0.id] }.max() ?? 0
+      DitherTooltip(
+        heading: data[index].label,
+        items: series.map { item in
+          DitherTooltipItem(
+            id: item.id,
+            label: item.label,
+            value: data[index][item.id],
+            color: item.color)
+        },
+        valueFormat: options.valueFormat,
+        locale: locale
+      )
+      .position(
+        DitherTooltipPlacement.center(
+          markX: plot.minX + (proxy.position(forX: index) ?? plot.width / 2),
+          markY: plot.minY + (proxy.position(forY: peak) ?? 0),
+          container: geometry.size,
+          tooltipSize: tooltipSize)
+      )
+      .transition(.scale(scale: 0.98, anchor: .bottom).combined(with: .opacity))
     }
   }
 

@@ -89,3 +89,22 @@ import Testing
   // Neither placement fits: centered instead of overflowing either end.
   #expect(DitherGeometry.tooltipCenterY(markY: 0, containerHeight: 40, tooltipHeight: 60) == 20)
 }
+
+@Test func tooltipPlacementHoldsForAMarkAnywhereInTheChart() {
+  // Every chart places the one bubble through this call — a donut's slice
+  // centroid and a Swift Charts point alike — so the measured size, not a
+  // per-chart guess, is what decides whether it fits.
+  let container = CGSize(width: 320, height: 200)
+  let bubble = CGSize(width: 220, height: 56)
+
+  for markX in stride(from: CGFloat(-40), through: 360, by: 20) {
+    for markY in stride(from: CGFloat(-40), through: 240, by: 20) {
+      let center = DitherTooltipPlacement.center(
+        markX: markX, markY: markY, container: container, tooltipSize: bubble)
+      #expect(center.x - bubble.width / 2 >= 8)
+      #expect(center.x + bubble.width / 2 <= container.width - 8)
+      #expect(center.y - bubble.height / 2 >= 8)
+      #expect(center.y + bubble.height / 2 <= container.height - 8)
+    }
+  }
+}
