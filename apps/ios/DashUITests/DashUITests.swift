@@ -142,7 +142,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(card.waitForNonExistence(timeout: 2))
   }
 
-  func testTrayStopsAnchoredMotionWhenReduceMotionTurnsOn() {
+  func testSingleEndedTraySourceFallsBackToStandardReveal() {
     let app = XCUIApplication()
     launch(app, arguments: ["-uiTestTrayMotion"])
 
@@ -152,17 +152,15 @@ final class DashUITests: XCTestCase {
 
     let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
     XCTAssertTrue(card.waitForExistence(timeout: 2))
-    let anchored = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value == %@", "anchored"), object: card)
-    XCTAssertEqual(XCTWaiter.wait(for: [anchored], timeout: 2), .completed)
+    let standard = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "standard"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [standard], timeout: 2), .completed)
 
     let enableReduceMotion = app.buttons["ui-test-enable-reduce-motion"]
     XCTAssertTrue(Self.waitForHittable(enableReduceMotion))
     enableReduceMotion.tap()
 
-    let released = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value == %@", "unanchored"), object: card)
-    XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 2), .completed)
+    XCTAssertEqual(card.value as? String, "standard")
 
     let close = app.buttons["dash.tray.close"]
     XCTAssertTrue(close.waitForExistence(timeout: 2))
@@ -172,6 +170,35 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(restoredSource.waitForExistence(timeout: 2))
     restoredSource.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     XCTAssertTrue(card.waitForExistence(timeout: 2))
+  }
+
+  func testDemoConnectUsesPairedRevealAndRestoresSource() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview-onboarding"])
+
+    let exploreDemo = app.buttons["Explore the demo"]
+    XCTAssertTrue(Self.waitForHittable(exploreDemo))
+    exploreDemo.tap()
+
+    let source = app.buttons["home-demo-connect"]
+    XCTAssertTrue(source.waitForExistence(timeout: 10))
+    XCTAssertTrue(Self.waitForHittable(source))
+    source.tap()
+
+    let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
+    XCTAssertTrue(card.waitForExistence(timeout: 2))
+    let paired = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "paired"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [paired], timeout: 2), .completed)
+
+    let close = app.buttons["dash.tray.close"]
+    XCTAssertTrue(Self.waitForHittable(close))
+    XCTAssertEqual(card.value as? String, "paired")
+    close.tap()
+
+    XCTAssertTrue(card.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(source.waitForExistence(timeout: 2))
+    XCTAssertTrue(Self.waitForHittable(source))
   }
 
   func testR2CreateSuccessFlightSurvivesKeyboardDismissal() {
@@ -425,7 +452,7 @@ final class DashUITests: XCTestCase {
     XCTAssertFalse(app.staticTexts["View all domains"].exists)
   }
 
-  func testHomeQuickActionOpensPurgeCacheTray() {
+  func testHomeQuickActionUsesStandardTrayReveal() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -440,9 +467,9 @@ final class DashUITests: XCTestCase {
 
     let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
     XCTAssertTrue(card.waitForExistence(timeout: 2))
-    let anchored = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value == %@", "anchored"), object: card)
-    XCTAssertEqual(XCTWaiter.wait(for: [anchored], timeout: 2), .completed)
+    let standard = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "standard"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [standard], timeout: 2), .completed)
 
     let close = app.buttons["dash.tray.close"]
     XCTAssertTrue(close.waitForExistence(timeout: 2))

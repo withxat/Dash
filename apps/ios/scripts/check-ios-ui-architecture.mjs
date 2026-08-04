@@ -438,30 +438,134 @@ if (profileSettings.includes("tone: FeatureVisualIdentity.tone(for:")) {
   issues.push("Profile / Settings trays must stay neutral — remove dashTray tone wiring.");
 }
 
-// Anchored tray reveal (P5): Home quick-action tiles are the tray sources —
-// the tile registers its frame and the paired tray names it via sourceID.
-// Add Domain is deliberately unanchored (the Domains section opens the same
-// tray, so no single tile owns it).
-if (!homeView.includes(".dashTraySource(id: action.accessibilityIdentifier)")) {
+// Paired tray source (P5): a source morph is legal only when the same action
+// persists into the tray. Ordinary quick-action tiles are launchers, so they
+// always use the standard bottom reveal. Demo Connect is the representative
+// paired action and must declare both endpoints with one stable identity.
+const quickActions = declarationBody(
+  homeView,
+  "private struct HomeQuickActionsSection: View",
+);
+if (!quickActions) {
+  issues.push("Could not locate HomeQuickActionsSection.");
+} else if (
+  quickActions.includes("dashTraySource(") ||
+  quickActions.includes("dashTraySharedSource(")
+) {
   issues.push(
-    "Home quick-action tiles must register as tray sources via .dashTraySource(id:).",
+    "Ordinary Home quick-action tiles must use the standard bottom tray reveal.",
   );
 }
-if (!homeView.includes("sourceID: HomeActionID.createR2Bucket.accessibilityIdentifier")) {
+if (/(?:sourceID|sharedAction):\s*HomeActionID\./.test(homeView)) {
   issues.push(
-    "Home quick-action trays must anchor to their tiles via sourceID: (see createR2Bucket).",
+    "Home quick-action trays must not name a source; their tiles do not persist into the tray.",
   );
 }
-// Only the argument list (everything before the tray's content brace) may not
-// name a sourceID.
-const addDomainArguments = homeView.match(/isPresented: \$showsAddDomain[^{]*/)?.[0] ?? "";
-if (addDomainArguments === "" || addDomainArguments.includes("sourceID:")) {
+
+const demoSource = declarationBody(
+  homeView,
+  "private struct HomeDemoExperienceSection: View",
+);
+const demoDestination = declarationBody(
+  homeView,
+  "private struct HomeDemoConnectFooter: View",
+);
+if (
+  !/\.dashTraySharedSource\s*\(\s*HomeDemoConnect\.sharedAction\s*\)/.test(
+    demoSource ?? "",
+  ) ||
+  !/\.dashTraySharedDestination\s*\(\s*HomeDemoConnect\.sharedAction\s*\)/.test(
+    demoDestination ?? "",
+  )
+) {
   issues.push(
-    "The Add Domain tray must stay unanchored — the Domains section opens it too.",
+    "Demo Connect must declare matching source and destination action endpoints.",
   );
 }
-if (profileSettings.includes("sourceID:") || profileSettings.includes("dashTraySource(")) {
-  issues.push("Profile / Settings trays must not use anchored (sourceID) presentation.");
+const demoSourcePresenter = declarationBody(
+  homeView,
+  "private func presentDemoConnectFromSource()",
+);
+const performHomeAction = declarationBody(
+  homeView,
+  "private func perform(_ action: HomeActionID)",
+);
+if (
+  !homeView.includes("sharedAction: demoConnectSharedAction") ||
+  !demoSourcePresenter?.includes(
+    "demoConnectSharedAction = HomeDemoConnect.sharedAction",
+  ) ||
+  !demoSourcePresenter?.includes("showsDemoConnect = true") ||
+  occurrences(
+    homeView,
+    "demoConnectSharedAction = HomeDemoConnect.sharedAction",
+  ) !== 1 ||
+  !performHomeAction?.includes("demoConnectSharedAction = nil")
+) {
+  issues.push(
+    "Demo Connect must carry its shared-action identity only from the real source tap into presentation.",
+  );
+}
+
+const sharedReveal = declarationBody(
+  dashChrome,
+  "private struct DashTraySharedReveal: View",
+);
+if (!sharedReveal) {
+  issues.push("Could not locate the paired tray shared reveal.");
+} else if (sharedReveal.includes(".scaleEffect(")) {
+  issues.push(
+    "Paired tray reveal must expand the shell separately; never scale the card content.",
+  );
+}
+if (
+  dashChrome.includes("DashTrayAnchorMath.Transform") ||
+  /\bscale[XY]\b/.test(sharedReveal ?? "")
+) {
+  issues.push("Paired tray reveal must not use nonuniform whole-card scaling.");
+}
+if (dashChrome.includes("DashTrayAnchorReveal")) {
+  issues.push("Remove the legacy whole-card tray anchor reveal.");
+}
+const customSheet = declarationBody(
+  dashChrome,
+  "private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View",
+);
+const shellIndex = customSheet?.indexOf("layer: .shell") ?? -1;
+const cardIndex = customSheet?.indexOf("DashSheetCard(") ?? -1;
+const actionIndex = customSheet?.indexOf("layer: .action") ?? -1;
+if (
+  !customSheet?.includes("drawsSurface: !sharedRevealActive") ||
+  !customSheet?.includes("sharedRevealProgress: sharedRevealActive ? progress : nil") ||
+  !customSheet?.includes("active: !sharedRevealActive") ||
+  shellIndex === -1 ||
+  cardIndex === -1 ||
+  actionIndex === -1 ||
+  !(shellIndex < cardIndex && cardIndex < actionIndex)
+) {
+  issues.push(
+    "Paired trays must layer the expanding shell behind an unscaled final-layout card and keep the standard reveal inactive.",
+  );
+}
+if (
+  !customSheet?.includes(
+    "guard !presentationStarted, !isClosing else { return }",
+  ) ||
+  !customSheet?.includes(
+    "guard !Task.isCancelled, !presentationStarted, !isClosing",
+  ) ||
+  !customSheet?.includes("guard sharedRevealActive, !isClosing else { return }")
+) {
+  issues.push(
+    "Paired tray geometry and fallback tasks must not start presentation after dismissal begins.",
+  );
+}
+if (
+  profileSettings.includes("dashTraySharedSource(") ||
+  profileSettings.includes("dashTraySharedDestination(") ||
+  /\.dashTray\([^)]*sharedAction:/s.test(profileSettings)
+) {
+  issues.push("Profile / Settings trays must not use paired source presentation.");
 }
 
 // Result-destination flight (P6): a deliberately single-instance exploration.

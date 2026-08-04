@@ -1897,31 +1897,29 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(performed == 1)
 }
 
-@Test func trayAnchorTransformMapsTheCardOntoTheSourceRect() {
+@Test func traySharedRevealInterpolatesOnlyShellGeometry() {
   let card = CGRect(x: 20, y: 400, width: 350, height: 300)
-  let source = CGRect(x: 24, y: 620, width: 118, height: 88)
+  let actionHeight = DashTheme.Layout.actionPillHeight
+  let source = CGRect(x: 24, y: 620, width: 345, height: actionHeight)
 
-  // Progress 0: the whole card renders scaled and translated onto the source —
-  // its center lands on the source center at the source's proportions.
-  let start = DashTrayAnchorMath.transform(source: source, card: card, progress: 0)
-  #expect(abs(start.scaleX - source.width / card.width) < 0.0001)
-  #expect(abs(start.scaleY - source.height / card.height) < 0.0001)
-  #expect(abs(start.offsetX - (source.midX - card.midX)) < 0.0001)
-  #expect(abs(start.offsetY - (source.midY - card.midY)) < 0.0001)
+  #expect(DashTraySharedRevealMath.rect(from: source, to: card, progress: 0) == source)
+  #expect(DashTraySharedRevealMath.rect(from: source, to: card, progress: 1) == card)
 
-  // Progress 1: exact identity, so handing off to the slide modifier (which
-  // also renders identity at 1) can never jump.
-  let end = DashTrayAnchorMath.transform(source: source, card: card, progress: 1)
-  #expect(end == DashTrayAnchorMath.Transform(scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0))
+  let midpoint = DashTraySharedRevealMath.rect(from: source, to: card, progress: 0.5)
+  #expect(midpoint.origin.x == 22)
+  #expect(midpoint.origin.y == 510)
+  #expect(midpoint.width == 347.5)
+  #expect(midpoint.height == (source.height + card.height) / 2)
 
-  // An unmeasured card (first frame) must not divide by zero.
-  let unmeasured = DashTrayAnchorMath.transform(source: source, card: .zero, progress: 0)
-  #expect(unmeasured == DashTrayAnchorMath.Transform(scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0))
+  // Shared actions use the same fixed-height face at both endpoints; rect
+  // interpolation therefore moves the control without distorting its content.
+  let destination = CGRect(x: 24, y: 636, width: 345, height: actionHeight)
+  let actionMidpoint = DashTraySharedRevealMath.rect(
+    from: source, to: destination, progress: 0.5)
+  #expect(actionMidpoint.height == DashTheme.Layout.actionPillHeight)
 
-  // The card fades in over the first third and is opaque from there on.
-  #expect(DashTrayAnchorMath.opacity(progress: 0) == 0)
-  #expect(DashTrayAnchorMath.opacity(progress: 1.0 / 3.0) == 1)
-  #expect(DashTrayAnchorMath.opacity(progress: 1) == 1)
+  #expect(DashTraySharedRevealMath.stage(0.24, from: 0.24, to: 0.62) == 0)
+  #expect(DashTraySharedRevealMath.stage(0.62, from: 0.24, to: 0.62) == 1)
 }
 
 @Test func trayScrollBoundaryPaysForTheActionBandBeforeTheBody() {
@@ -1950,10 +1948,12 @@ private let watchtowerDropFrames: [CGRect] = [
 @Test @MainActor func trayAnchorSourcesMustBeOnScreenAndControlSized() {
   let bounds = CGRect(x: 0, y: 0, width: 393, height: 852)
 
-  // A quick-action tile: anchorable.
+  // A full-width primary pill: eligible as one endpoint of a paired action.
   #expect(
     DashTraySourceRegistry.isPresentableSource(
-      CGRect(x: 16, y: 300, width: 120, height: 90), in: bounds))
+      CGRect(
+        x: 24, y: 620, width: 345, height: DashTheme.Layout.actionPillHeight),
+      in: bounds))
 
   // Scrolled fully off screen, collapsed, or oversized (a scroll container or
   // near-full-screen surface would read as a zoom glitch): bottom reveal.
@@ -1971,10 +1971,12 @@ private let watchtowerDropFrames: [CGRect] = [
       CGRect(x: 16, y: 300, width: 120, height: 90), in: .zero))
 }
 
-@Test @MainActor func trayAnchorSourceClaimIsExclusiveAndOwnerReleased() {
+@Test @MainActor func traySharedSourceClaimDoesNotHideUntilActivatedAndOwnerReleases() {
   let registry = DashTraySourceRegistry()
 
   #expect(registry.claim("first"))
+  #expect(registry.occupiedID == nil)
+  #expect(registry.activate("first"))
   #expect(registry.occupiedID == AnyHashable("first"))
   #expect(!registry.claim("second"))
   #expect(registry.occupiedID == AnyHashable("first"))
@@ -1985,8 +1987,9 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(registry.occupiedID == nil)
   #expect(registry.claim("second"))
 
-  var lease: DashTrayAnchorLease? = DashTrayAnchorLease(registry: registry)
-  lease?.adopt(DashTrayAnchorClaim(sourceID: "second", frame: .zero))
+  let action = DashTraySharedAction(id: "second", title: "Continue")
+  var lease: DashTraySharedActionLease? = DashTraySharedActionLease(registry: registry)
+  lease?.adopt(DashTraySharedActionClaim(action: action, frame: .zero))
   lease = nil
   #expect(registry.occupiedID == nil)
 }

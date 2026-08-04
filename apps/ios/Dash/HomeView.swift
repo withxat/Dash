@@ -47,6 +47,7 @@ struct HomeView: View {
   @State private var showsEditActions = false
   @State private var showsEditShortcuts = false
   @State private var showsDemoConnect = false
+  @State private var demoConnectSharedAction: DashTraySharedAction?
 
   private var recents: [RecentResource] {
     guard let accountID = model.activeAccountID else { return [] }
@@ -98,7 +99,7 @@ struct HomeView: View {
           HomeDemoExperienceSection(
             openIssue: { navigator?.push(.watchtowerInbox) },
             openResource: { navigator?.push(.zone("zone-api")) },
-            connect: { showsDemoConnect = true }
+            connect: presentDemoConnectFromSource
           )
           .dashSectionReveal(1)
         }
@@ -168,13 +169,9 @@ struct HomeView: View {
         Task { await loadZones(force: true) }
       }
     }
-    // Quick-action trays grow out of their tiles (`sourceID` pairs with the
-    // tile's `.dashTraySource`). Add Domain stays unanchored: the Domains
-    // section opens the same tray, so it has no single source of truth.
     .dashTray(
       isPresented: $showsR2Upload, title: DashL10n.string("Upload to R2"),
-      tone: FeatureVisualIdentity.tone(for: .r2),
-      sourceID: HomeActionID.uploadR2.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .r2)
     ) {
       HomeR2UploadSheet { bucket in
         guard let accountID = model.activeAccountID else { return }
@@ -186,8 +183,7 @@ struct HomeView: View {
     }
     .dashTray(
       isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache"),
-      tone: FeatureVisualIdentity.tone(for: .zones),
-      sourceID: HomeActionID.purgeCache.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
       HomePurgeCachePicker(zones: displayedZones) { zone in
         guard zonesContext == model.accountRequestContext else {
@@ -199,50 +195,43 @@ struct HomeView: View {
     }
     .dashTray(
       isPresented: $showsAddDNSRecord, title: DashL10n.string("Add DNS record"),
-      tone: FeatureVisualIdentity.tone(for: .zones),
-      sourceID: HomeActionID.addDNSRecord.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
       HomeDNSRecordAction(zones: displayedZones)
     }
     .dashTray(
       isPresented: $showsCreateKVKey, title: DashL10n.string("Create KV key"),
-      tone: FeatureVisualIdentity.tone(for: .kv),
-      sourceID: HomeActionID.createKVKey.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .kv)
     ) {
       HomeCreateKVKeyAction()
     }
     .dashTray(
       isPresented: $showsCreateR2Bucket, title: DashL10n.string("Create R2 bucket"),
-      tone: FeatureVisualIdentity.tone(for: .r2),
-      sourceID: HomeActionID.createR2Bucket.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .r2)
     ) {
       R2CreateBucketSheet(onCreated: {})
     }
     .dashTray(
       isPresented: $showsAddPagesDomain, title: DashL10n.string("Add Pages domain"),
-      tone: FeatureVisualIdentity.tone(for: .pages),
-      sourceID: HomeActionID.addPagesDomain.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .pages)
     ) {
       HomePagesDomainAction()
     }
     .dashTray(
       isPresented: $showsAddWorkerDomain, title: DashL10n.string("Attach Worker domain"),
-      tone: FeatureVisualIdentity.tone(for: .workers),
-      sourceID: HomeActionID.addWorkerDomain.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .workers)
     ) {
       HomeWorkerDomainAction()
     }
     .dashTray(
       isPresented: $showsEnableDevelopmentMode, title: DashL10n.string("Development mode"),
-      tone: FeatureVisualIdentity.tone(for: .zones),
-      sourceID: HomeActionID.enableDevelopmentMode.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
       HomeZoneModeAction(zones: displayedZones, mode: .development)
     }
     .dashTray(
       isPresented: $showsEnableUnderAttackMode, title: DashL10n.string("Under Attack mode"),
-      tone: FeatureVisualIdentity.tone(for: .zones),
-      sourceID: HomeActionID.enableUnderAttackMode.accessibilityIdentifier
+      tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
       HomeZoneModeAction(zones: displayedZones, mode: .underAttack)
     }
@@ -254,15 +243,14 @@ struct HomeView: View {
     .dashTray(isPresented: $showsEditShortcuts, title: DashL10n.string("Edit shortcuts")) {
       EditShortcutsView(selectionRaw: $shortcutsRaw)
     }
-    // Demo Connect always grows out of the banner's Connect pill — quick
-    // actions open the same tray, so that button is the one source of truth.
-    // Off-screen / Reduce Motion falls back to the plain bottom reveal.
     .dashTray(
       isPresented: $showsDemoConnect,
       title: DashL10n.string("Connect your account"),
-      sourceID: HomeDemoConnect.sourceID
+      sharedAction: demoConnectSharedAction
     ) {
-      HomeDemoConnectContent(connect: leaveDemoForConnection)
+      HomeDemoConnectContent()
+    } footer: {
+      HomeDemoConnectFooter(connect: leaveDemoForConnection)
     }
     .onChange(of: actionsRaw) { _, newValue in
       ICloudPreferencesSync.shared.publish(.homeActions)
@@ -290,6 +278,9 @@ struct HomeView: View {
     .onChange(of: canPresentPendingAction) { _, _ in
       consumePendingHomeActionIfReady()
     }
+    .onChange(of: showsDemoConnect) { _, presented in
+      if !presented { demoConnectSharedAction = nil }
+    }
   }
 
   /// Deep-linked quick actions wait for the same zone context a tile tap would
@@ -310,6 +301,9 @@ struct HomeView: View {
 
   private func perform(_ action: HomeActionID) {
     guard !model.isDemoSession else {
+      // A quick action is only a launcher; it must not animate from the banner
+      // action the user did not tap.
+      demoConnectSharedAction = nil
       showsDemoConnect = true
       return
     }
@@ -375,6 +369,11 @@ struct HomeView: View {
 
   private func leaveDemoForConnection() {
     Task { await model.signOut() }
+  }
+
+  private func presentDemoConnectFromSource() {
+    demoConnectSharedAction = HomeDemoConnect.sharedAction
+    showsDemoConnect = true
   }
 
   private func dismissEducationTip(_ tip: HomeEducationTip, accountID: String) {
@@ -498,6 +497,7 @@ struct HomeView: View {
     showsEnableDevelopmentMode = false
     showsEnableUnderAttackMode = false
     showsDemoConnect = false
+    demoConnectSharedAction = nil
   }
 
   private func isCurrentZonesRequest(
@@ -542,10 +542,15 @@ struct HomeGreetingHeader: View {
 
 // MARK: - Demo
 
-/// Shared anchor for the demo Connect tray: the banner pill and every
-/// quick-action redirect grow out of / retract into this one control.
+/// The one production paired tray action. Its source and destination render
+/// the same primary control with one stable identity.
 private enum HomeDemoConnect {
   static let sourceID = "home-demo-connect"
+  static let sharedAction = DashTraySharedAction(
+    id: sourceID,
+    title: "Connect your account",
+    icon: SolarAsset.cloudflare
+  )
 }
 
 private struct HomeDemoExperienceSection: View {
@@ -604,13 +609,13 @@ private struct HomeDemoExperienceSection: View {
           )
         }
 
-        DashPillButton(
-          title: "Connect your account",
-          icon: SolarAsset.cloudflare,
+        DashActionButton(
+          title: HomeDemoConnect.sharedAction.title,
+          icon: HomeDemoConnect.sharedAction.icon,
           action: connect
         )
         .accessibilityIdentifier(HomeDemoConnect.sourceID)
-        .dashTraySource(id: HomeDemoConnect.sourceID)
+        .dashTraySharedSource(HomeDemoConnect.sharedAction)
       }
     }
     .accessibilityElement(children: .contain)
@@ -668,27 +673,36 @@ private struct HomeDemoExperienceSection: View {
 }
 
 private struct HomeDemoConnectContent: View {
+  var body: some View {
+    Color.clear
+      .frame(height: 1)
+      .accessibilityHidden(true)
+      .dashTrayDescription(
+        DashL10n.string(
+          "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+        )
+      )
+  }
+}
+
+private struct HomeDemoConnectFooter: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   let connect: () -> Void
 
   var body: some View {
     VStack(spacing: 12) {
-      DashPillButton(
-        title: "Return to connect",
-        icon: SolarAsset.cloudflare,
+      DashActionButton(
+        title: HomeDemoConnect.sharedAction.title,
+        icon: HomeDemoConnect.sharedAction.icon,
         action: connect
       )
+      .dashTraySharedDestination(HomeDemoConnect.sharedAction)
 
       DashSecondaryPillButton(
         title: "Keep exploring",
         action: dismiss
       )
     }
-    .dashTrayDescription(
-      DashL10n.string(
-        "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
-      )
-    )
   }
 }
 
@@ -748,9 +762,6 @@ private struct HomeQuickActionsSection: View {
         .accessibilityLabel(action.title)
         .accessibilityIdentifier(action.accessibilityIdentifier)
         .frame(maxWidth: .infinity)
-        // Anchor for the tray's grow-out-of-the-tile reveal; the tray pairs
-        // with this tile through the same stable identifier.
-        .dashTraySource(id: action.accessibilityIdentifier)
       }
     }
   }

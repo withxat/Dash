@@ -115,23 +115,29 @@ extension EnvironmentValues {
   }
 #endif
 
-// MARK: - Anchored tray presentation (Family's "the tray grows out of the button")
+// MARK: - Paired tray action presentation
 
-/// Global-frame registry connecting a tray's trigger control to its
-/// presentation. `.dashTraySource(id:)` keeps a control's global frame current
-/// here; `dashTray(sourceID:)` reads it once at present time and freezes it, so
-/// scrolling under the scrim never drags the reveal target around. Frames are
-/// plain (untracked) storage — only `occupiedID`, which hides the source while
-/// its tray is up (a component may never duplicate itself mid-animation), is
-/// observable.
+/// The one source transition Dash supports: the same primary action persists
+/// from the presenting screen into the tray. A launcher tile is not a shared
+/// action and must use the standard bottom reveal.
+struct DashTraySharedAction: Equatable, Sendable {
+  let id: String
+  let title: String
+  var icon: String? = nil
+}
+
+/// Global-frame registry for the presenting endpoint. The claim reserves one
+/// source while the transparent cover mounts, but the source stays visible
+/// until the tray has laid out the matching destination. Activation and the
+/// native-size proxy then exchange ownership in one rendered frame.
 @MainActor
 @Observable
 final class DashTraySourceRegistry {
   static let shared = DashTraySourceRegistry()
 
-  /// The source currently replaced by a presented tray; that control renders
-  /// at opacity 0 until the tray fully leaves.
+  /// The source currently represented by the host-owned action proxy.
   private(set) var occupiedID: AnyHashable?
+  @ObservationIgnored private var claimedID: AnyHashable?
   @ObservationIgnored private var frames: [AnyHashable: CGRect] = [:]
 
   func record(_ frame: CGRect, for id: AnyHashable) {
@@ -151,18 +157,25 @@ final class DashTraySourceRegistry {
     return frame
   }
 
-  /// Claims the one source slot. A second presentation must fall back to the
-  /// unanchored reveal instead of making the first tray's source reappear.
+  /// Reserves the one source slot. Reservation does not hide the source; the
+  /// paired destination must exist before `activate` transfers visual ownership.
   @discardableResult
   func claim(_ id: AnyHashable) -> Bool {
-    guard occupiedID == nil || occupiedID == id else { return false }
+    guard claimedID == nil || claimedID == id else { return false }
+    claimedID = id
+    return true
+  }
+
+  @discardableResult
+  func activate(_ id: AnyHashable) -> Bool {
+    guard claimedID == id else { return false }
     occupiedID = id
     return true
   }
 
   func release(_ id: AnyHashable) {
-    guard occupiedID == id else { return }
-    occupiedID = nil
+    if claimedID == id { claimedID = nil }
+    if occupiedID == id { occupiedID = nil }
   }
 
   /// A source is anchorable when it has real size and is at least partly on
@@ -172,40 +185,6 @@ final class DashTraySourceRegistry {
     guard !bounds.isEmpty, frame.width > 1, frame.height > 1 else { return false }
     guard frame.intersects(bounds) else { return false }
     return frame.width <= bounds.width && frame.height <= bounds.height * 0.6
-  }
-}
-
-/// Rect-to-rect mapping for the anchored reveal: at progress 0 the full card
-/// renders scaled and translated onto the source rect; at 1 it is untouched.
-/// One transform of the whole card — never per-property layout animation.
-enum DashTrayAnchorMath {
-  struct Transform: Equatable {
-    var scaleX: CGFloat
-    var scaleY: CGFloat
-    var offsetX: CGFloat
-    var offsetY: CGFloat
-  }
-
-  static func transform(source: CGRect, card: CGRect, progress: CGFloat) -> Transform {
-    guard card.width > 0, card.height > 0 else {
-      return Transform(scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0)
-    }
-    let remaining = 1 - progress
-    let scaleX = 1 + (source.width / card.width - 1) * remaining
-    let scaleY = 1 + (source.height / card.height - 1) * remaining
-    return Transform(
-      scaleX: scaleX,
-      scaleY: scaleY,
-      offsetX: (source.midX - card.midX) * remaining,
-      offsetY: (source.midY - card.midY) * remaining
-    )
-  }
-
-  /// The growing card turns opaque in the first third of the travel so the
-  /// hidden source never leaves a hole, without popping in full-strength at
-  /// frame zero.
-  static func opacity(progress: CGFloat) -> CGFloat {
-    min(1, max(0, progress * 3))
   }
 }
 
@@ -224,6 +203,84 @@ private struct DashTraySourceModifier: ViewModifier {
       // travelling to) this exact rect, so any crossfade would double-expose.
       .opacity(occupied ? 0 : 1)
       .allowsHitTesting(!occupied)
+      .accessibilityHidden(occupied)
+  }
+}
+
+/// The presented endpoint reports its live global frame to the tray host. The
+/// host freezes the opening frame, while continuing to retain the live value
+/// for an accurate close after keyboard or content-height changes.
+@MainActor
+@Observable
+private final class DashTraySharedActionCoordinator {
+  @ObservationIgnored private var destinationToken: UUID?
+  private(set) var destinationAction: DashTraySharedAction?
+  private(set) var destinationFrame: CGRect?
+
+  func update(_ action: DashTraySharedAction, frame: CGRect, token: UUID) {
+    destinationToken = token
+    destinationAction = action
+    destinationFrame = frame
+  }
+
+  func clear(token: UUID) {
+    guard destinationToken == token else { return }
+    destinationToken = nil
+    destinationAction = nil
+    destinationFrame = nil
+  }
+}
+
+private struct DashTraySharedGeometrySnapshot: Equatable {
+  let action: DashTraySharedAction
+  let destination: CGRect
+  let card: CGRect
+}
+
+private struct DashTraySharedActionCoordinatorKey: EnvironmentKey {
+  static let defaultValue: DashTraySharedActionCoordinator? = nil
+}
+
+private struct DashTrayProxyOwnedActionIDKey: EnvironmentKey {
+  static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+  fileprivate var dashTraySharedActionCoordinator: DashTraySharedActionCoordinator? {
+    get { self[DashTraySharedActionCoordinatorKey.self] }
+    set { self[DashTraySharedActionCoordinatorKey.self] = newValue }
+  }
+
+  fileprivate var dashTrayProxyOwnedActionID: String? {
+    get { self[DashTrayProxyOwnedActionIDKey.self] }
+    set { self[DashTrayProxyOwnedActionIDKey.self] = newValue }
+  }
+}
+
+private struct DashTraySharedDestinationModifier: ViewModifier {
+  let action: DashTraySharedAction
+  @Environment(\.dashTraySharedActionCoordinator) private var coordinator
+  @Environment(\.dashTrayProxyOwnedActionID) private var proxyOwnedActionID
+  @State private var token = UUID()
+
+  private var proxyOwnsAction: Bool { proxyOwnedActionID == action.id }
+
+  func body(content: Content) -> some View {
+    content
+      .background {
+        GeometryReader { proxy in
+          let frame = proxy.frame(in: .global)
+          Color.clear
+            .onAppear { coordinator?.update(action, frame: frame, token: token) }
+            .onChange(of: frame) { _, newFrame in
+              coordinator?.update(action, frame: newFrame, token: token)
+            }
+        }
+      }
+      .onDisappear { coordinator?.clear(token: token) }
+      .opacity(proxyOwnsAction ? 0 : 1)
+      .allowsHitTesting(!proxyOwnsAction)
+      .accessibilityHidden(proxyOwnsAction)
   }
 }
 
@@ -237,13 +294,22 @@ private struct DashTraySourceModifier: ViewModifier {
 }
 
 extension View {
-  /// Marks this control as a tray anchor: a `dashTray(sourceID:)` matching
-  /// `id` presents by growing out of this control's frame and, on ✕, shrinks
-  /// back into it. The control hides while its tray is up. IDs must be unique
-  /// among simultaneously visible sources; reuse the control's accessibility
-  /// identifier.
+  /// Compatibility-only geometry reporter for old debug hosts. A one-ended
+  /// source no longer changes presentation; production source transitions use
+  /// `dashTraySharedSource` plus a matching destination.
   func dashTraySource(id: AnyHashable) -> some View {
     modifier(DashTraySourceModifier(id: id))
+  }
+
+  /// Marks the presenting endpoint of one persistent tray action.
+  func dashTraySharedSource(_ action: DashTraySharedAction) -> some View {
+    modifier(DashTraySourceModifier(id: action.id))
+  }
+
+  /// Marks the matching endpoint inside the tray. Without this endpoint the
+  /// host releases the source and falls back to the standard bottom reveal.
+  func dashTraySharedDestination(_ action: DashTraySharedAction) -> some View {
+    modifier(DashTraySharedDestinationModifier(action: action))
   }
 }
 
@@ -257,23 +323,38 @@ extension View {
   /// screen's pull-to-refresh into the tray's own scroll view.
   /// `showsMenuButtons` toggles the corner controls (trailing action + close);
   /// with them off, scrim tap and header drag still dismiss.
-  /// `sourceID` names a `.dashTraySource(id:)` control: when its frame is
-  /// available the tray grows out of it and ✕ shrinks back into it; drag and
-  /// scrim keep the downward exit, and without a resolvable source the
-  /// presentation is byte-identical to the plain bottom reveal.
+  /// `sharedAction` opts into the paired-action reveal. The same descriptor
+  /// must mark one source and one destination; otherwise the tray uses the
+  /// standard bottom reveal.
   func dashTray<Content: View>(
     isPresented: Binding<Bool>,
     title: String,
     showsMenuButtons: Bool = true,
     tone: FeatureVisualTone? = nil,
-    sourceID: AnyHashable? = nil,
+    sharedAction: DashTraySharedAction? = nil,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     modifier(
       DashTrayModifier<EmptyView, Content, EmptyView>(
         isPresented: isPresented, title: title,
-        showsMenuButtons: showsMenuButtons, tone: tone, sourceID: sourceID, hero: nil,
+        showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: nil,
         trayContent: content, footer: { EmptyView() }, hasFooter: false))
+  }
+
+  /// Source-only compatibility for debug hosts. It deliberately presents with
+  /// the standard reveal; a frame without a destination is not a shared action.
+  func dashTray<Content: View>(
+    isPresented: Binding<Bool>,
+    title: String,
+    showsMenuButtons: Bool = true,
+    tone: FeatureVisualTone? = nil,
+    sourceID _: AnyHashable,
+    @ViewBuilder content: @escaping () -> Content
+  ) -> some View {
+    dashTray(
+      isPresented: isPresented, title: title,
+      showsMenuButtons: showsMenuButtons, tone: tone,
+      sharedAction: nil, content: content)
   }
 
   /// A floating content tray with three stable chrome regions: fixed header,
@@ -284,14 +365,14 @@ extension View {
     title: String,
     showsMenuButtons: Bool = true,
     tone: FeatureVisualTone? = nil,
-    sourceID: AnyHashable? = nil,
+    sharedAction: DashTraySharedAction? = nil,
     @ViewBuilder content: @escaping () -> Content,
     @ViewBuilder footer: @escaping () -> Footer
   ) -> some View {
     modifier(
       DashTrayModifier<EmptyView, Content, Footer>(
         isPresented: isPresented, title: title,
-        showsMenuButtons: showsMenuButtons, tone: tone, sourceID: sourceID, hero: nil,
+        showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: nil,
         trayContent: content, footer: footer, hasFooter: true))
   }
 
@@ -305,14 +386,14 @@ extension View {
     title: String,
     showsMenuButtons: Bool = true,
     tone: FeatureVisualTone? = nil,
-    sourceID: AnyHashable? = nil,
+    sharedAction: DashTraySharedAction? = nil,
     @ViewBuilder hero: @escaping () -> Hero,
     @ViewBuilder content: @escaping () -> Content
   ) -> some View {
     modifier(
       DashTrayModifier<Hero, Content, EmptyView>(
         isPresented: isPresented, title: title,
-        showsMenuButtons: showsMenuButtons, tone: tone, sourceID: sourceID, hero: hero,
+        showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: hero,
         trayContent: content, footer: { EmptyView() }, hasFooter: false))
   }
 
@@ -321,13 +402,13 @@ extension View {
     title: @escaping (Item) -> String,
     showsMenuButtons: Bool = true,
     tone: FeatureVisualTone? = nil,
-    sourceID: AnyHashable? = nil,
+    sharedAction: DashTraySharedAction? = nil,
     @ViewBuilder content: @escaping (Item) -> Content
   ) -> some View {
     modifier(
       DashTrayItemModifier<Item, EmptyView, Content>(
         item: item, title: title,
-        showsMenuButtons: showsMenuButtons, tone: tone, sourceID: sourceID, hero: nil,
+        showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: nil,
         trayContent: content)
     )
   }
@@ -338,14 +419,14 @@ extension View {
     title: @escaping (Item) -> String,
     showsMenuButtons: Bool = true,
     tone: FeatureVisualTone? = nil,
-    sourceID: AnyHashable? = nil,
+    sharedAction: DashTraySharedAction? = nil,
     @ViewBuilder hero: @escaping (Item) -> Hero,
     @ViewBuilder content: @escaping (Item) -> Content
   ) -> some View {
     modifier(
       DashTrayItemModifier(
         item: item, title: title,
-        showsMenuButtons: showsMenuButtons, tone: tone, sourceID: sourceID, hero: hero,
+        showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: hero,
         trayContent: content)
     )
   }
@@ -990,10 +1071,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   var showsMenuButtons = true
   /// Contextual tone; nil keeps the neutral tray. See `\.dashTrayTone`.
   var tone: FeatureVisualTone? = nil
-  /// Anchor pair, resolved by the presenting modifier: the source control's
-  /// registry id plus its frozen global frame at present time. Nil keeps the
-  /// plain bottom reveal.
-  var sourceID: AnyHashable? = nil
+  /// Paired action plus its frozen presenting frame. Nil keeps the standard
+  /// bottom reveal; the destination must still report the matching identity.
+  var sharedAction: DashTraySharedAction? = nil
   var sourceFrame: CGRect? = nil
   /// Full-bleed view replacing the title header; nil keeps the standard header.
   var hero: (() -> Hero)?
@@ -1022,14 +1102,20 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @State private var contentDescription: String?
   @State private var stepRole = DashTrayStepRole.root
   @State private var dismissDisabled = false
-  /// Set when a settled drag/scrim/programmatic exit hands the card from the
-  /// anchored reveal to the downward slide — the flip only happens where both
-  /// modifiers render identity. Never set mid-animation.
-  @State private var anchorReleased = false
-  /// The rect the ✕ retract returns into: the source's *current* frame read
-  /// at close time. Nil (entrance and fallback) keeps the frozen present-time
-  /// `sourceFrame`.
-  @State private var closeAnchorRect: CGRect?
+  @State private var sharedActionCoordinator = DashTraySharedActionCoordinator()
+  /// The destination is live-reported, but the opening endpoint freezes before
+  /// animation so layout feedback cannot steer an in-flight action.
+  @State private var openingDestinationFrame: CGRect?
+  @State private var openingCardFrame: CGRect?
+  @State private var closeDestinationFrame: CGRect?
+  @State private var closeSourceFrame: CGRect?
+  @State private var closeCardFrame: CGRect?
+  @State private var liveCardFrame: CGRect = .zero
+  @State private var presentationStarted = false
+  @State private var sharedProxyOwnsAction = false
+  /// A settled drag/scrim/programmatic exit hands the paired reveal to the
+  /// established downward slide at their shared identity pose.
+  @State private var sharedRevealReleased = false
   /// True once the present animation has visually finished — progress rests
   /// at 1, where both reveal modifiers render identity. The only moment an
   /// exit may hand off between them or retarget the anchor rect.
@@ -1056,15 +1142,34 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     #endif
   }
 
-  /// Whether the anchored reveal drives the card. Derived, never armed by a
-  /// lifecycle callback: an anchored tray is anchored from its very first
-  /// frame, so there is no pre-`onAppear` window rendering under the slide
-  /// modifier. Deliberately independent of the *live* Reduce Motion value —
-  /// initial Reduce Motion never resolves a `sourceFrame` at all, and a
-  /// mid-presentation toggle must not swap modifiers away from identity, so
-  /// ownership flips off only via `anchorReleased`, at settled identity.
-  private var anchorActive: Bool {
-    sourceFrame != nil && !anchorReleased
+  /// Initial Reduce Motion never resolves a shared action. A mid-presentation
+  /// toggle releases this path only at the card's identity pose.
+  private var sharedRevealActive: Bool {
+    sharedAction != nil && sourceFrame != nil && !sharedRevealReleased
+  }
+
+  private var sharedGeometrySnapshot: DashTraySharedGeometrySnapshot? {
+    guard sharedRevealActive,
+      let sharedAction,
+      sharedActionCoordinator.destinationAction == sharedAction,
+      let destination = sharedActionCoordinator.destinationFrame,
+      destination.width > 1, destination.height > 1,
+      liveCardFrame.width > 1, liveCardFrame.height > 1
+    else { return nil }
+    return DashTraySharedGeometrySnapshot(
+      action: sharedAction, destination: destination, card: liveCardFrame)
+  }
+
+  private var presentedCardFrame: CGRect {
+    if let closeCardFrame { return closeCardFrame }
+    if presentationSettled, !liveCardFrame.isEmpty { return liveCardFrame }
+    return openingCardFrame ?? liveCardFrame
+  }
+
+  private var presentedDestinationFrame: CGRect {
+    if let closeDestinationFrame { return closeDestinationFrame }
+    if presentationSettled, let live = sharedActionCoordinator.destinationFrame { return live }
+    return openingDestinationFrame ?? sharedActionCoordinator.destinationFrame ?? .zero
   }
 
   var body: some View {
@@ -1085,54 +1190,94 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       // lift is plain outer padding — there's no longer an edge-to-edge fill
       // that has to run under the keyboard.
       GeometryReader { proxy in
-        DashSheetCard(
-          maxCardHeight: proxy.size.height - bottomLift(proxy) - 24,
-          hasFooter: hasFooter
-        ) {
-          // Drag-to-dismiss lives on the header (or hero) only, so the
-          // scrollable body keeps its own vertical scroll.
-          trayHeader
-            .contentShape(Rectangle())
-            .gesture(dragGesture, including: trayInteractionDisabled ? .none : .all)
-        } content: {
-          content()
-            .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
-        } footer: {
-          footer()
-            .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, DashTheme.Sheet.floatingMargin)
-        .allowsHitTesting(keyboardAction == nil && !isClosing)
-        #if DEBUG
-          .overlay(alignment: .topLeading) {
-            Color.clear
-            .frame(width: 1, height: 1)
-            .accessibilityElement()
-            .accessibilityIdentifier("dash.tray.card")
-            .accessibilityValue(anchorActive ? "anchored" : "unanchored")
+        ZStack {
+          if sharedRevealActive, let sharedAction, let sourceFrame {
+            DashTraySharedReveal(
+              layer: .shell,
+              action: sharedAction,
+              progress: progress,
+              source: closeSourceFrame ?? sourceFrame,
+              destination: presentedDestinationFrame,
+              card: presentedCardFrame,
+              containerOrigin: proxy.frame(in: .global).origin,
+              proxyOwnsAction: sharedProxyOwnsAction
+            )
           }
-        #endif
-        // Anchored reveal: one whole-card transform mapping its laid-out rect
-        // onto the source control's rect — never per-property layout
-        // animation. Inert whenever this tray has no anchor. The card rect is
-        // *derived* from layout inputs (see `anchoredCardRect`), never
-        // measured through the reveal transforms, so the mapping cannot feed
-        // back into its own input regardless of callback timing.
-        .modifier(
-          DashTrayAnchorReveal(
-            progress: progress, active: anchorActive,
-            source: closeAnchorRect ?? sourceFrame ?? .zero,
-            card: anchoredCardRect(proxy))
+
+          DashSheetCard(
+            maxCardHeight: proxy.size.height - bottomLift(proxy) - 24,
+            hasFooter: hasFooter,
+            drawsSurface: !sharedRevealActive,
+            sharedRevealProgress: sharedRevealActive ? progress : nil
+          ) {
+            // Drag-to-dismiss lives on the header (or hero) only, so the
+            // scrollable body keeps its own vertical scroll.
+            trayHeader
+              .contentShape(Rectangle())
+              .gesture(dragGesture, including: trayInteractionDisabled ? .none : .all)
+          } content: {
+            content()
+              .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
+          } footer: {
+            footer()
+              .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
+          }
+          .frame(maxWidth: .infinity)
+          .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+            liveCardFrame = frame
+          }
+          .padding(.horizontal, DashTheme.Sheet.floatingMargin)
+          .padding(.bottom, bottomLift(proxy))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          .allowsHitTesting(keyboardAction == nil && !isClosing)
+          #if DEBUG
+            .overlay(alignment: .topLeading) {
+              Color.clear
+              .frame(width: 1, height: 1)
+              .accessibilityElement()
+              .accessibilityIdentifier("dash.tray.card")
+              .accessibilityValue(sharedRevealActive ? "paired" : "standard")
+            }
+          #endif
+          .mask {
+            if sharedRevealActive, let sourceFrame {
+              DashTraySharedContentMask(
+                progress: progress,
+                source: closeSourceFrame ?? sourceFrame,
+                card: presentedCardFrame,
+                containerOrigin: proxy.frame(in: .global).origin
+              )
+            } else {
+              Rectangle()
+            }
+          }
+
+          if sharedRevealActive, let sharedAction, let sourceFrame {
+            DashTraySharedReveal(
+              layer: .action,
+              action: sharedAction,
+              progress: progress,
+              source: closeSourceFrame ?? sourceFrame,
+              destination: presentedDestinationFrame,
+              card: presentedCardFrame,
+              containerOrigin: proxy.frame(in: .global).origin,
+              proxyOwnsAction: sharedProxyOwnsAction
+            )
+          }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .environment(\.dashTraySharedActionCoordinator, sharedActionCoordinator)
+        .environment(
+          \.dashTrayProxyOwnedActionID,
+          sharedProxyOwnsAction ? sharedAction?.id : nil
         )
-        .padding(.bottom, bottomLift(proxy))
-        // Bottom-pinned slide: a bounded fraction of the card height plus
-        // opacity, blur, and scale — tall trays never shoot in from far away.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        // The standard path keeps its bounded bottom reveal. The paired path
+        // leaves the final card layout untouched while its shell and native-size
+        // action proxy animate independently in the sibling layer above.
         .modifier(
           DashTrayCardReveal(
             progress: progress, drag: drag, revealOffset: revealOffset,
-            reduceMotion: reduceMotion, active: !anchorActive)
+            reduceMotion: reduceMotion, active: !sharedRevealActive)
         )
         // Gesture travel is its own animatable layer. Keeping it outside the
         // progress-driven reveal prevents a drag update from retargeting an
@@ -1160,6 +1305,20 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
     .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
+    .task(id: sharedGeometrySnapshot) {
+      guard let snapshot = sharedGeometrySnapshot, !presentationStarted, !isClosing else { return }
+      // One rendered-frame stability barrier: if either endpoint changes, the
+      // task is cancelled and restarted with the new snapshot.
+      try? await Task.sleep(for: .milliseconds(16))
+      guard !Task.isCancelled, !presentationStarted, !isClosing,
+        sharedGeometrySnapshot == snapshot
+      else {
+        return
+      }
+      openingDestinationFrame = snapshot.destination
+      openingCardFrame = snapshot.card
+      startPresentation()
+    }
     .onReceive(
       NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)
     ) { note in
@@ -1192,64 +1351,114 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     .onPreferenceChange(DashToastLeadingMarkPreferenceKey.self) { mark in
       if mark != nil || !isClosing { toastMark = mark }
     }
-    .onChange(of: reduceMotion, initial: true) { _, reduced in
-      // Enabling Reduce Motion is the one legal interruption of an unsettled
-      // anchored reveal: swap directly to the identity pose without another
-      // spatial animation, then keep the reduced fade path for dismissal.
-      // `progress` already holds its model-space target of 1 while SwiftUI is
-      // rendering the spring, so replacing the modifier is what cancels the
-      // presentation-layer transform.
+    .onChange(of: reduceMotion, initial: true) { previous, reduced in
       guard reduced else { return }
+      // The initial callback reports the same value twice; `onAppear` owns the
+      // normal reduced-opacity entrance regardless of callback ordering.
+      guard previous != reduced else { return }
+      if !presentationStarted {
+        if sharedRevealActive {
+          var transaction = Transaction()
+          transaction.disablesAnimations = true
+          withTransaction(transaction) {
+            sharedProxyOwnsAction = false
+            sharedRevealReleased = true
+          }
+          releaseSharedSource()
+        }
+        // Preserve the established short reduced-motion opacity transition on
+        // an initially reduced presentation.
+        startPresentation()
+        return
+      }
+
+      // A live setting change interrupts spatial motion at the identity pose.
       var transaction = Transaction()
       transaction.disablesAnimations = true
       withTransaction(transaction) {
         if !isClosing { presentationSettled = true }
-        anchorReleased = true
+        presentationStarted = true
+        progress = isClosing ? 0 : 1
+        sharedProxyOwnsAction = false
+        sharedRevealReleased = true
         if isClosing {
           flightProgress = 1
           flight = nil
         }
       }
+      releaseSharedSource()
       if isClosing { finishFlightExitStage() }
     }
     .onAppear {
-      // `.removed`, not `.logicallyComplete`: the present spring has a long
-      // tail, and `presentationSettled` gates handoffs and anchor-rect
-      // retargeting that are only legal once the rendered pose actually
-      // rests at identity. An early exit retargets progress before removal,
-      // so the completion then fires with `isClosing` already guarding
-      // every settled-only path.
-      withAnimation(
-        reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present,
-        completionCriteria: .removed
-      ) {
-        progress = 1
-      } completion: {
+      if !sharedRevealActive { startPresentation() }
+    }
+    .task {
+      // A malformed/conditional destination must not leave a transparent cover
+      // parked at progress zero. Give normal layout a short bounded window,
+      // then release the reservation and use the standard reveal.
+      guard sharedRevealActive, !isClosing else { return }
+      try? await Task.sleep(for: .milliseconds(180))
+      guard !Task.isCancelled, !presentationStarted, !isClosing else { return }
+      fallbackToStandardPresentation()
+    }
+  }
+
+  private func startPresentation() {
+    guard !presentationStarted, !isClosing else { return }
+
+    if sharedRevealActive {
+      guard let sharedAction, openingDestinationFrame != nil, openingCardFrame != nil else {
+        return
+      }
+      var activated = false
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        activated = DashTraySourceRegistry.shared.activate(sharedAction.id)
+        if activated { sharedProxyOwnsAction = true }
+      }
+      guard activated else {
+        fallbackToStandardPresentation()
+        return
+      }
+    }
+
+    presentationStarted = true
+    // `.removed`, not `.logicallyComplete`: endpoint ownership changes only
+    // once the rendered spring is actually at rest.
+    withAnimation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present,
+      completionCriteria: .removed
+    ) {
+      progress = 1
+    } completion: {
+      guard !isClosing else { return }
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
         presentationSettled = true
+        sharedProxyOwnsAction = false
       }
     }
   }
 
-  /// The card's final laid-out global rect, derived purely from layout
-  /// inputs: the container's global frame (the GeometryReader sits above
-  /// every reveal transform), the card's fitted-height preference (a layout
-  /// size — render transforms never touch it), and the same horizontal
-  /// margin and bottom lift the layout applies below. Because nothing here
-  /// is measured through the transforms, the anchored mapping cannot feed
-  /// back into itself and no assumption about geometry-callback ordering is
-  /// needed. Zero until the fitted height lands (a frame or two after
-  /// insertion), where the anchor modifier draws its no-scale fallback at
-  /// near-zero progress opacity.
-  private func anchoredCardRect(_ proxy: GeometryProxy) -> CGRect {
-    guard anchorActive, cardHeight > 0 else { return .zero }
-    let container = proxy.frame(in: .global)
-    let margin = DashTheme.Sheet.floatingMargin
-    let lift = bottomLift(proxy)
-    return CGRect(
-      x: container.minX + margin,
-      y: container.maxY - lift - cardHeight,
-      width: container.width - margin * 2,
-      height: cardHeight)
+  private func fallbackToStandardPresentation() {
+    guard !presentationStarted, !isClosing else { return }
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      sharedProxyOwnsAction = false
+      sharedRevealReleased = true
+      openingDestinationFrame = nil
+      openingCardFrame = nil
+    }
+    releaseSharedSource()
+    startPresentation()
+  }
+
+  private func releaseSharedSource() {
+    guard let sharedAction else { return }
+    DashTraySourceRegistry.shared.release(sharedAction.id)
   }
 
   /// One-shot overlay for the success-check flight. Mounted at progress 0 and
@@ -1345,42 +1554,34 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       ? -DashTheme.Sheet.floatingBottomTuck : DashTheme.Sheet.floatingMargin
   }
 
-  /// Exit routing, Family's rule set: only the ✕ control retraces the anchored
-  /// reveal back into its source; a drag or scrim tap is a physical downward
-  /// gesture and keeps the downward slide; programmatic dismissals (submit
-  /// success, Cancel) slide too. An exit that interrupts the anchored
-  /// entrance is the one exception: the two reveal modifiers only render the
-  /// same pose at settled progress 1, so before the presentation settles
-  /// *every* reason keeps the anchor and reverses the grow continuously from
-  /// its current partial pose back into the frozen source rect.
+  /// Only ✕ retraces a settled paired action. Drag, scrim, and programmatic
+  /// dismissal keep the established downward exit. An interrupted paired
+  /// entrance reverses continuously from its current shell/action pose.
   private func close(reason: DashTrayCloseReason = .programmatic) {
     guard !isClosing else { return }
     isClosing = true
-    let reversesUnsettledAnchor = anchorActive && !presentationSettled
-    if anchorActive, presentationSettled {
+    let reversesUnsettledSharedReveal = sharedRevealActive && !presentationSettled
+    if sharedRevealActive, presentationSettled {
       if reason == .control {
-        // Return into the source's *current* frame — layout may have shifted
-        // since present (keyboard, rotation); the frozen rect is the
-        // fallback. Retargeting is only legal here: the rect is not
-        // animatable state, so at any progress other than a settled 1
-        // (where the transform is identity for every rect) swapping it
-        // would snap the pose.
-        if let sourceID,
+        // Retarget both endpoints only at settled progress 1, where every
+        // possible rect produces the same final card/action pose.
+        if let sharedAction,
           let fresh = DashTraySourceRegistry.shared.presentationFrame(
-            for: sourceID, in: dashTrayWindowBounds())
+            for: sharedAction.id, in: dashTrayWindowBounds()),
+          sharedActionCoordinator.destinationAction == sharedAction,
+          let destination = sharedActionCoordinator.destinationFrame
         {
-          closeAnchorRect = fresh
+          closeSourceFrame = fresh
+          closeDestinationFrame = destination
+          closeCardFrame = liveCardFrame
+          sharedProxyOwnsAction = true
         } else {
-          // The trigger can scroll away or disappear while the tray is open.
-          // At settled identity it is safe to hand off to the standard exit;
-          // shrinking into the frozen old rect would point at empty space.
-          anchorReleased = true
+          sharedRevealReleased = true
+          sharedProxyOwnsAction = false
         }
       } else {
-        // At settled progress 1 both reveal modifiers render identity (the
-        // live drag offset included), so handing the exit to the downward
-        // slide cannot jump.
-        anchorReleased = true
+        sharedRevealReleased = true
+        sharedProxyOwnsAction = false
       }
     }
     let flies = beginSuccessFlightIfEligible(reason: reason)
@@ -1388,9 +1589,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     flightExitStagePending = flies
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.dismiss) {
       progress = 0
-      // A drag that interrupts the entrance must return to the source itself,
-      // not to `source + drag` before the hidden source reappears.
-      if reversesUnsettledAnchor { drag = 0 }
+      if reversesUnsettledSharedReveal { drag = 0 }
     } completion: {
       finishExitStage()
     }
@@ -1765,8 +1964,8 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
   var drag: CGFloat
   var revealOffset: CGFloat
   var reduceMotion: Bool
-  /// False hands the card to `DashTrayAnchorReveal` (anchored presentations);
-  /// the flip only ever happens at progress 1, where both render identity.
+  /// False hands presentation to the paired shell/action reveal; the flip only
+  /// happens at progress 1, where both paths render the final card pose.
   var active = true
 
   // Nonisolated: `Animatable` is a nonisolated protocol while `ViewModifier`
@@ -1794,38 +1993,136 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
   }
 }
 
-/// The anchored reveal: the whole card, scaled and translated so that at
-/// progress 0 it occupies the source control's rect and at 1 it sits exactly
-/// where layout put it. Drag rides on top so header pulls stay physical. If
-/// the card has not been measured yet (first frame), it falls back to a plain
-/// progress fade, which at progress ≈ 0 is invisible anyway.
-private struct DashTrayAnchorReveal: ViewModifier, Animatable {
-  var progress: CGFloat
-  var active: Bool
-  var source: CGRect
-  var card: CGRect
+/// Pure geometry for a paired tray reveal. Only rectangles and section alpha
+/// interpolate; text, icons, controls, and the final card layout retain native
+/// geometry throughout.
+enum DashTraySharedRevealMath {
+  static func shellProgress(_ progress: CGFloat) -> CGFloat {
+    stage(progress, from: 0, to: 0.55)
+  }
 
-  // Nonisolated for the same SE-0434 reason as DashTrayCardReveal.
+  static func actionProgress(_ progress: CGFloat) -> CGFloat {
+    stage(progress, from: 0, to: 0.48)
+  }
+
+  static func stage(_ progress: CGFloat, from start: CGFloat, to end: CGFloat) -> CGFloat {
+    guard end > start else { return progress >= end ? 1 : 0 }
+    return min(1, max(0, (progress - start) / (end - start)))
+  }
+
+  static func rect(from start: CGRect, to end: CGRect, progress: CGFloat) -> CGRect {
+    let t = min(1, max(0, progress))
+    return CGRect(
+      x: start.origin.x + (end.origin.x - start.origin.x) * t,
+      y: start.origin.y + (end.origin.y - start.origin.y) * t,
+      width: start.width + (end.width - start.width) * t,
+      height: start.height + (end.height - start.height) * t
+    )
+  }
+
+  static func cornerRadius(
+    source: CGRect, destination: CGFloat, progress: CGFloat
+  ) -> CGFloat {
+    let start = source.height / 2
+    let t = min(1, max(0, progress))
+    return start + (destination - start) * t
+  }
+}
+
+/// Family-style paired reveal: the surface expands around a native-size action
+/// proxy while the laid-out card content appears in staged sections behind it.
+/// This sibling layer never transforms `DashSheetCard` itself.
+private enum DashTraySharedRevealLayer {
+  case shell
+  case action
+}
+
+private struct DashTraySharedReveal: View, Animatable {
+  let layer: DashTraySharedRevealLayer
+  let action: DashTraySharedAction
+  var progress: CGFloat
+  var source: CGRect
+  var destination: CGRect
+  var card: CGRect
+  var containerOrigin: CGPoint
+  var proxyOwnsAction: Bool
+
   nonisolated var animatableData: CGFloat {
     get { progress }
     set { progress = newValue }
   }
 
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    if !active {
-      content
-    } else if card.width > 0, card.height > 0 {
-      let transform = DashTrayAnchorMath.transform(
-        source: source, card: card, progress: progress)
-      content
-        .scaleEffect(x: transform.scaleX, y: transform.scaleY, anchor: .center)
-        .offset(x: transform.offsetX, y: transform.offsetY)
-        .opacity(DashTrayAnchorMath.opacity(progress: progress))
-    } else {
-      content
-        .opacity(DashTrayAnchorMath.opacity(progress: progress))
+  @ViewBuilder var body: some View {
+    let shellProgress = DashTraySharedRevealMath.shellProgress(progress)
+    let actionProgress = DashTraySharedRevealMath.actionProgress(progress)
+    let shell = local(
+      DashTraySharedRevealMath.rect(from: source, to: card, progress: shellProgress))
+    let proxy = local(
+      DashTraySharedRevealMath.rect(from: source, to: destination, progress: actionProgress))
+    let corner = DashTraySharedRevealMath.cornerRadius(
+      source: source, destination: DashDisplayChrome.floatingRadius, progress: shellProgress)
+
+    ZStack(alignment: .topLeading) {
+      Group {
+        switch layer {
+        case .shell:
+          if shell.width > 0, shell.height > 0 {
+            DashTrayCardSurface(cornerRadius: corner)
+              .frame(width: shell.width, height: shell.height)
+              .position(x: shell.midX, y: shell.midY)
+              // While layout is finding the destination, the real source still
+              // owns the pixels behind this transparent cover. Mount the shell
+              // only in the same frame the native-size proxy takes ownership.
+              .opacity(proxyOwnsAction || progress > 0 ? 1 : 0)
+          }
+        case .action:
+          if proxy.width > 0, proxy.height > 0 {
+            DashActionButton(title: action.title, icon: action.icon, action: {})
+              .frame(width: proxy.width, height: proxy.height)
+              .position(x: proxy.midX, y: proxy.midY)
+              .opacity(proxyOwnsAction ? 1 : 0)
+          }
+        }
+      }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  private func local(_ rect: CGRect) -> CGRect {
+    rect.offsetBy(dx: -containerOrigin.x, dy: -containerOrigin.y)
+  }
+}
+
+/// Clips final-layout card content to the same expanding shell rect. The mask
+/// changes only rendered visibility; it never proposes a smaller layout to the
+/// header, body, footer, or destination reporter.
+private struct DashTraySharedContentMask: View, Animatable {
+  var progress: CGFloat
+  var source: CGRect
+  var card: CGRect
+  var containerOrigin: CGPoint
+
+  nonisolated var animatableData: CGFloat {
+    get { progress }
+    set { progress = newValue }
+  }
+
+  var body: some View {
+    let shellProgress = DashTraySharedRevealMath.shellProgress(progress)
+    let global = DashTraySharedRevealMath.rect(
+      from: source, to: card, progress: shellProgress)
+    let rect = global.offsetBy(dx: -containerOrigin.x, dy: -containerOrigin.y)
+    let corner = DashTraySharedRevealMath.cornerRadius(
+      source: source, destination: DashDisplayChrome.floatingRadius, progress: shellProgress)
+
+    ZStack(alignment: .topLeading) {
+      RoundedRectangle(cornerRadius: corner, style: .continuous)
+        .frame(width: rect.width, height: rect.height)
+        .position(x: rect.midX, y: rect.midY)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
   }
 }
 
@@ -1849,6 +2146,29 @@ enum DashDisplayChrome {
   }
 }
 
+/// One visual definition for both the resting tray card and the independently
+/// expanding paired shell. Sharing it prevents a fill/gradient handoff at the
+/// end of the source transition.
+private struct DashTrayCardSurface: View {
+  let cornerRadius: CGFloat
+  @Environment(\.dashTrayTone) private var tone
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .fill(DashTheme.Sheet.background)
+      if let tone {
+        LinearGradient(
+          colors: [tone.vivid.opacity(colorScheme == .dark ? 0.03 : 0.06), .clear],
+          startPoint: .top, endPoint: .center
+        )
+      }
+    }
+    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+  }
+}
+
 /// The visible compact tray card, at the bottom of a full-screen
 /// transparent cover: a fixed header over a body that animates its height to fit
 /// its content — so a morph resizes smoothly with no detent to clip or snap —
@@ -1858,12 +2178,12 @@ enum DashDisplayChrome {
 private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   let maxCardHeight: CGFloat
   let hasFooter: Bool
+  let drawsSurface: Bool
+  let sharedRevealProgress: CGFloat?
   @ViewBuilder let header: () -> Header
   @ViewBuilder let content: () -> Body
   @ViewBuilder let footer: () -> Footer
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.dashTrayTone) private var tone
-  @Environment(\.colorScheme) private var colorScheme
   @State private var headerHeight: CGFloat = 0
   @State private var footerHeight: CGFloat = 0
   @State private var bodyIdeal: CGFloat = 0
@@ -1889,9 +2209,28 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
     return max(0, maxBodyHeight - DashTheme.Sheet.bodyVertical - bodyBottomInset)
   }
 
+  private var headerReveal: CGFloat {
+    guard let sharedRevealProgress else { return 1 }
+    // The shell reaches its final rect at 0.55; no final-position header ink
+    // appears before there is surface behind it.
+    return DashTraySharedRevealMath.stage(sharedRevealProgress, from: 0.55, to: 0.78)
+  }
+
+  private var bodyReveal: CGFloat {
+    guard let sharedRevealProgress else { return 1 }
+    return DashTraySharedRevealMath.stage(sharedRevealProgress, from: 0.60, to: 0.88)
+  }
+
+  private var footerReveal: CGFloat {
+    guard let sharedRevealProgress else { return 1 }
+    return DashTraySharedRevealMath.stage(sharedRevealProgress, from: 0.44, to: 0.72)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       header()
+        .opacity(headerReveal)
+        .offset(y: 8 * (1 - headerReveal))
         .background {
           GeometryReader { proxy in
             Color.clear.preference(key: DashSheetHeaderHeightKey.self, value: proxy.size.height)
@@ -1918,6 +2257,8 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
           }
       }
       .frame(height: bodyDisplay > 0 ? bodyDisplay : nil)
+      .opacity(bodyReveal)
+      .offset(y: 10 * (1 - bodyReveal))
 
       if hasFooter {
         footer()
@@ -1932,25 +2273,15 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
               )
             }
           }
+          .opacity(footerReveal)
       }
     }
     .frame(maxWidth: .infinity)
     // A floating card: one stable all-corner radius, and nothing extends past
     // the card — the gaps around it are the design.
     .background {
-      ZStack {
-        RoundedRectangle(cornerRadius: DashDisplayChrome.floatingRadius, style: .continuous)
-          .fill(DashTheme.Sheet.background)
-        // A contextual whisper of the presenting feature's tone at the card
-        // top — Family's tray-dresses-for-the-room, at an opacity that can
-        // never move text contrast. The background token above stays the one
-        // true card color; this layer is absent entirely on neutral trays.
-        if let tone {
-          LinearGradient(
-            colors: [tone.vivid.opacity(colorScheme == .dark ? 0.03 : 0.06), .clear],
-            startPoint: .top, endPoint: .center
-          )
-        }
+      if drawsSurface {
+        DashTrayCardSurface(cornerRadius: DashDisplayChrome.floatingRadius)
       }
     }
     .clipShape(
@@ -2080,12 +2411,10 @@ private func dashPresentWithoutAnimation(_ apply: () -> Void) {
   withTransaction(transaction, apply)
 }
 
-/// Resolves and claims an anchor at present time; releases it when the
-/// caller's binding clears (which happens only after the exit animation, so
-/// the hidden source never reappears under a still-visible card). Reduce
-/// Motion never anchors — the standard fade reveal is already low-motion.
-struct DashTrayAnchorClaim {
-  let sourceID: AnyHashable
+/// Resolves and reserves a paired source at present time. Reduce Motion never
+/// takes the spatial path; the standard fade is already the correct answer.
+struct DashTraySharedActionClaim {
+  let action: DashTraySharedAction
   let frame: CGRect
 }
 
@@ -2094,18 +2423,18 @@ struct DashTrayAnchorClaim {
 /// still true, so relying only on the binding's `false` edge would leave the
 /// singleton registry occupied and the matching Home tile hidden forever.
 @MainActor
-final class DashTrayAnchorLease {
+final class DashTraySharedActionLease {
   private let registry: DashTraySourceRegistry
-  private var sourceID: AnyHashable?
+  private var sourceID: String?
 
   init(registry: DashTraySourceRegistry = .shared) {
     self.registry = registry
   }
 
-  func adopt(_ claim: DashTrayAnchorClaim?) {
-    guard sourceID != claim?.sourceID else { return }
+  func adopt(_ claim: DashTraySharedActionClaim?) {
+    guard sourceID != claim?.action.id else { return }
     release()
-    sourceID = claim?.sourceID
+    sourceID = claim?.action.id
   }
 
   func release() {
@@ -2119,16 +2448,16 @@ final class DashTrayAnchorLease {
   }
 }
 
-@MainActor private func dashTrayResolveAnchor(
-  sourceID: AnyHashable?, reduceMotion: Bool
-) -> DashTrayAnchorClaim? {
-  guard let sourceID, !reduceMotion else { return nil }
+@MainActor private func dashTrayResolveSharedAction(
+  _ action: DashTraySharedAction?, reduceMotion: Bool
+) -> DashTraySharedActionClaim? {
+  guard let action, !reduceMotion else { return nil }
   guard
     let frame = DashTraySourceRegistry.shared.presentationFrame(
-      for: sourceID, in: dashTrayWindowBounds()),
-    DashTraySourceRegistry.shared.claim(sourceID)
+      for: action.id, in: dashTrayWindowBounds()),
+    DashTraySourceRegistry.shared.claim(action.id)
   else { return nil }
-  return DashTrayAnchorClaim(sourceID: sourceID, frame: frame)
+  return DashTraySharedActionClaim(action: action, frame: frame)
 }
 
 /// Carries the trigger geometry and presented value through one state write.
@@ -2138,7 +2467,7 @@ final class DashTrayAnchorLease {
 private struct DashTrayCoverPresentation<Value>: Identifiable {
   let id = UUID()
   let value: Value
-  let sourceID: AnyHashable?
+  let sharedAction: DashTraySharedAction?
   let sourceFrame: CGRect?
 }
 
@@ -2147,7 +2476,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   let title: String
   var showsMenuButtons = true
   var tone: FeatureVisualTone? = nil
-  var sourceID: AnyHashable? = nil
+  var sharedAction: DashTraySharedAction? = nil
   var hero: (() -> Hero)?
   @ViewBuilder var trayContent: () -> TrayContent
   @ViewBuilder var footer: () -> Footer
@@ -2157,7 +2486,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
     @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
   #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Bool>?
-  @State private var anchorLease = DashTrayAnchorLease()
+  @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
 
   private var reduceMotion: Bool {
@@ -2177,20 +2506,20 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
       )
       .onChange(of: isPresented, initial: true) { _, present in
         if present {
-          let claim = dashTrayResolveAnchor(sourceID: sourceID, reduceMotion: reduceMotion)
-          anchorLease.adopt(claim)
+          let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
+          sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
-            value: true, sourceID: claim?.sourceID, sourceFrame: claim?.frame)
+            value: true, sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
-          anchorLease.release()
+          sharedActionLease.release()
           dashPresentWithoutAnimation { coverPresentation = nil }
         }
       }
       .fullScreenCover(
         item: $coverPresentation,
         onDismiss: {
-          anchorLease.release()
+          sharedActionLease.release()
           isPresented = false
           let completion = dismissCompletion
           dismissCompletion = nil
@@ -2199,7 +2528,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
         content: { presentation in
           DashCustomSheet(
             title: title, showsMenuButtons: showsMenuButtons, tone: tone,
-            sourceID: presentation.sourceID, sourceFrame: presentation.sourceFrame,
+            sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
             hero: hero,
             onDismiss: { completion in
               dismissCompletion = completion
@@ -2220,7 +2549,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
   let title: (Item) -> String
   var showsMenuButtons = true
   var tone: FeatureVisualTone? = nil
-  var sourceID: AnyHashable? = nil
+  var sharedAction: DashTraySharedAction? = nil
   var hero: ((Item) -> Hero)?
   @ViewBuilder var trayContent: (Item) -> TrayContent
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
@@ -2228,7 +2557,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
     @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
   #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Item>?
-  @State private var anchorLease = DashTrayAnchorLease()
+  @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
 
   private var isPresented: Bool { item != nil }
@@ -2249,20 +2578,20 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
       )
       .onChange(of: item, initial: true) { _, newItem in
         if let newItem {
-          let claim = dashTrayResolveAnchor(sourceID: sourceID, reduceMotion: reduceMotion)
-          anchorLease.adopt(claim)
+          let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
+          sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
-            value: newItem, sourceID: claim?.sourceID, sourceFrame: claim?.frame)
+            value: newItem, sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
-          anchorLease.release()
+          sharedActionLease.release()
           dashPresentWithoutAnimation { coverPresentation = nil }
         }
       }
       .fullScreenCover(
         item: $coverPresentation,
         onDismiss: {
-          anchorLease.release()
+          sharedActionLease.release()
           item = nil
           let completion = dismissCompletion
           dismissCompletion = nil
@@ -2271,7 +2600,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
         content: { presentation in
           DashCustomSheet<Hero, TrayContent, EmptyView>(
             title: title(presentation.value), showsMenuButtons: showsMenuButtons, tone: tone,
-            sourceID: presentation.sourceID, sourceFrame: presentation.sourceFrame,
+            sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
             hero: hero.map { hero in { hero(presentation.value) } },
             onDismiss: { completion in
               dismissCompletion = completion
