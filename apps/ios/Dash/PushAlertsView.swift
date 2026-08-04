@@ -235,18 +235,18 @@ struct PushAlertsView: View {
       }
     }
     .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alert policies")
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if allowsWrites, storedWebhookID != nil {
-          DashToolbarIconButton(
-            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("Create alert policy")
+    .dashPageActions(
+      trailing: allowsWrites && storedWebhookID != nil
+        ? [
+          .icon(
+            id: "push-alerts-create-policy",
+            asset: SolarAsset.plus,
+            accessibilityLabel: DashL10n.string("Create alert policy")
           ) {
             creatingPolicy = true
           }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+        ] : []
+    )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) {
       resetForAccountChange()

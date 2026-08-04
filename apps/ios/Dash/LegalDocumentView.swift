@@ -230,8 +230,6 @@ struct LegalDocumentView: View {
       .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
     }
     .background(DashTheme.canvas)
-    .navigationTitle(document.title)
-    .navigationBarTitleDisplayMode(.inline)
   }
 
   @ViewBuilder

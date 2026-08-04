@@ -70,21 +70,21 @@ struct ZonesView: View {
     }
     .refreshable { await load(force: true) }.task { await load() }
     .onAppear { reloadIfInvalidated() }
-    .toolbar {
-      if !model.isDemoSession {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(
+    .dashPageActions(
+      trailing: model.isDemoSession
+        ? []
+        : [
+          .icon(
+            id: "domains-add-domain",
             asset: SolarAsset.plus,
-            accessibilityLabel: DashL10n.string("Add domain")
+            accessibilityLabel: DashL10n.string("Add domain"),
+            isEnabled: !model.isAuthenticating,
+            accessibilityIdentifier: "domains-add-domain"
           ) {
             beginAddDomain()
           }
-          .disabled(model.isAuthenticating)
-          .accessibilityIdentifier("domains-add-domain")
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
+        ]
+    )
     .dashTray(
       isPresented: $showsAddDomain, title: "Add domain",
       tone: FeatureVisualIdentity.tone(for: .zones)
@@ -265,6 +265,7 @@ struct ZonesView: View {
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
@@ -387,40 +388,40 @@ struct ZoneDetailView: View {
       actions: [abandonSetupAction]
     )
     .navigationBarBackButtonHidden(showsCustomizeOverlay && isCustomizingCard)
-    .toolbar {
-      if showsCustomizeOverlay && isCustomizingCard {
-        ToolbarItem(placement: .topBarLeading) {
-          DashToolbarIconButton(
+    .dashPageActions(
+      leading: showsCustomizeOverlay && isCustomizingCard
+        ? [
+          .icon(
+            id: "domain-card-customize-close",
             asset: SolarAsset.editClose,
             accessibilityLabel: DashL10n.string("Cancel"),
-            action: cancelCardCustomize
-          )
-          .disabled(isExitingCardCustomize)
-          .accessibilityIdentifier("domain-card-customize-close")
-        }
-        .dashSeparateToolbarBackground()
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(
+            isEnabled: !isExitingCardCustomize,
+            accessibilityIdentifier: "domain-card-customize-close",
+            action: cancelCardCustomize)
+        ]
+        : [],
+      trailing: showsCustomizeOverlay && isCustomizingCard
+        ? [
+          .icon(
+            id: "domain-card-customize-save",
             asset: SolarAsset.unread,
             accessibilityLabel: DashL10n.string("Done"),
             variant: .confirmation,
-            action: saveCardCustomize
-          )
-          .disabled(isExitingCardCustomize)
-          .accessibilityIdentifier("domain-card-customize-save")
-        }
-        .dashSeparateToolbarBackground()
-      } else {
-        ToolbarItem(placement: .topBarTrailing) {
-          DashToolbarIconButton(
+            isEnabled: !isExitingCardCustomize,
+            accessibilityIdentifier: "domain-card-customize-save",
+            action: saveCardCustomize)
+        ]
+        : [
+          .icon(
+            id: "domain-pin-toggle",
             asset: isPinned ? SolarAsset.pinFilled : SolarAsset.pin,
-            accessibilityLabel: isPinned ? "Unpin domain" : "Pin domain"
-          ) { togglePin() }
-          .disabled(displayedZone == nil || showsCustomizeOverlay)
-        }
-        .dashSeparateToolbarBackground()
-      }
-    }
+            accessibilityLabel: isPinned ? "Unpin domain" : "Pin domain",
+            isEnabled: displayedZone != nil && !showsCustomizeOverlay
+          ) {
+            togglePin()
+          }
+        ]
+    )
     .refreshable { await load(force: true) }.task { await load() }
     .overlay {
       if showsCustomizeOverlay {
@@ -847,15 +848,10 @@ struct ZoneDetailView: View {
   }
 
   private func completeAbandonSetupPresentation() {
-    navigator?.path.removeAll { destination in
-      switch destination {
-      case .zone(let id), .dns(let id), .cache(let id), .zoneAnalytics(let id),
-        .zoneWebAnalytics(let id), .zoneWAF(let id), .zoneSettings(let id),
-        .zoneEmailRouting(let id):
-        id == zoneID
-      default:
-        false
-      }
+    if let navigationCoordinator {
+      navigationCoordinator.removeAll(ownedBy: .zone(zoneID))
+    } else {
+      navigator?.removeAll(ownedBy: .zone(zoneID))
     }
     model.toasts.success(DashL10n.string("Removed from account."))
   }
@@ -1450,18 +1446,19 @@ struct DNSRecordsView: View {
     }
     .refreshable { await load(force: true) }
     .detailHeader(icon: .solar(SolarAsset.Content.globus), title: "DNS")
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if featureAllowsWrites {
-          DashToolbarIconButton(
-            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("New DNS record")
+    .dashPageActions(
+      trailing: featureAllowsWrites
+        ? [
+          .icon(
+            id: "dns-create-record",
+            asset: SolarAsset.plus,
+            accessibilityLabel: DashL10n.string("New DNS record")
           ) {
             createsRecord = true
           }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+        ]
+        : []
+    )
     .dashTray(
       item: $selected,
       title: { _ in "DNS record" },

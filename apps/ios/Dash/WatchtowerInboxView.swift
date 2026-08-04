@@ -107,16 +107,14 @@ struct WatchtowerInboxView: View {
       }
     )
     .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alerts")
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if filter == .inbox, !state.contents.unreadNotifications.isEmpty {
-          DashToolbarTextButton(title: "Ignore all") {
+    .dashPageActions(
+      trailing: filter == .inbox && !state.contents.unreadNotifications.isEmpty
+        ? [
+          .text(id: "watchtower-ignore-all", title: "Ignore all") {
             showsIgnoreAll = true
           }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+        ] : []
+    )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
     .onChange(of: model.accountRequestContext) { _, context in

@@ -73,14 +73,19 @@ struct CachePurgeView: View {
       .dashKeyboardDismissal()
     }
     .detailHeader(icon: .solar(SolarAsset.Content.bolt), title: "Cache")
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if allowsWrites {
-          DashMoreButton(isPresented: $showsMore)
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+    .dashPageActions(
+      trailing: allowsWrites
+        ? [
+          .icon(
+            id: "cache-more-actions",
+            asset: SolarAsset.menuDots,
+            accessibilityLabel: "More actions"
+          ) {
+            showsMore = true
+          }
+        ]
+        : []
+    )
     .dashMoreMenu(
       isPresented: $showsMore,
       title: "Purge cache",

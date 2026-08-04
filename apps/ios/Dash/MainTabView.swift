@@ -4,6 +4,12 @@ import UIKit
 
 private enum AppTab: Hashable { case home, features, watchtower }
 
+enum DashNavigatorAccountScopeRules {
+  static func shouldSynchronize(during signOutPhase: DashActionPhase) -> Bool {
+    !signOutPhase.isActive
+  }
+}
+
 private struct AccountScopedRouteRequest {
   let account: CloudflareAccount
   let route: DashRoute
@@ -20,6 +26,10 @@ struct MainTabView: View {
   @State private var homeNavigator = DestinationNavigator()
   @State private var featuresNavigator = DestinationNavigator()
   @State private var watchtowerNavigator = DestinationNavigator()
+  @State private var navigationCoordinator = DashNavigationCoordinator()
+  @State private var navigationAnchorRegistry = DashNavigationAnchorRegistry()
+  @State private var workspacePresentationState = DashWorkspacePresentationState()
+  @State private var profileAnchorInstanceID = UUID()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
   /// The shared header owns Watchtower's editor buttons, while the screen still
   /// owns the staged editor-exit choreography. Bumping these tokens asks the
@@ -31,7 +41,7 @@ struct MainTabView: View {
   @State private var watchtowerEditorInteractionsReady = false
   /// Handed down to the active page and back up to the wash — never read here.
   /// It carries a per-frame scroll position, and this body owns the navigation
-  /// paths: reading it would re-apply them mid-push and cancel the transition.
+  /// entries: reading it would refresh every cached host during a transition.
   @State private var washScroll = DashWorkspaceWashScroll()
   @State private var showsProfile = false
   @State private var profileTrayPath: [ProfileTrayPhase] = []
@@ -46,7 +56,8 @@ struct MainTabView: View {
   /// account switcher (whose preference sits above our reader, so it is OR-ed in).
   private var overlayTrays: DashTrayPresentation {
     DashTrayPresentation(
-      presented: showsProfile || showsIgnoreAllAlerts || nestedTray.presented)
+      presented: showsProfile || showsIgnoreAllAlerts || nestedTray.presented
+        || workspacePresentationState.trayPresented)
   }
 
   private var workspaceWashPreset: DashWorkspaceWashPreset {
@@ -87,10 +98,10 @@ struct MainTabView: View {
   }
 
   /// Pages swipe only between the tab roots. A pushed feature/detail owns
-  /// horizontal gestures (the leading-edge back swipe must win), an open tray
-  /// freezes the canvas underneath it, and a live chart tooltip owns the finger
-  /// it is scrubbing with. The scrub itself already claims the pager's pan for
-  /// the length of the hold (`DitherHoldInteraction`); this holds the lock
+  /// its own canvas, an open tray freezes the canvas underneath it, and a live
+  /// chart tooltip owns the finger it is scrubbing with. The scrub itself
+  /// already claims the pager's pan for the length of the hold
+  /// (`DitherHoldInteraction`); this holds the lock
   /// across a SwiftUI rebuild that would otherwise hand it back mid-scrub.
   /// Enforced via `TabPagerScrollLock` (pan recognizer only — never
   /// `scrollDisabled` / `isScrollEnabled`).
@@ -117,12 +128,30 @@ struct MainTabView: View {
     }
   }
 
-  private func openOnActiveTab(_ destination: Destination) {
-    activeNavigator.push(destination)
+  private func synchronizeNavigatorAccountScopes() {
+    navigationCoordinator.configure(
+      navigators: [homeNavigator, featuresNavigator, watchtowerNavigator])
+    let accountID = model.activeAccountID
+    homeNavigator.setAccountScope(accountID)
+    featuresNavigator.setAccountScope(accountID)
+    watchtowerNavigator.setAccountScope(accountID)
+  }
+
+  private func openOnActiveTab(
+    _ destination: Destination,
+    presentation: DashNavigationPresentation? = nil,
+    origin: DashNavigationOrigin? = nil
+  ) {
+    synchronizeNavigatorAccountScopes()
+    activeNavigator.push(
+      destination,
+      presentation: presentation,
+      origin: origin)
   }
 
   /// Applies a route only after any account scope has been verified.
   private func openVerifiedRoute(_ route: DashRoute) {
+    synchronizeNavigatorAccountScopes()
     switch route {
     case .watchtower:
       selection = .watchtower
@@ -135,7 +164,13 @@ struct MainTabView: View {
     default:
       guard let destination = route.destination else { break }
       selection = .home
-      homeNavigator.reset(to: destination)
+      if destination == .settings {
+        homeNavigator.reset(
+          to: destination,
+          presentation: .workspaceOverlay)
+      } else {
+        homeNavigator.reset(to: destination)
+      }
     }
   }
 
@@ -144,6 +179,11 @@ struct MainTabView: View {
   /// rejected with actionable feedback. Legacy unscoped links keep their
   /// historical current-account behavior.
   private func consume(_ route: DashRoute) {
+    guard
+      model.authState == .authenticated,
+      DashNavigatorAccountScopeRules.shouldSynchronize(
+        during: model.signOutActionPhase)
+    else { return }
     model.pendingRoute = nil
     let resolution = route.accountResolution(
       activeAccountID: model.activeAccountID,
@@ -192,6 +232,12 @@ struct MainTabView: View {
 
   var body: some View {
     tabContainer
+      .environment(\.dashNavigationCoordinator, navigationCoordinator)
+      .environment(\.dashNavigationAnchorRegistry, navigationAnchorRegistry)
+      .environment(\.dashWorkspacePresentationState, workspacePresentationState)
+      .onPreferenceChange(DashNavigationAnchorFramesKey.self) {
+        navigationAnchorRegistry.replaceFrames($0)
+      }
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
       .onReceive(
         NotificationCenter.default.publisher(
@@ -221,6 +267,15 @@ struct MainTabView: View {
       // Warms the Watchtower badge once per account, before the tab is
       // ever visited.
       .task(id: model.activeAccountID) {
+        // Sign-out intentionally keeps the Settings page and its tray alive
+        // through the success presentation. The ID becomes nil while that
+        // phase is still active, so this task must honor the same retention
+        // gate as the onChange handler below.
+        guard
+          DashNavigatorAccountScopeRules.shouldSynchronize(
+            during: model.signOutActionPhase)
+        else { return }
+        synchronizeNavigatorAccountScopes()
         // A cold-launch deep link is set before this view mounts, so onChange
         // never fires for it — drain the inbox on first appearance too.
         if let route = model.pendingRoute { consume(route) }
@@ -229,17 +284,25 @@ struct MainTabView: View {
       .onChange(of: model.pendingRoute) { _, route in
         if let route { consume(route) }
       }
+      .onChange(of: model.signOutActionPhase) { _, phase in
+        guard
+          DashNavigatorAccountScopeRules.shouldSynchronize(during: phase),
+          let route = model.pendingRoute
+        else { return }
+        consume(route)
+      }
       .onChange(of: model.activeAccountID) { _, _ in
         // Sign-out clears the account before remote cleanup finishes. Keep the
         // account-switcher / Settings confirmation tray mounted through its loading and
         // success phases; AppRoot swaps to sign-in after the phase returns idle.
-        guard !model.signOutActionPhase.isActive else {
+        guard
+          DashNavigatorAccountScopeRules.shouldSynchronize(
+            during: model.signOutActionPhase)
+        else {
           showsIgnoreAllAlerts = false
           return
         }
-        homeNavigator.reset()
-        featuresNavigator.reset()
-        watchtowerNavigator.reset()
+        synchronizeNavigatorAccountScopes()
         watchtowerCustomization.cancelEditing()
         showsProfile = false
         showsIgnoreAllAlerts = false
@@ -294,8 +357,8 @@ struct MainTabView: View {
   /// the content — sliding away when a pushed route or overlay wants the space.
   private var tabContainer: some View {
     // Chrome animations stay on avatar/dock subtrees only. A ZStack-wide
-    // `.animation(value:)` lands in the same transaction as `NavigationStack`
-    // path updates and retargets the UIKit push onto a SwiftUI fade.
+    // `.animation(value:)` would otherwise retarget the page container's
+    // explicit transition onto an unrelated SwiftUI fade.
     ZStack(alignment: .bottom) {
       TabView(selection: $selection) {
         tabPage(.home) {
@@ -344,7 +407,7 @@ struct MainTabView: View {
       // detail is pushed (environment leak / parent scroll-view hit testing).
       .background { TabPagerScrollLock(locked: pagerLocked) }
       // Depth flips with every push/pop; keep those updates off SwiftUI's
-      // animation system so UIKit owns the slide.
+      // animation system so the custom container owns the page transition.
       .animation(nil, value: homeNavigator.depth)
       .animation(nil, value: featuresNavigator.depth)
       .animation(nil, value: watchtowerNavigator.depth)
@@ -394,7 +457,7 @@ struct MainTabView: View {
   /// ONE header layer above the pager. Normal roots show avatar + Watchtower
   /// inbox; chart editing hands those exact slots to Cancel + Add/Done. Keeping
   /// every source and destination inside one Liquid Glass container lets iOS 26
-  /// morph the shapes instead of compositing a second native-toolbar layer.
+  /// morph the shapes instead of compositing a second page-chrome layer.
   private var sharedHeaderOverlay: some View {
     Group {
       if #available(iOS 26.0, *) {
@@ -436,7 +499,16 @@ struct MainTabView: View {
           .transition(.opacity)
         } else if !hidesHeaderAvatar {
           HeaderProfileButton(
-            action: { openOnActiveTab(.settings) },
+            action: {
+              openOnActiveTab(
+                .settings,
+                presentation: .workspaceOverlay,
+                origin: navigationAnchorRegistry.captureOrigin(
+                  semanticID: DashNavigationSemanticID(
+                    namespace: "workspace-header",
+                    value: "profile-avatar"),
+                  anchorInstanceID: profileAnchorInstanceID))
+            },
             onLongPress: {
               // The path used to live inside the freshly mounted tray body.
               // Reset before presentation so an exit never swaps its content
@@ -445,9 +517,10 @@ struct MainTabView: View {
               showsProfile = true
             }
           )
+          .dashNavigationAnchor(instanceID: profileAnchorInstanceID)
           .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
-          // Tuned against the system back control's measured slot so the
-          // push crossfade reads as the avatar becoming the back button.
+          // Tuned against the custom page control's slot so the workspace
+          // handoff can later bridge the avatar into Close without a jump.
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
           .transition(.opacity)

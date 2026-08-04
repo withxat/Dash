@@ -290,9 +290,8 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(Self.waitForHittable(zonesFeature))
     zonesFeature.tap()
 
-    // Feature detail is a system push; the catalog root has no navigation
-    // title, so the native back button reads "Back".
-    let back = app.buttons["Back"].firstMatch
+    // Feature detail is owned by Dash's page stack and exposes one stable Back.
+    let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     // Feature detail immerses — the floating tab bar leaves the hierarchy.
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
@@ -369,18 +368,16 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(deployments.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    // Leading-edge swipe pops the Worker detail.
-    let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-    let interior = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-    edge.press(forDuration: 0.05, thenDragTo: interior)
+    let backFromWorker = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(backFromWorker.waitForExistence(timeout: 5))
+    backFromWorker.tap()
 
     let workerAgain = app.buttons["worker-api-worker"]
     XCTAssertTrue(Self.waitForHittable(workerAgain))
     XCTAssertTrue(deployments.waitForNonExistence(timeout: 2))
 
-    // Back to Resources catalog — the untitled catalog root leaves the feature
-    // screen's native back button labeled "Back".
-    let backToCatalog = app.buttons["Back"].firstMatch
+    // Back once more from the Workers collection to the Resources root.
+    let backToCatalog = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(backToCatalog.waitForExistence(timeout: 5))
     backToCatalog.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
@@ -409,7 +406,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(domainRow.waitForExistence(timeout: 5))
     domainRow.tap()
 
-    let back = app.buttons["Back"].firstMatch
+    let back = app.buttons["dash.navigation.back"].firstMatch
     let customize = app.buttons["domain-card-customize"]
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     XCTAssertTrue(customize.waitForExistence(timeout: 5))
@@ -668,12 +665,25 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(headerProfile.waitForExistence(timeout: 5))
     headerProfile.tap()
 
+    let close = app.buttons["dash.navigation.close"].firstMatch
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    let settingsTitle = app.staticTexts["dash.navigation.title"]
+    XCTAssertTrue(settingsTitle.waitForExistence(timeout: 5))
+    XCTAssertEqual(settingsTitle.label, "Settings")
+
     let profileRow = app.buttons["settings-profile-row"]
     XCTAssertTrue(profileRow.waitForExistence(timeout: 5))
     profileRow.tap()
 
+    let back = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["User ID"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Registered"].waitForExistence(timeout: 5))
+
+    back.tap()
+    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    close.tap()
+    XCTAssertTrue(headerProfile.waitForExistence(timeout: 5))
   }
 
   func testResourcesR2OpensBucketListAndPopsBack() {
@@ -694,7 +704,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(assetsBucket.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let back = app.buttons["Back"].firstMatch
+    let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
@@ -744,7 +754,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let back = app.buttons["Back"].firstMatch
+    let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
@@ -768,7 +778,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let back = app.buttons["Back"].firstMatch
+    let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))

@@ -304,14 +304,26 @@ private struct OnboardingView: View {
       }
     }
     .sheet(item: $legalDocument) { document in
-      NavigationStack {
-        LegalDocumentView(document: document)
-          .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
+      LegalDocumentView(document: document)
+        .safeAreaInset(edge: .top, spacing: 0) {
+          ZStack {
+            Text(document.title)
+              .dashTextStyle(.sectionTitle)
+              .foregroundStyle(DashTheme.strong)
+              .lineLimit(1)
+              .padding(.horizontal, 64)
+              .accessibilityAddTraits(.isHeader)
+            HStack {
+              Spacer(minLength: 0)
               Button("Done") { legalDocument = nil }
+                .fontWeight(.semibold)
+                .frame(minWidth: 44, minHeight: 44)
             }
           }
-      }
+          .padding(.horizontal, DashTheme.Spacing.screen)
+          .frame(height: DashPageChromeMetrics.reservedHeight)
+          .background(.regularMaterial)
+        }
     }
     .onAppear {
       // Keyed off the cloak, not dashSplashLifted: a slow bootstrap can mount

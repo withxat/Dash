@@ -613,6 +613,7 @@ private enum DashHelpLink {
 struct SettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
+  @Environment(\.destinationNavigator) private var navigator
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system.rawValue
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
@@ -849,36 +850,51 @@ struct SettingsView: View {
     }
     .background(DashTheme.canvas.ignoresSafeArea())
     .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
-    .dashTray(
-      isPresented: $showsLanguagePicker,
-      title: DashL10n.string("Language")
-    ) {
-      LanguagePickerTray(languageRaw: $languageRaw)
-    }
-    .dashTray(
-      isPresented: $showsWorkspaceWashPicker,
-      title: DashL10n.string("Top glow")
-    ) {
-      WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
-    }
-    .dashTray(
-      isPresented: $showsChartStylePicker,
-      title: DashL10n.string("Chart style")
-    ) {
-      ChartStylePickerTray(chartStyleRaw: $chartStyleRaw)
-    }
-    .dashTray(
-      isPresented: $showsSignOutConfirmation,
-      title: DashL10n.string("Sign out")
-    ) {
-      SignOutConfirmationContent()
-    }
-    .onChange(of: iCloudSyncEnabled) { _, enabled in
-      ICloudPreferencesSync.shared.setEnabled(enabled)
-    }
-    .onChange(of: workspaceWashRaw) { _, _ in
-      ICloudPreferencesSync.shared.publish(.workspaceWash)
-    }
+    .navigationBarBackButtonHidden(true)
+    .dashPageActions(
+      leading: [
+        .icon(
+          id: "settings-close",
+          asset: SolarAsset.close,
+          accessibilityLabel: DashL10n.string("Close"),
+          accessibilityIdentifier: "dash.navigation.close"
+        ) {
+          navigator?.dismissTop()
+        }
+      ])
+      .accessibilityAction(.escape) {
+        navigator?.dismissTop()
+      }
+      .dashTray(
+        isPresented: $showsLanguagePicker,
+        title: DashL10n.string("Language")
+      ) {
+        LanguagePickerTray(languageRaw: $languageRaw)
+      }
+      .dashTray(
+        isPresented: $showsWorkspaceWashPicker,
+        title: DashL10n.string("Top glow")
+      ) {
+        WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
+      }
+      .dashTray(
+        isPresented: $showsChartStylePicker,
+        title: DashL10n.string("Chart style")
+      ) {
+        ChartStylePickerTray(chartStyleRaw: $chartStyleRaw)
+      }
+      .dashTray(
+        isPresented: $showsSignOutConfirmation,
+        title: DashL10n.string("Sign out")
+      ) {
+        SignOutConfirmationContent()
+      }
+      .onChange(of: iCloudSyncEnabled) { _, enabled in
+        ICloudPreferencesSync.shared.setEnabled(enabled)
+      }
+      .onChange(of: workspaceWashRaw) { _, _ in
+        ICloudPreferencesSync.shared.publish(.workspaceWash)
+      }
   }
 
   private func externalRow(
@@ -903,7 +919,7 @@ struct SettingsView: View {
 
 struct SettingsAccountsView: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.destinationNavigator) private var navigator
   @State private var pendingAccount: CloudflareAccount?
 
   var body: some View {
@@ -912,7 +928,7 @@ struct SettingsAccountsView: View {
         ForEach(model.accounts) { account in
           Button {
             guard account.id != model.activeAccountID else {
-              dismiss()
+              navigator?.pop()
               return
             }
             DashDelight.lightImpact()

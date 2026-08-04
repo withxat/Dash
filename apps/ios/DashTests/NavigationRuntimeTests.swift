@@ -3,29 +3,6 @@ import UIKit
 
 @testable import Dash
 
-@Test func navigationScrubScheduleIsBoundedOutsideInteractivePop() {
-  #expect(NavigationScrubSchedule.pathTransitionDuration == 0.55)
-  #expect(NavigationScrubSchedule.interactiveSettleDuration == 0.12)
-  #expect(
-    NavigationScrubSchedule.shouldRun(
-      now: 10.54,
-      holdUntil: 10.55,
-      interactivePopActive: false))
-  #expect(
-    !NavigationScrubSchedule.shouldRun(
-      now: 10.55,
-      holdUntil: 10.55,
-      interactivePopActive: false))
-}
-
-@Test func navigationScrubScheduleHoldsForInteractivePop() {
-  #expect(
-    NavigationScrubSchedule.shouldRun(
-      now: 20,
-      holdUntil: 10,
-      interactivePopActive: true))
-}
-
 @Test func tabPagerLockRetriesUseBoundedOffsets() {
   #expect(TabPagerLockRetrySchedule.offsetsMS == [0, 16, 64, 160])
 }

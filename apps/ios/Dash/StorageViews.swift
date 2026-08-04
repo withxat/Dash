@@ -95,7 +95,7 @@ struct R2BucketsView: View {
 
 /// Everything that makes one mounted R2 browser request account-specific.
 /// The generation changes even when an account is signed out and back into,
-/// so a surviving NavigationStack destination cannot commit an older result.
+/// so a surviving cached page cannot commit an older result.
 struct R2BucketRequestIdentity: Hashable, Sendable {
   let context: AccountRequestContext?
   let bucket: String
@@ -141,6 +141,7 @@ struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   let bucket: String
   /// S3-style folder key for this screen (trailing `/`), or `""` at the bucket root.
@@ -201,8 +202,51 @@ struct R2BucketView: View {
   private var tracksObjectFrames: Bool {
     featureAllowsWrites && !objects.isEmpty
   }
-  private var currentDestination: Destination {
-    .r2Bucket(bucket, prefix: folderPrefix)
+  private var pageActions: [DashPageActionDescriptor] {
+    if selecting {
+      return [
+        .icon(
+          id: "r2-bucket-done-selecting",
+          asset: SolarAsset.close,
+          accessibilityLabel: DashL10n.string("Done selecting")
+        ) {
+          withAnimation(DashTheme.Motion.morph) {
+            selecting = false
+            selectedKeys = []
+          }
+        }
+      ]
+    }
+
+    var actions: [DashPageActionDescriptor] = []
+    if featureAllowsWrites {
+      actions.append(
+        .icon(
+          id: "r2-bucket-upload",
+          asset: SolarAsset.upload,
+          accessibilityLabel: DashL10n.string("Upload file"),
+          isEnabled: work.upload == nil,
+          disabledOpacity: 0.45
+        ) {
+          importsFile = true
+        })
+    }
+    actions.append(
+      .icon(
+        id: "r2-bucket-more",
+        asset: SolarAsset.menuDots,
+        accessibilityLabel: DashL10n.string("More actions")
+      ) {
+        showsBucketActions = true
+      })
+    return actions
+  }
+  private var isNavigationEntryRetained: Bool {
+    if let navigationEntryID {
+      return navigator?.contains(entryID: navigationEntryID) == true
+    }
+    // Previews and isolated hosts do not inject an entry identity yet.
+    return navigator?.contains(.r2Bucket(bucket, prefix: folderPrefix)) == true
   }
   private var requestIdentity: R2BucketRequestIdentity {
     R2BucketRequestIdentity(
@@ -306,38 +350,10 @@ struct R2BucketView: View {
       title: currentFolderName,
       tint: FeatureVisualIdentity.heroColor(for: .r2)
     )
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        DashToolbarActionGroup {
-          if selecting {
-            DashToolbarIconButton(
-              asset: SolarAsset.close,
-              accessibilityLabel: DashL10n.string("Done selecting")
-            ) {
-              withAnimation(DashTheme.Motion.morph) {
-                selecting = false
-                selectedKeys = []
-              }
-            }
-          } else {
-            // Stable trailing chrome: Upload (writes) + More. Select and
-            // settings live in More so load completion never inserts a third
-            // button and shoves the principal title left.
-            if featureAllowsWrites {
-              DashToolbarIconButton(
-                asset: SolarAsset.upload, accessibilityLabel: DashL10n.string("Upload file")
-              ) {
-                importsFile = true
-              }
-              .disabled(work.upload != nil)
-              .opacity(work.upload == nil ? 1 : 0.45)
-            }
-            DashMoreButton(isPresented: $showsBucketActions)
-          }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+    // Stable trailing chrome: Upload (writes) + More. Select and settings live
+    // in More so load completion never inserts a third button and shoves the
+    // principal title left.
+    .dashPageActions(trailing: pageActions)
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if selecting {
         selectionBar
@@ -415,8 +431,8 @@ struct R2BucketView: View {
       }
       reloadIfInvalidated()
     }
-    .onChange(of: navigator?.path) { _, path in
-      if path?.contains(currentDestination) != true {
+    .onChange(of: navigator?.entryIDs) { _, _ in
+      if !isNavigationEntryRetained {
         cancelOutstandingWork()
       }
     }
@@ -431,7 +447,7 @@ struct R2BucketView: View {
       // Folder/settings pushes keep this destination in the path. A pop does
       // not, so release Task references immediately instead of waiting for
       // SwiftUI to destroy a self-retaining view/task cycle.
-      if navigator?.path.contains(currentDestination) != true {
+      if !isNavigationEntryRetained {
         cancelOutstandingWork()
       }
     }
@@ -1228,8 +1244,8 @@ struct R2BrowserSnapshot: Sendable {
 }
 
 /// Holds in-flight upload work for one `R2BucketView`. Kept as a class so
-/// NavigationStack can hide the screen under a folder push without cancelling;
-/// `deinit` cancels when the screen is popped off the stack.
+/// the page stack can detach the screen under a folder push without cancelling;
+/// `deinit` cancels when the page is removed from the stack.
 @Observable
 private final class R2BucketWork {
   var upload: Task<Void, Never>?
@@ -1437,6 +1453,18 @@ struct KVNamespaceView: View {
   @State private var loadedContext: AccountRequestContext?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
+  private var pageActions: [DashPageActionDescriptor] {
+    guard featureAllowsWrites else { return [] }
+    return [
+      .icon(
+        id: "kv-namespace-create-key",
+        asset: SolarAsset.plus,
+        accessibilityLabel: DashL10n.string("Create key")
+      ) {
+        showsCreateKey = true
+      }
+    ]
+  }
 
   /// Prefer the cached human title so list → detail morphs keep the same label.
   private var namespaceTitle: String {
@@ -1489,18 +1517,7 @@ struct KVNamespaceView: View {
       title: namespaceTitle,
       tint: FeatureVisualIdentity.heroColor(for: .kv)
     )
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if featureAllowsWrites {
-          DashToolbarIconButton(
-            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("Create key")
-          ) {
-            showsCreateKey = true
-          }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+    .dashPageActions(trailing: pageActions)
     .task(id: model.accountRequestContext) {
       prepareForCurrentAccount()
       await load()
@@ -1978,6 +1995,21 @@ struct KVKeyDetailView: View {
   @State private var displayIssue: KVJSONFormatting.DisplayValue?
   @State private var rawValueData: Data?
 
+  private var pageActions: [DashPageActionDescriptor] {
+    guard featureAllowsWrites, mode == .viewing, loaded, ownsCurrentAccount,
+      !confirmingDelete
+    else { return [] }
+    return [
+      .icon(
+        id: "kv-key-delete",
+        asset: SolarAsset.trash,
+        accessibilityLabel: DashL10n.string("Delete")
+      ) {
+        withAnimation(DashTheme.Motion.morph) { confirmingDelete = true }
+      }
+    ]
+  }
+
   var body: some View {
     GeometryReader { geo in
       DashConfirmMorph(
@@ -2066,21 +2098,7 @@ struct KVKeyDetailView: View {
       title: key,
       tint: FeatureVisualIdentity.heroColor(for: .kv)
     )
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if featureAllowsWrites, mode == .viewing, loaded, ownsCurrentAccount,
-          !confirmingDelete
-        {
-          DashToolbarIconButton(
-            asset: SolarAsset.trash,
-            accessibilityLabel: DashL10n.string("Delete")
-          ) {
-            withAnimation(DashTheme.Motion.morph) { confirmingDelete = true }
-          }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+    .dashPageActions(trailing: pageActions)
     .dashKeyboardDismissal()
     .task(id: model.accountRequestContext) {
       prepareForCurrentAccount()

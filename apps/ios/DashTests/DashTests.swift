@@ -2434,21 +2434,6 @@ private let watchtowerDropFrames: [CGRect] = [
     })
 }
 
-@Test func navigationDimmingScrubberPreservesContentBearingContainer() {
-  #expect(
-    NavigationTransitionChromeRules.shouldHideDimmingView(
-      className: "_UIParallaxDimmingView",
-      hasSubviews: false))
-  #expect(
-    !NavigationTransitionChromeRules.shouldHideDimmingView(
-      className: "_UIParallaxDimmingView",
-      hasSubviews: true))
-  #expect(
-    !NavigationTransitionChromeRules.shouldHideDimmingView(
-      className: "NavigationDimmingScrubberView",
-      hasSubviews: false))
-}
-
 @Test func addDomainAcceptsPlausibleZoneNamesOnly() {
   #expect(AddDomainValidation.isPlausibleZoneName("example.com"))
   #expect(AddDomainValidation.isPlausibleZoneName("  Sub.Example.CO.UK  "))
@@ -3781,6 +3766,12 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(!DashTrayPresentation().presented)
 }
 
+@Test func navigatorAccountScopeWaitsForSignOutPresentationToFinish() {
+  #expect(DashNavigatorAccountScopeRules.shouldSynchronize(during: .idle))
+  #expect(!DashNavigatorAccountScopeRules.shouldSynchronize(during: .loading))
+  #expect(!DashNavigatorAccountScopeRules.shouldSynchronize(during: .succeeded))
+}
+
 @MainActor
 @Test func destinationNavigatorPushPopAndReset() {
   let navigator = DestinationNavigator()
@@ -3803,6 +3794,202 @@ private actor ZoneSecurityLevelTestLatch {
   navigator.push(.worker("api"))
   navigator.reset()
   #expect(navigator.depth == 0)
+}
+
+@MainActor
+@Test func destinationNavigatorKeepsStablePageInstanceIdentity() throws {
+  let navigator = DestinationNavigator()
+  let firstRootID = try #require(
+    navigator.push(.r2Bucket("media", prefix: "")))
+  let folderID = try #require(
+    navigator.push(.r2Bucket("media", prefix: "images/")))
+
+  #expect(firstRootID != folderID)
+  #expect(navigator.contains(entryID: firstRootID))
+  #expect(navigator.contains(entryID: folderID))
+  #expect(navigator.push(.r2Bucket("media", prefix: "images/")) == nil)
+
+  navigator.pop()
+  #expect(navigator.contains(entryID: firstRootID))
+  #expect(!navigator.contains(entryID: folderID))
+
+  let secondRootID = try #require(
+    navigator.push(.r2Bucket("media", prefix: "images/")))
+  navigator.push(.r2Bucket("media", prefix: ""))
+  #expect(navigator.topEntry?.id != firstRootID)
+  #expect(navigator.topEntry?.id != secondRootID)
+}
+
+@MainActor
+@Test func destinationNavigatorCarriesWorkspacePresentationContract() throws {
+  let navigator = DestinationNavigator(accountID: "account-1")
+  navigator.reset(
+    to: .settings,
+    presentation: .workspaceOverlay)
+
+  let firstEntry = try #require(navigator.topEntry)
+  #expect(firstEntry.presentation == .workspaceOverlay)
+  #expect(firstEntry.dismissal == .closeToWorkspaceRoot)
+  #expect(firstEntry.accountID == "account-1")
+
+  navigator.reset(
+    to: .settings,
+    presentation: .workspaceOverlay)
+  #expect(navigator.topEntry?.id != firstEntry.id)
+
+  navigator.dismissTop()
+  #expect(navigator.depth == 0)
+  #expect(navigator.lastMutation?.reason == .closeToWorkspaceRoot)
+}
+
+@MainActor
+@Test func destinationNavigatorDefaultsSemanticPresentationByRouteShape() throws {
+  let navigator = DestinationNavigator()
+  navigator.push(.zone("zone-1"))
+  #expect(navigator.topEntry?.presentation == .entityDetail)
+
+  navigator.push(.dns("zone-1"))
+  #expect(navigator.topEntry?.presentation == .detail)
+
+  navigator.push(.r2Bucket("media", prefix: ""))
+  #expect(navigator.topEntry?.presentation == .entityDetail)
+
+  navigator.push(.r2Bucket("media", prefix: "images/"))
+  #expect(navigator.topEntry?.presentation == .detail)
+
+  navigator.reset(to: .settings)
+  let settings = try #require(navigator.topEntry)
+  #expect(settings.presentation == .workspaceOverlay)
+  #expect(settings.dismissal == .closeToWorkspaceRoot)
+}
+
+@MainActor
+@Test func destinationNavigatorPrunesResourceOwnershipAtomically() throws {
+  let navigator = DestinationNavigator()
+  let featureID = try #require(navigator.push(.feature(.r2)))
+  navigator.push(.r2Bucket("media", prefix: ""))
+  navigator.push(.r2Bucket("media", prefix: "images/"))
+  let unrelatedID = try #require(navigator.push(.about))
+
+  navigator.removeAll(ownedBy: .r2Bucket("media"))
+
+  #expect(navigator.path == [.feature(.r2), .about])
+  #expect(navigator.entryIDs == [featureID, unrelatedID])
+}
+
+@MainActor
+@Test func destinationNavigatorInvalidatesEntriesWhenAccountScopeChanges() throws {
+  let navigator = DestinationNavigator(accountID: "account-1")
+  navigator.push(.zone("zone-1"))
+  #expect(navigator.topEntry?.accountID == "account-1")
+
+  navigator.setAccountScope("account-2")
+  #expect(navigator.depth == 0)
+  #expect(navigator.lastMutation?.reason == .accountScopeChanged)
+
+  navigator.push(.zone("zone-2"))
+  let entry = try #require(navigator.topEntry)
+  #expect(entry.accountID == "account-2")
+  #expect(navigator.lastMutation?.reason == .push)
+}
+
+@MainActor
+@Test func destinationNavigatorRecordsMonotonicMutationRevisions() {
+  let navigator = DestinationNavigator()
+  navigator.reset(to: .feature(.zones))
+  let resetRevision = navigator.revision
+  #expect(navigator.lastMutation?.reason == .reset)
+
+  navigator.push(.zone("zone-1"))
+  #expect(navigator.revision > resetRevision)
+  #expect(navigator.lastMutation?.reason == .push)
+
+  let pushRevision = navigator.revision
+  navigator.pop()
+  #expect(navigator.revision > pushRevision)
+  #expect(navigator.lastMutation?.reason == .back)
+}
+
+@MainActor
+@Test func navigationCoordinatorPrunesEveryTabNavigator() {
+  let home = DestinationNavigator()
+  let resources = DestinationNavigator()
+  let watchtower = DestinationNavigator()
+  let coordinator = DashNavigationCoordinator()
+  coordinator.configure(navigators: [home, resources, watchtower])
+
+  home.push(.r2Bucket("media", prefix: ""))
+  resources.push(.feature(.r2))
+  resources.push(.r2Bucket("media", prefix: "images/"))
+  watchtower.push(.about)
+
+  coordinator.removeAll(ownedBy: .r2Bucket("media"))
+
+  #expect(home.depth == 0)
+  #expect(resources.path == [.feature(.r2)])
+  #expect(watchtower.path == [.about])
+  #expect(resources.lastMutation?.reason == .resourcePruned(.r2Bucket("media")))
+}
+
+@MainActor
+@Test func navigationAnchorRegistryResolvesTheConcreteSourceOccurrence() throws {
+  let registry = DashNavigationAnchorRegistry()
+  let visibleAnchorID = UUID()
+  let staleAnchorID = UUID()
+  let frame = CGRect(x: 18, y: 62, width: 44, height: 44)
+  registry.replaceFrames([visibleAnchorID: frame])
+
+  let semanticID = DashNavigationSemanticID(
+    namespace: "workspace-header",
+    value: "profile-avatar")
+  let visibleOrigin = registry.captureOrigin(
+    semanticID: semanticID,
+    anchorInstanceID: visibleAnchorID)
+  let staleOrigin = DashNavigationOrigin(
+    semanticID: semanticID,
+    anchorInstanceID: staleAnchorID)
+
+  #expect(registry.frame(for: visibleOrigin) == frame)
+  registry.replaceFrames([:])
+  #expect(registry.frame(for: visibleOrigin) == frame)
+  #expect(registry.frame(for: staleOrigin) == nil)
+}
+
+@MainActor
+@Test func pageChromePreferencesMergeOuterHeaderWithInnerActions() {
+  var preference = DashPageChromePreference()
+  DashPageChromePreferenceKey.reduce(value: &preference) {
+    DashPageChromePreference(
+      header: DashPageHeaderDescriptor(
+        icon: .solar("header"),
+        title: "Domains",
+        tint: .blue))
+  }
+  DashPageChromePreferenceKey.reduce(value: &preference) {
+    DashPageChromePreference(
+      trailingActions: [
+        .icon(
+          id: "add",
+          asset: SolarAsset.plus,
+          accessibilityLabel: "Add"
+        ) {}
+      ])
+  }
+
+  #expect(preference.header?.title == "Domains")
+  #expect(preference.trailingActions.map(\.id) == ["add"])
+}
+
+@MainActor
+@Test func workspacePresentationStateClearsRemovedEntryReporters() {
+  let state = DashWorkspacePresentationState()
+  let entryID = UUID()
+  state.setTrayPresented(true, reporterID: UUID(), entryID: entryID)
+  state.setTrayPresented(false, reporterID: UUID(), entryID: UUID())
+  #expect(state.trayPresented)
+
+  state.removeTrayReporters(forEntryID: entryID)
+  #expect(!state.trayPresented)
 }
 
 @Test func r2MediaDetectsImagesByExtensionAndContentType() throws {

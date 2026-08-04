@@ -10,6 +10,43 @@ struct DashTrayPresentation: Equatable {
   var presented = false
 }
 
+/// Cross-host bridge for page-owned trays. Preferences cannot cross from a
+/// cached `UIHostingController` into `MainTabView`, so each tray also reports
+/// its stable modifier instance here while the custom page stack is active.
+@MainActor
+@Observable
+final class DashWorkspacePresentationState {
+  private struct Reporter {
+    let entryID: UUID?
+    var presented: Bool
+  }
+
+  private var trayPresentations: [UUID: Reporter] = [:]
+
+  var trayPresented: Bool {
+    trayPresentations.values.contains { $0.presented }
+  }
+
+  func setTrayPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
+    trayPresentations[reporterID] = Reporter(entryID: entryID, presented: presented)
+  }
+
+  func removeTrayReporters(forEntryID entryID: UUID) {
+    trayPresentations = trayPresentations.filter { $0.value.entryID != entryID }
+  }
+}
+
+private struct DashWorkspacePresentationStateKey: EnvironmentKey {
+  static let defaultValue: DashWorkspacePresentationState? = nil
+}
+
+extension EnvironmentValues {
+  var dashWorkspacePresentationState: DashWorkspacePresentationState? {
+    get { self[DashWorkspacePresentationStateKey.self] }
+    set { self[DashWorkspacePresentationStateKey.self] = newValue }
+  }
+}
+
 struct TrayPresentedPreferenceKey: PreferenceKey {
   static let defaultValue = DashTrayPresentation()
   static func reduce(value: inout DashTrayPresentation, nextValue: () -> DashTrayPresentation) {
@@ -2488,6 +2525,9 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @State private var coverPresentation: DashTrayCoverPresentation<Bool>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
+  @State private var presentationReporterID = UUID()
+  @Environment(\.dashWorkspacePresentationState) private var workspacePresentationState
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
 
   private var reduceMotion: Bool {
     #if DEBUG
@@ -2505,6 +2545,10 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
         value: DashTrayPresentation(presented: isPresented)
       )
       .onChange(of: isPresented, initial: true) { _, present in
+        workspacePresentationState?.setTrayPresented(
+          present,
+          reporterID: presentationReporterID,
+          entryID: navigationEntryID)
         if present {
           let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
           sharedActionLease.adopt(claim)
@@ -2515,6 +2559,12 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
           sharedActionLease.release()
           dashPresentWithoutAnimation { coverPresentation = nil }
         }
+      }
+      .onAppear {
+        workspacePresentationState?.setTrayPresented(
+          isPresented,
+          reporterID: presentationReporterID,
+          entryID: navigationEntryID)
       }
       .fullScreenCover(
         item: $coverPresentation,
@@ -2559,6 +2609,9 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
   @State private var coverPresentation: DashTrayCoverPresentation<Item>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
+  @State private var presentationReporterID = UUID()
+  @Environment(\.dashWorkspacePresentationState) private var workspacePresentationState
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
 
   private var isPresented: Bool { item != nil }
   private var reduceMotion: Bool {
@@ -2577,6 +2630,10 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
         value: DashTrayPresentation(presented: isPresented)
       )
       .onChange(of: item, initial: true) { _, newItem in
+        workspacePresentationState?.setTrayPresented(
+          newItem != nil,
+          reporterID: presentationReporterID,
+          entryID: navigationEntryID)
         if let newItem {
           let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
           sharedActionLease.adopt(claim)
@@ -2587,6 +2644,12 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
           sharedActionLease.release()
           dashPresentWithoutAnimation { coverPresentation = nil }
         }
+      }
+      .onAppear {
+        workspacePresentationState?.setTrayPresented(
+          isPresented,
+          reporterID: presentationReporterID,
+          entryID: navigationEntryID)
       }
       .fullScreenCover(
         item: $coverPresentation,

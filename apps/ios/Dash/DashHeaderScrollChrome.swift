@@ -5,11 +5,9 @@ import VariableBlur
 // MARK: - Root chrome
 
 /// Shared profile avatar control: ONE instance, floated by `MainTabView`
-/// above the pager so it doesn't ride along on tab swipes (and doesn't get
-/// squashed by the nav bar's item-height clamp). It is positioned over the
-/// leading slot of the roots' titleless nav bars, so on push it fades out
-/// exactly where the system back control fades in — same spot, same glass
-/// circle — reading as one control trading places.
+/// above the pager so it doesn't ride along on tab swipes. It is positioned
+/// over the custom page bar's leading slot, so a workspace presentation fades
+/// its Close control into the same spot and glass circle.
 ///
 /// Tap opens Settings; long-press opens the account switcher tray, matching
 /// the inbox's long-press pattern.
@@ -27,7 +25,7 @@ struct HeaderProfileButton: View {
     model.activeAccount?.name ?? model.profileTitle
   }
 
-  /// Circular glass matching the system back control. Without
+  /// Circular glass matching the custom page controls. Without
   /// `buttonBorderShape(.circle)`, iOS 26 paints a square glass plate around
   /// the 44×44 avatar bounds and flashes its white corner during push morph.
   /// The negative padding pulls the glass in so the ring hugs the avatar
@@ -176,42 +174,18 @@ struct HeaderInboxButton: View {
 extension View {
   /// Chrome for a tab-root screen: a transparent page plus every fix needed to
   /// keep the system's white slabs from painting over the workspace canvas
-  /// (UIKit scroll fill, iOS 26 edge pockets, nav-bar background).
+  /// (UIKit scroll fill and iOS 26 edge pockets).
   ///
-  /// The root shows a REAL navigation bar — no title, no items. Keeping the
-  /// bar mounted is what makes a push seamless: the bar's height never
-  /// changes (no content shift), and the back control lands in the leading
-  /// slot where the shared floating avatar sits (`MainTabView` renders that
-  /// avatar once, above the pager, so it doesn't ride along on tab swipes;
-  /// seating it as a toolbar item would also squash it against the bar's
-  /// item-height clamp).
+  /// `DashRoutePageChromeHost` reserves the same header height on roots and
+  /// destinations, so changing pages never shifts the content rest line. The
+  /// shared floating avatar sits above the pager in that leading slot.
   ///
   /// Roots paint NO background of their own. The canvas and the single
   /// `DashWorkspaceTopWash` live behind the pager in `MainTabView`, so all
   /// three tabs share one light field: the glow holds still while pages slide
   /// across it. Give a root an opaque plate again and it goes dark on that tab.
   func dashCatalogScreen() -> some View {
-    navigationTitle(Text(verbatim: ""))
-      .navigationBarTitleDisplayMode(.inline)
-      .toolbar {
-        // Invisible prop: a titleless bar with no items collapses to zero
-        // inset. A clear principal keeps the root bar at standard height —
-        // principal items carry no glass plate, so nothing shows — and the
-        // content rest line lands exactly where pushed screens put it.
-        ToolbarItem(placement: .principal) {
-          Color.clear.frame(width: 1, height: 1)
-        }
-      }
-      // The bar itself stays fully transparent so the canvas and the shared
-      // wash show through; scrolled content frosts under the status bar only
-      // via the shared appearance, never a slab.
-      .toolbarBackground(.hidden, for: .navigationBar)
-      .scrollContentBackground(.hidden)
-      .modifier(DashScrollEdgeEffectsHidden())
-      // Punches the UIKit scroll/hosting/navigation plates clear so the
-      // workspace canvas + wash behind the pager are what the root shows.
-      .background { DashScrollViewConfigurator(fill: .clear) }
-      .dashHeaderScrim()
+    modifier(DashCatalogScreenModifier())
   }
 
   /// Canvas scroll chrome for pushed feature/detail screens. Tab roots use
@@ -225,9 +199,8 @@ extension View {
   }
 
   /// The header frost, as a layer INSIDE the screen: above the scrolling
-  /// content, below the navigation bar. That z-order is the whole point — the
-  /// bar's title and back control have to stay crisp on top of the blur, and
-  /// nothing outside the page can be layered underneath UIKit's bar.
+  /// content, below the page-owned navigation chrome. That z-order keeps the
+  /// title and controls crisp on top of the blur.
   ///
   /// Screens that host fixed page chrome (`DashPageChromeHost` / text tabs)
   /// install their own frost under that chrome and set
@@ -235,6 +208,45 @@ extension View {
   /// the tabs.
   func dashHeaderScrim() -> some View {
     modifier(DashHeaderScrimModifier())
+  }
+}
+
+private struct DashCatalogScreenModifier: ViewModifier {
+  @Environment(\.dashUsesCustomPageStack) private var usesCustomPageStack
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if usesCustomPageStack {
+      content
+        .scrollContentBackground(.hidden)
+        .modifier(DashScrollEdgeEffectsHidden())
+        // The custom route host owns the header reservation and frost. This
+        // modifier keeps only the root's transparent UIKit plates.
+        .background { DashScrollViewConfigurator(fill: .clear) }
+    } else {
+      content
+        .navigationTitle(Text(verbatim: ""))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+          // Invisible prop: a titleless bar with no items collapses to zero
+          // inset. A clear principal keeps the root bar at standard height —
+          // principal items carry no glass plate, so nothing shows — and the
+          // content rest line lands exactly where pushed screens put it.
+          ToolbarItem(placement: .principal) {
+            Color.clear.frame(width: 1, height: 1)
+          }
+        }
+        // The bar itself stays fully transparent so the canvas and the shared
+        // wash show through; scrolled content frosts under the status bar only
+        // via the shared appearance, never a slab.
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .scrollContentBackground(.hidden)
+        .modifier(DashScrollEdgeEffectsHidden())
+        // Punches the UIKit scroll/hosting/navigation plates clear so the
+        // workspace canvas + wash behind the pager are what the root shows.
+        .background { DashScrollViewConfigurator(fill: .clear) }
+        .dashHeaderScrim()
+    }
   }
 }
 
@@ -258,7 +270,7 @@ private enum DashPageChromeHeightKey: PreferenceKey {
 }
 
 /// Fixed page chrome (text tabs) above the header frost, same stacking as the
-/// navigation bar's title and back control: no fill of its own, never softened
+/// page bar's title and controls: no fill of its own, never softened
 /// by the blur tail. Owns the frost for this screen so the outer
 /// `dashHeaderScrim()` wrapper can stand down.
 ///
@@ -338,11 +350,11 @@ struct DashScrollEdgeEffectsHidden: ViewModifier {
 // MARK: - Header scrim
 
 /// Geometry of the header frost. The band is pinned to the physical top edge
-/// and extends beyond the navigation bar so the progressive blur and tint can
+/// and extends beyond the navigation region so the progressive blur and tint can
 /// ease to nothing before their lower edge reaches scrolling content.
 enum DashHeaderScrimMetrics {
   /// Floor for the safe-area top inset, in case a screen reports one without
-  /// its navigation bar. Never a substitute for the measured inset.
+  /// its page chrome. Never a substitute for the measured inset.
   static let minimumTop: CGFloat = 44
   /// ProgressiveBlurHeader's fade length below the navigation inset. Kept
   /// shorter than the old 64pt so the frost clears sooner into content; the
@@ -442,8 +454,8 @@ enum DashHeaderScrimRules {
 ///
 /// One per screen, and deliberately not the screen's own `@State` value: the
 /// probe reports from a scroll callback, and a scroll-driven value the screen
-/// body reads re-applies the `NavigationStack` path mid-push — UIKit cancels
-/// the running transition and the pushed screen never mounts its content.
+/// body reads would refresh the page host on every frame while its explicit
+/// transition is still settling.
 @MainActor
 @Observable
 final class DashHeaderScrollState {
@@ -497,8 +509,7 @@ enum DashWorkspaceWashRules {
 /// Same rule as `DashHeaderScrollState`, and for the same reason: this value
 /// moves on every scrolled frame, so it must never become `MainTabView` state.
 /// The tab view only hands the reference to the wash; reading it in that body
-/// would re-apply the `NavigationStack` paths mid-push and UIKit would cancel
-/// the transition.
+/// would refresh every cached page host while the active page is moving.
 @MainActor
 @Observable
 final class DashWorkspaceWashScroll {
@@ -542,36 +553,44 @@ struct DashHeaderScrimModifier: ViewModifier {
   /// Non-nil only on the active tab root; the same probe then feeds this
   /// screen's frost and the workspace glow from one observation.
   @Environment(\.dashWorkspaceWashScroll) private var washScroll
+  @Environment(\.dashUsesCustomPageStack) private var usesCustomPageStack
   @State private var scroll = DashHeaderScrollState()
 
+  @ViewBuilder
   func body(content: Content) -> some View {
-    content
-      .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
-        if !handled {
-          DashHeaderScrim(scroll: scroll)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .allowsHitTesting(false)
+    if usesCustomPageStack {
+      // `DashRoutePageChromeHost` owns the page-level band and probe. Fixed
+      // in-page chrome can still publish `DashHeaderScrimHandledKey` and keep
+      // its more local ownership without this wrapper painting a duplicate.
+      content
+    } else {
+      content
+        .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+          if !handled {
+            DashHeaderScrim(scroll: scroll)
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+              .allowsHitTesting(false)
+          }
         }
-      }
-      .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
-        if !handled {
-          DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
-          // The band draws above its own layout box to cover the status bar;
-          // SwiftUI's hosting wrappers shear it there unless they are unclipped.
-          DashScreenClipLift()
+        .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+          if !handled {
+            DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
+            // The band draws above its own layout box to cover the status bar;
+            // SwiftUI's hosting wrappers shear it there unless they are unclipped.
+            DashScreenClipLift()
+          }
         }
-      }
+    }
   }
 }
 
 /// The screen's header frost: a variable-radius backdrop strongest at the
 /// physical top edge, with an adaptive tint eased to fully clear below the
-/// navigation bar so its lower edge never lands as a line on the content.
+/// navigation region so its lower edge never lands as a line on the content.
 ///
-/// It lives inside the page on purpose. UIKit draws the navigation bar above
-/// the hosted content, so a band placed here passes under the title and the
-/// back control and leaves them crisp — a band floated over the pager (where
-/// the profile avatar lives) would sit on top of them instead.
+/// It lives inside the page on purpose. The page-owned navigation chrome is
+/// layered above it, so the title and controls stay crisp; a band floated over
+/// the pager (where the profile avatar lives) would cover them instead.
 struct DashHeaderScrim: View {
   let scroll: DashHeaderScrollState
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -584,7 +603,7 @@ struct DashHeaderScrim: View {
       // participates in compositing.
       if scroll.isFrosted {
         // The reader sits in the content's safe area, whose top inset already
-        // covers the status bar and navigation bar. The tail gives the blur and
+        // covers the status bar and page navigation region. The tail gives the blur and
         // tint room to disappear.
         let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
         let height = top + DashHeaderScrimMetrics.tail
@@ -1115,6 +1134,8 @@ private struct DashScrollDismissesKeyboard: ViewModifier {
 /// multi-select all agree on which view controller and which scroll view a
 /// screen owns — a pushed destination and its tab root must never resolve to
 /// each other's.
+protocol DashScreenContainerController: AnyObject {}
+
 @MainActor
 enum DashScreenScrollLocator {
   /// Nearest non-container view controller hosting `view`. Navigation, tab and
@@ -1130,6 +1151,7 @@ enum DashScreenScrollLocator {
           !(controller is UINavigationController),
           !(controller is UITabBarController),
           !(controller is UIPageViewController),
+          !(controller is DashScreenContainerController),
           let root = controller.viewIfLoaded,
           current === root || current.isDescendant(of: root)
         {
@@ -1313,7 +1335,7 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
     // Hosting/nav containers default to system white above the scroll view.
     // Home (`.clear`) must punch that out so the wash shows through — but
     // never do that on a `.canvas` screen: light canvas (0xFBFBFB) is itself
-    // "near white", and clearing it leaves the UIKit push plate transparent.
+    // "near white", and clearing it leaves the page-host plate transparent.
     let name = NSStringFromClass(type(of: view))
     if name.contains("HostingView") || name.contains("NavigationController") {
       let unset =

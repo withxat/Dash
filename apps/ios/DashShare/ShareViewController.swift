@@ -559,42 +559,50 @@ struct ShareUploadView: View {
   @State private var showsUploadConfirmation = false
 
   var body: some View {
-    NavigationStack {
-      content
-        .navigationTitle(DashL10n.string("Upload to R2"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItem(placement: .cancellationAction) {
+    content
+      .safeAreaInset(edge: .top, spacing: 0) {
+        ZStack {
+          Text(DashL10n.string("Upload to R2"))
+            .font(.headline)
+            .lineLimit(1)
+            .padding(.horizontal, 96)
+            .accessibilityAddTraits(.isHeader)
+          HStack {
             Button(DashL10n.string("Cancel")) { model.cancel() }
-          }
-          ToolbarItem(placement: .confirmationAction) {
+              .frame(minWidth: 44, minHeight: 44)
+            Spacer(minLength: 0)
             switch model.phase {
             case .ready:
               Button(DashL10n.string("Upload")) { showsUploadConfirmation = true }
                 .fontWeight(.semibold)
+                .frame(minWidth: 44, minHeight: 44)
             case .done:
               Button(DashL10n.string("Done")) { model.finish() }
                 .fontWeight(.semibold)
+                .frame(minWidth: 44, minHeight: 44)
             default:
               EmptyView()
             }
           }
         }
-        .alert(
-          DashL10n.string("Upload to \(model.accountLabel)?"),
-          isPresented: $showsUploadConfirmation
-        ) {
-          Button(DashL10n.string("Cancel"), role: .cancel) {}
-          Button(DashL10n.string("Upload")) { model.startUpload() }
-        } message: {
-          let folder = model.normalizedPrefix
-          Text(
-            folder.isEmpty
-              ? DashL10n.string("The files will be written to \(model.bucket).")
-              : DashL10n.string("The files will be written to \(model.bucket)/\(folder).")
-          )
-        }
-    }
+        .padding(.horizontal, 16)
+        .frame(height: 54)
+        .background(.regularMaterial)
+      }
+      .alert(
+        DashL10n.string("Upload to \(model.accountLabel)?"),
+        isPresented: $showsUploadConfirmation
+      ) {
+        Button(DashL10n.string("Cancel"), role: .cancel) {}
+        Button(DashL10n.string("Upload")) { model.startUpload() }
+      } message: {
+        let folder = model.normalizedPrefix
+        Text(
+          folder.isEmpty
+            ? DashL10n.string("The files will be written to \(model.bucket).")
+            : DashL10n.string("The files will be written to \(model.bucket)/\(folder).")
+        )
+      }
   }
 
   @ViewBuilder

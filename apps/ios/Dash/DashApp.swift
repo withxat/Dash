@@ -512,13 +512,13 @@ private struct RootWithSplash: View {
   private struct DeferredDeletionTestHost: View {
     @Environment(AppModel.self) private var model
     @State private var ready = false
+    @State private var navigator = DestinationNavigator()
 
     var body: some View {
       Group {
         if ready {
-          NavigationStack {
-            DNSRecordsView(zoneID: "ui-zone")
-              .environment(\.featureAllowsWrites, true)
+          DestinationStackHost(navigator: navigator, isTabActive: true) {
+            Color.clear
           }
         } else {
           ProgressView()
@@ -536,6 +536,8 @@ private struct RootWithSplash: View {
         model.deferredDeletions.activateCredential(
           profileID: "ui-deferred-profile",
           availableAccountIDs: ["ui-account"])
+        navigator.setAccountScope("ui-account")
+        navigator.reset(to: .dns("ui-zone"))
         ready = true
       }
     }

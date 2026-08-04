@@ -374,6 +374,7 @@ struct R2BucketSettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let bucket: String
   @State private var managed: R2ManagedDomain?
@@ -757,13 +758,10 @@ struct R2BucketSettingsView: View {
   }
 
   private func completeBucketDeletionPresentation() {
-    navigator?.path.removeAll { destination in
-      switch destination {
-      case .r2Bucket(let name, _), .r2BucketSettings(let name):
-        name == bucket
-      default:
-        false
-      }
+    if let navigationCoordinator {
+      navigationCoordinator.removeAll(ownedBy: .r2Bucket(bucket))
+    } else {
+      navigator?.removeAll(ownedBy: .r2Bucket(bucket))
     }
     model.toasts.success(DashL10n.string("Deleted successfully."))
   }

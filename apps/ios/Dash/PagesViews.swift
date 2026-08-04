@@ -888,18 +888,18 @@ struct PagesDomainsView: View {
       title: "Domains",
       tint: FeatureVisualIdentity.heroColor(for: .pages)
     )
-    .toolbar {
-      ToolbarItem(placement: .topBarTrailing) {
-        if featureAllowsWrites {
-          DashToolbarIconButton(
-            asset: SolarAsset.plus, accessibilityLabel: DashL10n.string("Add domain")
+    .dashPageActions(
+      trailing: featureAllowsWrites
+        ? [
+          .icon(
+            id: "pages-add-domain",
+            asset: SolarAsset.plus,
+            accessibilityLabel: DashL10n.string("Add domain")
           ) {
             addsDomain = true
           }
-        }
-      }
-      .dashSeparateToolbarBackground()
-    }
+        ] : []
+    )
     .refreshable { await load(force: true) }
     .task { await load() }
     .dashTray(
