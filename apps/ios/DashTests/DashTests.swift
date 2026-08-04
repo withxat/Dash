@@ -4417,6 +4417,29 @@ private func decodePagesDeployments(_ json: String) throws -> [PagesDeployment] 
   #expect(empty.contains("No blocked events"))
 }
 
+/// The card lifts a quiet series off the floor so the sparkline stays visible;
+/// the pushed detail plots and tabulates what Cloudflare actually counted.
+@Test func wafDetailPointsKeepRealCountsInAscendingHourOrder() {
+  let previousLocale = DashL10n.localeOverrideForTesting
+  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+  defer { DashL10n.localeOverrideForTesting = previousLocale }
+
+  let series = [
+    FirewallEventsSeriesPoint(datetime: "2026-08-03T23:00:00Z", count: 7),
+    FirewallEventsSeriesPoint(datetime: "not-a-datetime", count: 999),
+    FirewallEventsSeriesPoint(datetime: "2026-08-03T22:00:00Z", count: 0),
+  ]
+  let points = WAFChartModel.detailPoints(series)
+
+  #expect(points.count == 2)
+  #expect(points.map { $0.datum["blocked"] } == [0, 7])
+  #expect(points.map(\.id) == WAFChartModel.seriesData(series).map(\.id))
+  // The table spells out the day — a 24-hour window crosses midnight, so two
+  // rows would otherwise read the same hour.
+  #expect(points.allSatisfy { $0.tableLabel.contains("Aug") })
+  #expect(points.allSatisfy { !$0.datum.label.contains("Aug") })
+}
+
 @Test func wafGlobeCentroidsCoverISOAlpha2AndCloudflareKosovoExtension() throws {
   let expectedCodes = Set(
     ("AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ BA BB BD BE BF BG BH BI BJ "

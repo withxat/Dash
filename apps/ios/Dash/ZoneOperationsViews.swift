@@ -540,27 +540,57 @@ enum WAFChartModel {
     )
   }
 
-  /// Ascending hourly blocked counts for the sparkline. Drops unparseable stamps.
-  static func seriesData(
-    _ series: [FirewallEventsSeriesPoint],
-    locale: Locale = DashL10n.activeLocale
-  ) -> [DitherDatum] {
+  /// Ascending hourly blocked counts. Drops unparseable stamps.
+  static func parsedSeries(_ series: [FirewallEventsSeriesPoint]) -> [(date: Date, count: Int)] {
     let parser = ISO8601DateFormatter()
     parser.formatOptions = [.withInternetDateTime]
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return
+      series
+      .compactMap { point -> (date: Date, count: Int)? in
+        guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
+        else { return nil }
+        return (date, point.count)
+      }
+      .sorted { $0.date < $1.date }
+  }
+
+  /// Sparkline data for the collapsed card.
+  static func seriesData(
+    _ series: [FirewallEventsSeriesPoint],
+    locale: Locale = DashL10n.activeLocale
+  ) -> [DitherDatum] {
     let labelStyle = Date.FormatStyle.dateTime.hour().locale(locale)
-    return series.compactMap { point -> (Date, Int)? in
-      guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
-      else { return nil }
-      return (date, point.count)
-    }
-    .sorted { $0.0 < $1.0 }
-    .map { date, count in
+    return parsedSeries(series).map { entry in
       DitherDatum(
-        id: date.ISO8601Format(),
-        label: date.formatted(labelStyle),
-        values: ["blocked": Double(count)])
+        id: entry.date.ISO8601Format(),
+        label: entry.date.formatted(labelStyle),
+        values: ["blocked": Double(entry.count)])
+    }
+  }
+
+  /// The same hours for the pushed detail, at their real counts — the card's
+  /// floor-lifted values exist only so a quiet series stays visible in a
+  /// sparkline.
+  ///
+  /// `tableLabel` spells out the day rather than repeating the axis: a 24-hour
+  /// window crosses midnight, so two rows would otherwise read the same hour.
+  /// It goes unrendered while this detail hands the table's place to the
+  /// country breakdown, and would be wrong the moment it did not.
+  static func detailPoints(
+    _ series: [FirewallEventsSeriesPoint],
+    locale: Locale = DashL10n.activeLocale
+  ) -> [DashChartDataPoint] {
+    let axisStyle = Date.FormatStyle.dateTime.hour().locale(locale)
+    let tableStyle = Date.FormatStyle.dateTime.month(.abbreviated).day().hour().locale(locale)
+    return parsedSeries(series).map { entry in
+      DashChartDataPoint(
+        datum: DitherDatum(
+          id: entry.date.ISO8601Format(),
+          label: entry.date.formatted(axisStyle),
+          values: ["blocked": Double(entry.count)]),
+        tableLabel: entry.date.formatted(tableStyle))
     }
   }
 
@@ -932,12 +962,8 @@ struct WAFEventsView: View {
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
-  @State private var selectedCountryCode: String?
-  @State private var globeCamera = GlobeCamera(longitude: 0, latitude: 15)
-  @State private var didSetInitialGlobeCamera = false
   @State private var summary: FirewallEventsSummary?
   @State private var loading = true
   @State private var error: String?
@@ -980,93 +1006,39 @@ struct WAFEventsView: View {
     .task(id: model.grantedScopes) { await load() }
   }
 
-  /// Fuller first-paint reserve: blocked metric, under-attack toggle, countries,
-  /// rules. Live mode drops empty chart / unavailable security / empty buckets;
-  /// those slots exit upward.
+  /// Fuller first-paint reserve: the blocked card, under-attack toggle, rules.
+  /// Live mode drops unavailable security / empty buckets; those slots exit
+  /// upward.
   @ViewBuilder
   private func wafDetailBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
-      DashGlassCard {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Last 24 hours")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          Text(verbatim: "888,888")
-            .dashTextStyle(.sectionTitle)
-            .foregroundStyle(DashTheme.text)
-            .monospacedDigit()
-          Text("Blocked requests")
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .dashBodyPlaceholder(true)
+      DashCollapsedChartPlaceholder(
+        title: "Blocked requests",
+        showsMetricHeader: true,
+        caption: "Last 24 hours"
+      )
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashCollapsedChartPlaceholder(title: "Blocked requests", showsMetricHeader: true)
-        .dashItemBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
       DashToggleRowPlaceholder()
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Top countries") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Top rules") {
         DashListRowPlaceholders(rows: 3)
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else {
+      let seriesData: [DitherDatum] = summary.map { WAFChartModel.seriesData($0.series) } ?? []
       if let summary {
-        // A metric tile — the surface `DashGlassCard` exists for.
-        DashGlassCard {
-          VStack(alignment: .leading, spacing: 8) {
-            Text("Last \(summary.hours) hours")
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-            Text(summary.blocked.formatted())
-              .dashTextStyle(.sectionTitle)
-              .foregroundStyle(DashTheme.text)
-              .monospacedDigit()
-            Text("Blocked requests")
-              .dashTextStyle(.caption)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .dashBodySlot(reduceMotion: reduceMotion)
-        let seriesData = WAFChartModel.seriesData(summary.series)
-        if !seriesData.isEmpty {
-          let collapsed = CollapsedDitherTrendSeries(
-            values: seriesData.map { $0.values["blocked"] ?? 0 })
-          let sparkData = zip(seriesData, collapsed.values).map { point, value in
-            DitherDatum(
-              id: point.id,
-              label: point.label,
-              values: ["blocked": value])
-          }
-          DashCollapsedChartCard(
-            title: "Blocked requests",
-            summaryValue: summary.blocked.formatted(.number.locale(DashL10n.activeLocale)),
-            data: sparkData,
-            series: [
-              DitherSeries(
-                id: "blocked",
-                label: DashL10n.ui("Blocked requests"),
-                color: DashTheme.DitherChart.warning(
-                  colorScheme: colorScheme,
-                  contrast: colorSchemeContrast),
-                variant: .gradient)
-            ],
-            valueCeiling: collapsed.valueCeiling,
-            accessibilitySummary: WAFChartModel.seriesAccessibilitySummary(
-              blocked: summary.blocked, hours: summary.hours)
-          )
-          .dashItemBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
+        // One card for one metric: the total, the shape of the window it
+        // covers, and the push to the detail that owns the interactive plot,
+        // the hourly table, and the country breakdown. A metric tile beside it
+        // would state the same number twice under the same words.
+        if seriesData.isEmpty {
+          blockedTotalCard(summary)
+            .dashBodySlot(reduceMotion: reduceMotion)
+        } else {
+          blockedChartCard(summary, seriesData: seriesData)
+            .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
       if securityAvailable {
@@ -1091,15 +1063,11 @@ struct WAFEventsView: View {
         }
       }
       if let summary {
-        let topCountries = WAFChartModel.topCountries(summary.countries)
-        if summary.countries.isEmpty || WAFGlobeModel.points(from: topCountries).isEmpty {
-          wafBucketGroup(
-            title: "Top countries", buckets: summary.countries, labelsAreRegionCodes: true
-          )
-          .dashSectionBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
-        } else {
-          countriesGlobeGroup(topCountries, totalBlocked: summary.blocked)
+        // Countries ride the chart detail. With no series there is no chart,
+        // hence no detail to carry them, and the screen keeps the section
+        // rather than dropping a dimension Cloudflare did return.
+        if seriesData.isEmpty {
+          DashChartCountryBreakdownSection(breakdown: countryBreakdown(summary))
             .dashSectionBoundary()
             .dashBodySlot(reduceMotion: reduceMotion)
         }
@@ -1110,171 +1078,96 @@ struct WAFEventsView: View {
     }
   }
 
-  /// The GraphQL country dimension is an ISO 3166 alpha-2 code — show the
-  /// localized region name when we can resolve one.
-  private func regionName(_ code: String) -> String {
-    guard let normalizedCode = WAFISOCountryCentroids.normalizedCode(code) else {
-      return code
-    }
-    return DashL10n.activeLocale.localizedString(forRegionCode: normalizedCode)
-      ?? normalizedCode
-  }
-
-  private var countryRankingColumns: [GridItem] {
-    if dynamicTypeSize.isAccessibilitySize {
-      return [GridItem(.flexible(), spacing: 0, alignment: .leading)]
-    }
-    return [
-      GridItem(.flexible(), spacing: 8, alignment: .leading),
-      GridItem(.flexible(), spacing: 8, alignment: .leading),
-    ]
-  }
-
-  private func countriesGlobeGroup(
-    _ countries: [FirewallEventsBucket],
-    totalBlocked: Int
-  ) -> some View {
-    let points = WAFGlobeModel.points(from: countries)
-    // One heading, not two: the card inside this group used to carry its own
-    // “Blocks by country” title, saying what the group header already says.
-    return DashListGroup(title: "Top countries") {
-      DashGlassCard {
-        VStack(alignment: .leading, spacing: 12) {
-          DotGlobeView(
-            camera: $globeCamera,
-            style: GlobeStyle(
-              baseColor: DashTheme.faint,
-              glowColor: DashTheme.hairline,
-              defaultMarkerColor: DashTheme.warning,
-              mapSamples: 12_000,
-              mapBrightness: colorScheme == .dark ? 7 : 5,
-              diffuse: 1.1,
-              markerElevation: 0.025
-            ),
-            markers: globeMarkers(points),
-            behavior: GlobeBehavior(
-              autoRotationSpeed: selectedCountryCode == nil ? 0.07 : 0,
-              allowsDragging: true,
-              allowsInertia: true,
-              quality: .adaptive
-            ),
-            accessibilityLabel: WAFChartModel.countriesAccessibilitySummary(
-              buckets: countries,
-              totalBlocked: totalBlocked)
-          ) { marker in
-            selectCountry(marker.id)
-          }
-          .frame(height: 220)
-          .contentShape(Rectangle())
-
-          countryRanking(countries)
-        }
+  /// The no-history pose: a total with nothing to plot keeps the plain metric
+  /// surface `DashGlassCard` exists for.
+  private func blockedTotalCard(_ summary: FirewallEventsSummary) -> some View {
+    DashGlassCard {
+      VStack(alignment: .leading, spacing: 8) {
+        Text("Last \(summary.hours) hours")
+          .dashTextStyle(.footnoteSemibold)
+          .foregroundStyle(DashTheme.subtle)
+        Text(summary.blocked.formatted())
+          .dashTextStyle(.sectionTitle)
+          .foregroundStyle(DashTheme.text)
+          .monospacedDigit()
+        Text("Blocked requests")
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.subtle)
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
     }
   }
 
-  private func globeMarkers(_ points: [WAFGlobePoint]) -> [GlobeMarker] {
-    points.map { point in
-      let isSelected = selectedCountryCode == point.countryCode
-      let countLabel = localizedBlockCount(point.count)
-      let selectionLabel =
-        isSelected ? ", \(DashL10n.ui("Selected"))" : ""
-      return GlobeMarker(
-        id: point.countryCode,
-        coordinate: point.coordinate,
-        size: point.markerSize,
-        color: isSelected ? DashTheme.brand : DashTheme.warning,
-        accessibilityLabel:
-          "\(regionName(point.countryCode)), \(countLabel)\(selectionLabel)"
-      )
-    }
-  }
-
-  private func countryRanking(_ countries: [FirewallEventsBucket]) -> some View {
-    LazyVGrid(columns: countryRankingColumns, alignment: .leading, spacing: 4) {
-      ForEach(Array(countries.enumerated()), id: \.element.id) { index, bucket in
-        if let countryCode = WAFISOCountryCentroids.normalizedCode(bucket.label),
-          let coordinate = WAFISOCountryCentroids.coordinate(for: countryCode)
-        {
-          Button {
-            selectCountry(countryCode, focus: coordinate)
-          } label: {
-            countryRankingCell(index: index, bucket: bucket)
-          }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityLabel(
-            "\(regionName(bucket.label)), \(localizedBlockCount(bucket.count))"
-          )
-          .accessibilityAddTraits(
-            selectedCountryCode == countryCode ? .isSelected : [])
-        } else {
-          countryRankingCell(index: index, bucket: bucket)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-              "\(regionName(bucket.label)), \(localizedBlockCount(bucket.count))")
-        }
-      }
-    }
-  }
-
-  private func countryRankingCell(
-    index: Int,
-    bucket: FirewallEventsBucket
+  private func blockedChartCard(
+    _ summary: FirewallEventsSummary,
+    seriesData: [DitherDatum]
   ) -> some View {
-    let isSelected =
-      selectedCountryCode == WAFISOCountryCentroids.normalizedCode(bucket.label)
-    return HStack(spacing: 8) {
-      Text((index + 1).formatted(.number.locale(DashL10n.activeLocale)))
-        .dashTextStyle(.captionSemibold)
-        .monospacedDigit()
-        .foregroundStyle(isSelected ? DashTheme.brand : DashTheme.faint)
-        .frame(minWidth: 14, alignment: .trailing)
-      Text(regionName(bucket.label))
-        .dashTextStyle(.footnote)
-        .foregroundStyle(isSelected ? DashTheme.strong : DashTheme.text)
-        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-      Spacer(minLength: 4)
-      Text(bucket.count.formatted(.number.locale(DashL10n.activeLocale)))
-        .dashTextStyle(.captionSemibold)
-        .monospacedDigit()
-        .foregroundStyle(isSelected ? DashTheme.brand : DashTheme.subtle)
+    let collapsed = CollapsedDitherTrendSeries(
+      values: seriesData.map { $0.values["blocked"] ?? 0 })
+    let sparkData = zip(seriesData, collapsed.values).map { point, value in
+      DitherDatum(
+        id: point.id,
+        label: point.label,
+        values: ["blocked": value])
     }
-    .padding(.horizontal, 8)
-    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
-    .background(
-      isSelected ? DashTheme.infoTint : Color.clear,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.small, style: .continuous)
-    )
-    .contentShape(
-      RoundedRectangle(cornerRadius: DashTheme.Radius.small, style: .continuous))
+    return DashCollapsedChartCard(
+      title: "Blocked requests",
+      summaryValue: summary.blocked.formatted(.number.locale(DashL10n.activeLocale)),
+      // The window the request itself asks for; no range control on this screen
+      // can change it.
+      caption: "Last 24 hours",
+      data: sparkData,
+      series: [blockedSeries],
+      valueCeiling: collapsed.valueCeiling,
+      accessibilitySummary: WAFChartModel.seriesAccessibilitySummary(
+        blocked: summary.blocked, hours: summary.hours),
+      detail: blockedChartDetail(summary),
+      detailAccessibilityIdentifier: "waf-blocked-chart-detail")
   }
 
-  private func localizedBlockCount(_ count: Int) -> String {
-    let formatted = count.formatted(.number.locale(DashL10n.activeLocale))
-    return DashL10n.string("\(formatted) blocks")
+  private var blockedSeries: DitherSeries {
+    DitherSeries(
+      id: "blocked",
+      label: DashL10n.ui("Blocked requests"),
+      color: DashTheme.DitherChart.warning(
+        colorScheme: colorScheme,
+        contrast: colorSchemeContrast),
+      variant: .gradient)
   }
 
-  private func selectCountry(
-    _ countryCode: String,
-    focus coordinate: GlobeCoordinate? = nil
-  ) {
-    let nextSelection = selectedCountryCode == countryCode ? nil : countryCode
-    guard nextSelection != selectedCountryCode else { return }
-    DashDelight.selectionChanged()
-    if nextSelection != nil, let coordinate {
-      globeCamera = GlobeCamera(
-        longitude: coordinate.longitude,
-        latitude: coordinate.latitude
-      )
-    }
-    withAnimation(DashTheme.Motion.settle) {
-      selectedCountryCode = nextSelection
-    }
+  private func blockedChartDetail(_ summary: FirewallEventsSummary) -> DashChartDetail {
+    DashChartDetail(
+      title: "Blocked requests",
+      rangeLabel: "Last 24 hours",
+      summaryValue: summary.blocked.formatted(.number.locale(DashL10n.activeLocale)),
+      categoryAxisLabel: "Time",
+      valueAxisLabel: "Requests",
+      axisValueFormat: .compact,
+      tableValueFormat: .number(maximumFractionDigits: 0),
+      accessibilitySummary: WAFChartModel.seriesAccessibilitySummary(
+        blocked: summary.blocked, hours: summary.hours),
+      content: .area(
+        points: WAFChartModel.detailPoints(summary.series),
+        series: [blockedSeries]),
+      featureID: .zones,
+      readScopes: DashAuthorizationScopes.zoneAnalytics,
+      countryBreakdown: countryBreakdown(summary))
+  }
+
+  private func countryBreakdown(
+    _ summary: FirewallEventsSummary
+  ) -> DashChartCountryBreakdown {
+    DashChartCountryBreakdown(
+      title: "Top countries",
+      buckets: summary.countries,
+      accessibilitySummary: WAFChartModel.countriesAccessibilitySummary(
+        buckets: summary.countries,
+        totalBlocked: summary.blocked))
   }
 
   @ViewBuilder
   private func wafBucketGroup(
-    title: String, buckets: [FirewallEventsBucket], labelsAreRegionCodes: Bool = false
+    title: String, buckets: [FirewallEventsBucket]
   ) -> some View {
     DashListGroup(title: title) {
       if buckets.isEmpty {
@@ -1288,7 +1181,7 @@ struct WAFEventsView: View {
         dashListCard {
           dashListCardRows(items: buckets) { bucket in
             DashListRow(
-              title: labelsAreRegionCodes ? regionName(bucket.label) : bucket.label,
+              title: bucket.label,
               subtitle: DashL10n.string("\(bucket.count.formatted()) blocks"),
               icon: SolarAsset.Content.shieldCheck,
               showsChevron: false
@@ -1324,23 +1217,7 @@ struct WAFEventsView: View {
   }
 
   private func applySummary(_ fetched: FirewallEventsSummary) {
-    let countriesChanged = fetched.countries != summary?.countries
     summary = fetched
-    guard countriesChanged else { return }
-
-    let points = WAFGlobeModel.points(
-      from: WAFChartModel.topCountries(fetched.countries))
-    if let selectedCountryCode,
-      !points.contains(where: { $0.countryCode == selectedCountryCode })
-    {
-      self.selectedCountryCode = nil
-    }
-    guard !didSetInitialGlobeCamera, let leader = points.first else { return }
-    globeCamera = GlobeCamera(
-      longitude: leader.coordinate.longitude,
-      latitude: leader.coordinate.latitude
-    )
-    didSetInitialGlobeCamera = true
   }
 
   private func loadSecurityLevel(force: Bool) async {
@@ -1403,6 +1280,235 @@ struct WAFEventsView: View {
       underAttack = !enabled
       model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
+    }
+  }
+}
+
+/// Where a chart's events came from: a marker globe over the ranking that names
+/// every marker, or plain rows when no label resolves to a country Dash can
+/// place.
+///
+/// It owns its camera and selection so the same section mounts on a pushed
+/// chart detail and on the WAF screen's no-history fallback, with no state to
+/// thread through either host.
+struct DashChartCountryBreakdownSection: View {
+  let breakdown: DashChartCountryBreakdown
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @State private var selectedCountryCode: String?
+  @State private var camera: GlobeCamera
+
+  /// Capped and ordered here rather than by the pushing screen, so the markers
+  /// and the ranking under them can never disagree about who leads.
+  private let ranked: [FirewallEventsBucket]
+  private let points: [WAFGlobePoint]
+
+  init(breakdown: DashChartCountryBreakdown) {
+    self.breakdown = breakdown
+    let ranked = WAFChartModel.topCountries(breakdown.buckets)
+    self.ranked = ranked
+    let points = WAFGlobeModel.points(from: ranked)
+    self.points = points
+    // Open on the busiest country instead of the prime meridian — the leader is
+    // what the ranking under the globe puts first, and an ocean tells nothing.
+    _camera = State(
+      initialValue: GlobeCamera(
+        longitude: points.first?.coordinate.longitude ?? 0,
+        latitude: points.first?.coordinate.latitude ?? 15))
+  }
+
+  /// A refresh can retire the selected country. Resolving against the current
+  /// points keeps a stale code from tinting a row that no longer has a marker.
+  private var selection: String? {
+    guard let selectedCountryCode,
+      points.contains(where: { $0.countryCode == selectedCountryCode })
+    else { return nil }
+    return selectedCountryCode
+  }
+
+  var body: some View {
+    // One heading, not two: the card inside this group used to carry its own
+    // “Blocks by country” title, saying what the group header already says.
+    DashListGroup(title: breakdown.title) {
+      if points.isEmpty {
+        fallbackRows
+      } else {
+        DashGlassCard {
+          VStack(alignment: .leading, spacing: 12) {
+            globe
+            ranking
+          }
+        }
+      }
+    }
+  }
+
+  private var globe: some View {
+    DotGlobeView(
+      camera: $camera,
+      style: GlobeStyle(
+        baseColor: DashTheme.faint,
+        glowColor: DashTheme.hairline,
+        defaultMarkerColor: DashTheme.warning,
+        mapSamples: 12_000,
+        mapBrightness: colorScheme == .dark ? 7 : 5,
+        diffuse: 1.1,
+        markerElevation: 0.025
+      ),
+      markers: markers,
+      behavior: GlobeBehavior(
+        autoRotationSpeed: selection == nil ? 0.07 : 0,
+        allowsDragging: true,
+        allowsInertia: true,
+        quality: .adaptive
+      ),
+      accessibilityLabel: breakdown.accessibilitySummary
+    ) { marker in
+      selectCountry(marker.id)
+    }
+    .frame(height: 220)
+    .contentShape(Rectangle())
+  }
+
+  /// Nothing on this list could be placed on the globe — Cloudflare still
+  /// counted the events, so the counts stand on their own rows.
+  @ViewBuilder
+  private var fallbackRows: some View {
+    if breakdown.buckets.isEmpty {
+      DashCard {
+        Text("No blocked events in this window.")
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+    } else {
+      dashListCard {
+        dashListCardRows(items: breakdown.buckets) { bucket in
+          DashListRow(
+            title: regionName(bucket.label),
+            subtitle: localizedBlockCount(bucket.count),
+            icon: SolarAsset.Content.shieldCheck,
+            showsChevron: false
+          )
+        }
+      }
+    }
+  }
+
+  private var markers: [GlobeMarker] {
+    points.map { point in
+      let isSelected = selection == point.countryCode
+      let countLabel = localizedBlockCount(point.count)
+      let selectionLabel =
+        isSelected ? ", \(DashL10n.ui("Selected"))" : ""
+      return GlobeMarker(
+        id: point.countryCode,
+        coordinate: point.coordinate,
+        size: point.markerSize,
+        color: isSelected ? DashTheme.brand : DashTheme.warning,
+        accessibilityLabel:
+          "\(regionName(point.countryCode)), \(countLabel)\(selectionLabel)"
+      )
+    }
+  }
+
+  private var rankingColumns: [GridItem] {
+    if dynamicTypeSize.isAccessibilitySize {
+      return [GridItem(.flexible(), spacing: 0, alignment: .leading)]
+    }
+    return [
+      GridItem(.flexible(), spacing: 8, alignment: .leading),
+      GridItem(.flexible(), spacing: 8, alignment: .leading),
+    ]
+  }
+
+  private var ranking: some View {
+    LazyVGrid(columns: rankingColumns, alignment: .leading, spacing: 4) {
+      ForEach(Array(ranked.enumerated()), id: \.element.id) { index, bucket in
+        if let countryCode = WAFISOCountryCentroids.normalizedCode(bucket.label),
+          let coordinate = WAFISOCountryCentroids.coordinate(for: countryCode)
+        {
+          Button {
+            selectCountry(countryCode, focus: coordinate)
+          } label: {
+            rankingCell(index: index, bucket: bucket)
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityLabel(
+            "\(regionName(bucket.label)), \(localizedBlockCount(bucket.count))"
+          )
+          .accessibilityAddTraits(selection == countryCode ? .isSelected : [])
+        } else {
+          rankingCell(index: index, bucket: bucket)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+              "\(regionName(bucket.label)), \(localizedBlockCount(bucket.count))")
+        }
+      }
+    }
+  }
+
+  private func rankingCell(
+    index: Int,
+    bucket: FirewallEventsBucket
+  ) -> some View {
+    let isSelected = selection == WAFISOCountryCentroids.normalizedCode(bucket.label)
+    return HStack(spacing: 8) {
+      Text((index + 1).formatted(.number.locale(DashL10n.activeLocale)))
+        .dashTextStyle(.captionSemibold)
+        .monospacedDigit()
+        .foregroundStyle(isSelected ? DashTheme.brand : DashTheme.faint)
+        .frame(minWidth: 14, alignment: .trailing)
+      Text(regionName(bucket.label))
+        .dashTextStyle(.footnote)
+        .foregroundStyle(isSelected ? DashTheme.strong : DashTheme.text)
+        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+      Spacer(minLength: 4)
+      Text(bucket.count.formatted(.number.locale(DashL10n.activeLocale)))
+        .dashTextStyle(.captionSemibold)
+        .monospacedDigit()
+        .foregroundStyle(isSelected ? DashTheme.brand : DashTheme.subtle)
+    }
+    .padding(.horizontal, 8)
+    .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
+    .background(
+      isSelected ? DashTheme.infoTint : Color.clear,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.small, style: .continuous)
+    )
+    .contentShape(
+      RoundedRectangle(cornerRadius: DashTheme.Radius.small, style: .continuous))
+  }
+
+  /// The GraphQL country dimension is an ISO 3166 alpha-2 code — show the
+  /// localized region name when we can resolve one.
+  private func regionName(_ code: String) -> String {
+    guard let normalizedCode = WAFISOCountryCentroids.normalizedCode(code) else {
+      return code
+    }
+    return DashL10n.activeLocale.localizedString(forRegionCode: normalizedCode)
+      ?? normalizedCode
+  }
+
+  private func localizedBlockCount(_ count: Int) -> String {
+    let formatted = count.formatted(.number.locale(DashL10n.activeLocale))
+    return DashL10n.string("\(formatted) blocks")
+  }
+
+  private func selectCountry(
+    _ countryCode: String,
+    focus coordinate: GlobeCoordinate? = nil
+  ) {
+    let nextSelection = selection == countryCode ? nil : countryCode
+    guard nextSelection != selection else { return }
+    DashDelight.selectionChanged()
+    if nextSelection != nil, let coordinate {
+      camera = GlobeCamera(
+        longitude: coordinate.longitude,
+        latitude: coordinate.latitude
+      )
+    }
+    withAnimation(DashTheme.Motion.settle) {
+      selectedCountryCode = nextSelection
     }
   }
 }
