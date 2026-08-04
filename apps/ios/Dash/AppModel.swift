@@ -225,8 +225,8 @@ enum WatchtowerRemoteRefreshInvalidationStore {
 @Observable
 final class AppModel {
   /// Demo keeps every core surface browsable, plus experimental feature reads
-  /// so flipping Settings → Experimental → Tunnels can explore DemoBackend
-  /// tunnels without a fake "Connect your account" wall.
+  /// so opting into one can explore its DemoBackend data without a fake
+  /// "Connect your account" wall.
   static let demoGrantedScopes: Set<String> = {
     let experimentalReads = DashAuthorizationScopes.experimentalFeatures.reduce(
       into: Set<String>()

@@ -673,7 +673,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 
-  func testSettingsExperimentalShowsTunnelsToggle() {
+  func testSettingsExperimentalShowsFeatureToggles() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -681,6 +681,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(profile.waitForExistence(timeout: 5))
     profile.tap()
 
+    let registrarToggle = app.switches["settings-experimental-registrar"]
     let tunnelsToggle = app.switches["settings-experimental-tunnels"]
     // The deterministic preview now includes the account-switching row. The
     // lazy stack can therefore expose this element to accessibility before it
@@ -688,13 +689,19 @@ final class DashUITests: XCTestCase {
     for _ in 0..<6 where !tunnelsToggle.isHittable {
       app.swipeUp()
     }
+    XCTAssertTrue(registrarToggle.waitForExistence(timeout: 5))
+    XCTAssertTrue(Self.waitForHittable(registrarToggle))
     XCTAssertTrue(tunnelsToggle.waitForExistence(timeout: 5))
     XCTAssertTrue(Self.waitForHittable(tunnelsToggle))
   }
 
   func testResourcesRegistrarCatalogOpens() {
     let app = XCUIApplication()
-    launch(app, arguments: ["-ui-preview"])
+    launch(
+      app,
+      arguments: [
+        "-ui-preview", "-dash.experimental.registrar_enabled", "YES",
+      ])
 
     let resources = app.buttons["Resources"]
     XCTAssertTrue(resources.waitForExistence(timeout: 5))

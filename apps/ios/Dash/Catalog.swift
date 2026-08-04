@@ -118,11 +118,22 @@ enum Destination: Hashable {
 extension DashExperimentalFeatures {
   /// Whether a catalog feature should appear in Resources / Home shortcuts.
   /// Experimental features stay hidden until their Settings toggle is on.
-  static func isCatalogVisible(_ feature: FeatureID, tunnelsEnabled: Bool) -> Bool {
-    if DashAuthorizationScopes.experimentalFeatures.contains(feature) {
-      return feature == .tunnels && tunnelsEnabled
+  static func isCatalogVisible(
+    _ feature: FeatureID,
+    registrarEnabled: Bool,
+    tunnelsEnabled: Bool
+  ) -> Bool {
+    guard DashAuthorizationScopes.experimentalFeatures.contains(feature) else {
+      return true
     }
-    return true
+    return switch feature {
+    case .registrar:
+      registrarEnabled
+    case .tunnels:
+      tunnelsEnabled
+    case .zones, .emailRouting, .workers, .pages, .r2, .kv:
+      false
+    }
   }
 }
 
@@ -133,11 +144,12 @@ enum FeatureCatalog {
       .zones, "Domains", "Domains, DNS, cache, and domain settings", "globe",
       "SolarGlobalFill", "SolarGlobalOutline", "Domains & DNS",
       read: ["zone.read"], write: ["zone.write"]),
-    // A zone and a registration are different objects — a zone Cloudflare
-    // serves DNS for versus a name the account owns — so Registrar browses
-    // beside Domains. `write` carries `registrar-domains.admin` so Resources
-    // can badge Demo / partial grants as Read-only; the index itself is
-    // browse-only and suppresses `FeatureReadOnlyBanner` (see
+    // Experimental and hidden until Settings opts it in. A zone and a
+    // registration are different objects — a zone Cloudflare serves DNS for
+    // versus a name the account owns — so Registrar browses beside Domains once
+    // enabled. `write` carries `registrar-domains.admin` so Resources can badge
+    // Demo / partial grants as Read-only; the index itself is browse-only and
+    // suppresses `FeatureReadOnlyBanner` (see
     // `FeatureID.showsCatalogReadOnlyBanner`).
     feature(
       .registrar, "Registrations", "Domains you bought on Cloudflare",

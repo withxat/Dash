@@ -620,6 +620,8 @@ struct SettingsView: View {
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
     DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
+  @AppStorage(DashExperimentalFeatures.registrarKey) private var registrarExperimentalEnabled =
+    false
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
   @State private var showsLanguagePicker = false
@@ -751,6 +753,13 @@ struct SettingsView: View {
         }
 
         SettingsPlainSection(title: "Experimental") {
+          SettingsPlainToggleRow(
+            title: DashL10n.string("Registrations"),
+            icon: SolarAsset.globus,
+            isOn: $registrarExperimentalEnabled
+          )
+          .accessibilityIdentifier("settings-experimental-registrar")
+
           SettingsPlainToggleRow(
             title: DashL10n.string("Tunnels"),
             icon: SolarAsset.routing,
