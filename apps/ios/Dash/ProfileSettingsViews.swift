@@ -10,11 +10,11 @@ import UniformTypeIdentifiers
 
 /// Switch account and Sign out are each asked in two places — the Profile
 /// tray, where they are stack steps (copy in the body, controls in the fixed
-/// footer), and Settings → Switch account, where each is a one-step tray
-/// holding both halves. The decision itself is defined once here: same copy,
-/// same controls, same rule about who gets a Cancel. Only the way *out*
-/// differs, so every host passes its own `cancel`, and only the Profile footer
-/// passes the morph identity its Sign out pill travels on.
+/// footer), and Settings, where tapping the row opens its one-step confirmation
+/// tray directly. The decision itself is defined once here: same copy, same
+/// controls, same rule about who gets a Cancel. Only the way *out* differs, so
+/// every host passes its own `cancel`, and only the Profile footer passes the
+/// morph identity its Sign out pill travels on.
 enum AccountDecisionCopy {
   /// Two consequences, two paragraphs — kept as separate catalog keys and
   /// joined here, because the Files sentence is only true of this app's mounts
@@ -962,93 +962,37 @@ private struct AccountSwitchConfirmationContent: View {
   }
 }
 
-/// The step a Settings sign-out tray is on. Sign out costs two taps wherever it
-/// is offered: the profile tray pushes its own confirmation step, and this is
-/// the same pair on a route morph — naming the action and committing to it are
-/// never the same tap.
+/// Settings' sign-out row already names the action, so its tray begins on the
+/// destructive confirmation instead of repeating Sign out as a menu choice.
 enum SignOutTrayStep: Hashable, Sendable {
-  /// Names the action; the red row is the surface the confirm pill grows from.
-  case intro
-  /// Consequences, Cancel, and the pill that actually signs out.
   case confirm
 
-  var trayRole: DashTrayStepRole {
-    switch self {
-    case .intro: .root
-    case .confirm: .destructive
-    }
-  }
+  static let initial = Self.confirm
+
+  var trayRole: DashTrayStepRole { .destructive }
 }
 
-/// Settings' sign-out tray: `DashConfirmableActions`' row → confirm pair, drawn
-/// here because that component owns the confirm pill's phase and this one has to
-/// run on `AppModel.signOutActionPhase` — `AppRootView` holds the signed-in
-/// stage while that phase is `.succeeded` and swaps to sign-in only when the
-/// pill's success check reports back through `completeSignOutActionPresentation`.
-/// The row itself is the shared `DashDangerMenuRow`.
+/// Settings' direct sign-out confirmation. It owns the confirm pill's phase
+/// because `AppRootView` holds the signed-in stage while that phase is
+/// `.succeeded` and swaps to sign-in only when the pill's success check reports
+/// back through `completeSignOutActionPresentation`.
 private struct SignOutConfirmationContent: View {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var step: SignOutTrayStep = .intro
-  @Namespace private var actionMorph
-
-  /// Shared by the red row and the confirm pill so the enamel face travels
-  /// between steps — the same `matchedGeometryEffect` path danger rows take.
-  private static let signOutMorphID = "settings-sign-out"
+  @Environment(\.dashTrayDismiss) private var dismiss
 
   var body: some View {
-    DashTrayFlow(route: step, role: step.trayRole) { route in
-      switch route {
-      case .intro:
-        introRow
-      case .confirm:
-        confirmation
-      }
+    DashTrayFlow(route: SignOutTrayStep.initial, role: SignOutTrayStep.initial.trayRole) { _ in
+      confirmation
     }
     .frame(maxWidth: .infinity)
-  }
-
-  private var morphID: String? {
-    reduceMotion ? nil : Self.signOutMorphID
-  }
-
-  /// Companion id for the title run: both endpoints say "Sign out", so the
-  /// pinned label rides the surface morph instead of cross-fading in place.
-  private var labelMorphID: String? {
-    reduceMotion ? nil : "\(Self.signOutMorphID).label"
-  }
-
-  private var morphNamespace: Namespace.ID? {
-    reduceMotion ? nil : actionMorph
-  }
-
-  private var introRow: some View {
-    Button {
-      step = .confirm
-    } label: {
-      DashDangerMenuRow(
-        title: "Sign out",
-        icon: SolarAsset.danger,
-        morphID: morphID,
-        labelMorphID: labelMorphID,
-        morphNamespace: morphNamespace
-      )
-    }
-    .buttonStyle(DashSurfaceButtonStyle())
-    .accessibilityIdentifier("settings-sign-out-continue")
   }
 
   private var confirmation: some View {
     VStack(spacing: 16) {
       AccountDecisionMessage(text: AccountDecisionCopy.signOutConsequences)
 
-      // Cancel steps back to the row, not out of the tray: on a route morph
-      // the header's ✕ stays a dismissal, so this is the way back.
       SignOutConfirmationActions(
-        cancel: { step = .intro },
-        confirmIdentifier: "settings-sign-out-confirm",
-        morphID: morphID,
-        labelMorphID: labelMorphID,
-        morphNamespace: morphNamespace
+        cancel: dismiss,
+        confirmIdentifier: "settings-sign-out-confirm"
       )
     }
   }
