@@ -799,8 +799,9 @@ final class AppModel {
           }
         }
         // Registrar has no URLProtocol preview backend. Seed the merged index
-        // itself so its UI test never falls through to a simulator credential
-        // or a live Cloudflare request.
+        // itself so the zone screen's Registration card — the only way into
+        // registrar detail — never falls through to a simulator credential or a
+        // live Cloudflare request during its UI test.
         let previewRegistrarDomain = RegistrarDomainSummary(
           name: "example.com",
           status: "active",

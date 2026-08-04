@@ -718,7 +718,6 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(profile.waitForExistence(timeout: 5))
     profile.tap()
 
-    let registrarToggle = app.switches["settings-experimental-registrar"]
     let tunnelsToggle = app.switches["settings-experimental-tunnels"]
     // The deterministic preview now includes the account-switching row. The
     // lazy stack can therefore expose this element to accessibility before it
@@ -726,38 +725,43 @@ final class DashUITests: XCTestCase {
     for _ in 0..<6 where !tunnelsToggle.isHittable {
       app.swipeUp()
     }
-    XCTAssertTrue(registrarToggle.waitForExistence(timeout: 5))
-    XCTAssertTrue(Self.waitForHittable(registrarToggle))
     XCTAssertTrue(tunnelsToggle.waitForExistence(timeout: 5))
     XCTAssertTrue(Self.waitForHittable(tunnelsToggle))
   }
 
-  func testResourcesRegistrarCatalogOpens() {
+  /// Registrar has no Resources row: the zone's Registration card is the only
+  /// door into a registration, and it only opens for a name this account
+  /// registered with Cloudflare.
+  func testZoneRegistrationCardOpensRegistrarDetail() {
     let app = XCUIApplication()
-    launch(
-      app,
-      arguments: [
-        "-ui-preview", "-dash.experimental.registrar_enabled", "YES",
-      ])
+    launch(app, arguments: ["-ui-preview"])
 
-    let resources = app.buttons["Resources"]
-    XCTAssertTrue(resources.waitForExistence(timeout: 5))
-    resources.tap()
-
-    let registrar = app.buttons["feature-registrar"]
-    XCTAssertTrue(Self.waitForHittable(registrar))
-    registrar.tap()
-
-    let exampleDomain = app.buttons.matching(
+    expandHomeDomains(in: app)
+    let domainRow = app.buttons.matching(
       NSPredicate(format: "label CONTAINS[c] %@", "example.com")
     ).firstMatch
-    XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
+    XCTAssertTrue(domainRow.waitForExistence(timeout: 5))
+    domainRow.tap()
+
+    // The card sits below the hero and the zone tools, and its lookup settles a
+    // frame after the zone does — so wait for it before scrolling toward it.
+    let manage = app.buttons["Manage registration"]
+    XCTAssertTrue(manage.waitForExistence(timeout: 5))
+    for _ in 0..<6 where !manage.isHittable {
+      app.swipeUp()
+    }
+    XCTAssertTrue(Self.waitForHittable(manage))
+    manage.tap()
+
+    // "Registration" is the card's title on both screens; Auto-renew exists
+    // only on the pushed one, seeded from the cached account index.
+    XCTAssertTrue(app.staticTexts["Auto-renew"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
     let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
-    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["domain-card-customize"].waitForExistence(timeout: 5))
   }
 
   func testResourcesEmailRoutingCatalogOpens() {

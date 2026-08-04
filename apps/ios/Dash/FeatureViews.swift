@@ -37,7 +37,6 @@ struct FeatureRouterContent: View {
     Group {
       switch feature {
       case .zones: ZonesView()
-      case .registrar: RegistrarDomainsView()
       case .emailRouting: EmailRoutingDomainsView()
       case .workers: WorkersView()
       case .pages: PagesProjectsView()
@@ -117,7 +116,11 @@ func featureID(for destination: Destination) -> FeatureID? {
     .zones
   case .zoneEmailRouting, .emailAddresses:
     .emailRouting
-  case .registrarDomain: .registrar
+  // A registration has no catalog feature: its scopes are `RegistrarAccess`
+  // literals below, and mapping it to `.zones` would hand the screen the Zones
+  // capability — `zone.write` it must never imply, and not the
+  // `registrar-domains.*` it actually needs.
+  case .registrarDomain: nil
   case .worker: .workers
   case .tunnel: .tunnels
   case .pagesProject, .pagesDeployment, .pagesDomains: .pages
@@ -134,6 +137,10 @@ func featureID(for destination: Destination) -> FeatureID? {
 /// feature for a grant missing one of them. Deleting a case here compiles fine
 /// and silently falls through to `.zones.capability.read`, which does not
 /// include them. See DashAuthorizationScopes.initialReadOnly.
+///
+/// `.registrarDomain` is the same shape for the same reason: `featureID(for:)`
+/// answers nil for it, so dropping its case here leaves the screen requiring
+/// nothing at all rather than `registrar-domains.read`.
 func readScopes(for destination: Destination) -> Set<String> {
   switch destination {
   case .profile, .settings, .settingsAccounts, .about, .openSource, .watchtowerInbox,
@@ -162,6 +169,8 @@ func readScopes(for destination: Destination) -> Set<String> {
     ["email-routing-address.read"]
   case .tunnel:
     ["argotunnel.read", "access.read"]
+  case .registrarDomain:
+    RegistrarAccess.read
   case .zoneAnalytics:
     DashAuthorizationScopes.zoneAnalytics
   case .zoneWAF:
@@ -170,7 +179,7 @@ func readScopes(for destination: Destination) -> Set<String> {
     DashAuthorizationScopes.webAnalytics
   case .chartDetail(let detail):
     detail.readScopes
-  case .feature, .zone, .registrarDomain, .worker, .pagesProject, .pagesDeployment, .pagesDomains,
+  case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains,
     .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
   }
@@ -202,7 +211,7 @@ func writeScopes(for destination: Destination) -> Set<String> {
   case .emailAddresses:
     ["email-routing-address.write"]
   case .registrarDomain:
-    FeatureID.registrar.capability.write
+    RegistrarAccess.write
   case .tunnel:
     []
   case .zoneWAF:

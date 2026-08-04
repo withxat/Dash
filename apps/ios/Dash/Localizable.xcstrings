@@ -3159,17 +3159,6 @@
         }
       }
     },
-    "Cloudflare didn’t return this account’s registered domains." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cloudflare 未返回此账户的已注册域名。"
-          }
-        }
-      }
-    },
     "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5475,28 +5464,6 @@
         }
       }
     },
-    "Domains you bought on Cloudflare" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Cloudflare 购买的域名"
-          }
-        }
-      }
-    },
-    "Domains you buy from Cloudflare Registrar appear here. Registration itself happens on the Cloudflare dashboard." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在 Cloudflare Registrar 购买的域名会显示在这里。注册操作需在 Cloudflare 控制台完成。"
-          }
-        }
-      }
-    },
     "Domains, Custom domains for this project" : {
       "localizations" : {
         "zh-Hans" : {
@@ -6119,17 +6086,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "到期"
-          }
-        }
-      }
-    },
-    "Expires %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "到期时间：%@"
           }
         }
       }
@@ -8325,17 +8281,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "此账户还没有上传记录。请选择存储桶。文件夹可选。"
-          }
-        }
-      }
-    },
-    "No registered domains" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "没有已注册的域名"
           }
         }
       }
@@ -10553,23 +10498,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "注册信息"
-          }
-        }
-      }
-    },
-    "Registrations" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Registrations"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "域名注册"
           }
         }
       }

@@ -21,8 +21,7 @@ enum DashAuthorizationScopes {
   /// `core` / sign-in; enabling one only reveals the Resources row (usually
   /// locked) until the user authorizes it.
   static let experimentalFeatures: Set<FeatureID> = [
-    .registrar,
-    .tunnels,
+    .tunnels
   ]
 
   /// Read scopes used by nested screens that are not represented by a
@@ -30,12 +29,17 @@ enum DashAuthorizationScopes {
   /// every core catalog surface without mutation permission.
   ///
   /// Email Routing rules and destination addresses call their matching read
-  /// scopes. Registrar's `registrar-domains.read` and Tunnels'
-  /// `argotunnel.read` / `access.read` live on their experimental features (and
-  /// their Grant access requests), not here. The removed load-balancing,
-  /// health-check, and SSL scopes remain absent because no current screen calls
-  /// them. Do not add a scope without a screen that calls the endpoint — the
-  /// sign-in sheet is the user's only view of what Dash can reach.
+  /// scopes. `registrar-domains.read` is here because the zone screen's
+  /// Registration card asks Cloudflare whether *this* domain is a first-party
+  /// registration on every zone visit: that lookup has no row to unlock and no
+  /// Grant access button of its own, so a scope requested on demand would never
+  /// be requested at all and the card would silently stay on RDAP forever.
+  /// Tunnels' `argotunnel.read` / `access.read` still live on that experimental
+  /// feature (and its Grant access request), not here. The removed
+  /// load-balancing, health-check, and SSL scopes remain absent because no
+  /// current screen calls them. Do not add a scope without a screen that calls
+  /// the endpoint — the sign-in sheet is the user's only view of what Dash can
+  /// reach.
   ///
   /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
   /// lives only in a feature's capability disappears from the OAuth request
@@ -50,6 +54,7 @@ enum DashAuthorizationScopes {
     "analytics.read",
     "email-routing-rule.read",
     "email-routing-address.read",
+    "registrar-domains.read",
   ]
 
   /// Scopes requested when unlocking an experimental (or otherwise locked)
@@ -66,15 +71,22 @@ enum DashAuthorizationScopes {
 
   /// Mutating operations that are not represented by a FeatureID. They remain
   /// explicit so `core` audits the complete real-account authorization.
-  /// Registrar / Email Routing writes live on those features' capabilities
-  /// (Resources Read-only badge); the browse-only indexes suppress the catalog
-  /// banner via `FeatureID.showsCatalogReadOnlyBanner`.
+  /// Email Routing writes live on that feature's capability (Resources
+  /// Read-only badge); its browse-only index suppresses the catalog banner via
+  /// `FeatureID.showsCatalogReadOnlyBanner`. `registrar-domains.admin` is here
+  /// with the read scope for the same reason: auto-renew and the transfer lock
+  /// are the two things the registration screen exists to change, and it is
+  /// reached by tapping one icon on a domain the user already opened — sending
+  /// them back through consent to flip a switch they came for is a wall, not a
+  /// safeguard. The screen keeps its `FeatureWriteAccessNotice` for grants that
+  /// predate this (or were narrowed by hand).
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
     "dns.write",
     "cache.purge",
     "notifications.write",
+    "registrar-domains.admin",
   ]
 
   /// Read-only profile retained for Demo and capability-gating tests.

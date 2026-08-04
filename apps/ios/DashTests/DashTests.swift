@@ -558,7 +558,7 @@ struct LocalizationTests {
 
 @Test func featureCatalogContainsEveryFeatureOnce() {
   let values = FeatureCatalog.grouped.flatMap(\.1)
-  #expect(FeatureID.allCases.count == 8)
+  #expect(FeatureID.allCases.count == 7)
   #expect(values.count == FeatureID.allCases.count)
   #expect(Set(values).count == FeatureID.allCases.count)
   #expect(FeatureCatalog.descriptors.map(\.id) == FeatureCatalog.all)
@@ -585,13 +585,16 @@ struct LocalizationTests {
   #expect(
     DashAuthorizationScopes.coreFeatures.isDisjoint(
       with: DashAuthorizationScopes.experimentalFeatures))
-  #expect(!DashAuthorizationScopes.core.contains("registrar-domains.read"))
-  #expect(!DashAuthorizationScopes.core.contains("registrar-domains.admin"))
+  // The registration screen has no Resources row to unlock it, so both its
+  // scopes ship with sign-in — the read one because the zone card's lookup runs
+  // unprompted, the admin one because auto-renew and the transfer lock are what
+  // the screen is for. The read-only profile still withholds the write.
+  #expect(DashAuthorizationScopes.core.contains("registrar-domains.read"))
+  #expect(DashAuthorizationScopes.core.contains("registrar-domains.admin"))
+  #expect(DashAuthorizationScopes.initialReadOnly.contains("registrar-domains.read"))
+  #expect(!DashAuthorizationScopes.initialReadOnly.contains("registrar-domains.admin"))
   #expect(!DashAuthorizationScopes.core.contains("argotunnel.read"))
   #expect(!DashAuthorizationScopes.core.contains("access.read"))
-  #expect(
-    DashAuthorizationScopes.authorizationScopes(for: .registrar)
-      == ["registrar-domains.read"])
   #expect(
     DashAuthorizationScopes.authorizationScopes(for: .tunnels)
       == ["argotunnel.read", "access.read"])
@@ -605,18 +608,28 @@ struct LocalizationTests {
     #expect(access == .readOnly)
   }
   #expect(
-    FeatureID.registrar.capability.accessLevel(
-      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
-  #expect(
     FeatureID.tunnels.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
+}
+
+/// Registrar left the catalog: the pushed registration screen is the only
+/// surface, so its scopes are literals rather than a `FeatureID` capability and
+/// nothing may re-derive them from the zone it was reached from.
+@Test func registrarScopesStayLiteralAndOffTheZoneCapability() {
+  let official = Set(CloudflareScopes.published)
+  #expect(RegistrarAccess.read == ["registrar-domains.read"])
+  #expect(RegistrarAccess.write == ["registrar-domains.admin"])
+  #expect(RegistrarAccess.read.union(RegistrarAccess.write).isSubset(of: official))
+  #expect(!official.contains("registrar-domains.write"))
+  #expect(
+    FeatureID.allCases.allSatisfy { $0.capability.all.isDisjoint(with: RegistrarAccess.write) })
 }
 
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 17)
-  #expect(DashAuthorizationScopes.core.count == 30)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
+  #expect(DashAuthorizationScopes.core.count == 32)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -660,35 +673,18 @@ struct LocalizationTests {
 
 @Test func experimentalFeaturesStayHiddenUntilOptedIn() {
   #expect(
-    !DashExperimentalFeatures.isCatalogVisible(
-      .registrar, registrarEnabled: false, tunnelsEnabled: false))
+    !DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: false))
   #expect(
-    DashExperimentalFeatures.isCatalogVisible(
-      .registrar, registrarEnabled: true, tunnelsEnabled: false))
+    DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: true))
   #expect(
-    !DashExperimentalFeatures.isCatalogVisible(
-      .tunnels, registrarEnabled: false, tunnelsEnabled: false))
-  #expect(
-    DashExperimentalFeatures.isCatalogVisible(
-      .tunnels, registrarEnabled: false, tunnelsEnabled: true))
-  #expect(
-    DashExperimentalFeatures.isCatalogVisible(
-      .zones, registrarEnabled: false, tunnelsEnabled: false))
+    DashExperimentalFeatures.isCatalogVisible(.zones, tunnelsEnabled: false))
 
   let coreOnly = FeatureCatalogFiltering.enabledFeatures(
-    registrarExperimentalEnabled: false,
     tunnelsExperimentalEnabled: false)
   #expect(coreOnly == DashAuthorizationScopes.coreFeatures)
-  #expect(!coreOnly.contains(.registrar))
   #expect(!coreOnly.contains(.tunnels))
 
-  let withRegistrar = FeatureCatalogFiltering.enabledFeatures(
-    registrarExperimentalEnabled: true,
-    tunnelsExperimentalEnabled: false)
-  #expect(withRegistrar == DashAuthorizationScopes.coreFeatures.union([.registrar]))
-
   let withExperimentalFeatures = FeatureCatalogFiltering.enabledFeatures(
-    registrarExperimentalEnabled: true,
     tunnelsExperimentalEnabled: true)
   #expect(withExperimentalFeatures == Set(FeatureID.allCases))
 
@@ -696,11 +692,7 @@ struct LocalizationTests {
     filter: .all,
     grantedScopes: DashAuthorizationScopes.initialReadOnly,
     enabled: withExperimentalFeatures)
-  #expect(lockedCatalog.contains(.registrar))
   #expect(lockedCatalog.contains(.tunnels))
-  #expect(
-    FeatureID.registrar.capability.accessLevel(
-      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
   #expect(
     FeatureID.tunnels.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
@@ -961,14 +953,12 @@ struct LocalizationTests {
     grantedScopes: nil)
   #expect(unknown.isEmpty)
   let coreEnabled = FeatureCatalogFiltering.enabledFeatures(
-    registrarExperimentalEnabled: false,
     tunnelsExperimentalEnabled: false)
   let initialGrant = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
     grantedScopes: DashAuthorizationScopes.initialReadOnly,
     enabled: coreEnabled)
   #expect(initialGrant.count == DashAuthorizationScopes.coreFeatures.count)
-  #expect(!initialGrant.contains(.registrar))
   #expect(!initialGrant.contains(.tunnels))
 }
 
@@ -1012,7 +1002,9 @@ struct LocalizationTests {
   #expect(featureID(for: .profile) == nil)
   #expect(featureID(for: .settingsAccounts) == nil)
   #expect(featureID(for: .emailAddresses) == .emailRouting)
-  #expect(featureID(for: .registrarDomain("example.com")) == .registrar)
+  // No catalog feature owns a registration; its scopes come from
+  // `RegistrarAccess`, never from the zone it was reached through.
+  #expect(featureID(for: .registrarDomain("example.com")) == nil)
 }
 
 /// Operational destinations keep reads and mutations explicit so Demo and
@@ -1049,8 +1041,6 @@ struct LocalizationTests {
   #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
   #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
   #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
-  #expect(FeatureID.registrar.capability.write == ["registrar-domains.admin"])
-  #expect(!FeatureID.registrar.showsCatalogReadOnlyBanner)
   #expect(
     FeatureID.emailRouting.capability.write
       == ["email-routing-rule.write", "email-routing-address.write"])
@@ -1729,7 +1719,6 @@ private let watchtowerDropFrames: [CGRect] = [
 
 @Test func featureVisualIdentityMapsStableTonesPerFeature() {
   #expect(FeatureVisualIdentity.tone(for: .zones) == .success)
-  #expect(FeatureVisualIdentity.tone(for: .registrar) == .teal)
   #expect(FeatureVisualIdentity.tone(for: .emailRouting) == .danger)
   #expect(FeatureVisualIdentity.tone(for: .workers) == .brand)
   #expect(FeatureVisualIdentity.tone(for: .pages) == .info)

@@ -511,7 +511,7 @@ enum DashTheme {
   }
 
   /// Categorical teal — the same stop the dither charts use for a third series.
-  /// Shared with the `.teal` workspace wash and the Registrar catalog tone.
+  /// Shared with the `.teal` workspace wash and the registrar detail header.
   static let teal = adaptive(
     light: 0x009689, dark: 0x00BBA7, highLight: 0x00786F, highDark: 0x46ECD5)
 
@@ -800,7 +800,6 @@ enum FeatureVisualIdentity {
   static func tone(for feature: FeatureID) -> FeatureVisualTone {
     switch feature {
     case .zones: .success
-    case .registrar: .teal
     case .emailRouting: .danger
     case .workers: .brand
     case .pages: .info

@@ -42,14 +42,12 @@ enum FeatureCatalogFiltering {
   }
 
   static func enabledFeatures(
-    registrarExperimentalEnabled: Bool,
     tunnelsExperimentalEnabled: Bool
   ) -> Set<FeatureID> {
     Set(
       FeatureID.allCases.filter {
         DashExperimentalFeatures.isCatalogVisible(
           $0,
-          registrarEnabled: registrarExperimentalEnabled,
           tunnelsEnabled: tunnelsExperimentalEnabled)
       })
   }
@@ -63,8 +61,6 @@ struct FeatureCatalogView: View {
   static let defaultFilter: FeatureAccessFilter = .all
 
   @Environment(AppModel.self) private var model
-  @AppStorage(DashExperimentalFeatures.registrarKey) private var registrarExperimentalEnabled =
-    false
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
 
@@ -73,7 +69,6 @@ struct FeatureCatalogView: View {
       filter: Self.defaultFilter,
       grantedScopes: model.grantedScopes,
       enabled: FeatureCatalogFiltering.enabledFeatures(
-        registrarExperimentalEnabled: registrarExperimentalEnabled,
         tunnelsExperimentalEnabled: tunnelsExperimentalEnabled))
   }
 

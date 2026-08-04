@@ -1,7 +1,7 @@
 import Foundation
 
 enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
-  case zones, registrar, emailRouting, workers, pages, r2, kv, tunnels
+  case zones, emailRouting, workers, pages, r2, kv, tunnels
 
   var id: String { rawValue }
   var title: String {
@@ -19,13 +19,13 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
   var capability: FeatureCapability { FeatureCatalog.descriptor(for: self).capability }
 
   /// Whether `FeatureRouterContent` should hang the shared read-only banner
-  /// over this feature's index. Registrar and Email Routing indexes are
-  /// browse-only — mutations live on nested destinations that already show
-  /// their own notice. Tunnels has no write scopes at all (Dash never mutates
-  /// tunnels), so a Grant-access banner would request nothing.
+  /// over this feature's index. The Email Routing index is browse-only —
+  /// mutations live on nested destinations that already show their own notice.
+  /// Tunnels has no write scopes at all (Dash never mutates tunnels), so a
+  /// Grant-access banner would request nothing.
   var showsCatalogReadOnlyBanner: Bool {
     switch self {
-    case .registrar, .emailRouting, .tunnels: false
+    case .emailRouting, .tunnels: false
     case .zones, .workers, .pages, .r2, .kv: true
     }
   }
@@ -96,8 +96,11 @@ enum Destination: Hashable {
   case cloudflareStatus
   /// Account-level Email Routing destination addresses.
   case emailAddresses
-  /// One Cloudflare Registrar domain, keyed on its FQDN. The account's index is
-  /// `feature(.registrar)` in Resources — there is no separate list destination.
+  /// One Cloudflare Registrar domain, keyed on its FQDN. Reached only from the
+  /// zone screen's Registration card, whose header action appears exactly when
+  /// the account registered that name with Cloudflare — a registration is a
+  /// fact *about a domain the user already opened*, not a resource to browse,
+  /// so there is no account-wide index and no Resources row.
   case registrarDomain(String)
   /// Render-ready snapshot of the chart the user tapped; never refetches.
   case chartDetail(DashChartDetail)
@@ -120,15 +123,12 @@ extension DashExperimentalFeatures {
   /// Experimental features stay hidden until their Settings toggle is on.
   static func isCatalogVisible(
     _ feature: FeatureID,
-    registrarEnabled: Bool,
     tunnelsEnabled: Bool
   ) -> Bool {
     guard DashAuthorizationScopes.experimentalFeatures.contains(feature) else {
       return true
     }
     return switch feature {
-    case .registrar:
-      registrarEnabled
     case .tunnels:
       tunnelsEnabled
     case .zones, .emailRouting, .workers, .pages, .r2, .kv:
@@ -144,17 +144,12 @@ enum FeatureCatalog {
       .zones, "Domains", "Domains, DNS, cache, and domain settings", "globe",
       "SolarGlobalFill", "SolarGlobalOutline", "Domains & DNS",
       read: ["zone.read"], write: ["zone.write"]),
-    // Experimental and hidden until Settings opts it in. A zone and a
-    // registration are different objects — a zone Cloudflare serves DNS for
-    // versus a name the account owns — so Registrar browses beside Domains once
-    // enabled. `write` carries `registrar-domains.admin` so Resources can badge
-    // Demo / partial grants as Read-only; the index itself is browse-only and
-    // suppresses `FeatureReadOnlyBanner` (see
-    // `FeatureID.showsCatalogReadOnlyBanner`).
-    feature(
-      .registrar, "Registrations", "Domains you bought on Cloudflare",
-      "checkmark.seal", "SolarGlobusFill", "SolarGlobusOutline", "Domains & DNS",
-      read: ["registrar-domains.read"], write: ["registrar-domains.admin"]),
+    // Registrar is deliberately NOT a catalog feature. A registration is not a
+    // resource the user browses for — it is one card's worth of facts about a
+    // domain they already opened, and every name Dash can show one for is
+    // already a row under Domains. Its screen is `Destination.registrarDomain`,
+    // pushed from the zone Registration card's header action, and its scopes
+    // live on `RegistrarAccess`.
     // Email Routing browses beside Domains: pick a zone, then manage routes.
     // Write scopes live on the capability for the Resources Read-only badge;
     // the domains index suppresses the catalog banner (mutations sit on
