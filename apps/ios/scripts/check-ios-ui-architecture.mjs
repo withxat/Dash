@@ -325,6 +325,59 @@ if (!sheetCardStack) {
       "DashSheetCard must reserve fixed footer height before sizing its scrolling body.",
     );
   }
+  if (!sheetCard.includes("\\.dashTrayBodyMaxHeight, contentMaxHeight")) {
+    issues.push(
+      "DashSheetCard must publish its content height budget so a tray's action band can be pinned.",
+    );
+  }
+}
+
+// A tray's action band never scrolls: DashConfirmMorph — the component behind
+// DashFormSheet and DashDetailTray, and so behind nearly every tray — must keep
+// its body and its band on opposite sides of DashTrayScrollBoundary.
+const formChrome = stripSwiftComments(
+  readFileSync(join(ROOT, "apps/ios/Dash/DashFormChrome.swift"), "utf8"),
+);
+const confirmMorph = declarationBody(
+  formChrome,
+  "struct DashConfirmMorph<Content: View, Accessory: View>: View",
+);
+const confirmMorphBody = confirmMorph
+  ? declarationBody(confirmMorph, "var body: some View")
+  : null;
+if (!confirmMorphBody) {
+  issues.push("Could not locate DashConfirmMorph's body/action split.");
+} else {
+  const boundaryIndex = confirmMorphBody.indexOf("DashTrayScrollBoundary");
+  const bodyIndex = confirmMorphBody.indexOf("bodyContent");
+  const actionIndex = confirmMorphBody.indexOf("actionContent");
+  if (
+    boundaryIndex === -1 ||
+    !(boundaryIndex < bodyIndex && bodyIndex < actionIndex)
+  ) {
+    issues.push(
+      "DashConfirmMorph must hand its body and action band to DashTrayScrollBoundary, in that order.",
+    );
+  }
+}
+
+const scrollBoundary = declarationBody(
+  dashChrome,
+  "struct DashTrayScrollBoundary<Content: View, Action: View>: View",
+);
+if (!scrollBoundary) {
+  issues.push("Could not locate DashTrayScrollBoundary.");
+} else {
+  if (!scrollBoundary.includes("DashTrayScrollBoundaryRules.bodyHeight")) {
+    issues.push(
+      "DashTrayScrollBoundary must size its scrolling region through DashTrayScrollBoundaryRules.",
+    );
+  }
+  if (!scrollBoundary.includes(".frame(height: bodyHeight)")) {
+    issues.push(
+      "DashTrayScrollBoundary must give its scroll region an exact height — a cap resolves against a proposal the card's scroll does not make.",
+    );
+  }
 }
 
 const profileTrayContent = declarationBody(

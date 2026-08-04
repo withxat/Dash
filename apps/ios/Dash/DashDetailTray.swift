@@ -13,9 +13,10 @@ struct DashDetailField {
 /// the readable home for information that a single `DashListRow` truncates. A
 /// read-only tray shows no action button; when a delete is supplied, a header
 /// trash button morphs the fields into a single-Confirm confirmation. The
-/// `accessory` slot renders below the fields — if it has buttons, the primary
-/// verb is a `DashActionButton` and the rest are `DashTrayPillButton`s, and the
-/// primary `DashActionButton` stays bottom-most (reversible pills above it).
+/// `accessory` slot is the tray's fixed action band, under the scrolling
+/// fields — if it has buttons, the primary verb is a `DashActionButton` and the
+/// rest are `DashTrayPillButton`s, and the primary `DashActionButton` stays
+/// bottom-most (reversible pills above it).
 struct DashDetailTray<Accessory: View>: View {
   let fields: [DashDetailField]
   var deleteMessage: String?
@@ -61,17 +62,16 @@ struct DashDetailTray<Accessory: View>: View {
       errorMessage: deleteError,
       action: { onDelete?() },
       headerDelete: hasDelete,
+      // The accessory is the tray's action band, not the end of its fields:
+      // pinned, so a long field list scrolls under buttons that stay put.
+      accessory: { accessory },
       content: {
-        // No inner ScrollView — the enclosing DashSheetCard scrolls the body.
+        // No inner ScrollView — DashConfirmMorph's scroll boundary owns it.
         VStack(alignment: .leading, spacing: 0) {
-          VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-              fieldRow(field)
-              if index < fields.count - 1 { DashListGroupDivider() }
-            }
+          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+            fieldRow(field)
+            if index < fields.count - 1 { DashListGroupDivider() }
           }
-          accessory
-            .padding(.top, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }

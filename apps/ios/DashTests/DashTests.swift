@@ -1892,6 +1892,29 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashTrayAnchorMath.opacity(progress: 1) == 1)
 }
 
+@Test func trayScrollBoundaryPaysForTheActionBandBeforeTheBody() {
+  // Fits: the body keeps its natural height and nothing scrolls.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 200, action: 68, available: 500) == 200)
+
+  // Outgrows the card: the band is paid for first and the body takes the rest,
+  // so the two together fill the budget exactly — the card's own body scroll
+  // stays inert and this one owns the finger.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 68, available: 500) == 432)
+
+  // Squeezed past the floor (a tall band under a raised keyboard): the body
+  // stops shrinking, the card overflows, and its scroll takes over.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 460, available: 500)
+      == DashTrayScrollBoundaryRules.minimumBody)
+
+  // No budget (outside a tray) and no measurement yet (first frame) both mean
+  // "lay out naturally" — never a zero-height region.
+  #expect(DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 68, available: nil) == nil)
+  #expect(DashTrayScrollBoundaryRules.bodyHeight(ideal: 0, action: 68, available: 500) == nil)
+}
+
 @Test @MainActor func trayAnchorSourcesMustBeOnScreenAndControlSized() {
   let bounds = CGRect(x: 0, y: 0, width: 393, height: 852)
 

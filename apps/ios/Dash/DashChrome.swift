@@ -49,6 +49,10 @@ private struct DashTrayToneKey: EnvironmentKey {
   static let defaultValue: FeatureVisualTone? = nil
 }
 
+private struct DashTrayBodyMaxHeightKey: EnvironmentKey {
+  static let defaultValue: CGFloat? = nil
+}
+
 #if DEBUG
   private struct DashTrayReduceMotionOverrideKey: EnvironmentKey {
     static let defaultValue: Bool? = nil
@@ -78,6 +82,16 @@ extension EnvironmentValues {
   var dashTrayTone: FeatureVisualTone? {
     get { self[DashTrayToneKey.self] }
     set { self[DashTrayToneKey.self] = newValue }
+  }
+
+  /// How tall the tray's content may grow before the card runs out of room —
+  /// published by `DashSheetCard`, spent by `DashTrayScrollBoundary`, which
+  /// hands what is left after its action band to the scrolling body. `nil`
+  /// outside a tray (and on the first frame, before the header is measured):
+  /// no budget, so the boundary lays out at natural height and never scrolls.
+  var dashTrayBodyMaxHeight: CGFloat? {
+    get { self[DashTrayBodyMaxHeightKey.self] }
+    set { self[DashTrayBodyMaxHeightKey.self] = newValue }
   }
 
   #if DEBUG
@@ -1859,6 +1873,22 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
     max(80, maxCardHeight - headerHeight - footerHeight)
   }
 
+  /// A tray with its own fixed footer keeps the body's bottom inset symmetric
+  /// with its top; without one, the last thing in the body is also the last
+  /// thing on the card and takes the home-indicator tuck.
+  private var bodyBottomInset: CGFloat {
+    hasFooter ? DashTheme.Sheet.bodyVertical : DashTheme.Sheet.bodyBottom
+  }
+
+  /// The height budget handed to `content()`: what the body region can show
+  /// minus its own insets. Withheld until the header has been measured —
+  /// until then `maxBodyHeight` is the whole card and a boundary that trusted
+  /// it would size its scroll region to a region that does not exist yet.
+  private var contentMaxHeight: CGFloat? {
+    guard headerHeight > 0 else { return nil }
+    return max(0, maxBodyHeight - DashTheme.Sheet.bodyVertical - bodyBottomInset)
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       header()
@@ -1876,13 +1906,11 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
         // The body owns its margins so every tray breathes the same: content
         // pieces must not add their own horizontal or bottom padding.
         content()
+          .environment(\.dashTrayBodyMaxHeight, contentMaxHeight)
           .frame(maxWidth: .infinity, alignment: .top)
           .padding(.horizontal, DashTheme.Sheet.content)
           .padding(.top, DashTheme.Sheet.bodyVertical)
-          .padding(
-            .bottom,
-            hasFooter ? DashTheme.Sheet.bodyVertical : DashTheme.Sheet.bodyBottom
-          )
+          .padding(.bottom, bodyBottomInset)
           .background {
             GeometryReader { proxy in
               Color.clear.preference(key: DashSheetBodyIdealKey.self, value: proxy.size.height)
@@ -1952,6 +1980,93 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
       transaction.disablesAnimations = reduceMotion
       withTransaction(transaction) { bodyDisplay = target }
     }
+  }
+}
+
+/// Height arithmetic for the tray's scroll boundary, kept out of the view so
+/// the one rule that decides what scrolls is testable.
+enum DashTrayScrollBoundaryRules {
+  /// The floor the scrolling body keeps whatever the action band costs. Below
+  /// it the boundary stops shrinking and the card's own body scroll takes the
+  /// overflow — a squeezed tray (a tall band under a raised keyboard) scrolls
+  /// as a whole rather than showing a body region too short to read.
+  static let minimumBody: CGFloat = 80
+
+  /// The height of the scrolling region, or `nil` for "lay out naturally".
+  ///
+  /// - `available`: the content budget from `\.dashTrayBodyMaxHeight`; `nil`
+  ///   outside a tray, where nothing constrains the card.
+  /// - `action`: the measured action band, which never scrolls and is paid
+  ///   for first.
+  /// - `ideal`: the body's own measured height; 0 before it is measured.
+  static func bodyHeight(ideal: CGFloat, action: CGFloat, available: CGFloat?) -> CGFloat? {
+    guard let available, ideal > 0 else { return nil }
+    return min(ideal, max(minimumBody, available - action))
+  }
+}
+
+private struct DashTrayBoundaryBodyIdealKey: PreferenceKey {
+  static let defaultValue: CGFloat = 0
+  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+    value = max(value, nextValue())
+  }
+}
+
+/// The tray's scroll boundary: the body scrolls, the action band under it does
+/// not. Every tray's title sits in the fixed header and its submit pill sits on
+/// the fixed floor of the card — reaching a form's action must never mean
+/// scrolling to find it, and a long list must never push it off the card.
+///
+/// The card publishes what room it has (`\.dashTrayBodyMaxHeight`); the band is
+/// measured and paid for first, and the body takes what is left, scrolling
+/// inside it. With no budget — outside a tray, or on the first frame before the
+/// header is measured — both regions lay out at natural height and the scroll
+/// view never scrolls, which is exactly what the card's own body scroll used to
+/// do on its own.
+///
+/// It nests inside the card's body scroll on purpose: sized this way the
+/// content always fits that scroll exactly, so the outer one stays inert (no
+/// bounce, no edge fade, no gesture) while this one owns the finger. Do not
+/// hoist it into `DashSheetCard`'s footer slot — body and band share the state
+/// that morphs them together (`DashConfirmMorph`'s `confirming`, its matched
+/// geometry), and a slot in the card is a different view tree.
+struct DashTrayScrollBoundary<Content: View, Action: View>: View {
+  @ViewBuilder let content: () -> Content
+  @ViewBuilder let action: () -> Action
+  @Environment(\.dashTrayBodyMaxHeight) private var available
+  @State private var bodyIdeal: CGFloat = 0
+  @State private var actionHeight: CGFloat = 0
+
+  private var bodyHeight: CGFloat? {
+    DashTrayScrollBoundaryRules.bodyHeight(
+      ideal: bodyIdeal, action: actionHeight, available: available)
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      DashFadedScrollView(
+        surface: DashTheme.Sheet.background,
+        bounceBasedOnSize: true,
+        dismissesKeyboardInteractively: true
+      ) {
+        content()
+          .frame(maxWidth: .infinity, alignment: .top)
+          .background {
+            GeometryReader { proxy in
+              Color.clear.preference(
+                key: DashTrayBoundaryBodyIdealKey.self, value: proxy.size.height)
+            }
+          }
+      }
+      // An exact height, not a cap: inside the card's scroll the incoming
+      // proposal carries no useful height, and a `maxHeight` would leave a
+      // greedy scroll view to resolve against whatever it was handed.
+      .frame(height: bodyHeight)
+
+      action()
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { actionHeight = $0 }
+    }
+    .onPreferenceChange(DashTrayBoundaryBodyIdealKey.self) { bodyIdeal = $0 }
   }
 }
 
