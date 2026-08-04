@@ -700,10 +700,12 @@ public actor CloudflareClient {
     let _: JSONValue = try await request(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/custom/\(domain)", method: "DELETE")
   }
-  public func listKVNamespaces(accountID: String, page: Int = 1) async throws -> Page<KVNamespace> {
+  public func listKVNamespaces(accountID: String, page: Int = 1, perPage: Int = 100)
+    async throws -> Page<KVNamespace>
+  {
     try await list(
       "/accounts/\(accountID)/storage/kv/namespaces",
-      query: ["page": String(page), "per_page": "100"])
+      query: ["page": String(page), "per_page": String(perPage)])
   }
   public func listKVKeys(
     accountID: String, namespaceID: String, cursor: String? = nil, prefix: String? = nil
