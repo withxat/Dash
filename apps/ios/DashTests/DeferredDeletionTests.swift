@@ -1213,9 +1213,10 @@ struct DeferredDeletionCoordinatorCoverageTests {
     model.authState = .unauthenticated
 
     model.enterDemo()
-    for _ in 0..<100 where model.authState != .authenticated {
+    for _ in 0..<100 where model.isEnteringDemo {
       try? await Task.sleep(for: .milliseconds(10))
     }
+    #expect(!model.isEnteringDemo)
     #expect(model.authState == .authenticated)
 
     let operationID = model.deferredDeletions.schedule(
@@ -1294,13 +1295,16 @@ struct DeferredDeletionCoordinatorCoverageTests {
       session: realSession,
       deferredDeletionPersistence: defaults)
 
-    await model.bootstrap()
-    #expect(model.authState == .unauthenticated)
+    // Cold-start restoration happens in AppModel.init. Keep this journal test
+    // independent of bootstrap's live Widget and File Provider teardown,
+    // which is a separate privacy boundary with its own coverage.
+    model.authState = .unauthenticated
     #expect(defaults.data(forKey: persistenceKey) == journal)
     model.enterDemo()
-    for _ in 0..<100 where model.authState != .authenticated {
+    for _ in 0..<100 where model.isEnteringDemo {
       try? await Task.sleep(for: .milliseconds(10))
     }
+    #expect(!model.isEnteringDemo)
     #expect(model.authState == .authenticated)
     #expect(defaults.data(forKey: persistenceKey) == journal)
 
