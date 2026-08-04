@@ -1764,11 +1764,10 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(ProfileTrayPhase.signOut.trayRole == .destructive)
 }
 
-@Test func signOutTrayCostsTwoTapsWhereverItIsOffered() {
-  // Settings' sign out is the same pair as the profile tray's pushed step:
-  // the row names the action at the root, and only the destructive step
-  // commits. A single-step Settings tray was the odd one out.
-  #expect(SignOutTrayStep.intro.trayRole == .root)
+@Test func settingsSignOutTrayStartsAtConfirmation() {
+  // The Settings row is the first tap, so its tray must not repeat Sign out as
+  // an intermediate menu choice before presenting the destructive decision.
+  #expect(SignOutTrayStep.initial == .confirm)
   #expect(SignOutTrayStep.confirm.trayRole == .destructive)
   #expect(ProfileTrayPhase.signOut.trayRole == SignOutTrayStep.confirm.trayRole)
 }
@@ -2450,6 +2449,13 @@ private let watchtowerDropFrames: [CGRect] = [
       ["z5", "z3", "z2", "z1", "z4"],
       pinsRaw: bootstrapped.pins,
       accountID: "acc1"
+    ) == ["z1", "z2", "z3", "z4", "z5"])
+  #expect(
+    PinnedZones.prioritized(
+      ["z5", "z3", "z2", "z1", "z4"],
+      pinsRaw: bootstrapped.pins,
+      accountID: "acc1",
+      id: { $0 }
     ) == ["z1", "z2", "z3", "z4", "z5"])
 
   // Once initialized, a deliberate empty pin set stays empty.

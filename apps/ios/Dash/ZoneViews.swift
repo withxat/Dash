@@ -12,6 +12,8 @@ struct ZonesView: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
+  @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
+  @AppStorage(PinnedZones.initializedAccountsKey) private var pinnedZonesInitialized = ""
   @State private var zones: [CloudflareZone] = []
   @State private var error: String?
   @State private var loading = true
@@ -21,6 +23,14 @@ struct ZonesView: View {
   @State private var listGeneration = 0
   @State private var showsAddDomain = false
   @State private var pageState = DashPageState()
+
+  /// Pin-first paint order. `zones` / cache stay in fetch order so pagination
+  /// and a later unpin can still recover the API sequence.
+  private var displayedZones: [CloudflareZone] {
+    guard let accountID = model.activeAccountID else { return zones }
+    return PinnedZones.prioritized(
+      zones, pinsRaw: pinnedZoneData, accountID: accountID, id: \.id)
+  }
 
   private var gridColumns: [GridItem] {
     let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
@@ -99,10 +109,11 @@ struct ZonesView: View {
   /// cards recede when fewer domains land.
   @ViewBuilder
   private func domainCardGrid(mode: DashBodyMode) -> some View {
+    let painted = displayedZones
     let count =
       mode.isPlaceholder
       ? DashBodyPlaceholderDepth.domainCards
-      : zones.count
+      : painted.count
     LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
       ForEach(0..<count, id: \.self) { index in
         Group {
@@ -116,7 +127,7 @@ struct ZonesView: View {
             )
             .dashBodyPlaceholder(true)
           } else {
-            domainCardLink(zones[index])
+            domainCardLink(painted[index])
           }
         }
         .dashBodySlot(reduceMotion: reduceMotion)
@@ -161,6 +172,7 @@ struct ZonesView: View {
     let key = FeatureCacheKey.zones(accountID)
     if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
       zones = cached
+      seedPinsIfNeeded(from: cached, accountID: accountID)
       pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
       loading = false
       error = nil
@@ -171,6 +183,7 @@ struct ZonesView: View {
     // failure path below then becomes a banner over this stale data.
     if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
       zones = stale
+      seedPinsIfNeeded(from: stale, accountID: accountID)
       pageState.rehydrate(loaded: stale.count, pageSize: Self.pageSize)
       loading = true
     }
@@ -186,6 +199,7 @@ struct ZonesView: View {
         accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
       guard generation == listGeneration, model.activeAccountID == accountID else { return }
       zones = page.items
+      seedPinsIfNeeded(from: page.items, accountID: accountID)
       pageState.absorb(
         info: page.resultInfo, received: page.items.count, loaded: zones.count,
         pageSize: Self.pageSize)
@@ -230,6 +244,21 @@ struct ZonesView: View {
       guard generation == listGeneration, model.activeAccountID == accountID else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  /// First non-empty zone load for an account seeds up to four pins so Home
+  /// and this grid have a pin-first order without requiring a manual pin.
+  private func seedPinsIfNeeded(from loaded: [CloudflareZone], accountID: String) {
+    guard !loaded.isEmpty else { return }
+    let result = PinnedZones.bootstrapped(
+      pinnedZoneData,
+      initializedAccountsRaw: pinnedZonesInitialized,
+      accountID: accountID,
+      defaults: loaded.map {
+        PinnedZone(accountID: accountID, zoneID: $0.id, name: $0.name)
+      })
+    pinnedZoneData = result.pins
+    pinnedZonesInitialized = result.initializedAccounts
   }
 }
 

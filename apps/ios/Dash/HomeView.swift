@@ -18,11 +18,20 @@ struct HomeView: View {
   @AppStorage(HomeEducation.dismissalsKey) private var educationDismissalsRaw = ""
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
+  @AppStorage(PinnedZones.initializedAccountsKey) private var pinnedZonesInitialized = ""
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoading = true
   @State private var zonesError: String?
   @State private var zonesContext: AccountRequestContext?
   @State private var zonesRequestID: UUID?
+
+  /// Pin-first order for Domains and zone pickers. Fetch/cache stay API-ordered.
+  private var displayedZones: [CloudflareZone] {
+    guard let accountID = model.activeAccountID else { return zones }
+    return PinnedZones.prioritized(
+      zones, pinsRaw: pinnedZoneData, accountID: accountID, id: \.id)
+  }
   @State private var showsAddDomain = false
   @State private var showsR2Upload = false
   @State private var showsPurgeCache = false
@@ -98,7 +107,7 @@ struct HomeView: View {
         .dashSectionReveal(1 + revealOffset)
 
         HomeDomainsSection(
-          zones: zones,
+          zones: displayedZones,
           isLoading: zonesLoading,
           error: zonesError,
           locked: isLocked(.zones),
@@ -176,7 +185,7 @@ struct HomeView: View {
       tone: FeatureVisualIdentity.tone(for: .zones),
       sourceID: HomeActionID.purgeCache.accessibilityIdentifier
     ) {
-      HomePurgeCachePicker(zones: zones) { zone in
+      HomePurgeCachePicker(zones: displayedZones) { zone in
         guard zonesContext == model.accountRequestContext else {
           showsPurgeCache = false
           return
@@ -189,7 +198,7 @@ struct HomeView: View {
       tone: FeatureVisualIdentity.tone(for: .zones),
       sourceID: HomeActionID.addDNSRecord.accessibilityIdentifier
     ) {
-      HomeDNSRecordAction(zones: zones)
+      HomeDNSRecordAction(zones: displayedZones)
     }
     .dashTray(
       isPresented: $showsCreateKVKey, title: DashL10n.string("Create KV key"),
@@ -224,14 +233,14 @@ struct HomeView: View {
       tone: FeatureVisualIdentity.tone(for: .zones),
       sourceID: HomeActionID.enableDevelopmentMode.accessibilityIdentifier
     ) {
-      HomeZoneModeAction(zones: zones, mode: .development)
+      HomeZoneModeAction(zones: displayedZones, mode: .development)
     }
     .dashTray(
       isPresented: $showsEnableUnderAttackMode, title: DashL10n.string("Under Attack mode"),
       tone: FeatureVisualIdentity.tone(for: .zones),
       sourceID: HomeActionID.enableUnderAttackMode.accessibilityIdentifier
     ) {
-      HomeZoneModeAction(zones: zones, mode: .underAttack)
+      HomeZoneModeAction(zones: displayedZones, mode: .underAttack)
     }
     .dashTray(
       isPresented: $showsEditActions, title: DashL10n.string("Edit quick actions")
@@ -429,6 +438,7 @@ struct HomeView: View {
     if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
       guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = cached
+      seedPinsIfNeeded(from: cached, accountID: context.accountID)
       zonesLoading = false
       zonesError = nil
       return
@@ -441,6 +451,7 @@ struct HomeView: View {
         accountID: context.accountID, page: 1, perPage: ZonesView.pageSize)
       guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = page.items
+      seedPinsIfNeeded(from: page.items, accountID: context.accountID)
       model.featureCache.storeZones(page.items, accountID: context.accountID)
       let catalogIsComplete: Bool
       if let totalCount = page.resultInfo?.totalCount {
@@ -493,6 +504,21 @@ struct HomeView: View {
       && zonesRequestID == requestID
       && zonesContext == context
       && model.isCurrentAccount(context)
+  }
+
+  /// First non-empty zone load for an account seeds up to four pins so Home
+  /// Domains and the Domains grid share a pin-first order without a manual pin.
+  private func seedPinsIfNeeded(from loaded: [CloudflareZone], accountID: String) {
+    guard !loaded.isEmpty else { return }
+    let result = PinnedZones.bootstrapped(
+      pinnedZoneData,
+      initializedAccountsRaw: pinnedZonesInitialized,
+      accountID: accountID,
+      defaults: loaded.map {
+        PinnedZone(accountID: accountID, zoneID: $0.id, name: $0.name)
+      })
+    pinnedZoneData = result.pins
+    pinnedZonesInitialized = result.initializedAccounts
   }
 }
 
