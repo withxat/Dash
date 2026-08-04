@@ -357,6 +357,10 @@ enum DashTheme {
     static let trayStepReturn = Animation.timingCurve(0.26, 0.08, 0.25, 1, duration: 0.22)
     static let trayStepDestructive = Animation.timingCurve(
       0.26, 0.08, 0.25, 1, duration: 0.15)
+    /// Horizontal travel of a stack-driven tray step: fly instead of teleport.
+    /// Forward pushes enter from the trailing side and exit leading; a pop
+    /// mirrors both. Small on purpose — a directional flash, not a page slide.
+    static let trayStepSlide: CGFloat = 24
     // MARK: Floating surfaces — Toast and free-moving interaction vocabulary.
     // Raw springs: call sites gate reduce-motion, and some deliberately skip the
     // gate to keep a drag-release physical.
@@ -762,6 +766,19 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .info: DashTheme.info
     case .violet: DashTheme.violet
     case .teal: DashTheme.teal
+    }
+  }
+
+  /// Label ink for text set on the `vivid` fill (toned tray submit pills).
+  /// Most vivid stops are deep in light mode and pale in dark, so adaptive
+  /// `inverse` reads on both. Brand orange (`accent`) is mid-luminance in
+  /// *both* appearances — near-white `inverse` text lands at ~2.4:1 on
+  /// `#F6821F` in light mode — so its label stays fixed near-black
+  /// (6.9:1 light, 8.4:1 dark).
+  var vividLabel: Color {
+    switch self {
+    case .accent: Color(hex: 0x171717)
+    default: DashTheme.inverse
     }
   }
 

@@ -70,7 +70,10 @@ struct ZonesView: View {
         .dashSeparateToolbarBackground()
       }
     }
-    .dashTray(isPresented: $showsAddDomain, title: "Add domain") {
+    .dashTray(
+      isPresented: $showsAddDomain, title: "Add domain",
+      tone: FeatureVisualIdentity.tone(for: .zones)
+    ) {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
         model.featureCache.remove(FeatureCacheKey.zones(accountID))
@@ -1464,6 +1467,7 @@ struct DNSRecordsView: View {
     .dashTray(
       item: $selected,
       title: { _ in "DNS record" },
+      tone: FeatureVisualIdentity.tone(for: .zones),
       content: { record in
         DNSRecordEditor(zoneID: zoneID, record: record) {
           model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
@@ -1474,6 +1478,7 @@ struct DNSRecordsView: View {
     .dashTray(
       item: $lockedRecord,
       title: { _ in "DNS record" },
+      tone: FeatureVisualIdentity.tone(for: .zones),
       content: { record in
         DashDetailTray(
           fields: [
@@ -1500,7 +1505,10 @@ struct DNSRecordsView: View {
         }
       }
     )
-    .dashTray(isPresented: $createsRecord, title: "New DNS record") {
+    .dashTray(
+      isPresented: $createsRecord, title: "New DNS record",
+      tone: FeatureVisualIdentity.tone(for: .zones)
+    ) {
       DNSRecordEditor(zoneID: zoneID, record: nil) {
         model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
         Task { await load(force: true) }

@@ -358,8 +358,70 @@ if (!profileTrayContent || !profileTrayFooter) {
   }
 }
 
-if (occurrences(mainTab, "ProfileTrayFooter(phase:") !== 1) {
+if (occurrences(mainTab, "ProfileTrayFooter(path:") !== 1) {
   issues.push("MainTabView must mount ProfileTrayFooter exactly once in tray chrome.");
+}
+
+// Tray context tone (P3): feature-launched trays carry their feature's tone,
+// while Profile / Settings trays stay neutral. Guard one representative wiring
+// on each side so a refactor cannot silently drop (or spread) the tone.
+const storageViews = stripSwiftComments(
+  readFileSync(join(ROOT, "apps/ios/Dash/StorageViews.swift"), "utf8"),
+);
+const homeView = stripSwiftComments(
+  readFileSync(join(ROOT, "apps/ios/Dash/HomeView.swift"), "utf8"),
+);
+if (!storageViews.includes("tone: FeatureVisualIdentity.tone(for: .r2)")) {
+  issues.push(
+    "StorageViews' R2 trays must pass tone: FeatureVisualIdentity.tone(for: .r2) to dashTray.",
+  );
+}
+if (!homeView.includes("tone: FeatureVisualIdentity.tone(for:")) {
+  issues.push(
+    "Home quick-action trays must pass their target feature's tone to dashTray.",
+  );
+}
+if (profileSettings.includes("tone: FeatureVisualIdentity.tone(for:")) {
+  issues.push("Profile / Settings trays must stay neutral — remove dashTray tone wiring.");
+}
+
+// Anchored tray reveal (P5): Home quick-action tiles are the tray sources —
+// the tile registers its frame and the paired tray names it via sourceID.
+// Add Domain is deliberately unanchored (the Domains section opens the same
+// tray, so no single tile owns it).
+if (!homeView.includes(".dashTraySource(id: action.accessibilityIdentifier)")) {
+  issues.push(
+    "Home quick-action tiles must register as tray sources via .dashTraySource(id:).",
+  );
+}
+if (!homeView.includes("sourceID: HomeActionID.createR2Bucket.accessibilityIdentifier")) {
+  issues.push(
+    "Home quick-action trays must anchor to their tiles via sourceID: (see createR2Bucket).",
+  );
+}
+// Only the argument list (everything before the tray's content brace) may not
+// name a sourceID.
+const addDomainArguments = homeView.match(/isPresented: \$showsAddDomain[^{]*/)?.[0] ?? "";
+if (addDomainArguments === "" || addDomainArguments.includes("sourceID:")) {
+  issues.push(
+    "The Add Domain tray must stay unanchored — the Domains section opens it too.",
+  );
+}
+if (profileSettings.includes("sourceID:") || profileSettings.includes("dashTraySource(")) {
+  issues.push("Profile / Settings trays must not use anchored (sourceID) presentation.");
+}
+
+// Result-destination flight (P6): a deliberately single-instance exploration.
+// Exactly one production tray — R2 Create bucket — opts in.
+const flightOptIns = occurrences(storageViews, ".dashTraySuccessFlight(");
+const flightElsewhere = [homeView, profileSettings, mainTab].reduce(
+  (count, source) => count + occurrences(source, ".dashTraySuccessFlight("),
+  0,
+);
+if (flightOptIns !== 1 || flightElsewhere !== 0) {
+  issues.push(
+    "dashTraySuccessFlight() must have exactly one production opt-in: R2CreateBucketSheet.",
+  );
 }
 
 if (issues.length > 0) {

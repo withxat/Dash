@@ -187,7 +187,10 @@ struct R2ObjectPreview: View {
     // stage still draw opaque on top): an opaque cover would fire the browser's
     // .onDisappear and cancel any in-flight upload the moment a row is tapped.
     .presentationBackground(.clear)
-    .dashTray(isPresented: $showsActions, title: filename) {
+    .dashTray(
+      isPresented: $showsActions, title: filename,
+      tone: FeatureVisualIdentity.tone(for: .r2)
+    ) {
       R2ObjectActionsSheet(
         bucket: bucket,
         object: object,

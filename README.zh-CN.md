@@ -4,7 +4,7 @@
 
 # Dash for Cloudflare
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
 Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 OAuth 2.0 Authorization Code + PKCE 登录，聚焦手机上日常会管的那几类 Cloudflare 资源。
 

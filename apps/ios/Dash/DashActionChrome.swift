@@ -387,7 +387,7 @@ struct DashConfirmableActions: View {
   @State private var actionPhase: DashActionPhase = .idle
   @State private var errorMessage: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
 
   private var route: Route {
     pending.map { .confirmation($0.id) } ?? .menu
@@ -424,7 +424,7 @@ struct DashConfirmableActions: View {
   private func dangerRow(_ action: DashDangerAction) -> some View {
     HStack(spacing: 12) {
       SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)
-      Text(DashL10n.ui(action.title))
+      dangerRowLabel(action)
         .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.danger)
         .lineLimit(1)
@@ -448,6 +448,25 @@ struct DashConfirmableActions: View {
         .fill(DashTheme.dangerTint)
         .matchedGeometryEffect(id: action.id, in: morph)
     }
+  }
+
+  /// The row's text layer shares a matched-geometry id with the confirm
+  /// pill's label, so the title glides into the pill instead of only the red
+  /// surface making the trip (the text morph the surface morph always implied).
+  @ViewBuilder
+  private func dangerRowLabel(_ action: DashDangerAction) -> some View {
+    let label = Text(DashL10n.ui(action.title))
+    if reduceMotion {
+      label
+    } else {
+      label.matchedGeometryEffect(id: labelMorphID(action), in: morph)
+    }
+  }
+
+  /// Companion id to the surface morph id (`action.id`); shared by
+  /// `dangerRowLabel` and the confirm `DashActionButton`'s title run.
+  private func labelMorphID(_ action: DashDangerAction) -> String {
+    "\(action.id).label"
   }
 
   private func confirmation(_ action: DashDangerAction) -> some View {
@@ -476,12 +495,11 @@ struct DashConfirmableActions: View {
           role: .destructive,
           phase: actionPhase,
           morphID: reduceMotion ? nil : action.id,
+          labelMorphID: reduceMotion ? nil : labelMorphID(action),
           morphNamespace: reduceMotion ? nil : morph,
           onSuccessPresentationCompleted: {
             guard actionPhase == .succeeded, pending?.id == action.id else { return }
-            actionPhase = .idle
-            dismiss()
-            action.onSuccessPresentationCompleted()
+            dismissAfter(action.onSuccessPresentationCompleted)
           },
           action: {
             Task {
@@ -521,15 +539,30 @@ struct DashActionButton: View {
   /// Optional matched-geometry id so a full-width pill (or danger row fill)
   /// can shrink into this confirm pill when Cancel joins the row.
   var morphID: String? = nil
+  /// Optional companion id for the title run, so the originating row's label
+  /// glides into this pill's label alongside the surface morph.
+  var labelMorphID: String? = nil
   var morphNamespace: Namespace.ID? = nil
   var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   let action: () -> Void
+  @Environment(\.dashTrayTone) private var trayTone
+  @Environment(\.dashTraySuccessFlightEnabled) private var successFlightEnabled
+  @Environment(\.dashTraySuccessFlightInProgress) private var successFlightInProgress
 
-  private var fill: Color { role == .destructive ? DashTheme.danger : DashTheme.strong }
+  /// Destructive keeps danger red whatever the tray's context. Otherwise a
+  /// toned tray colors its submit pill (Family's contextual tray) with the
+  /// tone's vivid stop; the label comes from `vividLabel`, which flips to
+  /// near-black ink for mid-luminance fills like brand orange.
+  private var fill: Color {
+    if role == .destructive { return DashTheme.danger }
+    return trayTone?.vivid ?? DashTheme.strong
+  }
   /// Danger pills stay white in both schemes — adaptive `inverse` goes dark in
-  /// Dark Mode and washes out on red. Non-destructive pills keep `inverse`.
+  /// Dark Mode and washes out on red. Non-destructive pills pair the tone's
+  /// `vividLabel` with its vivid fill, or keep `inverse` on neutral `strong`.
   private var labelForeground: Color {
-    role == .destructive ? Color(hex: 0xF5F5F5) : DashTheme.inverse
+    if role == .destructive { return Color(hex: 0xF5F5F5) }
+    return trayTone?.vividLabel ?? DashTheme.inverse
   }
 
   var body: some View {
@@ -538,6 +571,10 @@ struct DashActionButton: View {
     }
     .buttonStyle(DashPressButtonStyle())
     .disabled(phase.isActive)
+    // Explicit: the title now renders as segmented runs inside
+    // `DashMorphingLabel`, so the button names itself instead of relying on
+    // label aggregation across the segments.
+    .accessibilityLabel(DashL10n.ui(title))
     .accessibilityValue(phase.accessibilityValue)
     .dashTrayDismissDisabled(phase.isActive)
   }
@@ -556,6 +593,16 @@ struct DashActionButton: View {
           loadingColor: labelForeground,
           onSuccessPresentationCompleted: onSuccessPresentationCompleted
         )
+        // Liftoff slot for the tray host's success-check flight. The R2
+        // create flow keeps `.succeeded` mounted until the cover unmounts, so
+        // a keyboard can settle the card before dismissal without losing the
+        // current start point.
+        .background {
+          if successFlightEnabled, phase == .succeeded {
+            DashTraySuccessFlightSourceReporter()
+          }
+        }
+        .opacity(successFlightInProgress ? 0 : 1)
         .padding(.trailing, 18)
       }
 
@@ -571,6 +618,18 @@ struct DashActionButton: View {
     .dashEmbossChrome(.pigmented, shape: DashTheme.pillShape)
   }
 
+  /// The title as a character-run morphing label; a `labelMorphID` also pins
+  /// it into the shared matched-geometry space so the text layer travels with
+  /// the surface during row → confirm-pill morphs.
+  @ViewBuilder private var titleLabel: some View {
+    let label = DashMorphingLabel(text: DashL10n.ui(title))
+    if let labelMorphID, let morphNamespace {
+      label.matchedGeometryEffect(id: labelMorphID, in: morphNamespace)
+    } else {
+      label
+    }
+  }
+
   private var enamelFace: some View {
     ZStack {
       DashGrainSurface(color: fill, shape: .capsule, intensity: 0.055)
@@ -579,7 +638,9 @@ struct DashActionButton: View {
         if let icon {
           SolarIcon(asset: icon, size: 20, color: labelForeground)
         }
-        Text(DashL10n.ui(title))
+        // Status-y title swaps morph per character run instead of hard
+        // cross-fading; static titles render identically to a plain `Text`.
+        titleLabel
           .dashTextStyle(.button)
           .foregroundStyle(labelForeground)
           // Half a row wide when a cancel shares it: a long confirm verb

@@ -844,6 +844,14 @@ final class DeferredDeletionCoordinator {
     }
   }
 
+  /// Waits for one failed-operation cleanup without extending the production
+  /// meaning of `waitForActiveWork`, which deliberately excludes toast dwell.
+  func waitForFailedCleanup(of operationID: UUID) async {
+    if let task = failedCleanupTasks[operationID] {
+      await task.value
+    }
+  }
+
   private func resetBatchDeadline(
     batchID: UUID,
     to deadline: Date,

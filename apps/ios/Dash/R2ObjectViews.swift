@@ -412,7 +412,10 @@ struct R2BucketSettingsView: View {
     )
     .refreshable { await load(force: true) }
     .task { await load() }
-    .dashTray(isPresented: $addsDomain, title: "Add custom domain") {
+    .dashTray(
+      isPresented: $addsDomain, title: "Add custom domain",
+      tone: FeatureVisualIdentity.tone(for: .r2)
+    ) {
       R2AddDomainForm(bucket: bucket) {
         await load(force: true)
       }
@@ -420,6 +423,7 @@ struct R2BucketSettingsView: View {
     .dashTray(
       item: $selectedDomain,
       title: { $0.domain },
+      tone: FeatureVisualIdentity.tone(for: .r2),
       content: { domain in
         DashDetailTray(
           fields: domain.detailFields,

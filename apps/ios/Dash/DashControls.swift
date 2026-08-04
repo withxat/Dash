@@ -869,3 +869,155 @@ struct DashTextTabs<Selection: Hashable>: View {
     }
   }
 }
+
+// MARK: - Morphing label
+
+/// The `Character`-level common prefix / suffix split behind
+/// `DashMorphingLabel`, extracted so the diff is unit-testable. Operating on
+/// `Character` means CJK, emoji, and combining sequences segment correctly —
+/// always diff *localized* display strings, never catalog keys.
+struct DashMorphingLabelSegments: Equatable {
+  var prefix: String
+  var changed: String
+  var suffix: String
+
+  /// Resting state: the whole string is the changeable segment, so the first
+  /// morph is free to keep whatever affixes the next string shares.
+  init(text: String) {
+    prefix = ""
+    changed = text
+    suffix = ""
+  }
+
+  /// Splits `new` into (shared prefix, changed run, shared suffix) against
+  /// `old`. The two shared runs never overlap: the suffix scan stops at the
+  /// prefix boundary, so `"aa" → "aba"` yields `("a", "b", "a")`, not a
+  /// double-counted middle.
+  init(from old: String, to new: String) {
+    let oldChars = Array(old)
+    let newChars = Array(new)
+    let maxShared = min(oldChars.count, newChars.count)
+    var head = 0
+    while head < maxShared, oldChars[head] == newChars[head] { head += 1 }
+    var tail = 0
+    while tail < maxShared - head,
+      oldChars[oldChars.count - 1 - tail] == newChars[newChars.count - 1 - tail]
+    { tail += 1 }
+    prefix = String(newChars[..<head])
+    changed = String(newChars[head..<(newChars.count - tail)])
+    suffix = String(newChars[(newChars.count - tail)...])
+  }
+
+  var joined: String { prefix + changed + suffix }
+}
+
+/// Single-line label that morphs between strings by holding the shared
+/// characters still and dissolving only the run that changed (Family's
+/// Continue → Confirm move): "Delete" → "Delete 3" keeps "Delete" planted
+/// while " 3" blurs in and the layout springs over.
+///
+/// The swap is two-phase: the old string is first re-segmented on the new
+/// diff's boundaries in a no-animation transaction (identical glyphs, so the
+/// frame is invisible), then the changed run cross-dissolves one tick later —
+/// otherwise a second morph on an already-split label would briefly render
+/// shared characters twice (once in the settled prefix, once in the outgoing
+/// middle). Font and color inherit from the caller (`dashTextStyle` /
+/// `foregroundStyle`).
+///
+/// Segmented `HStack` layout breaks wrapping and per-`Text` scale factors, so
+/// this is hard-wired single-line: buttons, badges, and capsule labels only —
+/// multi-line copy keeps plain `Text`. Purely numeric changes keep
+/// `.contentTransition(.numericText())` instead; rolling digits are the better
+/// primitive there. Reduce Motion renders one `Text` with a plain opacity
+/// swap and no positional shift.
+struct DashMorphingLabel: View {
+  /// Phase-two payload: the animated half of a morph, keyed so a newer morph
+  /// (or a Reduce Motion reset) invalidates a marker that has not fired yet.
+  private struct PendingMorph: Equatable {
+    let generation: Int
+    let target: DashMorphingLabelSegments
+  }
+
+  let text: String
+
+  @State private var segments: DashMorphingLabelSegments
+  @State private var pendingMorph: PendingMorph?
+  /// Marker identity — each morph inserts a fresh marker so `onAppear` fires.
+  @State private var generation = 0
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  init(text: String) {
+    self.text = text
+    _segments = State(initialValue: DashMorphingLabelSegments(text: text))
+  }
+
+  var body: some View {
+    Group {
+      if reduceMotion {
+        Text(text)
+          .contentTransition(.opacity)
+          .animation(DashTheme.Motion.reduced, value: text)
+      } else {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+          Text(segments.prefix)
+          Text(segments.changed)
+            .id(segments.changed)
+            .transition(.dashMorph)
+          Text(segments.suffix)
+        }
+        // Phase two rides a zero-sized marker: its `onAppear` only fires once
+        // SwiftUI has built the hierarchy that contains the phase-one aligned
+        // segments, which is the render barrier a bare `Task` cannot promise —
+        // coalesced writes would resurrect the duplicated-glyph artifact.
+        .overlay {
+          if let pendingMorph {
+            Color.clear
+              .frame(width: 0, height: 0)
+              .id(pendingMorph.generation)
+              .onAppear {
+                guard self.pendingMorph == pendingMorph else { return }
+                withAnimation(DashTheme.Motion.morph) {
+                  self.pendingMorph = nil
+                  segments = pendingMorph.target
+                }
+              }
+          }
+        }
+      }
+    }
+    .lineLimit(1)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(text)
+    // Outside the Reduce Motion branch: the segments must track the text even
+    // while the plain-Text path renders, or toggling Reduce Motion back off
+    // would resurface a stale split.
+    .onChange(of: text) { old, new in
+      if reduceMotion {
+        var freeze = Transaction()
+        freeze.disablesAnimations = true
+        withTransaction(freeze) {
+          pendingMorph = nil
+          segments = DashMorphingLabelSegments(text: new)
+        }
+      } else {
+        beginMorph(from: old, to: new)
+      }
+    }
+  }
+
+  private func beginMorph(from old: String, to new: String) {
+    let target = DashMorphingLabelSegments(from: old, to: new)
+    // Phase one: repaint `old` on the new boundaries without animation. Same
+    // characters, same positions — invisible, but now the outgoing middle is
+    // exactly the run that differs. The marker carries phase two.
+    var aligned = target
+    aligned.changed = String(old.dropFirst(target.prefix.count).dropLast(target.suffix.count))
+    generation += 1
+    var freeze = Transaction()
+    freeze.disablesAnimations = true
+    withTransaction(freeze) {
+      segments = aligned
+      pendingMorph = PendingMorph(generation: generation, target: target)
+    }
+  }
+}

@@ -4,7 +4,7 @@
 
 # Dash for Cloudflare
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 Dash is a native iPhone Cloudflare client built with SwiftUI. It signs in with OAuth 2.0 Authorization Code + PKCE and focuses on the day-to-day resources people manage from a phone.
 

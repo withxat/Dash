@@ -133,8 +133,18 @@ final class DashToastCenter {
     return owner
   }
 
-  func success(_ message: String, title: String? = nil, haptic: Bool = true) {
-    show(DashToast(kind: .success, title: title, message: message), haptic: haptic)
+  /// Returns the new toast's identity so callers that animate toward it (the
+  /// tray success-check flight) can require an exact landing match.
+  @discardableResult
+  func success(
+    _ message: String,
+    title: String? = nil,
+    duration: TimeInterval? = nil,
+    haptic: Bool = true
+  ) -> DashToast.ID {
+    let toast = DashToast(kind: .success, title: title, message: message, duration: duration)
+    show(toast, haptic: haptic)
+    return toast.id
   }
 
   func error(_ message: String, title: String? = nil, haptic: Bool = true) {
@@ -532,13 +542,14 @@ struct DashToastHost: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var dragOffset: CGFloat = 0
+  var successFlightInProgress = false
 
   private var toast: DashToast? { model.toasts.current }
 
   var body: some View {
     Group {
       if let toast {
-        DashToastCard(toast: toast)
+        DashToastCard(toast: toast, hidesLeadingMark: successFlightInProgress)
           .padding(.horizontal, DashTheme.Toast.horizontalMargin)
           // Main canvas ignores the top safe area; land on the same band as
           // the floated avatar (safe area + chrome inset), not tray margins.
@@ -553,6 +564,7 @@ struct DashToastHost: View {
               dismissAnimated()
             }
           }
+          .allowsHitTesting(!successFlightInProgress)
       }
     }
     .frame(maxWidth: .infinity, alignment: .top)
@@ -627,6 +639,7 @@ private struct DashToastCard: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let toast: DashToast
+  var hidesLeadingMark = false
 
   private var accent: Color {
     switch toast.kind {
@@ -695,18 +708,33 @@ private struct DashToastCard: View {
 
   @ViewBuilder
   private var leadingMark: some View {
-    if let phase = toast.actionPhase {
-      DashActionStatusIcon(
-        phase: phase,
-        loadingColor: DashTheme.brand,
-        successColor: DashTheme.success,
-        size: 20,
-        lineWidth: 2.5
-      )
-    } else {
-      SolarIcon(asset: kindIcon, size: 20, color: accent)
-        .accessibilityHidden(true)
+    Group {
+      if let phase = toast.actionPhase {
+        DashActionStatusIcon(
+          phase: phase,
+          loadingColor: DashTheme.brand,
+          successColor: DashTheme.success,
+          size: 20,
+          lineWidth: 2.5
+        )
+      } else {
+        SolarIcon(asset: kindIcon, size: 20, color: accent)
+          .accessibilityHidden(true)
+      }
     }
+    // Landing mark for the tray host's success-check flight; unobserved on
+    // the main canvas host. The toast identity rides along so a flight can
+    // never land on an unrelated success toast holding the slot.
+    .background {
+      if toast.kind == .success {
+        GeometryReader { proxy in
+          Color.clear.preference(
+            key: DashToastLeadingMarkPreferenceKey.self,
+            value: DashToastLeadingMark(id: toast.id, frame: proxy.frame(in: .global)))
+        }
+      }
+    }
+    .opacity(hidesLeadingMark ? 0 : 1)
   }
 
   private var accessibilityLabel: String {
@@ -740,7 +768,9 @@ private struct DashToastCard: View {
 extension View {
   /// Mounts the shared toast host above this surface. Call once on the main
   /// canvas and again inside tray covers so toasts clear the dimmed sheet.
-  func dashToastHost() -> some View {
-    overlay(alignment: .top) { DashToastHost() }
+  func dashToastHost(successFlightInProgress: Bool = false) -> some View {
+    overlay(alignment: .top) {
+      DashToastHost(successFlightInProgress: successFlightInProgress)
+    }
   }
 }

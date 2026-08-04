@@ -19,7 +19,9 @@ struct DashApp: App {
     GlobeHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
     #if DEBUG
       let model: AppModel
-      if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion") {
+      if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion")
+        || ProcessInfo.processInfo.arguments.contains("-uiTestR2TrayFlight")
+      {
         DeferredDeletionUITestBackend.reset()
         model = AppModel(
           tokenStore: DeferredDeletionUITestTokenStore(),
@@ -96,7 +98,15 @@ struct DashApp: App {
   var body: some Scene {
     WindowGroup {
       #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
+        if ProcessInfo.processInfo.arguments.contains("-uiTestR2TrayFlight") {
+          R2TrayFlightTestHost()
+            .tint(DashTheme.brand)
+            .environment(model)
+        } else if ProcessInfo.processInfo.arguments.contains("-uiTestTrayMotion") {
+          TrayMotionTestHost()
+            .tint(DashTheme.brand)
+            .environment(model)
+        } else if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
           KeyboardDismissalTestHost()
             .tint(DashTheme.brand)
             .environment(model)
@@ -401,6 +411,92 @@ private struct RootWithSplash: View {
 }
 
 #if DEBUG
+  private struct R2TrayFlightTestHost: View {
+    @Environment(AppModel.self) private var model
+    private let sourceID = "ui-test-r2-create-source"
+    @State private var ready = false
+    @State private var presentsTray = false
+    @State private var created = false
+    @State private var flightRan = false
+
+    var body: some View {
+      VStack(spacing: 12) {
+        if ready {
+          Button {
+            presentsTray = true
+          } label: {
+            Text(verbatim: "Open R2 create")
+              .frame(width: 160, height: 72)
+          }
+          .accessibilityIdentifier(sourceID)
+          .dashTraySource(id: sourceID)
+        } else {
+          ProgressView()
+        }
+        if created { Text(verbatim: "Bucket created") }
+        if flightRan { Text(verbatim: "Success flight ran") }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .dashTray(
+        isPresented: $presentsTray,
+        title: "Create R2 bucket",
+        tone: FeatureVisualIdentity.tone(for: .r2),
+        sourceID: sourceID
+      ) {
+        R2CreateBucketSheet { created = true }
+      }
+      .dashToastHost()
+      .onReceive(
+        NotificationCenter.default.publisher(for: .dashTraySuccessFlightDidBegin)
+      ) { _ in
+        flightRan = true
+      }
+      .task {
+        model.activeAccountID = "ui-account"
+        model.grantedScopes = DashAuthorizationScopes.core
+        model.selectedScopes = DashAuthorizationScopes.core
+        ready = true
+      }
+    }
+  }
+
+  private struct TrayMotionTestHost: View {
+    private let sourceID = "ui-test-tray-source"
+    @State private var presentsTray = false
+    @State private var reduceMotion = false
+
+    var body: some View {
+      VStack {
+        Button {
+          presentsTray = true
+        } label: {
+          Text(verbatim: "Open anchored tray")
+            .frame(width: 160, height: 72)
+        }
+        .accessibilityIdentifier(sourceID)
+        .dashTraySource(id: sourceID)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .dashTray(
+        isPresented: $presentsTray,
+        title: "Actions",
+        sourceID: sourceID
+      ) {
+        VStack(spacing: 16) {
+          Text(verbatim: "Tray content")
+          Button {
+            reduceMotion = true
+          } label: {
+            Text(verbatim: "Enable Reduce Motion")
+          }
+          .accessibilityIdentifier("ui-test-enable-reduce-motion")
+        }
+        .frame(maxWidth: .infinity, minHeight: 120)
+      }
+      .dashTrayTestReduceMotionOverride(reduceMotion)
+    }
+  }
+
   private struct KeyboardDismissalTestHost: View {
     @State private var text = ""
     @State private var presentsForm = true
@@ -543,6 +639,23 @@ private struct RootWithSplash: View {
         path.removeFirst("/client/v4".count)
       }
       let parts = path.split(separator: "/").map(String.init)
+      let method = (request.httpMethod ?? "GET").uppercased()
+      if parts == ["accounts", "ui-account", "r2", "buckets"], method == "POST" {
+        return (
+          200,
+          """
+          {
+            "success": true,
+            "errors": [],
+            "messages": [],
+            "result": {
+              "name": "ui-bucket",
+              "creation_date": "2026-08-04T00:00:00Z"
+            }
+          }
+          """
+        )
+      }
       guard
         parts.count >= 3,
         parts[0] == "zones",
@@ -550,7 +663,6 @@ private struct RootWithSplash: View {
         parts[2] == "dns_records"
       else { return missingResponse }
 
-      let method = (request.httpMethod ?? "GET").uppercased()
       if parts.count == 3, method == "GET" {
         let records = recordsJSON
         let count = lock.withLock { recordJSONByID.count - deletedRecordIDs.count }
