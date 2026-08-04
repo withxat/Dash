@@ -318,7 +318,7 @@ struct DeferredDeletionCoordinatorCoverageTests {
     #expect(coordinator.operations[operationID]?.state == .failed)
 
     await cleanupSleeper.fireNext()
-    await Task.yield()
+    await coordinator.waitForFailedCleanup(of: operationID)
     #expect(coordinator.operations[operationID] == nil)
   }
 
@@ -354,7 +354,7 @@ struct DeferredDeletionCoordinatorCoverageTests {
     #expect(coordinator.operations[operationID]?.state == .failed)
 
     await cleanupSleeper.fireNext()
-    await Task.yield()
+    await coordinator.waitForFailedCleanup(of: operationID)
     #expect(coordinator.operations[operationID] == nil)
   }
 
@@ -1552,7 +1552,7 @@ struct DeferredDeletionCoordinatorCoverageTests {
 
     coordinator.refreshLocalizedPresentation()
     await cleanupSleeper.fireNext()
-    await Task.yield()
+    await coordinator.waitForFailedCleanup(of: operationID)
 
     #expect(coordinator.operations[operationID] == nil)
     #expect(toasts.current == nil)
