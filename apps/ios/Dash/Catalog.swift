@@ -91,6 +91,9 @@ enum Destination: Hashable {
   case pushAlerts
   /// Watchtower notification inbox (Cloudflare history + Dash detections).
   case watchtowerInbox
+  /// Cloudflare's own status page (cloudflarestatus.com), pushed from the
+  /// Watchtower status panel. Public data — no scopes, no account.
+  case cloudflareStatus
   /// Account-level Email Routing destination addresses.
   case emailAddresses
   /// One Cloudflare Registrar domain, keyed on its FQDN. The account's index is

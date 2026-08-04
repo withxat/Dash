@@ -64,6 +64,9 @@ enum FeatureCacheKey {
     "rumMetrics:\(siteTag):\(days)"
   }
   static func zoneRdap(_ zoneID: String) -> String { "zoneRdap:\(zoneID)" }
+  /// Account-independent: the status page is global truth. The snapshot type
+  /// is deliberately not Codable, so this never reaches the disk mirror.
+  static let cloudflareStatus = "cloudflareStatus"
   static func auditLogs(_ accountID: String) -> String { "auditLogs:\(accountID)" }
   static func registrarDomains(_ accountID: String) -> String {
     "registrarDomains:\(accountID)"

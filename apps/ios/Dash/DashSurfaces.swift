@@ -1797,12 +1797,26 @@ enum StatusToken: String, CaseIterable, Sendable {
   case suspended
   case redemptionPeriod
   case pendingDelete
-  // Cloudflare Tunnel
+  // Cloudflare Tunnel. `degraded` is shared with status-page components —
+  // one English word, one translation.
   case healthy
   case degraded
   case down
   case inactive
   case protected
+  // Cloudflare status page (cloudflarestatus.com). Page indicator…
+  case operational
+  case minorOutage
+  case majorOutage
+  case criticalOutage
+  // …component-only states…
+  case partialOutage
+  case underMaintenance
+  // …and the incident lifecycle.
+  case investigating
+  case identified
+  case monitoring
+  case resolved
 
   enum Presentation: Equatable {
     /// Quiet trailing label or check — never a colored capsule.
@@ -1820,27 +1834,31 @@ enum StatusToken: String, CaseIterable, Sendable {
 
   var presentation: Presentation {
     switch self {
-    case .current, .success, .verified, .ready, .registered, .healthy, .protected:
+    case .current, .success, .verified, .ready, .registered, .healthy, .protected,
+      .operational, .resolved:
       .quiet
     case .route, .readOnly, .locked, .unread, .failed, .inProgress, .canceled, .skipped,
       .unknown, .unverified, .misconfigured, .unlocked, .managed, .disabled,
       .registrationPending, .expired, .suspended, .redemptionPeriod, .pendingDelete, .degraded,
-      .down, .inactive:
+      .down, .inactive, .minorOutage, .majorOutage, .criticalOutage, .partialOutage,
+      .underMaintenance, .investigating, .identified, .monitoring:
       .capsule
     }
   }
 
   var tone: Tone {
     switch self {
-    case .current, .success, .verified, .ready, .registered, .healthy, .protected:
+    case .current, .success, .verified, .ready, .registered, .healthy, .protected,
+      .operational, .resolved:
       .success
-    case .readOnly, .locked, .unverified, .unlocked, .degraded:
+    case .readOnly, .locked, .unverified, .unlocked, .degraded, .minorOutage, .partialOutage,
+      .investigating, .identified:
       .warning
     case .failed, .canceled, .misconfigured, .expired, .suspended, .redemptionPeriod,
-      .pendingDelete, .down:
+      .pendingDelete, .down, .majorOutage, .criticalOutage:
       .danger
     case .route, .unread, .inProgress, .skipped, .unknown, .managed, .disabled,
-      .registrationPending, .inactive:
+      .registrationPending, .inactive, .underMaintenance, .monitoring:
       .info
     }
   }
@@ -1879,6 +1897,16 @@ enum StatusToken: String, CaseIterable, Sendable {
     case .down: DashL10n.string("Down")
     case .inactive: DashL10n.string("Inactive")
     case .protected: DashL10n.string("Protected")
+    case .operational: DashL10n.string("Operational")
+    case .minorOutage: DashL10n.string("Minor outage")
+    case .majorOutage: DashL10n.string("Major outage")
+    case .criticalOutage: DashL10n.string("Critical outage")
+    case .partialOutage: DashL10n.string("Partial outage")
+    case .underMaintenance: DashL10n.string("Maintenance")
+    case .investigating: DashL10n.string("Investigating")
+    case .identified: DashL10n.string("Identified")
+    case .monitoring: DashL10n.string("Monitoring")
+    case .resolved: DashL10n.string("Resolved")
     }
   }
 
@@ -1946,6 +1974,40 @@ enum StatusToken: String, CaseIterable, Sendable {
       self = .inactive
     default:
       self = .unknown
+    }
+  }
+
+  /// Status-page mappings switch over the package's typed enums with no
+  /// `default:`, so a vocabulary addition in `CloudflareStatus` cannot compile
+  /// without choosing a badge here.
+  init(statusIndicator: CloudflareStatusSummary.Indicator) {
+    switch statusIndicator {
+    case .none: self = .operational
+    case .minor: self = .minorOutage
+    case .major: self = .majorOutage
+    case .critical: self = .criticalOutage
+    case .unknown: self = .unknown
+    }
+  }
+
+  init(statusComponent: CloudflareStatusComponent.Status) {
+    switch statusComponent {
+    case .operational: self = .operational
+    case .degradedPerformance: self = .degraded
+    case .partialOutage: self = .partialOutage
+    case .majorOutage: self = .majorOutage
+    case .underMaintenance: self = .underMaintenance
+    case .unknown: self = .unknown
+    }
+  }
+
+  init(statusIncident: CloudflareStatusIncident.Status) {
+    switch statusIncident {
+    case .investigating: self = .investigating
+    case .identified: self = .identified
+    case .monitoring: self = .monitoring
+    case .resolved, .postmortem: self = .resolved
+    case .unknown: self = .unknown
     }
   }
 }

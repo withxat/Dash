@@ -423,6 +423,7 @@ struct DestinationRoutedContent: View {
       case .auditLogs: AuditLogView()
       case .pushAlerts: PushAlertsView()
       case .watchtowerInbox: WatchtowerInboxView()
+      case .cloudflareStatus: CloudflareStatusView()
       case .emailAddresses: EmailDestinationAddressesView()
       case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
       case .chartDetail(let detail): DashChartDetailView(detail: detail)

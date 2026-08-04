@@ -19,6 +19,7 @@
 		B00000000000000000000008 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000008 /* HomeView.swift */; };
 		B00000000000000000000009 /* FeatureCatalogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000009 /* FeatureCatalogView.swift */; };
 		B0000000000000000000000A /* WatchtowerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000A /* WatchtowerView.swift */; };
+		B00000000000000000000223 /* CloudflareStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000223 /* CloudflareStatusView.swift */; };
 		B0000000000000000000000B /* FeatureViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000B /* FeatureViews.swift */; };
 		B0000000000000000000000C /* StorageViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000C /* StorageViews.swift */; };
 		B00000000000000000000140 /* FileTypeIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000140 /* FileTypeIcons.swift */; };
@@ -242,6 +243,7 @@
 		F00000000000000000000008 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		F00000000000000000000009 /* FeatureCatalogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureCatalogView.swift; sourceTree = "<group>"; };
 		F0000000000000000000000A /* WatchtowerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerView.swift; sourceTree = "<group>"; };
+		F00000000000000000000223 /* CloudflareStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudflareStatusView.swift; sourceTree = "<group>"; };
 		F0000000000000000000000B /* FeatureViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureViews.swift; sourceTree = "<group>"; };
 		F0000000000000000000000C /* StorageViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageViews.swift; sourceTree = "<group>"; };
 		F00000000000000000000142 /* KVJSONFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KVJSONFormatting.swift; sourceTree = "<group>"; };
@@ -487,6 +489,7 @@
 				F00000000000000000000039 /* DashDetailTray.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
+				F00000000000000000000223 /* CloudflareStatusView.swift */,
 				F000000000000000000001CF /* ChartDetailView.swift */,
 				F000000000000000000001FB /* ChartTrendShared.swift */,
 				F000000000000000000001D1 /* DashCharts.swift */,
@@ -989,6 +992,7 @@
 				B00000000000000000000149 /* WebAnalyticsView.swift in Sources */,
 				B0000000000000000000001D /* DashDetailTray.swift in Sources */,
 				B0000000000000000000000A /* WatchtowerView.swift in Sources */,
+				B00000000000000000000223 /* CloudflareStatusView.swift in Sources */,
 				B000000000000000000001CF /* ChartDetailView.swift in Sources */,
 				B000000000000000000001FB /* ChartTrendShared.swift in Sources */,
 				B000000000000000000001D1 /* DashCharts.swift in Sources */,

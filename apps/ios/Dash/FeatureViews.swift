@@ -106,7 +106,7 @@ struct FeatureWriteAccessNotice: View {
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
   case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
-    .watchtowerInbox:
+    .watchtowerInbox, .cloudflareStatus:
     nil
   #if DEBUG
     case .debug: nil
@@ -136,7 +136,8 @@ func featureID(for destination: Destination) -> FeatureID? {
 /// include them. See DashAuthorizationScopes.initialReadOnly.
 func readScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .profile, .settings, .settingsAccounts, .about, .openSource, .watchtowerInbox:
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .watchtowerInbox,
+    .cloudflareStatus:
     []
   #if DEBUG
     case .debug:
@@ -180,7 +181,7 @@ func readScopes(for destination: Destination) -> Set<String> {
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
   case .settings, .settingsAccounts, .about, .openSource, .auditLogs,
-    .watchtowerInbox, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
+    .watchtowerInbox, .cloudflareStatus, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   #if DEBUG
     case .debug:
