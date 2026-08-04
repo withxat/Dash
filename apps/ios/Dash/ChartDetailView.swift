@@ -1,3 +1,4 @@
+import CloudflareAPI
 import Foundation
 import SwiftDitherKit
 import SwiftUI
@@ -148,6 +149,25 @@ enum DashChartDetailContent: Hashable, Sendable {
   case line(points: [DashChartDataPoint], series: [DitherSeries])
 }
 
+/// A geographic breakdown of the very metric a detail plots, carried into the
+/// push as data.
+///
+/// A breakdown of one metric is not a second metric: the source screen shows
+/// that metric once — its total over its history — and the map that says where
+/// those events came from belongs behind the same tap, not beside the card.
+/// On the detail it stands in for the exact-value table, which only spells out
+/// the plot the user is already looking at.
+/// `buckets` are label / count pairs ranked by the pushing screen; a label is
+/// an ISO 3166-1 alpha-2 code wherever Cloudflare resolved one, and anything
+/// else still renders as a plain row.
+struct DashChartCountryBreakdown: Hashable, Sendable {
+  /// Catalog key for the section title.
+  let title: String
+  let buckets: [FirewallEventsBucket]
+  /// Already-localized sentence describing the whole breakdown.
+  let accessibilitySummary: String
+}
+
 /// One time-range payload inside a chart detail. Shared title / axis formats
 /// live on `DashChartDetail`; this carries only what changes with the tab.
 struct DashChartDetailRange: Hashable, Sendable {
@@ -179,6 +199,13 @@ struct DashChartDetail: Hashable, Sendable {
   /// Initial tab when `ranges` is non-empty — matches the outer screen's
   /// current time dimension at the moment of the push.
   let selectedRange: AnalyticsRange?
+  /// Where the plotted events came from, when the source has that dimension.
+  /// Frozen at push time like every other field here, and shared across tabs:
+  /// it describes the metric, not one window of it.
+  ///
+  /// Setting it takes the exact-value table off the page — the breakdown is
+  /// the reading the table cannot give.
+  let countryBreakdown: DashChartCountryBreakdown?
 
   init(
     title: String,
@@ -194,7 +221,8 @@ struct DashChartDetail: Hashable, Sendable {
     featureID: FeatureID? = nil,
     readScopes: Set<String> = [],
     ranges: [DashChartDetailRange] = [],
-    selectedRange: AnalyticsRange? = nil
+    selectedRange: AnalyticsRange? = nil,
+    countryBreakdown: DashChartCountryBreakdown? = nil
   ) {
     self.title = title
     self.rangeLabel = rangeLabel
@@ -210,6 +238,7 @@ struct DashChartDetail: Hashable, Sendable {
     self.readScopes = readScopes
     self.ranges = ranges
     self.selectedRange = selectedRange
+    self.countryBreakdown = countryBreakdown
   }
 
   var showsRangeTabs: Bool { ranges.count >= 2 }
@@ -393,13 +422,23 @@ struct DashChartDetailView: View {
         .frame(maxWidth: .infinity)
         .frame(height: chartHeight)
         .dashSectionBoundary()
-      // Home's Shortcuts / Recently used frame, emitted lazily: the table can
-      // run to a few hundred rows, which is more than the eager
-      // `DashInfoGroup` stack should hold.
-      dashTwoToneGroupHeader(title: "Details")
-        .dashSectionBoundary()
-      dashTwoToneCardRows(items: tableRows) { row in
-        DashChartTableRow(row: row)
+      // A breakdown replaces the table rather than sitting above it. The table
+      // only transcribes the plot — one row per point — so it earns the page
+      // when the page has nothing else to say about the data; where the events
+      // came from is a second reading of the same series, and the transcript
+      // under it would be furniture the user scrolls past.
+      if let countryBreakdown = detail.countryBreakdown {
+        DashChartCountryBreakdownSection(breakdown: countryBreakdown)
+          .dashSectionBoundary()
+      } else {
+        // Home's Shortcuts / Recently used frame, emitted lazily: the table can
+        // run to a few hundred rows, which is more than the eager
+        // `DashInfoGroup` stack should hold.
+        dashTwoToneGroupHeader(title: "Details")
+          .dashSectionBoundary()
+        dashTwoToneCardRows(items: tableRows) { row in
+          DashChartTableRow(row: row)
+        }
       }
     }
     .detailHeader(

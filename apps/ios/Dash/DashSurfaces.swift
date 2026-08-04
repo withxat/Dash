@@ -350,6 +350,13 @@ struct DashCollapsedChartCard: View {
   /// reserved title lines over the total and trend — instead of a title-only
   /// strip above the sparkline.
   var summaryValue: String? = nil
+  /// Catalog key naming the window the total covers ("Last 24 hours").
+  ///
+  /// For a card that stands alone: a total needs its window stated, and a lone
+  /// card has no totals panel or screen-level range control above it to say so.
+  /// Paired half-width cards must leave it nil — one card carrying a caption
+  /// beside one that does not would break their shared height.
+  var caption: String? = nil
   var trend: DashChartTrend? = nil
   let data: [DitherDatum]
   let series: [DitherSeries]
@@ -372,6 +379,9 @@ struct DashCollapsedChartCard: View {
     summaryValue != nil || trend != nil
   }
 
+  /// The caption is deliberately absent: `accessibilitySummary` already names
+  /// the window in a sentence, and reading both makes VoiceOver state the range
+  /// twice in a row.
   private var combinedAccessibilityLabel: String {
     let change =
       trend?.formattedPercentage.map {
@@ -447,6 +457,12 @@ struct DashCollapsedChartCard: View {
           DashCollapsedChartTrendLabel(trend: trend)
           Spacer(minLength: 4)
         }
+      }
+      if let caption {
+        Text(DashL10n.ui(caption))
+          .dashTextStyle(.caption)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(1)
       }
     }
     .padding(.horizontal, DashTheme.Spacing.card)
@@ -2375,6 +2391,9 @@ struct DashCollapsedChartPlaceholder: View {
   var title: String?
   /// Matches `DashCollapsedChartCard` when it carries a total + trend.
   var showsMetricHeader = false
+  /// Same catalog key the live card takes, so the window line is already in
+  /// place when the total lands over it.
+  var caption: String?
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private var panelShape: RoundedRectangle {
@@ -2403,6 +2422,12 @@ struct DashCollapsedChartPlaceholder: View {
             .dashSkeletonFill(DashSkeletonStyle.strong)
             .frame(width: 64, height: 22)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        if let caption {
+          Text(DashL10n.ui(caption))
+            .dashTextStyle(.caption)
+            .foregroundStyle(DashTheme.subtle)
+            .lineLimit(1)
         }
       }
       .padding(.horizontal, DashTheme.Spacing.card)
