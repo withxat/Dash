@@ -1,6 +1,5 @@
 import CloudflareAPI
 import SwiftUI
-import UIKit
 
 private enum PushAlertScopes {
   static let read = readScopes(for: .pushAlerts)
@@ -8,37 +7,22 @@ private enum PushAlertScopes {
   static let all = read.union(write)
 }
 
-/// Cloudflare → APNs push rows, emitted into Settings' Watchtower section
-/// beside the local notification toggle: both answer "what reaches this
-/// iPhone", and splitting them across two sections read as two features.
+/// Cloudflare → webhook → APNs controls. Delivery is provisioned by default;
+/// Settings only exposes policy management, delivery promotion, and an
+/// explicit retry when automatic setup could not finish.
 struct PushAlertsSettingsRows: View {
   @Environment(AppModel.self) private var model
-  @State private var pushEnabled = false
-  @State private var pushBusy = false
-  @State private var pushError: String?
-  @State private var testBusy = false
+  @State private var pushReady = false
+  @State private var setupBusy = false
+  @State private var setupError: String?
   @State private var isProvisional = false
+
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
       if !model.hasScopes(PushAlertScopes.all) {
         DashAuthorizationDisclosure()
           .padding(.bottom, 8)
       }
-
-      SettingsPlainToggleRow(
-        title: DashL10n.string("Push alerts"),
-        icon: SolarAsset.bolt,
-        isOn: Binding(
-          get: { pushEnabled },
-          set: { newValue in
-            pushEnabled = newValue
-            Task { await setPushEnabled(newValue) }
-          }
-        ),
-        isEnabled: !pushBusy && model.configuration.pushBaseURL != nil,
-        isLoading: pushBusy
-      )
-      .accessibilityIdentifier("Push alerts")
 
       if model.configuration.pushBaseURL == nil {
         DashNotice(
@@ -48,14 +32,23 @@ struct PushAlertsSettingsRows: View {
         .padding(.bottom, 8)
       }
 
-      if let pushError {
-        DashNotice(kind: .error, message: pushError)
+      if let setupError {
+        DashNotice(kind: .error, message: setupError)
           .padding(.bottom, 8)
       }
 
-      if pushEnabled, isProvisional {
+      DashListGroupLink(value: .pushAlerts) {
+        SettingsPlainRow(
+          title: DashL10n.string("Alert policies"),
+          icon: SolarAsset.bolt,
+          showsChevron: true
+        )
+      }
+      .accessibilityIdentifier("Alert policies")
+
+      if pushReady, isProvisional {
         // iOS granted quiet delivery without a dialog. Offer the upgrade here
-        // instead of firing the system prompt at toggle time.
+        // instead of firing the system prompt during automatic setup.
         Button {
           Task { await promoteDelivery() }
         } label: {
@@ -70,176 +63,83 @@ struct PushAlertsSettingsRows: View {
         .accessibilityIdentifier("Deliver alerts prominently")
       }
 
-      if pushEnabled {
+      if !pushReady, model.configuration.pushBaseURL != nil,
+        model.hasScopes(PushAlertScopes.all),
+        !setupBusy,
+        setupError != nil
+      {
         Button {
-          Task { await sendTest() }
+          Task { await connectDefaultDelivery() }
         } label: {
           SettingsPlainRow(
-            title: DashL10n.string(testBusy ? "Sending…" : "Send test alert"),
-            icon: SolarAsset.inbox,
+            title: DashL10n.string("Try again"),
+            icon: SolarAsset.bolt,
             iconColor: DashTheme.brand,
             textColor: DashTheme.brand
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
-        .disabled(testBusy)
-        .accessibilityIdentifier("Send test alert")
-
-        DashListGroupLink(value: .pushAlerts) {
-          SettingsPlainRow(
-            title: DashL10n.string("Alert policies"),
-            icon: SolarAsset.bolt,
-            showsChevron: true
-          )
-        }
+        .accessibilityIdentifier("Retry alert setup")
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .task(id: model.accountRequestContext) {
-      pushBusy = false
-      pushError = nil
-      testBusy = false
-      syncPushToggle()
-      isProvisional = await WatchtowerNotifier.isProvisional()
-      await reconcilePushIfNeeded()
+      setupBusy = false
+      setupError = nil
+      syncPushState()
+      isProvisional = await DashNotificationSupport.isProvisional()
+      guard PushRegistrationService.shouldAutomaticallyProvisionForCurrentProcess else { return }
+      await connectDefaultDelivery()
     }
   }
 
   /// Shows the system prompt so quiet Notification Center delivery becomes
   /// banners and sounds. A decline leaves the provisional grant intact.
   private func promoteDelivery() async {
-    _ = await WatchtowerNotifier.requestAuthorization(prominently: true)
-    isProvisional = await WatchtowerNotifier.isProvisional()
-    if !isProvisional {
+    let granted = await DashNotificationSupport.requestAuthorization(prominently: true)
+    isProvisional = await DashNotificationSupport.isProvisional()
+    if granted, !isProvisional {
       model.toasts.success(DashL10n.string("Alerts will now appear as banners."))
+    } else if !granted {
+      model.toasts.warning(DashL10n.string("Notifications are turned off in Settings."))
     }
   }
 
-  private func syncPushToggle() {
+  private func syncPushState() {
     guard let accountID = model.activeAccountID else {
-      pushEnabled = false
+      pushReady = false
       return
     }
-    pushEnabled = PushRegistrationService.isEnabled(accountID: accountID)
+    pushReady = PushRegistrationService.isReady(accountID: accountID)
   }
 
-  private func setPushEnabled(_ enabled: Bool) async {
-    guard let context = model.accountRequestContext else {
-      pushEnabled = false
-      return
-    }
-    let accountID = context.accountID
-    guard model.hasScopes(PushAlertScopes.all) else {
-      pushEnabled = PushRegistrationService.isEnabled(accountID: accountID)
-      model.requestAccess(to: PushAlertScopes.all)
-      return
-    }
-    pushBusy = true
-    pushError = nil
-    let op = model.optimistic.begin(.toggle(enabled)) {
-      pushEnabled = !enabled
-      pushBusy = false
-    }
-    defer {
-      if model.isCurrentAccount(context) {
-        pushBusy = false
-      }
-    }
-    do {
-      try await model.optimistic.waitForCommit(op)
-      if enabled {
-        let granted = await WatchtowerNotifier.requestAuthorization()
-        guard !Task.isCancelled, model.isCurrentAccount(context) else {
-          model.optimistic.finishFailure(op)
-          return
-        }
-        guard granted else {
-          pushError = "Notifications are turned off in Settings."
-          pushEnabled = false
-          model.optimistic.finishFailure(op)
-          return
-        }
-        guard let token = await PushRegistrationService.waitForDeviceToken(in: model) else {
-          throw PushRegistrationError.missingDeviceToken
-        }
-        guard !Task.isCancelled, model.isCurrentAccount(context) else {
-          model.optimistic.finishFailure(op)
-          return
-        }
-        try await PushRegistrationService.enable(
-          accountID: accountID, client: model.client,
-          configuration: model.configuration, deviceToken: token)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else {
-          model.optimistic.finishFailure(op)
-          return
-        }
-        pushEnabled = true
-        model.optimistic.finishSuccess(op)
-      } else {
-        try await PushRegistrationService.disable(accountID: accountID, client: model.client)
-        guard !Task.isCancelled, model.isCurrentAccount(context) else {
-          model.optimistic.finishFailure(op)
-          return
-        }
-        pushEnabled = false
-        model.optimistic.finishSuccess(op)
-      }
-    } catch is CancellationError {
-      // Undo during grace already reverted local state.
-    } catch {
-      guard !error.dashIsCancellation, model.isCurrentAccount(context) else {
-        model.optimistic.finishFailure(op)
-        return
-      }
-      model.optimistic.finishFailure(op)
-      pushError = error.dashActionableMessage
-      syncPushToggle()
-      DashDelight.failError()
-    }
-  }
-
-  private func reconcilePushIfNeeded() async {
+  private func connectDefaultDelivery() async {
     guard model.hasScopes(PushAlertScopes.all),
       let context = model.accountRequestContext,
-      model.isCurrentAccount(context),
-      let token = model.pendingDeviceToken,
-      PushRegistrationService.isEnabled(accountID: context.accountID)
+      model.isCurrentAccount(context)
     else { return }
-    let accountID = context.accountID
-    try? await PushRegistrationService.reconcile(
-      accountID: accountID, client: model.client,
-      configuration: model.configuration, deviceToken: token)
-  }
-
-  private func sendTest() async {
-    guard let context = model.accountRequestContext else { return }
-    let accountID = context.accountID
-    testBusy = true
+    setupBusy = true
+    setupError = nil
     defer {
       if model.isCurrentAccount(context) {
-        testBusy = false
+        setupBusy = false
       }
     }
     do {
-      guard let token = await PushRegistrationService.waitForDeviceToken(in: model) else {
-        throw PushRegistrationError.missingDeviceToken
-      }
+      try await model.ensureDefaultPushRegistration(for: context)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      try await PushRegistrationService.sendTestAlert(
-        accountID: accountID,
-        configuration: model.configuration,
-        deviceToken: token
-      )
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      model.toasts.success(DashL10n.string("Test alert sent. It should appear in a moment."))
+      pushReady = true
+      isProvisional = await DashNotificationSupport.isProvisional()
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
-      model.toasts.error(error.dashActionableMessage)
+      syncPushState()
+      setupError = error.dashActionableMessage
     }
   }
 }
 
-/// Manage Cloudflare notification policies bound to the Dash webhook.
+/// Manage Cloudflare notification policies. Policies created in Dash attach
+/// the current device's default webhook explicitly.
 struct PushAlertsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -268,7 +168,6 @@ struct PushAlertsView: View {
     ("universal_ssl_event_type", "Universal SSL"),
     ("load_balancing_health_alert", "Load balancer health"),
     ("tunnel_health_event", "Tunnel health"),
-    ("pages_event_alert", "Pages builds"),
     ("secondary_dns_all_primaries_failing", "Secondary DNS"),
     ("weekly_account_overview", "Weekly overview"),
   ]
@@ -335,7 +234,7 @@ struct PushAlertsView: View {
           !mode.isPlaceholder && (showsRecommended || !allowsWrites))
       }
     }
-    .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Push alerts")
+    .detailHeader(icon: .solar(SolarAsset.Content.inbox), title: "Alert policies")
     .toolbar {
       ToolbarItem(placement: .topBarTrailing) {
         if allowsWrites, storedWebhookID != nil {
@@ -482,8 +381,15 @@ struct PushAlertsView: View {
       async let availableTask = model.client.listAvailableAlertGroups(accountID: accountID)
       let (fetchedPolicies, fetchedGroups) = try await (policiesTask, availableTask)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      policies = fetchedPolicies
-      groups = fetchedGroups
+      policies = fetchedPolicies.filter {
+        !PushRegistrationService.usesBuildActivityPath(alertType: $0.alertType)
+      }
+      groups = fetchedGroups.compactMap { group in
+        let alerts = group.alerts.filter {
+          !PushRegistrationService.usesBuildActivityPath(alertType: $0.type)
+        }
+        return alerts.isEmpty ? nil : AvailableAlertGroup(category: group.category, alerts: alerts)
+      }
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage

@@ -34,28 +34,6 @@
         }
       }
     },
-    "%@ expires %@. Auto-renew is off." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ 将于 %2$@ 到期，自动续费已关闭。"
-          }
-        }
-      }
-    },
-    "%@ expires %@. Renew it with your registrar." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ 将于%2$@到期，请在注册商处续费。"
-          }
-        }
-      }
-    },
     "%@ for %@. Total %@." : {
       "localizations" : {
         "en" : {
@@ -4509,17 +4487,6 @@
         }
       }
     },
-    "Dash test alert" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dash 测试提醒"
-          }
-        }
-      }
-    },
     "Dash will request all permissions used by its current features." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5394,17 +5361,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "域名已添加"
-          }
-        }
-      }
-    },
-    "Domain expiring" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "域名即将到期"
           }
         }
       }
@@ -9883,17 +9839,6 @@
         }
       }
     },
-    "Push is working." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "推送工作正常。"
-          }
-        }
-      }
-    },
     "Queued" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11071,16 +11016,6 @@
         }
       }
     },
-    "Send test alert" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发送测试提醒"
-          }
-        }
-      }
-    },
     "Send verification email" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -11088,16 +11023,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "发送验证邮件"
-          }
-        }
-      }
-    },
-    "Sending…" : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "发送中…"
           }
         }
       }
@@ -11954,16 +11879,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用条款"
-          }
-        }
-      }
-    },
-    "Test alert sent. It should appear in a moment." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "测试提醒已发送，稍后应会出现。"
           }
         }
       }
@@ -14008,17 +13923,6 @@
         }
       }
     },
-    "in %lld days" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 天后"
-          }
-        }
-      }
-    },
     "in your hand" : {
       "comment" : "Second hero line of the welcome slogan, continuing \"Cloudflare,\".",
       "localizations" : {
@@ -14162,17 +14066,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "完全（严格）"
-          }
-        }
-      }
-    },
-    "tomorrow" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "明天"
           }
         }
       }

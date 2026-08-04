@@ -25,7 +25,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 | **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Account / Domain Metrics widgets, Settings (push alerts, integrations, About), multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Account / Domain Metrics widgets, default Cloudflare webhook delivery with alert-policy management, integrations, multi-account OAuth, and iPhone-only single-stack navigation.
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
@@ -78,7 +78,7 @@ The API client stores tokens through a `TokenStore` abstraction. Dash implements
 
 `apps/web` deploys as worker `dash-relay` on `https://dash.xat.sh`. It serves the
 marketing landing page, redirects OAuth to `dash://oauth/callback`, and keeps
-the `/push/*` APNs bridge for Settings → Push alerts. The relay path is
+the `/push/*` APNs bridge for Dash's default Cloudflare alert delivery. The relay path is
 intentionally stateless: it never logs callback parameters and never receives
 the PKCE verifier.
 

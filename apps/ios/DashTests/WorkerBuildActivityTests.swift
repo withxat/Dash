@@ -52,11 +52,11 @@ private func build(_ json: String) throws -> WorkerBuild {
 }
 
 @Test func pollBackoffMatchesThePagesLadderAndIsClamped() {
-  #expect(WorkerBuildActivityControllerBox.pollDelaySeconds(consecutiveFailures: 0) == 10)
-  #expect(WorkerBuildActivityControllerBox.pollDelaySeconds(consecutiveFailures: 3) == 60)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 0) == 10)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 3) == 60)
   // Out-of-range input must not trap.
-  #expect(WorkerBuildActivityControllerBox.pollDelaySeconds(consecutiveFailures: 99) == 60)
-  #expect(WorkerBuildActivityControllerBox.pollDelaySeconds(consecutiveFailures: -1) == 10)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 99) == 60)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: -1) == 10)
 }
 
 @Test func monitorKeyDistinguishesAccountsAndScripts() {
