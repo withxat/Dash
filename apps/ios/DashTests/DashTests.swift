@@ -1760,6 +1760,15 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(ProfileTrayPhase.signOut.trayRole == .destructive)
 }
 
+@Test func signOutTrayCostsTwoTapsWhereverItIsOffered() {
+  // Settings' sign out is the same pair as the profile tray's pushed step:
+  // the row names the action at the root, and only the destructive step
+  // commits. A single-step Settings tray was the odd one out.
+  #expect(SignOutTrayStep.intro.trayRole == .root)
+  #expect(SignOutTrayStep.confirm.trayRole == .destructive)
+  #expect(ProfileTrayPhase.signOut.trayRole == SignOutTrayStep.confirm.trayRole)
+}
+
 @Test @MainActor func trayFlowStackDrivesRouteAndRoleFromThePathTail() throws {
   let account = try JSONDecoder().decode(
     CloudflareAccount.self,

@@ -371,6 +371,63 @@ struct DashDangerAction: Identifiable {
   }
 }
 
+/// One destructive choice as a tray menu row: outline glyph, danger ink, and
+/// the tinted surface a confirm pill grows out of. The row's text layer takes
+/// its own matched-geometry id, so the title glides into the pill instead of
+/// only the red surface making the trip (the text morph the surface morph
+/// always implied). Nil ids drop both effects without changing the look, which
+/// is how Reduce Motion renders it.
+///
+/// One definition for every tray that asks for the first of two taps —
+/// `DashConfirmableActions` and Settings' sign-out tray, which cannot use that
+/// component because its confirm pill runs on `AppModel`'s sign-out phase.
+struct DashDangerMenuRow: View {
+  let title: String
+  var icon = SolarAsset.trash
+  var morphID: String?
+  var labelMorphID: String?
+  var morphNamespace: Namespace.ID?
+
+  var body: some View {
+    HStack(spacing: 12) {
+      SolarIcon(asset: icon, size: 22, color: DashTheme.danger)
+      label
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.danger)
+        .lineLimit(1)
+      Spacer(minLength: 0)
+    }
+    .padding(.horizontal, 16)
+    .padding(.vertical, 14)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background {
+      background
+    }
+  }
+
+  @ViewBuilder
+  private var label: some View {
+    let text = Text(DashL10n.ui(title))
+    if let labelMorphID, let morphNamespace {
+      text.matchedGeometryEffect(id: labelMorphID, in: morphNamespace)
+    } else {
+      text
+    }
+  }
+
+  @ViewBuilder
+  private var background: some View {
+    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+    if let morphID, let morphNamespace {
+      shape
+        .fill(DashTheme.dangerTint)
+        .matchedGeometryEffect(id: morphID, in: morphNamespace)
+    } else {
+      shape.fill(DashTheme.dangerTint)
+    }
+  }
+}
+
 /// Tray content that lists destructive actions as menu rows and morphs a tapped
 /// one — via matchedGeometryEffect — into a confirm step (message, Cancel, and
 /// a red Delete that the row grows into). No type-the-name field and no hold.
@@ -413,58 +470,21 @@ struct DashConfirmableActions: View {
           errorMessage = nil
           pending = action
         } label: {
-          dangerRow(action)
+          DashDangerMenuRow(
+            title: action.title,
+            icon: action.icon,
+            morphID: reduceMotion ? nil : action.id,
+            labelMorphID: reduceMotion ? nil : labelMorphID(action),
+            morphNamespace: reduceMotion ? nil : morph
+          )
         }
         .buttonStyle(DashSurfaceButtonStyle())
       }
     }
   }
 
-  // List-item styled as a compact tray row, with an outline icon.
-  private func dangerRow(_ action: DashDangerAction) -> some View {
-    HStack(spacing: 12) {
-      SolarIcon(asset: action.icon, size: 22, color: DashTheme.danger)
-      dangerRowLabel(action)
-        .dashTextStyle(.bodyMedium)
-        .foregroundStyle(DashTheme.danger)
-        .lineLimit(1)
-      Spacer(minLength: 0)
-    }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 14)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background {
-      dangerBackground(action)
-    }
-  }
-
-  @ViewBuilder
-  private func dangerBackground(_ action: DashDangerAction) -> some View {
-    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
-    if reduceMotion {
-      shape.fill(DashTheme.dangerTint)
-    } else {
-      shape
-        .fill(DashTheme.dangerTint)
-        .matchedGeometryEffect(id: action.id, in: morph)
-    }
-  }
-
-  /// The row's text layer shares a matched-geometry id with the confirm
-  /// pill's label, so the title glides into the pill instead of only the red
-  /// surface making the trip (the text morph the surface morph always implied).
-  @ViewBuilder
-  private func dangerRowLabel(_ action: DashDangerAction) -> some View {
-    let label = Text(DashL10n.ui(action.title))
-    if reduceMotion {
-      label
-    } else {
-      label.matchedGeometryEffect(id: labelMorphID(action), in: morph)
-    }
-  }
-
   /// Companion id to the surface morph id (`action.id`); shared by
-  /// `dangerRowLabel` and the confirm `DashActionButton`'s title run.
+  /// the row's label and the confirm `DashActionButton`'s title run.
   private func labelMorphID(_ action: DashDangerAction) -> String {
     "\(action.id).label"
   }

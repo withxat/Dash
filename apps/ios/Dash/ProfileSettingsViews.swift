@@ -910,9 +910,39 @@ private struct AccountSwitchConfirmationContent: View {
   }
 }
 
+/// The step a Settings sign-out tray is on. Sign out costs two taps wherever it
+/// is offered: the profile tray pushes its own confirmation step, and this is
+/// the same pair on a route morph — naming the action and committing to it are
+/// never the same tap.
+enum SignOutTrayStep: Hashable, Sendable {
+  /// Names the action; the red row is the surface the confirm pill grows from.
+  case intro
+  /// Consequences, Cancel, and the pill that actually signs out.
+  case confirm
+
+  var trayRole: DashTrayStepRole {
+    switch self {
+    case .intro: .root
+    case .confirm: .destructive
+    }
+  }
+}
+
+/// Settings' sign-out tray: `DashConfirmableActions`' row → confirm pair, drawn
+/// here because that component owns the confirm pill's phase and this one has to
+/// run on `AppModel.signOutActionPhase` — `AppRootView` holds the signed-in
+/// stage while that phase is `.succeeded` and swaps to sign-in only when the
+/// pill's success check reports back through `completeSignOutActionPresentation`.
+/// The row itself is the shared `DashDangerMenuRow`.
 private struct SignOutConfirmationContent: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var step: SignOutTrayStep = .intro
+  @Namespace private var actionMorph
+
+  /// Shared by the red row and the confirm pill so the enamel face travels
+  /// between steps — the same `matchedGeometryEffect` path danger rows take.
+  private static let signOutMorphID = "settings-sign-out"
 
   /// Two consequences, two paragraphs — kept as separate catalog keys and
   /// joined here, because the Files sentence is only true of this app's mounts
@@ -927,22 +957,79 @@ private struct SignOutConfirmationContent: View {
   }
 
   var body: some View {
-    DashTrayActionPair {
-      DashTrayCancelButton(action: dismiss)
-        .disabled(model.signOutActionPhase.isActive)
-    } primary: {
-      DashActionButton(
-        title: "Sign out",
-        role: .destructive,
-        phase: model.signOutActionPhase,
-        onSuccessPresentationCompleted: model.completeSignOutActionPresentation
-      ) {
-        Task {
-          await model.signOut(presentsCompletion: true)
-        }
+    DashTrayFlow(route: step, role: step.trayRole) { route in
+      switch route {
+      case .intro:
+        introRow
+      case .confirm:
+        confirmation
       }
     }
-    .dashTrayDescription(consequences)
+    .frame(maxWidth: .infinity)
+  }
+
+  private var morphID: String? {
+    reduceMotion ? nil : Self.signOutMorphID
+  }
+
+  /// Companion id for the title run: both endpoints say "Sign out", so the
+  /// pinned label rides the surface morph instead of cross-fading in place.
+  private var labelMorphID: String? {
+    reduceMotion ? nil : "\(Self.signOutMorphID).label"
+  }
+
+  private var morphNamespace: Namespace.ID? {
+    reduceMotion ? nil : actionMorph
+  }
+
+  private var introRow: some View {
+    Button {
+      step = .confirm
+    } label: {
+      DashDangerMenuRow(
+        title: "Sign out",
+        icon: SolarAsset.danger,
+        morphID: morphID,
+        labelMorphID: labelMorphID,
+        morphNamespace: morphNamespace
+      )
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityIdentifier("settings-sign-out-continue")
+  }
+
+  private var confirmation: some View {
+    VStack(spacing: 16) {
+      Text(consequences)
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 4)
+        .padding(.top, 4)
+
+      DashTrayActionPair {
+        // Cancel steps back to the row, not out of the tray: on a route morph
+        // the header's ✕ stays a dismissal, so this is the way back.
+        DashTrayCancelButton { step = .intro }
+          .disabled(model.signOutActionPhase.isActive)
+      } primary: {
+        DashActionButton(
+          title: "Sign out",
+          role: .destructive,
+          phase: model.signOutActionPhase,
+          morphID: morphID,
+          labelMorphID: labelMorphID,
+          morphNamespace: morphNamespace,
+          onSuccessPresentationCompleted: model.completeSignOutActionPresentation
+        ) {
+          Task {
+            await model.signOut(presentsCompletion: true)
+          }
+        }
+        .accessibilityIdentifier("settings-sign-out-confirm")
+      }
+    }
   }
 }
 
