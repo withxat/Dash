@@ -2450,6 +2450,13 @@ private let watchtowerDropFrames: [CGRect] = [
       pinsRaw: bootstrapped.pins,
       accountID: "acc1"
     ) == ["z1", "z2", "z3", "z4", "z5"])
+  #expect(
+    PinnedZones.prioritized(
+      ["z5", "z3", "z2", "z1", "z4"],
+      pinsRaw: bootstrapped.pins,
+      accountID: "acc1",
+      id: { $0 }
+    ) == ["z1", "z2", "z3", "z4", "z5"])
 
   // Once initialized, a deliberate empty pin set stays empty.
   let afterManualClear = PinnedZones.bootstrapped(

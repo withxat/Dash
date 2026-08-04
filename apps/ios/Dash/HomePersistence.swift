@@ -277,6 +277,19 @@ enum PinnedZones {
     return leading + ids.filter { !leadingSet.contains($0) }
   }
 
+  /// Same pin-first ordering as `prioritizedZoneIDs`, applied to loaded zone
+  /// rows. Cache and network stay in API order; only the painted list moves.
+  static func prioritized<T>(
+    _ items: [T],
+    pinsRaw: String,
+    accountID: String,
+    id: (T) -> String
+  ) -> [T] {
+    let order = prioritizedZoneIDs(items.map(id), pinsRaw: pinsRaw, accountID: accountID)
+    let byID = Dictionary(uniqueKeysWithValues: items.map { (id($0), $0) })
+    return order.compactMap { byID[$0] }
+  }
+
   /// Seeds an account's pins from `defaults` the first time its zones load, and
   /// records that it happened. Already-initialized accounts are returned
   /// untouched, so clearing every pin is a decision the app respects.
