@@ -146,7 +146,12 @@ enum DashInteractionPreferences {
 /// `AppConfiguration`; catalog visibility helpers stay on `FeatureCatalog`
 /// with the rest of the feature registry.
 enum DashExperimentalFeatures {
+  static let registrarKey = "dash.experimental.registrar_enabled"
   static let tunnelsKey = "dash.experimental.tunnels_enabled"
+
+  static var registrarEnabled: Bool {
+    UserDefaults.standard.bool(forKey: registrarKey)
+  }
 
   static var tunnelsEnabled: Bool {
     UserDefaults.standard.bool(forKey: tunnelsKey)
