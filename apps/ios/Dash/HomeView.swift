@@ -826,6 +826,7 @@ extension HomeActionID {
 }
 
 private struct EditHomeActionsView: View {
+  @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   @Binding var selectionRaw: String
 
@@ -843,10 +844,16 @@ private struct EditHomeActionsView: View {
           title: action.title,
           subtitle: action.subtitle,
           isSelected: isSelected,
-          isEnabled: canToggle
+          isDimmed: !canToggle
         ) {
           HomeActionEditIcon(asset: action.icon)
         } action: {
+          guard canToggle else {
+            model.toasts.warning(
+              DashL10n.string("You can choose up to 3 quick actions."))
+            return
+          }
+          DashDelight.selectionChanged()
           selectionRaw = HomeActions.toggled(action, in: selectionRaw)
         }
       }
@@ -876,9 +883,12 @@ private struct HomeEditSelectionRow<Icon: View>: View {
   let title: String
   let subtitle: String
   let isSelected: Bool
-  var isEnabled: Bool = true
+  /// Softened look for at-limit quick-action rows. Kept tappable so the caller
+  /// can toast the three-slot ceiling instead of swallowing the tap.
+  var isDimmed: Bool = false
   @ViewBuilder let icon: () -> Icon
   let action: () -> Void
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     Button(action: action) {
@@ -894,17 +904,22 @@ private struct HomeEditSelectionRow<Icon: View>: View {
             .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-          .font(.system(size: 21, weight: .semibold))
-          .foregroundStyle(isSelected ? DashTheme.brand : DashTheme.faint)
+        // Instant Solar swap (same chrome as Profile / R2). SF Symbol name
+        // changes under the tray's resize animation read as a slow morph.
+        SolarIcon(
+          asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
+          size: 22,
+          color: isSelected ? DashTheme.brand : DashTheme.placeholder
+        )
+        .transaction { $0.animation = nil }
       }
       .padding(.vertical, 10)
       .frame(minHeight: DashTheme.Layout.minimumHitTarget)
       .contentShape(Rectangle())
     }
     .buttonStyle(DashSurfaceButtonStyle())
-    .disabled(!isEnabled)
-    .opacity(isEnabled ? 1 : 0.48)
+    .opacity(isDimmed ? 0.48 : 1)
+    .animation(reduceMotion ? nil : DashTheme.Motion.iconSwap, value: isDimmed)
     .accessibilityValue(
       isSelected ? DashL10n.string("Selected") : DashL10n.string("Not selected")
     )
@@ -984,6 +999,7 @@ private struct EditShortcutsView: View {
         ) {
           CatalogFeatureIcon(feature: feature, style: .fill, size: .list)
         } action: {
+          DashDelight.selectionChanged()
           selectionRaw = HomeShortcuts.toggled(feature, in: selectionRaw)
         }
       }
