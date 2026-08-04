@@ -36,6 +36,10 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const CATALOG = join(ROOT, "apps/ios/Dash/Localizable.xcstrings");
 const BASE_CONFIGURATION = join(ROOT, "apps/ios/Config/Base.xcconfig");
+const RUNTIME_LOCALIZED_KEYS = join(
+  ROOT,
+  "apps/ios/scripts/runtime-localized-keys.json"
+);
 const REQUIRED_TRANSLATIONS = ["zh-Hans"];
 const SOURCE_DIRECTORIES = [
   join(ROOT, "apps/ios/Dash"),
@@ -131,6 +135,47 @@ function addSites(target, key, sites) {
 
 function rewriteCustomLocalizationCalls(source) {
   return source.replace(CUSTOM_LOCALIZATION_CALL, "String(localized:");
+}
+
+function runtimeLocalizedKeySites(keys, sources) {
+  const sites = new Map();
+  const orphaned = new Set();
+
+  for (const key of keys) {
+    const literal = JSON.stringify(key);
+    let found = false;
+    for (const [source, contents] of sources) {
+      let offset = 0;
+      while ((offset = contents.indexOf(literal, offset)) !== -1) {
+        const line = contents.slice(0, offset).split("\n").length;
+        addSites(sites, key, [`${source}:${line}`]);
+        found = true;
+        offset += literal.length;
+      }
+    }
+    if (!found) orphaned.add(key);
+  }
+
+  return { orphaned, sites };
+}
+
+function loadRuntimeLocalizedKeys() {
+  const document = JSON.parse(readFileSync(RUNTIME_LOCALIZED_KEYS, "utf8"));
+  if (!Array.isArray(document.keys)) {
+    throw new Error("runtime-localized-keys.json must contain a keys array");
+  }
+  const keys = document.keys;
+  if (keys.some((key) => typeof key !== "string" || key.length === 0)) {
+    throw new Error("runtime-localized-keys.json keys must be non-empty strings");
+  }
+  if (new Set(keys).size !== keys.length) {
+    throw new Error("runtime-localized-keys.json contains duplicate keys");
+  }
+  const sorted = [...keys].sort();
+  if (keys.some((key, index) => key !== sorted[index])) {
+    throw new Error("runtime-localized-keys.json keys must be sorted");
+  }
+  return keys;
 }
 
 function collectStringUnits(value, path = [], result = []) {
@@ -444,6 +489,13 @@ function extractProductionKeys(catalogContents, catalog) {
   }
 }
 
+function productionSourceContents() {
+  return SOURCE_DIRECTORIES.flatMap(swiftFiles).map((source) => [
+    relative(ROOT, source),
+    readFileSync(source, "utf8"),
+  ]);
+}
+
 function sortedMapEntries(map) {
   return [...map].sort(([left], [right]) =>
     left < right ? -1 : left > right ? 1 : 0
@@ -468,6 +520,17 @@ function runSelfTests() {
     rewriteCustomLocalizationCalls('IntentDescription("Opens Dash")'),
     'String(localized:"Opens Dash")'
   );
+  const runtimeSites = runtimeLocalizedKeySites(
+    ["Dynamic title", "Retired title"],
+    [
+      ["Example.swift", 'DashInfoGroup(title: "Dynamic title") {}'],
+    ]
+  );
+  assert.deepEqual([...runtimeSites.sites.keys()], ["Dynamic title"]);
+  assert.deepEqual([...runtimeSites.sites.get("Dynamic title")], [
+    "Example.swift:1",
+  ]);
+  assert.deepEqual([...runtimeSites.orphaned], ["Retired title"]);
   assert.equal(
     translationPlaceholderIssue(
       "Moved %@ to %@ after %lld tries",
@@ -593,6 +656,12 @@ function main() {
     catalogContents,
     catalog
   );
+  const runtimeKeys = loadRuntimeLocalizedKeys();
+  const runtime = runtimeLocalizedKeySites(
+    runtimeKeys,
+    productionSourceContents()
+  );
+  for (const [key, sites] of runtime.sites) addSites(extracted, key, sites);
   const audit = auditCatalog(catalog, extracted);
   const integrity = auditCatalogIntegrity(catalog);
   const buildSetting = effectiveBuildSetting(
@@ -608,6 +677,7 @@ function main() {
     audit.missing.size === 0 &&
     audit.liveStale.size === 0 &&
     audit.ambiguous.size === 0 &&
+    runtime.orphaned.size === 0 &&
     integrity.missingTranslations.size === 0 &&
     integrity.positionalSourceKeys.length === 0 &&
     integrity.placeholderMismatches.length === 0 &&
@@ -626,6 +696,7 @@ function main() {
       `${audit.empty.size} empty source, ${integrity.emptyKeys.length} empty catalog, ` +
       `${audit.missing.size} missing, ${audit.liveStale.size} live-stale, ` +
       `${audit.ambiguous.size} ambiguous, ` +
+      `${runtime.orphaned.size} retired runtime key(s), ` +
       `${integrity.missingTranslations.size} untranslated, ` +
       `${integrity.positionalSourceKeys.length + integrity.placeholderMismatches.length} ` +
       `placeholder issue(s), ${serializationIssues.length} serialization issue(s))\n`
@@ -677,6 +748,14 @@ function main() {
           .join(", ")}`
       );
       printSites(entry.sites);
+    }
+    console.error("");
+  }
+
+  if (runtime.orphaned.size > 0) {
+    console.error("  Runtime-localized keys no longer found in production source:");
+    for (const key of [...runtime.orphaned].sort()) {
+      console.error(`    ${JSON.stringify(key)}`);
     }
     console.error("");
   }
