@@ -10,7 +10,6 @@ enum DashAuthorizationScopes {
   /// opt-in, and their scopes are appended when the user grants that feature.
   static let coreFeatures: Set<FeatureID> = [
     .zones,
-    .registrar,
     .emailRouting,
     .workers,
     .pages,
@@ -22,7 +21,8 @@ enum DashAuthorizationScopes {
   /// `core` / sign-in; enabling one only reveals the Resources row (usually
   /// locked) until the user authorizes it.
   static let experimentalFeatures: Set<FeatureID> = [
-    .tunnels
+    .registrar,
+    .tunnels,
   ]
 
   /// Read scopes used by nested screens that are not represented by a
@@ -30,12 +30,12 @@ enum DashAuthorizationScopes {
   /// every core catalog surface without mutation permission.
   ///
   /// Email Routing rules and destination addresses call their matching read
-  /// scopes. Tunnels' `argotunnel.read` / `access.read` live on the
-  /// experimental feature (and its Grant access request), not here. The removed
-  /// load-balancing, health-check, and SSL scopes remain absent because no
-  /// current screen calls them. Do not add a scope without a screen that calls
-  /// the endpoint — the sign-in sheet is the user's only view of what Dash can
-  /// reach.
+  /// scopes. Registrar's `registrar-domains.read` and Tunnels'
+  /// `argotunnel.read` / `access.read` live on their experimental features (and
+  /// their Grant access requests), not here. The removed load-balancing,
+  /// health-check, and SSL scopes remain absent because no current screen calls
+  /// them. Do not add a scope without a screen that calls the endpoint — the
+  /// sign-in sheet is the user's only view of what Dash can reach.
   ///
   /// `initialReadOnly` is derived from `coreFeatures`, so a read scope that
   /// lives only in a feature's capability disappears from the OAuth request

@@ -16,6 +16,8 @@ struct HomeView: View {
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
   @AppStorage(HomeEducation.dismissalsKey) private var educationDismissalsRaw = ""
+  @AppStorage(DashExperimentalFeatures.registrarKey) private var registrarExperimentalEnabled =
+    false
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
@@ -54,7 +56,9 @@ struct HomeView: View {
   private var shortcuts: [FeatureID] {
     HomeShortcuts.decode(shortcutsRaw).filter {
       DashExperimentalFeatures.isCatalogVisible(
-        $0, tunnelsEnabled: tunnelsExperimentalEnabled)
+        $0,
+        registrarEnabled: registrarExperimentalEnabled,
+        tunnelsEnabled: tunnelsExperimentalEnabled)
     }
   }
 
@@ -975,6 +979,8 @@ private struct HomeShortcutsSection: View {
 private struct EditShortcutsView: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   @Binding var selectionRaw: String
+  @AppStorage(DashExperimentalFeatures.registrarKey) private var registrarExperimentalEnabled =
+    false
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
 
@@ -985,7 +991,9 @@ private struct EditShortcutsView: View {
   private var catalogItems: [FeatureID] {
     FeatureCatalog.all.filter {
       DashExperimentalFeatures.isCatalogVisible(
-        $0, tunnelsEnabled: tunnelsExperimentalEnabled)
+        $0,
+        registrarEnabled: registrarExperimentalEnabled,
+        tunnelsEnabled: tunnelsExperimentalEnabled)
     }
   }
 

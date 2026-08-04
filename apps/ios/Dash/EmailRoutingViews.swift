@@ -1292,6 +1292,26 @@ struct EmailRoutingEnableTray: View {
   }
 
   var body: some View {
+    // Conflicts, the DNS plan, and a warning can outgrow the card together;
+    // the confirm pill stays on the card's floor while they scroll.
+    DashTrayScrollBoundary {
+      planBody
+    } action: {
+      DashActionButton(
+        title: confirmTitle,
+        phase: actionPhase,
+        onSuccessPresentationCompleted: completeEnablePresentation
+      ) {
+        Task { await enable() }
+      }
+      .disabled(!canConfirm)
+      .opacity(canConfirm ? 1 : 0.45)
+      .padding(.top, 16)
+    }
+    .task(id: model.accountRequestContext) { await loadPlan() }
+  }
+
+  private var planBody: some View {
     VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
       if !conflicts.mxHosts.isEmpty {
         DashNotice(
@@ -1331,20 +1351,8 @@ struct EmailRoutingEnableTray: View {
       if let errorMessage {
         DashNotice(kind: .error, message: errorMessage)
       }
-
-      // Bottom-most control, per the tray rule.
-      DashActionButton(
-        title: confirmTitle,
-        phase: actionPhase,
-        onSuccessPresentationCompleted: completeEnablePresentation
-      ) {
-        Task { await enable() }
-      }
-      .disabled(!canConfirm)
-      .opacity(canConfirm ? 1 : 0.45)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .task(id: model.accountRequestContext) { await loadPlan() }
   }
 
   private func loadPlan() async {

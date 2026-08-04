@@ -397,7 +397,9 @@ private struct WatchtowerInboxEntryTray: View {
   let unignore: () -> Void
 
   var body: some View {
-    VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
+    // An alert's own copy is Cloudflare's and can run long; the toggle keeps
+    // its place on the card floor while the text scrolls.
+    DashTrayScrollBoundary {
       VStack(alignment: .leading, spacing: 6) {
         sourceLine
         if let detail = entry.detail {
@@ -412,7 +414,8 @@ private struct WatchtowerInboxEntryTray: View {
             .foregroundStyle(DashTheme.subtle)
         }
       }
-
+      .frame(maxWidth: .infinity, alignment: .leading)
+    } action: {
       // Cloudflare's history carries no link back to the resource, so the
       // reversible ignore toggle is the only action and takes the primary slot.
       DashActionButton(
@@ -421,6 +424,7 @@ private struct WatchtowerInboxEntryTray: View {
         action: isIgnored ? unignore : ignore
       )
       .accessibilityIdentifier("watchtower-inbox-ignore-toggle")
+      .padding(.top, DashTheme.Spacing.section)
     }
   }
 

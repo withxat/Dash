@@ -585,8 +585,13 @@ struct LocalizationTests {
   #expect(
     DashAuthorizationScopes.coreFeatures.isDisjoint(
       with: DashAuthorizationScopes.experimentalFeatures))
+  #expect(!DashAuthorizationScopes.core.contains("registrar-domains.read"))
+  #expect(!DashAuthorizationScopes.core.contains("registrar-domains.admin"))
   #expect(!DashAuthorizationScopes.core.contains("argotunnel.read"))
   #expect(!DashAuthorizationScopes.core.contains("access.read"))
+  #expect(
+    DashAuthorizationScopes.authorizationScopes(for: .registrar)
+      == ["registrar-domains.read"])
   #expect(
     DashAuthorizationScopes.authorizationScopes(for: .tunnels)
       == ["argotunnel.read", "access.read"])
@@ -595,10 +600,13 @@ struct LocalizationTests {
       grantedScopes: DashAuthorizationScopes.initialReadOnly)
     // Demo / initial-read grants omit write scopes, so every unlocked core
     // feature with mutations is Read-only. (None of coreFeatures is
-    // permanently write-free — that pattern is Tunnels.)
+    // permanently write-free — that pattern is currently Tunnels.)
     #expect(!feature.capability.write.isEmpty)
     #expect(access == .readOnly)
   }
+  #expect(
+    FeatureID.registrar.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
   #expect(
     FeatureID.tunnels.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
@@ -607,8 +615,8 @@ struct LocalizationTests {
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
-  #expect(DashAuthorizationScopes.core.count == 32)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 17)
+  #expect(DashAuthorizationScopes.core.count == 30)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -635,6 +643,8 @@ struct LocalizationTests {
 
 @Test @MainActor func demoUsesReadOnlyGrantPlusExperimentalReads() {
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: AppModel.demoGrantedScopes))
+  #expect(AppModel.demoGrantedScopes.contains("registrar-domains.read"))
+  #expect(!AppModel.demoGrantedScopes.contains("registrar-domains.admin"))
   #expect(AppModel.demoGrantedScopes.contains("argotunnel.read"))
   #expect(AppModel.demoGrantedScopes.contains("access.read"))
   #expect(!AppModel.demoAccessRequiresConnection(["dns.read"]))
@@ -648,28 +658,49 @@ struct LocalizationTests {
   }
 }
 
-@Test func experimentalTunnelsStayHiddenUntilOptedIn() {
+@Test func experimentalFeaturesStayHiddenUntilOptedIn() {
   #expect(
-    !DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: false))
+    !DashExperimentalFeatures.isCatalogVisible(
+      .registrar, registrarEnabled: false, tunnelsEnabled: false))
   #expect(
-    DashExperimentalFeatures.isCatalogVisible(.tunnels, tunnelsEnabled: true))
+    DashExperimentalFeatures.isCatalogVisible(
+      .registrar, registrarEnabled: true, tunnelsEnabled: false))
   #expect(
-    DashExperimentalFeatures.isCatalogVisible(.zones, tunnelsEnabled: false))
+    !DashExperimentalFeatures.isCatalogVisible(
+      .tunnels, registrarEnabled: false, tunnelsEnabled: false))
+  #expect(
+    DashExperimentalFeatures.isCatalogVisible(
+      .tunnels, registrarEnabled: false, tunnelsEnabled: true))
+  #expect(
+    DashExperimentalFeatures.isCatalogVisible(
+      .zones, registrarEnabled: false, tunnelsEnabled: false))
 
   let coreOnly = FeatureCatalogFiltering.enabledFeatures(
+    registrarExperimentalEnabled: false,
     tunnelsExperimentalEnabled: false)
   #expect(coreOnly == DashAuthorizationScopes.coreFeatures)
+  #expect(!coreOnly.contains(.registrar))
   #expect(!coreOnly.contains(.tunnels))
 
-  let withTunnels = FeatureCatalogFiltering.enabledFeatures(
+  let withRegistrar = FeatureCatalogFiltering.enabledFeatures(
+    registrarExperimentalEnabled: true,
+    tunnelsExperimentalEnabled: false)
+  #expect(withRegistrar == DashAuthorizationScopes.coreFeatures.union([.registrar]))
+
+  let withExperimentalFeatures = FeatureCatalogFiltering.enabledFeatures(
+    registrarExperimentalEnabled: true,
     tunnelsExperimentalEnabled: true)
-  #expect(withTunnels == Set(FeatureID.allCases))
+  #expect(withExperimentalFeatures == Set(FeatureID.allCases))
 
   let lockedCatalog = FeatureCatalogFiltering.features(
     filter: .all,
     grantedScopes: DashAuthorizationScopes.initialReadOnly,
-    enabled: withTunnels)
+    enabled: withExperimentalFeatures)
+  #expect(lockedCatalog.contains(.registrar))
   #expect(lockedCatalog.contains(.tunnels))
+  #expect(
+    FeatureID.registrar.capability.accessLevel(
+      grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
   #expect(
     FeatureID.tunnels.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly) == .locked)
@@ -930,12 +961,14 @@ struct LocalizationTests {
     grantedScopes: nil)
   #expect(unknown.isEmpty)
   let coreEnabled = FeatureCatalogFiltering.enabledFeatures(
+    registrarExperimentalEnabled: false,
     tunnelsExperimentalEnabled: false)
   let initialGrant = FeatureCatalogFiltering.features(
     filter: FeatureCatalogView.defaultFilter,
     grantedScopes: DashAuthorizationScopes.initialReadOnly,
     enabled: coreEnabled)
   #expect(initialGrant.count == DashAuthorizationScopes.coreFeatures.count)
+  #expect(!initialGrant.contains(.registrar))
   #expect(!initialGrant.contains(.tunnels))
 }
 
@@ -1889,6 +1922,29 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashTrayAnchorMath.opacity(progress: 0) == 0)
   #expect(DashTrayAnchorMath.opacity(progress: 1.0 / 3.0) == 1)
   #expect(DashTrayAnchorMath.opacity(progress: 1) == 1)
+}
+
+@Test func trayScrollBoundaryPaysForTheActionBandBeforeTheBody() {
+  // Fits: the body keeps its natural height and nothing scrolls.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 200, action: 68, available: 500) == 200)
+
+  // Outgrows the card: the band is paid for first and the body takes the rest,
+  // so the two together fill the budget exactly — the card's own body scroll
+  // stays inert and this one owns the finger.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 68, available: 500) == 432)
+
+  // Squeezed past the floor (a tall band under a raised keyboard): the body
+  // stops shrinking, the card overflows, and its scroll takes over.
+  #expect(
+    DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 460, available: 500)
+      == DashTrayScrollBoundaryRules.minimumBody)
+
+  // No budget (outside a tray) and no measurement yet (first frame) both mean
+  // "lay out naturally" — never a zero-height region.
+  #expect(DashTrayScrollBoundaryRules.bodyHeight(ideal: 900, action: 68, available: nil) == nil)
+  #expect(DashTrayScrollBoundaryRules.bodyHeight(ideal: 0, action: 68, available: 500) == nil)
 }
 
 @Test @MainActor func trayAnchorSourcesMustBeOnScreenAndControlSized() {

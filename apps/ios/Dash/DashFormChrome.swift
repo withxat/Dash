@@ -70,7 +70,11 @@ struct DashFormSheet<Content: View>: View {
 /// ↔ Delete). A header trash button flips `confirming`. Reused by editor and
 /// detail trays so the whole app shares one "primary action + optional
 /// sub-actions" interaction.
-struct DashConfirmMorph<Content: View>: View {
+///
+/// Body and action band sit on opposite sides of `DashTrayScrollBoundary`: the
+/// body scrolls when it outgrows the card, the band never does. Both stay in
+/// this one view tree, which is what lets `confirming` morph them together.
+struct DashConfirmMorph<Content: View, Accessory: View>: View {
   @Binding var confirming: Bool
   var message: String?
   var actionPhase: DashActionPhase = .idle
@@ -90,19 +94,30 @@ struct DashConfirmMorph<Content: View>: View {
   var action: () -> Void
   var headerDelete = false
   var headerDeleteAction: (() -> Void)? = nil
+  /// Controls that belong to the action band rather than to the body — the
+  /// reversible pills a detail tray stacks above its primary verb. They ride
+  /// the idle route, so a confirmation replaces them along with the body.
+  @ViewBuilder var accessory: () -> Accessory
   @ViewBuilder var content: () -> Content
 
   private var stepRole: DashTrayStepRole { confirming ? .destructive : .root }
 
-  var body: some View {
-    VStack(spacing: 0) {
-      bodyContent
+  /// Whether the band renders anything worth separating from the body. A
+  /// detail tray with neither accessory nor idle verb shows nothing until its
+  /// header trash flips `confirming`, and an empty band must not reserve a gap.
+  private var hasActionBand: Bool {
+    confirming || actionTitle != nil || Accessory.self != EmptyView.self
+  }
 
+  var body: some View {
+    DashTrayScrollBoundary {
+      bodyContent
+    } action: {
       // Keep the route host alive even when a detail tray has no idle footer.
       // Its root route is zero-height, but retaining it lets Delete animate in
       // and back out instead of mounting the flow after the route already won.
       actionContent
-        .padding(.top, confirming || actionTitle != nil ? 16 : 0)
+        .padding(.top, hasActionBand ? 16 : 0)
     }
     .frame(maxWidth: .infinity, alignment: .top)
     .dashTrayHeaderAction(
@@ -138,25 +153,27 @@ struct DashConfirmMorph<Content: View>: View {
           .disabled(!actionEnabled)
           .opacity(actionEnabled ? 1 : 0.45)
         }
-      } else if let actionTitle {
-        if let secondaryActionTitle, let secondaryAction {
-          // Not a way out of the primary — an alternative beside it, so it
-          // keeps the stacked relationship rather than sharing the row.
-          DashTrayActionPair(axis: .vertical) {
-            DashTrayTextButton(title: secondaryActionTitle, action: secondaryAction)
-              .disabled(!secondaryActionEnabled || actionPhase.isActive)
-          } primary: {
-            DashActionButton(
-              title: actionTitle,
-              role: actionRole,
-              phase: actionPhase,
-              onSuccessPresentationCompleted: onSuccessPresentationCompleted,
-              action: action
-            )
-            .disabled(!actionEnabled)
-            .opacity(actionEnabled ? 1 : 0.45)
-          }
-        } else {
+      } else {
+        // Reversible pills above, the primary verb bottom-most — the band
+        // keeps that order whether the pills come from the accessory slot or
+        // from `secondaryActionTitle`.
+        VStack(spacing: 10) {
+          accessory()
+          idleAction
+        }
+      }
+    }
+  }
+
+  @ViewBuilder private var idleAction: some View {
+    if let actionTitle {
+      if let secondaryActionTitle, let secondaryAction {
+        // Not a way out of the primary — an alternative beside it, so it
+        // keeps the stacked relationship rather than sharing the row.
+        DashTrayActionPair(axis: .vertical) {
+          DashTrayTextButton(title: secondaryActionTitle, action: secondaryAction)
+            .disabled(!secondaryActionEnabled || actionPhase.isActive)
+        } primary: {
           DashActionButton(
             title: actionTitle,
             role: actionRole,
@@ -167,6 +184,16 @@ struct DashConfirmMorph<Content: View>: View {
           .disabled(!actionEnabled)
           .opacity(actionEnabled ? 1 : 0.45)
         }
+      } else {
+        DashActionButton(
+          title: actionTitle,
+          role: actionRole,
+          phase: actionPhase,
+          onSuccessPresentationCompleted: onSuccessPresentationCompleted,
+          action: action
+        )
+        .disabled(!actionEnabled)
+        .opacity(actionEnabled ? 1 : 0.45)
       }
     }
   }
@@ -190,6 +217,50 @@ struct DashConfirmMorph<Content: View>: View {
         content()
       }
     }
+  }
+}
+
+extension DashConfirmMorph where Accessory == EmptyView {
+  /// The common shape: a body and one route-driven primary action, with no
+  /// pills of its own in the band.
+  init(
+    confirming: Binding<Bool>,
+    message: String? = nil,
+    actionPhase: DashActionPhase = .idle,
+    onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil,
+    actionTitle: String?,
+    confirmingActionTitle: String = "Delete",
+    actionRole: ButtonRole? = nil,
+    confirmingActionRole: ButtonRole? = .destructive,
+    actionEnabled: Bool = true,
+    secondaryActionTitle: String? = nil,
+    secondaryActionEnabled: Bool = true,
+    secondaryAction: (() -> Void)? = nil,
+    errorMessage: String? = nil,
+    action: @escaping () -> Void,
+    headerDelete: Bool = false,
+    headerDeleteAction: (() -> Void)? = nil,
+    @ViewBuilder content: @escaping () -> Content
+  ) {
+    self.init(
+      confirming: confirming,
+      message: message,
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: onSuccessPresentationCompleted,
+      actionTitle: actionTitle,
+      confirmingActionTitle: confirmingActionTitle,
+      actionRole: actionRole,
+      confirmingActionRole: confirmingActionRole,
+      actionEnabled: actionEnabled,
+      secondaryActionTitle: secondaryActionTitle,
+      secondaryActionEnabled: secondaryActionEnabled,
+      secondaryAction: secondaryAction,
+      errorMessage: errorMessage,
+      action: action,
+      headerDelete: headerDelete,
+      headerDeleteAction: headerDeleteAction,
+      accessory: { EmptyView() },
+      content: content)
   }
 }
 
