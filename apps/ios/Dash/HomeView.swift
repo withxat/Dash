@@ -241,7 +241,14 @@ struct HomeView: View {
     .dashTray(isPresented: $showsEditShortcuts, title: DashL10n.string("Edit shortcuts")) {
       EditShortcutsView(selectionRaw: $shortcutsRaw)
     }
-    .dashTray(isPresented: $showsDemoConnect, title: DashL10n.string("Connect your account")) {
+    // Demo Connect always grows out of the banner's Connect pill — quick
+    // actions open the same tray, so that button is the one source of truth.
+    // Off-screen / Reduce Motion falls back to the plain bottom reveal.
+    .dashTray(
+      isPresented: $showsDemoConnect,
+      title: DashL10n.string("Connect your account"),
+      sourceID: HomeDemoConnect.sourceID
+    ) {
       HomeDemoConnectContent(connect: leaveDemoForConnection)
     }
     .onChange(of: actionsRaw) { _, newValue in
@@ -505,6 +512,12 @@ struct HomeGreetingHeader: View {
 
 // MARK: - Demo
 
+/// Shared anchor for the demo Connect tray: the banner pill and every
+/// quick-action redirect grow out of / retract into this one control.
+private enum HomeDemoConnect {
+  static let sourceID = "home-demo-connect"
+}
+
 private struct HomeDemoExperienceSection: View {
   let openIssue: () -> Void
   let openResource: () -> Void
@@ -566,6 +579,8 @@ private struct HomeDemoExperienceSection: View {
           icon: SolarAsset.cloudflare,
           action: connect
         )
+        .accessibilityIdentifier(HomeDemoConnect.sourceID)
+        .dashTraySource(id: HomeDemoConnect.sourceID)
       }
     }
     .accessibilityElement(children: .contain)
