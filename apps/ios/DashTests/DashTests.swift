@@ -1906,6 +1906,26 @@ private let watchtowerDropFrames: [CGRect] = [
       CGRect(x: 16, y: 300, width: 120, height: 90), in: .zero))
 }
 
+@Test @MainActor func trayAnchorSourceClaimIsExclusiveAndOwnerReleased() {
+  let registry = DashTraySourceRegistry()
+
+  #expect(registry.claim("first"))
+  #expect(registry.occupiedID == AnyHashable("first"))
+  #expect(!registry.claim("second"))
+  #expect(registry.occupiedID == AnyHashable("first"))
+
+  registry.release("second")
+  #expect(registry.occupiedID == AnyHashable("first"))
+  registry.release("first")
+  #expect(registry.occupiedID == nil)
+  #expect(registry.claim("second"))
+
+  var lease: DashTrayAnchorLease? = DashTrayAnchorLease(registry: registry)
+  lease?.adopt(DashTrayAnchorClaim(sourceID: "second", frame: .zero))
+  lease = nil
+  #expect(registry.occupiedID == nil)
+}
+
 @Test func successCheckFlightArcsBetweenItsEndpointsWithALateDissolve() {
   let from = CGPoint(x: 300, y: 700)
   let to = CGPoint(x: 60, y: 120)

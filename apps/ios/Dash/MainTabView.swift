@@ -256,7 +256,9 @@ struct MainTabView: View {
           ProfileTrayContent(path: $profileTrayPath)
         },
         footer: {
-          ProfileTrayFooter(path: $profileTrayPath)
+          ProfileTrayFooter(path: $profileTrayPath) { account in
+            model.selectAccount(account)
+          }
         }
       )
       .dashTray(
@@ -304,7 +306,8 @@ struct MainTabView: View {
           ) {
             HomeView(
               isActive: selection == .home,
-              isAtRoot: homeNavigator.depth == 0)
+              isAtRoot: homeNavigator.depth == 0,
+              canPresentPendingAction: !overlayTrays.presented)
           }
         }
         tabPage(.features) {

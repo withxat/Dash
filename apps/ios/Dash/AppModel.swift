@@ -635,6 +635,19 @@ final class AppModel {
         previewDefaults.set(HomeActions.defaultValue, forKey: HomeActions.key)
         grantedScopes = Set(CloudflareScopes.published)
         activeAccountID = "ui-account"
+        if let previewAccounts = try? JSONDecoder().decode(
+          [CloudflareAccount].self,
+          from: Data(
+            """
+            [
+              {"id":"ui-account","name":"Demo Workspace","type":"standard"},
+              {"id":"demo-account-studio","name":"Foxglove Studio","type":"standard"},
+              {"id":"demo-account-side","name":"Side Projects","type":"standard"}
+            ]
+            """.utf8))
+        {
+          accounts = previewAccounts
+        }
         if let zones = try? JSONDecoder().decode(
           [CloudflareZone].self,
           from: Data(
@@ -680,6 +693,24 @@ final class AppModel {
             }
           }
         }
+        // Registrar has no URLProtocol preview backend. Seed the merged index
+        // itself so its UI test never falls through to a simulator credential
+        // or a live Cloudflare request.
+        let previewRegistrarDomain = RegistrarDomainSummary(
+          name: "example.com",
+          status: "active",
+          expiresAt: "2027-07-16T00:00:00Z",
+          createdAt: "2024-07-16T00:00:00Z",
+          autoRenew: true,
+          locked: true,
+          privacyMode: "redacted",
+          currentRegistrar: "Cloudflare")
+        featureCache.set(
+          FeatureCacheKey.registrarDomains("ui-account"),
+          RegistrarAccountIndex(
+            domains: [previewRegistrarDomain],
+            registrations: .value([previewRegistrarDomain]),
+            legacy: .value([previewRegistrarDomain])))
         // A realistic slice of the ~60 settings Cloudflare returns: the five the
         // curated panel keeps, plus ones it must drop (a plan-locked toggle, a
         // set-once choice, and the array-valued key that used to render as

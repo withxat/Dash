@@ -387,7 +387,7 @@ struct DashConfirmableActions: View {
   @State private var actionPhase: DashActionPhase = .idle
   @State private var errorMessage: String?
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
 
   private var route: Route {
     pending.map { .confirmation($0.id) } ?? .menu
@@ -499,9 +499,7 @@ struct DashConfirmableActions: View {
           morphNamespace: reduceMotion ? nil : morph,
           onSuccessPresentationCompleted: {
             guard actionPhase == .succeeded, pending?.id == action.id else { return }
-            actionPhase = .idle
-            dismiss()
-            action.onSuccessPresentationCompleted()
+            dismissAfter(action.onSuccessPresentationCompleted)
           },
           action: {
             Task {
@@ -549,6 +547,7 @@ struct DashActionButton: View {
   let action: () -> Void
   @Environment(\.dashTrayTone) private var trayTone
   @Environment(\.dashTraySuccessFlightEnabled) private var successFlightEnabled
+  @Environment(\.dashTraySuccessFlightInProgress) private var successFlightInProgress
 
   /// Destructive keeps danger red whatever the tray's context. Otherwise a
   /// toned tray colors its submit pill (Family's contextual tray) with the
@@ -594,18 +593,16 @@ struct DashActionButton: View {
           loadingColor: labelForeground,
           onSuccessPresentationCompleted: onSuccessPresentationCompleted
         )
-        // Liftoff frame for the tray host's success-check flight — published
-        // only while the check is actually showing, and only for content that
-        // opted in via `dashTraySuccessFlight()`.
+        // Liftoff slot for the tray host's success-check flight. The R2
+        // create flow keeps `.succeeded` mounted until the cover unmounts, so
+        // a keyboard can settle the card before dismissal without losing the
+        // current start point.
         .background {
           if successFlightEnabled, phase == .succeeded {
-            GeometryReader { proxy in
-              Color.clear.preference(
-                key: DashTraySuccessFlightPreferenceKey.self,
-                value: proxy.frame(in: .global))
-            }
+            DashTraySuccessFlightSourceReporter()
           }
         }
+        .opacity(successFlightInProgress ? 0 : 1)
         .padding(.trailing, 18)
       }
 

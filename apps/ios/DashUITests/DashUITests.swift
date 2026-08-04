@@ -121,6 +121,87 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 2))
   }
 
+  func testTrayCloseDismissesKeyboardAndCover() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-uiTestKeyboardForm"])
+
+    let nameField = app.textFields["Name"]
+    XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+    nameField.tap()
+
+    let keyboard = app.keyboards.firstMatch
+    let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
+    let close = app.buttons["dash.tray.close"]
+    XCTAssertTrue(keyboard.waitForExistence(timeout: 2))
+    XCTAssertTrue(card.exists)
+    XCTAssertTrue(close.waitForExistence(timeout: 2))
+
+    close.tap()
+
+    XCTAssertTrue(keyboard.waitForNonExistence(timeout: 2))
+    XCTAssertTrue(card.waitForNonExistence(timeout: 2))
+  }
+
+  func testTrayStopsAnchoredMotionWhenReduceMotionTurnsOn() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-uiTestTrayMotion"])
+
+    let source = app.buttons["ui-test-tray-source"]
+    XCTAssertTrue(source.waitForExistence(timeout: 5))
+    source.tap()
+
+    let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
+    XCTAssertTrue(card.waitForExistence(timeout: 2))
+    let anchored = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "anchored"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [anchored], timeout: 2), .completed)
+
+    let enableReduceMotion = app.buttons["ui-test-enable-reduce-motion"]
+    XCTAssertTrue(Self.waitForHittable(enableReduceMotion))
+    enableReduceMotion.tap()
+
+    let released = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "unanchored"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [released], timeout: 2), .completed)
+
+    let close = app.buttons["dash.tray.close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 2))
+    close.tap()
+    XCTAssertTrue(card.waitForNonExistence(timeout: 2))
+    let restoredSource = app.buttons["Open anchored tray"]
+    XCTAssertTrue(restoredSource.waitForExistence(timeout: 2))
+    restoredSource.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertTrue(card.waitForExistence(timeout: 2))
+  }
+
+  func testR2CreateSuccessFlightSurvivesKeyboardDismissal() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-uiTestR2TrayFlight"])
+
+    let source = app.buttons["ui-test-r2-create-source"]
+    XCTAssertTrue(Self.waitForHittable(source))
+    source.tap()
+
+    let name = app.textFields["Bucket name"]
+    XCTAssertTrue(Self.waitForHittable(name))
+    name.tap()
+    name.typeText("ui-bucket")
+    XCTAssertTrue(app.keyboards.firstMatch.exists)
+
+    let create = app.buttons["Create bucket"]
+    XCTAssertTrue(Self.waitForHittable(create))
+    create.tap()
+
+    XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+    XCTAssertTrue(app.staticTexts["Created successfully."].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.staticTexts["Success flight ran"].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.staticTexts["Bucket created"].waitForExistence(timeout: 3))
+    let restoredSource = app.buttons["Open R2 create"]
+    XCTAssertTrue(restoredSource.waitForExistence(timeout: 2))
+    restoredSource.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    XCTAssertTrue(app.textFields["Bucket name"].waitForExistence(timeout: 2))
+  }
+
   func testDeferredDNSDeletionHidesImmediatelyAndUndoRestoresIt() {
     let app = XCUIApplication()
     launch(
@@ -355,6 +436,31 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(
       app.staticTexts["Choose the domain whose cache you want to clear."]
         .waitForExistence(timeout: 5))
+    XCTAssertFalse(purgeCache.isHittable)
+
+    let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
+    XCTAssertTrue(card.waitForExistence(timeout: 2))
+    let anchored = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value == %@", "anchored"), object: card)
+    XCTAssertEqual(XCTWaiter.wait(for: [anchored], timeout: 2), .completed)
+
+    let close = app.buttons["dash.tray.close"]
+    XCTAssertTrue(close.waitForExistence(timeout: 2))
+    close.tap()
+
+    XCTAssertTrue(close.waitForNonExistence(timeout: 5))
+    let restoredPurgeCache = app.buttons["Purge cache"]
+    XCTAssertTrue(restoredPurgeCache.waitForExistence(timeout: 2))
+
+    restoredPurgeCache.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    let zone = app.buttons.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(Self.waitForHittable(zone))
+    zone.tap()
+
+    XCTAssertTrue(card.waitForNonExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Purge URL"].waitForExistence(timeout: 5))
   }
 
   func testProfileTrayStackMorphsCloseIntoBack() {
@@ -582,7 +688,10 @@ final class DashUITests: XCTestCase {
     profile.tap()
 
     let tunnelsToggle = app.switches["settings-experimental-tunnels"]
-    for _ in 0..<6 where !tunnelsToggle.exists {
+    // The deterministic preview now includes the account-switching row. The
+    // lazy stack can therefore expose this element to accessibility before it
+    // is on screen; scroll until it is actually tappable, not merely present.
+    for _ in 0..<6 where !tunnelsToggle.isHittable {
       app.swipeUp()
     }
     XCTAssertTrue(tunnelsToggle.waitForExistence(timeout: 5))

@@ -92,9 +92,10 @@ struct ProfileTrayContent: View {
 /// global destination while account rows and confirmation copy morph above it.
 struct ProfileTrayFooter: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var path: [ProfileTrayPhase]
+  let onSwitchAccount: (CloudflareAccount) -> Void
   @Namespace private var actionMorph
 
   /// Shared by the idle Sign out pill and the confirming pill so the enamel
@@ -146,8 +147,7 @@ struct ProfileTrayFooter: View {
 
   private func accountSwitchActions(_ account: CloudflareAccount) -> some View {
     DashActionButton(title: "Switch account") {
-      model.selectAccount(account)
-      dismiss()
+      dismissAfter { onSwitchAccount(account) }
     }
   }
 
@@ -913,7 +913,7 @@ struct SettingsAccountsView: View {
       title: { _ in DashL10n.string("Switch account") },
       content: { account in
         AccountSwitchConfirmationContent(account: account) {
-          pendingAccount = nil
+          model.selectAccount(account)
         }
       }
     )
@@ -921,16 +921,17 @@ struct SettingsAccountsView: View {
 }
 
 private struct AccountSwitchConfirmationContent: View {
-  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let account: CloudflareAccount
-  let cancel: () -> Void
+  let confirm: () -> Void
 
   var body: some View {
     DashTrayActionPair {
-      DashTrayCancelButton(action: cancel)
+      DashTrayCancelButton(action: dismiss)
     } primary: {
       DashActionButton(title: "Switch account") {
-        model.selectAccount(account)
+        dismissAfter(confirm)
       }
     }
     .dashTrayDescription(

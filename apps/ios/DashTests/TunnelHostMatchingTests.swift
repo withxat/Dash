@@ -78,7 +78,7 @@ private struct CoverCase: Sendable {
     expected: false,
     note: "unrelated literal does not cover sibling host"),
 ])
-func tunnelHostMatchingCovers(cover: CoverCase) {
+private func tunnelHostMatchingCovers(cover: CoverCase) {
   #expect(
     TunnelHostMatching.covers(ingressHost: cover.ingress, accessHosts: cover.accessHosts)
       == cover.expected,

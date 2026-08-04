@@ -8,6 +8,10 @@ struct HomeView: View {
   @Environment(\.destinationNavigator) private var navigator
   let isActive: Bool
   let isAtRoot: Bool
+  /// A deep-linked action may arrive while Profile or another tray is still
+  /// leaving. Keep it queued until the app-level tray preference clears so two
+  /// independent full-screen covers never compete for the one compact tray.
+  let canPresentPendingAction: Bool
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
@@ -263,13 +267,16 @@ struct HomeView: View {
     .onChange(of: isAtRoot) { _, _ in
       consumePendingHomeActionIfReady()
     }
+    .onChange(of: canPresentPendingAction) { _, _ in
+      consumePendingHomeActionIfReady()
+    }
   }
 
   /// Deep-linked quick actions wait for the same zone context a tile tap would
   /// already have, so purge / DNS / mode trays do not open against a stale list.
   private func consumePendingHomeActionIfReady() {
     guard let pending = model.pendingHomeAction else { return }
-    guard isActive, isAtRoot else { return }
+    guard isActive, isAtRoot, canPresentPendingAction else { return }
     guard pending.matches(model.accountRequestContext) else {
       model.pendingHomeAction = nil
       return
@@ -693,6 +700,7 @@ private struct HomeQuickActionsSection: View {
           DashToolTile(title: action.title, icon: action.icon)
         }
         .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(action.title)
         .accessibilityIdentifier(action.accessibilityIdentifier)
         .frame(maxWidth: .infinity)
         // Anchor for the tray's grow-out-of-the-tile reveal; the tray pairs
@@ -1892,7 +1900,7 @@ private enum HomeR2UploadError: LocalizedError {
 }
 
 private struct HomePurgeCachePicker: View {
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let zones: [CloudflareZone]
   let onSelect: (CloudflareZone) -> Void
 
@@ -1906,8 +1914,7 @@ private struct HomePurgeCachePicker: View {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
             Button {
-              dismiss()
-              onSelect(zone)
+              dismissAfter { onSelect(zone) }
             } label: {
               DashListRow(
                 title: zone.name,

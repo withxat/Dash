@@ -120,6 +120,23 @@ private enum R2BucketActionsStep: Hashable, Sendable {
   }
 }
 
+/// Menu actions that navigate or mutate their presenting screen must wait for
+/// the tray's own exit to finish; clearing the binding and changing the parent
+/// in the same turn tears the cover out from under its animation.
+private struct R2BucketTrayExitButton<Label: View>: View {
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  let action: () -> Void
+  @ViewBuilder let label: () -> Label
+
+  var body: some View {
+    Button {
+      dismissAfter(action)
+    } label: {
+      label()
+    }
+  }
+}
+
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -544,8 +561,7 @@ struct R2BucketView: View {
 
         DashListGroupDivider()
 
-        Button {
-          showsBucketActions = false
+        R2BucketTrayExitButton {
           withAnimation(DashTheme.Motion.morph) {
             selecting = true
             selectedKeys = []
@@ -574,8 +590,7 @@ struct R2BucketView: View {
         DashListGroupDivider()
       }
 
-      Button {
-        showsBucketActions = false
+      R2BucketTrayExitButton {
         navigator?.push(.r2BucketSettings(bucket))
       } label: {
         DashListRow(
@@ -620,7 +635,6 @@ struct R2BucketView: View {
       message: DashL10n.string(
         "Deletes the empty \(currentFolderName) folder from \(bucket). This can't be undone."),
       onSuccessPresentationCompleted: {
-        bucketActionsPath = []
         // The parent listing is stale by exactly this folder; its own
         // `reloadIfInvalidated` refetches when the cache comes back cold.
         navigator?.pop()
@@ -1539,7 +1553,7 @@ private enum StorageExternalURL {
 
 struct R2CreateBucketSheet: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let onCreated: () -> Void
   @State private var name = ""
   @State private var actionPhase: DashActionPhase = .idle
@@ -1583,7 +1597,11 @@ struct R2CreateBucketSheet: View {
         actionPhase = .idle
         return
       }
-      successToastID = model.toasts.success(DashL10n.string("Created successfully."))
+      // The toast starts while the success glyph and keyboard are still in the
+      // tray. Give it one normal dwell for that handoff and one after landing.
+      successToastID = model.toasts.success(
+        DashL10n.string("Created successfully."),
+        duration: DashToast.Kind.success.duration * 2)
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
@@ -1597,9 +1615,7 @@ struct R2CreateBucketSheet: View {
       actionPhase = .idle
       return
     }
-    actionPhase = .idle
-    onCreated()
-    dismiss()
+    dismissAfter(onCreated)
   }
 }
 
@@ -1614,7 +1630,7 @@ struct R2CreateBucketSheet: View {
 /// directory cannot share one filename.
 struct R2CreateFolderSheet: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let bucket: String
   /// The prefix this tray creates into — `""` at the bucket root.
   let folderPrefix: String
@@ -1730,16 +1746,16 @@ struct R2CreateFolderSheet: View {
       actionPhase = .idle
       return
     }
-    actionPhase = .idle
-    dismiss()
-    Task { await onCreated() }
+    dismissAfter {
+      Task { await onCreated() }
+    }
   }
 }
 
 /// Creates a new KV key/value pair in the open namespace.
 struct KVCreateKeySheet: View {
   @Environment(AppModel.self) private var model
-  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let namespaceID: String
   let onCreated: () -> Void
   @State private var keyName = ""
@@ -1861,9 +1877,7 @@ struct KVCreateKeySheet: View {
       actionPhase = .idle
       return
     }
-    actionPhase = .idle
-    onCreated()
-    dismiss()
+    dismissAfter(onCreated)
   }
 }
 
