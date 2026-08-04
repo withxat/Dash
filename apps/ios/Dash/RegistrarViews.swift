@@ -23,23 +23,6 @@ enum RegistrarAccess {
   static let write: Set<String> = FeatureID.registrar.capability.write
 }
 
-/// Account-scoped deep link to one registrar domain, for locally-scheduled
-/// expiry reminders. `WatchtowerNotifier.route(host:path:accountID:)` is private
-/// to its own file, so the shape is rebuilt here rather than reached for.
-enum RegistrarRoute {
-  static func deepLink(domain: String, accountID: String) -> String? {
-    let domain = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    let accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !domain.isEmpty, !accountID.isEmpty else { return nil }
-    var components = URLComponents()
-    components.scheme = "dash"
-    components.host = "registrar"
-    components.path = "/\(domain)"
-    components.queryItems = [URLQueryItem(name: "account", value: accountID)]
-    return components.url?.absoluteString
-  }
-}
-
 // MARK: - Fetch outcomes
 
 /// What one registrar endpoint answered.
@@ -189,17 +172,6 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
       return nil
     }
     return StatusToken(registrarStatus: status)
-  }
-
-  var expiresOn: Date? {
-    expiresAt.flatMap(ExpiryReminders.date(fromISO8601:))
-  }
-
-  /// The renewal policy this registration implies, read through
-  /// `ExpiryReminders.renewal` so the reminder and the screen can never
-  /// disagree about whether a deadline exists.
-  var renewal: ExpiryReminders.Renewal {
-    ExpiryReminders.renewal(registrarStatus: status, autoRenew: autoRenew)
   }
 }
 
@@ -776,7 +748,7 @@ struct RegistrarDomainDetailView: View {
     }
     let key = FeatureCacheKey.registrarDomain(accountID: accountID, domain: domain)
     if !force, let cached: RegistrarDomainDetail = model.featureCache.get(key) {
-      await apply(cached, accountID: accountID)
+      apply(cached)
       return
     }
     if force {
@@ -800,7 +772,7 @@ struct RegistrarDomainDetailView: View {
       detail.isCacheable
     else { return }
     model.featureCache.set(key, detail)
-    await apply(detail, accountID: accountID)
+    apply(detail)
   }
 
   private func reset(for context: AccountRequestContext?) {
@@ -813,14 +785,13 @@ struct RegistrarDomainDetailView: View {
     inFlight = nil
   }
 
-  private func apply(_ detail: RegistrarDomainDetail, accountID: String) async {
+  private func apply(_ detail: RegistrarDomainDetail) {
     withAnimation(DashTheme.Motion.content) {
       registration = detail.registration
       legacy = detail.legacy
       autoRenewOverride = nil
       lockedOverride = nil
     }
-    await scheduleExpiryReminder(accountID: accountID)
   }
 
   /// Flips the control immediately, sends only the flag that changed, and puts
@@ -870,9 +841,6 @@ struct RegistrarDomainDetailView: View {
         model.featureCache.remove(
           FeatureCacheKey.registrarDomain(accountID: context.accountID, domain: domain))
         model.optimistic.finishSuccess(op)
-        // The toggle is the moment the reminder's premise changes: auto-renew
-        // going on means there is no longer a deadline to count down to.
-        await scheduleExpiryReminder(accountID: context.accountID)
       } catch is CancellationError {
         // Undo during grace already reverted local state.
       } catch {
@@ -892,22 +860,6 @@ struct RegistrarDomainDetailView: View {
     }
   }
 
-  /// Applies (or withdraws) this domain's expiry reminders from whatever is
-  /// currently on screen. A Cloudflare registration that renews itself gets no
-  /// countdown — and any countdown left from before is removed.
-  private func scheduleExpiryReminder(accountID: String) async {
-    guard !model.isDemoSession, let summary else { return }
-    let renewal = ExpiryReminders.renewal(
-      registrarStatus: summary.status, autoRenew: autoRenewValue)
-    let expiresOn = summary.expiresOn
-    let route = RegistrarRoute.deepLink(domain: summary.name, accountID: accountID)
-    await ExpiryReminders.applyDomainReminder(
-      domain: summary.name,
-      accountID: accountID,
-      expiresOn: expiresOn,
-      renewal: renewal,
-      route: route)
-  }
 }
 
 /// Both halves of one registrar domain, cached together so a revisit paints

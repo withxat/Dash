@@ -700,10 +700,12 @@ public actor CloudflareClient {
     let _: JSONValue = try await request(
       "/accounts/\(accountID)/r2/buckets/\(bucket)/domains/custom/\(domain)", method: "DELETE")
   }
-  public func listKVNamespaces(accountID: String, page: Int = 1) async throws -> Page<KVNamespace> {
+  public func listKVNamespaces(accountID: String, page: Int = 1, perPage: Int = 100)
+    async throws -> Page<KVNamespace>
+  {
     try await list(
       "/accounts/\(accountID)/storage/kv/namespaces",
-      query: ["page": String(page), "per_page": "100"])
+      query: ["page": String(page), "per_page": String(perPage)])
   }
   public func listKVKeys(
     accountID: String, namespaceID: String, cursor: String? = nil, prefix: String? = nil
@@ -761,6 +763,11 @@ public actor CloudflareClient {
   public func listNotificationPolicies(accountID: String) async throws -> [NotificationPolicy] {
     try await listAllPages("/accounts/\(accountID)/alerting/v3/policies", perPage: 50)
   }
+  public func getNotificationPolicy(accountID: String, policyID: String) async throws
+    -> NotificationPolicy
+  {
+    try await request("/accounts/\(accountID)/alerting/v3/policies/\(policyID)")
+  }
   public func createNotificationPolicy(accountID: String, input: NotificationPolicyInput)
     async throws -> NotificationPolicy
   {
@@ -772,6 +779,16 @@ public actor CloudflareClient {
   ) async throws -> NotificationPolicy {
     try await request(
       "/accounts/\(accountID)/alerting/v3/policies/\(policyID)", method: "PUT", body: input)
+  }
+  public func updateNotificationPolicyMechanisms(
+    accountID: String,
+    policyID: String,
+    mechanisms: NotificationMechanisms
+  ) async throws -> NotificationPolicy {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/policies/\(policyID)",
+      method: "PUT",
+      body: NotificationPolicyMechanismsInput(mechanisms: mechanisms))
   }
   public func deleteNotificationPolicy(accountID: String, policyID: String) async throws {
     let _: JSONValue = try await request(

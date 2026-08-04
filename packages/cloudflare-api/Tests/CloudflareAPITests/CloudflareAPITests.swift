@@ -334,6 +334,70 @@ struct NetworkTests {
     #expect(recorder.paths == ["1", "2"])
   }
 
+  @Test func getsOneNotificationPolicyByID() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "GET")
+      #expect(request.url?.path == "/accounts/acct/alerting/v3/policies/policy-1")
+      return (
+        200,
+        Data(
+          #"{"success":true,"result":{"id":"policy-1","alert_type":"tunnel_health_event","mechanisms":{"webhooks":[{"id":"hook-1"}]}}}"#
+            .utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let policy = try await client.getNotificationPolicy(
+      accountID: "acct", policyID: "policy-1")
+
+    #expect(policy.id == "policy-1")
+    #expect(policy.mechanisms?.webhooks?.map(\.id) == ["hook-1"])
+  }
+
+  @Test func notificationPolicyDeliveryUpdateOnlyEncodesMechanisms() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.httpMethod == "PUT")
+      #expect(request.url?.path == "/accounts/acct/alerting/v3/policies/policy-1")
+      let body = try #require(requestBodyData(request))
+      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      #expect(Set(object.keys) == Set(["mechanisms"]))
+      let mechanisms = try #require(object["mechanisms"] as? [String: Any])
+      let emails = try #require(mechanisms["email"] as? [[String: Any]])
+      #expect(emails.compactMap { $0["id"] as? String } == ["person@example.com"])
+      let pagerDuty = try #require(mechanisms["pagerduty"] as? [[String: Any]])
+      #expect(pagerDuty.compactMap { $0["id"] as? String } == ["pager-1"])
+      let webhooks = try #require(mechanisms["webhooks"] as? [[String: Any]])
+      #expect(webhooks.compactMap { $0["id"] as? String } == ["hook-1", "hook-2"])
+      return (
+        200,
+        Data(
+          #"{"success":true,"result":{"id":"policy-1","alert_type":"tunnel_health_event","mechanisms":{"email":[{"id":"person@example.com"}],"pagerduty":[{"id":"pager-1"}],"webhooks":[{"id":"hook-1"},{"id":"hook-2"}]}}}"#
+            .utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let mechanisms = NotificationMechanisms(
+      email: [NotificationMechanismTarget(id: "person@example.com")],
+      pagerduty: [NotificationMechanismTarget(id: "pager-1")],
+      webhooks: [
+        NotificationMechanismTarget(id: "hook-1"),
+        NotificationMechanismTarget(id: "hook-2"),
+      ])
+
+    let policy = try await client.updateNotificationPolicyMechanisms(
+      accountID: "acct", policyID: "policy-1", mechanisms: mechanisms)
+
+    #expect(policy.mechanisms?.webhooks?.map(\.id) == ["hook-1", "hook-2"])
+    #expect(policy.mechanisms?.email?.map(\.id) == ["person@example.com"])
+    #expect(policy.mechanisms?.pagerduty?.map(\.id) == ["pager-1"])
+  }
+
   @Test func listNotificationWebhooksCollectsEveryPage() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

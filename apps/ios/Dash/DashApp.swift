@@ -44,12 +44,12 @@ struct DashApp: App {
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
     AppDependencyManager.shared.add(dependency: model)
-    if UserDefaults.standard.bool(forKey: WatchtowerNotifier.optInDefaultsKey)
-      || !PushRegistrationService.enabledAccountIDs().isEmpty
-    {
-      Task {
-        await WatchtowerNotifier.migrateLegacyBadgeAuthorizationIfNeeded()
-      }
+    LegacyWatchtowerNotificationSettings.clear()
+    LegacyPagesBuildPushTokenStore.clear()
+    Task { @MainActor in
+      await PagesBuildActivityController.addStaleDatesToLegacyActivities()
+      await DashNotificationSupport.removeLegacyGeneratedNotifications()
+      await DashNotificationSupport.migrateLegacyBadgeAuthorizationIfNeeded()
     }
 
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
@@ -122,15 +122,6 @@ struct DashApp: App {
         RootWithSplash(model: model)
           .tint(DashTheme.brand)
       #endif
-    }
-    .backgroundTask(.appRefresh(AppModel.backgroundRefreshID)) {
-      await model.performBackgroundWatchtowerRefresh()
-    }
-    // Pages LA continuation — same SwiftUI registration path as Watchtower.
-    // Best-effort; the controller single-flights it with any foreground refresh.
-    .backgroundTask(.appRefresh(PagesBuildActivityController.backgroundRefreshID)) {
-      await PagesBuildActivityController.shared.performBackgroundRefresh(
-        client: model.client, context: model.accountRequestContext)
     }
   }
 }

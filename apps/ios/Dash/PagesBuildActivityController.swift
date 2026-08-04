@@ -1,8 +1,6 @@
 @preconcurrency import ActivityKit
-import BackgroundTasks
 import CloudflareAPI
 import Foundation
-import OSLog
 
 struct PagesBuildMonitorKey: Hashable, Sendable {
   let accountID: String
@@ -11,11 +9,20 @@ struct PagesBuildMonitorKey: Hashable, Sendable {
   let deploymentID: String
 }
 
+enum LegacyPagesBuildPushTokenStore {
+  static let keyPrefix = "dash.pages.live_activity_push_token."
+
+  static func clear(defaults: UserDefaults = .standard) {
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+      defaults.removeObject(forKey: key)
+    }
+  }
+}
+
 enum PagesBuildRefreshSource: Equatable, Sendable {
   case initial
   case poll
   case manual
-  case background
 
   fileprivate func coalesced(with other: Self) -> Self {
     coalescingPriority >= other.coalescingPriority ? self : other
@@ -26,7 +33,6 @@ enum PagesBuildRefreshSource: Equatable, Sendable {
     case .manual: 3
     case .initial: 2
     case .poll: 1
-    case .background: 0
     }
   }
 }
@@ -49,12 +55,12 @@ enum PagesBuildLogRefreshPolicy {
   }
 }
 
-enum PagesBuildRefreshDisposition: Equatable, Sendable {
+enum BuildMonitorRefreshDisposition: Equatable, Sendable {
   case cancel
   case retry
   case stop
 
-  static func classify(_ error: any Error) -> PagesBuildRefreshDisposition {
+  static func classify(_ error: any Error) -> BuildMonitorRefreshDisposition {
     if error.dashIsCancellation {
       return .cancel
     }
@@ -80,15 +86,33 @@ enum PagesBuildRefreshDisposition: Equatable, Sendable {
   }
 }
 
+enum BuildActivityPresentationRules {
+  /// Pages and Workers share one Lock Screen freshness contract.
+  static let staleAfter: TimeInterval = 3 * 60
+}
+
 /// Starts, updates, and ends the single poll-driven Pages build Live Activity.
 ///
 /// The monitor is also the deployment detail's source of truth, so foreground
-/// UI, Live Activity, pull-to-refresh, and BGAppRefresh never create competing
-/// periodic loops for the same deployment.
+/// UI, Live Activity, and pull-to-refresh never create competing periodic loops
+/// for the same deployment.
 @MainActor
 enum PagesBuildActivityController {
   static let shared = PagesBuildActivityControllerBox()
-  static let backgroundRefreshID = "sh.xat.dash.app.pages-build-refresh"
+
+  /// Activities created by older releases had no stale date because Pages used
+  /// a background task and requested an unused push token. Constrain those
+  /// survivors on upgrade so removing both mechanisms cannot leave an eternal
+  /// "Building…" state on the Lock Screen.
+  static func addStaleDatesToLegacyActivities() async {
+    for activity in Activity<PagesBuildAttributes>.activities
+    where activity.content.staleDate == nil {
+      await activity.update(
+        ActivityContent(
+          state: activity.content.state,
+          staleDate: Date(timeIntervalSinceNow: BuildActivityPresentationRules.staleAfter)))
+    }
+  }
 }
 
 @MainActor
@@ -119,7 +143,7 @@ final class PagesBuildActivityControllerBox {
     }
 
     var source: PagesBuildRefreshSource {
-      waiters.values.reduce(.background) { current, waiter in
+      waiters.values.reduce(.poll) { current, waiter in
         current.coalesced(with: waiter.source)
       }
     }
@@ -162,8 +186,6 @@ final class PagesBuildActivityControllerBox {
   private var pollTask: Task<Void, Never>?
   private var pollID: UUID?
   private var refreshTasks: [PagesBuildMonitorKey: RefreshTask] = [:]
-  private var pushTokenTask: Task<Void, Never>?
-  private var pushTokenActivityID: String?
   private var activityCleanupTask: Task<Void, Never>?
   private var invalidationSerial: UInt64 = 0
   private let fetchDeployment:
@@ -266,10 +288,6 @@ final class PagesBuildActivityControllerBox {
     monitor?.consecutiveFailures = 0
     monitor?.retryPending = false
     broadcast(.deployment(deployment, source: .initial), for: key)
-
-    if keepsActivity {
-      scheduleBackgroundRefresh()
-    }
     updatePolling()
   }
 
@@ -284,10 +302,6 @@ final class PagesBuildActivityControllerBox {
     for task in tasks {
       task.cancel()
     }
-    pushTokenTask?.cancel()
-    pushTokenTask = nil
-    pushTokenActivityID = nil
-    cancelBackgroundRefresh()
 
     let activities = Activity<PagesBuildAttributes>.activities
     activityCleanupTask?.cancel()
@@ -296,60 +310,6 @@ final class PagesBuildActivityControllerBox {
         await activity.end(nil, dismissalPolicy: .immediate)
       }
     }
-  }
-
-  /// BGAppRefresh always uses the account persisted in the Activity. A legacy
-  /// or mismatched activity is ended instead of being queried through the
-  /// currently-selected account.
-  func performBackgroundRefresh(
-    client: CloudflareClient,
-    context: AccountRequestContext?
-  ) async {
-    let serial = invalidationSerial
-    if let activityCleanupTask {
-      await activityCleanupTask.value
-    }
-    guard !Task.isCancelled, serial == invalidationSerial else { return }
-
-    guard let activity = Activity<PagesBuildAttributes>.activities.first else {
-      cancelBackgroundRefresh()
-      return
-    }
-    guard let sourceAccountID = activity.attributes.accountID,
-      let context,
-      sourceAccountID == context.accountID
-    else {
-      await activity.end(nil, dismissalPolicy: .immediate)
-      cancelBackgroundRefresh()
-      return
-    }
-
-    let key = PagesBuildMonitorKey(
-      accountID: sourceAccountID,
-      accountGeneration: context.generation,
-      projectName: activity.attributes.projectName,
-      deploymentID: activity.attributes.deploymentID)
-    let result = await refreshDeployment(key: key, client: client, source: .background)
-    switch result {
-    case .inProgress, .retry:
-      scheduleBackgroundRefresh()
-    case .terminal, .cancelled:
-      cancelBackgroundRefresh()
-    }
-  }
-
-  /// Asks iOS to wake the app to refresh an in-progress Pages LA.
-  /// Opportunistic — delivery is not guaranteed; foreground polling remains authoritative.
-  func scheduleBackgroundRefresh() {
-    let request = BGAppRefreshTaskRequest(
-      identifier: PagesBuildActivityController.backgroundRefreshID)
-    request.earliestBeginDate = Date(timeIntervalSinceNow: 60)
-    try? BGTaskScheduler.shared.submit(request)
-  }
-
-  func cancelBackgroundRefresh() {
-    BGTaskScheduler.shared.cancel(
-      taskRequestWithIdentifier: PagesBuildActivityController.backgroundRefreshID)
   }
 
   private func refreshDeployment(
@@ -497,17 +457,11 @@ final class PagesBuildActivityControllerBox {
     }
 
     if deployment.isInProgress {
-      if keepsActivity {
-        scheduleBackgroundRefresh()
-      } else {
-        cancelBackgroundRefresh()
-      }
       completeRefresh(key: key, loadID: loadID, result: .inProgress)
       updatePolling()
       return
     }
 
-    cancelBackgroundRefresh()
     completeRefresh(key: key, loadID: loadID, result: .terminal)
     updatePolling()
   }
@@ -525,7 +479,7 @@ final class PagesBuildActivityControllerBox {
       return
     }
 
-    let disposition = PagesBuildRefreshDisposition.classify(error)
+    let disposition = BuildMonitorRefreshDisposition.classify(error)
     guard disposition != .cancel else {
       completeRefresh(key: key, loadID: loadID, result: .cancelled)
       return
@@ -568,7 +522,6 @@ final class PagesBuildActivityControllerBox {
         updatePolling()
       }
     case .stop:
-      cancelBackgroundRefresh()
       completeRefresh(key: key, loadID: loadID, result: .terminal)
       if monitor?.key == key {
         updatePolling()
@@ -604,7 +557,7 @@ final class PagesBuildActivityControllerBox {
       }
       while !Task.isCancelled {
         guard let current = self.monitor else { return }
-        let delay = PagesBuildRefreshDisposition.retryDelaySeconds(
+        let delay = BuildMonitorRefreshDisposition.retryDelaySeconds(
           consecutiveFailures: current.consecutiveFailures)
         do {
           try await Task.sleep(for: .seconds(Double(delay)))
@@ -676,15 +629,16 @@ final class PagesBuildActivityControllerBox {
       stage: deployment.latestStage?.name ?? "build",
       status: deployment.latestStage?.status ?? "active",
       shortID: deployment.shortID ?? String(deployment.id.prefix(8)))
+    let content = ActivityContent(
+      state: state,
+      staleDate: Date(timeIntervalSinceNow: BuildActivityPresentationRules.staleAfter))
 
     if let existing = Activity<PagesBuildAttributes>.activities.first(where: {
       $0.attributes.accountID == accountID
         && $0.attributes.deploymentID == deployment.id
     }) {
-      await existing.update(ActivityContent(state: state, staleDate: nil))
-      guard !Task.isCancelled, serial == invalidationSerial else { return false }
-      observePushToken(existing)
-      return true
+      await existing.update(content)
+      return !Task.isCancelled && serial == invalidationSerial
     }
 
     for activity in Activity<PagesBuildAttributes>.activities {
@@ -696,29 +650,7 @@ final class PagesBuildActivityControllerBox {
       accountID: accountID,
       projectName: projectName,
       deploymentID: deployment.id)
-    let activity = try? Activity.request(
-      attributes: attributes,
-      content: ActivityContent(state: state, staleDate: nil),
-      pushType: .token)
-    if let activity {
-      observePushToken(activity)
-      return true
-    }
-    return false
-  }
-
-  private func observePushToken(_ activity: Activity<PagesBuildAttributes>) {
-    guard pushTokenActivityID != activity.id else { return }
-    pushTokenTask?.cancel()
-    pushTokenActivityID = activity.id
-    pushTokenTask = Task {
-      for await tokenData in activity.pushTokenUpdates {
-        let hex = tokenData.map { String(format: "%02x", $0) }.joined()
-        UserDefaults.standard.set(
-          hex,
-          forKey: "dash.pages.live_activity_push_token.\(activity.attributes.deploymentID)")
-      }
-    }
+    return (try? Activity.request(attributes: attributes, content: content, pushType: nil)) != nil
   }
 
   private func end(
@@ -743,11 +675,6 @@ final class PagesBuildActivityControllerBox {
             shortID: deployment.shortID ?? String(deployment.id.prefix(8))),
           staleDate: nil),
         dismissalPolicy: .default)
-      if pushTokenActivityID == activity.id {
-        pushTokenTask?.cancel()
-        pushTokenTask = nil
-        pushTokenActivityID = nil
-      }
     }
   }
 
@@ -762,11 +689,6 @@ final class PagesBuildActivityControllerBox {
       && (activity.attributes.accountID == key.accountID || activity.attributes.accountID == nil)
     {
       await activity.end(nil, dismissalPolicy: .immediate)
-      if pushTokenActivityID == activity.id {
-        pushTokenTask?.cancel()
-        pushTokenTask = nil
-        pushTokenActivityID = nil
-      }
     }
   }
 }

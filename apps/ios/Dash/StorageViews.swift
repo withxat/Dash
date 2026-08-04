@@ -1036,7 +1036,7 @@ private func r2BucketAccessibilityLabel(_ bucket: R2Bucket) -> String {
 
 private func r2BucketCreationText(_ value: String?) -> String? {
   guard let value, !value.isEmpty else { return nil }
-  guard ExpiryReminders.date(fromISO8601: value) != nil else { return value }
+  guard DashDateFormatting.date(fromISO8601: value) != nil else { return value }
   return DashL10n.string(
     "Created \(DashDateFormatting.dateOnly(fromISO8601: value))")
 }
@@ -1246,6 +1246,8 @@ private final class R2BucketWork {
 }
 
 struct KVNamespacesView: View {
+  static let pageSize = 100
+
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1253,6 +1255,11 @@ struct KVNamespacesView: View {
   @State private var namespaces: [KVNamespace] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var isLoadingMore = false
+  /// Bumped on every fresh `load` so an in-flight `loadMore` cannot append
+  /// onto a list that was just reset / replaced.
+  @State private var listGeneration = 0
+  @State private var pageState = DashPageState()
   @State private var loadedContext: AccountRequestContext?
 
   var body: some View {
@@ -1283,6 +1290,17 @@ struct KVNamespacesView: View {
             DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
               .accessibilityLabel(DashL10n.string("\(namespace.title), KV namespace"))
           }
+        }
+      }
+      if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
+        DashInfiniteScrollFooter(
+          loaded: namespaces.count,
+          isLoading: isLoadingMore
+        ) {
+          // A failed page leaves the list banner up; don't spin the same
+          // request until the user retries (pull-to-refresh / Try again).
+          guard error == nil else { return }
+          Task { await loadMore() }
         }
       }
     }
@@ -1319,6 +1337,7 @@ struct KVNamespacesView: View {
     if !force, let cached: [KVNamespace] = model.featureCache.get(key) {
       guard model.isCurrentAccount(context) else { return }
       namespaces = cached
+      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
       loading = false
       error = nil
       return
@@ -1327,21 +1346,67 @@ struct KVNamespacesView: View {
     if namespaces.isEmpty, let stale: [KVNamespace] = model.featureCache.getStale(key) {
       guard model.isCurrentAccount(context) else { return }
       namespaces = stale
+      pageState.rehydrate(loaded: stale.count, pageSize: Self.pageSize)
       loading = true
     }
     if namespaces.isEmpty { loading = true }
+    isLoadingMore = false
+    listGeneration += 1
+    let generation = listGeneration
     let client = model.client
     do {
-      let fetched = try await client.listKVNamespaces(accountID: context.accountID).items
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
-      namespaces = fetched
-      model.featureCache.set(key, fetched)
+      pageState.reset()
+      let page = try await client.listKVNamespaces(
+        accountID: context.accountID, page: pageState.nextPage, perPage: Self.pageSize)
+      guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context)
+      else { return }
+      namespaces = page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: namespaces.count,
+        pageSize: Self.pageSize)
+      model.featureCache.set(key, namespaces)
       error = nil
     } catch {
-      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      guard !error.dashIsCancellation, generation == listGeneration,
+        model.isCurrentAccount(context)
+      else { return }
       self.error = error.dashActionableMessage
     }
     if model.isCurrentAccount(context) { loading = false }
+  }
+
+  private func loadMore() async {
+    guard
+      let context = model.accountRequestContext,
+      pageState.canLoadMore,
+      !isLoadingMore
+    else { return }
+    let generation = listGeneration
+    let pageNumber = pageState.nextPage
+    let client = model.client
+    isLoadingMore = true
+    defer {
+      if model.isCurrentAccount(context) {
+        isLoadingMore = false
+      }
+    }
+    do {
+      let page = try await client.listKVNamespaces(
+        accountID: context.accountID, page: pageNumber, perPage: Self.pageSize)
+      guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context)
+      else { return }
+      namespaces += page.items
+      pageState.absorb(
+        info: page.resultInfo, received: page.items.count, loaded: namespaces.count,
+        pageSize: Self.pageSize)
+      model.featureCache.set(FeatureCacheKey.kvNamespaces(context.accountID), namespaces)
+      error = nil
+    } catch {
+      guard !error.dashIsCancellation, generation == listGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      self.error = error.dashActionableMessage
+    }
   }
 
   private func prepareForCurrentAccount() {
@@ -1351,6 +1416,9 @@ struct KVNamespacesView: View {
     namespaces = []
     error = nil
     loading = context != nil
+    isLoadingMore = false
+    pageState.reset()
+    listGeneration += 1
   }
 }
 

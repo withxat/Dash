@@ -122,7 +122,7 @@ describe('alert tiering', () => {
 				.threadID,
 			'pages:docs',
 		)
-		assert.equal(mapAlert({ alert_type: 'dash_test', text: 'x' }).threadID, 'type:dash_test')
+		assert.equal(mapAlert({ alert_type: 'future_alert', text: 'x' }).threadID, 'type:future_alert')
 	})
 
 	it('only offers zone actions when a zone id can target them', () => {

@@ -1444,6 +1444,17 @@ public struct NotificationPolicyInput: Codable, Hashable, Sendable {
   }
 }
 
+/// Narrow update body used when Dash only changes policy delivery. Cloudflare's
+/// update endpoint accepts optional fields, so omitting enabled state, filters,
+/// interval, and copy avoids overwriting a concurrent dashboard edit.
+public struct NotificationPolicyMechanismsInput: Codable, Hashable, Sendable {
+  public var mechanisms: NotificationMechanisms
+
+  public init(mechanisms: NotificationMechanisms) {
+    self.mechanisms = mechanisms
+  }
+}
+
 public struct NotificationWebhook: Codable, Hashable, Identifiable, Sendable {
   public let id: String
   public let name: String?

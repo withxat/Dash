@@ -523,10 +523,6 @@ struct ZoneDetailView: View {
       forZoneNamed: zone.name, model: model)
     {
       settleRegistrar(registration)
-      await scheduleExpiryReminder(
-        domain: registration.name,
-        expiresOn: registration.expiresOn,
-        renewal: registration.renewal)
       return
     }
     await loadRdap(for: zone, force: force)
@@ -544,10 +540,6 @@ struct ZoneDetailView: View {
     let key = FeatureCacheKey.zoneRdap(zoneID)
     if !force, let cached: RdapRegistration = model.featureCache.get(key) {
       settleRdap(cached, phase: .content)
-      await scheduleExpiryReminder(
-        domain: zone.name,
-        expiresOn: cached.expiresOn.flatMap(ExpiryReminders.date(fromISO8601:)),
-        renewal: .thirdParty)
       return
     }
     do {
@@ -559,10 +551,6 @@ struct ZoneDetailView: View {
       settleRdap(registration, phase: .content)
       if let registration {
         model.featureCache.set(key, registration)
-        await scheduleExpiryReminder(
-          domain: zone.name,
-          expiresOn: registration.expiresOn.flatMap(ExpiryReminders.date(fromISO8601:)),
-          renewal: .thirdParty)
       }
     } catch {
       // `.task` identity changes cancel this lookup; that is not a failure the
@@ -586,28 +574,6 @@ struct ZoneDetailView: View {
     guard let zone = displayedZone else { return }
     withAnimation(DashTheme.Motion.content) { rdapPhase = .loading }
     await loadRegistration(for: zone, force: true)
-  }
-
-  /// Rides along with the registration card's own lookup — no extra request, and
-  /// the reminder is refreshed every time the user opens the domain, so a
-  /// renewal moves the schedule the next time they visit.
-  ///
-  /// Keyed on the domain name rather than the zone id, and routed through the
-  /// same helper the registrar screen calls, so the two screens describe one
-  /// deadline instead of double-booking it. `renewal` is what keeps a
-  /// self-renewing Cloudflare registration from getting a countdown at all.
-  private func scheduleExpiryReminder(
-    domain: String,
-    expiresOn: Date?,
-    renewal: ExpiryReminders.Renewal
-  ) async {
-    guard !model.isDemoSession, let accountID = model.activeAccountID else { return }
-    await ExpiryReminders.applyDomainReminder(
-      domain: domain,
-      accountID: accountID,
-      expiresOn: expiresOn,
-      renewal: renewal,
-      route: WatchtowerNotifier.zoneRoute(zoneID: zoneID, accountID: accountID))
   }
 
   /// The zone's name only exists after a load, so recency is recorded here
