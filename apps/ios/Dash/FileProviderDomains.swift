@@ -44,13 +44,6 @@ enum FileProviderDomains {
   /// File Provider can report `NSFileWriteFileExistsError` when the replica
   /// directory already exists. That error is idempotent only when a fresh
   /// domain read proves that this identifier is mounted.
-  @discardableResult
-  static func addDomain(for account: CloudflareAccount) async throws -> Set<String> {
-    try await operationGate.withLock {
-      try await addDomainUnlocked(for: account)
-    }
-  }
-
   private static func addDomainUnlocked(
     for account: CloudflareAccount
   ) async throws -> Set<String> {
@@ -79,49 +72,14 @@ enum FileProviderDomains {
     return accountIDs
   }
 
-  /// Destructively removes one account's replica and all downloaded data.
+  /// Brings the mounted domains in line with the authenticated account set.
   ///
-  /// A missing domain is already the requested result. A racing second remove
-  /// is also accepted only after a live re-read proves the domain is gone.
-  @discardableResult
-  static func removeDomain(accountID: String) async throws -> Set<String> {
-    try await operationGate.withLock {
-      try await removeDomainUnlocked(accountID: accountID)
-    }
-  }
-
-  private static func removeDomainUnlocked(accountID: String) async throws -> Set<String> {
-    let domains = try await fetchDomains()
-    guard let domain = domains.first(where: { identifier(of: $0) == accountID }) else {
-      let accountIDs = identifiers(in: domains)
-      updateMirror(accountIDs)
-      return accountIDs
-    }
-
-    do {
-      try await remove(domain)
-    } catch {
-      let refreshedDomains = try await fetchDomains()
-      let accountIDs = identifiers(in: refreshedDomains)
-      guard !accountIDs.contains(accountID) else { throw error }
-      updateMirror(accountIDs)
-      return accountIDs
-    }
-
-    let refreshedDomains = try await fetchDomains()
-    let accountIDs = identifiers(in: refreshedDomains)
-    guard !accountIDs.contains(accountID) else {
-      throw FileProviderDomainsError.inconsistentState
-    }
-    updateMirror(accountIDs)
-    return accountIDs
-  }
-
-  /// Removes mounted domains whose credentials can no longer exist.
-  ///
-  /// This is intentionally a subtraction, not a top-up: mounting is an
-  /// explicit user choice, while orphan removal is required to prevent a
-  /// permanently unauthenticated location in Files.
+  /// Every authenticated account owns a Files location — there is no per-account
+  /// opt-in — so this both tops up missing domains and removes the ones whose
+  /// account no longer exists, which is what prevents a permanently
+  /// unauthenticated location in Files. Users who don't want the locations turn
+  /// them off in Files › Browse › Edit; that hides the location without
+  /// unregistering the domain, so this pass never fights that choice.
   @discardableResult
   static func reconcile(
     accounts: [CloudflareAccount],
@@ -141,8 +99,9 @@ enum FileProviderDomains {
     let validAccountIDs = Set(accounts.map(\.id))
     let domains = try await fetchDomains()
     try Task.checkCancellation()
+    let installedAccountIDs = identifiers(in: domains)
     let orphanedIDs = orphanedAccountIDs(
-      installed: identifiers(in: domains),
+      installed: installedAccountIDs,
       validAccountIDs: validAccountIDs,
       preservingAccountIDs: preservingAccountIDs
     )
@@ -152,7 +111,29 @@ enum FileProviderDomains {
 
     try await removeDomains(orphanedDomains)
     try Task.checkCancellation()
-    return try await mountedAccountIDsUnlocked()
+
+    // Mount the rest one at a time: a single account whose domain cannot be
+    // created must not cost the others theirs, so the first failure is only
+    // rethrown after every remaining account has had its turn.
+    let missingAccountIDs = unmountedAccountIDs(
+      installed: installedAccountIDs,
+      validAccountIDs: validAccountIDs
+    )
+    var firstError: Error?
+    for account in accounts where missingAccountIDs.contains(account.id) {
+      try Task.checkCancellation()
+      do {
+        _ = try await addDomainUnlocked(for: account)
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        firstError = firstError ?? error
+      }
+    }
+
+    let accountIDs = try await mountedAccountIDsUnlocked()
+    if let firstError { throw firstError }
+    return accountIDs
   }
 
   /// Destructively removes every mounted replica. Call this before token
@@ -187,6 +168,16 @@ enum FileProviderDomains {
     preservingAccountIDs: Set<String> = []
   ) -> Set<String> {
     installed.subtracting(validAccountIDs.union(preservingAccountIDs))
+  }
+
+  /// The other half of the same diff: authenticated accounts with no Files
+  /// location yet. Preserved-but-unverified ids are deliberately absent — this
+  /// only ever mounts accounts the current credential just returned.
+  static func unmountedAccountIDs(
+    installed: Set<String>,
+    validAccountIDs: Set<String>
+  ) -> Set<String> {
+    validAccountIDs.subtracting(installed)
   }
 
   private static func removeDomains(_ domains: [NSFileProviderDomain]) async throws {

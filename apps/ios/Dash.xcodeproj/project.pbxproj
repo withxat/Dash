@@ -153,7 +153,6 @@
 		B000000000000000000001B9 /* EmailAddressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B9 /* EmailAddressViews.swift */; };
 		B000000000000000000001BA /* RegistrarViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BA /* RegistrarViews.swift */; };
 		B000000000000000000001BB /* TunnelViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BB /* TunnelViews.swift */; };
-		B000000000000000000001BC /* FilesMountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BC /* FilesMountView.swift */; };
 		B000000000000000000001BD /* FileProviderDomains.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BD /* FileProviderDomains.swift */; };
 		B000000000000000000001BE /* FileProviderExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BE /* FileProviderExtension.swift */; };
 		B000000000000000000001BF /* R2ItemIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BF /* R2ItemIdentifier.swift */; };
@@ -348,7 +347,6 @@
 		F000000000000000000001B9 /* EmailAddressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAddressViews.swift; sourceTree = "<group>"; };
 		F000000000000000000001BA /* RegistrarViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrarViews.swift; sourceTree = "<group>"; };
 		F000000000000000000001BB /* TunnelViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TunnelViews.swift; sourceTree = "<group>"; };
-		F000000000000000000001BC /* FilesMountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesMountView.swift; sourceTree = "<group>"; };
 		F000000000000000000001BD /* FileProviderDomains.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderDomains.swift; sourceTree = "<group>"; };
 		F000000000000000000001BE /* FileProviderExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderExtension.swift; sourceTree = "<group>"; };
 		F000000000000000000001BF /* R2ItemIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ItemIdentifier.swift; sourceTree = "<group>"; };
@@ -498,7 +496,6 @@
 				F000000000000000000001B9 /* EmailAddressViews.swift */,
 				F000000000000000000001BA /* RegistrarViews.swift */,
 				F000000000000000000001BB /* TunnelViews.swift */,
-				F000000000000000000001BC /* FilesMountView.swift */,
 				F000000000000000000001BD /* FileProviderDomains.swift */,
 				F0000000000000000000015B /* WorkerViews.swift */,
 				F0000000000000000000015C /* ZoneOperationsViews.swift */,
@@ -1001,7 +998,6 @@
 				B000000000000000000001B9 /* EmailAddressViews.swift in Sources */,
 				B000000000000000000001BA /* RegistrarViews.swift in Sources */,
 				B000000000000000000001BB /* TunnelViews.swift in Sources */,
-				B000000000000000000001BC /* FilesMountView.swift in Sources */,
 				B000000000000000000001BD /* FileProviderDomains.swift in Sources */,
 				B0000000000000000000015B /* WorkerViews.swift in Sources */,
 				B0000000000000000000015C /* ZoneOperationsViews.swift in Sources */,

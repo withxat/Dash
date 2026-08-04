@@ -17,6 +17,16 @@ import Testing
   #expect(!orphaned.contains("account-not-mounted"))
 }
 
+@Test func fileProviderReconciliationMountsEveryAuthenticatedAccount() {
+  let unmounted = FileProviderDomains.unmountedAccountIDs(
+    installed: ["account-mounted", "account-orphaned"],
+    validAccountIDs: ["account-mounted", "account-new"]
+  )
+
+  #expect(unmounted == ["account-new"])
+  #expect(!unmounted.contains("account-orphaned"))
+}
+
 @Test func fileProviderReconciliationPreservesUnverifiedMissingAccounts() {
   let orphaned = FileProviderDomains.orphanedAccountIDs(
     installed: ["account-returned", "account-lossy-row", "account-gone"],

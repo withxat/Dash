@@ -1,4 +1,3 @@
-import AppIntents
 import CloudflareAPI
 import CoreTransferable
 import GradientAvatars
@@ -692,37 +691,6 @@ struct SettingsView: View {
           }
 
           PushAlertsSettingsRows()
-        }
-
-        SettingsPlainSection(title: "Integrations") {
-          // `ShortcutsLink` is the only supported way into Dash’s App Shortcuts
-          // page. `shortcuts://` only restores Shortcuts’ last screen; there is
-          // no public URI for an app’s own actions folder. Keep the link on top
-          // with a full-row hit shape — burying it under the chrome leaves only
-          // the system pill’s tiny target, which reads as a dead Settings row.
-          SettingsPlainRow(
-            title: DashL10n.string("Siri & Shortcuts"),
-            icon: SolarAsset.bolt,
-            showsChevron: true
-          )
-          .accessibilityHidden(true)
-          .overlay {
-            ShortcutsLink()
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .contentShape(Rectangle())
-              .opacity(0.02)
-              .accessibilityLabel(DashL10n.string("Siri & Shortcuts"))
-              .accessibilityHint(DashL10n.string("Opens the Shortcuts app"))
-              .accessibilityIdentifier("settings-siri-shortcuts")
-          }
-
-          DashListGroupLink(value: .filesMount) {
-            SettingsPlainRow(
-              title: DashL10n.string("Files"),
-              icon: SolarAsset.folder,
-              showsChevron: true
-            )
-          }
         }
 
         SettingsPlainSection(title: "Experimental") {

@@ -974,7 +974,6 @@ struct LocalizationTests {
   #expect(featureID(for: .kvKey(namespaceID: "ns", key: "flag")) == .kv)
   #expect(featureID(for: .profile) == nil)
   #expect(featureID(for: .settingsAccounts) == nil)
-  #expect(featureID(for: .filesMount) == nil)
   #expect(featureID(for: .emailAddresses) == .emailRouting)
   #expect(featureID(for: .registrarDomain("example.com")) == .registrar)
 }
@@ -1001,8 +1000,6 @@ struct LocalizationTests {
   #expect(writeScopes(for: .pushAlerts) == ["notifications.write"])
   #expect(writeScopes(for: .profile) == ["account-settings.write"])
   #expect(requiredScopes(for: .settingsAccounts).isEmpty)
-  #expect(readScopes(for: .filesMount).isEmpty)
-  #expect(writeScopes(for: .filesMount).isEmpty)
   #expect(
     readScopes(for: .zoneEmailRouting("z1"))
       == [

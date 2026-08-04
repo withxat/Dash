@@ -923,17 +923,6 @@
         }
       }
     },
-    "Accounts" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "账户"
-          }
-        }
-      }
-    },
     "Actions" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1901,17 +1890,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "存储桶设置，公共访问与自定义域名"
-          }
-        }
-      }
-    },
-    "Buckets appear read-only in Files until you authorize write access." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "在你授权写入权限之前，存储桶在“文件”中将显示为只读。"
           }
         }
       }
@@ -3176,23 +3154,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接你的账户"
-          }
-        }
-      }
-    },
-    "Connect your account to show R2 buckets in the Files app." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Connect your account to show R2 buckets in the Files app."
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "连接账户后，即可在“文件”App 中显示 R2 存储桶。"
           }
         }
       }
@@ -5037,17 +4998,6 @@
         }
       }
     },
-    "Downloads the whole file" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "下载整个文件"
-          }
-        }
-      }
-    },
     "Drop" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5484,17 +5434,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "体验演示"
-          }
-        }
-      }
-    },
-    "External changes" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "外部更改"
           }
         }
       }
@@ -6295,23 +6234,6 @@
         }
       }
     },
-    "Integrations" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Integrations"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "系统集成"
-          }
-        }
-      }
-    },
     "Invocations chart for the last 24 hours. Total %@ requests, %@ errors." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6829,28 +6751,6 @@
         }
       }
     },
-    "Maximum download" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最大下载大小"
-          }
-        }
-      }
-    },
-    "Maximum upload" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "最大上传大小"
-          }
-        }
-      }
-    },
     "Metric" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7057,17 +6957,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "新建存储桶"
-          }
-        }
-      }
-    },
-    "New folder" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "新建文件夹"
           }
         }
       }
@@ -7395,17 +7284,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "无"
-          }
-        }
-      }
-    },
-    "Not available. R2 has no rename or move API" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "不可用。R2 没有重命名或移动接口"
           }
         }
       }
@@ -7759,17 +7637,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在打开…"
-          }
-        }
-      }
-    },
-    "Opens the Shortcuts app" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开「快捷指令」App"
           }
         }
       }
@@ -8412,17 +8279,6 @@
         }
       }
     },
-    "Previews" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "预览"
-          }
-        }
-      }
-    },
     "Priority %lld" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8893,17 +8749,6 @@
         }
       }
     },
-    "Re-enter the folder to see objects added or deleted from Wrangler, the dashboard, or another device." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重新进入文件夹后，才会显示 Wrangler、控制台或其他设备新增或删除的对象。"
-          }
-        }
-      }
-    },
     "Read & write" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9274,17 +9119,6 @@
         }
       }
     },
-    "Remove" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "移除"
-          }
-        }
-      }
-    },
     "Remove %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9370,17 +9204,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dash 暂不支持删除收件地址，请前往 Cloudflare 控制台操作。"
-          }
-        }
-      }
-    },
-    "Rename & move" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "重命名与移动"
           }
         }
       }
@@ -10267,22 +10090,6 @@
         }
       }
     },
-    "Siri & Shortcuts" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Siri & Shortcuts"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Siri 与快捷指令"
-          }
-        }
-      }
-    },
     "Skipped" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10662,17 +10469,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "路径过长 — R2 key 最多 1,024 字节。"
-          }
-        }
-      }
-    },
-    "The Files location and its downloaded files will be removed from this iPhone." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "这个“文件”位置及其已下载文件将从这台 iPhone 移除。"
           }
         }
       }
@@ -12630,17 +12426,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "遭受攻击"
-          }
-        }
-      }
-    },
-    "Supported. Delete folders in Dash." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "支持。请在 Dash 中删除文件夹。"
           }
         }
       }

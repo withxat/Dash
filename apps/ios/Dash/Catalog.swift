@@ -89,8 +89,6 @@ enum Destination: Hashable {
   case zoneEmailRouting(String)
   case auditLogs
   case pushAlerts
-  /// Settings → Files: one opt-in R2 File Provider domain per Cloudflare account.
-  case filesMount
   /// Watchtower notification inbox (Cloudflare history + Dash detections).
   case watchtowerInbox
   /// Account-level Email Routing destination addresses.

@@ -428,10 +428,6 @@ final class AppModel {
     return AccountRequestContext(accountID: activeAccountID, generation: accountGeneration)
   }
 
-  var canModifyFileProviderDomains: Bool {
-    authState == .authenticated && !isDemoSession && !isAuthenticating && !isSigningOut
-  }
-
   nonisolated static func shouldReconcileFileProviderDomains(
     authState: AuthenticationState,
     identityStale: Bool,
@@ -495,8 +491,10 @@ final class AppModel {
   }
 
   /// Reconcile only after authenticated identity has supplied the complete
-  /// account set. Mounting remains an explicit user choice; this background
-  /// pass only removes domains whose account no longer exists.
+  /// account set. Every authenticated account is mounted in Files, so this
+  /// background pass both adds the missing domains and removes the ones whose
+  /// account no longer exists — running it on a partial account list would
+  /// unmount a live account and drop its downloaded replica.
   private func scheduleFileProviderDomainReconciliation() {
     guard
       Self.shouldReconcileFileProviderDomains(
@@ -2020,9 +2018,9 @@ final class AppModel {
     toasts.clearAll()
     activeAccountID = account.id
     UserDefaults.standard.set(account.id, forKey: DashAppGroup.activeAccountKey)
-    // Domains are account-scoped, not active-account-scoped. Reconciliation
-    // only subtracts accounts that no longer exist and never unmounts the
-    // other authenticated accounts when this selection changes.
+    // Domains are account-scoped, not active-account-scoped: every
+    // authenticated account keeps its Files location, so switching the
+    // selection neither mounts nor unmounts anything on its own.
     scheduleFileProviderDomainReconciliation()
   }
 

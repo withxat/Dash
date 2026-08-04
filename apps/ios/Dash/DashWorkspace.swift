@@ -422,7 +422,6 @@ struct DestinationRoutedContent: View {
       case .zoneEmailRouting(let id): EmailRoutingView(zoneID: id)
       case .auditLogs: AuditLogView()
       case .pushAlerts: PushAlertsView()
-      case .filesMount: FilesMountView()
       case .watchtowerInbox: WatchtowerInboxView()
       case .emailAddresses: EmailDestinationAddressesView()
       case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
