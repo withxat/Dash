@@ -3,24 +3,28 @@ import SwiftUI
 
 // MARK: - Access
 
-/// The one place the Registrar scope ids are read from.
+/// The one place the Registrar scope ids are written.
 ///
-/// Registrar is a catalog `FeatureID` (`Resources → Registrations`), so
-/// the read scope lives in `FeatureCatalog.descriptors` like every other
-/// feature's and is mirrored here for the two screens that gate on it. The
-/// write scope stays out of that capability on purpose — see below.
+/// Registrar is not a catalog `FeatureID`, so these are literals rather than a
+/// capability lookup — the same shape `readScopes(for:)` already uses for
+/// `dns.*` and `cache.purge`. `readScopes` / `writeScopes` for
+/// `.registrarDomain` read them from here, so the pushed screen and the OAuth
+/// audit can never disagree about what it needs.
 enum RegistrarAccess {
-  static let read: Set<String> = FeatureID.registrar.capability.read
+  /// In `DashAuthorizationScopes.coreReadOperations`, and it has to be: the
+  /// only thing that asks for it is the zone screen's Registration lookup,
+  /// which has no button to request it on demand.
+  static let read: Set<String> = ["registrar-domains.read"]
 
   /// `.admin`, not `.write`. `registrar-domains.write` does not exist in
   /// Cloudflare's scope catalog, and `CloudflareScopes.sanitized()` drops
   /// unknown ids silently — the guess produces a successful consent flow that
   /// grants nothing, and a read-only screen with no error to explain it.
   ///
-  /// Mirrored on `FeatureID.registrar.capability.write` so Resources can badge
-  /// Demo / partial grants. The domains index suppresses the catalog banner
-  /// (`showsCatalogReadOnlyBanner`); this screen keeps its own notice.
-  static let write: Set<String> = FeatureID.registrar.capability.write
+  /// In `DashAuthorizationScopes.coreWriteOperations`: auto-renew and the
+  /// transfer lock are what the detail screen is for. The screen still carries
+  /// a `FeatureWriteAccessNotice` for grants that predate that.
+  static let write: Set<String> = ["registrar-domains.admin"]
 }
 
 // MARK: - Fetch outcomes
@@ -182,10 +186,9 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
 /// `/registrar/registrations` list returns domains bought through the
 /// Cloudflare dashboard or only ones created through the beta API itself. So
 /// the legacy page-numbered list is a first-class source here, not a rescue —
-/// both are called on every load and merged — and the screen is allowed to say
-/// "you own no domains" only when a source that answered `200` said so.
-/// "This endpoint doesn't know about your domains" renders as a failure with a
-/// retry, never as the empty state.
+/// both are called on every load and merged. A zone whose name is missing from
+/// the merged list simply falls through to RDAP, so neither endpoint's silence
+/// is ever reported as an answer.
 struct RegistrarAccountIndex: Sendable {
   let domains: [RegistrarDomainSummary]
   let registrations: RegistrarFetch<[RegistrarDomainSummary]>
@@ -198,36 +201,6 @@ struct RegistrarAccountIndex: Sendable {
     // `blog.example.com` zone's own registration record, so suffix matching
     // would attach one domain's expiry date and auto-renew state to another's.
     return domains.first { $0.name.lowercased() == needle }
-  }
-
-  /// Why the screen may not render the empty state.
-  ///
-  /// Only consulted when the merged list is empty. The page-numbered list is
-  /// the authority on "this account owns nothing" — it predates the beta and is
-  /// the one endpoint known to carry dashboard-bought domains. A `404` from it
-  /// means the endpoint itself is gone, in which case a `200` from the beta
-  /// list is the best answer available and is believed. Anything else (a 403, a
-  /// 5xx, a timeout, a decode failure) leaves the question unanswered, and an
-  /// unanswered question is not "none".
-  var unresolvedFailure: String? {
-    guard domains.isEmpty else { return nil }
-    if case .value = legacy { return nil }
-    if case .absent = legacy, case .value = registrations { return nil }
-    return legacy.failureMessage
-      ?? registrations.failureMessage
-      ?? DashL10n.string("Cloudflare didn’t return this account’s registered domains.")
-  }
-
-  /// A source is down while the other one carried rows: the list works, but it
-  /// may be short. Permission failures stay silent here — the rows on screen
-  /// already prove the grant covers the list, and a second grant prompt over a
-  /// working screen is furniture.
-  var partialFailure: String? {
-    guard !domains.isEmpty else { return nil }
-    for outcome in [registrations, legacy] {
-      if case .failed(let message) = outcome { return message }
-    }
-    return nil
   }
 
   /// A half-torn-down load is not a result. Caching one would freeze a partial
@@ -277,9 +250,9 @@ enum RegistrarIndexLoader {
 
 /// The zone screen's half of the registrar lookup.
 ///
-/// The account index is shared with `RegistrarDomainsView` through one cache
-/// key, so opening a zone and opening the registrar list never fetch the same
-/// two endpoints twice in a session.
+/// The account index is cached under one key and seeds
+/// `RegistrarDomainDetailView`, so opening a zone and then its registration
+/// never fetches the same two endpoints twice in a session.
 @MainActor
 enum RegistrarZoneRegistration {
   /// The first-party registration for a zone, or `nil` when the zone's domain
@@ -343,113 +316,6 @@ struct RegistrarRegistrationRows: View {
       DashInfoRow("WHOIS privacy", value: privacy)
       DashInfoRow("Privacy settings", value: DashL10n.string("Cloudflare dashboard"))
     }
-  }
-}
-
-// MARK: - Domains list
-
-struct RegistrarDomainsView: View {
-  @Environment(AppModel.self) private var model
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @State private var index: RegistrarAccountIndex?
-  @State private var loading = true
-  @State private var error: String?
-  @State private var loadedContext: AccountRequestContext?
-
-  private var domains: [RegistrarDomainSummary] { index?.domains ?? [] }
-
-  private var allowsWrites: Bool {
-    model.hasScopes(RegistrarAccess.write) && !model.isDemoSession
-  }
-
-  var body: some View {
-    DashFeatureList(
-      isLoading: loading,
-      error: error,
-      hasContent: !domains.isEmpty,
-      // Reached only when a source that answered 200 said zero. A 403, a beta
-      // 404 or a decode failure takes the `fullScreenError` branch instead —
-      // most accounts legitimately own no registrar domains, which makes this
-      // state perfect camouflage for a failure.
-      empty: DashFeatureEmpty(
-        icon: SolarAsset.Content.globus,
-        title: "No registered domains",
-        message:
-          "Domains you buy from Cloudflare Registrar appear here. Registration itself happens on the Cloudflare dashboard."
-      ),
-      retry: { Task { await load(force: true) } }
-    ) { mode in
-      if !mode.isPlaceholder, !allowsWrites {
-        FeatureWriteAccessNotice(
-          message: "Read-only — grant Registrar access to change these settings.",
-          scopes: RegistrarAccess.write)
-      }
-      // Header and rows used to share the lazy stack; keep rows here so a
-      // `DashListGroup` wrapper cannot mount a long registrar list eagerly.
-      dashListCard {
-        dashModeListRows(mode: mode, items: domains, reduceMotion: reduceMotion) { domain in
-          DashListGroupLink(value: .registrarDomain(domain.name)) {
-            DashListRow(
-              title: domain.name,
-              subtitle: domain.expiresSubtitle,
-              avatarSeed: domain.name
-            ) {
-              // Positive states carry no capsule: the row is the domain, and
-              // "Registered" on every row is noise.
-              if let token = domain.statusToken, token != .registered {
-                StatusBadge(token)
-              }
-            }
-            .accessibilityLabel(registrarDomainAccessibilityLabel(domain))
-          }
-        }
-      }
-      .dashSectionBoundary(!mode.isPlaceholder && !allowsWrites)
-    }
-    // No `detailHeader` here: this is `Destination.feature(.registrar)`, and
-    // `FeatureRouterContent` already installs the catalog icon and title. A
-    // second one would add a second principal toolbar item.
-    .refreshable { await load(force: true) }
-    .task(id: model.accountRequestContext) { await load() }
-  }
-
-  private func load(force: Bool = false) async {
-    guard let context = model.accountRequestContext else {
-      loadedContext = nil
-      index = nil
-      loading = false
-      error = nil
-      return
-    }
-    if loadedContext != context {
-      loadedContext = context
-      index = nil
-      loading = true
-      error = nil
-    }
-    let key = FeatureCacheKey.registrarDomains(context.accountID)
-    if !force, let cached: RegistrarAccountIndex = model.featureCache.get(key) {
-      settle(cached)
-      return
-    }
-    if domains.isEmpty { loading = true }
-    error = nil
-    let loaded = await RegistrarIndexLoader.load(
-      client: model.client, accountID: context.accountID)
-    guard
-      !Task.isCancelled,
-      model.isCurrentAccount(context),
-      loaded.isCacheable
-    else { return }
-    model.featureCache.set(key, loaded)
-    settle(loaded)
-  }
-
-  private func settle(_ loaded: RegistrarAccountIndex) {
-    index = loaded
-    // An empty index that cannot be trusted is a failure, not an empty state.
-    error = loaded.unresolvedFailure ?? loaded.partialFailure
-    loading = false
   }
 }
 
@@ -559,7 +425,14 @@ struct RegistrarDomainDetailView: View {
     ) { mode in
       registrarDomainDetailBody(mode: mode)
     }
-    .detailHeader(icon: .solar(SolarAsset.Content.globus), title: domain)
+    // Tinted by hand: with no catalog feature behind it there is no
+    // `featureIdentity` to resolve, and the brand-orange fallback would read as
+    // a Workers screen. Teal was this screen's mark while Registrar was in the
+    // catalog and is still unclaimed by any surviving feature.
+    .detailHeader(
+      icon: .solar(SolarAsset.Content.globus), title: domain,
+      tint: FeatureVisualTone.teal.vivid
+    )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
   }
@@ -874,12 +747,6 @@ struct RegistrarDomainDetail: Sendable {
 }
 
 extension RegistrarDomainSummary {
-  fileprivate var expiresSubtitle: String? {
-    guard let expiresAt else { return nil }
-    return DashL10n.string(
-      "Expires \(DashDateFormatting.dateOnly(fromISO8601: expiresAt))")
-  }
-
   /// Cloudflare documents exactly one value for `privacy_mode` (`redaction`)
   /// and publishes no enum, so an unrecognised one survives the wire and is
   /// localized at the last render step rather than dropped.
@@ -967,17 +834,6 @@ enum RegistryStatusVocabulary {
 /// a single catalog key localizes it — and so the zone screen's Registration
 /// card and the registrar screen's Registry status never spell the same code two
 /// ways.
-private func registrarDomainAccessibilityLabel(_ domain: RegistrarDomainSummary) -> String {
-  var parts = [domain.name]
-  if let subtitle = domain.expiresSubtitle {
-    parts.append(subtitle)
-  }
-  if let token = domain.statusToken, token != .registered {
-    parts.append(StatusBadge.accessibilityText(for: token))
-  }
-  return parts.joined(separator: ", ")
-}
-
 func rdapStatusLabel(_ raw: String) -> String {
   if let known = RegistryStatusVocabulary.labels[RegistryStatusVocabulary.key(raw)] {
     return DashL10n.ui(known)

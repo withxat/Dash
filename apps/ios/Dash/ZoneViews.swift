@@ -538,7 +538,8 @@ struct ZoneDetailView: View {
 
   /// Registration precedence, in order: (1) no `registrar-domains.read` grant →
   /// RDAP unchanged; (2) the account's registrar index, fetched once per session
-  /// and shared with `RegistrarDomainsView` through one cache key; (3) matched
+  /// and cached under one key that also seeds the pushed registrar detail;
+  /// (3) matched
   /// on the zone's own name by **exact equality** — a registrar-owned
   /// `example.com` says nothing about a `blog.example.com` zone's record;
   /// (4) a hit renders first-party and RDAP is never called; (5) a miss falls
@@ -930,8 +931,9 @@ struct ZoneDetailView: View {
   @ViewBuilder
   private func registrationGroup() -> some View {
     if registrarRegistration != nil || rdapPhase != .content || rdap != nil {
-      // First-party path only: the header action pushes registrar detail.
-      // A domain registered elsewhere has no `/registrar/registrations`
+      // First-party path only: the header action pushes registrar detail, and
+      // it is the only way into that screen — Registrar is not a catalog
+      // feature. A domain registered elsewhere has no `/registrar/registrations`
       // record, so an always-on control would open a screen that 404s.
       let manageDomain = registrarRegistration?.name
       DashInfoGroup(

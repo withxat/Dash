@@ -620,8 +620,6 @@ struct SettingsView: View {
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
     DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
-  @AppStorage(DashExperimentalFeatures.registrarKey) private var registrarExperimentalEnabled =
-    false
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
   @State private var showsLanguagePicker = false
@@ -753,13 +751,6 @@ struct SettingsView: View {
         }
 
         SettingsPlainSection(title: "Experimental") {
-          SettingsPlainToggleRow(
-            title: DashL10n.string("Registrations"),
-            icon: SolarAsset.globus,
-            isOn: $registrarExperimentalEnabled
-          )
-          .accessibilityIdentifier("settings-experimental-registrar")
-
           SettingsPlainToggleRow(
             title: DashL10n.string("Tunnels"),
             icon: SolarAsset.routing,
@@ -1548,8 +1539,9 @@ struct ProfileView: View {
           .frame(maxWidth: .infinity, alignment: .leading)
         }
 
-        // Registrations used to sit here; it browses as its own catalog
-        // feature in Resources now, so this group carries the audit log alone.
+        // Registrations used to sit here, and then briefly in Resources. A
+        // registration is now one card on the zone that owns the name, so this
+        // group carries the audit log alone.
         DashListGroup(title: "Account") {
           dashListCard {
             DashListGroupLink(value: .auditLogs) {
