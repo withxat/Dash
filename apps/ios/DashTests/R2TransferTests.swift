@@ -158,6 +158,99 @@ private func r2Object(
         folderPrefix: "videos/"))
 }
 
+@MainActor
+@Test func r2BucketUploadWorkSurvivesDeeperRoutesAndCancelsOnPop() async throws {
+  let navigator = DestinationNavigator(accountID: "account-a")
+  let bucketEntryID = try #require(
+    navigator.push(.r2Bucket("assets", prefix: "")))
+  let work = R2BucketWork()
+  let upload = longRunningR2TestTask()
+  work.upload = upload
+  work.retainUploadWhileRouteExists(in: navigator, entryID: bucketEntryID)
+
+  navigator.push(.r2Bucket("assets", prefix: "images/"))
+  await settleR2RouteObservation()
+  #expect(!upload.isCancelled)
+  #expect(work.upload != nil)
+
+  navigator.pop()
+  await settleR2RouteObservation()
+  #expect(!upload.isCancelled)
+  #expect(work.upload != nil)
+
+  navigator.pop()
+  let cancelled = await waitForR2RouteCancellation(upload: upload, work: work)
+  #expect(cancelled)
+  #expect(work.upload == nil)
+}
+
+@MainActor
+@Test func r2BucketUploadWorkCancelsWhenHiddenResourceIsPruned() async throws {
+  let navigator = DestinationNavigator(accountID: "account-a")
+  navigator.push(.feature(.r2))
+  let bucketEntryID = try #require(
+    navigator.push(.r2Bucket("assets", prefix: "")))
+  navigator.push(.r2Bucket("assets", prefix: "images/"))
+  navigator.push(.about)
+  let work = R2BucketWork()
+  let upload = longRunningR2TestTask()
+  work.upload = upload
+  work.retainUploadWhileRouteExists(in: navigator, entryID: bucketEntryID)
+
+  navigator.removeAll(ownedBy: .r2Bucket("assets"))
+  let cancelled = await waitForR2RouteCancellation(upload: upload, work: work)
+
+  #expect(cancelled)
+  #expect(work.upload == nil)
+  #expect(navigator.path == [.feature(.r2), .about])
+}
+
+@MainActor
+@Test func r2BucketUploadWorkCancelsWhenAccountScopeResetsRoutes() async throws {
+  let navigator = DestinationNavigator(accountID: "account-a")
+  let bucketEntryID = try #require(
+    navigator.push(.r2Bucket("assets", prefix: "")))
+  let work = R2BucketWork()
+  let upload = longRunningR2TestTask()
+  work.upload = upload
+  work.retainUploadWhileRouteExists(in: navigator, entryID: bucketEntryID)
+
+  navigator.setAccountScope("account-b")
+  let cancelled = await waitForR2RouteCancellation(upload: upload, work: work)
+
+  #expect(cancelled)
+  #expect(work.upload == nil)
+  #expect(navigator.depth == 0)
+}
+
+@MainActor
+private func longRunningR2TestTask() -> Task<Void, Never> {
+  Task {
+    do {
+      try await Task.sleep(for: .seconds(30))
+    } catch {
+      // Cancellation is the result under test.
+    }
+  }
+}
+
+@MainActor
+private func settleR2RouteObservation() async {
+  for _ in 0..<8 { await Task.yield() }
+}
+
+@MainActor
+private func waitForR2RouteCancellation(
+  upload: Task<Void, Never>,
+  work: R2BucketWork
+) async -> Bool {
+  for _ in 0..<32 {
+    if upload.isCancelled, work.upload == nil { return true }
+    await Task.yield()
+  }
+  return upload.isCancelled && work.upload == nil
+}
+
 @Test func r2ThumbnailRequestIdentityScopesVersionToAccountAndObject() {
   let original = R2ThumbnailRequestIdentity(
     context: AccountRequestContext(accountID: "account-a", generation: 1),

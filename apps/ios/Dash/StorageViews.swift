@@ -1,5 +1,6 @@
 import CloudflareAPI
 import CodeEditor
+import Observation
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -380,6 +381,7 @@ struct R2BucketView: View {
     }
     .task(id: requestIdentity) {
       let request = requestIdentity
+      work.retainUploadWhileRouteExists(in: navigator, entryID: navigationEntryID)
       prepareForRequest(request)
       guard request.context != nil else { return }
       recordRecentBucket(for: request)
@@ -1246,9 +1248,28 @@ struct R2BrowserSnapshot: Sendable {
 /// Holds in-flight upload work for one `R2BucketView`. Kept as a class so
 /// the page stack can detach the screen under a folder push without cancelling;
 /// `deinit` cancels when the page is removed from the stack.
+@MainActor
 @Observable
-private final class R2BucketWork {
+final class R2BucketWork {
   var upload: Task<Void, Never>?
+  @ObservationIgnored private weak var routeNavigator: DestinationNavigator?
+  @ObservationIgnored private var routeEntryID: DashNavigationEntry.ID?
+
+  /// Observes the page-instance store directly instead of relying on a hidden
+  /// SwiftUI host to redraw after it has been detached from the container.
+  /// Any deeper route mutation re-arms the one-shot observation while this
+  /// entry survives; pop, resource pruning, and account reset remove the UUID
+  /// and release the upload immediately.
+  func retainUploadWhileRouteExists(
+    in navigator: DestinationNavigator?,
+    entryID: DashNavigationEntry.ID?
+  ) {
+    guard let navigator, let entryID else { return }
+    guard routeNavigator !== navigator || routeEntryID != entryID else { return }
+    routeNavigator = navigator
+    routeEntryID = entryID
+    observeRouteRetention()
+  }
 
   func cancelAndRelease() {
     let upload = upload
@@ -1256,8 +1277,23 @@ private final class R2BucketWork {
     upload?.cancel()
   }
 
-  deinit {
+  isolated deinit {
     upload?.cancel()
+  }
+
+  private func observeRouteRetention() {
+    guard let navigator = routeNavigator, let entryID = routeEntryID else { return }
+    let isRetained = withObservationTracking {
+      navigator.contains(entryID: entryID)
+    } onChange: { [weak self] in
+      Task { @MainActor [weak self] in
+        self?.observeRouteRetention()
+      }
+    }
+    guard !isRetained else { return }
+    routeNavigator = nil
+    routeEntryID = nil
+    cancelAndRelease()
   }
 }
 
