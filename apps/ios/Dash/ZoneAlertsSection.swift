@@ -4,7 +4,7 @@ import SwiftUI
 /// Per-domain alert switches on the zone settings screen.
 ///
 /// This is where subscribing to an alert belongs: at the domain it is about,
-/// not buried in Settings → Push alerts behind a policy form that asks for an
+/// not buried in Settings → Alert policies behind a policy form that asks for an
 /// alert type id. Settings still owns the account-wide list; this owns "tell me
 /// about *this* one".
 struct ZoneAlertsSection: View {

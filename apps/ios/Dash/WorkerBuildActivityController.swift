@@ -17,11 +17,9 @@ enum WorkerBuildMonitorEvent: Sendable {
 /// Polls the newest Workers Build for one Worker and drives its Live Activity.
 ///
 /// Deliberately thinner than `PagesBuildActivityController`. That one carries
-/// refresh coalescing and waiter continuations because four callers (detail
-/// screen, pull-to-refresh, Live Activity, BGAppRefresh) converge on one
-/// deployment. A Worker build has three, and no background task — so this is a
-/// single monitor with one in-flight load, and the Activity carries a
-/// `staleDate` instead of pretending a backgrounded app is still watching.
+/// source-aware refresh coalescing and waiter continuations because initial,
+/// manual, and polling refreshes can converge on one deployment. A Worker build
+/// uses one screen-driven monitor with one in-flight load.
 ///
 /// Cloudflare's Workers build notifications ship through Queue Event
 /// Subscriptions rather than notification policies, so Dash's alert bridge does
@@ -29,10 +27,6 @@ enum WorkerBuildMonitorEvent: Sendable {
 @MainActor
 enum WorkerBuildActivityController {
   static let shared = WorkerBuildActivityControllerBox()
-  /// How long the Lock Screen may keep showing a running build before iOS dims
-  /// it. Polling stops when the app leaves the foreground, and a frozen
-  /// "Building…" is worse than a visibly stale one.
-  static let staleAfter: TimeInterval = 3 * 60
 }
 
 @MainActor
@@ -64,13 +58,6 @@ final class WorkerBuildActivityControllerBox {
       }
   ) {
     self.fetchLatest = fetchLatest
-  }
-
-  /// Backoff shared with the Pages monitor's ladder, so a flapping account does
-  /// not hammer two endpoints at different rates.
-  nonisolated static func pollDelaySeconds(consecutiveFailures: Int) -> Int {
-    let delays = [10, 20, 40, 60]
-    return delays[min(max(consecutiveFailures, 0), delays.count - 1)]
   }
 
   func updates(
@@ -176,10 +163,10 @@ final class WorkerBuildActivityControllerBox {
       guard !error.dashIsCancellation, serial == invalidationSerial, monitor?.key == key else {
         return
       }
-      // Reuse the Pages disposition ladder: a 403 or 404 is permanent (the
+      // A 403 or 404 is permanent (the
       // account has no Workers Builds, or the token cannot see them) and must
       // stop the poll instead of retrying every ten seconds forever.
-      let disposition = PagesBuildRefreshDisposition.classify(error)
+      let disposition = BuildMonitorRefreshDisposition.classify(error)
       if disposition == .stop {
         await endActivity(for: key, serial: serial)
         guard serial == invalidationSerial, monitor?.key == key else { return }
@@ -214,7 +201,7 @@ final class WorkerBuildActivityControllerBox {
     pollTask = Task { [weak self] in
       while !Task.isCancelled {
         guard let self, let current = self.monitor else { return }
-        let delay = WorkerBuildActivityControllerBox.pollDelaySeconds(
+        let delay = BuildMonitorRefreshDisposition.retryDelaySeconds(
           consecutiveFailures: current.consecutiveFailures)
         do {
           try await Task.sleep(for: .seconds(Double(delay)))
@@ -306,7 +293,7 @@ final class WorkerBuildActivityControllerBox {
 
     let content = ActivityContent(
       state: WorkerBuildActivityControllerBox.contentState(for: build),
-      staleDate: Date(timeIntervalSinceNow: WorkerBuildActivityController.staleAfter))
+      staleDate: Date(timeIntervalSinceNow: BuildActivityPresentationRules.staleAfter))
 
     if let existing = Activity<WorkerBuildAttributes>.activities.first(where: {
       $0.attributes.accountID == key.accountID && $0.attributes.buildID == buildID

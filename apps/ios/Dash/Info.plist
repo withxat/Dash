@@ -40,16 +40,10 @@
 	<string>$(DASH_REDIRECT_URI)</string>
 	<key>DashKeychainAccessGroup</key>
 	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>sh.xat.dash.app.watchtower.refresh</string>
-		<string>sh.xat.dash.app.pages-build-refresh</string>
-	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>fetch</string>
 		<string>remote-notification</string>
 	</array>
 	<key>UILaunchScreen</key>

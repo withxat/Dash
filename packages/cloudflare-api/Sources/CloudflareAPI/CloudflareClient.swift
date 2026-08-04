@@ -761,6 +761,11 @@ public actor CloudflareClient {
   public func listNotificationPolicies(accountID: String) async throws -> [NotificationPolicy] {
     try await listAllPages("/accounts/\(accountID)/alerting/v3/policies", perPage: 50)
   }
+  public func getNotificationPolicy(accountID: String, policyID: String) async throws
+    -> NotificationPolicy
+  {
+    try await request("/accounts/\(accountID)/alerting/v3/policies/\(policyID)")
+  }
   public func createNotificationPolicy(accountID: String, input: NotificationPolicyInput)
     async throws -> NotificationPolicy
   {
@@ -772,6 +777,16 @@ public actor CloudflareClient {
   ) async throws -> NotificationPolicy {
     try await request(
       "/accounts/\(accountID)/alerting/v3/policies/\(policyID)", method: "PUT", body: input)
+  }
+  public func updateNotificationPolicyMechanisms(
+    accountID: String,
+    policyID: String,
+    mechanisms: NotificationMechanisms
+  ) async throws -> NotificationPolicy {
+    try await request(
+      "/accounts/\(accountID)/alerting/v3/policies/\(policyID)",
+      method: "PUT",
+      body: NotificationPolicyMechanismsInput(mechanisms: mechanisms))
   }
   public func deleteNotificationPolicy(accountID: String, policyID: String) async throws {
     let _: JSONValue = try await request(

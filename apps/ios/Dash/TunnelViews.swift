@@ -285,13 +285,13 @@ struct TunnelDetailView: View {
       // serving traffic has no interesting disconnect stamp, and one that is
       // down has no honest "connected since".
       if health == .healthy || health == .degraded {
-        if let since = tunnel.connsActiveAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
+        if let since = tunnel.connsActiveAt.flatMap(DashDateFormatting.date(fromISO8601:)) {
           DashInfoRow("Connected since", value: DashDateFormatting.dateAndTime(since))
         }
-      } else if let last = tunnel.connsInactiveAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
+      } else if let last = tunnel.connsInactiveAt.flatMap(DashDateFormatting.date(fromISO8601:)) {
         DashInfoRow("Disconnected", value: DashDateFormatting.dateAndTime(last))
       }
-      if let created = tunnel.createdAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
+      if let created = tunnel.createdAt.flatMap(DashDateFormatting.date(fromISO8601:)) {
         DashInfoRow("Created", value: DashDateFormatting.dateAndTime(created))
       }
       tunnelIDRow
@@ -558,7 +558,7 @@ struct TunnelDetailView: View {
     if let origin = connector.conns?.compactMap(\.originIP).first(where: { !$0.isEmpty }) {
       parts.append(origin)
     }
-    if let started = connector.runAt.flatMap(ExpiryReminders.date(fromISO8601:)) {
+    if let started = connector.runAt.flatMap(DashDateFormatting.date(fromISO8601:)) {
       parts.append(DashL10n.string("Started \(watchtowerRelativeTime(started))"))
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
@@ -1004,7 +1004,7 @@ func tunnelListSubtitle(_ tunnel: CloudflareTunnel) -> String? {
     guard let colos = tunnelColoSummary(tunnel.connections ?? []) else { return connectors }
     return "\(connectors) · \(colos)"
   case .down, .inactive:
-    guard let last = tunnel.connsInactiveAt.flatMap(ExpiryReminders.date(fromISO8601:)) else {
+    guard let last = tunnel.connsInactiveAt.flatMap(DashDateFormatting.date(fromISO8601:)) else {
       return nil
     }
     return DashL10n.string("Last connected \(watchtowerRelativeTime(last))")

@@ -560,7 +560,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Current"].exists)
   }
 
-  /// Push setup lives in Settings; Watchtower only presents Cloudflare deliveries.
+  /// Watchtower presents Cloudflare history; delivery controls live in Settings.
   func testWatchtowerAlertsDoNotExposeRemotePush() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
@@ -570,7 +570,6 @@ final class DashUITests: XCTestCase {
     watchtower.tap()
 
     XCTAssertFalse(app.staticTexts["Push Cloudflare alerts to this iPhone"].exists)
-    XCTAssertFalse(app.buttons["Send test alert"].exists)
     XCTAssertFalse(app.switches["Push alerts"].exists)
     XCTAssertFalse(app.staticTexts["Recent alerts"].exists)
 
@@ -595,7 +594,7 @@ final class DashUITests: XCTestCase {
       app.buttons["watchtower-inbox-ignore-toggle"].waitForExistence(timeout: 5))
   }
 
-  func testSettingsExposesPushAlertsAndICloudSync() {
+  func testSettingsExposesDefaultAlertPoliciesAndICloudSync() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -624,14 +623,14 @@ final class DashUITests: XCTestCase {
       object: iCloudSync)
     XCTAssertEqual(XCTWaiter.wait(for: [syncOn], timeout: 5), .completed)
 
-    let pushAlerts =
+    let alertPolicies =
       app.descendants(matching: .any)
-      .matching(identifier: "Push alerts")
+      .matching(identifier: "Alert policies")
       .firstMatch
-    for _ in 0..<5 where !pushAlerts.exists {
+    for _ in 0..<5 where !alertPolicies.exists {
       app.swipeUp()
     }
-    XCTAssertTrue(pushAlerts.waitForExistence(timeout: 5))
+    XCTAssertTrue(alertPolicies.waitForExistence(timeout: 5))
   }
 
   func testAvatarOpensSettingsWithProfileAsAChildPage() {

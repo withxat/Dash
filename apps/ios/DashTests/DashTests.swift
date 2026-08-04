@@ -95,6 +95,10 @@ import UIKit
       timeZone: zone
     )
     .contains("2026"))
+  #expect(DashDateFormatting.date(fromISO8601: "2026-06-01T00:00:00Z") != nil)
+  #expect(DashDateFormatting.date(fromISO8601: "2026-06-01T00:00:00.000Z") != nil)
+  #expect(DashDateFormatting.date(fromISO8601: "2026-06-01") != nil)
+  #expect(DashDateFormatting.date(fromISO8601: "not a date") == nil)
 }
 
 @Test func workspaceWashPresetResolvesStoredPreference() {
@@ -707,7 +711,7 @@ struct LocalizationTests {
     "cache.purge",  // CachePurgeView and PurgeCacheIntent
     "workers-routes.read",  // WorkerDetail routes rows (zone-scoped, no carrier FeatureID)
     "notifications.read",  // Watchtower inbox (Cloudflare delivery history)
-    "notifications.write",  // Push alerts webhook + policies
+    "notifications.write",  // Default alert webhook + policies
     "account-analytics.read",  // Worker metrics card (account-scoped GraphQL)
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
@@ -2649,15 +2653,6 @@ private let watchtowerDropFrames: [CGRect] = [
       == .open(.r2("assets")))
 }
 
-@Test func watchtowerNotificationRouteCarriesAccountContext() {
-  let route = WatchtowerNotifier.watchtowerRoute(accountID: "account with spaces")
-  #expect(route == "dash://watchtower?account=account%20with%20spaces")
-  #expect(
-    route.flatMap(URL.init(string:)).flatMap(DashRoute.parse)?.accountID
-      == "account with spaces")
-  #expect(WatchtowerNotifier.watchtowerRoute(accountID: "  ") == nil)
-}
-
 @Test func legacyNotificationRoutesNeverGuessBetweenAccounts() {
   let legacy = DashRoute.zone("zone-1")
   #expect(
@@ -2726,6 +2721,98 @@ private let watchtowerDropFrames: [CGRect] = [
       relayBaseURL: relay))
 }
 
+@Test func defaultPushProvisioningSkipsPreviewAndTestProcesses() {
+  #expect(
+    !PushRegistrationService.shouldAutomaticallyProvision(
+      arguments: ["Dash", "-ui-preview"], environment: [:]))
+  #expect(
+    !PushRegistrationService.shouldAutomaticallyProvision(
+      arguments: ["Dash"], environment: ["XCTestConfigurationFilePath": "/tmp/tests"]))
+  #expect(
+    PushRegistrationService.shouldAutomaticallyProvision(
+      arguments: ["Dash"], environment: [:]))
+}
+
+@Test func pushIsReadyOnlyAfterDestinationSetupAndBuildPolicyMigration() throws {
+  let suite = "dash.tests.push-ready.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  let accountID = "account-a"
+
+  defaults.set("webhook-a", forKey: PushRegistrationService.webhookIDKey(accountID: accountID))
+  #expect(!PushRegistrationService.isReady(accountID: accountID, in: defaults))
+
+  defaults.set(true, forKey: PushRegistrationService.readinessKey(accountID: accountID))
+  #expect(PushRegistrationService.isReady(accountID: accountID, in: defaults))
+
+  defaults.removeObject(forKey: PushRegistrationService.webhookIDKey(accountID: accountID))
+  #expect(!PushRegistrationService.isReady(accountID: accountID, in: defaults))
+}
+
+@Test func webhookRemovalPreservesPolicyAndOtherDeliveryTargets() throws {
+  let policy = try JSONDecoder().decode(
+    NotificationPolicy.self,
+    from: Data(
+      #"{"id":"policy-1","name":"Existing","alert_type":"tunnel_health_event","enabled":false,"alert_interval":"weekly","filters":{"zones":["zone-1"]},"mechanisms":{"email":[{"id":"email-1"}],"pagerduty":[{"id":"pager-1"}],"webhooks":[{"id":"device-a"}]}}"#
+        .utf8))
+
+  let mechanisms = try #require(
+    PushRegistrationService.mechanismsRemovingDelivery(
+      webhookIDs: ["device-a"], from: policy))
+  #expect(mechanisms.email?.map(\.id) == ["email-1"])
+  #expect(mechanisms.pagerduty?.map(\.id) == ["pager-1"])
+  #expect(mechanisms.webhooks?.isEmpty == true)
+  #expect(
+    PushRegistrationService.mechanismsRemovingDelivery(
+      webhookIDs: ["device-b"], from: policy) == nil)
+  #expect(
+    PushRegistrationService.mechanismsRemovingDelivery(
+      webhookIDs: ["  "], from: policy) == nil)
+
+  let encoded = try JSONEncoder().encode(
+    NotificationPolicyMechanismsInput(mechanisms: mechanisms))
+  let object = try #require(
+    JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+  #expect(Set(object.keys) == Set(["mechanisms"]))
+
+  let pagesPolicy = try JSONDecoder().decode(
+    NotificationPolicy.self,
+    from: Data(
+      #"{"id":"pages","alert_type":"pages_event_alert","mechanisms":{"email":[{"id":"email-1"}],"webhooks":[{"id":"device-a"},{"id":"device-b"}]}}"#
+        .utf8))
+  let pagesInput = try #require(
+    PushRegistrationService.mechanismsRemovingDelivery(
+      webhookIDs: ["device-a", "device-b"], from: pagesPolicy))
+  #expect(pagesInput.email?.map(\.id) == ["email-1"])
+  #expect(pagesInput.webhooks?.isEmpty == true)
+  #expect(PushRegistrationService.usesBuildActivityPath(alertType: "pages_event_alert"))
+}
+
+@Test func legacyLocalWatchtowerNotificationStateIsRemoved() throws {
+  let suite = "dash.tests.legacy-watchtower-notifications.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  defaults.set(true, forKey: LegacyWatchtowerNotificationSettings.optInKey)
+  defaults.set(Data([1, 2, 3]), forKey: LegacyWatchtowerNotificationSettings.baselinesKey)
+
+  LegacyWatchtowerNotificationSettings.clear(defaults: defaults)
+
+  #expect(defaults.object(forKey: LegacyWatchtowerNotificationSettings.optInKey) == nil)
+  #expect(defaults.object(forKey: LegacyWatchtowerNotificationSettings.baselinesKey) == nil)
+}
+
+@Test func legacyGeneratedNotificationCleanupDoesNotMatchCloudflarePushes() {
+  #expect(
+    DashNotificationSupport.isLegacyGeneratedNotificationIdentifier(
+      "dash.expiry.domain.account.example.com.7"))
+  #expect(DashNotificationSupport.isLegacyGeneratedNotificationIdentifier("watchtower.alerts"))
+  #expect(
+    DashNotificationSupport.isLegacyGeneratedNotificationIdentifier("watchtower.alert.delivery"))
+  #expect(
+    !DashNotificationSupport.isLegacyGeneratedNotificationIdentifier(
+      "CFNetwork-generated-remote-identifier"))
+}
+
 @Test func pushPayloadSeparatesPossessionChallengeFromAccountRefresh() throws {
   let challenge = try #require(
     PushRemoteNotificationPayload.registrationChallenge(from: [
@@ -2755,13 +2842,13 @@ private let watchtowerDropFrames: [CGRect] = [
 }
 
 @Test func pushAuthorizationIncludesBadgeDelivery() {
-  let provisional = WatchtowerNotifier.authorizationOptions(prominently: false)
+  let provisional = DashNotificationSupport.authorizationOptions(prominently: false)
   #expect(provisional.contains(.alert))
   #expect(provisional.contains(.sound))
   #expect(provisional.contains(.badge))
   #expect(provisional.contains(.provisional))
 
-  let prominent = WatchtowerNotifier.authorizationOptions(prominently: true)
+  let prominent = DashNotificationSupport.authorizationOptions(prominently: true)
   #expect(prominent.contains(.alert))
   #expect(prominent.contains(.sound))
   #expect(prominent.contains(.badge))
@@ -2770,29 +2857,29 @@ private let watchtowerDropFrames: [CGRect] = [
   // `.notSupported` is what a real legacy install reports — the badge option
   // was never requested, so iOS never had a setting to disable. Matching only
   // `.disabled` skipped every one of them.
-  let authorizedMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+  let authorizedMigration = DashNotificationSupport.badgeAuthorizationMigrationOptions(
     authorizationStatus: .authorized,
     badgeSetting: .notSupported)
   #expect(authorizedMigration == [.badge])
-  let provisionalMigration = WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+  let provisionalMigration = DashNotificationSupport.badgeAuthorizationMigrationOptions(
     authorizationStatus: .provisional,
     badgeSetting: .notSupported)
   #expect(provisionalMigration?.contains(.badge) == true)
   #expect(provisionalMigration?.contains(.provisional) == true)
   #expect(
-    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    DashNotificationSupport.badgeAuthorizationMigrationOptions(
       authorizationStatus: .authorized,
       badgeSetting: .disabled) == [.badge])
   #expect(
-    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    DashNotificationSupport.badgeAuthorizationMigrationOptions(
       authorizationStatus: .authorized,
       badgeSetting: .enabled) == nil)
   #expect(
-    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    DashNotificationSupport.badgeAuthorizationMigrationOptions(
       authorizationStatus: .denied,
       badgeSetting: .notSupported) == nil)
   #expect(
-    WatchtowerNotifier.badgeAuthorizationMigrationOptions(
+    DashNotificationSupport.badgeAuthorizationMigrationOptions(
       authorizationStatus: .notDetermined,
       badgeSetting: .notSupported) == nil)
 }
@@ -2815,51 +2902,29 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!replayed)
 }
 
-@Test @MainActor func pushOperationGateLetsDisableSupersedeReconcile() throws {
-  let accountID = "gate-\(UUID().uuidString)"
-  let reconcile = try #require(
-    PushRegistrationOperationGate.beginReconcile(
-      accountID: accountID,
-      isCurrentlyEnabled: true))
-  #expect(PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
+@Test @MainActor func automaticPushEnsuresShareOneDesiredGeneration() {
+  let accountID = "ensure-\(UUID().uuidString)"
+  let first = PushRegistrationOperationGate.beginEnsureEnabled(accountID: accountID)
+  let second = PushRegistrationOperationGate.beginEnsureEnabled(accountID: accountID)
 
-  let disable = PushRegistrationOperationGate.beginDesiredChange(
-    accountID: accountID,
-    enabled: false)
-  #expect(!PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
-  #expect(PushRegistrationOperationGate.isCurrent(disable, enabled: false))
-  #expect(
-    PushRegistrationOperationGate.beginReconcile(
-      accountID: accountID,
-      isCurrentlyEnabled: true) == nil)
+  #expect(first == second)
+  #expect(PushRegistrationOperationGate.isCurrent(first, enabled: true))
+
+  _ = PushRegistrationOperationGate.beginDesiredChange(accountID: accountID, enabled: false)
+  #expect(!PushRegistrationOperationGate.isCurrent(first, enabled: true))
 }
 
 @Test @MainActor func signOutPreparationInvalidatesUnstoredPushEnables() {
-  let enablingAccount = "enable-\(UUID().uuidString)"
-  let reconcilingAccount = "reconcile-\(UUID().uuidString)"
-  let enable = PushRegistrationOperationGate.beginDesiredChange(
-    accountID: enablingAccount,
-    enabled: true)
-  let reconcile = PushRegistrationOperationGate.beginReconcile(
-    accountID: reconcilingAccount,
-    isCurrentlyEnabled: true)
+  let firstAccount = "enable-\(UUID().uuidString)"
+  let secondAccount = "ensure-\(UUID().uuidString)"
+  let first = PushRegistrationOperationGate.beginEnsureEnabled(accountID: firstAccount)
+  let second = PushRegistrationOperationGate.beginEnsureEnabled(accountID: secondAccount)
 
   PushRegistrationService.prepareForSignOut(
-    accountIDs: [enablingAccount, reconcilingAccount])
+    accountIDs: [firstAccount, secondAccount])
 
-  #expect(!PushRegistrationOperationGate.isCurrent(enable, enabled: true))
-  #expect(reconcile != nil)
-  if let reconcile {
-    #expect(!PushRegistrationOperationGate.isCurrent(reconcile, enabled: true))
-  }
-  #expect(
-    PushRegistrationOperationGate.beginReconcile(
-      accountID: enablingAccount,
-      isCurrentlyEnabled: true) == nil)
-  #expect(
-    PushRegistrationOperationGate.beginReconcile(
-      accountID: reconcilingAccount,
-      isCurrentlyEnabled: true) == nil)
+  #expect(!PushRegistrationOperationGate.isCurrent(first, enabled: true))
+  #expect(!PushRegistrationOperationGate.isCurrent(second, enabled: true))
 }
 
 @Test func pushWebhookNameIsStableWithoutExposingTheDeviceToken() {
@@ -2891,7 +2956,6 @@ private let watchtowerDropFrames: [CGRect] = [
 
   #expect(defaults.string(forKey: webhookKey) == "webhook-a")
   #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults) == ["account-a"])
-  #expect(PushRegistrationService.reconcilableAccountIDs(in: defaults).isEmpty)
   let tombstone = try #require(
     PushRegistrationService.cleanupTombstone(accountID: "account-a", in: defaults))
   #expect(tombstone.webhookID == "webhook-a")
@@ -2900,11 +2964,10 @@ private let watchtowerDropFrames: [CGRect] = [
 
   PushRegistrationService.clearCleanup(accountID: "account-a", defaults: defaults)
   #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults).isEmpty)
-  #expect(PushRegistrationService.reconcilableAccountIDs(in: defaults) == ["account-a"])
 }
 
 @Test @MainActor
-func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() throws {
+func remoteWatchtowerRefreshStaysAccountScopedAndRejectsOldClears() throws {
   let suite = "dash.tests.watchtower-remote-refresh.\(UUID().uuidString)"
   let defaults = try #require(UserDefaults(suiteName: suite))
   defer { defaults.removePersistentDomain(forName: suite) }
@@ -2918,21 +2981,6 @@ func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() thr
   #expect(
     !WatchtowerRemoteRefreshInvalidationStore.contains(
       accountID: "account-a", defaults: defaults))
-  #expect(
-    !WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
-      source: .foreground,
-      accountID: "account-b",
-      defaults: defaults))
-  #expect(
-    WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
-      source: .foreground,
-      accountID: "account-a",
-      defaults: defaults))
-  #expect(
-    !WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
-      source: .remoteNotification,
-      accountID: "account-a",
-      defaults: defaults))
   WatchtowerRemoteRefreshInvalidationStore.mark(
     accountID: "account-b",
     defaults: defaults)
@@ -2953,11 +3001,6 @@ func remoteWatchtowerRefreshStaysAccountScopedAndSuppressesDuplicateAlerts() thr
   #expect(
     WatchtowerRemoteRefreshInvalidationStore.pendingGeneration(
       accountID: "account-b", defaults: defaults) == nil)
-  #expect(
-    WatchtowerRemoteRefreshInvalidationStore.allowsLocalNotifications(
-      source: .foreground,
-      accountID: "account-b",
-      defaults: defaults))
 }
 
 @Test func notificationAccountAuthorizationDefaultsClosed() throws {
@@ -3456,110 +3499,6 @@ private actor ZoneSecurityLevelTestLatch {
       fetchedAt: base.fetchedAt,
       now: Date(timeIntervalSince1970: 25 * 3_600))
       == String(localized: "Checked \(staleRelative) · Refresh now"))
-}
-
-@Test func watchtowerNotificationPlannerDiffsDeliveries() {
-  func snapshot(_ ids: [String], detail: String? = "d") -> WatchtowerWidgetSnapshot {
-    WatchtowerWidgetSnapshot(
-      unreadCount: ids.count,
-      alerts: ids.map { .init(id: $0, title: $0, detail: detail) },
-      accountID: "account-1", accountName: nil,
-      fetchedAt: Date(timeIntervalSince1970: 0))
-  }
-  typealias Planner = WatchtowerNotificationPlanner
-
-  // First run: nothing to diff against.
-  #expect(Planner.plans(previous: nil, current: snapshot(["a"])).isEmpty)
-
-  // A delivery that was not in the baseline fires with a stable identifier.
-  let arrived = Planner.plans(previous: snapshot(["a"]), current: snapshot(["tunnel", "a"]))
-  #expect(arrived.map(\.identifier) == ["watchtower.alert.tunnel"])
-  #expect(arrived.first?.title == "tunnel")
-  #expect(arrived.first?.body == "d")
-
-  // An unchanged page does not re-notify.
-  #expect(Planner.plans(previous: snapshot(["a"]), current: snapshot(["a"])).isEmpty)
-
-  // Several new deliveries collapse into one summary keeping the first body.
-  let summary = Planner.plans(previous: snapshot([]), current: snapshot(["tunnel", "pages"]))
-  #expect(summary.map(\.identifier) == ["watchtower.alerts"])
-  #expect(summary.first?.title == "tunnel")
-  #expect(summary.first?.body == "d · 1 more unread alert.")
-
-  // A delivery with no body still says something useful.
-  let bodyless = Planner.plans(
-    previous: snapshot([]), current: snapshot(["tunnel"], detail: nil))
-  #expect(bodyless.first?.body == "New alert from Cloudflare.")
-
-  // Read/ignored away → nothing.
-  #expect(Planner.plans(previous: snapshot(["a"]), current: snapshot([])).isEmpty)
-}
-
-@Test func watchtowerNotificationPlannerResetsBaselineAcrossAccounts() {
-  func snapshot(accountID: String?, alerts: [WatchtowerWidgetSnapshot.Alert])
-    -> WatchtowerWidgetSnapshot
-  {
-    WatchtowerWidgetSnapshot(
-      unreadCount: alerts.count,
-      alerts: alerts,
-      accountID: accountID,
-      accountName: nil,
-      fetchedAt: Date(timeIntervalSince1970: 0))
-  }
-
-  let alert = WatchtowerWidgetSnapshot.Alert(
-    id: "cf:1", title: "Pages deployment", detail: "Latest deployment failed")
-  let current = snapshot(accountID: "account-b", alerts: [alert])
-
-  #expect(
-    WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: "account-a", alerts: []),
-      current: current
-    ).isEmpty)
-  #expect(
-    WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: nil, alerts: []),
-      current: current
-    ).isEmpty)
-  #expect(
-    WatchtowerNotificationPlanner.plans(
-      previous: snapshot(accountID: "account-b", alerts: []),
-      current: current
-    ).map(\.identifier) == ["watchtower.alert.cf:1"])
-}
-
-@Test func watchtowerNotificationBaselinesStayAccountScoped() {
-  let suite = "dash.tests.watchtower-baselines.\(UUID().uuidString)"
-  let defaults = UserDefaults(suiteName: suite)!
-  defer { defaults.removePersistentDomain(forName: suite) }
-
-  func snapshot(accountID: String, title: String) -> WatchtowerWidgetSnapshot {
-    WatchtowerWidgetSnapshot(
-      unreadCount: 1,
-      alerts: [.init(id: "cf:\(title)", title: title, detail: "Delivered")],
-      accountID: accountID,
-      accountName: accountID,
-      fetchedAt: Date(timeIntervalSince1970: 0))
-  }
-
-  let accountA = snapshot(accountID: "account-a", title: "Pages")
-  let accountB = snapshot(accountID: "account-b", title: "Workers")
-  WatchtowerNotificationBaselineStore.store(
-    accountA, accountID: "account-a", defaults: defaults)
-  WatchtowerNotificationBaselineStore.store(
-    accountB, accountID: "account-b", defaults: defaults)
-
-  #expect(
-    WatchtowerNotificationBaselineStore.snapshot(
-      accountID: "account-a", defaults: defaults) == accountA)
-  #expect(
-    WatchtowerNotificationBaselineStore.snapshot(
-      accountID: "account-b", defaults: defaults) == accountB)
-
-  WatchtowerNotificationBaselineStore.clearAll(defaults: defaults)
-  #expect(
-    WatchtowerNotificationBaselineStore.snapshot(
-      accountID: "account-a", defaults: defaults) == nil)
 }
 
 @Test @MainActor func watchtowerInboxStateRejectsStaleAccountLoads() {

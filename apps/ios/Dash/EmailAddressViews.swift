@@ -147,7 +147,7 @@ struct EmailDestinationAddressesView: View {
 
   static func detailFields(for address: EmailDestinationAddress) -> [DashDetailField] {
     var fields = [DashDetailField(label: "Address", value: address.email, mono: true)]
-    if let created = address.created, ExpiryReminders.date(fromISO8601: created) != nil {
+    if let created = address.created, DashDateFormatting.date(fromISO8601: created) != nil {
       fields.append(
         DashDetailField(
           label: "Added",
@@ -157,7 +157,7 @@ struct EmailDestinationAddressesView: View {
       DashDetailField(
         label: "Verified",
         value: address.verified.flatMap { iso -> String? in
-          guard ExpiryReminders.date(fromISO8601: iso) != nil else { return nil }
+          guard DashDateFormatting.date(fromISO8601: iso) != nil else { return nil }
           return DashDateFormatting.dateAndTime(fromISO8601: iso)
         } ?? DashL10n.string("Unverified")))
     return fields
@@ -165,7 +165,7 @@ struct EmailDestinationAddressesView: View {
 
   static func addedSubtitle(_ address: EmailDestinationAddress) -> String? {
     guard let created = address.created,
-      ExpiryReminders.date(fromISO8601: created) != nil
+      DashDateFormatting.date(fromISO8601: created) != nil
     else {
       return nil
     }

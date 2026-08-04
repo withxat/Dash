@@ -1,7 +1,6 @@
 import CloudflareAPI
 import SwiftUI
 import UIKit
-import UserNotifications
 
 private enum AppTab: Hashable { case home, features, watchtower }
 
@@ -208,13 +207,13 @@ struct MainTabView: View {
         switch phase {
         case .active:
           model.deferredDeletions.resumeReconciliation()
+          model.retryDefaultPushRegistrationIfNeeded()
           Task {
             await model.retryIdentityIfNeeded()
             await model.refreshWatchtowerIfStale()
           }
         case .background:
           model.commitDeferredDeletionsForBackground()
-          model.scheduleWatchtowerBackgroundRefresh()
         default:
           break
         }

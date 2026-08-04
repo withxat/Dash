@@ -59,7 +59,6 @@
 		B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B1 /* WorkerBuildsSection.swift */; };
 		B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B0 /* WorkerBuildActivityController.swift */; };
-		B00000000000000000000173 /* ExpiryReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000173 /* ExpiryReminders.swift */; };
 		B00000000000000000000175 /* DashDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* DashDateFormatting.swift */; };
 		B00000000000000000000172 /* ZoneAlertsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000172 /* ZoneAlertsSection.swift */; };
 		B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000171 /* ZoneAlertSubscriptions.swift */; };
@@ -291,7 +290,6 @@
 		F000000000000000000001B2 /* WorkerBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivity.swift; sourceTree = "<group>"; };
 		F000000000000000000001B1 /* WorkerBuildsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildsSection.swift; sourceTree = "<group>"; };
 		F000000000000000000001B0 /* WorkerBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityController.swift; sourceTree = "<group>"; };
-		F00000000000000000000173 /* ExpiryReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExpiryReminders.swift; sourceTree = "<group>"; };
 		F00000000000000000000175 /* DashDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDateFormatting.swift; sourceTree = "<group>"; };
 		F00000000000000000000172 /* ZoneAlertsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertsSection.swift; sourceTree = "<group>"; };
 		F00000000000000000000171 /* ZoneAlertSubscriptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertSubscriptions.swift; sourceTree = "<group>"; };
@@ -530,7 +528,6 @@
 				F000000000000000000001B1 /* WorkerBuildsSection.swift */,
 				F000000000000000000001B0 /* WorkerBuildActivityController.swift */,
 				F00000000000000000000174 /* AlertLocalization.swift */,
-				F00000000000000000000173 /* ExpiryReminders.swift */,
 				F00000000000000000000175 /* DashDateFormatting.swift */,
 				F00000000000000000000172 /* ZoneAlertsSection.swift */,
 				F00000000000000000000171 /* ZoneAlertSubscriptions.swift */,
@@ -1033,7 +1030,6 @@
 				B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */,
 				B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */,
 				B00000000000000000000174 /* AlertLocalization.swift in Sources */,
-				B00000000000000000000173 /* ExpiryReminders.swift in Sources */,
 				B00000000000000000000175 /* DashDateFormatting.swift in Sources */,
 				B00000000000000000000172 /* ZoneAlertsSection.swift in Sources */,
 				B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */,

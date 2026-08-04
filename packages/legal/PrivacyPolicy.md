@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-Effective July 29, 2026.
+Effective August 4, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. Core account API requests go directly from your device to
@@ -65,14 +65,18 @@ using Cloudflare's Cache API. For abuse protection, it uses the connecting IP
 address only as the key for an hourly request counter, also cached for at most
 one hour. These values are not used for analytics, advertising, or tracking.
 
-Watchtower's "Notify after background checks" switch uses notifications
-generated locally on your device and does not send Watchtower data through the
-relay.
-
-Optional "Push alerts" in Settings registers this device with Apple Push
-Notification service and creates a webhook destination in your own Cloudflare
-account. When a notification policy you enable fires, Cloudflare posts the alert
-to `dash.xat.sh`, which forwards a push to this iPhone. The relay does not store
+For a signed-in real account, Dash requests quiet notification delivery from
+iOS, registers this device with Apple Push Notification service, and creates a
+per-device webhook destination in your own Cloudflare account. Dash does not
+attach that destination to your existing ordinary notification policies
+automatically; policies created or managed in Dash attach it explicitly. Legacy
+Dash webhook bindings are removed from Pages build policies while their email,
+PagerDuty, and unrelated webhook destinations are preserved. Dash does not
+create new alert policies automatically or derive or schedule notifications
+from fetched account or resource data. Pages and Workers build monitoring
+instead uses app-driven Live Activities and does not pass through this webhook.
+When an eligible policy fires, Cloudflare posts the alert to `dash.xat.sh`,
+which forwards a push to this iPhone. The relay does not store
 device tokens, alert payloads, or notify URLs; those live in the signed webhook
 URL and your Cloudflare account.
 
@@ -97,7 +101,7 @@ your initials. Gravatar is operated by Automattic Inc. and has its own
 ## What we can see
 
 We do not receive your OAuth tokens or Cloudflare traffic. The relay necessarily
-processes the OAuth callback, registration lookup, and optional push-alert
+processes the OAuth callback, registration lookup, and push-alert
 requests described above, but the app code does not use those requests for
 product analytics or tracking. Support happens over email, with only the
 information you choose to share.
@@ -105,13 +109,19 @@ information you choose to share.
 ## Data deletion
 
 Signing out revokes the OAuth token with Cloudflare, deletes it from your
-Keychain, clears in-memory session data, and removes Dash's R2 temporary files.
+Keychain, attempts to remove this device's webhook from your Cloudflare
+notification policies and delete that webhook, clears in-memory session data,
+and removes Dash's R2 temporary files.
 Deleting the app removes locally stored preferences, custom profile photos,
 and extension staging files. A synced preference copy can remain in your
 iCloud account so Dash can restore it after reinstalling. Registration
 snapshots and IP-based rate-limit counters expire automatically within the
 periods described above. Dash holds no persistent server-side copy of your
 Cloudflare account data.
+
+Deleting Dash without signing out prevents the app from removing the webhook
+destination from your Cloudflare account. You can remove a leftover destination
+and its policy bindings from the Cloudflare dashboard.
 
 ## Changes
 

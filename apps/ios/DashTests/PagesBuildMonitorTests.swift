@@ -4,40 +4,54 @@ import Testing
 
 @testable import Dash
 
-@Test func pagesBuildRefreshDispositionClassifiesCancellationAndHTTPFailures() {
-  #expect(PagesBuildRefreshDisposition.classify(CancellationError()) == .cancel)
-  #expect(PagesBuildRefreshDisposition.classify(URLError(.cancelled)) == .cancel)
+@Test func legacyPagesActivityPushTokensAreRemoved() throws {
+  let suite = "dash.tests.pages-activity-token.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  defaults.set("token-a", forKey: "\(LegacyPagesBuildPushTokenStore.keyPrefix)deployment-a")
+  defaults.set("keep", forKey: "dash.unrelated")
+
+  LegacyPagesBuildPushTokenStore.clear(defaults: defaults)
+
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    defaults.object(forKey: "\(LegacyPagesBuildPushTokenStore.keyPrefix)deployment-a") == nil)
+  #expect(defaults.string(forKey: "dash.unrelated") == "keep")
+}
+
+@Test func pagesBuildRefreshDispositionClassifiesCancellationAndHTTPFailures() {
+  #expect(BuildMonitorRefreshDisposition.classify(CancellationError()) == .cancel)
+  #expect(BuildMonitorRefreshDisposition.classify(URLError(.cancelled)) == .cancel)
+  #expect(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 401, errors: [])) == .stop)
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 403, errors: [])) == .stop)
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 404, errors: [])) == .stop)
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 408, errors: [])) == .retry)
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 429, errors: [])) == .retry)
   #expect(
-    PagesBuildRefreshDisposition.classify(
+    BuildMonitorRefreshDisposition.classify(
       CloudflareAPIError.request(status: 503, errors: [])) == .retry)
   #expect(
-    PagesBuildRefreshDisposition.classify(CloudflareAPIError.transport("offline")) == .retry)
+    BuildMonitorRefreshDisposition.classify(CloudflareAPIError.transport("offline")) == .retry)
   #expect(
-    PagesBuildRefreshDisposition.classify(CloudflareAPIError.oauth("invalid_grant")) == .stop)
+    BuildMonitorRefreshDisposition.classify(CloudflareAPIError.oauth("invalid_grant")) == .stop)
 }
 
 @Test func pagesBuildRetryDelayIsExponentiallyBounded() {
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: -1) == 10)
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: 0) == 10)
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: 1) == 20)
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: 2) == 40)
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: 3) == 60)
-  #expect(PagesBuildRefreshDisposition.retryDelaySeconds(consecutiveFailures: 20) == 60)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: -1) == 10)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 0) == 10)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 1) == 20)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 2) == 40)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 3) == 60)
+  #expect(BuildMonitorRefreshDisposition.retryDelaySeconds(consecutiveFailures: 20) == 60)
 }
 
 @Test func pagesBuildLogsRefreshOnlyInitiallyManuallyOrAtTerminalTransition() {
@@ -132,8 +146,8 @@ import Testing
     controller.invalidateSession()
   }
 
-  let background = Task { @MainActor in
-    await controller.refresh(key: key, client: client, source: .background)
+  let initial = Task { @MainActor in
+    await controller.refresh(key: key, client: client, source: .initial)
   }
   while await fetchProbe.startCount == 0 {
     await Task.yield()
@@ -146,7 +160,7 @@ import Testing
   }
 
   await fetchProbe.complete(.success(try pagesDeploymentFixture()))
-  await background.value
+  await initial.value
   await manual.value
   await waitForPagesBuildEvents(eventProbe, count: 1)
   for _ in 0..<10 { await Task.yield() }

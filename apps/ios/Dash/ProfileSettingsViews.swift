@@ -5,7 +5,6 @@ import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
-import UserNotifications
 
 // MARK: - Account decisions
 
@@ -614,7 +613,6 @@ private enum DashHelpLink {
 struct SettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
-  @AppStorage(WatchtowerNotifier.optInDefaultsKey) private var watchtowerNotifications = false
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system.rawValue
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
   @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
@@ -624,7 +622,6 @@ struct SettingsView: View {
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
-  @State private var watchtowerNotificationsDenied = false
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceWashPicker = false
   @State private var showsChartStylePicker = false
@@ -750,38 +747,6 @@ struct SettingsView: View {
         }
 
         SettingsPlainSection(title: "Watchtower") {
-          SettingsPlainToggleRow(
-            title: DashL10n.string("Notifications"),
-            icon: SolarAsset.inbox,
-            isOn: $watchtowerNotifications
-          )
-          .onChange(of: watchtowerNotifications) { _, enabled in
-            guard enabled else {
-              watchtowerNotificationsDenied = false
-              return
-            }
-            Task {
-              let granted = await WatchtowerNotifier.requestAuthorization()
-              if !granted {
-                watchtowerNotifications = false
-                watchtowerNotificationsDenied = true
-                model.toasts.warning(
-                  DashL10n.string(
-                    "Notifications are turned off in iOS Settings. Enable them for Dash to get alerts."
-                  ))
-              }
-            }
-          }
-          if watchtowerNotificationsDenied {
-            DashNotice(
-              kind: .warning,
-              message: DashL10n.string(
-                "Notifications are turned off in iOS Settings. Enable them for Dash to get alerts."
-              )
-            )
-            .padding(.bottom, 8)
-          }
-
           PushAlertsSettingsRows()
         }
 
@@ -1818,7 +1783,7 @@ struct ProfileView: View {
   /// seconds; render them as a plain date.
   private func formattedDate(_ iso: String?) -> String? {
     guard let iso else { return nil }
-    guard ExpiryReminders.date(fromISO8601: iso) != nil else { return iso }
+    guard DashDateFormatting.date(fromISO8601: iso) != nil else { return iso }
     return DashDateFormatting.dateOnly(fromISO8601: iso)
   }
 }

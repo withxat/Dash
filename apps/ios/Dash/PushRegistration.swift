@@ -121,7 +121,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCen
     _ application: UIApplication,
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
-    // Silent — push degrades; Watchtower local notifications still work.
+    // Silent — Cloudflare history remains available in Watchtower, and a later
+    // launch/token callback retries the default webhook delivery path.
   }
 
   nonisolated func userNotificationCenter(
@@ -271,17 +272,14 @@ enum PushRegistrationOperationGate {
     return Operation(accountID: accountID, generation: state.generation)
   }
 
-  static func beginReconcile(
-    accountID: String,
-    isCurrentlyEnabled: Bool
-  ) -> Operation? {
-    var state =
-      states[accountID]
-      ?? State(generation: 0, wantsEnabled: isCurrentlyEnabled)
-    guard state.wantsEnabled, isCurrentlyEnabled else { return nil }
-    state.generation &+= 1
-    states[accountID] = state
-    return Operation(accountID: accountID, generation: state.generation)
+  /// Automatic setup and a Settings refresh may converge on the same account.
+  /// They share one desired generation so serial execution stays idempotent;
+  /// only an explicit disable/sign-out invalidates both.
+  static func beginEnsureEnabled(accountID: String) -> Operation {
+    if let state = states[accountID], state.wantsEnabled {
+      return Operation(accountID: accountID, generation: state.generation)
+    }
+    return beginDesiredChange(accountID: accountID, enabled: true)
   }
 
   static func isCurrent(_ operation: Operation, enabled: Bool) -> Bool {
@@ -320,7 +318,7 @@ private actor PushRegistrationMutationLock {
 
 /// APNs collapses registration challenges for one device to a single pending
 /// delivery. Serialize challenge exchanges for that token so an automatic
-/// reconcile and "Send test alert" cannot replace each other's nonce.
+/// reconcile for one account cannot replace another account's nonce.
 private actor PushRegistrationChallengeLock {
   static let shared = PushRegistrationChallengeLock()
 
@@ -354,7 +352,10 @@ private actor PushRegistrationChallengeLock {
 /// Dash remembers the webhook id plus any pending cleanup retry in UserDefaults.
 enum PushRegistrationService {
   private static let webhookIDPrefix = "dash.push.webhook_id."
+  private static let readyPrefix = "dash.push.ready."
   private static let cleanupPrefix = "dash.push.cleanup."
+  static let requiredScopes: Set<String> = ["notifications.read", "notifications.write"]
+  private static let buildActivityAlertTypes: Set<String> = ["pages_event_alert"]
 
   struct CleanupTombstone: Codable, Equatable, Sendable {
     let webhookID: String
@@ -382,8 +383,18 @@ enum PushRegistrationService {
     return try? JSONDecoder().decode(CleanupTombstone.self, from: data)
   }
 
-  static func isEnabled(accountID: String) -> Bool {
-    storedWebhookID(accountID: accountID) != nil
+  static func readinessKey(accountID: String) -> String {
+    "\(readyPrefix)\(accountID)"
+  }
+
+  static func isReady(
+    accountID: String,
+    in defaults: UserDefaults = .standard
+  ) -> Bool {
+    guard let webhookID = defaults.string(forKey: webhookIDKey(accountID: accountID)),
+      !webhookID.isEmpty
+    else { return false }
+    return defaults.bool(forKey: readinessKey(accountID: accountID))
   }
 
   static func enabledAccountIDs(in defaults: UserDefaults = .standard) -> [String] {
@@ -407,9 +418,27 @@ enum PushRegistrationService {
     ).sorted()
   }
 
-  static func reconcilableAccountIDs(in defaults: UserDefaults = .standard) -> [String] {
-    let cleanup = Set(pendingCleanupAccountIDs(in: defaults))
-    return enabledAccountIDs(in: defaults).filter { !cleanup.contains($0) }
+  static var shouldAutomaticallyProvisionForCurrentProcess: Bool {
+    shouldAutomaticallyProvision(
+      arguments: ProcessInfo.processInfo.arguments,
+      environment: ProcessInfo.processInfo.environment)
+  }
+
+  static func shouldAutomaticallyProvision(
+    arguments: [String],
+    environment: [String: String]
+  ) -> Bool {
+    if environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+      || environment["XCTestConfigurationFilePath"] != nil
+      || environment["XCTestBundlePath"] != nil
+      || arguments.contains("-ui-testing")
+      || arguments.contains(where: {
+        $0.hasPrefix("-ui-preview") || $0.hasPrefix("-uiTest")
+      })
+    {
+      return false
+    }
+    return true
   }
 
   /// Invalidates every in-flight enable/reconcile before sign-out starts
@@ -428,17 +457,18 @@ enum PushRegistrationService {
     let secret: String
   }
 
-  /// Mint a signed notify URL from the relay, then create/update/adopt the
-  /// Cloudflare webhook for this account.
+  /// Mint a signed notify URL from the relay and create/update/adopt this
+  /// device's Cloudflare webhook. Existing notification policies remain
+  /// user-owned; Dash-created policies opt into this destination explicitly.
+  /// Concurrent default-setup callers share the same desired generation.
   @MainActor
-  static func enable(
+  static func ensureEnabled(
     accountID: String,
     client: CloudflareClient,
     configuration: AppConfiguration,
     deviceToken: String
   ) async throws {
-    let operation = PushRegistrationOperationGate.beginDesiredChange(
-      accountID: accountID, enabled: true)
+    let operation = PushRegistrationOperationGate.beginEnsureEnabled(accountID: accountID)
     try await withMutationLock(accountID: accountID) {
       try await enable(
         accountID: accountID,
@@ -458,6 +488,7 @@ enum PushRegistrationService {
     operation: PushRegistrationOperationGate.Operation
   ) async throws {
     try requireCurrentEnabledOperation(operation)
+    clearReady(accountID: accountID)
     guard let base = configuration.pushBaseURL else {
       throw PushRegistrationError.pushNotConfigured
     }
@@ -471,14 +502,40 @@ enum PushRegistrationService {
     let input = NotificationWebhookInput(
       name: deviceWebhookName, url: registration.url, secret: registration.secret)
 
+    let webhookID = try await upsertWebhook(
+      accountID: accountID,
+      client: client,
+      deviceToken: deviceToken,
+      name: deviceWebhookName,
+      input: input,
+      operation: operation)
+    try requireCurrentEnabledOperation(operation)
+    try await removeDashDeliveryFromBuildPolicies(
+      webhookID: webhookID,
+      accountID: accountID,
+      client: client,
+      relayBaseURL: base)
+    try requireCurrentEnabledOperation(operation)
+    markReady(accountID: accountID)
+    clearCleanup(accountID: accountID)
+  }
+
+  @MainActor
+  private static func upsertWebhook(
+    accountID: String,
+    client: CloudflareClient,
+    deviceToken: String,
+    name: String,
+    input: NotificationWebhookInput,
+    operation: PushRegistrationOperationGate.Operation
+  ) async throws -> String {
     if let existingID = storedWebhookID(accountID: accountID) {
       do {
         let updated = try await client.updateNotificationWebhook(
           accountID: accountID, webhookID: existingID, input: input)
         store(webhookID: updated.id, accountID: accountID)
         try requireCurrentEnabledOperation(operation)
-        clearCleanup(accountID: accountID)
-        return
+        return updated.id
       } catch is CancellationError {
         throw CancellationError()
       } catch {
@@ -491,14 +548,13 @@ enum PushRegistrationService {
     let webhooks = try await client.listNotificationWebhooks(accountID: accountID)
     try requireCurrentEnabledOperation(operation)
     if let match = webhooks.first(where: {
-      $0.name == deviceWebhookName || $0.url?.contains(deviceToken) == true
+      $0.name == name || $0.url?.contains(deviceToken) == true
     }) {
       let updated = try await client.updateNotificationWebhook(
         accountID: accountID, webhookID: match.id, input: input)
       store(webhookID: updated.id, accountID: accountID)
       try requireCurrentEnabledOperation(operation)
-      clearCleanup(accountID: accountID)
-      return
+      return updated.id
     }
 
     try requireCurrentEnabledOperation(operation)
@@ -507,7 +563,7 @@ enum PushRegistrationService {
     // A queued Disable can now delete a create that finished while it waited.
     store(webhookID: created.id, accountID: accountID)
     try requireCurrentEnabledOperation(operation)
-    clearCleanup(accountID: accountID)
+    return created.id
   }
 
   /// Delete the webhook (unbinding policies first if Cloudflare rejects the
@@ -531,6 +587,7 @@ enum PushRegistrationService {
         storedWebhookID(accountID: accountID)
         ?? cleanupTombstone(accountID: accountID)?.webhookID
     else {
+      clearReady(accountID: accountID)
       clearCleanup(accountID: accountID)
       return
     }
@@ -560,32 +617,6 @@ enum PushRegistrationService {
     clearCleanup(accountID: accountID)
   }
 
-  /// Refresh the webhook URL when the device token rotates, if push is on.
-  @MainActor
-  static func reconcile(
-    accountID: String,
-    client: CloudflareClient,
-    configuration: AppConfiguration,
-    deviceToken: String
-  ) async throws {
-    guard isEnabled(accountID: accountID),
-      cleanupTombstone(accountID: accountID) == nil
-    else { return }
-    guard
-      let operation = PushRegistrationOperationGate.beginReconcile(
-        accountID: accountID,
-        isCurrentlyEnabled: true)
-    else { return }
-    try await withMutationLock(accountID: accountID) {
-      try await enable(
-        accountID: accountID,
-        client: client,
-        configuration: configuration,
-        deviceToken: deviceToken,
-        operation: operation)
-    }
-  }
-
   /// Wait briefly for the system to deliver a device token after registration.
   @MainActor
   static func waitForDeviceToken(in model: AppModel, attempts: Int = 30) async -> String? {
@@ -596,43 +627,6 @@ enum PushRegistrationService {
       if let token = model.pendingDeviceToken { return token }
     }
     return model.pendingDeviceToken
-  }
-
-  /// Mint a notify URL for the current token and POST a synthetic Cloudflare
-  /// alert payload so the user can verify APNs end-to-end.
-  @MainActor
-  static func sendTestAlert(
-    accountID: String,
-    configuration: AppConfiguration,
-    deviceToken: String
-  ) async throws {
-    guard let base = configuration.pushBaseURL else {
-      throw PushRegistrationError.pushNotConfigured
-    }
-    let registration = try await registerWithRelay(
-      baseURL: base,
-      token: deviceToken,
-      accountID: accountID
-    )
-    guard let notifyURL = URL(string: registration.url) else {
-      throw PushRegistrationError.relayFailed(status: -1)
-    }
-    var request = URLRequest(url: notifyURL)
-    request.httpMethod = "POST"
-    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-    request.setValue(registration.secret, forHTTPHeaderField: "cf-webhook-auth")
-    request.httpBody = try JSONSerialization.data(withJSONObject: [
-      "name": "Dash test alert",
-      "text": "Push is working. Cloudflare alerts will appear like this.",
-      "alert_type": "dash_test",
-    ])
-    let (_, response) = try await URLSession.shared.data(for: request)
-    guard let http = response as? HTTPURLResponse else {
-      throw PushRegistrationError.relayFailed(status: -1)
-    }
-    guard (200..<300).contains(http.statusCode) else {
-      throw PushRegistrationError.relayFailed(status: http.statusCode)
-    }
   }
 
   private static func registerWithRelay(
@@ -753,24 +747,138 @@ enum PushRegistrationService {
   ) async throws {
     let policies = try await client.listNotificationPolicies(accountID: accountID)
     for policy in policies {
-      guard var mechanisms = policy.mechanisms,
-        let hooks = mechanisms.webhooks,
-        hooks.contains(where: { $0.id == webhookID })
+      guard policy.mechanisms?.webhooks?.contains(where: { $0.id == webhookID }) == true
       else { continue }
-      mechanisms.webhooks = hooks.filter { $0.id != webhookID }
-      var input = policy.input()
-      input.mechanisms = mechanisms
-      _ = try await client.updateNotificationPolicy(
-        accountID: accountID, policyID: policy.id, input: input)
+      try await reconcilePolicyDeliveryRemoval(
+        webhookIDs: [webhookID],
+        accountID: accountID,
+        policyID: policy.id,
+        client: client)
     }
+  }
+
+  /// Pages and Workers share the app-driven Live Activity route. Remove every
+  /// Dash relay destination from legacy Pages policies, but preserve the policy
+  /// itself and all non-Dash delivery mechanisms the user owns in Cloudflare.
+  private static func removeDashDeliveryFromBuildPolicies(
+    webhookID: String,
+    accountID: String,
+    client: CloudflareClient,
+    relayBaseURL: URL
+  ) async throws {
+    let webhooks = try await client.listNotificationWebhooks(accountID: accountID)
+    var dashWebhookIDs: Set<String> = [webhookID]
+    dashWebhookIDs.formUnion(
+      webhooks.compactMap { webhook in
+        guard let url = webhook.url,
+          isValidRelayNotifyURL(url, relayBaseURL: relayBaseURL)
+        else { return nil }
+        return webhook.id
+      })
+
+    let policies = try await client.listNotificationPolicies(accountID: accountID)
+    for policy in policies where usesBuildActivityPath(alertType: policy.alertType) {
+      guard containsAnyWebhook(dashWebhookIDs, in: policy)
+      else { continue }
+      try await reconcilePolicyDeliveryRemoval(
+        webhookIDs: dashWebhookIDs,
+        accountID: accountID,
+        policyID: policy.id,
+        client: client)
+    }
+  }
+
+  /// Cloudflare exposes a per-policy GET and an update body whose fields are
+  /// optional. Read immediately before each mechanisms-only removal, then
+  /// verify and retry a bounded number of times. This avoids replaying stale
+  /// enabled state, filters, interval, or copy over a dashboard edit.
+  private static func reconcilePolicyDeliveryRemoval(
+    webhookIDs: Set<String>,
+    accountID: String,
+    policyID: String,
+    client: CloudflareClient
+  ) async throws {
+    guard !webhookIDs.isEmpty else { return }
+    for _ in 0..<3 {
+      try Task.checkCancellation()
+      let policy: NotificationPolicy
+      do {
+        policy = try await client.getNotificationPolicy(
+          accountID: accountID, policyID: policyID)
+      } catch {
+        if isStatus(error, 404) { return }
+        throw error
+      }
+      guard
+        let mechanisms = mechanismsRemovingDelivery(
+          webhookIDs: webhookIDs,
+          from: policy)
+      else { return }
+
+      _ = try await client.updateNotificationPolicyMechanisms(
+        accountID: accountID,
+        policyID: policyID,
+        mechanisms: mechanisms)
+      try Task.checkCancellation()
+      do {
+        let verified = try await client.getNotificationPolicy(
+          accountID: accountID, policyID: policyID)
+        if !containsAnyWebhook(webhookIDs, in: verified) {
+          return
+        }
+      } catch {
+        if isStatus(error, 404) { return }
+        throw error
+      }
+    }
+    throw PushRegistrationError.policyReconciliationFailed
+  }
+
+  static func usesBuildActivityPath(alertType: String?) -> Bool {
+    alertType.map(buildActivityAlertTypes.contains) ?? false
+  }
+
+  /// Removes only the selected webhook destinations. Existing email,
+  /// PagerDuty, and unrelated webhook targets survive.
+  static func mechanismsRemovingDelivery(
+    webhookIDs: Set<String>,
+    from policy: NotificationPolicy
+  ) -> NotificationMechanisms? {
+    let webhookIDs = Set(
+      webhookIDs.map {
+        $0.trimmingCharacters(in: .whitespacesAndNewlines)
+      }.filter { !$0.isEmpty })
+    guard !webhookIDs.isEmpty else { return nil }
+    var mechanisms = policy.mechanisms ?? NotificationMechanisms()
+    var webhooks = mechanisms.webhooks ?? []
+    guard webhooks.contains(where: { webhookIDs.contains($0.id) }) else { return nil }
+    webhooks.removeAll { webhookIDs.contains($0.id) }
+    mechanisms.webhooks = webhooks
+    return mechanisms
+  }
+
+  private static func containsAnyWebhook(
+    _ webhookIDs: Set<String>,
+    in policy: NotificationPolicy
+  ) -> Bool {
+    policy.mechanisms?.webhooks?.contains(where: { webhookIDs.contains($0.id) }) == true
   }
 
   private static func store(webhookID: String, accountID: String) {
     UserDefaults.standard.set(webhookID, forKey: webhookIDKey(accountID: accountID))
   }
 
+  private static func markReady(accountID: String) {
+    UserDefaults.standard.set(true, forKey: readinessKey(accountID: accountID))
+  }
+
+  private static func clearReady(accountID: String) {
+    UserDefaults.standard.removeObject(forKey: readinessKey(accountID: accountID))
+  }
+
   private static func clear(accountID: String) {
     UserDefaults.standard.removeObject(forKey: webhookIDKey(accountID: accountID))
+    clearReady(accountID: accountID)
   }
 
   static func webhookName(deviceToken: String) -> String {
@@ -840,6 +948,9 @@ enum PushRegistrationService {
 
 enum PushRegistrationError: Error, LocalizedError {
   case pushNotConfigured
+  case authorizationRequired
+  case notificationsDisabled
+  case policyReconciliationFailed
   case relayFailed(status: Int)
   case relayAccountMismatch
   case missingDeviceToken
@@ -848,6 +959,12 @@ enum PushRegistrationError: Error, LocalizedError {
     switch self {
     case .pushNotConfigured:
       return DashL10n.string("Push alerts are not configured for this build.")
+    case .authorizationRequired:
+      return DashL10n.string("Grant access")
+    case .notificationsDisabled:
+      return DashL10n.string("Notifications are turned off in Settings.")
+    case .policyReconciliationFailed:
+      return DashL10n.string("Cloudflare couldn’t complete this request. Try again.")
     case .relayFailed(let status):
       return DashL10n.string("Could not register with the push relay (HTTP \(status)).")
     case .relayAccountMismatch:

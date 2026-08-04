@@ -1036,7 +1036,7 @@ private func r2BucketAccessibilityLabel(_ bucket: R2Bucket) -> String {
 
 private func r2BucketCreationText(_ value: String?) -> String? {
   guard let value, !value.isEmpty else { return nil }
-  guard ExpiryReminders.date(fromISO8601: value) != nil else { return value }
+  guard DashDateFormatting.date(fromISO8601: value) != nil else { return value }
   return DashL10n.string(
     "Created \(DashDateFormatting.dateOnly(fromISO8601: value))")
 }

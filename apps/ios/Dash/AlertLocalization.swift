@@ -28,7 +28,6 @@ enum AlertLocalization {
   /// a far better outcome than a confidently mistranslated one, and Cloudflare
   /// adds alert types faster than this list can track them.
   enum Known: String, CaseIterable, Sendable {
-    case dashTest = "dash_test"
     case dosAttackL7 = "dos_attack_l7"
     case httpAlertEdgeError = "http_alert_edge_error"
     case httpAlertOriginError = "http_alert_origin_error"
@@ -42,7 +41,6 @@ enum AlertLocalization {
 
     var title: String {
       switch self {
-      case .dashTest: DashAlertStrings.string("Dash test alert")
       case .dosAttackL7: DashAlertStrings.string("L7 DDoS")
       case .httpAlertEdgeError: DashAlertStrings.string("Edge errors")
       case .httpAlertOriginError: DashAlertStrings.string("Origin errors")
@@ -64,8 +62,6 @@ enum AlertLocalization {
     /// is kept rather than replaced with something vaguer.
     func body(subject: String) -> String {
       switch self {
-      case .dashTest:
-        DashAlertStrings.string("Push is working.")
       case .dosAttackL7:
         DashAlertStrings.string("Cloudflare is mitigating an attack on \(subject).")
       case .httpAlertEdgeError:
@@ -89,7 +85,7 @@ enum AlertLocalization {
 
     /// True when the body reads correctly with no resource named.
     var isSubjectOptional: Bool {
-      self == .dashTest || self == .weeklyAccountOverview
+      self == .weeklyAccountOverview
     }
   }
 
