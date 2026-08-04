@@ -598,6 +598,8 @@ struct SettingsView: View {
 
         SettingsPlainSection(title: "General") {
           Button {
+            // `DashSurfaceButtonStyle` has no press haptic — only shrink styles do.
+            DashDelight.lightImpact()
             showsLanguagePicker = true
           } label: {
             SettingsPlainRow(
@@ -613,6 +615,7 @@ struct SettingsView: View {
           // Appearance held this one row on its own; a single-row section is a
           // header the page pays for twice.
           Button {
+            DashDelight.lightImpact()
             showsWorkspaceWashPicker = true
           } label: {
             SettingsPlainRow(
@@ -626,6 +629,7 @@ struct SettingsView: View {
           .accessibilityIdentifier("workspace-wash-color")
 
           Button {
+            DashDelight.lightImpact()
             showsChartStylePicker = true
           } label: {
             SettingsPlainRow(
@@ -763,6 +767,7 @@ struct SettingsView: View {
 
         SettingsPlainSection(title: "Account") {
           Button {
+            DashDelight.lightImpact()
             showsSignOutConfirmation = true
           } label: {
             SettingsPlainRow(
@@ -848,6 +853,7 @@ struct SettingsAccountsView: View {
               dismiss()
               return
             }
+            DashDelight.lightImpact()
             pendingAccount = account
           } label: {
             SettingsPlainRow(

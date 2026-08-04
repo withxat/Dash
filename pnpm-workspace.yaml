@@ -38,6 +38,11 @@ trustPolicyExclude:
   - semver@6.3.1
   - ua-parser-js@1.0.41
 minimumReleaseAgeExclude:
+  # browserslist transitive pins — too new for the default age gate until they
+  # age out; keep the lockfile installable for hooks in the meantime.
+  - baseline-browser-mapping@2.11.12
+  - electron-to-chromium@1.5.400
+  - node-releases@2.0.52
   - '@turbo/darwin-64@2.10.2'
   - '@turbo/darwin-arm64@2.10.2'
   - '@turbo/linux-64@2.10.2'
