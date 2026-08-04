@@ -117,7 +117,8 @@ struct DashLoadMoreFooter: View {
           .monospacedDigit()
           .foregroundStyle(DashTheme.subtle)
           .contentTransition(
-            reduceMotion ? .opacity : .numericText(value: Double(loaded)))
+            reduceMotion ? .opacity : .numericText(value: Double(loaded))
+          )
           .animation(
             reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph,
             value: loaded)

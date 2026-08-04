@@ -1040,7 +1040,8 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           DashTrayAnchorReveal(
             progress: progress, drag: drag, active: anchorActive,
             source: closeAnchorRect ?? sourceFrame ?? .zero,
-            card: anchoredCardRect(proxy)))
+            card: anchoredCardRect(proxy))
+        )
         .padding(.bottom, bottomLift(proxy))
         // Bottom-pinned slide: a bounded fraction of the card height plus
         // opacity, blur, and scale — tall trays never shoot in from far away.
