@@ -362,8 +362,25 @@ enum DashTheme {
 
     /// Family-style tab handoff: a short directional flight between two content
     /// identities while the workspace wash, root header, and dock stay fixed.
-    static let tabStepDuration: TimeInterval = 0.26
+    /// The two page timelines are deliberately asymmetric (measured from
+    /// Family's own switches at 60fps): the outgoing page clears FIRST — a
+    /// front-loaded fade over a near-constant glide, still travelling when it
+    /// vanishes — and the incoming page lands just after it, a lagged S-curve
+    /// fade riding a soft spring settle with ~1pt of overshoot. The opacities
+    /// are not complementary: at the crossover both sit near 30%, so the swap
+    /// briefly breathes toward the canvas instead of double-exposing two pages.
     static let tabStepSlide: CGFloat = 24
+    static let tabStepOutgoingFadeDuration: TimeInterval = 0.12
+    static let tabStepOutgoingFadeControlPoint1 = CGPoint(x: 0.2, y: 0.7)
+    static let tabStepOutgoingFadeControlPoint2 = CGPoint(x: 0.4, y: 1)
+    static let tabStepOutgoingSlideDuration: TimeInterval = 0.15
+    static let tabStepIncomingFadeDuration: TimeInterval = 0.14
+    static let tabStepSettleDuration: TimeInterval = 0.3
+    static let tabStepSettleDampingRatio: CGFloat = 0.68
+    /// The ONE workspace wash blends the two tabs' scroll lifts across the same
+    /// handoff. It is shared chrome behind both pages, so it keeps a single
+    /// calm complementary curve that finishes inside the settle window.
+    static let tabStepDuration: TimeInterval = 0.26
     static let tabStepControlPoint1 = CGPoint(x: 0.22, y: 1)
     static let tabStepControlPoint2 = CGPoint(x: 0.36, y: 1)
     static let tabStep = Animation.timingCurve(

@@ -2075,7 +2075,11 @@ enum DashTabFlowContainerRules {
 @MainActor
 final class DashTabFlowViewController: UIViewController {
   private final class ActiveTransition {
+    /// The longest timeline (the incoming settle); it owns the completion.
     let animator: UIViewPropertyAnimator
+    /// Shorter concurrent timelines (fades, outgoing glide). They always end
+    /// before `animator` does naturally; a forced finish jumps them first.
+    let auxiliaryAnimators: [UIViewPropertyAnimator]
     let sourceTab: AppTab
     let targetTab: AppTab
     let generation: UInt64
@@ -2087,6 +2091,7 @@ final class DashTabFlowViewController: UIViewController {
 
     init(
       animator: UIViewPropertyAnimator,
+      auxiliaryAnimators: [UIViewPropertyAnimator],
       sourceTab: AppTab,
       targetTab: AppTab,
       generation: UInt64,
@@ -2096,6 +2101,7 @@ final class DashTabFlowViewController: UIViewController {
       onCompleted: @escaping (AppTab, AppTab, UInt64) -> Void
     ) {
       self.animator = animator
+      self.auxiliaryAnimators = auxiliaryAnimators
       self.sourceTab = sourceTab
       self.targetTab = targetTab
       self.generation = generation
@@ -2276,38 +2282,84 @@ final class DashTabFlowViewController: UIViewController {
       target.beginAppearanceTransition(true, animated: true)
     }
 
-    let duration =
-      reduceMotion
-      ? DashTheme.Motion.Page.reducedDuration
-      : DashTheme.Motion.tabStepDuration
-    let timing =
-      reduceMotion
-      ? UICubicTimingParameters(animationCurve: .easeOut)
-      : UICubicTimingParameters(
-        controlPoint1: DashTheme.Motion.tabStepControlPoint1,
-        controlPoint2: DashTheme.Motion.tabStepControlPoint2)
-    let animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
-    let transition = ActiveTransition(
-      animator: animator,
-      sourceTab: sourceTab,
-      targetTab: targetTab,
-      generation: generation,
-      source: source,
-      target: target,
-      appearanceWasBegun: appearanceWasBegun,
-      onCompleted: onCompleted)
-    activeTransition = transition
-    animator.addAnimations {
-      source.view.alpha = 0
-      source.view.transform = CGAffineTransform(translationX: -travel, y: 0)
-      target.view.alpha = 1
-      target.view.transform = .identity
+    let transition: ActiveTransition
+    if reduceMotion {
+      // Stationary complementary crossfade; `travel` is already zero here.
+      let animator = UIViewPropertyAnimator(
+        duration: DashTheme.Motion.Page.reducedDuration,
+        timingParameters: UICubicTimingParameters(animationCurve: .easeOut))
+      animator.addAnimations {
+        source.view.alpha = 0
+        source.view.transform = .identity
+        target.view.alpha = 1
+        target.view.transform = .identity
+      }
+      transition = ActiveTransition(
+        animator: animator,
+        auxiliaryAnimators: [],
+        sourceTab: sourceTab,
+        targetTab: targetTab,
+        generation: generation,
+        source: source,
+        target: target,
+        appearanceWasBegun: appearanceWasBegun,
+        onCompleted: onCompleted)
+    } else {
+      // The outgoing page clears first: a front-loaded fade over a constant-
+      // speed glide that is still travelling when its opacity reaches zero.
+      let outgoingFade = UIViewPropertyAnimator(
+        duration: DashTheme.Motion.tabStepOutgoingFadeDuration,
+        timingParameters: UICubicTimingParameters(
+          controlPoint1: DashTheme.Motion.tabStepOutgoingFadeControlPoint1,
+          controlPoint2: DashTheme.Motion.tabStepOutgoingFadeControlPoint2))
+      outgoingFade.addAnimations {
+        source.view.alpha = 0
+      }
+      let outgoingSlide = UIViewPropertyAnimator(
+        duration: DashTheme.Motion.tabStepOutgoingSlideDuration,
+        timingParameters: UICubicTimingParameters(animationCurve: .linear))
+      outgoingSlide.addAnimations {
+        source.view.transform = CGAffineTransform(translationX: -travel, y: 0)
+      }
+      // The incoming page lands just after it: the S-curve's slow first frames
+      // are the lag that keeps both opacities near 30% at the crossover.
+      let incomingFade = UIViewPropertyAnimator(
+        duration: DashTheme.Motion.tabStepIncomingFadeDuration,
+        timingParameters: UICubicTimingParameters(animationCurve: .easeInOut))
+      incomingFade.addAnimations {
+        target.view.alpha = 1
+      }
+      // Soft spring settle; the fade is complete well before the ~1pt
+      // overshoot, so only fully opaque content ever bounces. Longest
+      // timeline, so it owns the completion.
+      let settle = UIViewPropertyAnimator(
+        duration: DashTheme.Motion.tabStepSettleDuration,
+        timingParameters: UISpringTimingParameters(
+          dampingRatio: DashTheme.Motion.tabStepSettleDampingRatio,
+          initialVelocity: .zero))
+      settle.addAnimations {
+        target.view.transform = .identity
+      }
+      transition = ActiveTransition(
+        animator: settle,
+        auxiliaryAnimators: [outgoingFade, outgoingSlide, incomingFade],
+        sourceTab: sourceTab,
+        targetTab: targetTab,
+        generation: generation,
+        source: source,
+        target: target,
+        appearanceWasBegun: appearanceWasBegun,
+        onCompleted: onCompleted)
     }
-    animator.addCompletion { [weak self, weak transition] _ in
+    activeTransition = transition
+    transition.animator.addCompletion { [weak self, weak transition] _ in
       guard let self, let transition else { return }
       self.complete(transition)
     }
-    animator.startAnimation()
+    for animator in transition.auxiliaryAnimators {
+      animator.startAnimation()
+    }
+    transition.animator.startAnimation()
   }
 
   private func enforceInteractionGate(for transition: ActiveTransition) {
@@ -2349,6 +2401,14 @@ final class DashTabFlowViewController: UIViewController {
   private func finishActiveTransition(notify: Bool) {
     guard let transition = activeTransition else { return }
     transition.notifiesCompletion = notify
+    // Auxiliary timelines may already have run out naturally; only a still-
+    // active one can be stopped and jumped to its end values.
+    for animator in transition.auxiliaryAnimators where animator.state == .active {
+      animator.stopAnimation(false)
+      if animator.state == .stopped {
+        animator.finishAnimation(at: .end)
+      }
+    }
     transition.animator.stopAnimation(false)
     transition.animator.finishAnimation(at: .end)
   }
