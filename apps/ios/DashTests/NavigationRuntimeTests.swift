@@ -69,6 +69,20 @@ import UIKit
   #expect(DashCardMorphRules.detailAccessoryOpacity(at: 0.94) == 1)
 }
 
+@Test func destinationCanvasCoversTheWorkspaceBeforeTheFirstPushFrame() {
+  let rootPush = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: false,
+    targetShowsDestinationCanvas: true)
+  #expect(!rootPush.isHidden)
+  #expect(rootPush.alpha == 1)
+
+  let rootAtRest = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: false,
+    targetShowsDestinationCanvas: false)
+  #expect(rootAtRest.isHidden)
+  #expect(rootAtRest.alpha == 0)
+}
+
 @Test func navigationOriginCarriesSemanticCardContentWithoutRequiringPixels() {
   let hero = DashNavigationHero.domainCard(
     name: "example.com",

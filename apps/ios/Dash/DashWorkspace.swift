@@ -1494,6 +1494,14 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     prepareDestinationCanvasTransition(targetVisible: targetOwnsDestinationCanvas)
     let isPush = requestedStyle.isPush
     hostContext.interactionLockedEntryID = isPush ? request.entries.last?.id : nil
+
+    // A newly attached hosting controller may commit its first SwiftUI frame
+    // during containment/layout. Put it in a non-visible push pose before it
+    // enters the hierarchy so that frame can never flash above the safe area.
+    resetTransitionState(source.view)
+    resetTransitionState(target.view)
+    if isPush { target.view.alpha = 0 }
+
     attach(target, above: isPush ? source : nil)
     if !isPush {
       view.insertSubview(target.view, belowSubview: source.view)
@@ -1503,8 +1511,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       requestedStyle,
       source: source.view,
       target: target.view)
-    resetTransitionState(source.view)
-    resetTransitionState(target.view)
     source.view.isUserInteractionEnabled = false
     // Keep the hosting view alive for Back/Close, while DashRoutePageChromeHost
     // gates the arriving page body until the transition settles. This makes a
@@ -2394,9 +2400,12 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
 
   private func prepareDestinationCanvasTransition(targetVisible: Bool) {
     let sourceVisible = !settledEntries.isEmpty
+    let preparation = DashDestinationCanvasRules.preparation(
+      sourceShowsDestinationCanvas: sourceVisible,
+      targetShowsDestinationCanvas: targetVisible)
     destinationCanvasPlate.layer.removeAllAnimations()
-    destinationCanvasPlate.isHidden = !(sourceVisible || targetVisible)
-    destinationCanvasPlate.alpha = sourceVisible ? 1 : 0
+    destinationCanvasPlate.isHidden = preparation.isHidden
+    destinationCanvasPlate.alpha = preparation.alpha
   }
 
   /// A deferred route may be replaced before its transition starts. Its source
@@ -2573,8 +2582,16 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
           DashCardMorphRules.backdropOpacity(at: detailProgress)
         updateCardHeroContent(proxy, detailProgress: detailProgress)
         proxy.outgoingContent?.alpha = 1
-        if let sourceFrame = proxy.morphStartFrame,
-          let landingFrame = proxy.morphTargetFrame
+        // SwiftUI can finish propagating the destination's safe-area inset one
+        // layout pass after the controller is attached. Track both concrete
+        // seats while they are live instead of freezing that provisional first
+        // frame and jumping when the proxy hands back to the real card.
+        if let sourceFrame = transitionFrame(
+          for: proxy.claimedOrigin,
+          liveOnly: true) ?? proxy.morphStartFrame,
+          let landingFrame = anchorFrameInContainer(
+            for: proxy.claimedLanding,
+            liveOnly: true) ?? proxy.morphTargetFrame
         {
           applyCardHeroFrame(
             proxy,
@@ -3509,7 +3526,7 @@ struct DestinationRoutedContent: View {
 // MARK: - Detail header
 
 /// The identity glyph a detail screen shows ahead of its inline title.
-enum DetailIcon {
+enum DetailIcon: Equatable {
   case feature(FeatureID)
   case avatar(String)
   case solar(String)
@@ -3531,14 +3548,14 @@ struct DetailIconView: View {
   }
 }
 
-struct DashPageHeaderDescriptor {
+struct DashPageHeaderDescriptor: Equatable {
   let icon: DetailIcon
   let title: String
   let tint: Color
 }
 
 struct DashPageActionDescriptor: Identifiable {
-  enum Label {
+  enum Label: Equatable {
     case icon(
       asset: String,
       accessibilityLabel: String,
@@ -3594,7 +3611,19 @@ struct DashPageActionDescriptor: Identifiable {
   }
 }
 
-struct DashPageChromePreference {
+/// Equality ignores action closures: chrome identity is id / label / enabled
+/// state, matching `DashPageEscapeActionPreference`.
+extension DashPageActionDescriptor: Equatable {
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.id == rhs.id
+      && lhs.label == rhs.label
+      && lhs.isEnabled == rhs.isEnabled
+      && lhs.disabledOpacity == rhs.disabledOpacity
+      && lhs.accessibilityIdentifier == rhs.accessibilityIdentifier
+  }
+}
+
+struct DashPageChromePreference: Equatable {
   var header: DashPageHeaderDescriptor? = nil
   var leadingActions: [DashPageActionDescriptor] = []
   var trailingActions: [DashPageActionDescriptor] = []
@@ -3686,6 +3715,23 @@ enum DashPageChromeMetrics {
   static let reservedHeight = controlSize + topInset
   static let actionSpacing: CGFloat = 8
   static let maximumPrincipalWidth: CGFloat = 160
+}
+
+/// The opaque destination plate must already cover the workspace wash before
+/// a root push exposes its first attached page frame.
+enum DashDestinationCanvasRules {
+  struct Preparation: Equatable {
+    let isHidden: Bool
+    let alpha: CGFloat
+  }
+
+  static func preparation(
+    sourceShowsDestinationCanvas: Bool,
+    targetShowsDestinationCanvas: Bool
+  ) -> Preparation {
+    let shows = sourceShowsDestinationCanvas || targetShowsDestinationCanvas
+    return Preparation(isHidden: !shows, alpha: shows ? 1 : 0)
+  }
 }
 
 private struct DashPageNavigationBar: View {
@@ -3803,6 +3849,7 @@ struct DashRoutePageChromeHost<Content: View>: View {
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dashWorkspaceWashScroll) private var washScroll
   @State private var scroll = DashHeaderScrollState()
+  @State private var pageChrome = DashPageChromePreference()
   @State private var preferredEscapeAction: DashPageEscapeActionPreference?
 
   var body: some View {
@@ -3812,8 +3859,9 @@ struct DashRoutePageChromeHost<Content: View>: View {
         .allowsHitTesting(allowsBodyInteraction)
         .accessibilityHidden(!allowsBodyInteraction)
     }
-    .padding(.top, DashPageChromeMetrics.reservedHeight)
-    // Frost first, navigation chrome second: controls remain crisp above it.
+    // Frost sits on the content, under the inset chrome — same z-order as under
+    // UINavigationBar. The inset expands safeAreaInsets.top so content and
+    // landing anchors share the physical screen's safe coordinate space.
     .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
       if !handled {
         DashHeaderScrim(scroll: scroll)
@@ -3821,21 +3869,17 @@ struct DashRoutePageChromeHost<Content: View>: View {
           .allowsHitTesting(false)
       }
     }
-    .overlayPreferenceValue(DashPageChromePreferenceKey.self, alignment: .top) { chrome in
-      if let entry {
-        DashPageNavigationBar(
-          entry: entry,
-          chrome: chrome,
-          allowsBusinessActions: allowsBodyInteraction,
-          dismiss: { navigator?.dismiss(entryID: entry.id) }
-        )
-      }
-    }
     .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
       if !handled {
         DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
         DashScreenClipLift()
       }
+    }
+    .onPreferenceChange(DashPageChromePreferenceKey.self) { [$pageChrome] chrome in
+      $pageChrome.wrappedValue = chrome
+    }
+    .safeAreaInset(edge: .top, spacing: 0) {
+      routeChromeInset
     }
     .preference(key: DashHeaderScrimHandledKey.self, value: true)
     .onPreferenceChange(DashPageEscapeActionPreferenceKey.self) { action in
@@ -3853,6 +3897,25 @@ struct DashRoutePageChromeHost<Content: View>: View {
             navigator?.dismiss(entryID: entry.id)
           }
         }))
+  }
+
+  /// Fixed-height top chrome so roots and destinations share one safe-area
+  /// reservation. Clear on tab roots; destinations paint the same slot.
+  @ViewBuilder private var routeChromeInset: some View {
+    Group {
+      if let entry {
+        DashPageNavigationBar(
+          entry: entry,
+          chrome: pageChrome,
+          allowsBusinessActions: allowsBodyInteraction,
+          dismiss: { navigator?.dismiss(entryID: entry.id) }
+        )
+      } else {
+        Color.clear
+      }
+    }
+    .frame(height: DashPageChromeMetrics.reservedHeight)
+    .frame(maxWidth: .infinity, alignment: .top)
   }
 }
 
