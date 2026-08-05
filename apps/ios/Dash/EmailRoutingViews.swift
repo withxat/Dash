@@ -237,7 +237,6 @@ struct EmailRoutingView: View {
 
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
-  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
 
@@ -299,8 +298,7 @@ struct EmailRoutingView: View {
         zoneID: zoneID,
         zoneName: settings?.name ?? "",
         rule: nil,
-        deliveryOptions: deliveryOptions,
-        onOpenAddresses: openAddresses
+        deliveryOptions: deliveryOptions
       ) {
         await load(force: true)
       }
@@ -313,8 +311,7 @@ struct EmailRoutingView: View {
           zoneID: zoneID,
           zoneName: settings?.name ?? "",
           rule: rule,
-          deliveryOptions: deliveryOptions,
-          onOpenAddresses: openAddresses
+          deliveryOptions: deliveryOptions
         ) {
           await load(force: true)
         }
@@ -827,12 +824,6 @@ struct EmailRoutingView: View {
     ) {
       try await turnOff()
     }
-  }
-
-  // MARK: Navigation
-
-  private func openAddresses() {
-    navigator?.push(.emailAddresses)
   }
 
   // MARK: Loading
@@ -1594,11 +1585,11 @@ struct EmailRoutingRuleEditor: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let zoneID: String
   let zoneName: String
   let rule: EmailRoutingRule?
   let deliveryOptions: [String]
-  var onOpenAddresses: () -> Void
   var onSaved: () async -> Void
 
   @State private var localPart = ""
@@ -1723,9 +1714,11 @@ struct EmailRoutingRuleEditor: View {
               message:
                 "A route can only forward to a verified destination address. Add one, then open the confirmation email Cloudflare sends."
             )
-            DashPillButton(title: "Add a destination address") {
-              dismiss()
-              onOpenAddresses()
+            DashNavigationSource(
+              destination: .emailAddresses,
+              schedule: dismissAfter
+            ) { navigate in
+              DashPillButton(title: "Add a destination address", action: navigate)
             }
           } else {
             DashFormMenuField(

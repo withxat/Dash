@@ -22,17 +22,27 @@ final class DashWorkspacePresentationState {
   }
 
   private var trayPresentations: [UUID: Reporter] = [:]
+  private var coverPresentations: [UUID: Reporter] = [:]
 
   var trayPresented: Bool {
     trayPresentations.values.contains { $0.presented }
+  }
+
+  var coverPresented: Bool {
+    coverPresentations.values.contains { $0.presented }
   }
 
   func setTrayPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
     trayPresentations[reporterID] = Reporter(entryID: entryID, presented: presented)
   }
 
-  func removeTrayReporters(forEntryID entryID: UUID) {
+  func setCoverPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
+    coverPresentations[reporterID] = Reporter(entryID: entryID, presented: presented)
+  }
+
+  func removePresentationReporters(forEntryID entryID: UUID) {
     trayPresentations = trayPresentations.filter { $0.value.entryID != entryID }
+    coverPresentations = coverPresentations.filter { $0.value.entryID != entryID }
   }
 }
 

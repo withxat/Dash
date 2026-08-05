@@ -315,6 +315,21 @@ enum DashTheme {
     /// Reduce-motion fallback: position/scale drop out, a short opacity ease stays.
     static let reduced = Animation.easeOut(duration: 0.12)
 
+    /// UIKit timings for Dash's page compositor. They mirror the SwiftUI
+    /// vocabulary above but keep route roles distinct: frequent flow steps are
+    /// brisk, an object expansion gets enough time to preserve identity, and
+    /// exits finish sooner than their matching entrances.
+    enum Page {
+      static let reducedDuration: TimeInterval = 0.12
+      static let flowEnterDuration: TimeInterval = 0.27
+      static let flowExitDuration: TimeInterval = 0.21
+      static let entityEnterDuration: TimeInterval = 0.29
+      static let entityExitDuration: TimeInterval = 0.23
+      static let workspaceEnterDuration: TimeInterval = 0.28
+      static let workspaceExitDuration: TimeInterval = 0.21
+      static let dampingRatio: CGFloat = 0.9
+    }
+
     /// Skeleton → loaded content: long enough for blur to read.
     @MainActor static var content: Animation {
       isReduced ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.3)

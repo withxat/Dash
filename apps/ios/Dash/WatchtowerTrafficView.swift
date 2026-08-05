@@ -2574,7 +2574,6 @@ private struct WatchtowerMetricChartCard: View {
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
-  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let metric: WatchtowerAnalyticsMetric
   let overview: AccountAnalyticsOverview
@@ -2728,14 +2727,14 @@ private struct WatchtowerMetricChartCard: View {
   var body: some View {
     Group {
       if opensDetailOnTap, let detail {
-        Button {
-          navigator?.push(.chartDetail(detail))
-        } label: {
-          cardChrome
+        DashNavigationSource(destination: .chartDetail(detail)) { navigate in
+          Button(action: navigate) {
+            cardChrome
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityHint("Shows chart details")
+          .accessibilityIdentifier("watchtower-chart-detail-\(metric.rawValue)")
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityHint("Shows chart details")
-        .accessibilityIdentifier("watchtower-chart-detail-\(metric.rawValue)")
       } else {
         cardChrome
       }

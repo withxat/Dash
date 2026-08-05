@@ -3761,6 +3761,24 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(!DashNavigatorAccountScopeRules.shouldSynchronize(during: .succeeded))
 }
 
+@Test func externalRoutesWaitForPresentationsAndAccountRoutingTransactions() {
+  #expect(
+    !DashRouteConsumptionRules.isBlocked(
+      overlayPresented: false,
+      coverPresented: false,
+      awaitingAccountConfirmation: false,
+      awaitingAccountSwitch: false))
+
+  for blocker in 0..<4 {
+    #expect(
+      DashRouteConsumptionRules.isBlocked(
+        overlayPresented: blocker == 0,
+        coverPresented: blocker == 1,
+        awaitingAccountConfirmation: blocker == 2,
+        awaitingAccountSwitch: blocker == 3))
+  }
+}
+
 @MainActor
 @Test func destinationNavigatorPushPopAndReset() {
   let navigator = DestinationNavigator()
@@ -3829,6 +3847,23 @@ private actor ZoneSecurityLevelTestLatch {
   navigator.dismissTop()
   #expect(navigator.depth == 0)
   #expect(navigator.lastMutation?.reason == .closeToWorkspaceRoot)
+}
+
+@MainActor
+@Test func destinationNavigatorDismissesOnlyTheEmittingPageInstance() throws {
+  let navigator = DestinationNavigator()
+  let settingsID = try #require(navigator.push(.settings))
+  let profileID = try #require(navigator.push(.profile))
+
+  navigator.dismiss(entryID: settingsID)
+  #expect(navigator.entryIDs == [settingsID, profileID])
+
+  navigator.dismiss(entryID: profileID)
+  #expect(navigator.entryIDs == [settingsID])
+
+  // A duplicate delivery from the removed page cannot dismiss Settings too.
+  navigator.dismiss(entryID: profileID)
+  #expect(navigator.entryIDs == [settingsID])
 }
 
 @MainActor
@@ -3926,7 +3961,9 @@ private actor ZoneSecurityLevelTestLatch {
   let visibleAnchorID = UUID()
   let staleAnchorID = UUID()
   let frame = CGRect(x: 18, y: 62, width: 44, height: 44)
+  let hostedFrame = CGRect(x: 20, y: 64, width: 48, height: 48)
   registry.replaceFrames([visibleAnchorID: frame])
+  registry.setHostedFrame(hostedFrame, for: visibleAnchorID)
 
   let semanticID = DashNavigationSemanticID(
     namespace: "workspace-header",
@@ -3938,9 +3975,17 @@ private actor ZoneSecurityLevelTestLatch {
     semanticID: semanticID,
     anchorInstanceID: staleAnchorID)
 
+  #expect(registry.frame(for: visibleOrigin) == hostedFrame)
+  #expect(registry.liveFrame(for: visibleOrigin) == nil)
+  #expect(!registry.claimState.isClaimed(visibleAnchorID))
+  registry.claim(visibleOrigin)
+  #expect(registry.claimState.isClaimed(visibleAnchorID))
+  registry.release(visibleOrigin)
+  #expect(!registry.claimState.isClaimed(visibleAnchorID))
+  registry.removeHostedFrame(for: visibleAnchorID)
   #expect(registry.frame(for: visibleOrigin) == frame)
   registry.replaceFrames([:])
-  #expect(registry.frame(for: visibleOrigin) == frame)
+  #expect(registry.frame(for: visibleOrigin) == hostedFrame)
   #expect(registry.frame(for: staleOrigin) == nil)
 }
 
@@ -3974,11 +4019,14 @@ private actor ZoneSecurityLevelTestLatch {
   let state = DashWorkspacePresentationState()
   let entryID = UUID()
   state.setTrayPresented(true, reporterID: UUID(), entryID: entryID)
+  state.setCoverPresented(true, reporterID: UUID(), entryID: entryID)
   state.setTrayPresented(false, reporterID: UUID(), entryID: UUID())
   #expect(state.trayPresented)
+  #expect(state.coverPresented)
 
-  state.removeTrayReporters(forEntryID: entryID)
+  state.removePresentationReporters(forEntryID: entryID)
   #expect(!state.trayPresented)
+  #expect(!state.coverPresented)
 }
 
 @Test func r2MediaDetectsImagesByExtensionAndContentType() throws {

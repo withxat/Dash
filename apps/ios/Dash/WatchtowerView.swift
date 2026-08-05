@@ -21,8 +21,8 @@ struct WatchtowerView: View {
   /// Changes when the shared leading header asks this screen to cancel. The
   /// screen keeps ownership of the staged exit so controls still animate out
   /// before the chart layout returns to its saved draft.
-  let cancelRequest: Int
-  let commitRequest: Int
+  @Binding var cancelRequest: Int
+  @Binding var commitRequest: Int
   @Binding var editorInteractionsReady: Bool
   @State private var trafficState = WatchtowerTrafficState()
   @State private var statusState = CloudflareStatusState()

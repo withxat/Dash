@@ -109,6 +109,51 @@ struct DashNavigationEntry: Identifiable, Hashable {
 }
 
 extension Destination {
+  /// Stable route identity used by source-to-page transitions. Keep this
+  /// independent of localized copy and list position: one resource can appear
+  /// in several places, while the occurrence UUID distinguishes the concrete
+  /// source the user actually touched.
+  var dashNavigationSemanticID: DashNavigationSemanticID {
+    switch self {
+    case .profile: .init(namespace: "settings", value: "profile")
+    case .settings: .init(namespace: "workspace", value: "settings")
+    case .settingsAccounts: .init(namespace: "settings", value: "accounts")
+    case .about: .init(namespace: "settings", value: "about")
+    case .openSource: .init(namespace: "settings", value: "open-source")
+    #if DEBUG
+      case .debug: .init(namespace: "settings", value: "debug")
+    #endif
+    case .feature(let feature): .init(namespace: "feature", value: feature.rawValue)
+    case .zone(let id): .init(namespace: "zone", value: id)
+    case .dns(let id): .init(namespace: "zone-dns", value: id)
+    case .cache(let id): .init(namespace: "zone-cache", value: id)
+    case .zoneAnalytics(let id): .init(namespace: "zone-analytics", value: id)
+    case .zoneWebAnalytics(let id): .init(namespace: "zone-web-analytics", value: id)
+    case .zoneWAF(let id): .init(namespace: "zone-waf", value: id)
+    case .zoneSettings(let id): .init(namespace: "zone-settings", value: id)
+    case .zoneEmailRouting(let id): .init(namespace: "zone-email-routing", value: id)
+    case .auditLogs: .init(namespace: "account", value: "audit-logs")
+    case .pushAlerts: .init(namespace: "account", value: "push-alerts")
+    case .watchtowerInbox: .init(namespace: "watchtower", value: "inbox")
+    case .cloudflareStatus: .init(namespace: "watchtower", value: "cloudflare-status")
+    case .emailAddresses: .init(namespace: "email-routing", value: "addresses")
+    case .registrarDomain(let domain): .init(namespace: "registration", value: domain)
+    case .chartDetail(let detail): .init(namespace: "chart", value: detail.title)
+    case .worker(let name): .init(namespace: "worker", value: name)
+    case .tunnel(let id): .init(namespace: "tunnel", value: id)
+    case .pagesProject(let name): .init(namespace: "pages-project", value: name)
+    case .pagesDeployment(let project, let deploymentID):
+      .init(namespace: "pages-deployment", value: "\(project)/\(deploymentID)")
+    case .pagesDomains(let name): .init(namespace: "pages-domains", value: name)
+    case .r2Bucket(let name, let prefix):
+      .init(namespace: "r2", value: "\(name)/\(prefix)")
+    case .r2BucketSettings(let name): .init(namespace: "r2-settings", value: name)
+    case .kvNamespace(let id): .init(namespace: "kv-namespace", value: id)
+    case .kvKey(let namespaceID, let key):
+      .init(namespace: "kv-key", value: "\(namespaceID)/\(key)")
+    }
+  }
+
   fileprivate var dashDefaultNavigationPresentation: DashNavigationPresentation {
     switch self {
     case .settings:
@@ -188,6 +233,13 @@ final class DestinationNavigator {
     case .closeToWorkspaceRoot:
       closeToWorkspaceRoot()
     }
+  }
+
+  /// Dismisses only the page instance that emitted the action. A delayed or
+  /// repeated Back/Escape event must never consume the page underneath it.
+  func dismiss(entryID: DashNavigationEntry.ID) {
+    guard topEntry?.id == entryID else { return }
+    dismissTop()
   }
 
   func popToRoot() {
@@ -287,24 +339,137 @@ final class DashNavigationCoordinator {
 /// moment an animation starts and falls back when the source is no longer live.
 @MainActor
 final class DashNavigationAnchorRegistry {
-  private var frames: [UUID: CGRect] = [:]
+  @MainActor
+  @Observable
+  final class ClaimState {
+    private var claimedInstanceIDs: Set<UUID> = []
+
+    func claim(_ instanceID: UUID) {
+      claimedInstanceIDs.insert(instanceID)
+    }
+
+    func release(_ instanceID: UUID) {
+      claimedInstanceIDs.remove(instanceID)
+    }
+
+    func isClaimed(_ instanceID: UUID) -> Bool {
+      claimedInstanceIDs.contains(instanceID)
+    }
+  }
+
+  private final class WeakSourceView {
+    weak var value: UIView?
+
+    init(_ value: UIView) {
+      self.value = value
+    }
+  }
+
+  struct CapturedVisual {
+    let view: UIView
+    /// Window-coordinate frame at the instant the action was invoked.
+    let frame: CGRect
+  }
+
+  private var preferenceFrames: [UUID: CGRect] = [:]
+  private var hostedFrames: [UUID: CGRect] = [:]
+  private var sourceViews: [UUID: WeakSourceView] = [:]
+  private var capturedVisuals: [UUID: CapturedVisual] = [:]
+  let claimState = ClaimState()
 
   func replaceFrames(_ frames: [UUID: CGRect]) {
-    self.frames = frames
+    preferenceFrames = frames
+  }
+
+  /// Preferences do not cross a `UIHostingController` boundary. Custom-stack
+  /// pages therefore publish their source frames directly into this shared
+  /// registry, while outer workspace chrome can keep using preferences.
+  func setHostedFrame(_ frame: CGRect, for instanceID: UUID) {
+    hostedFrames[instanceID] = frame
+  }
+
+  func removeHostedFrame(for instanceID: UUID) {
+    hostedFrames[instanceID] = nil
+  }
+
+  func registerSourceView(_ view: UIView, for instanceID: UUID) {
+    sourceViews[instanceID] = WeakSourceView(view)
+  }
+
+  func unregisterSourceView(_ view: UIView, for instanceID: UUID) {
+    guard sourceViews[instanceID]?.value === view else { return }
+    sourceViews[instanceID] = nil
   }
 
   func frame(for origin: DashNavigationOrigin) -> CGRect? {
-    frames[origin.anchorInstanceID] ?? origin.sourceFrame
+    sourceWindowFrame(for: origin.anchorInstanceID)
+      ?? hostedFrames[origin.anchorInstanceID]
+      ?? preferenceFrames[origin.anchorInstanceID]
+      ?? origin.sourceFrame
+  }
+
+  /// A return morph is valid only while the exact source occurrence still
+  /// exists in a window. Captured geometry is useful for a push whose source
+  /// is leaving, but it must never pull a page back into a stale list slot.
+  func liveFrame(for origin: DashNavigationOrigin) -> CGRect? {
+    sourceWindowFrame(for: origin.anchorInstanceID)
+  }
+
+  func claim(_ origin: DashNavigationOrigin?) {
+    guard let origin else { return }
+    claimState.claim(origin.anchorInstanceID)
+  }
+
+  func release(_ origin: DashNavigationOrigin?) {
+    guard let origin else { return }
+    claimState.release(origin.anchorInstanceID)
   }
 
   func captureOrigin(
     semanticID: DashNavigationSemanticID,
     anchorInstanceID: UUID
   ) -> DashNavigationOrigin {
-    DashNavigationOrigin(
+    let frame =
+      sourceWindowFrame(for: anchorInstanceID)
+      ?? hostedFrames[anchorInstanceID]
+      ?? preferenceFrames[anchorInstanceID]
+    if let source = sourceViews[anchorInstanceID]?.value,
+      let window = source.window,
+      let frame,
+      frame.width > 2,
+      frame.height > 2,
+      let snapshot = window.resizableSnapshotView(
+        from: frame,
+        afterScreenUpdates: false,
+        withCapInsets: .zero)
+    {
+      capturedVisuals[anchorInstanceID] = CapturedVisual(view: snapshot, frame: frame)
+    } else {
+      capturedVisuals[anchorInstanceID] = nil
+    }
+    return DashNavigationOrigin(
       semanticID: semanticID,
       anchorInstanceID: anchorInstanceID,
-      sourceFrame: frames[anchorInstanceID])
+      sourceFrame: frame)
+  }
+
+  func takeCapturedVisual(for origin: DashNavigationOrigin?) -> CapturedVisual? {
+    guard let origin else { return nil }
+    return capturedVisuals.removeValue(forKey: origin.anchorInstanceID)
+  }
+
+  func discardCapturedVisual(for origin: DashNavigationOrigin?) {
+    guard let origin else { return }
+    capturedVisuals[origin.anchorInstanceID] = nil
+  }
+
+  private func sourceWindowFrame(for instanceID: UUID) -> CGRect? {
+    guard let source = sourceViews[instanceID]?.value, let window = source.window else {
+      return nil
+    }
+    let frame = source.convert(source.bounds, to: window)
+    guard frame.width > 0, frame.height > 0 else { return nil }
+    return frame
   }
 }
 
@@ -342,6 +507,10 @@ private struct DashUsesCustomPageStackKey: EnvironmentKey {
   static let defaultValue = false
 }
 
+private struct DashCanPresentPendingHomeActionKey: EnvironmentKey {
+  static let defaultValue = true
+}
+
 extension EnvironmentValues {
   var destinationNavigator: DestinationNavigator? {
     get { self[DestinationNavigatorKey.self] }
@@ -377,19 +546,108 @@ extension EnvironmentValues {
     get { self[DashUsesCustomPageStackKey.self] }
     set { self[DashUsesCustomPageStackKey.self] = newValue }
   }
+
+  var dashCanPresentPendingHomeAction: Bool {
+    get { self[DashCanPresentPendingHomeActionKey.self] }
+    set { self[DashCanPresentPendingHomeActionKey.self] = newValue }
+  }
 }
 
 extension View {
   /// Registers the frame for this exact source occurrence. A semantic resource
   /// ID alone is insufficient when the same resource is visible in two places.
   func dashNavigationAnchor(instanceID: UUID) -> some View {
-    background {
-      GeometryReader { proxy in
-        Color.clear.preference(
-          key: DashNavigationAnchorFramesKey.self,
-          value: [instanceID: proxy.frame(in: .global)])
+    modifier(DashNavigationAnchorModifier(instanceID: instanceID))
+  }
+}
+
+private struct DashNavigationAnchorModifier: ViewModifier {
+  let instanceID: UUID
+  @Environment(\.dashNavigationAnchorRegistry) private var registry
+
+  func body(content: Content) -> some View {
+    let isClaimed = registry?.claimState.isClaimed(instanceID) == true
+    content
+      // The compositor owns this exact occurrence while its proxy is active.
+      // Keep the layout/probe alive, but never render or activate a duplicate.
+      .opacity(isClaimed ? 0 : 1)
+      .allowsHitTesting(!isClaimed)
+      .accessibilityHidden(isClaimed)
+      .animation(nil, value: isClaimed)
+      .background {
+        GeometryReader { proxy in
+          let frame = proxy.frame(in: .global)
+          Color.clear
+            .preference(
+              key: DashNavigationAnchorFramesKey.self,
+              value: [instanceID: frame]
+            )
+            .onAppear { registry?.setHostedFrame(frame, for: instanceID) }
+            .onChange(of: frame) { _, nextFrame in
+              registry?.setHostedFrame(nextFrame, for: instanceID)
+            }
+            .onDisappear { registry?.removeHostedFrame(for: instanceID) }
+            .overlay {
+              DashNavigationAnchorProbe(
+                instanceID: instanceID,
+                registry: registry)
+            }
+        }
       }
+  }
+}
+
+private struct DashNavigationAnchorProbe: UIViewRepresentable {
+  let instanceID: UUID
+  let registry: DashNavigationAnchorRegistry?
+
+  func makeUIView(context: Context) -> DashNavigationAnchorProbeView {
+    let view = DashNavigationAnchorProbeView()
+    view.configure(instanceID: instanceID, registry: registry)
+    return view
+  }
+
+  func updateUIView(_ uiView: DashNavigationAnchorProbeView, context: Context) {
+    uiView.configure(instanceID: instanceID, registry: registry)
+  }
+
+  static func dismantleUIView(_ uiView: DashNavigationAnchorProbeView, coordinator: ()) {
+    uiView.tearDown()
+  }
+}
+
+private final class DashNavigationAnchorProbeView: UIView {
+  private var instanceID: UUID?
+  private weak var registry: DashNavigationAnchorRegistry?
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    backgroundColor = .clear
+    isOpaque = false
+    isUserInteractionEnabled = false
+    accessibilityElementsHidden = true
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  func configure(instanceID: UUID, registry: DashNavigationAnchorRegistry?) {
+    if self.instanceID != instanceID || self.registry !== registry {
+      tearDown()
+      self.instanceID = instanceID
+      self.registry = registry
     }
+    registry?.registerSourceView(self, for: instanceID)
+  }
+
+  func tearDown() {
+    if let instanceID {
+      registry?.unregisterSourceView(self, for: instanceID)
+    }
+    instanceID = nil
+    registry = nil
   }
 }
 
@@ -399,17 +657,25 @@ extension View {
 @Observable
 private final class DashPageHostContext {
   var isTabActive: Bool
+  var canPresentPendingHomeAction: Bool
+  var splashLifted: Bool
+  var interactionLockedEntryID: DashNavigationEntry.ID?
   var workspaceWashScroll: DashWorkspaceWashScroll?
   var locale: Locale
   var dynamicTypeSize: DynamicTypeSize
 
   init(
     isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    splashLifted: Bool,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize
   ) {
     self.isTabActive = isTabActive
+    self.canPresentPendingHomeAction = canPresentPendingHomeAction
+    self.splashLifted = splashLifted
+    self.interactionLockedEntryID = nil
     self.workspaceWashScroll = workspaceWashScroll
     self.locale = locale
     self.dynamicTypeSize = dynamicTypeSize
@@ -417,11 +683,15 @@ private final class DashPageHostContext {
 
   func update(
     isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    splashLifted: Bool,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize
   ) {
     self.isTabActive = isTabActive
+    self.canPresentPendingHomeAction = canPresentPendingHomeAction
+    self.splashLifted = splashLifted
     self.workspaceWashScroll = workspaceWashScroll
     self.locale = locale
     self.dynamicTypeSize = dynamicTypeSize
@@ -429,9 +699,8 @@ private final class DashPageHostContext {
 }
 
 @MainActor
-@Observable
 private final class DashRootContentBox<Content: View> {
-  var content: Content
+  let content: Content
 
   init(content: Content) {
     self.content = content
@@ -460,6 +729,11 @@ private struct DashHostedRoot<Root: View>: View {
     .environment(\.dashUsesCustomPageStack, true)
     .environment(\.dashNavigationEntryID, nil)
     .environment(\.dashTabActive, hostContext.isTabActive)
+    .environment(\.dashSplashLifted, hostContext.splashLifted)
+    .environment(
+      \.dashCanPresentPendingHomeAction,
+      hostContext.canPresentPendingHomeAction
+    )
     .environment(
       \.dashWorkspaceWashScroll,
       hostContext.isTabActive ? hostContext.workspaceWashScroll : nil
@@ -479,7 +753,10 @@ private struct DashHostedDestination: View {
   let hostContext: DashPageHostContext
 
   var body: some View {
-    DashRoutePageChromeHost(entry: entry) {
+    DashRoutePageChromeHost(
+      entry: entry,
+      allowsBodyInteraction: hostContext.interactionLockedEntryID != entry.id
+    ) {
       DestinationRoutedContent(destination: entry.destination)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -495,6 +772,11 @@ private struct DashHostedDestination: View {
     .environment(\.dashUsesCustomPageStack, true)
     .environment(\.dashNavigationEntryID, entry.id)
     .environment(\.dashTabActive, hostContext.isTabActive)
+    .environment(\.dashSplashLifted, hostContext.splashLifted)
+    .environment(
+      \.dashCanPresentPendingHomeAction,
+      hostContext.canPresentPendingHomeAction
+    )
     .environment(\.dashWorkspaceWashScroll, nil)
     .environment(\.locale, hostContext.locale)
     .environment(\.dynamicTypeSize, hostContext.dynamicTypeSize)
@@ -502,10 +784,40 @@ private struct DashHostedDestination: View {
 }
 
 private enum DashPageTransitionStyle {
-  case detailPush
-  case detailPop
-  case workspacePresent
-  case workspaceDismiss
+  case flowPush
+  case flowPop
+  case entityPush(DashNavigationEntry)
+  case entityPop(DashNavigationEntry)
+  case workspacePresent(DashNavigationEntry)
+  case workspaceDismiss(DashNavigationEntry)
+
+  var isPush: Bool {
+    switch self {
+    case .flowPush, .entityPush, .workspacePresent: true
+    case .flowPop, .entityPop, .workspaceDismiss: false
+    }
+  }
+
+  var entry: DashNavigationEntry? {
+    switch self {
+    case .entityPush(let entry), .entityPop(let entry),
+      .workspacePresent(let entry), .workspaceDismiss(let entry):
+      entry
+    case .flowPush, .flowPop:
+      nil
+    }
+  }
+
+  var duration: TimeInterval {
+    switch self {
+    case .flowPush: DashTheme.Motion.Page.flowEnterDuration
+    case .flowPop: DashTheme.Motion.Page.flowExitDuration
+    case .entityPush: DashTheme.Motion.Page.entityEnterDuration
+    case .entityPop: DashTheme.Motion.Page.entityExitDuration
+    case .workspacePresent: DashTheme.Motion.Page.workspaceEnterDuration
+    case .workspaceDismiss: DashTheme.Motion.Page.workspaceExitDuration
+    }
+  }
 }
 
 private struct DashPageStackRequest {
@@ -529,13 +841,66 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let controller: UIHostingController<DashHostedDestination>
   }
 
-  private struct ActiveTransition {
+  /// A neutral full-screen surface separates the outgoing and arriving page
+  /// timelines. Raster content stays at its natural size and only crossfades;
+  /// the concrete source snapshot is the one local element carried across.
+  private final class TransitionProxy {
+    let overlay: UIView
+    let shell: UIView?
+    let outgoingContent: UIView?
+    let arrivingContent: UIView?
+    /// Invisible property-animation payload that gives the display-link content
+    /// timeline a reversible progress source without transforming any pixels.
+    let timelineDriver: UIView?
+    let claimedOrigin: DashNavigationOrigin?
+
+    init(
+      overlay: UIView,
+      shell: UIView?,
+      outgoingContent: UIView?,
+      arrivingContent: UIView?,
+      timelineDriver: UIView?,
+      claimedOrigin: DashNavigationOrigin?
+    ) {
+      self.overlay = overlay
+      self.shell = shell
+      self.outgoingContent = outgoingContent
+      self.arrivingContent = arrivingContent
+      self.timelineDriver = timelineDriver
+      self.claimedOrigin = claimedOrigin
+    }
+  }
+
+  private final class ActiveTransition {
     let animator: UIViewPropertyAnimator
     let source: UIViewController
     let target: UIViewController
-    let desiredEntries: [DashNavigationEntry]
-    let revision: UInt64
+    let style: DashPageTransitionStyle
+    let proxy: TransitionProxy?
+    var desiredEntries: [DashNavigationEntry]
+    var revision: UInt64
     let appearanceWasBegun: Bool
+    var isReversed = false
+
+    init(
+      animator: UIViewPropertyAnimator,
+      source: UIViewController,
+      target: UIViewController,
+      style: DashPageTransitionStyle,
+      proxy: TransitionProxy?,
+      desiredEntries: [DashNavigationEntry],
+      revision: UInt64,
+      appearanceWasBegun: Bool
+    ) {
+      self.animator = animator
+      self.source = source
+      self.target = target
+      self.style = style
+      self.proxy = proxy
+      self.desiredEntries = desiredEntries
+      self.revision = revision
+      self.appearanceWasBegun = appearanceWasBegun
+    }
   }
 
   private let contentBox: DashRootContentBox<Root>
@@ -552,6 +917,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private var settledRevision: UInt64 = 0
   private var visibleController: UIViewController?
   private var activeTransition: ActiveTransition?
+  private var transitionContentDisplayLink: CADisplayLink?
   private var pendingRequest: DashPageStackRequest?
   private var accountID: String?
   private var isContainerVisible = false
@@ -571,6 +937,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     anchorRegistry: DashNavigationAnchorRegistry?,
     presentationState: DashWorkspacePresentationState?,
     isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    splashLifted: Bool,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize,
@@ -579,6 +947,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let contentBox = DashRootContentBox(content: root)
     let hostContext = DashPageHostContext(
       isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize)
@@ -661,16 +1031,18 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   }
 
   func update(
-    root: Root,
     isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    splashLifted: Bool,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize,
     request: DashPageStackRequest
   ) {
-    contentBox.content = root
     hostContext.update(
       isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize)
@@ -685,20 +1057,24 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     guard request.revision >= newestKnownRevision else { return }
 
     if parentAppearanceTransitionChild != nil {
-      pendingRequest = request
+      storePendingRequest(request)
       return
     }
 
     if request.accountID != accountID {
       accountID = request.accountID
-      pendingRequest = nil
+      discardPendingRequest()
       finishActiveTransitionImmediately()
       installImmediately(request.entries, revision: request.revision)
       return
     }
 
+    if reverseActiveTransitionIfPossible(for: request) {
+      return
+    }
+
     if activeTransition != nil {
-      pendingRequest = request
+      storePendingRequest(request)
       return
     }
 
@@ -759,42 +1135,63 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private func transitionStyle(for request: DashPageStackRequest) -> DashPageTransitionStyle {
     switch request.mutation?.reason {
     case .push:
-      return request.entries.last?.presentation == .workspaceOverlay
-        ? .workspacePresent : .detailPush
+      guard let entry = request.entries.last else { return .flowPush }
+      return switch entry.presentation {
+      case .detail: .flowPush
+      case .entityDetail: .entityPush(entry)
+      case .workspaceOverlay: .workspacePresent(entry)
+      }
     case .closeToWorkspaceRoot:
-      return .workspaceDismiss
+      guard let entry = settledEntries.last else { return .flowPop }
+      return .workspaceDismiss(entry)
     case .back, .popToRoot, .resourcePruned:
-      return settledEntries.last?.presentation == .workspaceOverlay
-        ? .workspaceDismiss : .detailPop
+      guard let entry = settledEntries.last else { return .flowPop }
+      return switch entry.presentation {
+      case .detail: .flowPop
+      case .entityDetail: .entityPop(entry)
+      case .workspaceOverlay: .workspaceDismiss(entry)
+      }
     case .reset, .accountScopeChanged, nil:
-      return .detailPush
+      return .flowPush
     }
   }
 
   private func performTransition(
     from source: UIViewController,
     to target: UIViewController,
-    style: DashPageTransitionStyle,
+    style requestedStyle: DashPageTransitionStyle,
     request: DashPageStackRequest
   ) {
-    let isPush: Bool
-    switch style {
-    case .detailPush, .workspacePresent: isPush = true
-    case .detailPop, .workspaceDismiss: isPush = false
-    }
+    let isPush = requestedStyle.isPush
+    hostContext.interactionLockedEntryID = isPush ? request.entries.last?.id : nil
     attach(target, above: isPush ? source : nil)
     if !isPush {
       view.insertSubview(target.view, belowSubview: source.view)
     }
     view.layoutIfNeeded()
+    let style = resolvedTransitionStyle(requestedStyle)
     resetTransitionState(source.view)
     resetTransitionState(target.view)
     source.view.isUserInteractionEnabled = false
-    target.view.isUserInteractionEnabled = false
+    // Keep the hosting view alive for Back/Close, while DashRoutePageChromeHost
+    // gates the arriving page body until the transition settles. This makes a
+    // deliberate immediate reversal possible without click-through routes.
+    target.view.isUserInteractionEnabled = isPush
+    if request.reduceMotion || style.entry == nil {
+      anchorRegistry?.discardCapturedVisual(for: request.entries.last?.origin)
+    }
+    let proxy =
+      request.reduceMotion
+      ? nil
+      : makeTransitionProxy(
+        style: style,
+        source: source.view,
+        target: target.view)
     applyInitialTransitionState(
       style: style,
       source: source.view,
       target: target.view,
+      hasProxy: proxy != nil,
       reduceMotion: request.reduceMotion)
 
     let appearanceWasBegun = isContainerVisible && !parentAppearanceIsDisappearing
@@ -803,30 +1200,37 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       target.beginAppearanceTransition(true, animated: true)
     }
 
-    let duration = request.reduceMotion ? 0.2 : 0.42
+    let duration =
+      request.reduceMotion
+      ? DashTheme.Motion.Page.reducedDuration
+      : style.duration
     let animator = UIViewPropertyAnimator(
       duration: duration,
-      dampingRatio: request.reduceMotion ? 1 : 0.9)
+      dampingRatio: request.reduceMotion ? 1 : DashTheme.Motion.Page.dampingRatio)
     animator.addAnimations { [weak self, weak source, weak target] in
       guard let self, let source, let target else { return }
       self.applyFinalTransitionState(
         style: style,
         source: source.view,
         target: target.view,
+        proxy: proxy,
         reduceMotion: request.reduceMotion)
     }
     activeTransition = ActiveTransition(
       animator: animator,
       source: source,
       target: target,
+      style: style,
+      proxy: proxy,
       desiredEntries: request.entries,
       revision: request.revision,
       appearanceWasBegun: appearanceWasBegun)
-    animator.addCompletion { [weak self, weak animator] _ in
+    startTransitionContentTimelineIfNeeded()
+    animator.addCompletion { [weak self, weak animator] position in
       guard let self, let animator,
         self.activeTransition?.animator === animator
       else { return }
-      self.completeActiveTransition()
+      self.completeActiveTransition(at: position)
     }
     animator.startAnimation()
   }
@@ -835,64 +1239,421 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     style: DashPageTransitionStyle,
     source: UIView,
     target: UIView,
+    hasProxy: Bool,
     reduceMotion: Bool
   ) {
     let travel = min(max(view.bounds.width * 0.08, 22), 34)
     let direction: CGFloat =
       view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
     switch style {
-    case .detailPush:
+    case .flowPush:
       target.alpha = 0
       if !reduceMotion {
         target.transform = CGAffineTransform(translationX: travel * direction, y: 0)
       }
-    case .detailPop:
+    case .flowPop:
       target.alpha = reduceMotion ? 0 : 0.96
       if !reduceMotion {
         target.transform = CGAffineTransform(
           translationX: -travel * 0.35 * direction,
           y: 0)
       }
+    case .entityPush:
+      target.alpha = 0
+      if !reduceMotion, !hasProxy {
+        target.transform = CGAffineTransform(translationX: travel * direction, y: 0)
+      }
+    case .entityPop:
+      target.alpha = hasProxy ? 1 : (reduceMotion ? 0 : 0.94)
+      if !reduceMotion, !hasProxy {
+        target.transform = CGAffineTransform(
+          translationX: -travel * 0.35 * direction,
+          y: 0)
+      }
+      if hasProxy { source.alpha = 0 }
     case .workspacePresent:
       target.alpha = 0
       if !reduceMotion { target.transform = CGAffineTransform(scaleX: 0.985, y: 0.985) }
     case .workspaceDismiss:
-      target.alpha = reduceMotion ? 0 : 1
+      target.alpha = reduceMotion ? 0 : 0.96
     }
-    source.alpha = 1
+    if source.alpha != 0 { source.alpha = 1 }
   }
 
   private func applyFinalTransitionState(
     style: DashPageTransitionStyle,
     source: UIView,
     target: UIView,
+    proxy: TransitionProxy?,
     reduceMotion: Bool
   ) {
     let direction: CGFloat =
       view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
-    target.alpha = 1
-    target.transform = .identity
     switch style {
-    case .detailPush:
+    case .flowPush:
+      target.alpha = 1
+      target.transform = .identity
       if !reduceMotion {
         source.transform = CGAffineTransform(translationX: -8 * direction, y: 0)
       }
-    case .detailPop:
+    case .flowPop:
+      target.alpha = 1
+      target.transform = .identity
       source.alpha = 0
       if !reduceMotion {
         source.transform = CGAffineTransform(translationX: 28 * direction, y: 0)
       }
+    case .entityPush:
+      if proxy == nil {
+        target.alpha = 1
+        target.transform = .identity
+      } else {
+        // The full-size proxy is the sole owner of arriving content until the
+        // completion handoff. Fading the live target here double-exposes every
+        // title, card, and row underneath the expanding snapshot.
+        target.alpha = 0
+      }
+      if !reduceMotion, proxy == nil {
+        source.alpha = 0.9
+        source.transform = CGAffineTransform(scaleX: 0.985, y: 0.985)
+      }
+      proxy?.timelineDriver?.alpha = 1
+    case .entityPop:
+      target.alpha = 1
+      target.transform = .identity
+      source.alpha = 0
+      proxy?.timelineDriver?.alpha = 1
     case .workspacePresent:
-      break
+      target.alpha = 1
+      target.transform = .identity
+      proxy?.outgoingContent?.alpha = 0
+      proxy?.arrivingContent?.alpha = 1
     case .workspaceDismiss:
+      target.alpha = 1
+      target.transform = .identity
       source.alpha = 0
       if !reduceMotion { source.transform = CGAffineTransform(scaleX: 0.985, y: 0.985) }
+      proxy?.outgoingContent?.alpha = 0
+      proxy?.arrivingContent?.alpha = 1
     }
   }
 
-  private func completeActiveTransition() {
-    guard let transition = activeTransition else { return }
+  /// A push immediately followed by its own Back/Close is the one retarget that
+  /// must feel direct. `UIViewPropertyAnimator` reverses from its presentation
+  /// value, so there is no jump back to either endpoint before the page returns.
+  private func reverseActiveTransitionIfPossible(
+    for request: DashPageStackRequest
+  ) -> Bool {
+    guard let transition = activeTransition, transition.style.isPush,
+      request.entries.map(\.id) == settledEntries.map(\.id)
+    else { return false }
+    switch request.mutation?.reason {
+    case .back, .closeToWorkspaceRoot, .popToRoot:
+      break
+    default:
+      return false
+    }
+    guard transition.animator.state == .active, !transition.isReversed else {
+      return false
+    }
+
+    discardPendingRequest()
+    transition.desiredEntries = request.entries
+    transition.revision = request.revision
+    transition.isReversed = true
+    transition.target.view.isUserInteractionEnabled = false
+    transition.source.view.isUserInteractionEnabled = false
+
+    if transition.appearanceWasBegun {
+      // UIKit treats an opposite begin as cancellation of the in-flight
+      // appearance. One final end per child then settles source as appeared
+      // and target as disappeared, without a false didDisappear/didAppear pair.
+      transition.source.beginAppearanceTransition(true, animated: true)
+      transition.target.beginAppearanceTransition(false, animated: true)
+    }
+    transition.animator.isReversed = true
+    return true
+  }
+
+  private func makeTransitionProxy(
+    style: DashPageTransitionStyle,
+    source: UIView,
+    target: UIView
+  ) -> TransitionProxy? {
+    let requiresLiveFrame: Bool
+    if case .entityPop = style {
+      requiresLiveFrame = true
+    } else {
+      requiresLiveFrame = false
+    }
+    guard let entry = style.entry,
+      let sourceFrame = transitionFrame(for: entry.origin, liveOnly: requiresLiveFrame)
+    else { return nil }
+
+    let overlay = UIView(frame: view.bounds)
+    overlay.backgroundColor = .clear
+    overlay.isOpaque = false
+    overlay.isUserInteractionEnabled = false
+    overlay.isAccessibilityElement = false
+    overlay.accessibilityElementsHidden = true
+    overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+
+    var shell: UIView?
+    var outgoingContent: UIView?
+    var arrivingContent: UIView?
+    var timelineDriver: UIView?
+    var claimedOrigin: DashNavigationOrigin?
+
+    switch style {
+    case .entityPush:
+      let capturedFrame: CGRect
+      if let captured = anchorRegistry?.takeCapturedVisual(for: entry.origin) {
+        capturedFrame = frameInContainer(fromWindowFrame: captured.frame) ?? sourceFrame
+        outgoingContent = captured.view
+      } else {
+        capturedFrame = sourceFrame
+        outgoingContent = snapshotFromWindow(at: sourceFrame)
+      }
+      if let outgoingContent {
+        outgoingContent.frame = capturedFrame
+      }
+      shell = makeFullScreenTransitionShell(alpha: 0)
+      arrivingContent = target.snapshotView(afterScreenUpdates: true)
+      arrivingContent?.frame = view.bounds
+      arrivingContent?.alpha = 0
+      timelineDriver = makeTransitionTimelineDriver()
+    case .entityPop:
+      shell = makeFullScreenTransitionShell(alpha: 1)
+      outgoingContent = source.snapshotView(afterScreenUpdates: false)
+      outgoingContent?.frame = view.bounds
+      arrivingContent = rasterSnapshotRegion(
+        from: target,
+        at: sourceFrame,
+        afterScreenUpdates: true)
+      arrivingContent?.alpha = 0
+      timelineDriver = makeTransitionTimelineDriver()
+    case .workspacePresent:
+      if let captured = anchorRegistry?.takeCapturedVisual(for: entry.origin) {
+        outgoingContent = captured.view
+        outgoingContent?.frame =
+          frameInContainer(fromWindowFrame: captured.frame) ?? sourceFrame
+      } else {
+        outgoingContent = snapshotFromWindow(at: sourceFrame)
+        outgoingContent?.frame = sourceFrame
+      }
+      arrivingContent = snapshotRegion(
+        from: target,
+        at: sourceFrame,
+        afterScreenUpdates: true)
+      arrivingContent?.alpha = 0
+      shell = makeIdentityTransitionShell(frame: sourceFrame)
+      claimedOrigin = entry.origin
+    case .workspaceDismiss:
+      outgoingContent = snapshotRegion(
+        from: source,
+        at: sourceFrame,
+        afterScreenUpdates: false)
+      arrivingContent = snapshotRegion(
+        from: target,
+        at: sourceFrame,
+        afterScreenUpdates: true)
+      arrivingContent?.alpha = 0
+      shell = makeIdentityTransitionShell(frame: sourceFrame)
+      claimedOrigin = entry.origin
+    case .flowPush, .flowPop:
+      return nil
+    }
+
+    guard shell != nil || outgoingContent != nil || arrivingContent != nil else {
+      return nil
+    }
+    if let shell { overlay.addSubview(shell) }
+    if let outgoingContent {
+      configureTransitionSnapshot(outgoingContent)
+      overlay.addSubview(outgoingContent)
+    }
+    if let arrivingContent {
+      configureTransitionSnapshot(arrivingContent)
+      overlay.addSubview(arrivingContent)
+    }
+    if let timelineDriver { overlay.addSubview(timelineDriver) }
+    view.addSubview(overlay)
+    anchorRegistry?.claim(claimedOrigin)
+    return TransitionProxy(
+      overlay: overlay,
+      shell: shell,
+      outgoingContent: outgoingContent,
+      arrivingContent: arrivingContent,
+      timelineDriver: timelineDriver,
+      claimedOrigin: claimedOrigin)
+  }
+
+  private func resolvedTransitionStyle(
+    _ style: DashPageTransitionStyle
+  ) -> DashPageTransitionStyle {
+    guard case .entityPop(let entry) = style,
+      transitionFrame(for: entry.origin, liveOnly: true) == nil
+    else { return style }
+    return .flowPop
+  }
+
+  private func transitionFrame(
+    for origin: DashNavigationOrigin?,
+    liveOnly: Bool = false
+  ) -> CGRect? {
+    guard let origin,
+      let globalFrame = liveOnly
+        ? anchorRegistry?.liveFrame(for: origin)
+        : anchorRegistry?.frame(for: origin),
+      globalFrame.width.isFinite, globalFrame.height.isFinite,
+      globalFrame.minX.isFinite, globalFrame.minY.isFinite
+    else { return nil }
+    let localFrame = view.convert(globalFrame, from: nil)
+    guard localFrame.width > 2, localFrame.height > 2,
+      localFrame.intersects(view.bounds.insetBy(dx: -2, dy: -2))
+    else { return nil }
+    return localFrame
+  }
+
+  private func makeFullScreenTransitionShell(alpha: CGFloat) -> UIView {
+    let shell = UIView(frame: view.bounds)
+    shell.backgroundColor = UIColor(DashTheme.canvas).resolvedColor(with: traitCollection)
+    shell.isOpaque = true
+    shell.isUserInteractionEnabled = false
+    shell.alpha = alpha
+    return shell
+  }
+
+  private func makeTransitionTimelineDriver() -> UIView {
+    let driver = UIView(frame: .zero)
+    driver.alpha = 0
+    driver.isUserInteractionEnabled = false
+    return driver
+  }
+
+  private func makeIdentityTransitionShell(frame: CGRect) -> UIView {
+    let shell = UIView(frame: frame)
+    shell.backgroundColor = UIColor(DashTheme.canvas).resolvedColor(with: traitCollection)
+    shell.isOpaque = true
+    shell.isUserInteractionEnabled = false
+    shell.clipsToBounds = true
+    shell.layer.cornerCurve = .continuous
+    shell.layer.cornerRadius = min(frame.width, frame.height) / 2
+    return shell
+  }
+
+  private func configureTransitionSnapshot(_ snapshot: UIView) {
+    snapshot.isAccessibilityElement = false
+    snapshot.accessibilityElementsHidden = true
+    snapshot.isUserInteractionEnabled = false
+    snapshot.clipsToBounds = true
+    snapshot.layer.cornerCurve = .continuous
+  }
+
+  private func frameInContainer(fromWindowFrame frame: CGRect) -> CGRect? {
+    guard let window = view.window else { return nil }
+    return view.convert(frame, from: window)
+  }
+
+  private func snapshotFromWindow(at localFrame: CGRect) -> UIView? {
+    guard let window = view.window else { return nil }
+    let windowFrame = window.convert(localFrame, from: view)
+    return window.resizableSnapshotView(
+      from: windowFrame,
+      afterScreenUpdates: false,
+      withCapInsets: .zero)
+  }
+
+  private func snapshotRegion(
+    from source: UIView,
+    at containerFrame: CGRect,
+    afterScreenUpdates: Bool
+  ) -> UIView? {
+    let sourceRect = source.convert(containerFrame, from: view)
+      .intersection(source.bounds)
+    guard !sourceRect.isNull, sourceRect.width > 2, sourceRect.height > 2 else {
+      return nil
+    }
+    let snapshot = source.resizableSnapshotView(
+      from: sourceRect,
+      afterScreenUpdates: afterScreenUpdates,
+      withCapInsets: .zero)
+    snapshot?.frame = view.convert(sourceRect, from: source)
+    return snapshot
+  }
+
+  /// A freshly reattached SwiftUI hierarchy may not have committed every text
+  /// layer to the render server yet. `resizableSnapshotView` can therefore
+  /// return the row background and image while omitting its labels. Drawing the
+  /// already-laid-out target hierarchy into one immutable raster keeps the
+  /// source row atomic during the return handoff.
+  private func rasterSnapshotRegion(
+    from source: UIView,
+    at containerFrame: CGRect,
+    afterScreenUpdates: Bool
+  ) -> UIView? {
+    let sourceRect = source.convert(containerFrame, from: view)
+      .intersection(source.bounds)
+    guard !sourceRect.isNull, sourceRect.width > 2, sourceRect.height > 2 else {
+      return nil
+    }
+
+    let format = UIGraphicsImageRendererFormat()
+    format.scale = view.window?.screen.scale ?? traitCollection.displayScale
+    format.opaque = false
+    let renderer = UIGraphicsImageRenderer(size: sourceRect.size, format: format)
+    let image = renderer.image { context in
+      context.cgContext.translateBy(x: -sourceRect.minX, y: -sourceRect.minY)
+      if !source.drawHierarchy(
+        in: source.bounds,
+        afterScreenUpdates: afterScreenUpdates)
+      {
+        source.layer.render(in: context.cgContext)
+      }
+    }
+    let snapshot = UIImageView(image: image)
+    snapshot.contentMode = .scaleToFill
+    snapshot.frame = view.convert(sourceRect, from: source)
+    return snapshot
+  }
+
+  private func completeReversedTransition(_ transition: ActiveTransition) {
+    hostContext.interactionLockedEntryID = nil
     resetTransitionState(transition.source.view)
+    transition.source.view.isUserInteractionEnabled = true
+    transition.target.view.isUserInteractionEnabled = true
+    if transition.appearanceWasBegun {
+      transition.source.endAppearanceTransition()
+      transition.target.endAppearanceTransition()
+    }
+    // Keep the losing page at its animated endpoint until it is out of the
+    // hierarchy. Restoring alpha first can briefly put two complete pages
+    // behind a nearly transparent proxy at the completion boundary.
+    detach(transition.target)
+    resetTransitionState(transition.target.view)
+    releaseAndRemove(transition.proxy)
+    visibleController = transition.source
+    settledEntries = transition.desiredEntries
+    settledRevision = transition.revision
+    activeTransition = nil
+    purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
+    if isContainerVisible, hostContext.isTabActive {
+      UIAccessibility.post(notification: .screenChanged, argument: transition.source.view)
+    }
+    if let pendingRequest = takePendingRequest() {
+      reconcile(pendingRequest)
+    }
+  }
+
+  private func completeActiveTransition(at position: UIViewAnimatingPosition) {
+    guard let transition = activeTransition else { return }
+    stopTransitionContentTimeline(
+      settlingAt: transition.isReversed || position == .start ? 0 : 1)
+    if transition.isReversed || position == .start {
+      completeReversedTransition(transition)
+      return
+    }
+    hostContext.interactionLockedEntryID = nil
     resetTransitionState(transition.target.view)
     transition.source.view.isUserInteractionEnabled = true
     transition.target.view.isUserInteractionEnabled = true
@@ -901,6 +1662,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       transition.target.endAppearanceTransition()
     }
     detach(transition.source)
+    resetTransitionState(transition.source.view)
+    releaseAndRemove(transition.proxy)
     visibleController = transition.target
     settledEntries = transition.desiredEntries
     settledRevision = transition.revision
@@ -913,25 +1676,29 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     if isContainerVisible, hostContext.isTabActive, !pendingChangesVisiblePage {
       UIAccessibility.post(notification: .screenChanged, argument: transition.target.view)
     }
-    if let pendingRequest {
-      self.pendingRequest = nil
+    if let pendingRequest = takePendingRequest() {
       reconcile(pendingRequest)
     }
   }
 
   private func finishActiveTransitionImmediately() {
     guard let transition = activeTransition else { return }
+    stopTransitionContentTimeline(settlingAt: transition.isReversed ? 0 : 1)
+    hostContext.interactionLockedEntryID = nil
     transition.animator.stopAnimation(true)
-    resetTransitionState(transition.source.view)
-    resetTransitionState(transition.target.view)
+    let winner = transition.isReversed ? transition.source : transition.target
+    let loser = transition.isReversed ? transition.target : transition.source
+    resetTransitionState(winner.view)
     transition.source.view.isUserInteractionEnabled = true
     transition.target.view.isUserInteractionEnabled = true
     if transition.appearanceWasBegun {
       transition.source.endAppearanceTransition()
       transition.target.endAppearanceTransition()
     }
-    detach(transition.source)
-    visibleController = transition.target
+    detach(loser)
+    resetTransitionState(loser.view)
+    visibleController = winner
+    releaseAndRemove(transition.proxy)
     settledEntries = transition.desiredEntries
     settledRevision = transition.revision
     activeTransition = nil
@@ -944,12 +1711,13 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   }
 
   private func reconcilePendingRequestIfNeeded() {
-    guard let pendingRequest else { return }
-    self.pendingRequest = nil
+    guard let pendingRequest = takePendingRequest() else { return }
     reconcile(pendingRequest)
   }
 
   private func installImmediately(_ entries: [DashNavigationEntry], revision: UInt64) {
+    hostContext.interactionLockedEntryID = nil
+    anchorRegistry?.discardCapturedVisual(for: entries.last?.origin)
     finishActiveTransitionImmediately()
     let target = controller(for: entries)
     if visibleController !== target {
@@ -977,6 +1745,32 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     purgeEntryHosts(retaining: Set(entries.map(\.id)))
   }
 
+  /// A deferred route may be replaced before its transition starts. Its source
+  /// snapshot is registry-owned, so dropping the request must drop that visual
+  /// too. The same concrete anchor is exempt because a newer capture replaces
+  /// the old value under the same key before this method runs.
+  private func storePendingRequest(_ request: DashPageStackRequest) {
+    let previousOrigin = pendingRequest?.entries.last?.origin
+    let nextOrigin = request.entries.last?.origin
+    if previousOrigin?.anchorInstanceID != nextOrigin?.anchorInstanceID {
+      anchorRegistry?.discardCapturedVisual(for: previousOrigin)
+    }
+    pendingRequest = request
+  }
+
+  private func discardPendingRequest() {
+    anchorRegistry?.discardCapturedVisual(for: pendingRequest?.entries.last?.origin)
+    pendingRequest = nil
+  }
+
+  /// Taking transfers snapshot ownership to `reconcile`; it must not discard
+  /// the visual that the imminent transition is about to consume.
+  private func takePendingRequest() -> DashPageStackRequest? {
+    let request = pendingRequest
+    pendingRequest = nil
+    return request
+  }
+
   private func controller(for entries: [DashNavigationEntry]) -> UIViewController {
     guard let entry = entries.last else { return rootController }
     if let cached = entryHosts[entry.id] { return cached.controller }
@@ -1002,7 +1796,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       {
         detach(controller)
       }
-      presentationState?.removeTrayReporters(forEntryID: id)
+      presentationState?.removePresentationReporters(forEntryID: id)
       entryHosts[id] = nil
     }
   }
@@ -1040,11 +1834,94 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     view.alpha = 1
     view.transform = .identity
   }
+
+  /// Entity pages fade through an opaque canvas instead of crossfading through
+  /// one another. The source snapshot lingers locally while outgoing content
+  /// clears, then the full-size destination arrives without masks or scaling.
+  /// Reading the active animator's fraction keeps immediate Back reversible.
+  private func startTransitionContentTimelineIfNeeded() {
+    guard let transition = activeTransition, transition.proxy != nil else { return }
+    switch transition.style {
+    case .entityPush, .entityPop:
+      break
+    case .flowPush, .flowPop, .workspacePresent, .workspaceDismiss:
+      return
+    }
+    stopTransitionContentTimeline()
+    updateTransitionContentTimeline(transition, progress: 0)
+    let displayLink = CADisplayLink(
+      target: self,
+      selector: #selector(displayLinkDidRefreshTransitionContent))
+    displayLink.add(to: .main, forMode: .common)
+    transitionContentDisplayLink = displayLink
+  }
+
+  @objc private func displayLinkDidRefreshTransitionContent() {
+    guard let transition = activeTransition else {
+      stopTransitionContentTimeline()
+      return
+    }
+    updateTransitionContentTimeline(
+      transition,
+      progress: CGFloat(transition.animator.fractionComplete))
+  }
+
+  private func updateTransitionContentTimeline(
+    _ transition: ActiveTransition,
+    progress rawProgress: CGFloat
+  ) {
+    guard let proxy = transition.proxy else { return }
+    let progress = min(max(rawProgress, 0), 1)
+    UIView.performWithoutAnimation {
+      switch transition.style {
+      case .entityPush:
+        proxy.shell?.alpha = transitionSegment(progress, from: 0, to: 0.3)
+        proxy.outgoingContent?.alpha =
+          1 - transitionSegment(progress, from: 0.08, to: 0.36)
+        proxy.arrivingContent?.alpha =
+          transitionSegment(progress, from: 0.3, to: 0.82)
+      case .entityPop:
+        proxy.outgoingContent?.alpha =
+          1 - transitionSegment(progress, from: 0, to: 0.34)
+        proxy.arrivingContent?.alpha =
+          transitionSegment(progress, from: 0.38, to: 0.68)
+        proxy.shell?.alpha =
+          1 - transitionSegment(progress, from: 0.38, to: 0.76)
+      case .flowPush, .flowPop, .workspacePresent, .workspaceDismiss:
+        break
+      }
+    }
+  }
+
+  private func transitionSegment(
+    _ progress: CGFloat,
+    from start: CGFloat,
+    to end: CGFloat
+  ) -> CGFloat {
+    guard end > start else { return progress >= end ? 1 : 0 }
+    let unit = min(max((progress - start) / (end - start), 0), 1)
+    return unit * unit * (3 - 2 * unit)
+  }
+
+  private func stopTransitionContentTimeline(settlingAt progress: CGFloat? = nil) {
+    if let progress, let transition = activeTransition {
+      updateTransitionContentTimeline(transition, progress: progress)
+    }
+    transitionContentDisplayLink?.invalidate()
+    transitionContentDisplayLink = nil
+  }
+
+  private func releaseAndRemove(_ proxy: TransitionProxy?) {
+    guard let proxy else { return }
+    anchorRegistry?.release(proxy.claimedOrigin)
+    proxy.overlay.removeFromSuperview()
+  }
 }
 
 private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
   @Bindable var navigator: DestinationNavigator
   var isTabActive: Bool
+  var canPresentPendingHomeAction: Bool
   @ViewBuilder var root: () -> Root
 
   @Environment(AppModel.self) private var model
@@ -1055,6 +1932,7 @@ private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
   @Environment(\.locale) private var locale
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dashSplashLifted) private var splashLifted
 
   func makeUIViewController(context: Context) -> DashPageStackViewController<Root> {
     DashPageStackViewController(
@@ -1065,6 +1943,8 @@ private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
       anchorRegistry: anchorRegistry,
       presentationState: presentationState,
       isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize,
@@ -1076,8 +1956,9 @@ private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
     context: Context
   ) {
     uiViewController.update(
-      root: root(),
       isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize,
@@ -1100,12 +1981,14 @@ struct DestinationStackHost<Root: View>: View {
   @Bindable var navigator: DestinationNavigator
   @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   var isTabActive: Bool
+  var canPresentPendingHomeAction = true
   @ViewBuilder var root: () -> Root
 
   var body: some View {
     DashPageStackHost(
       navigator: navigator,
       isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
       root: root
     )
     .onAppear {
@@ -1298,6 +2181,7 @@ struct DashPageChromePreferenceKey: PreferenceKey {
 
 private struct DashPageActionControl: View {
   let descriptor: DashPageActionDescriptor
+  var allowsInteraction = true
 
   @ViewBuilder private var control: some View {
     switch descriptor.label {
@@ -1315,12 +2199,12 @@ private struct DashPageActionControl: View {
   var body: some View {
     if let identifier = descriptor.accessibilityIdentifier {
       control
-        .disabled(!descriptor.isEnabled)
+        .disabled(!descriptor.isEnabled || !allowsInteraction)
         .opacity(resolvedOpacity)
         .accessibilityIdentifier(identifier)
     } else {
       control
-        .disabled(!descriptor.isEnabled)
+        .disabled(!descriptor.isEnabled || !allowsInteraction)
         .opacity(resolvedOpacity)
     }
   }
@@ -1332,11 +2216,14 @@ private struct DashPageActionControl: View {
 
 private struct DashPageActionGroupView: View {
   let actions: [DashPageActionDescriptor]
+  var allowsInteraction = true
 
   var body: some View {
     DashToolbarActionGroup {
       ForEach(actions) { action in
-        DashPageActionControl(descriptor: action)
+        DashPageActionControl(
+          descriptor: action,
+          allowsInteraction: allowsInteraction)
       }
     }
   }
@@ -1354,6 +2241,7 @@ enum DashPageChromeMetrics {
 private struct DashPageNavigationBar: View {
   let entry: DashNavigationEntry
   let chrome: DashPageChromePreference
+  let allowsBusinessActions: Bool
   let dismiss: () -> Void
   @Environment(\.layoutDirection) private var layoutDirection
 
@@ -1378,7 +2266,9 @@ private struct DashPageNavigationBar: View {
         leadingControl
         Spacer(minLength: 0)
         if !chrome.trailingActions.isEmpty {
-          DashPageActionGroupView(actions: chrome.trailingActions)
+          DashPageActionGroupView(
+            actions: chrome.trailingActions,
+            allowsInteraction: allowsBusinessActions)
         }
       }
     }
@@ -1390,7 +2280,9 @@ private struct DashPageNavigationBar: View {
 
   @ViewBuilder private var leadingControl: some View {
     if !chrome.leadingActions.isEmpty {
-      DashPageActionGroupView(actions: chrome.leadingActions)
+      DashPageActionGroupView(
+        actions: chrome.leadingActions,
+        allowsInteraction: allowsBusinessActions)
     } else {
       switch entry.dismissal {
       case .back:
@@ -1427,48 +2319,90 @@ private struct DashPageEscapeActionModifier: ViewModifier {
   }
 }
 
+/// The visible leading replacement owns VoiceOver Escape too. Equality ignores
+/// the closure deliberately: a page action's stable ID and enabled state define
+/// its lifetime, while SwiftUI's state-backed action keeps reading live values.
+private struct DashPageEscapeActionPreference: Equatable {
+  let id: String
+  let isEnabled: Bool
+  let action: () -> Void
+
+  static func == (lhs: Self, rhs: Self) -> Bool {
+    lhs.id == rhs.id && lhs.isEnabled == rhs.isEnabled
+  }
+}
+
+private struct DashPageEscapeActionPreferenceKey: PreferenceKey {
+  static var defaultValue: DashPageEscapeActionPreference? { nil }
+
+  static func reduce(
+    value: inout DashPageEscapeActionPreference?,
+    nextValue: () -> DashPageEscapeActionPreference?
+  ) {
+    if let next = nextValue() { value = next }
+  }
+}
+
 /// Page-local custom chrome used by Dash's UIKit page container. It
 /// deliberately lives in the same SwiftUI tree as the page so dynamic actions,
 /// frost, and scroll probing retain their existing ownership.
 struct DashRoutePageChromeHost<Content: View>: View {
   let entry: DashNavigationEntry?
+  var allowsBodyInteraction = true
   @ViewBuilder var content: () -> Content
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dashWorkspaceWashScroll) private var washScroll
   @State private var scroll = DashHeaderScrollState()
+  @State private var preferredEscapeAction: DashPageEscapeActionPreference?
 
   var body: some View {
-    content()
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-      .padding(.top, DashPageChromeMetrics.reservedHeight)
-      // Frost first, navigation chrome second: controls remain crisp above it.
-      .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
-        if !handled {
-          DashHeaderScrim(scroll: scroll)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .allowsHitTesting(false)
-        }
+    Group {
+      content()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .allowsHitTesting(allowsBodyInteraction)
+        .accessibilityHidden(!allowsBodyInteraction)
+    }
+    .padding(.top, DashPageChromeMetrics.reservedHeight)
+    // Frost first, navigation chrome second: controls remain crisp above it.
+    .overlayPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+      if !handled {
+        DashHeaderScrim(scroll: scroll)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+          .allowsHitTesting(false)
       }
-      .overlayPreferenceValue(DashPageChromePreferenceKey.self, alignment: .top) { chrome in
-        if let entry {
-          DashPageNavigationBar(
-            entry: entry,
-            chrome: chrome,
-            dismiss: { navigator?.dismissTop() }
-          )
-        }
+    }
+    .overlayPreferenceValue(DashPageChromePreferenceKey.self, alignment: .top) { chrome in
+      if let entry {
+        DashPageNavigationBar(
+          entry: entry,
+          chrome: chrome,
+          allowsBusinessActions: allowsBodyInteraction,
+          dismiss: { navigator?.dismiss(entryID: entry.id) }
+        )
       }
-      .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
-        if !handled {
-          DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
-          DashScreenClipLift()
-        }
+    }
+    .backgroundPreferenceValue(DashHeaderScrimHandledKey.self) { handled in
+      if !handled {
+        DashHeaderScrollProbe(scroll: scroll, wash: washScroll)
+        DashScreenClipLift()
       }
-      .preference(key: DashHeaderScrimHandledKey.self, value: true)
-      .modifier(
-        DashPageEscapeActionModifier(
-          isEnabled: entry != nil,
-          action: { navigator?.dismissTop() }))
+    }
+    .preference(key: DashHeaderScrimHandledKey.self, value: true)
+    .onPreferenceChange(DashPageEscapeActionPreferenceKey.self) { action in
+      preferredEscapeAction = action
+    }
+    .modifier(
+      DashPageEscapeActionModifier(
+        isEnabled: entry != nil,
+        action: {
+          guard let entry else { return }
+          if let preferredEscapeAction {
+            guard preferredEscapeAction.isEnabled, allowsBodyInteraction else { return }
+            preferredEscapeAction.action()
+          } else {
+            navigator?.dismiss(entryID: entry.id)
+          }
+        }))
   }
 }
 
@@ -1478,11 +2412,20 @@ private struct DashPageActionsModifier: ViewModifier {
 
   func body(content: Content) -> some View {
     content
+      // Mutate only the action slots. Replacing the whole preference here
+      // would erase an inner `detailHeader` descriptor on the same page.
+      .transformPreference(DashPageChromePreferenceKey.self) { preference in
+        preference.leadingActions = leading
+        preference.trailingActions = trailing
+      }
       .preference(
-        key: DashPageChromePreferenceKey.self,
-        value: DashPageChromePreference(
-          leadingActions: leading,
-          trailingActions: trailing)
+        key: DashPageEscapeActionPreferenceKey.self,
+        value: leading.first.map {
+          DashPageEscapeActionPreference(
+            id: $0.id,
+            isEnabled: $0.isEnabled,
+            action: $0.action)
+        }
       )
       // Keep the same page-owned descriptor usable in isolated previews and
       // system-presented leaf contexts. Production routes consume the
@@ -1549,14 +2492,13 @@ private struct DetailHeaderModifier: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .preference(
-        key: DashPageChromePreferenceKey.self,
-        value: DashPageChromePreference(
-          header: DashPageHeaderDescriptor(
-            icon: icon,
-            title: displayedTitle,
-            tint: resolvedTint))
-      )
+      // Preserve page actions regardless of modifier order.
+      .transformPreference(DashPageChromePreferenceKey.self) { preference in
+        preference.header = DashPageHeaderDescriptor(
+          icon: icon,
+          title: displayedTitle,
+          tint: resolvedTint)
+      }
       .navigationTitle(displayedTitle)
       .toolbar {
         ToolbarItem(placement: .principal) {
@@ -1581,22 +2523,80 @@ private struct DetailHeaderModifier: ViewModifier {
 
 // MARK: - Link helpers
 
+/// Supplies a navigation action whose concrete source occurrence is registered
+/// with the custom page compositor. Use this for controls that need their own
+/// button style; `DestinationLink` is the standard row-shaped convenience.
+struct DashNavigationSource<Content: View>: View {
+  let destination: Destination
+  var presentation: DashNavigationPresentation?
+  var onNavigate: (() -> Void)?
+  /// Optional lifecycle boundary (for example a Tray's `dismissAfter`). The
+  /// source geometry is captured on the tap, before the presenting surface
+  /// unmounts; only the route mutation waits for the boundary to finish.
+  var schedule: ((@escaping () -> Void) -> Void)?
+  @ViewBuilder var content: (@escaping () -> Void) -> Content
+
+  @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationAnchorRegistry) private var anchorRegistry
+  @Environment(\.dashNavigationEntryID) private var sourceEntryID
+  @State private var anchorInstanceID = UUID()
+
+  var body: some View {
+    content(navigate)
+      .dashNavigationAnchor(instanceID: anchorInstanceID)
+  }
+
+  private func navigate() {
+    let origin = anchorRegistry?.captureOrigin(
+      semanticID: destination.dashNavigationSemanticID,
+      anchorInstanceID: anchorInstanceID)
+    let expectedNavigator = navigator
+    let expectedSourceEntryID = sourceEntryID
+    onNavigate?()
+    // `onNavigate` may legitimately synchronize this navigator's account
+    // scope. The delayed-intent baseline starts after that preparation, while
+    // the source visual was still captured synchronously at the tap.
+    let expectedRevision = expectedNavigator?.revision
+    let expectedAccountID = expectedNavigator?.accountID
+    let commit: () -> Void = {
+      guard let expectedNavigator, let expectedRevision,
+        expectedNavigator.revision == expectedRevision,
+        expectedNavigator.accountID == expectedAccountID,
+        expectedSourceEntryID == nil
+          || expectedNavigator.topEntry?.id == expectedSourceEntryID
+      else {
+        anchorRegistry?.discardCapturedVisual(for: origin)
+        return
+      }
+      let entryID = expectedNavigator.push(
+        destination,
+        presentation: presentation,
+        origin: origin)
+      if entryID == nil {
+        anchorRegistry?.discardCapturedVisual(for: origin)
+      }
+    }
+    if let schedule {
+      schedule(commit)
+    } else {
+      commit()
+    }
+  }
+}
+
 /// Opens a `Destination` on the enclosing tab's custom page stack.
 struct DestinationLink<Label: View>: View {
   let destination: Destination
   var onNavigate: (() -> Void)?
   @ViewBuilder var label: () -> Label
 
-  @Environment(\.destinationNavigator) private var navigator
-
   var body: some View {
-    Button {
-      onNavigate?()
-      navigator?.push(destination)
-    } label: {
-      label()
+    DashNavigationSource(destination: destination, onNavigate: onNavigate) { navigate in
+      Button(action: navigate) {
+        label()
+      }
+      // A navigation row is a surface, not a button — it must not shrink on press.
+      .buttonStyle(DashSurfaceButtonStyle())
     }
-    // A navigation row is a surface, not a button — it must not shrink on press.
-    .buttonStyle(DashSurfaceButtonStyle())
   }
 }

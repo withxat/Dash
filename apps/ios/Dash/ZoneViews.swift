@@ -932,39 +932,47 @@ struct ZoneDetailView: View {
       // feature. A domain registered elsewhere has no `/registrar/registrations`
       // record, so an always-on control would open a screen that 404s.
       let manageDomain = registrarRegistration?.name
-      DashInfoGroup(
-        title: "Registration",
-        phase: rdapPhase,
-        // The four fields below, so the arriving values land on the
-        // placeholder instead of growing the section.
-        placeholderRows: 4,
-        retry: { Task { await retryRegistration() } },
-        actionTitle: manageDomain != nil ? "Manage registration" : nil,
-        actionIcon: manageDomain != nil ? SolarAsset.globus : nil,
-        action: manageDomain.map { domain in
-          { navigator?.push(.registrarDomain(domain)) }
+      if let manageDomain {
+        DashNavigationSource(destination: .registrarDomain(manageDomain)) { navigate in
+          registrationInfoGroup(action: navigate)
         }
-      ) {
-        if let registration = registrarRegistration {
-          RegistrarRegistrationRows(summary: registration)
-        } else if let registration = rdap {
-          if let registrar = registration.registrar {
-            DashInfoRow("Registrar", value: registrar)
-          }
-          if let expires = registration.expiresOn {
-            DashInfoRow("Expires", value: DashDateFormatting.dateOnly(fromISO8601: expires))
-          }
-          if let registered = registration.registeredOn {
-            DashInfoRow(
-              "Registered", value: DashDateFormatting.dateOnly(fromISO8601: registered))
-          }
-          if let status = registration.status.first {
-            DashInfoRow("Status", value: rdapStatusLabel(status))
-          }
+      } else {
+        registrationInfoGroup(action: nil)
+      }
+    }
+  }
+
+  private func registrationInfoGroup(action: (() -> Void)?) -> some View {
+    DashInfoGroup(
+      title: "Registration",
+      phase: rdapPhase,
+      // The four fields below, so the arriving values land on the
+      // placeholder instead of growing the section.
+      placeholderRows: 4,
+      retry: { Task { await retryRegistration() } },
+      actionTitle: action != nil ? "Manage registration" : nil,
+      actionIcon: action != nil ? SolarAsset.globus : nil,
+      action: action
+    ) {
+      if let registration = registrarRegistration {
+        RegistrarRegistrationRows(summary: registration)
+      } else if let registration = rdap {
+        if let registrar = registration.registrar {
+          DashInfoRow("Registrar", value: registrar)
+        }
+        if let expires = registration.expiresOn {
+          DashInfoRow("Expires", value: DashDateFormatting.dateOnly(fromISO8601: expires))
+        }
+        if let registered = registration.registeredOn {
+          DashInfoRow(
+            "Registered", value: DashDateFormatting.dateOnly(fromISO8601: registered))
+        }
+        if let status = registration.status.first {
+          DashInfoRow("Status", value: rdapStatusLabel(status))
         }
       }
-      .dashSectionBoundary()
     }
+    .dashSectionBoundary()
   }
 }
 
@@ -1340,6 +1348,27 @@ private struct ZoneTool: Identifiable {
   var id: String { title }
 }
 
+/// Captures the managed-record Tray row before the Tray leaves, then commits
+/// the page route only after its exit choreography has completed.
+private struct DNSLockedRecordEmailRoutingButton: View {
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  let zoneID: String
+
+  var body: some View {
+    DashNavigationSource(
+      destination: .zoneEmailRouting(zoneID),
+      schedule: dismissAfter
+    ) { navigate in
+      Button(action: navigate) {
+        DashListRow(
+          title: DashL10n.string("Open email routing"),
+          icon: SolarAsset.Content.mailbox)
+      }
+      .buttonStyle(DashSurfaceButtonStyle())
+    }
+  }
+}
+
 struct DNSRecordsView: View {
   static let pageSize = 100
 
@@ -1490,14 +1519,7 @@ struct DNSRecordsView: View {
               message:
                 "Email routing manages this record. Editing or deleting it would stop mail delivery for this domain."
             )
-            DestinationLink(
-              destination: .zoneEmailRouting(zoneID),
-              onNavigate: { lockedRecord = nil }
-            ) {
-              DashListRow(
-                title: DashL10n.string("Open email routing"),
-                icon: SolarAsset.Content.mailbox)
-            }
+            DNSLockedRecordEmailRoutingButton(zoneID: zoneID)
           }
         }
       }

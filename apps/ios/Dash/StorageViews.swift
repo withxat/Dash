@@ -138,11 +138,28 @@ private struct R2BucketTrayExitButton<Label: View>: View {
   }
 }
 
+/// Freezes the tapped Tray row as the page-transition source, then waits for
+/// the Tray's complete exit choreography before mutating the page stack.
+private struct R2BucketTrayDestinationButton<Label: View>: View {
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  let destination: Destination
+  @ViewBuilder let label: () -> Label
+
+  var body: some View {
+    DashNavigationSource(destination: destination, schedule: dismissAfter) { navigate in
+      Button(action: navigate) {
+        label()
+      }
+    }
+  }
+}
+
 struct R2BucketView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dashNavigationEntryID) private var navigationEntryID
+  @Environment(\.dashWorkspacePresentationState) private var workspacePresentationState
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   let bucket: String
   /// S3-style folder key for this screen (trailing `/`), or `""` at the bucket root.
@@ -156,7 +173,9 @@ struct R2BucketView: View {
   @State private var loading = true
   @State private var isLoadingMore = false
   @State private var importsFile = false
+  @State private var fileImporterReporterID = UUID()
   @State private var selectedObject: R2Object?
+  @State private var previewPresentationReporterID = UUID()
   /// Survives folder/settings pushes (view merely disappears). Cancels in
   /// `deinit` when this screen leaves the navigation stack for good.
   @State private var work = R2BucketWork()
@@ -229,7 +248,7 @@ struct R2BucketView: View {
           isEnabled: work.upload == nil,
           disabledOpacity: 0.45
         ) {
-          importsFile = true
+          presentFileImporter()
         })
     }
     actions.append(
@@ -278,7 +297,7 @@ struct R2BucketView: View {
             ? DashL10n.string("Upload a file into this folder.")
             : DashL10n.string("This virtual folder has no objects.")),
         actionTitle: featureAllowsWrites ? DashL10n.string("Upload file") : nil,
-        action: featureAllowsWrites ? { importsFile = true } : nil
+        action: featureAllowsWrites ? { presentFileImporter() } : nil
       ),
       retry: {
         let request = requestIdentity
@@ -372,9 +391,19 @@ struct R2BucketView: View {
     .onChange(of: tracksObjectFrames) { _, enabled in
       if !enabled { objectFrameStore.clear() }
     }
-    .fileImporter(isPresented: $importsFile, allowedContentTypes: [.data]) { result in
-      if case .success(let url) = result { beginUpload(url) }
-    }
+    .fileImporter(
+      isPresented: $importsFile,
+      allowedContentTypes: [.data],
+      allowsMultipleSelection: false,
+      onCompletion: { result in
+        // The binding falls before this callback. Start route-owned work first,
+        // then release the presentation lease so a queued external route can
+        // deterministically cancel it by removing this entry.
+        if case .success(let urls) = result, let url = urls.first { beginUpload(url) }
+        finishFileImporterPresentation()
+      },
+      onCancellation: { finishFileImporterPresentation() }
+    )
     .refreshable {
       let request = requestIdentity
       await load(force: true, for: request)
@@ -389,7 +418,17 @@ struct R2BucketView: View {
       async let domainLoad: Void = loadDomains(for: request)
       _ = await (objectLoad, domainLoad)
     }
-    .fullScreenCover(item: $selectedObject) { object in
+    .fullScreenCover(
+      item: $selectedObject,
+      onDismiss: {
+        // The item is cleared to begin dismissal; keep external routing blocked
+        // until UIKit confirms that the presenting page owns the canvas again.
+        workspacePresentationState?.setCoverPresented(
+          false,
+          reporterID: previewPresentationReporterID,
+          entryID: navigationEntryID)
+      }
+    ) { object in
       R2ObjectPreview(
         bucket: bucket,
         object: object,
@@ -402,6 +441,13 @@ struct R2BucketView: View {
           await invalidateAndReload()
         }
       )
+    }
+    .onChange(of: selectedObject != nil, initial: true) { _, presented in
+      guard presented else { return }
+      workspacePresentationState?.setCoverPresented(
+        true,
+        reporterID: previewPresentationReporterID,
+        entryID: navigationEntryID)
     }
     .dashMoreMenu(
       isPresented: $confirmsBatchDelete,
@@ -458,6 +504,21 @@ struct R2BucketView: View {
   private func cancelOutstandingWork() {
     work.cancelAndRelease()
     uploadingFileName = nil
+  }
+
+  private func presentFileImporter() {
+    workspacePresentationState?.setCoverPresented(
+      true,
+      reporterID: fileImporterReporterID,
+      entryID: navigationEntryID)
+    importsFile = true
+  }
+
+  private func finishFileImporterPresentation() {
+    workspacePresentationState?.setCoverPresented(
+      false,
+      reporterID: fileImporterReporterID,
+      entryID: navigationEntryID)
   }
 
   /// Synchronously drops every account-scoped value before a new request can
@@ -607,9 +668,7 @@ struct R2BucketView: View {
         DashListGroupDivider()
       }
 
-      R2BucketTrayExitButton {
-        navigator?.push(.r2BucketSettings(bucket))
-      } label: {
+      R2BucketTrayDestinationButton(destination: .r2BucketSettings(bucket)) {
         DashListRow(
           title: DashL10n.string("Bucket settings"),
           subtitle: DashL10n.string("Public access and custom domains"),
@@ -654,7 +713,8 @@ struct R2BucketView: View {
       onSuccessPresentationCompleted: {
         // The parent listing is stale by exactly this folder; its own
         // `reloadIfInvalidated` refetches when the cache comes back cold.
-        navigator?.pop()
+        guard let navigationEntryID else { return }
+        navigator?.dismiss(entryID: navigationEntryID)
       },
       perform: { try await deleteFolder() }
     )
@@ -2009,6 +2069,7 @@ struct KVKeyDetailView: View {
 
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.featureRequiredScopes) private var featureRequiredScopes
   let namespaceID: String
@@ -2391,7 +2452,8 @@ struct KVKeyDetailView: View {
     if deleting {
       deleting = false
       actionPhase = .idle
-      navigator?.pop()
+      guard let navigationEntryID else { return }
+      navigator?.dismiss(entryID: navigationEntryID)
     } else {
       saving = false
       actionPhase = .idle

@@ -317,7 +317,6 @@ struct DashChartDetailButton: View {
   /// multi-range payload — keeps the plate seated so the title does not jump.
   var isEnabled: Bool = true
   var accessibilityIdentifier: String? = nil
-  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   /// Painted diameter. `dashCompactHitTarget` keeps the 44pt tap area around it,
@@ -336,18 +335,26 @@ struct DashChartDetailButton: View {
   }
 
   private var button: some View {
-    Button {
-      guard isEnabled else { return }
-      navigator?.push(.chartDetail(detail))
-    } label: {
-      plate
+    // This compact disclosure control is an action, not the chart surface
+    // itself. Keep it on the brisk flow transition; collapsed cards that own
+    // the whole tap target still use the entity expansion.
+    DashNavigationSource(
+      destination: .chartDetail(detail),
+      presentation: .detail
+    ) { navigate in
+      Button {
+        guard isEnabled else { return }
+        navigate()
+      } label: {
+        plate
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .disabled(!isEnabled)
+      .accessibilityLabel(
+        "\(DashL10n.ui(detail.title)), \(DashL10n.ui("Details"))"
+      )
+      .accessibilityHint("Shows chart details")
     }
-    .buttonStyle(DashPressButtonStyle())
-    .disabled(!isEnabled)
-    .accessibilityLabel(
-      "\(DashL10n.ui(detail.title)), \(DashL10n.ui("Details"))"
-    )
-    .accessibilityHint("Shows chart details")
   }
 
   private var glyph: some View {

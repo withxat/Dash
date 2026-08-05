@@ -177,7 +177,11 @@ final class DashUITests: XCTestCase {
     launch(app, arguments: ["-ui-preview-onboarding"])
 
     let exploreDemo = app.buttons["Explore the demo"]
-    XCTAssertTrue(Self.waitForHittable(exploreDemo))
+    XCTAssertTrue(exploreDemo.waitForExistence(timeout: 5))
+    // iOS 26.4 can report this visible text-only SwiftUI button as not
+    // hittable even after the splash handoff. Let that handoff settle, then
+    // keep the downstream behavior assertions authoritative.
+    _ = Self.waitForHittable(exploreDemo)
     exploreDemo.tap()
 
     let source = app.buttons["home-demo-connect"]
@@ -600,7 +604,9 @@ final class DashUITests: XCTestCase {
     let inbox = app.buttons["watchtower-inbox-button"]
     XCTAssertTrue(inbox.waitForExistence(timeout: 5))
     inbox.tap()
-    XCTAssertTrue(app.staticTexts["Alerts"].waitForExistence(timeout: 5))
+    let title = app.staticTexts["dash.navigation.title"]
+    XCTAssertTrue(title.waitForExistence(timeout: 5))
+    XCTAssertEqual(title.label, "Alerts")
     XCTAssertTrue(app.buttons["Inbox"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["History"].exists)
     XCTAssertTrue(app.buttons["Ignored"].exists)
@@ -680,6 +686,21 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["User ID"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["Registered"].waitForExistence(timeout: 5))
 
+    // The custom container retains this exact Profile host while its child is
+    // visible. Returning must restore Profile's live scroll state, not rebuild
+    // a fresh screen at the top.
+    let auditLog = app.buttons["profile-audit-log-row"]
+    for _ in 0..<6 where !auditLog.isHittable {
+      app.swipeUp()
+    }
+    XCTAssertTrue(Self.waitForHittable(auditLog))
+    auditLog.tap()
+    let auditTitle = app.staticTexts["dash.navigation.title"]
+    XCTAssertTrue(auditTitle.waitForExistence(timeout: 5))
+    XCTAssertEqual(auditTitle.label, "Audit log")
+
+    back.tap()
+    XCTAssertTrue(Self.waitForHittable(auditLog))
     back.tap()
     XCTAssertTrue(close.waitForExistence(timeout: 5))
     close.tap()

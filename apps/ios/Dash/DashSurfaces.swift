@@ -368,7 +368,6 @@ struct DashCollapsedChartCard: View {
   let accessibilitySummary: String
   var detail: DashChartDetail?
   var detailAccessibilityIdentifier: String?
-  @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
   private var shape: RoundedRectangle {
@@ -396,14 +395,15 @@ struct DashCollapsedChartCard: View {
   var body: some View {
     Group {
       if let detail {
-        Button {
-          navigator?.push(.chartDetail(detail))
-        } label: {
-          cardContent
+        DashNavigationSource(destination: .chartDetail(detail)) { navigate in
+          Button(action: navigate) {
+            cardContent
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityHint("Shows chart details")
+          .accessibilityIdentifier(
+            detailAccessibilityIdentifier ?? "collapsed-chart-detail")
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityHint("Shows chart details")
-        .accessibilityIdentifier(detailAccessibilityIdentifier ?? "collapsed-chart-detail")
       } else {
         cardContent
       }

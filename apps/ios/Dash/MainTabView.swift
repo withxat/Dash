@@ -10,6 +10,18 @@ enum DashNavigatorAccountScopeRules {
   }
 }
 
+enum DashRouteConsumptionRules {
+  static func isBlocked(
+    overlayPresented: Bool,
+    coverPresented: Bool,
+    awaitingAccountConfirmation: Bool,
+    awaitingAccountSwitch: Bool
+  ) -> Bool {
+    overlayPresented || coverPresented || awaitingAccountConfirmation
+      || awaitingAccountSwitch
+  }
+}
+
 private struct AccountScopedRouteRequest {
   let account: CloudflareAccount
   let route: DashRoute
@@ -29,7 +41,6 @@ struct MainTabView: View {
   @State private var navigationCoordinator = DashNavigationCoordinator()
   @State private var navigationAnchorRegistry = DashNavigationAnchorRegistry()
   @State private var workspacePresentationState = DashWorkspacePresentationState()
-  @State private var profileAnchorInstanceID = UUID()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
   /// The shared header owns Watchtower's editor buttons, while the screen still
   /// owns the staged editor-exit choreography. Bumping these tokens asks the
@@ -58,6 +69,18 @@ struct MainTabView: View {
     DashTrayPresentation(
       presented: showsProfile || showsIgnoreAllAlerts || nestedTray.presented
         || workspacePresentationState.trayPresented)
+  }
+
+  /// External routes wait for every presenter and account-routing transaction
+  /// to finish. Resetting a cached page underneath a cover would tear down its
+  /// owner, while consuming a second route during account confirmation could
+  /// let the older request overwrite the newer one after the switch completes.
+  private var routeConsumptionBlocked: Bool {
+    DashRouteConsumptionRules.isBlocked(
+      overlayPresented: overlayTrays.presented,
+      coverPresented: workspacePresentationState.coverPresented,
+      awaitingAccountConfirmation: accountRouteConfirmation != nil,
+      awaitingAccountSwitch: routeAfterAccountSwitch != nil)
   }
 
   private var workspaceWashPreset: DashWorkspaceWashPreset {
@@ -137,18 +160,6 @@ struct MainTabView: View {
     watchtowerNavigator.setAccountScope(accountID)
   }
 
-  private func openOnActiveTab(
-    _ destination: Destination,
-    presentation: DashNavigationPresentation? = nil,
-    origin: DashNavigationOrigin? = nil
-  ) {
-    synchronizeNavigatorAccountScopes()
-    activeNavigator.push(
-      destination,
-      presentation: presentation,
-      origin: origin)
-  }
-
   /// Applies a route only after any account scope has been verified.
   private func openVerifiedRoute(_ route: DashRoute) {
     synchronizeNavigatorAccountScopes()
@@ -182,7 +193,8 @@ struct MainTabView: View {
     guard
       model.authState == .authenticated,
       DashNavigatorAccountScopeRules.shouldSynchronize(
-        during: model.signOutActionPhase)
+        during: model.signOutActionPhase),
+      !routeConsumptionBlocked
     else { return }
     model.pendingRoute = nil
     let resolution = route.accountResolution(
@@ -284,6 +296,10 @@ struct MainTabView: View {
       .onChange(of: model.pendingRoute) { _, route in
         if let route { consume(route) }
       }
+      .onChange(of: routeConsumptionBlocked) { _, blocked in
+        guard !blocked, let route = model.pendingRoute else { return }
+        consume(route)
+      }
       .onChange(of: model.signOutActionPhase) { _, phase in
         guard
           DashNavigatorAccountScopeRules.shouldSynchronize(during: phase),
@@ -364,12 +380,10 @@ struct MainTabView: View {
         tabPage(.home) {
           DestinationStackHost(
             navigator: homeNavigator,
-            isTabActive: selection == .home
+            isTabActive: selection == .home,
+            canPresentPendingHomeAction: !overlayTrays.presented
           ) {
-            HomeView(
-              isActive: selection == .home,
-              isAtRoot: homeNavigator.depth == 0,
-              canPresentPendingAction: !overlayTrays.presented)
+            HomeView()
           }
         }
         tabPage(.features) {
@@ -387,8 +401,8 @@ struct MainTabView: View {
           ) {
             WatchtowerView(
               customization: watchtowerCustomization,
-              cancelRequest: watchtowerCancelRequest,
-              commitRequest: watchtowerCommitRequest,
+              cancelRequest: $watchtowerCancelRequest,
+              commitRequest: $watchtowerCommitRequest,
               editorInteractionsReady: $watchtowerEditorInteractionsReady
             )
           }
@@ -428,7 +442,7 @@ struct MainTabView: View {
           // bottom bar and paints a white scroll-edge pocket under the capsule.
           // Offset sinks the bar into the home-indicator inset instead.
           .offset(y: DashDockMetrics.bottomSink)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
+          .transition(tabBarTransition)
         }
       }
       .animation(tabBarVisibilityAnimation, value: hidesDock)
@@ -497,33 +511,38 @@ struct MainTabView: View {
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
           .transition(.opacity)
-        } else if !hidesHeaderAvatar {
-          HeaderProfileButton(
-            action: {
-              openOnActiveTab(
-                .settings,
-                presentation: .workspaceOverlay,
-                origin: navigationAnchorRegistry.captureOrigin(
-                  semanticID: DashNavigationSemanticID(
-                    namespace: "workspace-header",
-                    value: "profile-avatar"),
-                  anchorInstanceID: profileAnchorInstanceID))
-            },
-            onLongPress: {
-              // The path used to live inside the freshly mounted tray body.
-              // Reset before presentation so an exit never swaps its content
-              // back to Accounts while the card is still animating away.
-              profileTrayPath = []
-              showsProfile = true
-            }
-          )
-          .dashNavigationAnchor(instanceID: profileAnchorInstanceID)
+        } else {
+          DashNavigationSource(
+            destination: .settings,
+            presentation: .workspaceOverlay,
+            onNavigate: synchronizeNavigatorAccountScopes
+          ) { navigate in
+            HeaderProfileButton(
+              action: { navigate() },
+              onLongPress: {
+                // The path used to live inside the freshly mounted tray body.
+                // Reset before presentation so an exit never swaps its content
+                // back to Accounts while the card is still animating away.
+                profileTrayPath = []
+                showsProfile = true
+              }
+            )
+          }
+          // The avatar floats above all three page hosts, so it cannot inherit
+          // the active tab's navigator from a hosted root. Bind the same
+          // navigator the visible workspace owns before handing off to Close.
+          .environment(\.destinationNavigator, activeNavigator)
           .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
           // Tuned against the custom page control's slot so the workspace
           // handoff can later bridge the avatar into Close without a jump.
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          .transition(.opacity)
+          // Keep the exact source occurrence mounted across Settings. The
+          // compositor claims it while one stable proxy changes avatar ↔ Close,
+          // then releases the same occurrence on return.
+          .opacity(hidesHeaderAvatar ? 0 : 1)
+          .allowsHitTesting(!hidesHeaderAvatar)
+          .accessibilityHidden(hidesHeaderAvatar)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -549,11 +568,15 @@ struct MainTabView: View {
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
           .transition(.opacity)
         } else if showsWatchtowerInboxButton {
-          HeaderInboxButton(
-            count: model.watchtowerUnreadAlertCount ?? 0,
-            action: { watchtowerNavigator.push(.watchtowerInbox) },
-            onLongPress: { showsIgnoreAllAlerts = true }
-          )
+          DashNavigationSource(destination: .watchtowerInbox) { navigate in
+            HeaderInboxButton(
+              count: model.watchtowerUnreadAlertCount ?? 0,
+              action: { navigate() },
+              onLongPress: { showsIgnoreAllAlerts = true }
+            )
+          }
+          // Like the avatar, the inbox lives above the hosted tab page.
+          .environment(\.destinationNavigator, watchtowerNavigator)
           .workspaceHeaderGlassID(.trailingPrimary, in: workspaceHeaderGlass)
           .padding(.trailing, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
@@ -610,7 +633,15 @@ struct MainTabView: View {
   /// The floating bar rides in on first appearance without animation and slides
   /// on later navigation changes — SwiftUI only animates the value that flips.
   private var tabBarVisibilityAnimation: Animation {
-    DashTheme.Motion.settle
+    reduceMotion
+      ? .easeOut(duration: DashTheme.Motion.Page.reducedDuration)
+      : DashTheme.Motion.settle
+  }
+
+  private var tabBarTransition: AnyTransition {
+    reduceMotion
+      ? .opacity
+      : .move(edge: .bottom).combined(with: .opacity)
   }
 
   /// Re-tapping the active tab clears its navigation path, matching `TabView`.

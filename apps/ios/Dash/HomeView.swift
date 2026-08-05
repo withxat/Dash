@@ -6,12 +6,11 @@ import UniformTypeIdentifiers
 struct HomeView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
-  let isActive: Bool
-  let isAtRoot: Bool
+  @Environment(\.dashTabActive) private var isActive
+  @Environment(\.dashCanPresentPendingHomeAction) private var canPresentPendingAction
   /// A deep-linked action may arrive while Profile or another tray is still
   /// leaving. Keep it queued until the app-level tray preference clears so two
   /// independent full-screen covers never compete for the one compact tray.
-  let canPresentPendingAction: Bool
   @AppStorage(RecentResources.key) private var recentsRaw = ""
   @AppStorage(HomeShortcuts.key) private var shortcutsRaw = HomeShortcuts.defaultValue
   @AppStorage(HomeActions.key) private var actionsRaw = HomeActions.defaultValue
@@ -77,6 +76,10 @@ struct HomeView: View {
     model.isDemoSession ? 1 : 0
   }
 
+  private var isAtRoot: Bool {
+    navigator?.depth == 0
+  }
+
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
@@ -94,8 +97,6 @@ struct HomeView: View {
 
         if model.isDemoSession {
           HomeDemoExperienceSection(
-            openIssue: { navigator?.push(.watchtowerInbox) },
-            openResource: { navigator?.push(.zone("zone-api")) },
             connect: presentDemoConnectFromSource
           )
           .dashSectionReveal(1)
@@ -103,6 +104,7 @@ struct HomeView: View {
 
         HomeQuickActionsSection(
           actions: quickActions,
+          navigationDestination: quickActionNavigationDestination,
           perform: perform,
           edit: { showsEditActions = true }
         )
@@ -182,12 +184,12 @@ struct HomeView: View {
       isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache"),
       tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
-      HomePurgeCachePicker(zones: displayedZones) { zone in
+      HomePurgeCachePicker(zones: displayedZones) { zone, navigate in
         guard zonesContext == model.accountRequestContext else {
           showsPurgeCache = false
           return
         }
-        navigator?.push(.cache(zone.id))
+        navigate()
       }
     }
     .dashTray(
@@ -408,10 +410,23 @@ struct HomeView: View {
       return
     }
     if zones.count == 1, let zone = zones.first {
+      // Pending/deep-linked actions have no concrete control occurrence. The
+      // visible quick-action tile routes through DashNavigationSource below.
       navigator?.push(.cache(zone.id))
     } else {
       showsPurgeCache = true
     }
+  }
+
+  private func quickActionNavigationDestination(_ action: HomeActionID) -> Destination? {
+    guard action == .purgeCache,
+      let context = model.accountRequestContext,
+      zonesContext == context,
+      model.hasScopes(["zone.read", "cache.purge"]),
+      zones.count == 1,
+      let zone = zones.first
+    else { return nil }
+    return .cache(zone.id)
   }
 
   private func isLocked(_ feature: FeatureID) -> Bool {
@@ -551,8 +566,6 @@ private enum HomeDemoConnect {
 }
 
 private struct HomeDemoExperienceSection: View {
-  let openIssue: () -> Void
-  let openResource: () -> Void
   let connect: () -> Void
 
   var body: some View {
@@ -585,7 +598,7 @@ private struct HomeDemoExperienceSection: View {
             number: "01",
             title: DashL10n.string("Review the issue"),
             subtitle: DashL10n.string("Start with the pending domain signal"),
-            action: openIssue
+            destination: .watchtowerInbox
           )
 
           DashListGroupDivider()
@@ -594,7 +607,7 @@ private struct HomeDemoExperienceSection: View {
             number: "02",
             title: DashL10n.string("Inspect the resource"),
             subtitle: DashL10n.string("Open api.example.net and review its state"),
-            action: openResource
+            destination: .zone("zone-api")
           )
 
           DashListGroupDivider()
@@ -623,13 +636,12 @@ private struct HomeDemoExperienceSection: View {
     number: String,
     title: String,
     subtitle: String,
-    action: @escaping () -> Void
+    destination: Destination
   ) -> some View {
-    Button(action: action) {
+    DestinationLink(destination: destination) {
       stepLabel(number: number, title: title, subtitle: subtitle, showsChevron: true)
         .contentShape(Rectangle())
     }
-    .buttonStyle(DashSurfaceButtonStyle())
   }
 
   private func stepLabel(
@@ -708,6 +720,7 @@ private struct HomeDemoConnectFooter: View {
 private struct HomeQuickActionsSection: View {
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   let actions: [HomeActionID]
+  let navigationDestination: (HomeActionID) -> Destination?
   let perform: (HomeActionID) -> Void
   let edit: () -> Void
 
@@ -750,17 +763,28 @@ private struct HomeQuickActionsSection: View {
       .frame(maxWidth: .infinity)
     } else {
       ForEach(actions) { action in
-        Button {
-          perform(action)
-        } label: {
-          DashToolTile(title: action.title, icon: action.icon)
+        if let destination = navigationDestination(action) {
+          DashNavigationSource(destination: destination) { navigate in
+            quickActionButton(action, action: navigate)
+          }
+        } else {
+          quickActionButton(action) { perform(action) }
         }
-        .buttonStyle(DashPressButtonStyle())
-        .accessibilityLabel(action.title)
-        .accessibilityIdentifier(action.accessibilityIdentifier)
-        .frame(maxWidth: .infinity)
       }
     }
+  }
+
+  private func quickActionButton(
+    _ action: HomeActionID,
+    action perform: @escaping () -> Void
+  ) -> some View {
+    Button(action: perform) {
+      DashToolTile(title: action.title, icon: action.icon)
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .accessibilityLabel(action.title)
+    .accessibilityIdentifier(action.accessibilityIdentifier)
+    .frame(maxWidth: .infinity)
   }
 }
 
@@ -1972,7 +1996,7 @@ private enum HomeR2UploadError: LocalizedError {
 private struct HomePurgeCachePicker: View {
   @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let zones: [CloudflareZone]
-  let onSelect: (CloudflareZone) -> Void
+  let onSelect: (CloudflareZone, @escaping () -> Void) -> Void
 
   var body: some View {
     Group {
@@ -1983,16 +2007,21 @@ private struct HomePurgeCachePicker: View {
       } else {
         VStack(alignment: .leading, spacing: 0) {
           ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-            Button {
-              dismissAfter { onSelect(zone) }
-            } label: {
-              DashListRow(
-                title: zone.name,
-                subtitle: (zone.status ?? "unknown").capitalized,
-                avatarSeed: zone.name
-              )
+            DashNavigationSource(
+              destination: .cache(zone.id),
+              schedule: dismissAfter
+            ) { navigate in
+              Button {
+                onSelect(zone, navigate)
+              } label: {
+                DashListRow(
+                  title: zone.name,
+                  subtitle: (zone.status ?? "unknown").capitalized,
+                  avatarSeed: zone.name
+                )
+              }
+              .buttonStyle(DashSurfaceButtonStyle())
             }
-            .buttonStyle(DashSurfaceButtonStyle())
             if index < zones.count - 1 {
               DashListGroupDivider()
             }
