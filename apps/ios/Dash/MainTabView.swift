@@ -596,7 +596,8 @@ struct MainTabView: View {
           DashNavigationSource(
             destination: .settings,
             presentation: .workspaceOverlay,
-            onNavigate: synchronizeNavigatorAccountScopes
+            onNavigate: synchronizeNavigatorAccountScopes,
+            embedsAnchor: true
           ) { navigate in
             HeaderProfileButton(
               action: { navigate() },
