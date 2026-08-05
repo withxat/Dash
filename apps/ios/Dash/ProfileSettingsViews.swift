@@ -656,6 +656,10 @@ struct SettingsView: View {
               subtitle: profileSubtitle
             ) {
               UserAvatar(email: model.user?.email ?? "", size: 56)
+                // The seat the header avatar's workspace flight lands on; the
+                // claim mechanism keeps this occurrence hidden while the
+                // transition proxy owns the avatar's identity.
+                .dashNavigationLanding(.settingsProfileAvatar)
             }
           }
           .accessibilityIdentifier("settings-profile-row")

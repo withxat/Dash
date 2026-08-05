@@ -26,6 +26,14 @@ struct DashNavigationSemanticID: Hashable {
   let value: String
 }
 
+extension DashNavigationSemanticID {
+  /// The settings page's profile avatar — the seat the header avatar's
+  /// workspace-present flight lands on, and where the return flight departs.
+  static let settingsProfileAvatar = DashNavigationSemanticID(
+    namespace: "workspace-landing",
+    value: "settings-profile-avatar")
+}
+
 /// One concrete occurrence of a semantic source. The same resource can appear
 /// in Home recents, a feature list, and a pinned card at the same time.
 struct DashNavigationOrigin: Hashable {
@@ -165,6 +173,16 @@ extension Destination {
       prefix.isEmpty ? .entityDetail : .detail
     default:
       .detail
+    }
+  }
+
+  /// The in-page landmark a workspace present flies its source visual onto.
+  /// Only pages that visibly re-seat their source element publish one; every
+  /// other destination keeps the in-place identity crossfade.
+  fileprivate var dashNavigationLandingSemanticID: DashNavigationSemanticID? {
+    switch self {
+    case .settings: .settingsProfileAvatar
+    default: nil
     }
   }
 
@@ -375,6 +393,11 @@ final class DashNavigationAnchorRegistry {
   private var hostedFrames: [UUID: CGRect] = [:]
   private var sourceViews: [UUID: WeakSourceView] = [:]
   private var capturedVisuals: [UUID: CapturedVisual] = [:]
+  /// Landing seats published by destination pages. Keyed by semantic identity
+  /// because the transition renderer has no way to learn a fresh page's private
+  /// anchor UUID; the concrete occurrence re-registers under the same key on
+  /// every page instance.
+  private var landingInstanceIDs: [DashNavigationSemanticID: UUID] = [:]
   let claimState = ClaimState()
 
   func replaceFrames(_ frames: [UUID: CGRect]) {
@@ -399,6 +422,25 @@ final class DashNavigationAnchorRegistry {
   func unregisterSourceView(_ view: UIView, for instanceID: UUID) {
     guard sourceViews[instanceID]?.value === view else { return }
     sourceViews[instanceID] = nil
+  }
+
+  func registerLanding(instanceID: UUID, for semanticID: DashNavigationSemanticID) {
+    landingInstanceIDs[semanticID] = instanceID
+  }
+
+  /// A purged page may tear down after its successor registered the same seat;
+  /// only the current occupant may vacate the key.
+  func unregisterLanding(instanceID: UUID, for semanticID: DashNavigationSemanticID) {
+    guard landingInstanceIDs[semanticID] == instanceID else { return }
+    landingInstanceIDs[semanticID] = nil
+  }
+
+  /// Live occurrence of a destination-page landing seat. Valid only while that
+  /// page's probe is mounted in a window, so the caller resolves it after the
+  /// arriving page has laid out — never from a captured fallback frame.
+  func landingOrigin(for semanticID: DashNavigationSemanticID) -> DashNavigationOrigin? {
+    guard let instanceID = landingInstanceIDs[semanticID] else { return nil }
+    return DashNavigationOrigin(semanticID: semanticID, anchorInstanceID: instanceID)
   }
 
   func frame(for origin: DashNavigationOrigin) -> CGRect? {
@@ -511,10 +553,22 @@ private struct DashCanPresentPendingHomeActionKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+/// When set, an inner control (the header avatar circle) registers the
+/// navigation source anchor instead of the outer `DashNavigationSource` wrapper
+/// — so a workspace morph captures the face, not the glass chrome around it.
+private struct DashNavigationEmbeddedAnchorIDKey: EnvironmentKey {
+  static let defaultValue: UUID? = nil
+}
+
 extension EnvironmentValues {
   var destinationNavigator: DestinationNavigator? {
     get { self[DestinationNavigatorKey.self] }
     set { self[DestinationNavigatorKey.self] = newValue }
+  }
+
+  var dashNavigationEmbeddedAnchorID: UUID? {
+    get { self[DashNavigationEmbeddedAnchorIDKey.self] }
+    set { self[DashNavigationEmbeddedAnchorIDKey.self] = newValue }
   }
 
   /// True when this tab is selected, regardless of push depth. The tab flow
@@ -556,13 +610,34 @@ extension EnvironmentValues {
 extension View {
   /// Registers the frame for this exact source occurrence. A semantic resource
   /// ID alone is insufficient when the same resource is visible in two places.
-  func dashNavigationAnchor(instanceID: UUID) -> some View {
-    modifier(DashNavigationAnchorModifier(instanceID: instanceID))
+  func dashNavigationAnchor(
+    instanceID: UUID,
+    landing: DashNavigationSemanticID? = nil
+  ) -> some View {
+    modifier(DashNavigationAnchorModifier(instanceID: instanceID, landing: landing))
+  }
+
+  /// Publishes this view as a destination-page landing seat: the spot a
+  /// workspace morph flies the source visual onto. The claim mechanism hides
+  /// the live view while the flight proxy owns its identity, exactly like a
+  /// navigation source.
+  func dashNavigationLanding(_ semanticID: DashNavigationSemanticID) -> some View {
+    modifier(DashNavigationLandingModifier(semanticID: semanticID))
+  }
+}
+
+private struct DashNavigationLandingModifier: ViewModifier {
+  let semanticID: DashNavigationSemanticID
+  @State private var instanceID = UUID()
+
+  func body(content: Content) -> some View {
+    content.dashNavigationAnchor(instanceID: instanceID, landing: semanticID)
   }
 }
 
 private struct DashNavigationAnchorModifier: ViewModifier {
   let instanceID: UUID
+  var landing: DashNavigationSemanticID?
   @Environment(\.dashNavigationAnchorRegistry) private var registry
 
   func body(content: Content) -> some View {
@@ -590,6 +665,7 @@ private struct DashNavigationAnchorModifier: ViewModifier {
             .overlay {
               DashNavigationAnchorProbe(
                 instanceID: instanceID,
+                landing: landing,
                 registry: registry)
             }
         }
@@ -599,16 +675,17 @@ private struct DashNavigationAnchorModifier: ViewModifier {
 
 private struct DashNavigationAnchorProbe: UIViewRepresentable {
   let instanceID: UUID
+  var landing: DashNavigationSemanticID?
   let registry: DashNavigationAnchorRegistry?
 
   func makeUIView(context: Context) -> DashNavigationAnchorProbeView {
     let view = DashNavigationAnchorProbeView()
-    view.configure(instanceID: instanceID, registry: registry)
+    view.configure(instanceID: instanceID, landing: landing, registry: registry)
     return view
   }
 
   func updateUIView(_ uiView: DashNavigationAnchorProbeView, context: Context) {
-    uiView.configure(instanceID: instanceID, registry: registry)
+    uiView.configure(instanceID: instanceID, landing: landing, registry: registry)
   }
 
   static func dismantleUIView(_ uiView: DashNavigationAnchorProbeView, coordinator: ()) {
@@ -618,6 +695,7 @@ private struct DashNavigationAnchorProbe: UIViewRepresentable {
 
 private final class DashNavigationAnchorProbeView: UIView {
   private var instanceID: UUID?
+  private var landing: DashNavigationSemanticID?
   private weak var registry: DashNavigationAnchorRegistry?
 
   override init(frame: CGRect) {
@@ -633,20 +711,37 @@ private final class DashNavigationAnchorProbeView: UIView {
     fatalError("init(coder:) has not been implemented")
   }
 
-  func configure(instanceID: UUID, registry: DashNavigationAnchorRegistry?) {
-    if self.instanceID != instanceID || self.registry !== registry {
+  func configure(
+    instanceID: UUID,
+    landing: DashNavigationSemanticID?,
+    registry: DashNavigationAnchorRegistry?
+  ) {
+    if self.instanceID != instanceID || self.landing != landing
+      || self.registry !== registry
+    {
       tearDown()
       self.instanceID = instanceID
+      self.landing = landing
       self.registry = registry
     }
+    // Probe registration runs inside UIKit layout, so a landing seat is
+    // resolvable synchronously after the arriving page's first layoutIfNeeded —
+    // before its transition builds a proxy.
     registry?.registerSourceView(self, for: instanceID)
+    if let landing {
+      registry?.registerLanding(instanceID: instanceID, for: landing)
+    }
   }
 
   func tearDown() {
     if let instanceID {
       registry?.unregisterSourceView(self, for: instanceID)
+      if let landing {
+        registry?.unregisterLanding(instanceID: instanceID, for: landing)
+      }
     }
     instanceID = nil
+    landing = nil
     registry = nil
   }
 }
@@ -856,6 +951,14 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let controller: UIHostingController<DashHostedDestination>
   }
 
+  /// How a workspace morph samples its moving seat while the page train runs.
+  private enum WorkspaceMorphTracking {
+    /// Present: header is fixed, the settings seat rides in on the arriving page.
+    case landingIsEnd
+    /// Dismiss: the settings seat rides out on the departing page, header is fixed.
+    case landingIsStart
+  }
+
   /// A neutral full-screen surface separates the outgoing and arriving page
   /// timelines. Raster content stays at its natural size and only crossfades;
   /// the concrete source snapshot is the one local element carried across.
@@ -868,6 +971,15 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     /// timeline a reversible progress source without transforming any pixels.
     let timelineDriver: UIView?
     let claimedOrigin: DashNavigationOrigin?
+    /// Second claim for a destination-page landing seat, held for the same
+    /// span as `claimedOrigin` so the live seat never doubles the flight.
+    let claimedLanding: DashNavigationOrigin?
+    /// Fixed end of a morph flight (present: settled seat; dismiss: header slot).
+    let morphTargetFrame: CGRect?
+    /// Fixed start of a morph flight, captured before the page train moves.
+    let morphStartFrame: CGRect?
+    /// Which endpoint tracks the live landing seat through the page transform.
+    let morphTracking: WorkspaceMorphTracking?
 
     init(
       overlay: UIView,
@@ -875,7 +987,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       outgoingContent: UIView?,
       arrivingContent: UIView?,
       timelineDriver: UIView?,
-      claimedOrigin: DashNavigationOrigin?
+      claimedOrigin: DashNavigationOrigin?,
+      claimedLanding: DashNavigationOrigin? = nil,
+      morphTargetFrame: CGRect? = nil,
+      morphStartFrame: CGRect? = nil,
+      morphTracking: WorkspaceMorphTracking? = nil
     ) {
       self.overlay = overlay
       self.shell = shell
@@ -883,6 +999,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       self.arrivingContent = arrivingContent
       self.timelineDriver = timelineDriver
       self.claimedOrigin = claimedOrigin
+      self.claimedLanding = claimedLanding
+      self.morphTargetFrame = morphTargetFrame
+      self.morphStartFrame = morphStartFrame
+      self.morphTracking = morphTracking
     }
   }
 
@@ -934,6 +1054,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private var settledRevision: UInt64 = 0
   private var visibleController: UIViewController?
   private var activeTransition: ActiveTransition?
+  /// Landed morph overlays outliving their transition by one handoff beat.
+  /// The live element underneath is revealed on a later SwiftUI commit; these
+  /// must be swept before any new transition composes over them.
+  private var lingeringProxyOverlays: [UIView] = []
   private var transitionContentDisplayLink: CADisplayLink?
   private var pendingRequest: DashPageStackRequest?
   private var accountID: String?
@@ -1227,6 +1351,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     style requestedStyle: DashPageTransitionStyle,
     request: DashPageStackRequest
   ) {
+    removeLingeringProxyOverlays()
     let targetOwnsDestinationCanvas = !request.entries.isEmpty
     prepareDestinationCanvasTransition(targetVisible: targetOwnsDestinationCanvas)
     let isPush = requestedStyle.isPush
@@ -1341,10 +1466,22 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       }
       if hasProxy { source.alpha = 0 }
     case .workspacePresent:
-      target.alpha = 0
-      if !reduceMotion { target.transform = CGAffineTransform(scaleX: 0.985, y: 0.985) }
+      // Vertical train: the workspace descends off the bottom while settings
+      // rides in from above, edge to edge in the same animator, so the two
+      // pages read as one connected surface.
+      if reduceMotion {
+        target.alpha = 0
+      } else {
+        target.alpha = 1
+        target.transform = CGAffineTransform(translationX: 0, y: -view.bounds.height)
+      }
     case .workspaceDismiss:
-      target.alpha = reduceMotion ? 0 : 0.96
+      if reduceMotion {
+        target.alpha = 0
+      } else {
+        target.alpha = 1
+        target.transform = CGAffineTransform(translationX: 0, y: view.bounds.height)
+      }
     }
     if source.alpha != 0 { source.alpha = 1 }
   }
@@ -1395,16 +1532,44 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     case .workspacePresent:
       target.alpha = 1
       target.transform = .identity
+      if !reduceMotion {
+        source.transform = CGAffineTransform(translationX: 0, y: view.bounds.height)
+      }
+      // Morph frames are driven by the display-link timeline so they can track
+      // the seat through the page train. Alphas still settle here so a morph
+      // and the in-place identity crossfade share one fade curve.
       proxy?.outgoingContent?.alpha = 0
       proxy?.arrivingContent?.alpha = 1
     case .workspaceDismiss:
       target.alpha = 1
       target.transform = .identity
-      source.alpha = 0
-      if !reduceMotion { source.transform = CGAffineTransform(scaleX: 0.985, y: 0.985) }
-      proxy?.outgoingContent?.alpha = 0
-      proxy?.arrivingContent?.alpha = 1
+      if reduceMotion {
+        source.alpha = 0
+      } else {
+        source.transform = CGAffineTransform(translationX: 0, y: -view.bounds.height)
+      }
+      if proxy?.morphTracking == nil {
+        proxy?.outgoingContent?.alpha = 0
+        proxy?.arrivingContent?.alpha = 1
+      }
+    // Morph dismiss keeps the flying pixels — fading toward the empty header
+    // slot would dissolve the element the eye is tracking home.
     }
+  }
+
+  /// Places every morph layer on one circular rect. Frames are set without
+  /// implicit actions so the display-link timeline owns the interpolation.
+  private func applyMorphFlightFrame(_ proxy: TransitionProxy, at frame: CGRect) {
+    let cornerRadius = min(frame.width, frame.height) / 2
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for surface in [proxy.shell, proxy.outgoingContent, proxy.arrivingContent] {
+      guard let surface else { continue }
+      surface.frame = frame
+      surface.layer.cornerRadius = cornerRadius
+      surface.layer.masksToBounds = true
+    }
+    CATransaction.commit()
   }
 
   /// A push immediately followed by its own Back/Close is the one retarget that
@@ -1472,6 +1637,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     var arrivingContent: UIView?
     var timelineDriver: UIView?
     var claimedOrigin: DashNavigationOrigin?
+    var claimedLanding: DashNavigationOrigin?
+    var morphTargetFrame: CGRect?
+    var morphStartFrame: CGRect?
+    var morphTracking: WorkspaceMorphTracking?
 
     switch style {
     case .entityPush:
@@ -1510,24 +1679,67 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         outgoingContent = snapshotFromWindow(at: sourceFrame)
         outgoingContent?.frame = sourceFrame
       }
-      arrivingContent = snapshotRegion(
-        from: target,
-        at: sourceFrame,
-        afterScreenUpdates: true)
-      arrivingContent?.alpha = 0
       shell = makeIdentityTransitionShell(frame: sourceFrame)
+      // Preferred: fly the avatar from the header slot onto the page's own
+      // landing seat, resolved live now that the arriving page has laid out.
+      // The raster variant keeps text-backed avatars (initials) atomic on a
+      // freshly attached hierarchy. No seat means the page publishes none or
+      // it sits off-screen — crossfade in place like every other overlay.
+      if let landing = resolvedLandingOrigin(for: entry, in: target),
+        let landingFrame = anchorFrameInContainer(for: landing, liveOnly: true),
+        let seatVisual = rasterSnapshotRegion(
+          from: target,
+          at: landingFrame,
+          afterScreenUpdates: true)
+      {
+        seatVisual.alpha = 0
+        arrivingContent = seatVisual
+        configureMorphFlightLayer(seatVisual, departingFrom: sourceFrame)
+        configureMorphFlightLayer(outgoingContent, departingFrom: sourceFrame)
+        morphStartFrame = sourceFrame
+        morphTargetFrame = landingFrame
+        morphTracking = .landingIsEnd
+        claimedLanding = landing
+        timelineDriver = makeTransitionTimelineDriver()
+      } else {
+        arrivingContent = snapshotRegion(
+          from: target,
+          at: sourceFrame,
+          afterScreenUpdates: true)
+        arrivingContent?.alpha = 0
+      }
       claimedOrigin = entry.origin
     case .workspaceDismiss:
-      outgoingContent = snapshotRegion(
-        from: source,
-        at: sourceFrame,
-        afterScreenUpdates: false)
-      arrivingContent = snapshotRegion(
-        from: target,
-        at: sourceFrame,
-        afterScreenUpdates: true)
-      arrivingContent?.alpha = 0
-      shell = makeIdentityTransitionShell(frame: sourceFrame)
+      // Preferred: detach the avatar from the departing page and fly it home;
+      // the floated header avatar remounts under the landed proxy once the
+      // workspace settles.
+      if let landing = resolvedLandingOrigin(for: entry, in: source),
+        let departFrame = anchorFrameInContainer(for: landing, liveOnly: true),
+        let flying = snapshotRegion(
+          from: source,
+          at: departFrame,
+          afterScreenUpdates: false)
+      {
+        outgoingContent = flying
+        shell = makeIdentityTransitionShell(frame: departFrame)
+        configureMorphFlightLayer(flying, departingFrom: departFrame)
+        morphStartFrame = departFrame
+        morphTargetFrame = sourceFrame
+        morphTracking = .landingIsStart
+        claimedLanding = landing
+        timelineDriver = makeTransitionTimelineDriver()
+      } else {
+        outgoingContent = snapshotRegion(
+          from: source,
+          at: sourceFrame,
+          afterScreenUpdates: false)
+        arrivingContent = snapshotRegion(
+          from: target,
+          at: sourceFrame,
+          afterScreenUpdates: true)
+        arrivingContent?.alpha = 0
+        shell = makeIdentityTransitionShell(frame: sourceFrame)
+      }
       claimedOrigin = entry.origin
     case .flowPush, .flowPop:
       return nil
@@ -1548,13 +1760,76 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     if let timelineDriver { overlay.addSubview(timelineDriver) }
     view.addSubview(overlay)
     anchorRegistry?.claim(claimedOrigin)
+    anchorRegistry?.claim(claimedLanding)
     return TransitionProxy(
       overlay: overlay,
       shell: shell,
       outgoingContent: outgoingContent,
       arrivingContent: arrivingContent,
       timelineDriver: timelineDriver,
-      claimedOrigin: claimedOrigin)
+      claimedOrigin: claimedOrigin,
+      claimedLanding: claimedLanding,
+      morphTargetFrame: morphTargetFrame,
+      morphStartFrame: morphStartFrame,
+      morphTracking: morphTracking)
+  }
+
+  /// A flight layer travels over both moving pages, so its baked-in corner
+  /// pixels no longer match what is behind it; clipping every layer to the
+  /// avatar's own circle keeps the trip clean end to end.
+  private func configureMorphFlightLayer(
+    _ layerView: UIView?,
+    departingFrom frame: CGRect
+  ) {
+    guard let layerView else { return }
+    layerView.frame = frame
+    layerView.layer.cornerRadius = min(frame.width, frame.height) / 2
+    layerView.layer.masksToBounds = true
+  }
+
+  /// The landing seat the entry's destination publishes, if any. Resolved per
+  /// transition because every page instance registers its own occurrence.
+  private func landingOrigin(for entry: DashNavigationEntry) -> DashNavigationOrigin? {
+    guard let semanticID = entry.destination.dashNavigationLandingSemanticID else {
+      return nil
+    }
+    return anchorRegistry?.landingOrigin(for: semanticID)
+  }
+
+  /// Freshly attached SwiftUI pages sometimes register their landing probe one
+  /// layout pass late. One synchronous retry covers the settings avatar seat
+  /// without waiting a runloop, which would let the page train start unmorphed.
+  private func resolvedLandingOrigin(
+    for entry: DashNavigationEntry,
+    in page: UIView
+  ) -> DashNavigationOrigin? {
+    if let landing = landingOrigin(for: entry),
+      anchorFrameInContainer(for: landing, liveOnly: true) != nil
+    {
+      return landing
+    }
+    page.setNeedsLayout()
+    page.layoutIfNeeded()
+    return landingOrigin(for: entry)
+  }
+
+  /// Container-space frame for a morph endpoint. Unlike `transitionFrame`, this
+  /// keeps off-screen seats — the settings avatar starts above the canvas on
+  /// present and leaves above it on dismiss, and the flight still needs them.
+  private func anchorFrameInContainer(
+    for origin: DashNavigationOrigin?,
+    liveOnly: Bool = false
+  ) -> CGRect? {
+    guard let origin,
+      let globalFrame = liveOnly
+        ? anchorRegistry?.liveFrame(for: origin)
+        : anchorRegistry?.frame(for: origin),
+      globalFrame.width.isFinite, globalFrame.height.isFinite,
+      globalFrame.minX.isFinite, globalFrame.minY.isFinite
+    else { return nil }
+    let localFrame = view.convert(globalFrame, from: nil)
+    guard localFrame.width > 2, localFrame.height > 2 else { return nil }
+    return localFrame
   }
 
   private func resolvedTransitionStyle(
@@ -1700,7 +1975,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     // behind a nearly transparent proxy at the completion boundary.
     detach(transition.target)
     resetTransitionState(transition.target.view)
-    releaseAndRemove(transition.proxy)
+    releaseAndRemoveAfterHandoff(transition.proxy)
     visibleController = transition.source
     settledEntries = transition.desiredEntries
     settledRevision = transition.revision
@@ -1734,7 +2009,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     }
     detach(transition.source)
     resetTransitionState(transition.source.view)
-    releaseAndRemove(transition.proxy)
+    releaseAndRemoveAfterHandoff(transition.proxy)
     visibleController = transition.target
     settledEntries = transition.desiredEntries
     settledRevision = transition.revision
@@ -1755,6 +2030,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   }
 
   private func finishActiveTransitionImmediately() {
+    removeLingeringProxyOverlays()
     guard let transition = activeTransition else { return }
     stopTransitionContentTimeline(settlingAt: transition.isReversed ? 0 : 1)
     hostContext.interactionLockedEntryID = nil
@@ -1932,13 +2208,17 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   /// Entity pages fade through an opaque canvas instead of crossfading through
   /// one another. The source snapshot lingers locally while outgoing content
   /// clears, then the full-size destination arrives without masks or scaling.
+  /// Workspace morphs also ride this link so the flying avatar can track the
+  /// landing seat through the page train's live transform.
   /// Reading the active animator's fraction keeps immediate Back reversible.
   private func startTransitionContentTimelineIfNeeded() {
-    guard let transition = activeTransition, transition.proxy != nil else { return }
+    guard let transition = activeTransition, let proxy = transition.proxy else { return }
     switch transition.style {
     case .entityPush, .entityPop:
       break
-    case .flowPush, .flowPop, .workspacePresent, .workspaceDismiss:
+    case .workspacePresent, .workspaceDismiss:
+      guard proxy.morphTracking != nil else { return }
+    case .flowPush, .flowPop:
       return
     }
     stopTransitionContentTimeline()
@@ -1981,10 +2261,49 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
           transitionSegment(progress, from: 0.38, to: 0.68)
         proxy.shell?.alpha =
           1 - transitionSegment(progress, from: 0.38, to: 0.76)
-      case .flowPush, .flowPop, .workspacePresent, .workspaceDismiss:
+      case .workspacePresent, .workspaceDismiss:
+        updateWorkspaceMorphTimeline(proxy, progress: progress)
+      case .flowPush, .flowPop:
         break
       }
     }
+  }
+
+  /// Interpolates the flying avatar between the fixed header slot and the live
+  /// settings seat. Using the seat's current on-screen frame (not the settled
+  /// one) keeps the morph glued to the page train instead of racing ahead to
+  /// where the seat will eventually rest.
+  private func updateWorkspaceMorphTimeline(
+    _ proxy: TransitionProxy,
+    progress: CGFloat
+  ) {
+    guard let tracking = proxy.morphTracking,
+      let start = proxy.morphStartFrame,
+      let end = proxy.morphTargetFrame
+    else { return }
+    let liveLanding = anchorFrameInContainer(
+      for: proxy.claimedLanding,
+      liveOnly: true)
+    let from: CGRect
+    let to: CGRect
+    switch tracking {
+    case .landingIsEnd:
+      from = start
+      to = liveLanding ?? end
+    case .landingIsStart:
+      from = liveLanding ?? start
+      to = end
+    }
+    applyMorphFlightFrame(proxy, at: lerpedRect(from, to, progress: progress))
+  }
+
+  private func lerpedRect(_ from: CGRect, _ to: CGRect, progress: CGFloat) -> CGRect {
+    let t = min(max(progress, 0), 1)
+    return CGRect(
+      x: from.minX + (to.minX - from.minX) * t,
+      y: from.minY + (to.minY - from.minY) * t,
+      width: from.width + (to.width - from.width) * t,
+      height: from.height + (to.height - from.height) * t)
   }
 
   private func transitionSegment(
@@ -2008,7 +2327,39 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private func releaseAndRemove(_ proxy: TransitionProxy?) {
     guard let proxy else { return }
     anchorRegistry?.release(proxy.claimedOrigin)
+    anchorRegistry?.release(proxy.claimedLanding)
     proxy.overlay.removeFromSuperview()
+  }
+
+  /// Completion variant for landed morph flights. Claims are released now so
+  /// the live element re-renders beneath the pixel-matching proxy, but the
+  /// overlay leaves only after that reveal has had a SwiftUI commit — the
+  /// header avatar additionally waits on the asynchronous presentation-state
+  /// publish. Removing it in the same runloop blinks the element the eye just
+  /// tracked to its seat.
+  private func releaseAndRemoveAfterHandoff(_ proxy: TransitionProxy?) {
+    guard let proxy else { return }
+    guard proxy.morphTargetFrame != nil else {
+      releaseAndRemove(proxy)
+      return
+    }
+    anchorRegistry?.release(proxy.claimedOrigin)
+    anchorRegistry?.release(proxy.claimedLanding)
+    let overlay = proxy.overlay
+    lingeringProxyOverlays.append(overlay)
+    Task { @MainActor [weak self] in
+      try? await Task.sleep(for: .milliseconds(140))
+      overlay.removeFromSuperview()
+      self?.lingeringProxyOverlays.removeAll { $0 === overlay }
+    }
+  }
+
+  private func removeLingeringProxyOverlays() {
+    guard !lingeringProxyOverlays.isEmpty else { return }
+    for overlay in lingeringProxyOverlays {
+      overlay.removeFromSuperview()
+    }
+    lingeringProxyOverlays.removeAll()
   }
 }
 
@@ -3248,6 +3599,10 @@ struct DashNavigationSource<Content: View>: View {
   /// source geometry is captured on the tap, before the presenting surface
   /// unmounts; only the route mutation waits for the boundary to finish.
   var schedule: ((@escaping () -> Void) -> Void)?
+  /// When true, the source anchor is published through the environment so an
+  /// inner view (the header avatar circle) can register it. The outer wrapper
+  /// stays unanchored — otherwise the morph would capture glass chrome.
+  var embedsAnchor: Bool = false
   @ViewBuilder var content: (@escaping () -> Void) -> Content
 
   @Environment(\.destinationNavigator) private var navigator
@@ -3256,8 +3611,13 @@ struct DashNavigationSource<Content: View>: View {
   @State private var anchorInstanceID = UUID()
 
   var body: some View {
-    content(navigate)
-      .dashNavigationAnchor(instanceID: anchorInstanceID)
+    if embedsAnchor {
+      content(navigate)
+        .environment(\.dashNavigationEmbeddedAnchorID, anchorInstanceID)
+    } else {
+      content(navigate)
+        .dashNavigationAnchor(instanceID: anchorInstanceID)
+    }
   }
 
   private func navigate() {

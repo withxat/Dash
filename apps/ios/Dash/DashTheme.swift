@@ -325,8 +325,10 @@ enum DashTheme {
       static let flowExitDuration: TimeInterval = 0.21
       static let entityEnterDuration: TimeInterval = 0.29
       static let entityExitDuration: TimeInterval = 0.23
-      static let workspaceEnterDuration: TimeInterval = 0.28
-      static let workspaceExitDuration: TimeInterval = 0.21
+      // The workspace pair travels the full canvas height (vertical train),
+      // so it needs more time to read than the sibling fades.
+      static let workspaceEnterDuration: TimeInterval = 0.44
+      static let workspaceExitDuration: TimeInterval = 0.36
       static let dampingRatio: CGFloat = 0.9
     }
 

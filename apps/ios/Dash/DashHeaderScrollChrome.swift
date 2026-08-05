@@ -13,6 +13,9 @@ import VariableBlur
 /// the inbox's long-press pattern.
 struct HeaderProfileButton: View {
   @Environment(AppModel.self) private var model
+  /// Workspace present publishes its source anchor onto the avatar circle so
+  /// the morph captures the face, not the glass plate around it.
+  @Environment(\.dashNavigationEmbeddedAnchorID) private var embeddedAnchorID
   let action: @MainActor () -> Void
   /// Long-press opens the account switcher tray when provided.
   var onLongPress: (@MainActor () -> Void)? = nil
@@ -37,7 +40,7 @@ struct HeaderProfileButton: View {
         Button {
           performTap()
         } label: {
-          HeaderProfileAvatar(email: email)
+          avatar(email: email)
             .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
             .padding(-7)
         }
@@ -45,7 +48,7 @@ struct HeaderProfileButton: View {
         .buttonBorderShape(.circle)
       } else {
         Button(action: performTap) {
-          HeaderProfileAvatar(email: email)
+          avatar(email: email)
         }
         .buttonStyle(DashPressButtonStyle())
       }
@@ -76,6 +79,16 @@ struct HeaderProfileButton: View {
     }
     DashDelight.lightImpact()
     action()
+  }
+
+  @ViewBuilder
+  private func avatar(email: String) -> some View {
+    let mark = HeaderProfileAvatar(email: email)
+    if let embeddedAnchorID {
+      mark.dashNavigationAnchor(instanceID: embeddedAnchorID)
+    } else {
+      mark
+    }
   }
 }
 

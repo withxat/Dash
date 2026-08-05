@@ -3997,6 +3997,28 @@ private actor ZoneSecurityLevelTestLatch {
 }
 
 @MainActor
+@Test func navigationAnchorRegistryTracksDestinationLandingSeats() {
+  let registry = DashNavigationAnchorRegistry()
+  let firstSeat = UUID()
+  let secondSeat = UUID()
+  let semanticID = DashNavigationSemanticID.settingsProfileAvatar
+
+  registry.registerLanding(instanceID: firstSeat, for: semanticID)
+  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == firstSeat)
+
+  // A successor page may register before the departing host tears down.
+  registry.registerLanding(instanceID: secondSeat, for: semanticID)
+  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == secondSeat)
+
+  // Only the current occupant may vacate the key.
+  registry.unregisterLanding(instanceID: firstSeat, for: semanticID)
+  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == secondSeat)
+
+  registry.unregisterLanding(instanceID: secondSeat, for: semanticID)
+  #expect(registry.landingOrigin(for: semanticID) == nil)
+}
+
+@MainActor
 @Test func pageChromePreferencesMergeOuterHeaderWithInnerActions() {
   var preference = DashPageChromePreference()
   DashPageChromePreferenceKey.reduce(value: &preference) {
