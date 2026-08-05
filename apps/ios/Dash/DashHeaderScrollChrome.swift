@@ -500,16 +500,24 @@ enum DashWorkspaceWashRules {
   static func lift(for distance: CGFloat) -> CGFloat {
     min(max(distance, 0), depth)
   }
+
+  static func blendedDistance(
+    from source: CGFloat,
+    to target: CGFloat,
+    progress rawProgress: CGFloat
+  ) -> CGFloat {
+    let progress = min(max(rawProgress, 0), 1)
+    return source + ((target - source) * progress)
+  }
 }
 
-/// Scroll distance of the tab root that currently owns the workspace canvas.
-/// Written by that root's `DashHeaderScrollProbe`, read ONLY by
-/// `DashWorkspaceTopWash`.
+/// One tab root's private workspace-scroll snapshot. Written by that root's
+/// `DashHeaderScrollProbe`, read ONLY by the single `DashWorkspaceTopWash`.
 ///
 /// Same rule as `DashHeaderScrollState`, and for the same reason: this value
 /// moves on every scrolled frame, so it must never become `MainTabView` state.
-/// The tab view only hands the reference to the wash; reading it in that body
-/// would refresh every cached page host while the active page is moving.
+/// `MainTabView` only hands these references to the wash; reading a distance in
+/// that body would refresh every cached page host while a root is moving.
 @MainActor
 @Observable
 final class DashWorkspaceWashScroll {
@@ -531,11 +539,9 @@ private struct DashWorkspaceWashScrollKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-  /// Present on the ACTIVE tab page only (`MainTabView`), and cleared again for
-  /// pushed destinations (`DestinationStackHost`), so exactly one screen — the
-  /// visible root — drives the shared glow. An off-screen root would fight it
-  /// over the same store, and a pushed screen would wrench the light while the
-  /// transparent root it covers is still sliding away.
+  /// Each cached tab root receives its own snapshot store from `MainTabView`;
+  /// pushed destinations clear it in `DestinationStackHost`. The single wash
+  /// blends only the outgoing and selected snapshots during a tab handoff.
   var dashWorkspaceWashScroll: DashWorkspaceWashScroll? {
     get { self[DashWorkspaceWashScrollKey.self] }
     set { self[DashWorkspaceWashScrollKey.self] = newValue }
@@ -707,8 +713,8 @@ enum DashHeaderScrollProbeSchedule {
 /// destination feeds its own frost without a feature screen knowing it exists.
 struct DashHeaderScrollProbe: UIViewRepresentable {
   let scroll: DashHeaderScrollState
-  /// The workspace glow, on the one screen that owns it — nil everywhere else.
-  /// One observation feeds both: the frost wants a threshold off this distance,
+  /// This root's private workspace snapshot — nil on pushed destinations. One
+  /// observation feeds both: the frost wants a threshold off this distance,
   /// the glow wants the distance itself.
   var wash: DashWorkspaceWashScroll?
 
@@ -748,10 +754,9 @@ final class DashHeaderScrollProbeView: UIView {
 
   func configure(scroll: DashHeaderScrollState, wash: DashWorkspaceWashScroll?) {
     self.scroll = scroll
-    // Reassigned rather than merged: the store arrives when this screen becomes
-    // the active tab root and is taken away again when it stops being one, and
-    // the `report()` below hands the glow the new owner's position in the same
-    // turn the pager settles.
+    // Reassigned rather than merged: each cached root owns one stable snapshot,
+    // while pushed destinations receive nil. The one visible wash decides which
+    // two root snapshots participate in a tab handoff.
     self.wash = wash
     attachIfNeeded()
     report()

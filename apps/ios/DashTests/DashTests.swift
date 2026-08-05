@@ -2324,6 +2324,9 @@ private let watchtowerDropFrames: [CGRect] = [
   // flipping: it has no armed state to hold on to.
   #expect(DashWorkspaceWashRules.lift(for: DashHeaderScrimMetrics.enter) > 0)
   #expect(DashWorkspaceWashRules.lift(for: 120) == 120)
+  #expect(DashWorkspaceWashRules.blendedDistance(from: 120, to: 0, progress: 0) == 120)
+  #expect(DashWorkspaceWashRules.blendedDistance(from: 120, to: 0, progress: 0.5) == 60)
+  #expect(DashWorkspaceWashRules.blendedDistance(from: 120, to: 0, progress: 1) == 0)
 }
 
 /// Clamped at both ends. A rubber-band pull past the top would otherwise push
@@ -3767,15 +3770,19 @@ private actor ZoneSecurityLevelTestLatch {
       overlayPresented: false,
       coverPresented: false,
       awaitingAccountConfirmation: false,
-      awaitingAccountSwitch: false))
+      awaitingAccountSwitch: false,
+      tabTransitionActive: false,
+      pageTransitionActive: false))
 
-  for blocker in 0..<4 {
+  for blocker in 0..<6 {
     #expect(
       DashRouteConsumptionRules.isBlocked(
         overlayPresented: blocker == 0,
         coverPresented: blocker == 1,
         awaitingAccountConfirmation: blocker == 2,
-        awaitingAccountSwitch: blocker == 3))
+        awaitingAccountSwitch: blocker == 3,
+        tabTransitionActive: blocker == 4,
+        pageTransitionActive: blocker == 5))
   }
 }
 

@@ -3,27 +3,68 @@ import UIKit
 
 @testable import Dash
 
-@Test func tabPagerLockRetriesUseBoundedOffsets() {
-  #expect(TabPagerLockRetrySchedule.offsetsMS == [0, 16, 64, 160])
+@Test func tabFlowDirectionFollowsTheDestinationOrder() {
+  #expect(DashTabTransitionRules.direction(from: .home, to: .features) == .forward)
+  #expect(DashTabTransitionRules.direction(from: .home, to: .watchtower) == .forward)
+  #expect(DashTabTransitionRules.direction(from: .watchtower, to: .home) == .backward)
+  #expect(DashTabTransitionRules.direction(from: .features, to: .features) == .stationary)
 }
 
-@MainActor
-@Test func tabPagerLockRulesGateOnlyThePagerPan() {
-  let pager = UICollectionView(
-    frame: CGRect(x: 0, y: 0, width: 390, height: 844),
-    collectionViewLayout: UICollectionViewFlowLayout())
-  pager.isScrollEnabled = false
-  pager.alwaysBounceVertical = true
-  pager.panGestureRecognizer.isEnabled = true
+@Test func tabFlowMotionMirrorsAndReduceMotionRemovesTravel() {
+  #expect(
+    DashTabTransitionRules.signedTravel(
+      for: .forward,
+      rightToLeft: false,
+      reduceMotion: false) == DashTheme.Motion.tabStepSlide)
+  #expect(
+    DashTabTransitionRules.signedTravel(
+      for: .forward,
+      rightToLeft: true,
+      reduceMotion: false) == -DashTheme.Motion.tabStepSlide)
+  #expect(
+    DashTabTransitionRules.signedTravel(
+      for: .backward,
+      rightToLeft: false,
+      reduceMotion: false) == -DashTheme.Motion.tabStepSlide)
+  #expect(
+    DashTabTransitionRules.signedTravel(
+      for: .forward,
+      rightToLeft: false,
+      reduceMotion: true) == 0)
+}
 
-  TabPagerLockRules.apply(locked: true, to: pager)
+@Test func tabFlowDefersOnlyAcrossAnActiveParentAppearanceTransition() {
+  #expect(
+    DashTabFlowContainerRules.reconciliationDisposition(
+      isContainerVisible: true,
+      parentAppearanceTransitionActive: false) == .animate)
+  #expect(
+    DashTabFlowContainerRules.reconciliationDisposition(
+      isContainerVisible: false,
+      parentAppearanceTransitionActive: true) == .deferUntilVisible)
+  #expect(
+    DashTabFlowContainerRules.reconciliationDisposition(
+      isContainerVisible: false,
+      parentAppearanceTransitionActive: false) == .settleOffscreen)
+}
 
-  #expect(pager.isScrollEnabled)
-  #expect(!pager.alwaysBounceVertical)
-  #expect(!pager.panGestureRecognizer.isEnabled)
+@Test func pageTransitionRetainsRootChromeDisplacementUntilSettled() {
+  let popping = DashPagePresentationState(settledDepth: 1, isTransitioning: true)
+  #expect(popping.resolvedDepth(navigatorDepth: 0) == 1)
+  #expect(
+    shouldHideHeaderAvatar(
+      overlays: DashTrayPresentation(),
+      navigationDepth: popping.resolvedDepth(navigatorDepth: 0),
+      pageTransitionActive: popping.isTransitioning))
+  #expect(
+    shouldHideTabBar(
+      overlays: DashTrayPresentation(),
+      navigationDepth: popping.resolvedDepth(navigatorDepth: 0),
+      pageTransitionActive: popping.isTransitioning))
 
-  TabPagerLockRules.apply(locked: false, to: pager)
+  let settledRoot = DashPagePresentationState(settledDepth: 0, isTransitioning: false)
+  #expect(!settledRoot.occupiesWorkspace(navigatorDepth: 0))
 
-  #expect(pager.isScrollEnabled)
-  #expect(pager.panGestureRecognizer.isEnabled)
+  let outgoingDetail = DashPagePresentationState(settledDepth: 1, isTransitioning: false)
+  #expect(outgoingDetail.occupiesWorkspace(navigatorDepth: 0))
 }

@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
+const DASH_WORKSPACE_PATH = join(ROOT, "apps/ios/Dash/DashWorkspace.swift");
 const WATCHTOWER_PATH = join(ROOT, "apps/ios/Dash/WatchtowerView.swift");
 const DASH_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashChrome.swift");
 const DASH_THEME_PATH = join(ROOT, "apps/ios/Dash/DashTheme.swift");
@@ -14,6 +15,9 @@ const PROFILE_SETTINGS_PATH = join(
   "apps/ios/Dash/ProfileSettingsViews.swift",
 );
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
+const dashWorkspace = stripSwiftComments(
+  readFileSync(DASH_WORKSPACE_PATH, "utf8"),
+);
 const watchtower = stripSwiftComments(readFileSync(WATCHTOWER_PATH, "utf8"));
 const dashChrome = stripSwiftComments(readFileSync(DASH_CHROME_PATH, "utf8"));
 const dashTheme = stripSwiftComments(readFileSync(DASH_THEME_PATH, "utf8"));
@@ -219,15 +223,15 @@ if (!tabContainer) {
   issues.push("Could not locate MainTabView.tabContainer for shared-header validation.");
 } else {
   const rootStack = declarationBody(tabContainer, "ZStack(alignment: .bottom)");
-  const pagerIndex = rootStack
-    ? topLevelTokenIndex(rootStack, "TabView(selection:")
+  const flowIndex = rootStack
+    ? topLevelTokenIndex(rootStack, "tabFlow")
     : -1;
   const headerIndex = rootStack
     ? topLevelTokenIndex(rootStack, "sharedHeaderOverlay")
     : -1;
-  if (!rootStack || pagerIndex === -1 || headerIndex === -1 || headerIndex < pagerIndex) {
+  if (!rootStack || flowIndex === -1 || headerIndex === -1 || headerIndex < flowIndex) {
     issues.push(
-      "MainTabView.tabContainer must render sharedHeaderOverlay as a top-level sibling after the pager.",
+      "MainTabView.tabContainer must render sharedHeaderOverlay as a top-level sibling after the tab flow.",
     );
   } else {
     const headerTail = rootStack.slice(headerIndex, headerIndex + 160);
@@ -235,6 +239,106 @@ if (!tabContainer) {
       issues.push("sharedHeaderOverlay must not be placed behind the pager with a negative zIndex.");
     }
   }
+}
+
+for (const legacyPagerToken of [
+  "TabView(selection:",
+  ".tabViewStyle(.page",
+  "TabPagerScrollLock",
+]) {
+  if (mainTab.includes(legacyPagerToken)) {
+    issues.push(
+      `MainTabView must use the identity tab flow, not legacy pager token ${legacyPagerToken}.`,
+    );
+  }
+}
+
+if (
+  !mainTab.includes("homeWashScroll") ||
+  !mainTab.includes("featuresWashScroll") ||
+  !mainTab.includes("watchtowerWashScroll") ||
+  !mainTab.includes("outgoingScroll: outgoingSelection.map") ||
+  !/\\\.dashWorkspaceWashScroll,\s*hostContext\.workspaceWashScroll/.test(
+    dashWorkspace,
+  ) ||
+  dashWorkspace.includes(
+    "hostContext.isTabActive ? hostContext.workspaceWashScroll : nil",
+  )
+) {
+  issues.push(
+    "The one workspace wash must blend private root snapshots; tab activity must not drop the outgoing snapshot.",
+  );
+}
+
+if (
+  occurrences(mainTab, ".accessibilityHidden(outgoingSelection != nil)") < 1 ||
+  !mainTab.includes(
+    ".accessibilityHidden(sharedHeaderIsDisplaced || outgoingSelection != nil)",
+  ) ||
+  !dashWorkspace.includes("source.view.isUserInteractionEnabled = false") ||
+  !dashWorkspace.includes("target.view.isUserInteractionEnabled = false") ||
+  !dashWorkspace.includes("source.view.accessibilityElementsHidden = true") ||
+  !dashWorkspace.includes("target.view.accessibilityElementsHidden = true") ||
+  !dashWorkspace.includes("view.accessibilityElementsHidden = true") ||
+  !dashWorkspace.includes("enforceInteractionGate(for: transition)")
+) {
+  issues.push(
+    "Tab handoffs must disable touch and accessibility routing in both UIKit pages and shared SwiftUI chrome until they settle.",
+  );
+}
+
+const selectTab = declarationBody(mainTab, "private func selectTab");
+const tabSettleIndex = selectTab?.indexOf("completeTabTransitionImmediately()") ?? -1;
+const sameTabGuardIndex = selectTab?.indexOf("guard tab != selection") ?? -1;
+if (
+  !selectTab ||
+  selectTab.includes("Task.sleep") ||
+  selectTab.includes("Task.yield") ||
+  !mainTab.includes("onTransitionCompleted:") ||
+  !dashWorkspace.includes("animator.addCompletion") ||
+  !dashWorkspace.includes("callback(sourceTab, targetTab, generation)") ||
+  tabSettleIndex === -1 ||
+  sameTabGuardIndex === -1 ||
+  tabSettleIndex > sameTabGuardIndex
+) {
+  issues.push(
+    "Tab handoff cleanup must settle before same-tab routing and follow the UIKit compositor completion, never a fixed delay.",
+  );
+}
+
+if (
+  !mainTab.includes("DashTabFlowHost(") ||
+  !dashWorkspace.includes("final class DashTabFlowViewController") ||
+  !dashWorkspace.includes("addChild(child)") ||
+  !dashWorkspace.includes("child.didMove(toParent: self)") ||
+  !dashWorkspace.includes("child.willMove(toParent: nil)") ||
+  !dashWorkspace.includes("child.removeFromParent()") ||
+  !dashWorkspace.includes("detach(transition.source)") ||
+  !dashWorkspace.includes("case .deferUntilVisible:") ||
+  !dashWorkspace.includes("settlePendingRequestOffscreenIfNeeded()") ||
+  !dashWorkspace.includes("view.accessibilityElements = nil") ||
+  !dashWorkspace.includes("view.accessibilityElementsHidden = false")
+) {
+  issues.push(
+    "The identity tab flow must be one UIKit container that owns child containment and exposes only the settled page to accessibility.",
+  );
+}
+
+if (
+  !dashWorkspace.includes(
+    "controller.view.backgroundColor = UIColor(DashTheme.canvas)",
+  ) ||
+  !dashWorkspace.includes("controller.view.isOpaque = true") ||
+  !dashWorkspace.includes("destinationCanvasPlate.frame = view.bounds") ||
+  !dashWorkspace.includes("prepareDestinationCanvasTransition") ||
+  !dashWorkspace.includes(
+    "destinationCanvasPlate.alpha = targetOwnsDestinationCanvas ? 1 : 0",
+  ) ||
+  !dashWorkspace.includes("setDestinationCanvasVisible(!settledEntries.isEmpty)")
+) {
+  issues.push(
+    "Pushed pages must own an opaque full-window canvas plate that joins the route animator.",
+  );
 }
 
 const sharedHeader = declarationBody(

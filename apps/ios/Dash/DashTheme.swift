@@ -360,6 +360,19 @@ enum DashTheme {
       isReduced ? reduced : Animation.spring(response: 0.32, dampingFraction: 0.9)
     }
 
+    /// Family-style tab handoff: a short directional flight between two content
+    /// identities while the workspace wash, root header, and dock stay fixed.
+    static let tabStepDuration: TimeInterval = 0.26
+    static let tabStepSlide: CGFloat = 24
+    static let tabStepControlPoint1 = CGPoint(x: 0.22, y: 1)
+    static let tabStepControlPoint2 = CGPoint(x: 0.36, y: 1)
+    static let tabStep = Animation.timingCurve(
+      Double(tabStepControlPoint1.x),
+      Double(tabStepControlPoint1.y),
+      Double(tabStepControlPoint2.x),
+      Double(tabStepControlPoint2.y),
+      duration: tabStepDuration)
+
     // MARK: Tray
 
     /// During an internal route replacement, the compact card follows the active

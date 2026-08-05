@@ -1,8 +1,43 @@
 import CloudflareAPI
 import SwiftUI
-import UIKit
 
-private enum AppTab: Hashable { case home, features, watchtower }
+enum AppTab: Hashable { case home, features, watchtower }
+
+enum DashTabTransitionDirection: Equatable {
+  case stationary
+  case backward
+  case forward
+}
+
+enum DashTabTransitionRules {
+  static func direction(
+    from source: AppTab,
+    to target: AppTab
+  ) -> DashTabTransitionDirection {
+    guard source != target else { return .stationary }
+    guard
+      let sourceIndex = AppTab.orderedCases.firstIndex(of: source),
+      let targetIndex = AppTab.orderedCases.firstIndex(of: target)
+    else { return .stationary }
+    return targetIndex > sourceIndex ? .forward : .backward
+  }
+
+  static func signedTravel(
+    for direction: DashTabTransitionDirection,
+    rightToLeft: Bool,
+    reduceMotion: Bool
+  ) -> CGFloat {
+    let directionalSign: CGFloat =
+      switch direction {
+      case .stationary: 0
+      case .backward: -1
+      case .forward: 1
+      }
+    let layoutSign: CGFloat = rightToLeft ? -1 : 1
+    let travel = reduceMotion ? 0 : DashTheme.Motion.tabStepSlide
+    return travel * directionalSign * layoutSign
+  }
+}
 
 enum DashNavigatorAccountScopeRules {
   static func shouldSynchronize(during signOutPhase: DashActionPhase) -> Bool {
@@ -15,10 +50,12 @@ enum DashRouteConsumptionRules {
     overlayPresented: Bool,
     coverPresented: Bool,
     awaitingAccountConfirmation: Bool,
-    awaitingAccountSwitch: Bool
+    awaitingAccountSwitch: Bool,
+    tabTransitionActive: Bool,
+    pageTransitionActive: Bool
   ) -> Bool {
     overlayPresented || coverPresented || awaitingAccountConfirmation
-      || awaitingAccountSwitch
+      || awaitingAccountSwitch || tabTransitionActive || pageTransitionActive
   }
 }
 
@@ -35,6 +72,10 @@ struct MainTabView: View {
     DashWorkspaceWashPreset.defaultPreset.rawValue
   @Namespace private var workspaceHeaderGlass
   @State private var selection: AppTab = .home
+  @State private var outgoingSelection: AppTab?
+  @State private var tabTransitionDirection = DashTabTransitionDirection.stationary
+  @State private var tabTransitionProgress: CGFloat = 0
+  @State private var tabTransitionGeneration: UInt64 = 0
   @State private var homeNavigator = DestinationNavigator()
   @State private var featuresNavigator = DestinationNavigator()
   @State private var watchtowerNavigator = DestinationNavigator()
@@ -50,16 +91,19 @@ struct MainTabView: View {
   /// Add stays disabled until Watchtower has mounted the drag bridge after the
   /// editor morph; moving the menu into shared chrome must retain that gate.
   @State private var watchtowerEditorInteractionsReady = false
-  /// Handed down to the active page and back up to the wash — never read here.
-  /// It carries a per-frame scroll position, and this body owns the navigation
-  /// entries: reading it would refresh every cached host during a transition.
-  @State private var washScroll = DashWorkspaceWashScroll()
+  /// Each cached root retains its own scroll snapshot. MainTabView passes only
+  /// the references; the ONE wash view reads and blends old/target distances so
+  /// per-frame scrolling never refreshes the cached navigation hosts.
+  @State private var homeWashScroll = DashWorkspaceWashScroll()
+  @State private var featuresWashScroll = DashWorkspaceWashScroll()
+  @State private var watchtowerWashScroll = DashWorkspaceWashScroll()
   @State private var showsProfile = false
   @State private var profileTrayPath: [ProfileTrayPhase] = []
   @State private var showsIgnoreAllAlerts = false
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
   @State private var routeAfterAccountSwitch: DashRoute?
+  @State private var pagePresentationStates: [AppTab: DashPagePresentationState] = [:]
 
   init() {}
 
@@ -80,25 +124,37 @@ struct MainTabView: View {
       overlayPresented: overlayTrays.presented,
       coverPresented: workspacePresentationState.coverPresented,
       awaitingAccountConfirmation: accountRouteConfirmation != nil,
-      awaitingAccountSwitch: routeAfterAccountSwitch != nil)
+      awaitingAccountSwitch: routeAfterAccountSwitch != nil,
+      tabTransitionActive: outgoingSelection != nil,
+      pageTransitionActive: activePagePresentationState.isTransitioning)
   }
 
   private var workspaceWashPreset: DashWorkspaceWashPreset {
     DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
   }
 
+  private func workspaceWashScroll(for tab: AppTab) -> DashWorkspaceWashScroll {
+    switch tab {
+    case .home: homeWashScroll
+    case .features: featuresWashScroll
+    case .watchtower: watchtowerWashScroll
+    }
+  }
+
   private var hidesDock: Bool {
     shouldHideTabBar(
       overlays: overlayTrays,
-      navigationDepth: activeNavigationDepth
-    ) || watchtowerCustomization.isEditing
+      navigationDepth: activeNavigationDepth,
+      pageTransitionActive: activePagePresentationState.isTransitioning
+    ) || outgoingPageOccupiesWorkspace || watchtowerCustomization.isEditing
   }
 
   private var sharedHeaderIsDisplaced: Bool {
     shouldHideHeaderAvatar(
       overlays: overlayTrays,
-      navigationDepth: activeNavigationDepth
-    )
+      navigationDepth: activeNavigationDepth,
+      pageTransitionActive: activePagePresentationState.isTransitioning
+    ) || outgoingPageOccupiesWorkspace
   }
 
   private var hidesHeaderAvatar: Bool {
@@ -120,31 +176,37 @@ struct MainTabView: View {
       && !sharedHeaderIsDisplaced
   }
 
-  /// Pages swipe only between the tab roots. A pushed feature/detail owns
-  /// its own canvas, an open tray freezes the canvas underneath it, and a live
-  /// chart tooltip owns the finger it is scrubbing with. The scrub itself
-  /// already claims the pager's pan for the length of the hold
-  /// (`DitherHoldInteraction`); this holds the lock
-  /// across a SwiftUI rebuild that would otherwise hand it back mid-scrub.
-  /// Enforced via `TabPagerScrollLock` (pan recognizer only — never
-  /// `scrollDisabled` / `isScrollEnabled`).
-  private var pagerLocked: Bool {
-    activeNavigationDepth > 0
-      || overlayTrays.presented
-      || watchtowerCustomization.isEditing
-      || watchtowerCustomization.isScrubbing
+  private var activeNavigationDepth: Int {
+    activePagePresentationState.resolvedDepth(
+      navigatorDepth: activeNavigator.depth)
   }
 
-  private var activeNavigationDepth: Int {
-    switch selection {
-    case .home: homeNavigator.depth
-    case .features: featuresNavigator.depth
-    case .watchtower: watchtowerNavigator.depth
-    }
+  private var activePagePresentationState: DashPagePresentationState {
+    pagePresentationState(for: selection)
+  }
+
+  /// External routes can replace a tab while its pushed page is still leaving.
+  /// Keep root chrome displaced until that outgoing compositor has yielded the
+  /// physical workspace; a normal root-to-root tab flight leaves it visible.
+  private var outgoingPageOccupiesWorkspace: Bool {
+    guard let outgoingSelection else { return false }
+    return pagePresentationState(for: outgoingSelection).occupiesWorkspace(
+      navigatorDepth: navigator(for: outgoingSelection).depth)
+  }
+
+  private func pagePresentationState(for tab: AppTab) -> DashPagePresentationState {
+    pagePresentationStates[tab]
+      ?? DashPagePresentationState(
+        settledDepth: navigator(for: tab).depth,
+        isTransitioning: false)
   }
 
   private var activeNavigator: DestinationNavigator {
-    switch selection {
+    navigator(for: selection)
+  }
+
+  private func navigator(for tab: AppTab) -> DestinationNavigator {
+    switch tab {
     case .home: homeNavigator
     case .features: featuresNavigator
     case .watchtower: watchtowerNavigator
@@ -165,16 +227,20 @@ struct MainTabView: View {
     synchronizeNavigatorAccountScopes()
     switch route {
     case .watchtower:
-      selection = .watchtower
+      selectTab(.watchtower)
       watchtowerNavigator.reset()
     case .action(let action):
-      selection = .home
+      // The action immediately presents its own tray. Settle Home first so the
+      // tray never opens halfway through an unrelated tab-content handoff.
+      selectTab(.home, animated: false)
       homeNavigator.reset()
       guard let context = model.accountRequestContext else { return }
       model.pendingHomeAction = PendingHomeAction(action: action, context: context)
     default:
       guard let destination = route.destination else { break }
-      selection = .home
+      // A destination immediately starts its own page transition. Settle the
+      // owning tab first so two independent content handoffs never overlap.
+      selectTab(.home, animated: false)
       if destination == .settings {
         homeNavigator.reset(
           to: destination,
@@ -327,6 +393,9 @@ struct MainTabView: View {
           openVerifiedRoute(route)
         }
       }
+      .onDisappear {
+        completeTabTransitionImmediately()
+      }
       .dashTray(
         isPresented: $showsProfile,
         title: DashL10n.string("Switch account"),
@@ -366,65 +435,12 @@ struct MainTabView: View {
       }
   }
 
-  /// The three tab canvases ride in a paging `TabView`, so a horizontal drag
-  /// on any root slides between them with the finger. Every page stays mounted
-  /// (paging needs neighbors renderable mid-drag), which also keeps state and
-  /// in-flight loads alive across switches. A custom floating bar floats over
-  /// the content — sliding away when a pushed route or overlay wants the space.
+  /// Tabs are cached in one physical workspace rather than arranged as a
+  /// horizontal strip. A switch briefly exposes only the old and target roots,
+  /// each travelling a few points with direction; shared chrome never moves.
   private var tabContainer: some View {
-    // Chrome animations stay on avatar/dock subtrees only. A ZStack-wide
-    // `.animation(value:)` would otherwise retarget the page container's
-    // explicit transition onto an unrelated SwiftUI fade.
     ZStack(alignment: .bottom) {
-      TabView(selection: $selection) {
-        tabPage(.home) {
-          DestinationStackHost(
-            navigator: homeNavigator,
-            isTabActive: selection == .home,
-            canPresentPendingHomeAction: !overlayTrays.presented
-          ) {
-            HomeView()
-          }
-        }
-        tabPage(.features) {
-          DestinationStackHost(
-            navigator: featuresNavigator,
-            isTabActive: selection == .features
-          ) {
-            FeatureCatalogView()
-          }
-        }
-        tabPage(.watchtower) {
-          DestinationStackHost(
-            navigator: watchtowerNavigator,
-            isTabActive: selection == .watchtower
-          ) {
-            WatchtowerView(
-              customization: watchtowerCustomization,
-              cancelRequest: $watchtowerCancelRequest,
-              commitRequest: $watchtowerCommitRequest,
-              editorInteractionsReady: $watchtowerEditorInteractionsReady
-            )
-          }
-        }
-      }
-      .tabViewStyle(.page(indexDisplayMode: .never))
-      // Full-bleed pages: top so Home's in-page wash can cover the status bar
-      // (a behind-pager wash can't ride the push; a clipped page can't paint
-      // the status bar), bottom so the home-indicator band isn't a white
-      // scroll-edge pocket. Content still lays out in the safe area; only the
-      // page chrome extends. The floating dock sits on top.
-      .ignoresSafeArea(edges: [.top, .bottom])
-      // Lock ONLY the pager's pan recognizer. Do NOT use SwiftUI
-      // `scrollDisabled` here and do NOT flip `isScrollEnabled` on the
-      // UICollectionView — both freeze nested feature-list scrolling while a
-      // detail is pushed (environment leak / parent scroll-view hit testing).
-      .background { TabPagerScrollLock(locked: pagerLocked) }
-      // Depth flips with every push/pop; keep those updates off SwiftUI's
-      // animation system so the custom container owns the page transition.
-      .animation(nil, value: homeNavigator.depth)
-      .animation(nil, value: featuresNavigator.depth)
-      .animation(nil, value: watchtowerNavigator.depth)
+      tabFlow
 
       sharedHeaderOverlay
 
@@ -432,9 +448,16 @@ struct MainTabView: View {
       ZStack(alignment: .bottom) {
         if !hidesDock {
           DashFloatingTabBar(
-            selection: $selection,
+            selection: selection,
             watchtowerUnreadCount: model.watchtowerUnreadAlertCount ?? 0,
-            onReselect: popActiveTabToRoot,
+            onSelect: { tab in
+              guard outgoingSelection == nil else { return }
+              selectTab(tab)
+            },
+            onReselect: {
+              guard outgoingSelection == nil else { return }
+              popActiveTabToRoot()
+            },
             onRequestIgnoreAllAlerts: { showsIgnoreAllAlerts = true }
           )
           .frame(maxWidth: .infinity)
@@ -446,20 +469,22 @@ struct MainTabView: View {
         }
       }
       .animation(tabBarVisibilityAnimation, value: hidesDock)
-      .allowsHitTesting(!hidesDock)
+      .allowsHitTesting(!hidesDock && outgoingSelection == nil)
+      .accessibilityHidden(outgoingSelection != nil)
     }
-    // The workspace canvas and its ONE top light field, painted behind the
-    // pager. Every tab root is transparent (`dashCatalogScreen`), so all three
-    // share this single wash instead of carrying a copy each: the glow never
-    // rides a tab swipe, and it holds still while pages slide across it. It
-    // does ride the active root's *vertical* scroll — see `DashWorkspaceTopWash`.
+    // The workspace canvas and its ONE top light field stay behind the flow.
+    // Tab roots remain transparent, so neither old nor incoming content carries
+    // a duplicate wash through the directional handoff.
     .background {
       ZStack(alignment: .top) {
         DashTheme.canvas
         if workspaceWashPreset != .none {
           DashWorkspaceTopWash(
             color: DashTheme.workspaceWash(for: workspaceWashPreset),
-            scroll: washScroll
+            selectedScroll: workspaceWashScroll(for: selection),
+            outgoingScroll: outgoingSelection.map { workspaceWashScroll(for: $0) },
+            transitionProgress: tabTransitionProgress,
+            reduceMotion: reduceMotion
           )
         }
       }
@@ -468,7 +493,61 @@ struct MainTabView: View {
     .dashToastHost()
   }
 
-  /// ONE header layer above the pager. Normal roots show avatar + Watchtower
+  private var tabFlow: some View {
+    DashTabFlowHost(
+      homeNavigator: homeNavigator,
+      featuresNavigator: featuresNavigator,
+      watchtowerNavigator: watchtowerNavigator,
+      selection: selection,
+      outgoingSelection: outgoingSelection,
+      transitionDirection: tabTransitionDirection,
+      transitionGeneration: tabTransitionGeneration,
+      canPresentPendingHomeAction: !overlayTrays.presented,
+      homeWorkspaceWashScroll: homeWashScroll,
+      featuresWorkspaceWashScroll: featuresWashScroll,
+      watchtowerWorkspaceWashScroll: watchtowerWashScroll,
+      onHomePresentationStateChange: { state in
+        pagePresentationStates[.home] = state
+      },
+      onFeaturesPresentationStateChange: { state in
+        pagePresentationStates[.features] = state
+      },
+      onWatchtowerPresentationStateChange: { state in
+        pagePresentationStates[.watchtower] = state
+      },
+      onTransitionCompleted: { source, target, generation in
+        guard
+          tabTransitionGeneration == generation,
+          selection == target,
+          outgoingSelection == source
+        else { return }
+        settleTabTransition()
+      },
+      home: {
+        HomeView()
+      },
+      features: {
+        FeatureCatalogView()
+      },
+      watchtower: {
+        WatchtowerView(
+          customization: watchtowerCustomization,
+          cancelRequest: $watchtowerCancelRequest,
+          commitRequest: $watchtowerCommitRequest,
+          editorInteractionsReady: $watchtowerEditorInteractionsReady
+        )
+      }
+    )
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .ignoresSafeArea()
+    // Navigation depth belongs to the UIKit page stack. Keep those mutations
+    // out of the SwiftUI tab-flow transaction.
+    .animation(nil, value: homeNavigator.depth)
+    .animation(nil, value: featuresNavigator.depth)
+    .animation(nil, value: watchtowerNavigator.depth)
+  }
+
+  /// ONE header layer above the tab flow. Normal roots show avatar + Watchtower
   /// inbox; chart editing hands those exact slots to Cancel + Add/Done. Keeping
   /// every source and destination inside one Liquid Glass container lets iOS 26
   /// morph the shapes instead of compositing a second page-chrome layer.
@@ -486,14 +565,16 @@ struct MainTabView: View {
     // supplies their fade. Tab switches and editor enter/exit already originate
     // in explicit settle/morph transactions and keep their directional timing.
     .animation(tabBarVisibilityAnimation, value: sharedHeaderIsDisplaced)
-    // A finger-driven page swipe can update `selection` without the tab bar's
-    // explicit transaction. Give that handoff the same settle curve without
-    // keying off editor visibility, which would replace morph/morphExit.
+    // Selection still changes Watchtower's root-only trailing controls; keep
+    // that handoff independent from editor visibility and page motion.
     .animation(tabBarVisibilityAnimation, value: selection)
     .allowsHitTesting(
-      !hidesHeaderAvatar
-        || showsWatchtowerInboxButton
-        || showsWatchtowerEditorHeader)
+      outgoingSelection == nil
+        && (!hidesHeaderAvatar
+          || showsWatchtowerInboxButton
+          || showsWatchtowerEditorHeader)
+    )
+    .accessibilityHidden(sharedHeaderIsDisplaced || outgoingSelection != nil)
   }
 
   private var sharedHeaderControls: some View {
@@ -511,7 +592,7 @@ struct MainTabView: View {
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
           .transition(.opacity)
-        } else {
+        } else if !hidesHeaderAvatar {
           DashNavigationSource(
             destination: .settings,
             presentation: .workspaceOverlay,
@@ -537,12 +618,11 @@ struct MainTabView: View {
           // handoff can later bridge the avatar into Close without a jump.
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          // Keep the exact source occurrence mounted across Settings. The
-          // compositor claims it while one stable proxy changes avatar ↔ Close,
-          // then releases the same occurrence on return.
-          .opacity(hidesHeaderAvatar ? 0 : 1)
-          .allowsHitTesting(!hidesHeaderAvatar)
-          .accessibilityHidden(hidesHeaderAvatar)
+          // Liquid Glass is composited outside a normal opacity group on iOS
+          // 26, so an opacity-zero avatar can still render above page-local
+          // Back. Remove the root occurrence once the compositor has captured
+          // its source; remount it only after the returning page has settled.
+          .transition(.identity)
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -611,25 +691,6 @@ struct MainTabView: View {
     .accessibilityIdentifier("watchtower-add-chart")
   }
 
-  /// One page of the tab pager. Off-screen pages stay mounted for the
-  /// mid-drag preview and hide from the accessibility tree — inactive tabs
-  /// stay off VoiceOver and, mostly, off XCTest queries (the tests still
-  /// guard against duplicate labels).
-  private func tabPage<Content: View>(
-    _ tab: AppTab,
-    @ViewBuilder content: () -> Content
-  ) -> some View {
-    let isActive = selection == tab
-    return content()
-      // Only the visible root drives the shared glow. Off-screen pages stay
-      // mounted for the pager and keep probing their own frost, but they must
-      // not push their scroll position into the one wash behind all three.
-      .environment(\.dashWorkspaceWashScroll, isActive ? washScroll : nil)
-      .tag(tab)
-      .accessibilityHidden(!isActive)
-      .accessibilityElement(children: isActive ? .contain : .ignore)
-  }
-
   /// The floating bar rides in on first appearance without animation and slides
   /// on later navigation changes — SwiftUI only animates the value that flips.
   private var tabBarVisibilityAnimation: Animation {
@@ -644,7 +705,46 @@ struct MainTabView: View {
       : .move(edge: .bottom).combined(with: .opacity)
   }
 
-  /// Re-tapping the active tab clears its navigation path, matching `TabView`.
+  private func selectTab(_ tab: AppTab, animated: Bool = true) {
+    completeTabTransitionImmediately()
+    guard tab != selection else { return }
+    tabTransitionGeneration &+= 1
+
+    guard animated else {
+      selection = tab
+      return
+    }
+
+    let source = selection
+    withAnimation(
+      reduceMotion
+        ? .easeOut(duration: DashTheme.Motion.Page.reducedDuration)
+        : DashTheme.Motion.tabStep
+    ) {
+      outgoingSelection = source
+      tabTransitionDirection = DashTabTransitionRules.direction(from: source, to: tab)
+      tabTransitionProgress = 1
+      selection = tab
+    }
+  }
+
+  private func completeTabTransitionImmediately() {
+    guard outgoingSelection != nil else { return }
+    tabTransitionGeneration &+= 1
+    settleTabTransition()
+  }
+
+  private func settleTabTransition() {
+    var transaction = Transaction(animation: nil)
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      tabTransitionProgress = 0
+      outgoingSelection = nil
+      tabTransitionDirection = .stationary
+    }
+  }
+
+  /// Re-tapping the active tab clears its navigation path.
   private func popActiveTabToRoot() {
     activeNavigator.popToRoot()
   }
@@ -700,7 +800,7 @@ private struct WatchtowerAddChartToolbarLabel: View {
 /// The workspace's top light field: one continuous wash from the physical top
 /// edge — status bar included — falling off sideways and down into the canvas.
 ///
-/// ONE instance, painted by `MainTabView` *behind* the tab pager. It belongs to
+/// ONE instance, painted by `MainTabView` *behind* the tab flow. It belongs to
 /// the workspace canvas, not to any page: Home, Resources and Watchtower all
 /// show the same glow because they are transparent (`dashCatalogScreen`), not
 /// because each renders its own. Do not move a copy into a tab root — three
@@ -714,16 +814,37 @@ private struct WatchtowerAddChartToolbarLabel: View {
 /// content, so it rides the active root's scroll 1:1 and leaves with it. Only
 /// the header frost stays pinned up there. Pin both and the two read as one
 /// stuck slab — which is exactly what adding the frost made the glow look like.
-struct DashWorkspaceTopWash: View {
+@MainActor
+struct DashWorkspaceTopWash: View, @MainActor Animatable {
   let color: Color
-  /// The active root's scroll position. Read HERE and nowhere else: it moves
-  /// every frame, and this view is the only thing that should re-render for it.
-  let scroll: DashWorkspaceWashScroll
+  /// Root scroll positions are read HERE and nowhere else. They move every
+  /// frame, and this view is the only thing that should re-render for them.
+  let selectedScroll: DashWorkspaceWashScroll
+  let outgoingScroll: DashWorkspaceWashScroll?
+  var transitionProgress: CGFloat
+  let reduceMotion: Bool
+
+  var animatableData: CGFloat {
+    get { transitionProgress }
+    set { transitionProgress = newValue }
+  }
 
   /// Fall-off distance from the physical top edge.
   private let depth = DashWorkspaceWashRules.depth
 
-  var body: some View {
+  private var progress: CGFloat {
+    min(max(transitionProgress, 0), 1)
+  }
+
+  private var scrollDistance: CGFloat {
+    guard let outgoingScroll else { return selectedScroll.distance }
+    return DashWorkspaceWashRules.blendedDistance(
+      from: outgoingScroll.distance,
+      to: selectedScroll.distance,
+      progress: progress)
+  }
+
+  private var washField: some View {
     ZStack {
       LinearGradient(
         stops: [
@@ -743,188 +864,29 @@ struct DashWorkspaceTopWash: View {
     }
     .frame(height: depth)
     .frame(maxWidth: .infinity)
-    .offset(y: -DashWorkspaceWashRules.lift(for: scroll.distance))
+  }
+
+  @ViewBuilder
+  var body: some View {
+    Group {
+      if reduceMotion, let outgoingScroll {
+        // Reduced Motion keeps both fields stationary and crossfades them. The
+        // normal path moves the one field between the two content positions.
+        ZStack {
+          washField
+            .offset(y: -DashWorkspaceWashRules.lift(for: outgoingScroll.distance))
+            .opacity(1 - progress)
+          washField
+            .offset(y: -DashWorkspaceWashRules.lift(for: selectedScroll.distance))
+            .opacity(progress)
+        }
+      } else {
+        washField
+          .offset(y: -DashWorkspaceWashRules.lift(for: scrollDistance))
+      }
+    }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
-  }
-}
-
-/// Disables the page `TabView`'s horizontal paging pan while a pushed screen
-/// or tray owns the canvas. Recent iOS backs the pager with a
-/// `UICollectionView` (`isPagingEnabled` often false) — detect by geometry,
-/// then re-apply on hierarchy changes and a short retry window (SwiftUI can
-/// rebuild and re-enable the pan immediately after an update).
-///
-/// Only the pan recognizer is toggled. Flipping `isScrollEnabled` (or using
-/// SwiftUI `scrollDisabled` on the `TabView`) freezes nested feature lists
-/// inside the page cells.
-private struct TabPagerScrollLock: UIViewRepresentable {
-  var locked: Bool
-
-  func makeUIView(context: Context) -> TabPagerScrollLockView {
-    TabPagerScrollLockView()
-  }
-
-  func updateUIView(_ uiView: TabPagerScrollLockView, context: Context) {
-    uiView.setLocked(locked)
-  }
-
-  static func dismantleUIView(
-    _ uiView: TabPagerScrollLockView,
-    coordinator: ()
-  ) {
-    uiView.tearDown()
-  }
-}
-
-enum TabPagerLockRules {
-  @MainActor
-  static func apply(locked: Bool, to pager: UIScrollView) {
-    // Keep scrolling enabled so nested lists inside page cells still receive
-    // vertical pans; only the pager's own pan recognizer is gated.
-    if !pager.isScrollEnabled {
-      pager.isScrollEnabled = true
-    }
-    if let collection = pager as? UICollectionView, collection.alwaysBounceVertical {
-      collection.alwaysBounceVertical = false
-    }
-    let panEnabled = !locked
-    if pager.panGestureRecognizer.isEnabled != panEnabled {
-      pager.panGestureRecognizer.isEnabled = panEnabled
-    }
-  }
-}
-
-enum TabPagerLockRetrySchedule {
-  static let offsetsMS: [Int64] = [0, 16, 64, 160]
-}
-
-private final class TabPagerScrollLockView: UIView {
-  private var locked = false
-  private var isTearingDown = false
-  private var retryTask: Task<Void, Never>?
-  private weak var pager: UIScrollView?
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    isUserInteractionEnabled = false
-    isHidden = true
-    backgroundColor = .clear
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) { fatalError() }
-
-  override func willMove(toWindow newWindow: UIWindow?) {
-    if newWindow == nil {
-      tearDown()
-    }
-    super.willMove(toWindow: newWindow)
-  }
-
-  override func didMoveToWindow() {
-    super.didMoveToWindow()
-    guard window != nil else { return }
-    isTearingDown = false
-    resolveAndApply()
-    scheduleRetries()
-  }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    resolveAndApply()
-  }
-
-  func setLocked(_ locked: Bool) {
-    self.locked = locked
-    resolveAndApply()
-    scheduleRetries()
-  }
-
-  fileprivate func tearDown() {
-    isTearingDown = true
-    retryTask?.cancel()
-    retryTask = nil
-    if let pager {
-      TabPagerLockRules.apply(locked: false, to: pager)
-    }
-    pager = nil
-  }
-
-  private func scheduleRetries() {
-    retryTask?.cancel()
-    guard window != nil, !isTearingDown else {
-      retryTask = nil
-      return
-    }
-    let expectedLocked = locked
-    retryTask = Task { @MainActor [weak self] in
-      var previousOffsetMS: Int64 = 0
-      for offsetMS in TabPagerLockRetrySchedule.offsetsMS {
-        let delayMS = offsetMS - previousOffsetMS
-        previousOffsetMS = offsetMS
-        if delayMS > 0 {
-          do {
-            try await Task.sleep(for: .milliseconds(delayMS))
-          } catch {
-            return
-          }
-        }
-
-        guard
-          !Task.isCancelled,
-          let self,
-          self.window != nil,
-          !self.isTearingDown,
-          self.locked == expectedLocked
-        else {
-          return
-        }
-        self.resolveAndApply()
-      }
-      self?.retryTask = nil
-    }
-  }
-
-  private func resolveAndApply() {
-    guard window != nil, !isTearingDown else { return }
-    if let pager, pager.window !== window {
-      TabPagerLockRules.apply(locked: false, to: pager)
-      self.pager = nil
-    }
-
-    let resolved = pager ?? Self.findTabPager(from: self)
-    guard let resolved else { return }
-    pager = resolved
-    TabPagerLockRules.apply(locked: locked, to: resolved)
-  }
-
-  /// Walk ancestors and shallow children for the three-tab pager. Do not deep-
-  /// search page content — feature screens can host their own horizontal
-  /// scrolls.
-  private static func findTabPager(from view: UIView) -> UIScrollView? {
-    var node: UIView? = view
-    while let current = node {
-      if let scroll = current as? UIScrollView, isTabPager(scroll) {
-        return scroll
-      }
-      for child in current.subviews {
-        if let scroll = child as? UIScrollView, isTabPager(scroll) {
-          return scroll
-        }
-        for grand in child.subviews {
-          if let scroll = grand as? UIScrollView, isTabPager(scroll) {
-            return scroll
-          }
-        }
-      }
-      node = current.superview
-    }
-    return nil
-  }
-
-  private static func isTabPager(_ scroll: UIScrollView) -> Bool {
-    DashScrollViewConfigurator.isTabPager(scroll)
   }
 }
 
@@ -955,11 +917,11 @@ extension AppTab {
 /// lives in `DashDockMetrics`. Watchtower with an active inbox long-presses into
 /// the shared Ignore-all confirmation tray.
 private struct DashFloatingTabBar: View {
-  @Binding var selection: AppTab
+  let selection: AppTab
   let watchtowerUnreadCount: Int
+  let onSelect: (AppTab) -> Void
   let onReselect: () -> Void
   var onRequestIgnoreAllAlerts: () -> Void = {}
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var tabs: [AppTab] { AppTab.orderedCases }
   private var barWidth: CGFloat { DashDockMetrics.cell * CGFloat(tabs.count) }
@@ -1033,9 +995,7 @@ private struct DashFloatingTabBar: View {
     if isActive {
       onReselect()
     } else {
-      withAnimation(reduceMotion ? nil : DashTheme.Motion.settle) {
-        selection = tab
-      }
+      onSelect(tab)
     }
   }
 
@@ -1115,15 +1075,18 @@ private struct DashTabIcon: View {
 /// can slide up from the bottom without fighting the dock.
 func shouldHideTabBar(
   overlays: DashTrayPresentation,
-  navigationDepth: Int
+  navigationDepth: Int,
+  pageTransitionActive: Bool = false
 ) -> Bool {
-  navigationDepth > 0 || overlays.presented
+  navigationDepth > 0 || overlays.presented || pageTransitionActive
 }
 
-/// The floating header avatar clears out for any overlay or pushed route.
+/// Root header controls stay displaced until the page compositor has actually
+/// settled, not merely until the target navigation path reaches depth zero.
 func shouldHideHeaderAvatar(
   overlays: DashTrayPresentation,
-  navigationDepth: Int
+  navigationDepth: Int,
+  pageTransitionActive: Bool = false
 ) -> Bool {
-  navigationDepth > 0 || overlays.presented
+  navigationDepth > 0 || overlays.presented || pageTransitionActive
 }

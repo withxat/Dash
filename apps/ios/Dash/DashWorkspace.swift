@@ -517,9 +517,9 @@ extension EnvironmentValues {
     set { self[DestinationNavigatorKey.self] = newValue }
   }
 
-  /// True when this tab is the selected page, regardless of push depth. Every
-  /// page stays mounted for the pager, so heavy roots gate their network loads
-  /// on this to defer work until the tab is actually shown.
+  /// True when this tab is selected, regardless of push depth. The tab flow
+  /// retains inactive page stacks as detached controllers, so heavy roots use
+  /// this to defer work until their tab is actually attached and shown.
   var dashTabActive: Bool {
     get { self[DashTabActiveKey.self] }
     set { self[DashTabActiveKey.self] = newValue }
@@ -653,6 +653,21 @@ private final class DashNavigationAnchorProbeView: UIView {
 
 // MARK: - Custom page stack
 
+struct DashPagePresentationState: Equatable {
+  let settledDepth: Int
+  let isTransitioning: Bool
+
+  func resolvedDepth(navigatorDepth: Int) -> Int {
+    // The navigator leads on push; the compositor leads on pop. Taking both
+    // prevents root chrome from returning before either owner reaches root.
+    max(navigatorDepth, settledDepth)
+  }
+
+  func occupiesWorkspace(navigatorDepth: Int) -> Bool {
+    resolvedDepth(navigatorDepth: navigatorDepth) > 0 || isTransitioning
+  }
+}
+
 @MainActor
 @Observable
 private final class DashPageHostContext {
@@ -736,7 +751,7 @@ private struct DashHostedRoot<Root: View>: View {
     )
     .environment(
       \.dashWorkspaceWashScroll,
-      hostContext.isTabActive ? hostContext.workspaceWashScroll : nil
+      hostContext.workspaceWashScroll
     )
     .environment(\.locale, hostContext.locale)
     .environment(\.dynamicTypeSize, hostContext.dynamicTypeSize)
@@ -911,6 +926,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private let anchorRegistry: DashNavigationAnchorRegistry?
   private let presentationState: DashWorkspacePresentationState?
   private let rootController: UIHostingController<DashHostedRoot<Root>>
+  private let destinationCanvasPlate = UIView()
+  private var onPresentationStateChange: (DashPagePresentationState) -> Void
 
   private var entryHosts: [DashNavigationEntry.ID: EntryHost] = [:]
   private var settledEntries: [DashNavigationEntry] = []
@@ -926,6 +943,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   /// Route updates are deferred until this is ended so begin/end can never
   /// land on different cached pages.
   private var parentAppearanceTransitionChild: UIViewController?
+  private var pendingPresentationReport: DashPagePresentationState?
+  private var lastDeliveredPresentationState: DashPagePresentationState?
 
   override var shouldAutomaticallyForwardAppearanceMethods: Bool { false }
 
@@ -942,7 +961,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize,
-    accountID: String?
+    accountID: String?,
+    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void
   ) {
     let contentBox = DashRootContentBox(content: root)
     let hostContext = DashPageHostContext(
@@ -960,6 +980,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     self.anchorRegistry = anchorRegistry
     self.presentationState = presentationState
     self.accountID = accountID
+    self.onPresentationStateChange = onPresentationStateChange
     self.rootController = UIHostingController(
       rootView: DashHostedRoot(
         contentBox: contentBox,
@@ -982,9 +1003,20 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     view.backgroundColor = .clear
     view.isOpaque = false
     view.clipsToBounds = true
+    destinationCanvasPlate.frame = view.bounds
+    destinationCanvasPlate.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    destinationCanvasPlate.backgroundColor = UIColor(DashTheme.canvas)
+    destinationCanvasPlate.isOpaque = true
+    destinationCanvasPlate.isUserInteractionEnabled = false
+    destinationCanvasPlate.isAccessibilityElement = false
+    destinationCanvasPlate.accessibilityElementsHidden = true
+    destinationCanvasPlate.alpha = 0
+    destinationCanvasPlate.isHidden = true
+    view.addSubview(destinationCanvasPlate)
     rootController.view.backgroundColor = .clear
     attach(rootController, above: nil)
     visibleController = rootController
+    reportPresentationState()
   }
 
   override func viewDidLayoutSubviews() {
@@ -1037,8 +1069,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     workspaceWashScroll: DashWorkspaceWashScroll?,
     locale: Locale,
     dynamicTypeSize: DynamicTypeSize,
+    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void,
     request: DashPageStackRequest
   ) {
+    self.onPresentationStateChange = onPresentationStateChange
     hostContext.update(
       isTabActive: isTabActive,
       canPresentPendingHomeAction: canPresentPendingHomeAction,
@@ -1047,7 +1081,35 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize)
     loadViewIfNeeded()
+    // SwiftUI's outer accessibility modifiers do not reliably penetrate a
+    // UIViewControllerRepresentable that keeps multiple child controllers
+    // cached. Enforce tab ownership at the UIKit boundary so an invisible
+    // sibling can never pollute VoiceOver/XCUI visible-point resolution.
+    view.isUserInteractionEnabled = isTabActive
+    view.accessibilityElementsHidden = !isTabActive
     reconcile(request)
+  }
+
+  private func reportPresentationState() {
+    let state = DashPagePresentationState(
+      settledDepth: settledEntries.count,
+      isTransitioning: activeTransition != nil)
+    if lastDeliveredPresentationState == state {
+      // Also cancel a queued intermediate report if the compositor returned to
+      // the state SwiftUI already owns before that report could be delivered.
+      pendingPresentationReport = nil
+      return
+    }
+    guard pendingPresentationReport != state else { return }
+    pendingPresentationReport = state
+    // Reconciliation runs from updateUIViewController. Publish on the next
+    // MainActor turn so SwiftUI never receives a state mutation mid-update.
+    Task { @MainActor [weak self] in
+      guard let self, self.pendingPresentationReport == state else { return }
+      self.pendingPresentationReport = nil
+      self.lastDeliveredPresentationState = state
+      self.onPresentationStateChange(state)
+    }
   }
 
   private func reconcile(_ request: DashPageStackRequest) {
@@ -1083,6 +1145,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     guard desiredIDs != settledIDs else {
       settledEntries = request.entries
       settledRevision = max(settledRevision, request.revision)
+      reportPresentationState()
       return
     }
 
@@ -1108,6 +1171,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         settledEntries = request.entries
         settledRevision = request.revision
         purgeEntryHosts(retaining: Set(desiredIDs))
+        reportPresentationState()
         return
       }
     }
@@ -1121,6 +1185,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       settledEntries = request.entries
       settledRevision = request.revision
       purgeEntryHosts(retaining: Set(desiredIDs))
+      reportPresentationState()
       return
     }
 
@@ -1162,6 +1227,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     style requestedStyle: DashPageTransitionStyle,
     request: DashPageStackRequest
   ) {
+    let targetOwnsDestinationCanvas = !request.entries.isEmpty
+    prepareDestinationCanvasTransition(targetVisible: targetOwnsDestinationCanvas)
     let isPush = requestedStyle.isPush
     hostContext.interactionLockedEntryID = isPush ? request.entries.last?.id : nil
     attach(target, above: isPush ? source : nil)
@@ -1209,6 +1276,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       dampingRatio: request.reduceMotion ? 1 : DashTheme.Motion.Page.dampingRatio)
     animator.addAnimations { [weak self, weak source, weak target] in
       guard let self, let source, let target else { return }
+      self.destinationCanvasPlate.alpha = targetOwnsDestinationCanvas ? 1 : 0
       self.applyFinalTransitionState(
         style: style,
         source: source.view,
@@ -1225,6 +1293,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       desiredEntries: request.entries,
       revision: request.revision,
       appearanceWasBegun: appearanceWasBegun)
+    reportPresentationState()
     startTransitionContentTimelineIfNeeded()
     animator.addCompletion { [weak self, weak animator] position in
       guard let self, let animator,
@@ -1637,6 +1706,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     settledRevision = transition.revision
     activeTransition = nil
     purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
+    setDestinationCanvasVisible(!settledEntries.isEmpty)
+    reportPresentationState()
     if isContainerVisible, hostContext.isTabActive {
       UIAccessibility.post(notification: .screenChanged, argument: transition.source.view)
     }
@@ -1669,6 +1740,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     settledRevision = transition.revision
     activeTransition = nil
     purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
+    setDestinationCanvasVisible(!settledEntries.isEmpty)
+    reportPresentationState()
     let pendingChangesVisiblePage =
       pendingRequest.map {
         $0.entries.last?.id != transition.desiredEntries.last?.id
@@ -1703,6 +1776,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     settledRevision = transition.revision
     activeTransition = nil
     purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
+    setDestinationCanvasVisible(!settledEntries.isEmpty)
+    reportPresentationState()
   }
 
   private func finishParentChildAppearanceTransition() {
@@ -1743,6 +1818,21 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     settledEntries = entries
     settledRevision = revision
     purgeEntryHosts(retaining: Set(entries.map(\.id)))
+    setDestinationCanvasVisible(!entries.isEmpty)
+    reportPresentationState()
+  }
+
+  private func setDestinationCanvasVisible(_ visible: Bool) {
+    destinationCanvasPlate.layer.removeAllAnimations()
+    destinationCanvasPlate.alpha = visible ? 1 : 0
+    destinationCanvasPlate.isHidden = !visible
+  }
+
+  private func prepareDestinationCanvasTransition(targetVisible: Bool) {
+    let sourceVisible = !settledEntries.isEmpty
+    destinationCanvasPlate.layer.removeAllAnimations()
+    destinationCanvasPlate.isHidden = !(sourceVisible || targetVisible)
+    destinationCanvasPlate.alpha = sourceVisible ? 1 : 0
   }
 
   /// A deferred route may be replaced before its transition starts. Its source
@@ -1783,7 +1873,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         anchorRegistry: anchorRegistry,
         presentationState: presentationState,
         hostContext: hostContext))
-    controller.view.backgroundColor = .clear
+    // A pushed page owns the whole physical container, including both safe-area
+    // bands. UIKit's backing plate closes any gap before SwiftUI's ignored-safe-
+    // area background has rendered its first frame.
+    controller.view.backgroundColor = UIColor(DashTheme.canvas)
+    controller.view.isOpaque = true
     entryHosts[entry.id] = EntryHost(entry: entry, controller: controller)
     return controller
   }
@@ -1918,10 +2012,626 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   }
 }
 
+private struct DashTabPageUpdate {
+  let isTabActive: Bool
+  let canPresentPendingHomeAction: Bool
+  let splashLifted: Bool
+  let workspaceWashScroll: DashWorkspaceWashScroll
+  let locale: Locale
+  let dynamicTypeSize: DynamicTypeSize
+  let onPresentationStateChange: (DashPagePresentationState) -> Void
+  let request: DashPageStackRequest
+}
+
+@MainActor
+private final class DashTabPageSlot {
+  let controller: UIViewController
+  private let updatePage: (DashTabPageUpdate) -> Void
+
+  init(
+    controller: UIViewController,
+    updatePage: @escaping (DashTabPageUpdate) -> Void
+  ) {
+    self.controller = controller
+    self.updatePage = updatePage
+  }
+
+  func update(_ update: DashTabPageUpdate) {
+    updatePage(update)
+  }
+}
+
+private struct DashTabFlowRequest {
+  let selection: AppTab
+  let outgoingSelection: AppTab?
+  let direction: DashTabTransitionDirection
+  let generation: UInt64
+  let reduceMotion: Bool
+  let rightToLeft: Bool
+  let onTransitionCompleted: (AppTab, AppTab, UInt64) -> Void
+}
+
+enum DashTabFlowReconciliationDisposition: Equatable {
+  case animate
+  case deferUntilVisible
+  case settleOffscreen
+}
+
+enum DashTabFlowContainerRules {
+  static func reconciliationDisposition(
+    isContainerVisible: Bool,
+    parentAppearanceTransitionActive: Bool
+  ) -> DashTabFlowReconciliationDisposition {
+    if isContainerVisible { return .animate }
+    return parentAppearanceTransitionActive ? .deferUntilVisible : .settleOffscreen
+  }
+}
+
+/// Owns the three persistent page stacks as real UIKit children. At rest only
+/// the selected page participates in containment; a Family-style tab handoff
+/// temporarily attaches the source and target, then detaches the source without
+/// releasing it. This keeps each tab's state while giving UIKit and AX one
+/// unambiguous visible-controller tree.
+@MainActor
+final class DashTabFlowViewController: UIViewController {
+  private final class ActiveTransition {
+    let animator: UIViewPropertyAnimator
+    let sourceTab: AppTab
+    let targetTab: AppTab
+    let generation: UInt64
+    let source: UIViewController
+    let target: UIViewController
+    let appearanceWasBegun: Bool
+    let onCompleted: (AppTab, AppTab, UInt64) -> Void
+    var notifiesCompletion = true
+
+    init(
+      animator: UIViewPropertyAnimator,
+      sourceTab: AppTab,
+      targetTab: AppTab,
+      generation: UInt64,
+      source: UIViewController,
+      target: UIViewController,
+      appearanceWasBegun: Bool,
+      onCompleted: @escaping (AppTab, AppTab, UInt64) -> Void
+    ) {
+      self.animator = animator
+      self.sourceTab = sourceTab
+      self.targetTab = targetTab
+      self.generation = generation
+      self.source = source
+      self.target = target
+      self.appearanceWasBegun = appearanceWasBegun
+      self.onCompleted = onCompleted
+    }
+  }
+
+  private let pages: [AppTab: DashTabPageSlot]
+  private var currentTab: AppTab
+  private var activeTransition: ActiveTransition?
+  private var isContainerVisible = false
+  private var parentAppearanceChild: UIViewController?
+  private var pendingRequest: DashTabFlowRequest?
+
+  override var shouldAutomaticallyForwardAppearanceMethods: Bool { false }
+
+  fileprivate init(pages: [AppTab: DashTabPageSlot], selection: AppTab) {
+    self.pages = pages
+    self.currentTab = selection
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    view.backgroundColor = .clear
+    view.isOpaque = false
+    view.clipsToBounds = true
+    view.isAccessibilityElement = false
+    let selected = page(for: currentTab).controller
+    attach(selected, above: nil)
+    exposeOnly(selected)
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    for child in children {
+      child.view.frame = view.bounds
+    }
+  }
+
+  override func viewWillAppear(_ animated: Bool) {
+    super.viewWillAppear(animated)
+    finishParentAppearanceTransition()
+    let selected = page(for: currentTab).controller
+    selected.beginAppearanceTransition(true, animated: animated)
+    parentAppearanceChild = selected
+  }
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    finishParentAppearanceTransition()
+    isContainerVisible = true
+    reconcilePendingRequestIfNeeded()
+  }
+
+  override func viewWillDisappear(_ animated: Bool) {
+    super.viewWillDisappear(animated)
+    finishParentAppearanceTransition()
+    isContainerVisible = false
+    finishActiveTransition(notify: false)
+    let selected = page(for: currentTab).controller
+    selected.beginAppearanceTransition(false, animated: animated)
+    parentAppearanceChild = selected
+  }
+
+  override func viewDidDisappear(_ animated: Bool) {
+    finishParentAppearanceTransition()
+    super.viewDidDisappear(animated)
+    settlePendingRequestOffscreenIfNeeded()
+  }
+
+  fileprivate func updatePage(_ tab: AppTab, with update: DashTabPageUpdate) {
+    page(for: tab).update(update)
+  }
+
+  fileprivate func reconcile(_ request: DashTabFlowRequest) {
+    loadViewIfNeeded()
+
+    switch DashTabFlowContainerRules.reconciliationDisposition(
+      isContainerVisible: isContainerVisible,
+      parentAppearanceTransitionActive: parentAppearanceChild != nil)
+    {
+    case .animate:
+      pendingRequest = nil
+    case .deferUntilVisible:
+      pendingRequest = request
+      return
+    case .settleOffscreen:
+      pendingRequest = nil
+      settleOffscreen(request)
+      return
+    }
+
+    if let transition = activeTransition {
+      let requestMatchesTransition =
+        request.selection == transition.targetTab
+        && request.outgoingSelection == transition.sourceTab
+        && request.generation == transition.generation
+      if requestMatchesTransition {
+        enforceInteractionGate(for: transition)
+        return
+      }
+      finishActiveTransition(notify: false)
+    }
+
+    guard
+      let sourceTab = request.outgoingSelection,
+      sourceTab != request.selection
+    else {
+      showOnly(request.selection)
+      return
+    }
+
+    if currentTab != sourceTab {
+      showOnly(sourceTab)
+    }
+    startTransition(
+      from: sourceTab,
+      to: request.selection,
+      direction: request.direction,
+      generation: request.generation,
+      reduceMotion: request.reduceMotion,
+      rightToLeft: request.rightToLeft,
+      onCompleted: request.onTransitionCompleted)
+  }
+
+  private func page(for tab: AppTab) -> DashTabPageSlot {
+    guard let page = pages[tab] else {
+      preconditionFailure("Missing tab page for \(tab)")
+    }
+    return page
+  }
+
+  private func startTransition(
+    from sourceTab: AppTab,
+    to targetTab: AppTab,
+    direction: DashTabTransitionDirection,
+    generation: UInt64,
+    reduceMotion: Bool,
+    rightToLeft: Bool,
+    onCompleted: @escaping (AppTab, AppTab, UInt64) -> Void
+  ) {
+    let source = page(for: sourceTab).controller
+    let target = page(for: targetTab).controller
+    guard source !== target else {
+      showOnly(targetTab)
+      return
+    }
+
+    attach(target, above: source)
+    view.layoutIfNeeded()
+
+    let travel = DashTabTransitionRules.signedTravel(
+      for: direction,
+      rightToLeft: rightToLeft,
+      reduceMotion: reduceMotion)
+    resetVisualState(source.view)
+    target.view.layer.removeAllAnimations()
+    target.view.alpha = 0
+    target.view.transform = CGAffineTransform(translationX: travel, y: 0)
+    source.view.isUserInteractionEnabled = false
+    target.view.isUserInteractionEnabled = false
+    source.view.accessibilityElementsHidden = true
+    target.view.accessibilityElementsHidden = true
+    view.accessibilityElementsHidden = true
+
+    let appearanceWasBegun = isContainerVisible
+    if appearanceWasBegun {
+      source.beginAppearanceTransition(false, animated: true)
+      target.beginAppearanceTransition(true, animated: true)
+    }
+
+    let duration =
+      reduceMotion
+      ? DashTheme.Motion.Page.reducedDuration
+      : DashTheme.Motion.tabStepDuration
+    let timing =
+      reduceMotion
+      ? UICubicTimingParameters(animationCurve: .easeOut)
+      : UICubicTimingParameters(
+        controlPoint1: DashTheme.Motion.tabStepControlPoint1,
+        controlPoint2: DashTheme.Motion.tabStepControlPoint2)
+    let animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
+    let transition = ActiveTransition(
+      animator: animator,
+      sourceTab: sourceTab,
+      targetTab: targetTab,
+      generation: generation,
+      source: source,
+      target: target,
+      appearanceWasBegun: appearanceWasBegun,
+      onCompleted: onCompleted)
+    activeTransition = transition
+    animator.addAnimations {
+      source.view.alpha = 0
+      source.view.transform = CGAffineTransform(translationX: -travel, y: 0)
+      target.view.alpha = 1
+      target.view.transform = .identity
+    }
+    animator.addCompletion { [weak self, weak transition] _ in
+      guard let self, let transition else { return }
+      self.complete(transition)
+    }
+    animator.startAnimation()
+  }
+
+  private func enforceInteractionGate(for transition: ActiveTransition) {
+    transition.source.view.isUserInteractionEnabled = false
+    transition.target.view.isUserInteractionEnabled = false
+    transition.source.view.accessibilityElementsHidden = true
+    transition.target.view.accessibilityElementsHidden = true
+    view.accessibilityElementsHidden = true
+  }
+
+  private func complete(_ transition: ActiveTransition) {
+    guard activeTransition === transition else { return }
+    if transition.appearanceWasBegun {
+      transition.source.endAppearanceTransition()
+      transition.target.endAppearanceTransition()
+    }
+    resetVisualState(transition.source.view)
+    resetVisualState(transition.target.view)
+    detach(transition.source)
+    currentTab = transition.targetTab
+    exposeOnly(transition.target)
+    activeTransition = nil
+
+    if isContainerVisible {
+      UIAccessibility.post(notification: .screenChanged, argument: transition.target.view)
+    }
+    guard transition.notifiesCompletion else { return }
+    let callback = transition.onCompleted
+    let sourceTab = transition.sourceTab
+    let targetTab = transition.targetTab
+    let generation = transition.generation
+    // A property animator can be completed while SwiftUI is reconciling this
+    // representable. Publish ownership on the next actor turn, never mid-update.
+    Task { @MainActor in
+      callback(sourceTab, targetTab, generation)
+    }
+  }
+
+  private func finishActiveTransition(notify: Bool) {
+    guard let transition = activeTransition else { return }
+    transition.notifiesCompletion = notify
+    transition.animator.stopAnimation(false)
+    transition.animator.finishAnimation(at: .end)
+  }
+
+  private func settleOffscreen(_ request: DashTabFlowRequest) {
+    finishActiveTransition(notify: false)
+    showOnly(request.selection)
+    guard
+      let sourceTab = request.outgoingSelection,
+      sourceTab != request.selection
+    else { return }
+    let callback = request.onTransitionCompleted
+    let targetTab = request.selection
+    let generation = request.generation
+    Task { @MainActor in
+      callback(sourceTab, targetTab, generation)
+    }
+  }
+
+  private func reconcilePendingRequestIfNeeded() {
+    guard let pendingRequest else { return }
+    self.pendingRequest = nil
+    reconcile(pendingRequest)
+  }
+
+  private func settlePendingRequestOffscreenIfNeeded() {
+    guard let pendingRequest else { return }
+    self.pendingRequest = nil
+    settleOffscreen(pendingRequest)
+  }
+
+  private func showOnly(_ tab: AppTab) {
+    let target = page(for: tab).controller
+    let source = page(for: currentTab).controller
+    guard target !== source else {
+      exposeOnly(target)
+      return
+    }
+
+    attach(target, above: source)
+    let forwardsAppearance = isContainerVisible
+    if forwardsAppearance {
+      source.beginAppearanceTransition(false, animated: false)
+      target.beginAppearanceTransition(true, animated: false)
+    }
+    if forwardsAppearance {
+      source.endAppearanceTransition()
+      target.endAppearanceTransition()
+    }
+    resetVisualState(source.view)
+    resetVisualState(target.view)
+    detach(source)
+    currentTab = tab
+    exposeOnly(target)
+    if isContainerVisible {
+      UIAccessibility.post(notification: .screenChanged, argument: target.view)
+    }
+  }
+
+  private func exposeOnly(_ controller: UIViewController) {
+    controller.view.isUserInteractionEnabled = true
+    controller.view.accessibilityElementsHidden = false
+    // Let UIKit derive descendants from the one attached child. Publishing a
+    // plain UIView through an explicit accessibilityElements array leaves its
+    // SwiftUI descendants enumerable but without a valid XCUI visible point.
+    view.accessibilityElements = nil
+    view.accessibilityElementsHidden = false
+  }
+
+  private func attach(_ child: UIViewController, above sibling: UIViewController?) {
+    if child.parent === self {
+      child.view.frame = view.bounds
+      if let sibling, sibling.view.superview === view {
+        view.insertSubview(child.view, aboveSubview: sibling.view)
+      } else {
+        view.bringSubviewToFront(child.view)
+      }
+      return
+    }
+    addChild(child)
+    child.view.frame = view.bounds
+    child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    if let sibling, sibling.view.superview === view {
+      view.insertSubview(child.view, aboveSubview: sibling.view)
+    } else {
+      view.addSubview(child.view)
+    }
+    child.didMove(toParent: self)
+  }
+
+  private func detach(_ child: UIViewController) {
+    guard child.parent === self else { return }
+    child.willMove(toParent: nil)
+    child.view.removeFromSuperview()
+    child.removeFromParent()
+  }
+
+  private func resetVisualState(_ view: UIView) {
+    view.layer.removeAllAnimations()
+    view.alpha = 1
+    view.transform = .identity
+  }
+
+  private func finishParentAppearanceTransition() {
+    parentAppearanceChild?.endAppearanceTransition()
+    parentAppearanceChild = nil
+  }
+}
+
+/// One representable for the entire workspace flow. Individual page stacks are
+/// cached as detached UIKit controllers instead of separate SwiftUI siblings,
+/// which preserves their state without exposing invisible AX containers.
+struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>:
+  UIViewControllerRepresentable
+{
+  @Bindable var homeNavigator: DestinationNavigator
+  @Bindable var featuresNavigator: DestinationNavigator
+  @Bindable var watchtowerNavigator: DestinationNavigator
+  let selection: AppTab
+  let outgoingSelection: AppTab?
+  let transitionDirection: DashTabTransitionDirection
+  let transitionGeneration: UInt64
+  let canPresentPendingHomeAction: Bool
+  let homeWorkspaceWashScroll: DashWorkspaceWashScroll
+  let featuresWorkspaceWashScroll: DashWorkspaceWashScroll
+  let watchtowerWorkspaceWashScroll: DashWorkspaceWashScroll
+  let onHomePresentationStateChange: (DashPagePresentationState) -> Void
+  let onFeaturesPresentationStateChange: (DashPagePresentationState) -> Void
+  let onWatchtowerPresentationStateChange: (DashPagePresentationState) -> Void
+  let onTransitionCompleted: (AppTab, AppTab, UInt64) -> Void
+  @ViewBuilder var home: () -> HomeRoot
+  @ViewBuilder var features: () -> FeaturesRoot
+  @ViewBuilder var watchtower: () -> WatchtowerRoot
+
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
+  @Environment(\.dashNavigationAnchorRegistry) private var anchorRegistry
+  @Environment(\.dashWorkspacePresentationState) private var presentationState
+  @Environment(\.locale) private var locale
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.layoutDirection) private var layoutDirection
+  @Environment(\.dashSplashLifted) private var splashLifted
+
+  func makeUIViewController(context: Context) -> DashTabFlowViewController {
+    navigationCoordinator?.register(homeNavigator)
+    navigationCoordinator?.register(featuresNavigator)
+    navigationCoordinator?.register(watchtowerNavigator)
+    let pages = [
+      AppTab.home: makePage(
+        root: home(),
+        navigator: homeNavigator,
+        isTabActive: selection == .home,
+        canPresentPendingHomeAction: canPresentPendingHomeAction,
+        workspaceWashScroll: homeWorkspaceWashScroll,
+        onPresentationStateChange: onHomePresentationStateChange),
+      AppTab.features: makePage(
+        root: features(),
+        navigator: featuresNavigator,
+        isTabActive: selection == .features,
+        canPresentPendingHomeAction: true,
+        workspaceWashScroll: featuresWorkspaceWashScroll,
+        onPresentationStateChange: onFeaturesPresentationStateChange),
+      AppTab.watchtower: makePage(
+        root: watchtower(),
+        navigator: watchtowerNavigator,
+        isTabActive: selection == .watchtower,
+        canPresentPendingHomeAction: true,
+        workspaceWashScroll: watchtowerWorkspaceWashScroll,
+        onPresentationStateChange: onWatchtowerPresentationStateChange),
+    ]
+    return DashTabFlowViewController(pages: pages, selection: selection)
+  }
+
+  func updateUIViewController(
+    _ uiViewController: DashTabFlowViewController,
+    context: Context
+  ) {
+    navigationCoordinator?.register(homeNavigator)
+    navigationCoordinator?.register(featuresNavigator)
+    navigationCoordinator?.register(watchtowerNavigator)
+    let participatingTabs = Set([selection, outgoingSelection].compactMap { $0 })
+    uiViewController.updatePage(
+      .home,
+      with: pageUpdate(
+        navigator: homeNavigator,
+        isTabActive: participatingTabs.contains(.home),
+        canPresentPendingHomeAction: canPresentPendingHomeAction,
+        workspaceWashScroll: homeWorkspaceWashScroll,
+        onPresentationStateChange: onHomePresentationStateChange))
+    uiViewController.updatePage(
+      .features,
+      with: pageUpdate(
+        navigator: featuresNavigator,
+        isTabActive: participatingTabs.contains(.features),
+        canPresentPendingHomeAction: true,
+        workspaceWashScroll: featuresWorkspaceWashScroll,
+        onPresentationStateChange: onFeaturesPresentationStateChange))
+    uiViewController.updatePage(
+      .watchtower,
+      with: pageUpdate(
+        navigator: watchtowerNavigator,
+        isTabActive: participatingTabs.contains(.watchtower),
+        canPresentPendingHomeAction: true,
+        workspaceWashScroll: watchtowerWorkspaceWashScroll,
+        onPresentationStateChange: onWatchtowerPresentationStateChange))
+    uiViewController.reconcile(
+      DashTabFlowRequest(
+        selection: selection,
+        outgoingSelection: outgoingSelection,
+        direction: transitionDirection,
+        generation: transitionGeneration,
+        reduceMotion: reduceMotion,
+        rightToLeft: layoutDirection == .rightToLeft,
+        onTransitionCompleted: onTransitionCompleted))
+  }
+
+  private func makePage<Root: View>(
+    root: Root,
+    navigator: DestinationNavigator,
+    isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    workspaceWashScroll: DashWorkspaceWashScroll,
+    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void
+  ) -> DashTabPageSlot {
+    let controller = DashPageStackViewController(
+      root: root,
+      model: model,
+      navigator: navigator,
+      navigationCoordinator: navigationCoordinator,
+      anchorRegistry: anchorRegistry,
+      presentationState: presentationState,
+      isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
+      workspaceWashScroll: workspaceWashScroll,
+      locale: locale,
+      dynamicTypeSize: dynamicTypeSize,
+      accountID: navigator.accountID,
+      onPresentationStateChange: onPresentationStateChange)
+    return DashTabPageSlot(controller: controller) { [weak controller] update in
+      controller?.update(
+        isTabActive: update.isTabActive,
+        canPresentPendingHomeAction: update.canPresentPendingHomeAction,
+        splashLifted: update.splashLifted,
+        workspaceWashScroll: update.workspaceWashScroll,
+        locale: update.locale,
+        dynamicTypeSize: update.dynamicTypeSize,
+        onPresentationStateChange: update.onPresentationStateChange,
+        request: update.request)
+    }
+  }
+
+  private func pageUpdate(
+    navigator: DestinationNavigator,
+    isTabActive: Bool,
+    canPresentPendingHomeAction: Bool,
+    workspaceWashScroll: DashWorkspaceWashScroll,
+    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void
+  ) -> DashTabPageUpdate {
+    DashTabPageUpdate(
+      isTabActive: isTabActive,
+      canPresentPendingHomeAction: canPresentPendingHomeAction,
+      splashLifted: splashLifted,
+      workspaceWashScroll: workspaceWashScroll,
+      locale: locale,
+      dynamicTypeSize: dynamicTypeSize,
+      onPresentationStateChange: onPresentationStateChange,
+      request: DashPageStackRequest(
+        entries: navigator.entries,
+        revision: navigator.revision,
+        mutation: navigator.lastMutation,
+        accountID: navigator.accountID,
+        reduceMotion: reduceMotion,
+        isTabActive: isTabActive))
+  }
+}
+
 private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
   @Bindable var navigator: DestinationNavigator
   var isTabActive: Bool
   var canPresentPendingHomeAction: Bool
+  var onPresentationStateChange: (DashPagePresentationState) -> Void
   @ViewBuilder var root: () -> Root
 
   @Environment(AppModel.self) private var model
@@ -1948,7 +2658,8 @@ private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize,
-      accountID: navigator.accountID)
+      accountID: navigator.accountID,
+      onPresentationStateChange: onPresentationStateChange)
   }
 
   func updateUIViewController(
@@ -1962,6 +2673,7 @@ private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
       dynamicTypeSize: dynamicTypeSize,
+      onPresentationStateChange: onPresentationStateChange,
       request: DashPageStackRequest(
         entries: navigator.entries,
         revision: navigator.revision,
@@ -1982,6 +2694,7 @@ struct DestinationStackHost<Root: View>: View {
   @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   var isTabActive: Bool
   var canPresentPendingHomeAction = true
+  var onPresentationStateChange: (DashPagePresentationState) -> Void = { _ in }
   @ViewBuilder var root: () -> Root
 
   var body: some View {
@@ -1989,6 +2702,7 @@ struct DestinationStackHost<Root: View>: View {
       navigator: navigator,
       isTabActive: isTabActive,
       canPresentPendingHomeAction: canPresentPendingHomeAction,
+      onPresentationStateChange: onPresentationStateChange,
       root: root
     )
     .onAppear {
