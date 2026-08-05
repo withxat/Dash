@@ -138,7 +138,13 @@ struct ZonesView: View {
   private func domainCardLink(_ zone: CloudflareZone) -> some View {
     let fillHex = cardFillHex(for: zone)
     let status = (zone.status ?? "unknown").capitalized
-    return DashListGroupLink(value: .zone(zone.id)) {
+    let hero = DashNavigationHero.domainCard(
+      name: zone.name,
+      status: status,
+      seed: zone.name,
+      fillHex: fillHex,
+      plan: zone.plan?.name)
+    return DashListGroupLink(value: .zone(zone.id), hero: hero) {
       DomainCardFace(
         name: zone.name,
         status: status,
@@ -621,9 +627,15 @@ struct ZoneDetailView: View {
   /// registration itself stays section-cold after the zone lands.
   @ViewBuilder
   private func zoneDetailBody(mode: DashBodyMode) -> some View {
+    // One stable seat spans placeholder → live so an in-flight compositor
+    // claim never loses the card when cached detail data lands.
+    zoneHeroLandingSeat(
+      mode: mode,
+      zone: mode.isPlaceholder ? nil : displayedZone
+    )
+    .dashBodySlot(reduceMotion: reduceMotion)
+
     if mode.isPlaceholder {
-      zoneHeroPlaceholder
-        .dashBodySlot(reduceMotion: reduceMotion)
       identifiersGroup
         .dashBodyPlaceholder(true)
         .dashSectionBoundary()
@@ -634,8 +646,6 @@ struct ZoneDetailView: View {
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else if let zone = displayedZone {
-      zoneHero(zone)
-        .dashBodySlot(reduceMotion: reduceMotion)
       if isActive(zone) {
         identifiersGroup
           .dashSectionBoundary()
@@ -668,6 +678,37 @@ struct ZoneDetailView: View {
         }
       }
     }
+  }
+
+  @ViewBuilder
+  private func zoneHeroLandingSeat(mode: DashBodyMode, zone: CloudflareZone?) -> some View {
+    Group {
+      if mode.isPlaceholder || zone == nil {
+        zoneHeroPlaceholder
+      } else if let zone {
+        zoneHero(zone)
+      }
+    }
+    .dashNavigationLanding(.zoneHero(zoneID))
+    .overlay(alignment: .bottomTrailing) {
+      if zone != nil, !showsCustomizeOverlay {
+        DomainCardCustomizeButton {
+          beginCardCustomize()
+        }
+        .accessibilityValue(DomainCardColors.formatHex(cardFillHex))
+        .padding(12)
+      }
+    }
+    .matchedGeometryEffect(
+      id: Self.cardMorphID,
+      in: cardCustomizeNamespace,
+      properties: .frame,
+      isSource: !isCustomizingCard
+    )
+    .opacity(isCustomizingCard ? 0 : 1)
+    .allowsHitTesting(!showsCustomizeOverlay)
+    .frame(maxWidth: .infinity)
+    .accessibilityHidden(showsCustomizeOverlay)
   }
 
   private var zoneHeroPlaceholder: some View {
@@ -736,25 +777,6 @@ struct ZoneDetailView: View {
       plan: plan,
       aspectRatio: DomainCardFace.detailAspectRatio
     )
-    .overlay(alignment: .bottomTrailing) {
-      if !showsCustomizeOverlay {
-        DomainCardCustomizeButton {
-          beginCardCustomize()
-        }
-        .accessibilityValue(DomainCardColors.formatHex(cardFillHex))
-        .padding(12)
-      }
-    }
-    .matchedGeometryEffect(
-      id: Self.cardMorphID,
-      in: cardCustomizeNamespace,
-      properties: .frame,
-      isSource: !isCustomizingCard
-    )
-    .opacity(isCustomizingCard ? 0 : 1)
-    .allowsHitTesting(!showsCustomizeOverlay)
-    .frame(maxWidth: .infinity)
-    .accessibilityHidden(showsCustomizeOverlay)
   }
 
   private func primaryActions() -> some View {
@@ -992,7 +1014,7 @@ struct ZoneNameserversGroup: View {
 }
 
 /// Native glass control on the detail hero card — opens the color picker.
-private struct DomainCardCustomizeButton: View {
+struct DomainCardCustomizeButton: View {
   let action: () -> Void
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -1050,6 +1072,38 @@ private struct DomainCardCustomizeButton: View {
   }
 }
 
+/// Collapses detail-only card copy without changing its natural layout. The
+/// surrounding VStack therefore moves the shared name/status continuously as
+/// a compact card becomes its detail variant.
+private struct DomainCardExtraRevealLayout: Layout {
+  let progress: CGFloat
+
+  func sizeThatFits(
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) -> CGSize {
+    guard let subview = subviews.first else { return .zero }
+    let natural = subview.sizeThatFits(proposal)
+    let resolved = min(max(progress, 0), 1)
+    return CGSize(width: natural.width, height: natural.height * resolved)
+  }
+
+  func placeSubviews(
+    in bounds: CGRect,
+    proposal: ProposedViewSize,
+    subviews: Subviews,
+    cache: inout ()
+  ) {
+    guard let subview = subviews.first else { return }
+    let natural = subview.sizeThatFits(proposal)
+    subview.place(
+      at: CGPoint(x: bounds.minX, y: bounds.maxY),
+      anchor: .bottomLeading,
+      proposal: ProposedViewSize(width: bounds.width, height: natural.height))
+  }
+}
+
 /// Colored domain card shared by the Domains grid, detail hero, and color picker.
 ///
 /// Width fills the offered slot; height scales with `aspectRatio`.
@@ -1067,6 +1121,12 @@ struct DomainCardFace: View {
   var plan: String? = nil
   var meta: String? = nil
   var aspectRatio: CGFloat = DomainCardFace.gridAspectRatio
+  /// Transition hosts own the animated bounds. In that context the card fills
+  /// every intermediate rect and SwiftUI reflows its contents inside it.
+  var fillsContainer = false
+  /// Detail-only content grows into layout instead of appearing at the source
+  /// endpoint or crossfading a second complete card over the first one.
+  var detailReveal: CGFloat = 1
 
   private let avatarSize: CGFloat = 28
   private let cornerRadius: CGFloat = DashTheme.Radius.button
@@ -1080,7 +1140,16 @@ struct DomainCardFace: View {
     return parts.joined(separator: ", ")
   }
 
+  @ViewBuilder
   var body: some View {
+    if fillsContainer {
+      face
+    } else {
+      face.aspectRatio(aspectRatio, contentMode: .fit)
+    }
+  }
+
+  private var face: some View {
     VStack(alignment: .leading, spacing: 0) {
       GradientAvatar(seed: seed, size: avatarSize, pattern: .dither, contentScale: 1.5)
         .accessibilityHidden(true)
@@ -1097,7 +1166,12 @@ struct DomainCardFace: View {
         .lineLimit(1)
 
       if plan != nil || meta != nil {
-        tileExtras
+        DomainCardExtraRevealLayout(progress: detailReveal) {
+          tileExtras
+            .opacity(min(max(detailReveal, 0), 1))
+            .offset(y: (1 - min(max(detailReveal, 0), 1)) * 4)
+        }
+        .clipped()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -1112,7 +1186,6 @@ struct DomainCardFace: View {
       )
     }
     .dashEmbossed(.pigmented, cornerRadius: cornerRadius)
-    .aspectRatio(aspectRatio, contentMode: .fit)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(accessibilitySummary)
   }

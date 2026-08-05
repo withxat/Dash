@@ -33,6 +33,57 @@ import UIKit
       reduceMotion: true) == 0)
 }
 
+@Test func cardMorphKeepsPagesStationaryAndReflowsBetweenExactSeats() {
+  let source = CGRect(x: 20, y: 132, width: 164, height: 131.2)
+  let landing = CGRect(x: 16, y: 112, width: 358, height: 214.8)
+
+  #expect(!DashCardMorphRules.movesPages)
+  #expect(
+    DashCardMorphRules.heroFrame(
+      from: source,
+      to: landing,
+      detailProgress: 0) == source)
+  #expect(
+    DashCardMorphRules.heroFrame(
+      from: source,
+      to: landing,
+      detailProgress: 1) == landing)
+
+  let midpoint = DashCardMorphRules.heroFrame(
+    from: source,
+    to: landing,
+    detailProgress: 0.5)
+  #expect(abs(midpoint.width - 261) < 0.001)
+  #expect(abs(midpoint.height - 173) < 0.001)
+}
+
+@Test func cardMorphDelaysDetailContentUntilTheCardIsUnderway() {
+  #expect(DashCardMorphRules.detailPageOpacity(at: 0.12) == 0)
+  #expect(DashCardMorphRules.detailPageOpacity(at: 0.92) == 1)
+  #expect(DashCardMorphRules.departingDetailPageOpacity(at: 0.4) == 0)
+  #expect(DashCardMorphRules.departingDetailPageOpacity(at: 0.96) == 1)
+  #expect(DashCardMorphRules.backdropOpacity(at: 0) == 0)
+  #expect(DashCardMorphRules.backdropOpacity(at: 0.5) == 1)
+  #expect(DashCardMorphRules.backdropOpacity(at: 1) == 0)
+  #expect(DashCardMorphRules.detailAccessoryOpacity(at: 0.5) == 0)
+  #expect(DashCardMorphRules.detailAccessoryOpacity(at: 0.94) == 1)
+}
+
+@Test func navigationOriginCarriesSemanticCardContentWithoutRequiringPixels() {
+  let hero = DashNavigationHero.domainCard(
+    name: "example.com",
+    status: "Active",
+    seed: "example.com",
+    fillHex: 0xB8DDA8,
+    plan: "Free")
+  let origin = DashNavigationOrigin(
+    semanticID: .init(namespace: "zone", value: "zone-1"),
+    anchorInstanceID: UUID(),
+    hero: hero)
+
+  #expect(origin.hero == hero)
+}
+
 @Test func tabFlowDefersOnlyAcrossAnActiveParentAppearanceTransition() {
   #expect(
     DashTabFlowContainerRules.reconciliationDisposition(

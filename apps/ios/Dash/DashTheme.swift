@@ -325,6 +325,11 @@ enum DashTheme {
       static let flowExitDuration: TimeInterval = 0.21
       static let entityEnterDuration: TimeInterval = 0.29
       static let entityExitDuration: TimeInterval = 0.23
+      /// Family's wallet-card pattern: geometry settles first, with destination
+      /// chrome resolving during the latter half. Collapse is a firmer inverse.
+      static let cardEnterDuration: TimeInterval = 0.38
+      static let cardExitDuration: TimeInterval = 0.34
+      static let cardDampingRatio: CGFloat = 1
       // The workspace pair travels the full canvas height (vertical train),
       // so it needs more time to read than the sibling fades.
       static let workspaceEnterDuration: TimeInterval = 0.44

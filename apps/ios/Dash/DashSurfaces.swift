@@ -609,11 +609,12 @@ struct DashToolTile: View {
 /// Opens a destination on the enclosing tab's navigation stack.
 struct DashListGroupLink<Label: View>: View {
   let value: Destination
+  var hero: DashNavigationHero? = nil
   var onNavigate: (() -> Void)?
   @ViewBuilder let label: () -> Label
 
   var body: some View {
-    DestinationLink(destination: value, onNavigate: onNavigate, label: label)
+    DestinationLink(destination: value, hero: hero, onNavigate: onNavigate, label: label)
   }
 }
 

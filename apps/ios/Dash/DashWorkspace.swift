@@ -32,6 +32,22 @@ extension DashNavigationSemanticID {
   static let settingsProfileAvatar = DashNavigationSemanticID(
     namespace: "workspace-landing",
     value: "settings-profile-avatar")
+
+  static func zoneHero(_ zoneID: String) -> DashNavigationSemanticID {
+    DashNavigationSemanticID(namespace: "zone-hero", value: zoneID)
+  }
+}
+
+/// Semantic content a card transition can redraw at every intermediate size.
+/// Keeping this data with the route origin lets the compositor re-layout a
+/// real SwiftUI surface instead of stretching captured pixels.
+enum DashNavigationHero: Hashable {
+  case domainCard(
+    name: String,
+    status: String,
+    seed: String,
+    fillHex: UInt32,
+    plan: String?)
 }
 
 /// One concrete occurrence of a semantic source. The same resource can appear
@@ -42,15 +58,18 @@ struct DashNavigationOrigin: Hashable {
   /// Global frame captured synchronously with the navigation intent. The live
   /// source often unmounts in the same update that reveals the destination.
   let sourceFrame: CGRect?
+  let hero: DashNavigationHero?
 
   init(
     semanticID: DashNavigationSemanticID,
     anchorInstanceID: UUID,
-    sourceFrame: CGRect? = nil
+    sourceFrame: CGRect? = nil,
+    hero: DashNavigationHero? = nil
   ) {
     self.semanticID = semanticID
     self.anchorInstanceID = anchorInstanceID
     self.sourceFrame = sourceFrame
+    self.hero = hero
   }
 }
 
@@ -182,6 +201,7 @@ extension Destination {
   fileprivate var dashNavigationLandingSemanticID: DashNavigationSemanticID? {
     switch self {
     case .settings: .settingsProfileAvatar
+    case .zone(let id): .zoneHero(id)
     default: nil
     }
   }
@@ -469,13 +489,15 @@ final class DashNavigationAnchorRegistry {
 
   func captureOrigin(
     semanticID: DashNavigationSemanticID,
-    anchorInstanceID: UUID
+    anchorInstanceID: UUID,
+    hero: DashNavigationHero? = nil
   ) -> DashNavigationOrigin {
     let frame =
       sourceWindowFrame(for: anchorInstanceID)
       ?? hostedFrames[anchorInstanceID]
       ?? preferenceFrames[anchorInstanceID]
-    if let source = sourceViews[anchorInstanceID]?.value,
+    if hero == nil,
+      let source = sourceViews[anchorInstanceID]?.value,
       let window = source.window,
       let frame,
       frame.width > 2,
@@ -492,7 +514,8 @@ final class DashNavigationAnchorRegistry {
     return DashNavigationOrigin(
       semanticID: semanticID,
       anchorInstanceID: anchorInstanceID,
-      sourceFrame: frame)
+      sourceFrame: frame,
+      hero: hero)
   }
 
   func takeCapturedVisual(for origin: DashNavigationOrigin?) -> CapturedVisual? {
@@ -893,24 +916,117 @@ private struct DashHostedDestination: View {
   }
 }
 
+/// The card is the only moving spatial identity. Both pages stay fixed while
+/// the source context softens and the destination content resolves behind it.
+enum DashCardMorphRules {
+  static let movesPages = false
+
+  static func heroFrame(
+    from source: CGRect,
+    to landing: CGRect,
+    detailProgress: CGFloat
+  ) -> CGRect {
+    let progress = min(max(detailProgress, 0), 1)
+    return CGRect(
+      x: source.minX + (landing.minX - source.minX) * progress,
+      y: source.minY + (landing.minY - source.minY) * progress,
+      width: source.width + (landing.width - source.width) * progress,
+      height: source.height + (landing.height - source.height) * progress)
+  }
+
+  static func detailPageOpacity(at detailProgress: CGFloat) -> CGFloat {
+    smoothSegment(detailProgress, from: 0.2, to: 0.88)
+  }
+
+  static func departingDetailPageOpacity(at detailProgress: CGFloat) -> CGFloat {
+    smoothSegment(detailProgress, from: 0.44, to: 0.94)
+  }
+
+  static func backdropOpacity(at detailProgress: CGFloat) -> CGFloat {
+    if detailProgress <= 0.5 {
+      return smoothSegment(detailProgress, from: 0.04, to: 0.42)
+    }
+    return 1 - smoothSegment(detailProgress, from: 0.58, to: 0.96)
+  }
+
+  static func detailAccessoryOpacity(at detailProgress: CGFloat) -> CGFloat {
+    smoothSegment(detailProgress, from: 0.62, to: 0.9)
+  }
+
+  static func isUsableEndpoint(_ frame: CGRect, in bounds: CGRect) -> Bool {
+    frame.width > 2 && frame.height > 2
+      && frame.width.isFinite && frame.height.isFinite
+      && frame.minX.isFinite && frame.minY.isFinite
+      && frame.intersects(bounds.insetBy(dx: -2, dy: -2))
+  }
+
+  private static func smoothSegment(
+    _ progress: CGFloat,
+    from start: CGFloat,
+    to end: CGFloat
+  ) -> CGFloat {
+    guard end > start else { return progress >= end ? 1 : 0 }
+    let unit = min(max((progress - start) / (end - start), 0), 1)
+    return unit * unit * (3 - 2 * unit)
+  }
+}
+
+private struct DashNavigationHeroView: View {
+  let hero: DashNavigationHero
+  let detailProgress: CGFloat
+  let locale: Locale
+  let dynamicTypeSize: DynamicTypeSize
+
+  var body: some View {
+    content
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .environment(\.locale, locale)
+      .environment(\.dynamicTypeSize, dynamicTypeSize)
+  }
+
+  @ViewBuilder
+  private var content: some View {
+    switch hero {
+    case .domainCard(let name, let status, let seed, let fillHex, let plan):
+      DomainCardFace(
+        name: name,
+        status: status,
+        seed: seed,
+        fillHex: fillHex,
+        plan: plan,
+        fillsContainer: true,
+        detailReveal: detailProgress
+      )
+      .overlay(alignment: .bottomTrailing) {
+        DomainCardCustomizeButton {}
+          .opacity(DashCardMorphRules.detailAccessoryOpacity(at: detailProgress))
+          .padding(12)
+      }
+    }
+  }
+}
+
 private enum DashPageTransitionStyle {
   case flowPush
   case flowPop
   case entityPush(DashNavigationEntry)
   case entityPop(DashNavigationEntry)
+  case cardPush(DashNavigationEntry)
+  case cardPop(DashNavigationEntry)
   case workspacePresent(DashNavigationEntry)
   case workspaceDismiss(DashNavigationEntry)
 
   var isPush: Bool {
     switch self {
-    case .flowPush, .entityPush, .workspacePresent: true
-    case .flowPop, .entityPop, .workspaceDismiss: false
+    case .flowPush, .entityPush, .cardPush, .workspacePresent: true
+    case .flowPop, .entityPop, .cardPop, .workspaceDismiss: false
     }
   }
 
   var entry: DashNavigationEntry? {
     switch self {
     case .entityPush(let entry), .entityPop(let entry),
+      .cardPush(let entry), .cardPop(let entry),
       .workspacePresent(let entry), .workspaceDismiss(let entry):
       entry
     case .flowPush, .flowPop:
@@ -924,8 +1040,17 @@ private enum DashPageTransitionStyle {
     case .flowPop: DashTheme.Motion.Page.flowExitDuration
     case .entityPush: DashTheme.Motion.Page.entityEnterDuration
     case .entityPop: DashTheme.Motion.Page.entityExitDuration
+    case .cardPush: DashTheme.Motion.Page.cardEnterDuration
+    case .cardPop: DashTheme.Motion.Page.cardExitDuration
     case .workspacePresent: DashTheme.Motion.Page.workspaceEnterDuration
     case .workspaceDismiss: DashTheme.Motion.Page.workspaceExitDuration
+    }
+  }
+
+  var dampingRatio: CGFloat {
+    switch self {
+    case .cardPush, .cardPop: DashTheme.Motion.Page.cardDampingRatio
+    default: DashTheme.Motion.Page.dampingRatio
     }
   }
 }
@@ -965,8 +1090,13 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private final class TransitionProxy {
     let overlay: UIView
     let shell: UIView?
+    /// Sits between the stationary pages for a card transition: it softens the
+    /// old context while the sharp destination resolves above it.
+    let backgroundEffect: UIView?
     let outgoingContent: UIView?
     let arrivingContent: UIView?
+    /// Retains the live SwiftUI card renderer for the transition and handoff beat.
+    let heroController: UIHostingController<DashNavigationHeroView>?
     /// Invisible property-animation payload that gives the display-link content
     /// timeline a reversible progress source without transforming any pixels.
     let timelineDriver: UIView?
@@ -984,8 +1114,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     init(
       overlay: UIView,
       shell: UIView?,
+      backgroundEffect: UIView? = nil,
       outgoingContent: UIView?,
       arrivingContent: UIView?,
+      heroController: UIHostingController<DashNavigationHeroView>? = nil,
       timelineDriver: UIView?,
       claimedOrigin: DashNavigationOrigin?,
       claimedLanding: DashNavigationOrigin? = nil,
@@ -995,8 +1127,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     ) {
       self.overlay = overlay
       self.shell = shell
+      self.backgroundEffect = backgroundEffect
       self.outgoingContent = outgoingContent
       self.arrivingContent = arrivingContent
+      self.heroController = heroController
       self.timelineDriver = timelineDriver
       self.claimedOrigin = claimedOrigin
       self.claimedLanding = claimedLanding
@@ -1004,6 +1138,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       self.morphStartFrame = morphStartFrame
       self.morphTracking = morphTracking
     }
+
+    var isCardMorph: Bool { heroController != nil }
   }
 
   private final class ActiveTransition {
@@ -1057,7 +1193,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   /// Landed morph overlays outliving their transition by one handoff beat.
   /// The live element underneath is revealed on a later SwiftUI commit; these
   /// must be swept before any new transition composes over them.
-  private var lingeringProxyOverlays: [UIView] = []
+  private var lingeringProxies: [TransitionProxy] = []
   private var transitionContentDisplayLink: CADisplayLink?
   private var pendingRequest: DashPageStackRequest?
   private var accountID: String?
@@ -1327,7 +1463,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       guard let entry = request.entries.last else { return .flowPush }
       return switch entry.presentation {
       case .detail: .flowPush
-      case .entityDetail: .entityPush(entry)
+      case .entityDetail:
+        entry.origin?.hero == nil ? .entityPush(entry) : .cardPush(entry)
       case .workspaceOverlay: .workspacePresent(entry)
       }
     case .closeToWorkspaceRoot:
@@ -1337,7 +1474,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       guard let entry = settledEntries.last else { return .flowPop }
       return switch entry.presentation {
       case .detail: .flowPop
-      case .entityDetail: .entityPop(entry)
+      case .entityDetail:
+        entry.origin?.hero == nil ? .entityPop(entry) : .cardPop(entry)
       case .workspaceOverlay: .workspaceDismiss(entry)
       }
     case .reset, .accountScopeChanged, nil:
@@ -1361,7 +1499,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       view.insertSubview(target.view, belowSubview: source.view)
     }
     view.layoutIfNeeded()
-    let style = resolvedTransitionStyle(requestedStyle)
+    let style = resolvedTransitionStyle(
+      requestedStyle,
+      source: source.view,
+      target: target.view)
     resetTransitionState(source.view)
     resetTransitionState(target.view)
     source.view.isUserInteractionEnabled = false
@@ -1398,7 +1539,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       : style.duration
     let animator = UIViewPropertyAnimator(
       duration: duration,
-      dampingRatio: request.reduceMotion ? 1 : DashTheme.Motion.Page.dampingRatio)
+      dampingRatio: request.reduceMotion ? 1 : style.dampingRatio)
+    animator.scrubsLinearly = false
     animator.addAnimations { [weak self, weak source, weak target] in
       guard let self, let source, let target else { return }
       self.destinationCanvasPlate.alpha = targetOwnsDestinationCanvas ? 1 : 0
@@ -1465,6 +1607,12 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
           y: 0)
       }
       if hasProxy { source.alpha = 0 }
+    case .cardPush:
+      target.alpha = 0
+    case .cardPop:
+      // Root already sits behind the detail. The display-link timeline fades
+      // only the detail page, so neither page acquires spatial travel.
+      target.alpha = 1
     case .workspacePresent:
       // Vertical train: the workspace descends off the bottom while settings
       // rides in from above, edge to edge in the same animator, so the two
@@ -1529,6 +1677,14 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       target.transform = .identity
       source.alpha = 0
       proxy?.timelineDriver?.alpha = 1
+    case .cardPush, .cardPop:
+      if let proxy {
+        proxy.timelineDriver?.alpha = 1
+      } else {
+        // Reduce Motion and invalid-endpoint fallback keep a short crossfade.
+        target.alpha = 1
+        source.alpha = 0
+      }
     case .workspacePresent:
       target.alpha = 1
       target.transform = .identity
@@ -1570,6 +1726,35 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       surface.layer.masksToBounds = true
     }
     CATransaction.commit()
+  }
+
+  /// The semantic card is laid out at every intermediate size. Updating bounds
+  /// and center preserves the SwiftUI hierarchy's typography and avatar shape;
+  /// no bitmap is ever non-uniformly scaled between the two aspect ratios.
+  private func applyCardHeroFrame(_ proxy: TransitionProxy, at frame: CGRect) {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    for hero in [proxy.outgoingContent, proxy.arrivingContent] {
+      guard let hero else { continue }
+      hero.bounds = CGRect(origin: .zero, size: frame.size)
+      hero.center = CGPoint(x: frame.midX, y: frame.midY)
+      hero.setNeedsLayout()
+      hero.layoutIfNeeded()
+    }
+    CATransaction.commit()
+  }
+
+  private func updateCardHeroContent(
+    _ proxy: TransitionProxy,
+    detailProgress: CGFloat
+  ) {
+    guard let controller = proxy.heroController else { return }
+    let root = controller.rootView
+    controller.rootView = DashNavigationHeroView(
+      hero: root.hero,
+      detailProgress: detailProgress,
+      locale: root.locale,
+      dynamicTypeSize: root.dynamicTypeSize)
   }
 
   /// A push immediately followed by its own Back/Close is the one retarget that
@@ -1617,6 +1802,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let requiresLiveFrame: Bool
     if case .entityPop = style {
       requiresLiveFrame = true
+    } else if case .cardPop = style {
+      requiresLiveFrame = true
     } else {
       requiresLiveFrame = false
     }
@@ -1633,8 +1820,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
 
     var shell: UIView?
+    var backgroundEffect: UIView?
     var outgoingContent: UIView?
     var arrivingContent: UIView?
+    var heroController: UIHostingController<DashNavigationHeroView>?
     var timelineDriver: UIView?
     var claimedOrigin: DashNavigationOrigin?
     var claimedLanding: DashNavigationOrigin?
@@ -1670,6 +1859,25 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         afterScreenUpdates: true)
       arrivingContent?.alpha = 0
       timelineDriver = makeTransitionTimelineDriver()
+    case .cardPush, .cardPop:
+      guard let hero = entry.origin?.hero else { return nil }
+      let landingPage = style.isPush ? target : source
+      guard let landing = resolvedLandingOrigin(for: entry, in: landingPage),
+        let landingFrame = anchorFrameInContainer(for: landing, liveOnly: true)
+      else { return nil }
+
+      let liveHero = makeNavigationHeroController(
+        hero,
+        detailProgress: style.isPush ? 0 : 1)
+      outgoingContent = liveHero.view
+      heroController = liveHero
+      backgroundEffect = makeCardMorphBackgroundEffect()
+      morphStartFrame = sourceFrame
+      morphTargetFrame = landingFrame
+      claimedOrigin = entry.origin
+      claimedLanding = landing
+      timelineDriver = makeTransitionTimelineDriver()
+      anchorRegistry?.discardCapturedVisual(for: entry.origin)
     case .workspacePresent:
       if let captured = anchorRegistry?.takeCapturedVisual(for: entry.origin) {
         outgoingContent = captured.view
@@ -1748,13 +1956,22 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     guard shell != nil || outgoingContent != nil || arrivingContent != nil else {
       return nil
     }
+    if let backgroundEffect { overlay.addSubview(backgroundEffect) }
     if let shell { overlay.addSubview(shell) }
     if let outgoingContent {
-      configureTransitionSnapshot(outgoingContent)
+      if heroController == nil {
+        configureTransitionSnapshot(outgoingContent)
+      } else {
+        configureNavigationHeroLayer(outgoingContent)
+      }
       overlay.addSubview(outgoingContent)
     }
     if let arrivingContent {
-      configureTransitionSnapshot(arrivingContent)
+      if heroController == nil {
+        configureTransitionSnapshot(arrivingContent)
+      } else {
+        configureNavigationHeroLayer(arrivingContent)
+      }
       overlay.addSubview(arrivingContent)
     }
     if let timelineDriver { overlay.addSubview(timelineDriver) }
@@ -1764,8 +1981,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     return TransitionProxy(
       overlay: overlay,
       shell: shell,
+      backgroundEffect: backgroundEffect,
       outgoingContent: outgoingContent,
       arrivingContent: arrivingContent,
+      heroController: heroController,
       timelineDriver: timelineDriver,
       claimedOrigin: claimedOrigin,
       claimedLanding: claimedLanding,
@@ -1785,6 +2004,56 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     layerView.frame = frame
     layerView.layer.cornerRadius = min(frame.width, frame.height) / 2
     layerView.layer.masksToBounds = true
+  }
+
+  private func makeNavigationHeroController(
+    _ hero: DashNavigationHero,
+    detailProgress: CGFloat
+  ) -> UIHostingController<DashNavigationHeroView> {
+    let controller = UIHostingController(
+      rootView: DashNavigationHeroView(
+        hero: hero,
+        detailProgress: detailProgress,
+        locale: hostContext.locale,
+        dynamicTypeSize: hostContext.dynamicTypeSize))
+    controller.loadViewIfNeeded()
+    controller.view.backgroundColor = .clear
+    controller.view.isOpaque = false
+    return controller
+  }
+
+  private func configureNavigationHeroLayer(_ hero: UIView) {
+    hero.backgroundColor = .clear
+    hero.isOpaque = false
+    hero.isAccessibilityElement = false
+    hero.accessibilityElementsHidden = true
+    hero.isUserInteractionEnabled = false
+    hero.clipsToBounds = false
+    hero.layer.masksToBounds = false
+  }
+
+  private func makeCardMorphBackgroundEffect() -> UIView {
+    let background: UIView
+    if UIAccessibility.isReduceTransparencyEnabled {
+      let veil = UIView()
+      veil.backgroundColor = UIColor(DashTheme.canvas).resolvedColor(
+        with: traitCollection
+      ).withAlphaComponent(0.9)
+      background = veil
+    } else {
+      let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+      blur.backgroundColor = UIColor(DashTheme.canvas).resolvedColor(
+        with: traitCollection
+      ).withAlphaComponent(0.12)
+      background = blur
+    }
+    background.frame = view.bounds
+    background.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    background.alpha = 0
+    background.isUserInteractionEnabled = false
+    background.isAccessibilityElement = false
+    background.accessibilityElementsHidden = true
+    return background
   }
 
   /// The landing seat the entry's destination publishes, if any. Resolved per
@@ -1833,12 +2102,31 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   }
 
   private func resolvedTransitionStyle(
-    _ style: DashPageTransitionStyle
+    _ style: DashPageTransitionStyle,
+    source: UIView,
+    target: UIView
   ) -> DashPageTransitionStyle {
-    guard case .entityPop(let entry) = style,
-      transitionFrame(for: entry.origin, liveOnly: true) == nil
-    else { return style }
-    return .flowPop
+    switch style {
+    case .entityPop(let entry):
+      return transitionFrame(for: entry.origin, liveOnly: true) == nil
+        ? .flowPop
+        : style
+    case .cardPush(let entry), .cardPop(let entry):
+      let isPush = style.isPush
+      let landingPage = isPush ? target : source
+      guard entry.origin?.hero != nil,
+        let sourceFrame = transitionFrame(for: entry.origin, liveOnly: !isPush),
+        let landing = resolvedLandingOrigin(for: entry, in: landingPage),
+        let landingFrame = anchorFrameInContainer(for: landing, liveOnly: true),
+        DashCardMorphRules.isUsableEndpoint(sourceFrame, in: view.bounds),
+        DashCardMorphRules.isUsableEndpoint(landingFrame, in: view.bounds)
+      else {
+        return isPush ? .entityPush(entry) : .flowPop
+      }
+      return style
+    default:
+      return style
+    }
   }
 
   private func transitionFrame(
@@ -2216,6 +2504,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     switch transition.style {
     case .entityPush, .entityPop:
       break
+    case .cardPush, .cardPop:
+      break
     case .workspacePresent, .workspaceDismiss:
       guard proxy.morphTracking != nil else { return }
     case .flowPush, .flowPop:
@@ -2235,9 +2525,16 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       stopTransitionContentTimeline()
       return
     }
-    updateTransitionContentTimeline(
-      transition,
-      progress: CGFloat(transition.animator.fractionComplete))
+    let progress: CGFloat
+    if transition.proxy?.isCardMorph == true,
+      let driver = transition.proxy?.timelineDriver,
+      let presentation = driver.layer.presentation()
+    {
+      progress = CGFloat(presentation.opacity)
+    } else {
+      progress = CGFloat(transition.animator.fractionComplete)
+    }
+    updateTransitionContentTimeline(transition, progress: progress)
   }
 
   private func updateTransitionContentTimeline(
@@ -2261,6 +2558,31 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
           transitionSegment(progress, from: 0.38, to: 0.68)
         proxy.shell?.alpha =
           1 - transitionSegment(progress, from: 0.38, to: 0.76)
+      case .cardPush, .cardPop:
+        let detailProgress = transition.style.isPush ? progress : 1 - progress
+        if transition.style.isPush {
+          transition.source.view.alpha = 1
+          transition.target.view.alpha =
+            DashCardMorphRules.detailPageOpacity(at: detailProgress)
+        } else {
+          transition.source.view.alpha =
+            DashCardMorphRules.departingDetailPageOpacity(at: detailProgress)
+          transition.target.view.alpha = 1
+        }
+        proxy.backgroundEffect?.alpha =
+          DashCardMorphRules.backdropOpacity(at: detailProgress)
+        updateCardHeroContent(proxy, detailProgress: detailProgress)
+        proxy.outgoingContent?.alpha = 1
+        if let sourceFrame = proxy.morphStartFrame,
+          let landingFrame = proxy.morphTargetFrame
+        {
+          applyCardHeroFrame(
+            proxy,
+            at: DashCardMorphRules.heroFrame(
+              from: sourceFrame,
+              to: landingFrame,
+              detailProgress: detailProgress))
+        }
       case .workspacePresent, .workspaceDismiss:
         updateWorkspaceMorphTimeline(proxy, progress: progress)
       case .flowPush, .flowPop:
@@ -2328,6 +2650,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     guard let proxy else { return }
     anchorRegistry?.release(proxy.claimedOrigin)
     anchorRegistry?.release(proxy.claimedLanding)
+    proxy.backgroundEffect?.removeFromSuperview()
     proxy.overlay.removeFromSuperview()
   }
 
@@ -2345,21 +2668,23 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     }
     anchorRegistry?.release(proxy.claimedOrigin)
     anchorRegistry?.release(proxy.claimedLanding)
-    let overlay = proxy.overlay
-    lingeringProxyOverlays.append(overlay)
+    proxy.backgroundEffect?.removeFromSuperview()
+    lingeringProxies.append(proxy)
+    let handoffDelay: Int64 = proxy.isCardMorph ? 100 : 140
     Task { @MainActor [weak self] in
-      try? await Task.sleep(for: .milliseconds(140))
-      overlay.removeFromSuperview()
-      self?.lingeringProxyOverlays.removeAll { $0 === overlay }
+      try? await Task.sleep(for: .milliseconds(handoffDelay))
+      proxy.overlay.removeFromSuperview()
+      self?.lingeringProxies.removeAll { $0 === proxy }
     }
   }
 
   private func removeLingeringProxyOverlays() {
-    guard !lingeringProxyOverlays.isEmpty else { return }
-    for overlay in lingeringProxyOverlays {
-      overlay.removeFromSuperview()
+    guard !lingeringProxies.isEmpty else { return }
+    for proxy in lingeringProxies {
+      proxy.backgroundEffect?.removeFromSuperview()
+      proxy.overlay.removeFromSuperview()
     }
-    lingeringProxyOverlays.removeAll()
+    lingeringProxies.removeAll()
   }
 }
 
@@ -3654,6 +3979,7 @@ private struct DetailHeaderModifier: ViewModifier {
 struct DashNavigationSource<Content: View>: View {
   let destination: Destination
   var presentation: DashNavigationPresentation?
+  var hero: DashNavigationHero? = nil
   var onNavigate: (() -> Void)?
   /// Optional lifecycle boundary (for example a Tray's `dismissAfter`). The
   /// source geometry is captured on the tap, before the presenting surface
@@ -3683,7 +4009,8 @@ struct DashNavigationSource<Content: View>: View {
   private func navigate() {
     let origin = anchorRegistry?.captureOrigin(
       semanticID: destination.dashNavigationSemanticID,
-      anchorInstanceID: anchorInstanceID)
+      anchorInstanceID: anchorInstanceID,
+      hero: hero)
     let expectedNavigator = navigator
     let expectedSourceEntryID = sourceEntryID
     onNavigate?()
@@ -3721,11 +4048,16 @@ struct DashNavigationSource<Content: View>: View {
 /// Opens a `Destination` on the enclosing tab's custom page stack.
 struct DestinationLink<Label: View>: View {
   let destination: Destination
+  var hero: DashNavigationHero? = nil
   var onNavigate: (() -> Void)?
   @ViewBuilder var label: () -> Label
 
   var body: some View {
-    DashNavigationSource(destination: destination, onNavigate: onNavigate) { navigate in
+    DashNavigationSource(
+      destination: destination,
+      hero: hero,
+      onNavigate: onNavigate
+    ) { navigate in
       Button(action: navigate) {
         label()
       }
