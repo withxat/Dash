@@ -2295,6 +2295,20 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(!DashCanvasPlateRules.isSystemPlate(UIColor(white: 1, alpha: 0.5)))
 }
 
+/// Vertical content scrolls must never be mistaken for a tab pager just because
+/// paging is enabled — that skip leaves the header permanently unfrosted.
+@Test @MainActor func contentScrollIsNotSkippedAsTabPager() {
+  let vertical = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+  vertical.isPagingEnabled = true
+  vertical.contentSize = CGSize(width: 390, height: 2000)
+  #expect(!DashScrollViewConfigurator.isTabPager(vertical))
+
+  let horizontalPager = UIScrollView(frame: CGRect(x: 0, y: 0, width: 390, height: 700))
+  horizontalPager.isPagingEnabled = true
+  horizontalPager.contentSize = CGSize(width: 390 * 3, height: 700)
+  #expect(DashScrollViewConfigurator.isTabPager(horizontalPager))
+}
+
 /// The frost is a threshold, not a scrub: it arms once content has genuinely
 /// gone under the bar, and disarms only back at the top. Between the two lines
 /// it holds whatever it already was, so resting a finger there can't chatter it.
@@ -3877,13 +3891,13 @@ private actor ZoneSecurityLevelTestLatch {
 @Test func destinationNavigatorDefaultsSemanticPresentationByRouteShape() throws {
   let navigator = DestinationNavigator()
   navigator.push(.zone("zone-1"))
-  #expect(navigator.topEntry?.presentation == .entityDetail)
+  #expect(navigator.topEntry?.presentation == .detail)
 
   navigator.push(.dns("zone-1"))
   #expect(navigator.topEntry?.presentation == .detail)
 
   navigator.push(.r2Bucket("media", prefix: ""))
-  #expect(navigator.topEntry?.presentation == .entityDetail)
+  #expect(navigator.topEntry?.presentation == .detail)
 
   navigator.push(.r2Bucket("media", prefix: "images/"))
   #expect(navigator.topEntry?.presentation == .detail)
@@ -3996,26 +4010,34 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(registry.frame(for: staleOrigin) == nil)
 }
 
-@MainActor
-@Test func navigationAnchorRegistryTracksDestinationLandingSeats() {
-  let registry = DashNavigationAnchorRegistry()
-  let firstSeat = UUID()
-  let secondSeat = UUID()
-  let semanticID = DashNavigationSemanticID.settingsProfileAvatar
+@Test func domainCardSeatMorphRecognizesGridAspectAndLerpsRect() {
+  let grid = CGRect(x: 20, y: 100, width: 160, height: 128)  // 5:4
+  let hero = CGRect(x: 16, y: 120, width: 360, height: 216)  // 5:3
+  let row = CGRect(x: 16, y: 200, width: 360, height: 56)  // wide Home row
+  #expect(abs(grid.width / grid.height - DomainCardFace.gridAspectRatio) < 0.01)
+  #expect(abs(hero.width / hero.height - DomainCardFace.detailAspectRatio) < 0.01)
+  // Seat overlay only flies card-like sources (~5:4); Home rows stay pure flow.
+  #expect(DashNavigationAnchorRegistry.isCardLikeSourceFrame(grid))
+  #expect(!DashNavigationAnchorRegistry.isCardLikeSourceFrame(row))
 
-  registry.registerLanding(instanceID: firstSeat, for: semanticID)
-  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == firstSeat)
+  let mid = CGRect(
+    x: grid.minX + (hero.minX - grid.minX) * 0.5,
+    y: grid.minY + (hero.minY - grid.minY) * 0.5,
+    width: grid.width + (hero.width - grid.width) * 0.5,
+    height: grid.height + (hero.height - grid.height) * 0.5)
+  #expect(abs(mid.width - 260) < 0.01)
+  #expect(abs(mid.height - 172) < 0.01)
+}
 
-  // A successor page may register before the departing host tears down.
-  registry.registerLanding(instanceID: secondSeat, for: semanticID)
-  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == secondSeat)
-
-  // Only the current occupant may vacate the key.
-  registry.unregisterLanding(instanceID: firstSeat, for: semanticID)
-  #expect(registry.landingOrigin(for: semanticID)?.anchorInstanceID == secondSeat)
-
-  registry.unregisterLanding(instanceID: secondSeat, for: semanticID)
-  #expect(registry.landingOrigin(for: semanticID) == nil)
+@Test func zoneDetailLandingSemanticMatchesDestination() {
+  let destination = Destination.zone("zone-abc")
+  #expect(
+    destination.dashNavigationLandingSemanticID
+      == DashNavigationSemanticID(namespace: "zone-hero", value: "zone-abc"))
+  // Seat overlay eligibility: only routes that name a landing can fly a card.
+  #expect(Destination.about.dashNavigationLandingSemanticID == nil)
+  #expect(Destination.feature(.zones).dashNavigationLandingSemanticID == nil)
+  #expect(Destination.worker("api").dashNavigationLandingSemanticID == nil)
 }
 
 @MainActor

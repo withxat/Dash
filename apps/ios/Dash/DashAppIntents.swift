@@ -10,6 +10,19 @@ private func dashIntentVerbatim(_ value: String) -> LocalizedStringResource {
   LocalizedStringResource(stringLiteral: value)
 }
 
+extension AppIntent {
+  /// iOS 18+ carries the dialog. The pre-18 SDK only exposes a non-deprecated
+  /// no-argument confirm — the deprecated `result:` overload warns
+  /// unconditionally, so iOS 17 keeps the gate without that call.
+  fileprivate func dashRequestConfirmation(dialog: IntentDialog) async throws {
+    if #available(iOS 18.0, *) {
+      try await requestConfirmation(dialog: dialog)
+    } else {
+      try await requestConfirmation()
+    }
+  }
+}
+
 /// Surfaced to Siri, Spotlight, and the Shortcuts app. In-app intents run in
 /// the app process, so they reuse the app's single `CloudflareClient` (via
 /// `@Dependency`) to preserve its single-flight token refresh.
@@ -119,11 +132,8 @@ struct PurgeCacheIntent: AppIntent {
   @MainActor
   func perform() async throws -> some IntentResult & ProvidesDialog {
     try await DashIntentAuthorization.require(["cache.purge"], model: model)
-    // The non-deprecated requestConfirmation(conditions:actionName:dialog:) is
-    // iOS 18+, and the old overload is deprecated unconditionally (no version),
-    // so this warns until IPHONEOS_DEPLOYMENT_TARGET reaches 18.0.
-    try await requestConfirmation(
-      result: .result(dialog: "Purge everything from \(zone.name)'s cache?"))
+    try await dashRequestConfirmation(
+      dialog: "Purge everything from \(zone.name)'s cache?")
     try await model.client.purgeCache(zoneID: zone.id, files: nil)
     return .result(dialog: "Purged everything from \(zone.name).")
   }
@@ -543,9 +553,8 @@ struct UploadToR2Intent: AppIntent {
     let prefix = Self.normalizedPrefix(rawFolder)
     let key = prefix + file.filename
 
-    try await requestConfirmation(
-      result: .result(
-        dialog: "Upload \(file.filename) to \(bucketName) in \(accountName)?"))
+    try await dashRequestConfirmation(
+      dialog: "Upload \(file.filename) to \(bucketName) in \(accountName)?")
     guard model.isCurrentAccount(context) else {
       throw DashIntentError(
         localizedStringResource:

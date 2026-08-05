@@ -227,7 +227,7 @@ struct R2BucketView: View {
       return [
         .icon(
           id: "r2-bucket-done-selecting",
-          asset: SolarAsset.close,
+          asset: SolarAsset.editClose,
           accessibilityLabel: DashL10n.string("Done selecting")
         ) {
           withAnimation(DashTheme.Motion.morph) {

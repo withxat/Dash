@@ -784,7 +784,7 @@ private struct HomeQuickActionsSection: View {
     .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(action.title)
     .accessibilityIdentifier(action.accessibilityIdentifier)
-    .frame(maxWidth: .infinity)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 

@@ -106,11 +106,15 @@ enum SolarAsset {
   static let clock = "SolarClockCircleOutline"
   static let slider = "SolarSliderHorizontalOutline"
   static let search = "SolarMagnifierOutline"
-  /// Heavy close mark used by trays and modal dismissal controls.
+  /// Heavy close mark — tray header ✕ only (`DashFormChrome` / sheet chrome).
   static let close = "SolarCloseOutline"
-  /// 2pt close mark paired with `unread` in editing toolbars.
+  /// 2pt close mark for page chrome (Settings dismiss, editor Cancel, etc.).
   static let editClose = "SolarEditCloseOutline"
   static let menuDots = "SolarMenuDotsOutline"
+  /// `menuDots` rotated 90° — the horizontal dots that mark a row opening a
+  /// picker tray (Language / Top glow / Chart style). Shares the same glyph;
+  /// the rotation is applied at the call site via `SolarIcon.rotation`.
+  static let trayDots = "SolarMenuDotsOutline"
   static let pen = "SolarPenNewSquareOutline"
   /// Not a Solar glyph: the Cloudflare brand mark (Simple Icons, filled).
   static let cloudflare = "CloudflareLogo"
@@ -124,6 +128,7 @@ struct SolarIcon: View {
   let asset: String
   var size: CGFloat = 24
   var color: Color = DashTheme.text
+  var rotation: Angle = .zero
 
   var body: some View {
     Image(asset)
@@ -131,6 +136,7 @@ struct SolarIcon: View {
       .renderingMode(.template)
       .scaledToFit()
       .frame(width: size, height: size)
+      .rotationEffect(rotation)
       .foregroundStyle(color)
       .accessibilityHidden(true)
   }

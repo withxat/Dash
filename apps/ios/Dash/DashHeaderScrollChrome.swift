@@ -1,21 +1,27 @@
+import OSLog
 import SwiftUI
 import UIKit
 import VariableBlur
+
+#if DEBUG
+  private enum DashHeaderFrostDebug {
+    static let log = Logger(subsystem: "sh.xat.dash.app", category: "HeaderFrost")
+    static var enabled: Bool {
+      ProcessInfo.processInfo.environment["DASH_DEBUG_HEADER_FROST"] == "1"
+    }
+  }
+#endif
 
 // MARK: - Root chrome
 
 /// Shared profile avatar control: ONE instance, floated by `MainTabView`
 /// above the pager so it doesn't ride along on tab swipes. It is positioned
-/// over the custom page bar's leading slot, so a workspace presentation fades
-/// its Close control into the same spot and glass circle.
+/// over the custom page bar's leading slot.
 ///
 /// Tap opens Settings; long-press opens the account switcher tray, matching
 /// the inbox's long-press pattern.
 struct HeaderProfileButton: View {
   @Environment(AppModel.self) private var model
-  /// Workspace present publishes its source anchor onto the avatar circle so
-  /// the morph captures the face, not the glass plate around it.
-  @Environment(\.dashNavigationEmbeddedAnchorID) private var embeddedAnchorID
   let action: @MainActor () -> Void
   /// Long-press opens the account switcher tray when provided.
   var onLongPress: (@MainActor () -> Void)? = nil
@@ -30,9 +36,8 @@ struct HeaderProfileButton: View {
 
   /// Circular glass matching the custom page controls. Without
   /// `buttonBorderShape(.circle)`, iOS 26 paints a square glass plate around
-  /// the 44×44 avatar bounds and flashes its white corner during push morph.
-  /// The negative padding pulls the glass in so the ring hugs the avatar
-  /// instead of leaving a gap around it.
+  /// the 44×44 avatar bounds. The negative padding pulls the glass in so the
+  /// ring hugs the avatar instead of leaving a gap around it.
   var body: some View {
     let email = model.user?.email ?? ""
     Group {
@@ -40,7 +45,7 @@ struct HeaderProfileButton: View {
         Button {
           performTap()
         } label: {
-          avatar(email: email)
+          HeaderProfileAvatar(email: email)
             .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
             .padding(-7)
         }
@@ -48,7 +53,7 @@ struct HeaderProfileButton: View {
         .buttonBorderShape(.circle)
       } else {
         Button(action: performTap) {
-          avatar(email: email)
+          HeaderProfileAvatar(email: email)
         }
         .buttonStyle(DashPressButtonStyle())
       }
@@ -79,16 +84,6 @@ struct HeaderProfileButton: View {
     }
     DashDelight.lightImpact()
     action()
-  }
-
-  @ViewBuilder
-  private func avatar(email: String) -> some View {
-    let mark = HeaderProfileAvatar(email: email)
-    if let embeddedAnchorID {
-      mark.dashNavigationAnchor(instanceID: embeddedAnchorID)
-    } else {
-      mark
-    }
   }
 }
 
@@ -621,9 +616,10 @@ struct DashHeaderScrim: View {
       // Mounted only while it shows: even an invisible backdrop filter still
       // participates in compositing.
       if scroll.isFrosted {
-        // The reader sits in the content's safe area, whose top inset already
-        // covers the status bar and page navigation region. The tail gives the blur and
-        // tint room to disappear.
+        // Same contract as before the custom page stack: the reader sits in the
+        // content safe area, whose top inset already covers the status bar and
+        // navigation region (`safeAreaInset` on the route host restores that
+        // for the custom bar). The tail gives the blur and tint room to ease out.
         let top = max(proxy.safeAreaInsets.top, DashHeaderScrimMetrics.minimumTop)
         let height = top + DashHeaderScrimMetrics.tail
         band(
@@ -847,9 +843,25 @@ final class DashHeaderScrollProbeView: UIView {
     offsetObservation = nil
     guard let scroll = DashScreenScrollLocator.contentScrollView(from: self) else {
       scrollView = nil
+      #if DEBUG
+        if DashHeaderFrostDebug.enabled {
+          let host = DashScreenScrollLocator.enclosingViewController(from: self)
+          DashHeaderFrostDebug.log.warning(
+            "probe attach missed scroll host=\(String(describing: host.map { type(of: $0) }), privacy: .public)"
+          )
+        }
+      #endif
       return
     }
     scrollView = scroll
+    #if DEBUG
+      if DashHeaderFrostDebug.enabled {
+        let host = DashScreenScrollLocator.enclosingViewController(from: self)
+        DashHeaderFrostDebug.log.info(
+          "probe attached scrollType=\(String(describing: type(of: scroll)), privacy: .public) h=\(scroll.bounds.height, format: .fixed(precision: 1)) paging=\(scroll.isPagingEnabled) host=\(String(describing: host.map { type(of: $0) }), privacy: .public)"
+        )
+      }
+    #endif
     offsetObservation = scroll.observe(\.contentOffset) { [weak self] _, _ in
       MainActor.assumeIsolated { self?.report() }
     }
@@ -860,11 +872,24 @@ final class DashHeaderScrollProbeView: UIView {
     guard let scrollView, scrollView.window != nil else {
       scroll.clear()
       wash?.clear()
+      #if DEBUG
+        if DashHeaderFrostDebug.enabled {
+          DashHeaderFrostDebug.log.warning("probe cleared — scroll missing window")
+        }
+      #endif
       return
     }
     let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
+    let wasFrosted = scroll.isFrosted
     scroll.report(distance: distance)
     wash?.report(distance: distance)
+    #if DEBUG
+      if DashHeaderFrostDebug.enabled, wasFrosted != scroll.isFrosted {
+        DashHeaderFrostDebug.log.info(
+          "frost \(scroll.isFrosted ? "armed" : "disarmed", privacy: .public) distance=\(distance, format: .fixed(precision: 1))"
+        )
+      }
+    #endif
   }
 }
 
@@ -922,8 +947,17 @@ final class DashScreenClipLiftView: UIView {
 /// Testable boundary for the UIKit mutation above.
 @MainActor
 enum DashScreenClipScope {
+  /// Unclip SwiftUI wrappers between the probe and the screen's hosting root —
+  /// never the content root itself or anything above it. Clearing the hosting
+  /// controller's clip lets a push's first under-safe-area frame paint into the
+  /// Dynamic Island and flash the workspace wash behind the arriving page.
   static func lift(from view: UIView) {
     guard let contentRoot = DashScreenScrollLocator.enclosingContentView(from: view) else {
+      #if DEBUG
+        if DashHeaderFrostDebug.enabled {
+          DashHeaderFrostDebug.log.warning("clip lift missed content root")
+        }
+      #endif
       return
     }
     var node = view.superview
@@ -1292,11 +1326,11 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
     apply(in: screen, fill: fill)
   }
 
-  /// Same geometry heuristic as `TabPagerScrollLock` — shared so Home's page
-  /// fill and the pager lock agree on which scroll is the three-tab pager.
+  /// Geometry heuristic for a horizontal multi-page container. The workspace
+  /// tab flow is no longer a paging scroll — do not treat every
+  /// `isPagingEnabled` view as a pager or a vertical content scroll that the
+  /// header frost must ignore can be skipped forever.
   static func isTabPager(_ scroll: UIScrollView) -> Bool {
-    if scroll.isPagingEnabled { return true }
-    guard scroll is UICollectionView else { return false }
     let width = scroll.bounds.width
     guard width > 100 else { return false }
     let pages = scroll.contentSize.width / width

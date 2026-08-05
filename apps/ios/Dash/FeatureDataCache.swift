@@ -447,7 +447,7 @@ final class FeatureDataCache {
     fetchedAt: Date,
     ttl: TimeInterval?
   ) {
-    guard let persistence, let accountID = persistenceAccountID else { return }
+    guard persistence != nil, let accountID = persistenceAccountID else { return }
     guard let data = encodeIfCodable(value) else { return }
     let entry = FeatureCachePersistedEntry(data: data, fetchedAt: fetchedAt, ttl: ttl)
     persistedEntries[key] = entry

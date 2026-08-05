@@ -422,6 +422,12 @@ enum DashTheme {
       response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
     static let dismiss = Animation.spring(
       response: 0.28, dampingFraction: 0.94, blendDuration: 0.08)
+    /// Tray scrim opacity fades in/out in place while the card rides its own
+    /// spring. Opacity carries no physics, so a timing curve reads cleaner than
+    /// a spring and stays in step with the card's settle: present eases out so
+    /// the scrim arrives and holds, dismiss eases in so it lingers then drops.
+    static let scrimPresent = Animation.easeOut(duration: 0.3)
+    static let scrimDismiss = Animation.easeIn(duration: 0.24)
   }
 
   enum Sheet {

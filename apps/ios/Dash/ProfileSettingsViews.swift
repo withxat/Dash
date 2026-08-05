@@ -323,10 +323,11 @@ enum ProfileTrayPhase: Hashable, Sendable {
 }
 
 private enum SettingsListMetrics {
-  /// Same 24-in-36 slot as `DashListRow` / Resources — plate stays
-  /// transparent; only the outline glyph paints.
-  static let iconSize: CGFloat = 24
-  static let iconColumn: CGFloat = 36
+  /// Grows with the enlarged row text (was the 24-in-36 slot shared with
+  /// `DashListRow` / Resources). Plate stays transparent; only the outline
+  /// glyph paints.
+  static let iconSize: CGFloat = 27
+  static let iconColumn: CGFloat = 40
   static let featuredLeading: CGFloat = 56
   static let rowSpacing: CGFloat = 12
 }
@@ -343,6 +344,9 @@ struct SettingsPlainRow<Accessory: View>: View {
   var textColor = DashTheme.text
   var trailing: String?
   var trailingIcon: String?
+  /// Applied to `trailingIcon` — `SolarAsset.trayDots` renders the horizontal
+  /// dots that mark a row opening a picker tray.
+  var trailingIconRotation: Angle = .zero
   var showsChevron = false
   /// Leaves the app (Safari / Mail) — arrow-right-up, not the in-app chevron.
   var showsExternalLink = false
@@ -367,6 +371,7 @@ struct SettingsPlainRow<Accessory: View>: View {
     textColor: Color = DashTheme.text,
     trailing: String? = nil,
     trailingIcon: String? = nil,
+    trailingIconRotation: Angle = .zero,
     showsChevron: Bool = false,
     showsExternalLink: Bool = false,
     hasAccessory: Bool = true,
@@ -379,6 +384,7 @@ struct SettingsPlainRow<Accessory: View>: View {
     self.textColor = textColor
     self.trailing = trailing
     self.trailingIcon = trailingIcon
+    self.trailingIconRotation = trailingIconRotation
     self.showsChevron = showsChevron
     self.showsExternalLink = showsExternalLink
     self.hasAccessory = hasAccessory
@@ -436,12 +442,14 @@ struct SettingsPlainRow<Accessory: View>: View {
       if let trailing {
         Text(trailing)
           .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
+          .foregroundStyle(DashTheme.text)
           .multilineTextAlignment(.trailing)
           .lineLimit(usesStackedLayout ? nil : 1)
       }
       if let trailingIcon {
-        SolarIcon(asset: trailingIcon, size: 20, color: DashTheme.placeholder)
+        SolarIcon(
+          asset: trailingIcon, size: 20, color: DashTheme.placeholder,
+          rotation: trailingIconRotation)
       } else if showsExternalLink {
         SolarIcon(
           asset: SolarAsset.arrowRightUp,
@@ -472,6 +480,7 @@ extension SettingsPlainRow where Accessory == EmptyView {
     textColor: Color = DashTheme.text,
     trailing: String? = nil,
     trailingIcon: String? = nil,
+    trailingIconRotation: Angle = .zero,
     showsChevron: Bool = false,
     showsExternalLink: Bool = false
   ) {
@@ -483,6 +492,7 @@ extension SettingsPlainRow where Accessory == EmptyView {
       textColor: textColor,
       trailing: trailing,
       trailingIcon: trailingIcon,
+      trailingIconRotation: trailingIconRotation,
       showsChevron: showsChevron,
       showsExternalLink: showsExternalLink,
       hasAccessory: false,
@@ -656,10 +666,6 @@ struct SettingsView: View {
               subtitle: profileSubtitle
             ) {
               UserAvatar(email: model.user?.email ?? "", size: 56)
-                // The seat the header avatar's workspace flight lands on; the
-                // claim mechanism keeps this occurrence hidden while the
-                // transition proxy owns the avatar's identity.
-                .dashNavigationLanding(.settingsProfileAvatar)
             }
           }
           .accessibilityIdentifier("settings-profile-row")
@@ -695,7 +701,8 @@ struct SettingsView: View {
               title: DashL10n.string("Language"),
               icon: SolarAsset.globus,
               trailing: selectedLanguage.displayName,
-              trailingIcon: SolarAsset.menuDots
+              trailingIcon: SolarAsset.trayDots,
+              trailingIconRotation: .degrees(90)
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())
@@ -711,7 +718,8 @@ struct SettingsView: View {
               title: DashL10n.string("Top glow"),
               icon: SolarAsset.sunset,
               trailing: selectedWorkspaceWash.displayName,
-              trailingIcon: SolarAsset.menuDots
+              trailingIcon: SolarAsset.trayDots,
+              trailingIconRotation: .degrees(90)
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())
@@ -725,7 +733,8 @@ struct SettingsView: View {
               title: DashL10n.string("Chart style"),
               icon: SolarAsset.chart,
               trailing: selectedChartStyle.displayName,
-              trailingIcon: SolarAsset.menuDots
+              trailingIcon: SolarAsset.trayDots,
+              trailingIconRotation: .degrees(90)
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())

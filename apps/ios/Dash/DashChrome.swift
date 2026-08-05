@@ -845,6 +845,8 @@ enum TrayDragDecision {
 /// timing vocabulary inside `DashTrayFlow`.
 private enum DashTrayMotion {
   static let present = DashTheme.Motion.present
+  static let scrimPresent = DashTheme.Motion.scrimPresent
+  static let scrimDismiss = DashTheme.Motion.scrimDismiss
   static let resize = DashTheme.Motion.trayResize
   static let release = DashTheme.Motion.release
   static let dismiss = DashTheme.Motion.dismiss
@@ -1111,8 +1113,8 @@ private struct DashSheetHeroHeader<Hero: View>: View {
 /// Compact trays use a full-screen transparent cover with our own dim and a
 /// bottom-pinned card. The card animates its own target height (DashSheetCard) so
 /// content morphs resize smoothly — there's no native detent to clip or snap.
-/// The dim fades and the card slides up from the bottom (and dismisses the
-/// same way), independently of the cover (see DashTrayModifier).
+/// Card and scrim share the cover but not the motion: the card springs up from
+/// the bottom, while the dim fades in place over the page behind.
 private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   let title: String
   var showsMenuButtons = true
@@ -1130,10 +1132,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   #if DEBUG
     @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
   #endif
+  /// Card / paired-shell reveal. Springs with the bottom train — not the dim.
   @State private var progress: CGFloat = 0
+  /// Full-screen page dim. Opacity only; never shares the card's offset spring.
+  @State private var scrimProgress: CGFloat = 0
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
   @State private var keyboardHeight: CGFloat = 0
@@ -1221,7 +1227,8 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
 
   var body: some View {
     ZStack(alignment: .bottom) {
-      Color.black.opacity(progress * DashTheme.Sheet.scrimOpacity)
+      trayScrim
+        .opacity(scrimProgress)
         .ignoresSafeArea()
         .contentShape(Rectangle())
         .onTapGesture { requestClose(reason: .gesture) }
@@ -1236,6 +1243,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       // left above the keyboard and scrolls the rest. As a floating card the
       // lift is plain outer padding — there's no longer an edge-to-edge fill
       // that has to run under the keyboard.
+      //
+      // The reader extends under the home indicator so bottom tuck is positive
+      // padding from the screen edge — negative padding inside a safe-area
+      // clipped host was cutting the card's bottom corners off.
       GeometryReader { proxy in
         ZStack {
           if sharedRevealActive, let sharedAction, let sourceFrame {
@@ -1252,7 +1263,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           }
 
           DashSheetCard(
-            maxCardHeight: proxy.size.height - bottomLift(proxy) - 24,
+            maxCardHeight: Self.resolvedMaxCardHeight(
+              containerHeight: proxy.size.height,
+              bottomLift: bottomLift(proxy)),
             hasFooter: hasFooter,
             drawsSurface: !sharedRevealActive,
             sharedRevealProgress: sharedRevealActive ? progress : nil
@@ -1270,9 +1283,19 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
               .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
           }
           .frame(maxWidth: .infinity)
+          .fixedSize(horizontal: false, vertical: true)
           .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
             liveCardFrame = frame
           }
+          // Rise only the card — never the GeometryReader host. Transforming
+          // the full host would slide empty transparent space and read like
+          // the page dim is traveling with the tray.
+          .modifier(
+            DashTrayCardReveal(
+              progress: progress, drag: drag, revealOffset: revealOffset,
+              reduceMotion: reduceMotion, active: !sharedRevealActive)
+          )
+          .offset(y: drag)
           .padding(.horizontal, DashTheme.Sheet.floatingMargin)
           .padding(.bottom, bottomLift(proxy))
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -1318,19 +1341,8 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           \.dashTrayProxyOwnedActionID,
           sharedProxyOwnsAction ? sharedAction?.id : nil
         )
-        // The standard path keeps its bounded bottom reveal. The paired path
-        // leaves the final card layout untouched while its shell and native-size
-        // action proxy animate independently in the sibling layer above.
-        .modifier(
-          DashTrayCardReveal(
-            progress: progress, drag: drag, revealOffset: revealOffset,
-            reduceMotion: reduceMotion, active: !sharedRevealActive)
-        )
-        // Gesture travel is its own animatable layer. Keeping it outside the
-        // progress-driven reveal prevents a drag update from retargeting an
-        // in-flight presentation spring's progress.
-        .offset(y: drag)
       }
+      .ignoresSafeArea(.container, edges: .bottom)
       .ignoresSafeArea(.keyboard)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1426,6 +1438,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
         if !isClosing { presentationSettled = true }
         presentationStarted = true
         progress = isClosing ? 0 : 1
+        scrimProgress = isClosing ? 0 : 1
         sharedProxyOwnsAction = false
         sharedRevealReleased = true
         if isClosing {
@@ -1471,6 +1484,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
 
     presentationStarted = true
+    // Scrim fades in place over the page; the card keeps its own bottom spring.
+    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimPresent) {
+      scrimProgress = 1
+    }
     // `.removed`, not `.logicallyComplete`: endpoint ownership changes only
     // once the rendered spring is actually at rest.
     withAnimation(
@@ -1583,22 +1600,46 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
   }
 
+  /// Page dim: material blur under a light black veil. Reduce Transparency
+  /// keeps the solid veil only so the entrance never depends on a filter.
+  @ViewBuilder private var trayScrim: some View {
+    ZStack {
+      if !reduceTransparency {
+        Rectangle().fill(.ultraThinMaterial)
+      }
+      Color.black.opacity(DashTheme.Sheet.scrimOpacity)
+    }
+  }
+
   /// How far to lift the card above the keyboard, in the GeometryReader's space.
-  /// `keyboardHeight` is measured from the window bottom (home indicator
-  /// included), but the reader already sits above the home indicator, so subtract
-  /// that inset or the card over-lifts and leaves a dim gap.
+  /// The reader extends under the home indicator; `keyboardHeight` is from the
+  /// window bottom, so subtract the safe-area inset or the card over-lifts.
   private func keyboardInset(_ proxy: GeometryProxy) -> CGFloat {
     max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
   }
 
-  /// Bottom gap under the floating card: the keyboard plus a margin while
-  /// typing. At rest, tuck the card slightly into the home-indicator safe area
-  /// so it does not appear to float too high above the screen edge.
+  /// Bottom gap under the floating card from the screen edge (always ≥ 0).
+  /// With a home indicator the gap is `safeArea - tuck` so the card sits
+  /// slightly into that region without negative padding (which clipped).
   private func bottomLift(_ proxy: GeometryProxy) -> CGFloat {
     let keyboard = keyboardInset(proxy)
     if keyboard > 0 { return keyboard + DashTheme.Sheet.floatingMargin }
-    return proxy.safeAreaInsets.bottom > 0
-      ? -DashTheme.Sheet.floatingBottomTuck : DashTheme.Sheet.floatingMargin
+    let safe = proxy.safeAreaInsets.bottom
+    if safe > 0 {
+      return max(0, safe - DashTheme.Sheet.floatingBottomTuck)
+    }
+    return DashTheme.Sheet.floatingMargin
+  }
+
+  /// Geometry can report 0 / non-finite sizes on the first cover layout pass;
+  /// never hand `DashSheetCard` a negative max height (SwiftUI then logs
+  /// "Invalid frame dimension").
+  private static func resolvedMaxCardHeight(
+    containerHeight: CGFloat,
+    bottomLift: CGFloat
+  ) -> CGFloat {
+    guard containerHeight.isFinite, bottomLift.isFinite else { return 120 }
+    return max(120, containerHeight - bottomLift - 24)
   }
 
   /// Only ✕ retraces a settled paired action. Drag, scrim, and programmatic
@@ -1634,6 +1675,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     let flies = beginSuccessFlightIfEligible(reason: reason)
     remainingExitStages = flies ? 2 : 1
     flightExitStagePending = flies
+    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimDismiss) {
+      scrimProgress = 0
+    }
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.dismiss) {
       progress = 0
       if reversesUnsettledSharedReveal { drag = 0 }
@@ -2031,11 +2075,13 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
       content
         .opacity(progress)
     } else {
+      // Card-only fade (the modifier sits on the card, not the full-screen host).
+      // Opacity still covers the bounded travel's peek; the page dim is a
+      // separate `scrimProgress` and must never ride this spring.
       content
         .offset(y: (1 - progress) * (max(revealOffset, drag + 48) - drag))
         .scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)
-        .opacity(progress)
-        .blur(radius: 4 * (1 - progress))
+        .opacity(min(1, progress * 2))
     }
   }
 }
@@ -2237,7 +2283,10 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   @State private var bodyDisplay: CGFloat = 0
 
   private var maxBodyHeight: CGFloat {
-    max(80, maxCardHeight - headerHeight - footerHeight)
+    guard maxCardHeight.isFinite, headerHeight.isFinite, footerHeight.isFinite else {
+      return 80
+    }
+    return max(80, maxCardHeight - headerHeight - footerHeight)
   }
 
   /// A tray with its own fixed footer keeps the body's bottom inset symmetric
@@ -2253,7 +2302,9 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   /// it would size its scroll region to a region that does not exist yet.
   private var contentMaxHeight: CGFloat? {
     guard headerHeight > 0 else { return nil }
-    return max(0, maxBodyHeight - DashTheme.Sheet.bodyVertical - bodyBottomInset)
+    let budget = maxBodyHeight - DashTheme.Sheet.bodyVertical - bodyBottomInset
+    guard budget.isFinite else { return nil }
+    return max(0, budget)
   }
 
   private var headerReveal: CGFloat {
@@ -2271,6 +2322,22 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   private var footerReveal: CGFloat {
     guard let sharedRevealProgress else { return 1 }
     return DashTraySharedRevealMath.stage(sharedRevealProgress, from: 0.44, to: 0.72)
+  }
+
+  /// Explicit body viewport once measured. `nil` only on the first pass so the
+  /// scroll child can hug content and publish `bodyIdeal` — a `0` height would
+  /// never measure. After that, always pin so the white surface cannot stretch.
+  private var resolvedBodyHeight: CGFloat? {
+    let candidate: CGFloat
+    if bodyDisplay > 0 {
+      candidate = bodyDisplay
+    } else if bodyIdeal > 0 {
+      candidate = min(bodyIdeal, maxBodyHeight)
+    } else {
+      return nil
+    }
+    guard candidate.isFinite, candidate >= 0 else { return nil }
+    return candidate
   }
 
   var body: some View {
@@ -2297,13 +2364,15 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
           .padding(.horizontal, DashTheme.Sheet.content)
           .padding(.top, DashTheme.Sheet.bodyVertical)
           .padding(.bottom, bodyBottomInset)
+          .fixedSize(horizontal: false, vertical: true)
           .background {
             GeometryReader { proxy in
               Color.clear.preference(key: DashSheetBodyIdealKey.self, value: proxy.size.height)
             }
           }
       }
-      .frame(height: bodyDisplay > 0 ? bodyDisplay : nil)
+      .frame(height: resolvedBodyHeight, alignment: .top)
+      .fixedSize(horizontal: false, vertical: resolvedBodyHeight == nil)
       .opacity(bodyReveal)
       .offset(y: 10 * (1 - bodyReveal))
 
@@ -2324,6 +2393,9 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
       }
     }
     .frame(maxWidth: .infinity)
+    // Hug header + fitted body + footer. Do not apply a tall `maxHeight` frame
+    // after this — that expands the white surface past the content.
+    .fixedSize(horizontal: false, vertical: true)
     // A floating card: one stable all-corner radius, and nothing extends past
     // the card — the gaps around it are the design.
     .background {
@@ -2339,9 +2411,16 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
         Color.clear.preference(key: DashSheetFittedHeightKey.self, value: proxy.size.height)
       }
     }
-    .onPreferenceChange(DashSheetHeaderHeightKey.self) { headerHeight = $0 }
-    .onPreferenceChange(DashSheetFooterHeightKey.self) { footerHeight = $0 }
+    .onPreferenceChange(DashSheetHeaderHeightKey.self) { height in
+      guard height.isFinite, height >= 0 else { return }
+      headerHeight = height
+    }
+    .onPreferenceChange(DashSheetFooterHeightKey.self) { height in
+      guard height.isFinite, height >= 0 else { return }
+      footerHeight = height
+    }
     .onPreferenceChange(DashSheetBodyIdealKey.self) { ideal in
+      guard ideal.isFinite, ideal >= 0 else { return }
       bodyIdeal = ideal
       applyBody(animated: bodyDisplay != 0)
     }
@@ -2350,7 +2429,7 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
 
   private func applyBody(animated: Bool) {
     let target = min(bodyIdeal, maxBodyHeight)
-    guard target > 0 else { return }
+    guard target.isFinite, target > 0 else { return }
     if animated, !reduceMotion {
       withAnimation(DashTrayMotion.resize) { bodyDisplay = target }
     } else {
@@ -2448,14 +2527,28 @@ struct DashTrayScrollBoundary<Content: View, Action: View>: View {
   }
 }
 
-// The full-screen cover is toggled without animation (`covered`, driven off the
-// caller's binding through a disabled-animation transaction) so its own present
-// transition never fires — DashCustomSheet owns the fade/slide and the exit
-// finishes before the caller's binding clears.
+// The full-screen cover must mount and unmount with *no* system slide — that
+// transition would translate the scrim and card together from the bottom, which
+// makes an opacity-only dim look like it rises with the tray. UIKit's modal
+// animation is not always suppressed by a SwiftUI transaction alone on recent
+// OS releases, so briefly disable UIView animations around the binding write.
+// Re-enable synchronously afterward so `DashCustomSheet`'s entrance springs
+// (started from `onAppear`) are not swallowed.
 private func dashPresentWithoutAnimation(_ apply: () -> Void) {
+  // SwiftUI view-update callbacks always run on the main thread, so assume the
+  // main actor synchronously for the UIKit calls rather than hop: the whole
+  // point is that animations are disabled for the duration of `apply`. Only the
+  // two `UIView` calls are isolated here so the non-`Sendable` `apply` closure
+  // is never captured into a sendable `@MainActor` context.
   var transaction = Transaction()
   transaction.disablesAnimations = true
+  MainActor.assumeIsolated {
+    UIView.setAnimationsEnabled(false)
+  }
   withTransaction(transaction, apply)
+  MainActor.assumeIsolated {
+    UIView.setAnimationsEnabled(true)
+  }
 }
 
 /// Resolves and reserves a paired source at present time. Reduce Motion never
@@ -2598,7 +2691,11 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
               dashPresentWithoutAnimation { coverPresentation = nil }
             }, content: trayContent,
             footer: footer, hasFooter: hasFooter)
-        })
+        }
+      )
+      // Belt with the binding transaction: keep the cover's own present/dismiss
+      // transition from sliding the whole host (scrim included).
+      .transaction { $0.disablesAnimations = true }
   }
 }
 
@@ -2682,6 +2779,8 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
               dashPresentWithoutAnimation { coverPresentation = nil }
             }, content: { trayContent(presentation.value) },
             footer: { EmptyView() }, hasFooter: false)
-        })
+        }
+      )
+      .transaction { $0.disablesAnimations = true }
   }
 }

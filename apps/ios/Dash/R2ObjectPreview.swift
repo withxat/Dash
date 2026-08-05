@@ -214,7 +214,7 @@ struct R2ObjectPreview: View {
     .safeAreaInset(edge: .top, spacing: 0) {
       HStack(spacing: 12) {
         PreviewChromeButton(
-          asset: SolarAsset.close, accessibilityLabel: DashL10n.string("Close"),
+          asset: SolarAsset.editClose, accessibilityLabel: DashL10n.string("Close"),
           action: { dismiss() })
         Text(filename)
           .dashTextStyle(.bodySemibold)

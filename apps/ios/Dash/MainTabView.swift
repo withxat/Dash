@@ -22,6 +22,8 @@ enum DashTabTransitionRules {
     return targetIndex > sourceIndex ? .forward : .backward
   }
 
+  /// Incoming start offset on the navigation axis. Forward LTR enters from the
+  /// trailing edge (positive X).
   static func signedTravel(
     for direction: DashTabTransitionDirection,
     rightToLeft: Bool,
@@ -36,6 +38,34 @@ enum DashTabTransitionRules {
     let layoutSign: CGFloat = rightToLeft ? -1 : 1
     let travel = reduceMotion ? 0 : DashTheme.Motion.tabStepSlide
     return travel * directionalSign * layoutSign
+  }
+
+  /// Outgoing end offset — opposite the incoming start. Forward LTR exits
+  /// toward the leading edge (negative X), like a horizontal pager.
+  static func outgoingEndOffset(
+    for direction: DashTabTransitionDirection,
+    rightToLeft: Bool,
+    reduceMotion: Bool
+  ) -> CGFloat {
+    -signedTravel(for: direction, rightToLeft: rightToLeft, reduceMotion: reduceMotion)
+  }
+
+  /// Push drills forward (Home → Resources); Back / Close-to-parent drills
+  /// backward. Page flow and tab handoff share this axis.
+  static func pageStepDirection(isPush: Bool) -> DashTabTransitionDirection {
+    isPush ? .forward : .backward
+  }
+}
+
+/// Fills a containment child without assigning `frame`. UIKit leaves `frame`
+/// undefined under a non-identity `transform`, and tab/page handoffs animate
+/// translation — writing `frame` mid-flight yanks the outgoing page back toward
+/// identity and reads as a reversed exit.
+enum DashContainmentLayout {
+  @MainActor
+  static func fill(_ child: UIView, in containerBounds: CGRect) {
+    child.bounds = CGRect(origin: .zero, size: containerBounds.size)
+    child.center = CGPoint(x: containerBounds.midX, y: containerBounds.midY)
   }
 }
 
@@ -596,8 +626,7 @@ struct MainTabView: View {
           DashNavigationSource(
             destination: .settings,
             presentation: .workspaceOverlay,
-            onNavigate: synchronizeNavigatorAccountScopes,
-            embedsAnchor: true
+            onNavigate: synchronizeNavigatorAccountScopes
           ) { navigate in
             HeaderProfileButton(
               action: { navigate() },
@@ -611,12 +640,9 @@ struct MainTabView: View {
             )
           }
           // The avatar floats above all three page hosts, so it cannot inherit
-          // the active tab's navigator from a hosted root. Bind the same
-          // navigator the visible workspace owns before handing off to Close.
+          // the active tab's navigator from a hosted root.
           .environment(\.destinationNavigator, activeNavigator)
           .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
-          // Tuned against the custom page control's slot so the workspace
-          // handoff can later bridge the avatar into Close without a jump.
           .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
           .padding(.top, WorkspaceHeaderMetrics.edgeInset)
           // Liquid Glass is composited outside a normal opacity group on iOS
