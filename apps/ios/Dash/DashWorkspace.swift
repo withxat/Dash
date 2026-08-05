@@ -1050,7 +1050,10 @@ private enum DashPageTransitionStyle {
   var dampingRatio: CGFloat {
     switch self {
     case .cardPush, .cardPop: DashTheme.Motion.Page.cardDampingRatio
-    default: DashTheme.Motion.Page.dampingRatio
+    case .flowPush, .flowPop: DashTheme.Motion.Page.flowDampingRatio
+    case .workspacePresent: DashTheme.Motion.Page.workspaceEnterDampingRatio
+    case .workspaceDismiss: DashTheme.Motion.Page.workspaceExitDampingRatio
+    case .entityPush, .entityPop: DashTheme.Motion.Page.dampingRatio
     }
   }
 }
@@ -1282,7 +1285,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     for child in children {
-      child.view.frame = view.bounds
+      DashContainmentLayout.fill(child.view, in: view.bounds)
     }
   }
 
@@ -1585,21 +1588,16 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     reduceMotion: Bool
   ) {
     let travel = min(max(view.bounds.width * 0.08, 22), 34)
-    let direction: CGFloat =
-      view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
+    let rightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+    let direction: CGFloat = rightToLeft ? -1 : 1
     switch style {
-    case .flowPush:
-      target.alpha = 0
-      if !reduceMotion {
-        target.transform = CGAffineTransform(translationX: travel * direction, y: 0)
-      }
-    case .flowPop:
-      target.alpha = reduceMotion ? 0 : 0.96
-      if !reduceMotion {
-        target.transform = CGAffineTransform(
-          translationX: -travel * 0.35 * direction,
-          y: 0)
-      }
+    case .flowPush, .flowPop:
+      applyTabStepInitial(
+        isPush: style.isPush,
+        source: source,
+        target: target,
+        rightToLeft: rightToLeft,
+        reduceMotion: reduceMotion)
     case .entityPush:
       target.alpha = 0
       if !reduceMotion, !hasProxy {
@@ -1640,6 +1638,46 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     if source.alpha != 0 { source.alpha = 1 }
   }
 
+  /// Flow pages use the same short directional handoff as tab changes. Card
+  /// pushes stay stationary and keep their independent semantic hero timeline.
+  private func applyTabStepInitial(
+    isPush: Bool,
+    source: UIView,
+    target: UIView,
+    rightToLeft: Bool,
+    reduceMotion: Bool
+  ) {
+    let direction = DashTabTransitionRules.pageStepDirection(isPush: isPush)
+    let travel = DashTabTransitionRules.signedTravel(
+      for: direction,
+      rightToLeft: rightToLeft,
+      reduceMotion: reduceMotion)
+    source.alpha = 1
+    source.transform = .identity
+    target.alpha = 0
+    target.transform =
+      reduceMotion ? .identity : CGAffineTransform(translationX: travel, y: 0)
+  }
+
+  private func applyTabStepFinal(
+    isPush: Bool,
+    source: UIView,
+    target: UIView,
+    rightToLeft: Bool,
+    reduceMotion: Bool
+  ) {
+    let direction = DashTabTransitionRules.pageStepDirection(isPush: isPush)
+    let outgoingTravel = DashTabTransitionRules.outgoingEndOffset(
+      for: direction,
+      rightToLeft: rightToLeft,
+      reduceMotion: reduceMotion)
+    target.alpha = 1
+    target.transform = .identity
+    source.alpha = 0
+    source.transform =
+      reduceMotion ? .identity : CGAffineTransform(translationX: outgoingTravel, y: 0)
+  }
+
   private func applyFinalTransitionState(
     style: DashPageTransitionStyle,
     source: UIView,
@@ -1647,22 +1685,15 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     proxy: TransitionProxy?,
     reduceMotion: Bool
   ) {
-    let direction: CGFloat =
-      view.effectiveUserInterfaceLayoutDirection == .rightToLeft ? -1 : 1
+    let rightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
     switch style {
-    case .flowPush:
-      target.alpha = 1
-      target.transform = .identity
-      if !reduceMotion {
-        source.transform = CGAffineTransform(translationX: -8 * direction, y: 0)
-      }
-    case .flowPop:
-      target.alpha = 1
-      target.transform = .identity
-      source.alpha = 0
-      if !reduceMotion {
-        source.transform = CGAffineTransform(translationX: 28 * direction, y: 0)
-      }
+    case .flowPush, .flowPop:
+      applyTabStepFinal(
+        isPush: style.isPush,
+        source: source,
+        target: target,
+        rightToLeft: rightToLeft,
+        reduceMotion: reduceMotion)
     case .entityPush:
       if proxy == nil {
         target.alpha = 1
@@ -2470,7 +2501,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
 
   private func attach(_ child: UIViewController, above sibling: UIViewController?) {
     guard child.parent !== self else {
-      child.view.frame = view.bounds
+      DashContainmentLayout.fill(child.view, in: view.bounds)
       if let sibling, sibling.view.superview === view {
         view.insertSubview(child.view, aboveSubview: sibling.view)
       } else {
@@ -2479,8 +2510,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       return
     }
     addChild(child)
-    child.view.frame = view.bounds
-    child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // Bounds/center remain valid while the page owns a transition transform.
+    child.view.autoresizingMask = []
+    DashContainmentLayout.fill(child.view, in: view.bounds)
     if let sibling, sibling.view.superview === view {
       view.insertSubview(child.view, aboveSubview: sibling.view)
     } else {
@@ -2839,7 +2871,7 @@ final class DashTabFlowViewController: UIViewController {
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
     for child in children {
-      child.view.frame = view.bounds
+      DashContainmentLayout.fill(child.view, in: view.bounds)
     }
   }
 
@@ -3173,7 +3205,7 @@ final class DashTabFlowViewController: UIViewController {
 
   private func attach(_ child: UIViewController, above sibling: UIViewController?) {
     if child.parent === self {
-      child.view.frame = view.bounds
+      DashContainmentLayout.fill(child.view, in: view.bounds)
       if let sibling, sibling.view.superview === view {
         view.insertSubview(child.view, aboveSubview: sibling.view)
       } else {
@@ -3182,8 +3214,9 @@ final class DashTabFlowViewController: UIViewController {
       return
     }
     addChild(child)
-    child.view.frame = view.bounds
-    child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // Bounds/center keep the tab handoff translation defined during layout.
+    child.view.autoresizingMask = []
+    DashContainmentLayout.fill(child.view, in: view.bounds)
     if let sibling, sibling.view.superview === view {
       view.insertSubview(child.view, aboveSubview: sibling.view)
     } else {
@@ -3717,6 +3750,21 @@ enum DashPageChromeMetrics {
   static let maximumPrincipalWidth: CGFloat = 160
 }
 
+enum DashPageChromeAssetRules {
+  static func leadingAsset(
+    for dismissal: DashNavigationDismissal,
+    rightToLeft: Bool
+  ) -> String {
+    switch dismissal {
+    case .back:
+      rightToLeft ? SolarAsset.chevronRight : SolarAsset.chevronLeft
+    case .closeToWorkspaceRoot:
+      // Page chrome uses the finer 2pt mark; the heavier close glyph is tray-only.
+      SolarAsset.editClose
+    }
+  }
+}
+
 /// The opaque destination plate must already cover the workspace wash before
 /// a root push exposes its first attached page frame.
 enum DashDestinationCanvasRules {
@@ -3783,15 +3831,18 @@ private struct DashPageNavigationBar: View {
       switch entry.dismissal {
       case .back:
         DashToolbarIconButton(
-          asset: layoutDirection == .rightToLeft
-            ? SolarAsset.chevronRight : SolarAsset.chevronLeft,
+          asset: DashPageChromeAssetRules.leadingAsset(
+            for: .back,
+            rightToLeft: layoutDirection == .rightToLeft),
           accessibilityLabel: DashL10n.string("Back"),
           action: dismiss
         )
         .accessibilityIdentifier("dash.navigation.back")
       case .closeToWorkspaceRoot:
         DashToolbarIconButton(
-          asset: SolarAsset.close,
+          asset: DashPageChromeAssetRules.leadingAsset(
+            for: .closeToWorkspaceRoot,
+            rightToLeft: layoutDirection == .rightToLeft),
           accessibilityLabel: DashL10n.string("Close"),
           action: dismiss
         )

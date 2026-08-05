@@ -341,6 +341,12 @@ if (
   );
 }
 
+if (!/case \.closeToWorkspaceRoot:\s*SolarAsset\.editClose/.test(dashWorkspace)) {
+  issues.push(
+    "Workspace Close must use the fine editClose mark; the heavier close glyph is tray-only.",
+  );
+}
+
 const sharedHeader = declarationBody(
   mainTab,
   "private var sharedHeaderOverlay: some View",

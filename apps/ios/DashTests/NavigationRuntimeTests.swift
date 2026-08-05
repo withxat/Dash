@@ -33,6 +33,52 @@ import UIKit
       reduceMotion: true) == 0)
 }
 
+@Test func tabFlowOutgoingExitsOppositeTheIncomingStart() {
+  #expect(
+    DashTabTransitionRules.outgoingEndOffset(
+      for: .forward,
+      rightToLeft: false,
+      reduceMotion: false) == -DashTheme.Motion.tabStepSlide)
+  #expect(
+    DashTabTransitionRules.outgoingEndOffset(
+      for: .backward,
+      rightToLeft: false,
+      reduceMotion: false) == DashTheme.Motion.tabStepSlide)
+  #expect(
+    DashTabTransitionRules.outgoingEndOffset(
+      for: .forward,
+      rightToLeft: true,
+      reduceMotion: false) == DashTheme.Motion.tabStepSlide)
+}
+
+@Test func pageStepSharesTabHandoffAxis() {
+  #expect(DashTabTransitionRules.pageStepDirection(isPush: true) == .forward)
+  #expect(DashTabTransitionRules.pageStepDirection(isPush: false) == .backward)
+  #expect(DashTheme.Motion.Page.flowEnterDuration == DashTheme.Motion.tabStepSettleDuration)
+  #expect(DashTheme.Motion.Page.flowDampingRatio == DashTheme.Motion.tabStepSettleDampingRatio)
+}
+
+@Test @MainActor func containmentLayoutPreservesTranslationWhileFilling() {
+  let container = CGRect(x: 0, y: 0, width: 390, height: 844)
+  let child = UIView(frame: .zero)
+  child.transform = CGAffineTransform(translationX: -24, y: 0)
+  DashContainmentLayout.fill(child, in: container)
+  #expect(child.bounds.size == container.size)
+  #expect(child.center == CGPoint(x: container.midX, y: container.midY))
+  #expect(child.transform.tx == -24)
+}
+
+@Test func pageCloseUsesTheFineEditCloseMark() {
+  #expect(
+    DashPageChromeAssetRules.leadingAsset(
+      for: .closeToWorkspaceRoot,
+      rightToLeft: false) == SolarAsset.editClose)
+  #expect(
+    DashPageChromeAssetRules.leadingAsset(
+      for: .back,
+      rightToLeft: true) == SolarAsset.chevronRight)
+}
+
 @Test func cardMorphKeepsPagesStationaryAndReflowsBetweenExactSeats() {
   let source = CGRect(x: 20, y: 132, width: 164, height: 131.2)
   let landing = CGRect(x: 16, y: 112, width: 358, height: 214.8)
@@ -75,6 +121,12 @@ import UIKit
     targetShowsDestinationCanvas: true)
   #expect(!rootPush.isHidden)
   #expect(rootPush.alpha == 1)
+
+  let popToRoot = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: true,
+    targetShowsDestinationCanvas: false)
+  #expect(!popToRoot.isHidden)
+  #expect(popToRoot.alpha == 1)
 
   let rootAtRest = DashDestinationCanvasRules.preparation(
     sourceShowsDestinationCanvas: false,

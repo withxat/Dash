@@ -315,14 +315,13 @@ enum DashTheme {
     /// Reduce-motion fallback: position/scale drop out, a short opacity ease stays.
     static let reduced = Animation.easeOut(duration: 0.12)
 
-    /// UIKit timings for Dash's page compositor. They mirror the SwiftUI
-    /// vocabulary above but keep route roles distinct: frequent flow steps are
-    /// brisk, an object expansion gets enough time to preserve identity, and
+    /// UIKit timings for Dash's page compositor. Detail drills share the tab
+    /// handoff settle window; workspace overlays keep a distinct vertical train;
     /// exits finish sooner than their matching entrances.
     enum Page {
       static let reducedDuration: TimeInterval = 0.12
-      static let flowEnterDuration: TimeInterval = 0.27
-      static let flowExitDuration: TimeInterval = 0.21
+      static let flowEnterDuration: TimeInterval = 0.3
+      static let flowExitDuration: TimeInterval = 0.3
       static let entityEnterDuration: TimeInterval = 0.29
       static let entityExitDuration: TimeInterval = 0.23
       /// Family's wallet-card pattern: geometry settles first, with destination
@@ -330,11 +329,16 @@ enum DashTheme {
       static let cardEnterDuration: TimeInterval = 0.38
       static let cardExitDuration: TimeInterval = 0.34
       static let cardDampingRatio: CGFloat = 1
-      // The workspace pair travels the full canvas height (vertical train),
-      // so it needs more time to read than the sibling fades.
-      static let workspaceEnterDuration: TimeInterval = 0.44
-      static let workspaceExitDuration: TimeInterval = 0.36
+      // The full-height workspace train stays close to the flow handoff pace.
+      static let workspaceEnterDuration: TimeInterval = 0.28
+      static let workspaceExitDuration: TimeInterval = 0.22
       static let dampingRatio: CGFloat = 0.9
+      /// Flow drills use the tab settle spring so push and tab swipe read as
+      /// one horizontal language (`tabStepSettleDampingRatio`).
+      static let flowDampingRatio: CGFloat = 0.68
+      /// Slightly underdamped on entrance; exit stays firmer so Close leaves cleanly.
+      static let workspaceEnterDampingRatio: CGFloat = 0.84
+      static let workspaceExitDampingRatio: CGFloat = 0.9
     }
 
     /// Skeleton → loaded content: long enough for blur to read.
@@ -427,7 +431,7 @@ enum DashTheme {
     /// a spring and stays in step with the card's settle: present eases out so
     /// the scrim arrives and holds, dismiss eases in so it lingers then drops.
     static let scrimPresent = Animation.easeOut(duration: 0.3)
-    static let scrimDismiss = Animation.easeIn(duration: 0.24)
+    static let scrimDismiss = Animation.easeIn(duration: 0.22)
   }
 
   enum Sheet {
@@ -764,19 +768,19 @@ enum DashTextStyle {
     case .emptyTitle: (24, .bold, .default, .title2)
     case .sheetTitle: (20, .bold, .default, .title3)
     case .trayTitle: (22, .bold, .default, .title3)
-    case .sectionTitle: (18, .semibold, .default, .headline)
-    case .body: (16, .regular, .default, .body)
-    case .bodyMedium: (16, .medium, .default, .body)
-    case .bodySemibold: (16, .semibold, .default, .body)
-    case .bodyBold: (16, .bold, .default, .body)
-    case .button: (17, .semibold, .default, .body)
-    case .buttonMedium: (17, .medium, .default, .body)
-    case .buttonBold: (17, .bold, .default, .body)
-    case .supporting: (15, .regular, .default, .subheadline)
-    case .supportingMedium: (14, .medium, .default, .subheadline)
-    case .supportingSemibold: (15, .semibold, .default, .subheadline)
-    case .footnote: (13, .regular, .default, .footnote)
-    case .footnoteSemibold: (13, .semibold, .default, .footnote)
+    case .sectionTitle: (20, .semibold, .default, .headline)
+    case .body: (18, .regular, .default, .body)
+    case .bodyMedium: (18, .medium, .default, .body)
+    case .bodySemibold: (18, .semibold, .default, .body)
+    case .bodyBold: (18, .bold, .default, .body)
+    case .button: (18, .semibold, .default, .body)
+    case .buttonMedium: (18, .medium, .default, .body)
+    case .buttonBold: (18, .bold, .default, .body)
+    case .supporting: (17, .regular, .default, .subheadline)
+    case .supportingMedium: (16, .medium, .default, .subheadline)
+    case .supportingSemibold: (17, .semibold, .default, .subheadline)
+    case .footnote: (15, .regular, .default, .footnote)
+    case .footnoteSemibold: (15, .semibold, .default, .footnote)
     case .caption: (12, .regular, .default, .caption)
     case .captionSemibold: (12, .semibold, .default, .caption)
     case .micro: (11, .regular, .default, .caption2)
@@ -900,8 +904,8 @@ struct DashGreedyWrapText: UIViewRepresentable {
     let label = UILabel()
     label.lineBreakStrategy = []
     label.lineBreakMode = .byTruncatingTail
-    // Mirrors `DashTextStyle.footnote` (13pt regular, scaling with .footnote).
-    label.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 13))
+    // Mirrors `DashTextStyle.footnote` (15pt regular, scaling with .footnote).
+    label.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 15))
     label.adjustsFontForContentSizeCategory = true
     label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return label

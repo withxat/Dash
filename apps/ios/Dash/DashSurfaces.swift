@@ -597,7 +597,7 @@ struct DashToolTile: View {
         .frame(maxWidth: .infinity)
     }
     .padding(DashTheme.Spacing.card)
-    .frame(maxWidth: .infinity, minHeight: 96)
+    .frame(maxWidth: .infinity, minHeight: 96, maxHeight: .infinity)
     .background(
       DashTheme.homeCardSurface,
       in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
