@@ -768,19 +768,19 @@ enum DashTextStyle {
     case .emptyTitle: (24, .bold, .default, .title2)
     case .sheetTitle: (20, .bold, .default, .title3)
     case .trayTitle: (22, .bold, .default, .title3)
-    case .sectionTitle: (20, .semibold, .default, .headline)
-    case .body: (18, .regular, .default, .body)
-    case .bodyMedium: (18, .medium, .default, .body)
-    case .bodySemibold: (18, .semibold, .default, .body)
-    case .bodyBold: (18, .bold, .default, .body)
-    case .button: (18, .semibold, .default, .body)
-    case .buttonMedium: (18, .medium, .default, .body)
-    case .buttonBold: (18, .bold, .default, .body)
-    case .supporting: (17, .regular, .default, .subheadline)
-    case .supportingMedium: (16, .medium, .default, .subheadline)
-    case .supportingSemibold: (17, .semibold, .default, .subheadline)
-    case .footnote: (15, .regular, .default, .footnote)
-    case .footnoteSemibold: (15, .semibold, .default, .footnote)
+    case .sectionTitle: (18, .semibold, .default, .headline)
+    case .body: (16, .regular, .default, .body)
+    case .bodyMedium: (16, .medium, .default, .body)
+    case .bodySemibold: (16, .semibold, .default, .body)
+    case .bodyBold: (16, .bold, .default, .body)
+    case .button: (17, .semibold, .default, .body)
+    case .buttonMedium: (17, .medium, .default, .body)
+    case .buttonBold: (17, .bold, .default, .body)
+    case .supporting: (15, .regular, .default, .subheadline)
+    case .supportingMedium: (14, .medium, .default, .subheadline)
+    case .supportingSemibold: (15, .semibold, .default, .subheadline)
+    case .footnote: (13, .regular, .default, .footnote)
+    case .footnoteSemibold: (13, .semibold, .default, .footnote)
     case .caption: (12, .regular, .default, .caption)
     case .captionSemibold: (12, .semibold, .default, .caption)
     case .micro: (11, .regular, .default, .caption2)
@@ -904,8 +904,8 @@ struct DashGreedyWrapText: UIViewRepresentable {
     let label = UILabel()
     label.lineBreakStrategy = []
     label.lineBreakMode = .byTruncatingTail
-    // Mirrors `DashTextStyle.footnote` (15pt regular, scaling with .footnote).
-    label.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 15))
+    // Mirrors `DashTextStyle.footnote` (13pt regular, scaling with .footnote).
+    label.font = UIFontMetrics(forTextStyle: .footnote).scaledFont(for: .systemFont(ofSize: 13))
     label.adjustsFontForContentSizeCategory = true
     label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return label
