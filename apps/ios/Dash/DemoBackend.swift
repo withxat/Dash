@@ -693,6 +693,17 @@ final class DemoBackend: URLProtocol {
     }
     let namespace = tail[0]
     switch tail.dropFirst().first {
+    case nil:
+      // The keys screen fetches the bare namespace to name its header when a
+      // deep link or relaunch skips the list.
+      guard let match = namespaces.first(where: { $0.id == namespace }) else {
+        return Reply(
+          status: 404,
+          json:
+            #"{"success":false,"errors":[{"code":10013,"message":"namespace not found"}],"messages":[],"result":null}"#
+        )
+      }
+      return ok(match.json)
     case "keys"?:
       var keys = DemoWorld.kvKeys(in: namespace)
       if let prefix {

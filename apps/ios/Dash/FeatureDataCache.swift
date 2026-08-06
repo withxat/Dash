@@ -107,6 +107,9 @@ enum FeatureCacheKey {
     "r2Domains:\(accountID):\(bucket)"
   }
   static func kvNamespaces(_ accountID: String) -> String { "kv:\(accountID)" }
+  static func kvNamespace(accountID: String, namespaceID: String) -> String {
+    "kvNamespace:\(accountID):\(namespaceID)"
+  }
   static func kvKeys(accountID: String, namespaceID: String, prefix: String) -> String {
     "kvKeys:\(accountID):\(namespaceID):\(prefix)"
   }

@@ -707,6 +707,9 @@ public actor CloudflareClient {
       "/accounts/\(accountID)/storage/kv/namespaces",
       query: ["page": String(page), "per_page": String(perPage)])
   }
+  public func getKVNamespace(accountID: String, namespaceID: String) async throws -> KVNamespace {
+    try await request("/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)")
+  }
   public func listKVKeys(
     accountID: String, namespaceID: String, cursor: String? = nil, prefix: String? = nil
   ) async throws -> CursorPage<KVKey> {

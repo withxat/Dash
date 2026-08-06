@@ -221,6 +221,25 @@ struct NetworkTests {
     #expect(account.name == "Saved")
   }
 
+  @Test func getKVNamespaceTargetsTheSingleNamespace() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path == "/accounts/account/storage/kv/namespaces/ns-1")
+      return (
+        200,
+        Data(#"{"success":true,"result":{"id":"ns-1","title":"production-config"}}"#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let namespace = try await client.getKVNamespace(accountID: "account", namespaceID: "ns-1")
+
+    #expect(namespace.id == "ns-1")
+    #expect(namespace.title == "production-config")
+  }
+
   @Test func listPagesProjectsCollectsEveryPage() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

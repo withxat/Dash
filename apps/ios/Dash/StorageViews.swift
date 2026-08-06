@@ -1547,6 +1547,7 @@ struct KVNamespaceView: View {
   @State private var loading = true
   @State private var isLoadingMore = false
   @State private var loadedContext: AccountRequestContext?
+  @State private var resolvedNamespace: KVNamespace?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
   private var pageActions: [DashPageActionDescriptor] {
@@ -1562,14 +1563,19 @@ struct KVNamespaceView: View {
     ]
   }
 
-  /// Prefer the cached human title so list → detail morphs keep the same label.
+  /// Prefer the cached human title so list → detail morphs keep the same label;
+  /// a deep link or relaunch with no list cache resolves the namespace itself
+  /// (`resolveNamespaceTitle`) and the late title morphs into the header.
   private var namespaceTitle: String {
-    guard let accountID = model.activeAccountID,
+    if let accountID = model.activeAccountID,
       let namespaces: [KVNamespace] = model.featureCache.get(
         FeatureCacheKey.kvNamespaces(accountID)),
       let match = namespaces.first(where: { $0.id == namespaceID })
-    else { return "KV keys" }
-    return match.title
+    {
+      return match.title
+    }
+    if let resolved = resolvedNamespace { return resolved.title }
+    return "KV keys"
   }
 
   var body: some View {
@@ -1617,8 +1623,12 @@ struct KVNamespaceView: View {
     .task(id: model.accountRequestContext) {
       prepareForCurrentAccount()
       await load()
+      await resolveNamespaceTitle()
     }
-    .refreshable { await load(force: true) }
+    .refreshable {
+      await load(force: true)
+      await resolveNamespaceTitle()
+    }
     .onAppear { reloadIfKeysInvalidated() }
     .dashTray(
       isPresented: $showsCreateKey, title: DashL10n.string("Create key"),
@@ -1628,6 +1638,41 @@ struct KVNamespaceView: View {
         invalidateKeys()
         Task { await load(force: true) }
       }
+    }
+  }
+
+  /// The header title normally rides in on the namespaces list cache; a cold
+  /// launch or deep link straight to this screen never fills that list, so
+  /// fetch the one namespace when it misses.
+  private func resolveNamespaceTitle() async {
+    guard let context = model.accountRequestContext else { return }
+    if let namespaces: [KVNamespace] = model.featureCache.get(
+      FeatureCacheKey.kvNamespaces(context.accountID)),
+      namespaces.contains(where: { $0.id == namespaceID })
+    {
+      return
+    }
+    let key = FeatureCacheKey.kvNamespace(accountID: context.accountID, namespaceID: namespaceID)
+    if let cached: KVNamespace = model.featureCache.get(key) {
+      guard model.isCurrentAccount(context) else { return }
+      resolvedNamespace = cached
+      return
+    }
+    // Cold but a stale copy exists on disk: paint it now and refresh in place.
+    if resolvedNamespace == nil, let stale: KVNamespace = model.featureCache.getStale(key) {
+      guard model.isCurrentAccount(context) else { return }
+      resolvedNamespace = stale
+    }
+    let client = model.client
+    do {
+      let namespace = try await client.getKVNamespace(
+        accountID: context.accountID, namespaceID: namespaceID)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      resolvedNamespace = namespace
+      model.featureCache.set(key, namespace)
+    } catch {
+      // The keys list owns this screen's error surface; a failed title lookup
+      // keeps the generic header label until the next load retries it.
     }
   }
 
@@ -1721,6 +1766,7 @@ struct KVNamespaceView: View {
     loading = context != nil
     isLoadingMore = false
     showsCreateKey = false
+    resolvedNamespace = nil
   }
 }
 
