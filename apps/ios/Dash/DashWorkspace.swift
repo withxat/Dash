@@ -1261,10 +1261,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let target: UIViewController
     let style: DashPageTransitionStyle
     let proxy: TransitionProxy?
-    var desiredEntries: [DashNavigationEntry]
-    var revision: UInt64
+    let desiredEntries: [DashNavigationEntry]
+    let revision: UInt64
     let appearanceWasBegun: Bool
-    var isReversed = false
 
     init(
       animator: UIViewPropertyAnimator,
@@ -1504,10 +1503,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       return
     }
 
-    if reverseActiveTransitionIfPossible(for: request) {
-      return
-    }
-
     if activeTransition != nil {
       storePendingRequest(request)
       return
@@ -1629,9 +1624,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       source: source.view,
       target: target.view)
     source.view.isUserInteractionEnabled = false
-    // Keep the hosting view alive for Back/Close, while DashRoutePageChromeHost
-    // gates the arriving page body until the transition settles. This makes a
-    // deliberate immediate reversal possible without click-through routes.
+    // Keep the arriving hosting view alive while DashRoutePageChromeHost gates
+    // its body until the transition settles, so the page is interactive the
+    // instant it lands without click-through routes.
     target.view.isUserInteractionEnabled = isPush
     if request.reduceMotion || style.entry == nil {
       anchorRegistry?.discardCapturedVisual(for: request.entries.last?.origin)
@@ -1693,11 +1688,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       appearanceWasBegun: appearanceWasBegun)
     reportPresentationState()
     startTransitionContentTimelineIfNeeded()
-    animator.addCompletion { [weak self, weak animator] position in
+    animator.addCompletion { [weak self, weak animator] _ in
       guard let self, let animator,
         self.activeTransition?.animator === animator
       else { return }
-      self.completeActiveTransition(at: position)
+      self.completeActiveTransition()
     }
     animator.startAnimation()
   }
@@ -1866,43 +1861,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       detailProgress: detailProgress,
       locale: root.locale,
       dynamicTypeSize: root.dynamicTypeSize)
-  }
-
-  /// A push immediately followed by its own Back/Close is the one retarget that
-  /// must feel direct. `UIViewPropertyAnimator` reverses from its presentation
-  /// value, so there is no jump back to either endpoint before the page returns.
-  private func reverseActiveTransitionIfPossible(
-    for request: DashPageStackRequest
-  ) -> Bool {
-    guard let transition = activeTransition, transition.style.isPush,
-      request.entries.map(\.id) == settledEntries.map(\.id)
-    else { return false }
-    switch request.mutation?.reason {
-    case .back, .closeToWorkspaceRoot, .popToRoot:
-      break
-    default:
-      return false
-    }
-    guard transition.animator.state == .active, !transition.isReversed else {
-      return false
-    }
-
-    discardPendingRequest()
-    transition.desiredEntries = request.entries
-    transition.revision = request.revision
-    transition.isReversed = true
-    transition.target.view.isUserInteractionEnabled = false
-    transition.source.view.isUserInteractionEnabled = false
-
-    if transition.appearanceWasBegun {
-      // UIKit treats an opposite begin as cancellation of the in-flight
-      // appearance. One final end per child then settles source as appeared
-      // and target as disappeared, without a false didDisappear/didAppear pair.
-      transition.source.beginAppearanceTransition(true, animated: true)
-      transition.target.beginAppearanceTransition(false, animated: true)
-    }
-    transition.animator.isReversed = true
-    return true
   }
 
   private func makeTransitionProxy(
@@ -2300,44 +2258,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     return snapshot
   }
 
-  private func completeReversedTransition(_ transition: ActiveTransition) {
-    hostContext.interactionLockedEntryID = nil
-    resetTransitionState(transition.source.view)
-    transition.source.view.isUserInteractionEnabled = true
-    transition.target.view.isUserInteractionEnabled = true
-    if transition.appearanceWasBegun {
-      transition.source.endAppearanceTransition()
-      transition.target.endAppearanceTransition()
-    }
-    // Keep the losing page at its animated endpoint until it is out of the
-    // hierarchy. Restoring alpha first can briefly put two complete pages
-    // behind a nearly transparent proxy at the completion boundary.
-    detach(transition.target)
-    resetTransitionState(transition.target.view)
-    releaseAndRemoveAfterHandoff(transition.proxy)
-    visibleController = transition.source
-    settledEntries = transition.desiredEntries
-    settledRevision = transition.revision
-    activeTransition = nil
-    purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
-    setDestinationCanvasVisible(!settledEntries.isEmpty)
-    reportPresentationState()
-    if isContainerVisible, hostContext.isTabActive {
-      UIAccessibility.post(notification: .screenChanged, argument: transition.source.view)
-    }
-    if let pendingRequest = takePendingRequest() {
-      reconcile(pendingRequest)
-    }
-  }
-
-  private func completeActiveTransition(at position: UIViewAnimatingPosition) {
+  private func completeActiveTransition() {
     guard let transition = activeTransition else { return }
-    stopTransitionContentTimeline(
-      settlingAt: transition.isReversed || position == .start ? 0 : 1)
-    if transition.isReversed || position == .start {
-      completeReversedTransition(transition)
-      return
-    }
+    stopTransitionContentTimeline(settlingAt: 1)
     hostContext.interactionLockedEntryID = nil
     resetTransitionState(transition.target.view)
     transition.source.view.isUserInteractionEnabled = true
@@ -2371,11 +2294,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private func finishActiveTransitionImmediately() {
     removeLingeringProxyOverlays()
     guard let transition = activeTransition else { return }
-    stopTransitionContentTimeline(settlingAt: transition.isReversed ? 0 : 1)
+    stopTransitionContentTimeline(settlingAt: 1)
     hostContext.interactionLockedEntryID = nil
     transition.animator.stopAnimation(true)
-    let winner = transition.isReversed ? transition.source : transition.target
-    let loser = transition.isReversed ? transition.target : transition.source
+    let winner = transition.target
+    let loser = transition.source
     resetTransitionState(winner.view)
     transition.source.view.isUserInteractionEnabled = true
     transition.target.view.isUserInteractionEnabled = true

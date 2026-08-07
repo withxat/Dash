@@ -38,6 +38,10 @@ struct HeaderProfileButton: View {
         } label: {
           HeaderProfileAvatar(email: email)
             .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
+            // The tap target is the drawn 44pt circle, declared on the label
+            // itself like `DashToolbarIconButton` does — never derived from
+            // the negative-padded 30pt layout box below.
+            .contentShape(Circle())
             .padding(-7)
         }
         .buttonStyle(.glass)
@@ -153,6 +157,10 @@ struct HeaderInboxButton: View {
       } label: {
         SolarIcon(asset: SolarAsset.inbox, size: 24, color: DashTheme.strong)
           .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
+          // Without this the label's hit region is the 24pt glyph — a `.frame`
+          // is layout only. Declare the drawn 44pt circle, same as the avatar
+          // and `DashToolbarIconButton`.
+          .contentShape(Circle())
           .padding(-7)
       }
       .buttonStyle(.glass)

@@ -759,26 +759,39 @@ struct DashToolbarActionIcon: View {
 /// Optical seat for chevron glyphs inside circular chrome (Back, onboarding,
 /// expanded-chart detail disclosure).
 enum DashChevronOpticalRules {
-  /// The correction belongs to the *seat*, not to the glyph.
+  /// The correction belongs to the *seat*, not to the glyph, and it scales with
+  /// the mark rather than being a flat point value.
   ///
   /// It was measured on the navigation circle: a 24pt mark with ~10pt of
-  /// clearance on each side, where nudging toward the tip does read centred.
-  /// The chart card's disclosure is a 14pt mark in a 32pt plate — the same flat
-  /// 1.5pt is nearly twice the correction in proportion, which put the tip
-  /// visibly toward the plate's edge. Keyed by asset alone, the rule could not
-  /// tell those two apart.
+  /// clearance on each side, where nudging toward the tip reads centred. Keyed
+  /// by asset alone, the rule handed that same flat 1.5pt to the chart card's
+  /// disclosure — a 14pt mark in a 32pt plate — where it is nearly twice the
+  /// correction in proportion and put the tip against the plate's edge.
+  /// Dropping it outright then read left of centre. In proportion is the answer
+  /// both ends of that were circling.
   enum Seat {
     case navigationCircle
     case compactDisclosure
+
+    fileprivate var glyphSize: CGFloat {
+      switch self {
+      case .navigationCircle: DashChevronOpticalRules.navigationGlyphSize
+      case .compactDisclosure: DashTheme.Chevron.compact
+      }
+    }
   }
 
+  /// The size the 1.5pt nudge below was tuned against.
+  fileprivate static let navigationGlyphSize: CGFloat = 24
+
   static func offsetX(for asset: String, seat: Seat = .navigationCircle) -> CGFloat {
-    guard seat == .navigationCircle else { return 0 }
-    return switch asset {
-    case SolarAsset.chevronLeft: -1.5
-    case SolarAsset.chevronRight: 1.5
-    default: 0
-    }
+    let nudge: CGFloat =
+      switch asset {
+      case SolarAsset.chevronLeft: -1.5
+      case SolarAsset.chevronRight: 1.5
+      default: 0
+      }
+    return nudge * seat.glyphSize / navigationGlyphSize
   }
 }
 

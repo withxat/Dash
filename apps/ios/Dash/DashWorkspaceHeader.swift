@@ -195,6 +195,35 @@ enum WorkspaceHeaderGlassID: Hashable, Sendable {
   case trailingSecondary
 }
 
+/// A leaving occupant is pure theater. SwiftUI keeps a removed branch mounted —
+/// and hit-testable — until its removal animation settles, and a spring's
+/// settling tail outlives the page compositor's animator that reopens the
+/// bar's hit gate: in that overlap a stale Close swallowed taps at the root
+/// (`dismissTopPage` guards an empty stack) and a stale avatar re-pushed
+/// Settings into the same-destination dedupe, both silently. Removal therefore
+/// drops hit testing the moment the handoff starts; insertion stays a plain
+/// fade so the arriving control is live immediately.
+private struct DashSeatGhostHitGate: ViewModifier {
+  var isGhost: Bool
+
+  func body(content: Content) -> some View {
+    content.allowsHitTesting(!isGhost)
+  }
+}
+
+extension AnyTransition {
+  // Computed, not stored: `AnyTransition` is not `Sendable`, so a static
+  // stored value would be shared mutable state under strict concurrency.
+  fileprivate static var dashSeatHandoff: AnyTransition {
+    .asymmetric(
+      insertion: .opacity,
+      removal: .opacity.combined(
+        with: .modifier(
+          active: DashSeatGhostHitGate(isGhost: true),
+          identity: DashSeatGhostHitGate(isGhost: false))))
+  }
+}
+
 extension View {
   /// Stable Liquid Glass identities for the controls that trade places inside
   /// the shared header. Earlier systems keep the same aligned opacity handoff
@@ -273,6 +302,14 @@ struct DashWorkspaceHeaderBar: View {
   /// read live state through captured references — the store's own `publish`
   /// dedup already relies on exactly that.
   @State private var displayed: DashWorkspaceHeaderState?
+  /// Monotonic z rank for the slots' occupants. SwiftUI does not define the
+  /// stacking order between a removing branch and its replacement, so every
+  /// animated mirror write ranks the arriving occupant above the ghost it
+  /// replaces — a removed branch keeps the rank it was last rendered with.
+  /// With `dashSeatHandoff` already muting the ghost's hits this is the second,
+  /// independent lock: the live occupant's full-circle content shape shields
+  /// the seat from above even where the ghost would still hit-test.
+  @State private var seatGeneration = 0.0
 
   private var entry: DashNavigationEntry? { navigator.topEntry }
 
@@ -318,7 +355,10 @@ struct DashWorkspaceHeaderBar: View {
           return
         }
         guard displayed != next else { return }
-        withAnimation(headerAnimation) { displayed = next }
+        withAnimation(headerAnimation) {
+          seatGeneration += 1
+          displayed = next
+        }
       }
   }
 
@@ -372,7 +412,8 @@ struct DashWorkspaceHeaderBar: View {
   /// blur dissolve is the title's language, and a glass circle mid-shape-morph
   /// does not want a second filter on top of it. No spatial travel: a leftover
   /// Y ride from the Settings train was sliding the Watchtower inbox in.
-  private var controlTransition: AnyTransition { .opacity }
+  /// The fade is hit-muted on its way out — see `dashSeatHandoff`.
+  private var controlTransition: AnyTransition { .dashSeatHandoff }
 
   // MARK: Leading
 
@@ -393,6 +434,7 @@ struct DashWorkspaceHeaderBar: View {
         // or a plain drill keeps one circle; avatar → Close and Back → Close
         // still remount because their `slotKind` differs.
         .id(shown.leading.slotKind)
+        .zIndex(seatGeneration)
     }
   }
 
@@ -430,14 +472,17 @@ struct DashWorkspaceHeaderBar: View {
         action: onCancelEditing
       )
       .accessibilityIdentifier("watchtower-customize-cancel")
-      .transition(.opacity)
+      .transition(.dashSeatHandoff)
     }
   }
 
   /// The leading seat is always one control changing job — avatar, Back, Close
   /// and a page's own leading action trade the same circle — so it morphs in
-  /// place on every role.
-  private var leadingTransition: AnyTransition { .opacity }
+  /// place on every role. The outgoing occupant must not keep taking taps
+  /// while it fades: its action reads navigator state that no longer matches
+  /// (a stale Close over an empty stack, a stale avatar under a dedupe), so
+  /// every tap it caught died silently.
+  private var leadingTransition: AnyTransition { .dashSeatHandoff }
 
   private var profileControl: some View {
     DashNavigationSource(
@@ -501,6 +546,7 @@ struct DashWorkspaceHeaderBar: View {
             kind: shown.trailing.slotKind)
         )
         .transition(controlTransition)
+        .zIndex(seatGeneration)
     }
   }
 

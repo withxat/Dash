@@ -85,17 +85,20 @@ import UIKit
   #expect(DashChevronOpticalRules.offsetX(for: SolarAsset.editClose) == 0)
 }
 
-/// The nudge is the navigation circle's, measured on a 24pt mark with ~10pt of
-/// clearance. A 14pt disclosure in a 32pt plate takes the same flat value as
-/// nearly twice the correction and reads pushed toward its tip, so that seat
-/// takes none.
-@Test func compactDisclosureSeatTakesNoChevronNudge() {
+/// The nudge scales with the mark. It was tuned on the navigation circle's 24pt
+/// glyph; the chart card's disclosure is 14pt, so it takes 14/24 of it. The flat
+/// value put that tip against the plate's edge, and none at all read left of
+/// centre.
+@Test func compactDisclosureSeatScalesTheChevronNudgeToItsGlyph() {
   #expect(
     DashChevronOpticalRules.offsetX(
-      for: SolarAsset.chevronRight, seat: .compactDisclosure) == 0)
+      for: SolarAsset.chevronRight, seat: .compactDisclosure) == 0.875)
   #expect(
     DashChevronOpticalRules.offsetX(
-      for: SolarAsset.chevronLeft, seat: .compactDisclosure) == 0)
+      for: SolarAsset.chevronLeft, seat: .compactDisclosure) == -0.875)
+  #expect(
+    DashChevronOpticalRules.offsetX(
+      for: SolarAsset.editClose, seat: .compactDisclosure) == 0)
 }
 
 @Test func cardMorphKeepsPagesStationaryAndReflowsBetweenExactSeats() {
