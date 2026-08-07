@@ -104,12 +104,9 @@ struct FeatureWriteAccessNotice: View {
 /// Maps a push destination to the catalog feature that owns its write scopes.
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
-  case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs, .pushAlerts,
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs,
     .watchtowerInbox, .cloudflareStatus:
     nil
-  #if DEBUG
-    case .debug: nil
-  #endif
   case .chartDetail(let detail): detail.featureID
   case .feature(let feature): feature
   case .zone, .dns, .cache, .zoneAnalytics, .zoneWebAnalytics, .zoneWAF, .zoneSettings:
@@ -131,12 +128,12 @@ func featureID(for destination: Destination) -> FeatureID? {
 
 /// Read scopes a destination needs beyond what its FeatureID declares.
 ///
-/// The literals matter: `dns.*` and `cache.purge` have no FeatureID of their own
-/// since DNS Management and Cache & Performance left the catalog, and they are
-/// not in `.zones.capability` — putting them there would lock the whole Zones
-/// feature for a grant missing one of them. Deleting a case here compiles fine
-/// and silently falls through to `.zones.capability.read`, which does not
-/// include them. See DashAuthorizationScopes.initialReadOnly.
+/// The literals matter: `dns.*` has no FeatureID of its own since DNS
+/// Management left the catalog, and it is not in `.zones.capability` — putting
+/// it there would lock the whole Zones feature for a grant missing it.
+/// Deleting a case here compiles fine and silently falls through to
+/// `.zones.capability.read`, which does not include it. See
+/// DashAuthorizationScopes.initialReadOnly.
 ///
 /// `.registrarDomain` is the same shape for the same reason: `featureID(for:)`
 /// answers nil for it, so dropping its case here leaves the screen requiring
@@ -146,18 +143,12 @@ func readScopes(for destination: Destination) -> Set<String> {
   case .profile, .settings, .settingsAccounts, .about, .openSource, .watchtowerInbox,
     .cloudflareStatus:
     []
-  #if DEBUG
-    case .debug:
-      []
-  #endif
   case .auditLogs:
     ["account-settings.read"]
-  case .pushAlerts:
-    ["notifications.read"]
   case .dns:
     ["zone.read", "dns.read"]
   case .cache:
-    ["zone.read"]
+    ["zone.read", "zone-settings.read"]
   case .zoneSettings:
     ["zone.read", "zone-settings.read"]
   case .zoneEmailRouting:
@@ -192,18 +183,12 @@ func writeScopes(for destination: Destination) -> Set<String> {
   case .settings, .settingsAccounts, .about, .openSource, .auditLogs,
     .watchtowerInbox, .cloudflareStatus, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
-  #if DEBUG
-    case .debug:
-      []
-  #endif
-  case .pushAlerts:
-    ["notifications.write"]
   case .profile:
     ["account-settings.write"]
   case .dns:
     ["dns.write"]
   case .cache:
-    ["cache.purge"]
+    ["zone-settings.write"]
   case .zoneSettings:
     ["zone-settings.write"]
   case .zoneEmailRouting:

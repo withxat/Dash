@@ -25,9 +25,9 @@
 		"lint": "turbo lint && pnpm lint:swift && pnpm lint:l10n && pnpm lint:ios-architecture",
 		"lint:ios-architecture": "node apps/ios/scripts/check-ios-ui-architecture.mjs",
 		"lint:l10n": "node apps/ios/scripts/check-l10n-keys.mjs",
-		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashShare apps/ios/DashNotificationService apps/ios/DashFileProvider apps/ios/DashTests apps/ios/DashUITests packages/BlossomColorPicker packages/cloudflare-api packages/gradient-avatars packages/SwiftDitherKit packages/SwiftGlobeKit",
+		"lint:swift": "xcrun swift format lint --strict --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashShare apps/ios/DashFileProvider apps/ios/DashTests apps/ios/DashUITests packages/BlossomColorPicker packages/cloudflare-api packages/gradient-avatars packages/SwiftDitherKit packages/SwiftGlobeKit",
 		"lint:fix": "turbo lint -- --fix && pnpm lint:fix:swift && pnpm lint:ios-architecture",
-		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashShare apps/ios/DashNotificationService apps/ios/DashFileProvider apps/ios/DashTests apps/ios/DashUITests packages/BlossomColorPicker packages/cloudflare-api packages/gradient-avatars packages/SwiftDitherKit packages/SwiftGlobeKit",
+		"lint:fix:swift": "xcrun swift format --in-place --recursive apps/ios/Dash apps/ios/DashWidgets apps/ios/DashShare apps/ios/DashFileProvider apps/ios/DashTests apps/ios/DashUITests packages/BlossomColorPicker packages/cloudflare-api packages/gradient-avatars packages/SwiftDitherKit packages/SwiftGlobeKit",
 		"web:dev": "pnpm --filter @dash/web run dev",
 		"web:deploy": "pnpm --filter @dash/web run deploy"
 	},

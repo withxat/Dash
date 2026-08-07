@@ -70,7 +70,7 @@ export function LandingPage() {
 							</StaggerItem>
 							<StaggerItem>
 								<p className="mx-auto mt-5 max-w-md text-base/6 text-pretty text-kumo-subtle">
-									Purge cache, watch traffic, roll back a deploy, browse R2.
+									Watch traffic, roll back a deploy, browse R2.
 									Zones, Workers, Pages, and KV, native and portrait.
 								</p>
 							</StaggerItem>

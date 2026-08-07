@@ -71,13 +71,10 @@ enum Destination: Hashable {
   case about
   /// Settings → Open source: third-party libraries and icon sets Dash ships.
   case openSource
-  #if DEBUG
-    /// DEBUG-only playground (toasts, haptics).
-    case debug
-  #endif
   case feature(FeatureID)
   case zone(String)
   case dns(String)
+  /// Cache settings: Development Mode, Always Online, Cache Level.
   case cache(String)
   case zoneAnalytics(String)
   /// Beacon-reported Web Analytics (RUM) — a different measurement from
@@ -88,7 +85,6 @@ enum Destination: Hashable {
   /// Email Routing for one zone: routes, catch-all, and plus addressing.
   case zoneEmailRouting(String)
   case auditLogs
-  case pushAlerts
   /// Watchtower notification inbox (Cloudflare history + Dash detections).
   case watchtowerInbox
   /// Cloudflare's own status page (cloudflarestatus.com), pushed from the

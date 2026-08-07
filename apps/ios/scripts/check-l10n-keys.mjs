@@ -45,7 +45,6 @@ const SOURCE_DIRECTORIES = [
   join(ROOT, "apps/ios/Dash"),
   join(ROOT, "apps/ios/DashWidgets"),
   join(ROOT, "apps/ios/DashShare"),
-  join(ROOT, "apps/ios/DashNotificationService"),
   join(ROOT, "apps/ios/DashFileProvider"),
 ];
 

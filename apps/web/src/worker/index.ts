@@ -1,8 +1,14 @@
 /**
- * Dash edge worker — landing SPA assets + Hono API + OAuth/push relay.
+ * Dash edge worker — landing SPA assets + Hono API + OAuth relay.
  *
- * OAuth and push stay worker-first so SPA not_found_handling cannot swallow
- * the Cloudflare OAuth navigation callback.
+ * OAuth stays worker-first so SPA not_found_handling cannot swallow the
+ * Cloudflare OAuth navigation callback.
+ *
+ * There is no push bridge. Dash's only notifications are the Workers and Pages
+ * build Live Activities, and those poll from the app while a screen or an
+ * activity is consuming them — no APNs token, no push-to-start, nothing for an
+ * edge worker to forward. The `/push/*` routes, the APNs client, the HMAC
+ * capability, and the alert mapper were removed with that decision.
  */
 
 import type { Env } from './env'
@@ -10,7 +16,6 @@ import type { Env } from './env'
 import { Hono } from 'hono'
 
 import { handleOAuth } from './relay/oauth'
-import { handlePush } from './relay/push'
 import { handleRegistration } from './relay/registration'
 
 const app = new Hono<{ Bindings: Env }>()
@@ -31,13 +36,6 @@ app.get('/api/registration/:domain', (c) => {
 
 app.get('/oauth/callback', (c) => {
 	return handleOAuth(c.req.raw, new URL(c.req.url))
-})
-
-app.all('/push/*', (c) => {
-	// The silent widget-refresh push runs after the response so Cloudflare's
-	// webhook delivery is never held open on a second APNs round trip.
-	return handlePush(c.req.raw, new URL(c.req.url), c.env, promise =>
-		c.executionCtx.waitUntil(promise))
 })
 
 export default app

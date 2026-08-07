@@ -256,9 +256,7 @@ final class AppModel {
   var accounts: [CloudflareAccount] = [] {
     didSet {
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
-      syncNotificationAccountAuthorization()
       scheduleFileProviderDomainReconciliation()
-      scheduleDefaultPushRegistration()
     }
   }
   // Mirrored into App Group defaults so the share extension knows which
@@ -277,12 +275,10 @@ final class AppModel {
   }
   var authState: AuthenticationState = .loading {
     didSet {
-      syncNotificationAccountAuthorization()
       if authState == .unauthenticated {
         clearWatchtowerWidgetSnapshot()
       } else if authState == .authenticated {
         scheduleFileProviderDomainReconciliation()
-        scheduleDefaultPushRegistration()
       }
     }
   }
@@ -302,7 +298,6 @@ final class AppModel {
       // presentation completes. Reconcile then as well as on account/auth
       // changes, otherwise a legacy read-only session never reaches default
       // webhook setup without revisiting Settings.
-      scheduleDefaultPushRegistration()
     }
   }
   var selectedScopes: Set<String>
@@ -314,7 +309,6 @@ final class AppModel {
       // A successful in-place identity retry keeps `authState` authenticated,
       // so no auth-state observer fires to resume deferred webhook setup.
       if !identityStale {
-        scheduleDefaultPushRegistration()
       }
     }
   }
@@ -340,7 +334,6 @@ final class AppModel {
   var pendingHomeAction: PendingHomeAction?
   /// An older notification that predates account-bound routes. It stays
   /// buffered until identity proves there is exactly one possible account.
-  private var pendingLegacyNotificationRoute: DashRoute?
 
   /// APNs device token hex, buffered because the system callback can arrive
   /// before bootstrap finishes (RootWithSplash holds ~800ms).
@@ -358,8 +351,6 @@ final class AppModel {
   private var activeAuthenticationCallbackGeneration: UInt64?
   private var authenticationCallbackOwnsCredentialMutation = false
   private var authenticationCallbackWaiters: [CheckedContinuation<Void, Never>] = []
-  private var pushReconcileTask: Task<Void, Never>?
-  private var pushReconcileGeneration: UInt64 = 0
   private var fileProviderReconcileTask: Task<Void, Never>?
   private var fileProviderReconcileGeneration: UInt64 = 0
   private var systemBadgeTask: Task<Void, Never>?
@@ -444,42 +435,7 @@ final class AppModel {
     activeAccountID == context.accountID && accountGeneration == context.generation
   }
 
-  private func syncNotificationAccountAuthorization() {
-    guard authState == .authenticated, !isDemoSession, !isSigningOut else {
-      NotificationAccountAuthorizationStore.clear()
-      return
-    }
-    NotificationAccountAuthorizationStore.replace(with: Set(accounts.map(\.id)))
-  }
-
-  func receiveNotificationRoute(_ route: DashRoute) {
-    switch NotificationRoutePolicy.resolve(
-      route,
-      availableAccountIDs: Set(accounts.map(\.id)),
-      allowsLegacyAccountInference: !isDemoSession)
-    {
-    case .open(let route):
-      pendingLegacyNotificationRoute = nil
-      pendingRoute = route
-    case .deferUntilAccountsLoad:
-      pendingLegacyNotificationRoute = route
-    case .rejectAmbiguous:
-      pendingLegacyNotificationRoute = nil
-      toasts.warning(
-        "This older notification doesn't identify its Cloudflare account. Open Watchtower to review it safely."
-      )
-    }
-  }
-
-  private func resolvePendingLegacyNotificationRoute() {
-    guard let route = pendingLegacyNotificationRoute else { return }
-    receiveNotificationRoute(route)
-  }
-
   private func resetAccountScopedWork() {
-    pushReconcileGeneration &+= 1
-    pushReconcileTask?.cancel()
-    pushReconcileTask = nil
     fileProviderReconcileGeneration &+= 1
     fileProviderReconcileTask?.cancel()
     fileProviderReconcileTask = nil
@@ -553,112 +509,6 @@ final class AppModel {
       else { return }
       self.fileProviderReconcileTask = nil
     }
-  }
-
-  /// Cloudflare notifications have one delivery path: a per-device webhook in
-  /// each real account. Provisioning is asynchronous and best-effort so sign-in
-  /// never waits on APNs, plan eligibility, or an account's policy catalog.
-  private func scheduleDefaultPushRegistration(onlyUnready: Bool = false) {
-    pushReconcileGeneration &+= 1
-    let generation = pushReconcileGeneration
-    pushReconcileTask?.cancel()
-    pushReconcileTask = nil
-    guard PushRegistrationService.shouldAutomaticallyProvisionForCurrentProcess,
-      authState == .authenticated,
-      !identityStale,
-      !isDemoSession,
-      !isSigningOut,
-      configuration.pushBaseURL != nil,
-      hasScopes(PushRegistrationService.requiredScopes),
-      !accounts.isEmpty
-    else { return }
-
-    // A cleanup tombstone represents an older webhook that still needs remote
-    // deletion. Never recreate delivery for that account until teardown has
-    // settled; `loadIdentity` schedules again immediately after a successful
-    // cleanup pass.
-    let pendingCleanup = Set(PushRegistrationService.pendingCleanupAccountIDs())
-    let accountIDs = accounts.map(\.id).filter { accountID in
-      !pendingCleanup.contains(accountID)
-        && (!onlyUnready || !PushRegistrationService.isReady(accountID: accountID))
-    }
-    guard !accountIDs.isEmpty else { return }
-
-    let expectedAccountGeneration = accountGeneration
-    pushReconcileTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      defer {
-        if self.pushReconcileGeneration == generation {
-          self.pushReconcileTask = nil
-        }
-      }
-      guard await DashNotificationSupport.requestAuthorization() else { return }
-      guard !Task.isCancelled, self.pushReconcileGeneration == generation,
-        self.accountGeneration == expectedAccountGeneration,
-        let token = await PushRegistrationService.waitForDeviceToken(in: self)
-      else { return }
-
-      for accountID in accountIDs {
-        guard !Task.isCancelled, self.pushReconcileGeneration == generation,
-          self.accountGeneration == expectedAccountGeneration,
-          !self.isDemoSession,
-          !self.isSigningOut
-        else { return }
-        do {
-          try await PushRegistrationService.ensureEnabled(
-            accountID: accountID,
-            client: self.client,
-            configuration: self.configuration,
-            deviceToken: token)
-        } catch is CancellationError {
-          return
-        } catch {
-          // Some accounts cannot create notification webhooks on their current
-          // plan. Keep the inbox available and retry on a later identity/token
-          // reconciliation without turning setup into a sign-in failure.
-        }
-      }
-    }
-  }
-
-  /// Foreground re-entry retries only accounts whose automatic destination
-  /// setup has not completed. A ready account does not exchange another relay
-  /// challenge merely because the user briefly backgrounded the app.
-  func retryDefaultPushRegistrationIfNeeded() {
-    guard
-      accounts.contains(where: {
-        !PushRegistrationService.isReady(accountID: $0.id)
-      })
-    else { return }
-    scheduleDefaultPushRegistration(onlyUnready: true)
-  }
-
-  /// Settings uses the same idempotent path to await setup for the active
-  /// account and surface an actionable error instead of owning another toggle.
-  func ensureDefaultPushRegistration(for context: AccountRequestContext) async throws {
-    guard !isDemoSession, !isSigningOut, isCurrentAccount(context) else {
-      throw CancellationError()
-    }
-    guard configuration.pushBaseURL != nil else {
-      throw PushRegistrationError.pushNotConfigured
-    }
-    guard hasScopes(PushRegistrationService.requiredScopes) else {
-      throw PushRegistrationError.authorizationRequired
-    }
-    guard await DashNotificationSupport.requestAuthorization() else {
-      throw PushRegistrationError.notificationsDisabled
-    }
-    guard let token = await PushRegistrationService.waitForDeviceToken(in: self) else {
-      throw PushRegistrationError.missingDeviceToken
-    }
-    guard !Task.isCancelled, isCurrentAccount(context), !isSigningOut else {
-      throw CancellationError()
-    }
-    try await PushRegistrationService.ensureEnabled(
-      accountID: context.accountID,
-      client: client,
-      configuration: configuration,
-      deviceToken: token)
   }
 
   /// Returns only after live system state proves that every local replica is
@@ -1809,7 +1659,6 @@ final class AppModel {
       }
       self.resetAccountScopedWork()
       self.featureCache.clearAllPersistence()
-      self.pendingLegacyNotificationRoute = nil
       self.isDemoSession = true
       self.errorMessage = nil
       let demoClient = CloudflareClient(
@@ -1877,7 +1726,6 @@ final class AppModel {
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
-    pendingLegacyNotificationRoute = nil
     LegacyWatchtowerNotificationSettings.clear()
     toasts.clearAll()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
@@ -1914,7 +1762,6 @@ final class AppModel {
     signOutActionPhase = presentsCompletion ? .loading : .idle
     defer {
       isSigningOut = false
-      syncNotificationAccountAuthorization()
       scheduleFileProviderDomainReconciliation()
     }
     invalidateAuthenticationAttempt()
@@ -1935,10 +1782,6 @@ final class AppModel {
         return
       }
     }
-
-    let pushAccountIDs = Set(accounts.map(\.id))
-      .union(PushRegistrationService.enabledAccountIDs())
-      .union(PushRegistrationService.pendingCleanupAccountIDs())
 
     // Freeze deferred work before the local commit. Nothing below this await
     // has removed Files data, disabled a webhook, or changed notification
@@ -1989,10 +1832,6 @@ final class AppModel {
       accessToken: removedCredential?.accessToken,
       refreshToken: removedCredential?.refreshToken,
       scopes: removedCredential?.grantedScopes)
-    let cleanupClient = CloudflareClient(
-      clientID: configuration.clientID,
-      tokenStore: cleanupStore,
-      session: authenticatedSession)
     var cleanupMessages: [String] = []
 
     fileProviderReconcileGeneration &+= 1
@@ -2007,32 +1846,6 @@ final class AppModel {
         ))
     }
 
-    // Invalidate user-started enable work before waiting on each account's
-    // mutation lock. If an enable crossed the Keychain commit, disable sees
-    // its persisted webhook or leaves a durable cleanup tombstone.
-    PushRegistrationService.prepareForSignOut(accountIDs: pushAccountIDs)
-    let pendingPushReconcile = pushReconcileTask
-    pushReconcileTask?.cancel()
-    pushReconcileTask = nil
-    NotificationAccountAuthorizationStore.clear()
-    await pendingPushReconcile?.value
-
-    var pushCleanupFailureCount = 0
-    for accountID in pushAccountIDs.sorted() {
-      do {
-        try await PushRegistrationService.disable(
-          accountID: accountID,
-          client: cleanupClient)
-      } catch {
-        pushCleanupFailureCount += 1
-      }
-    }
-    if pushCleanupFailureCount > 0 {
-      cleanupMessages.append(
-        "\(DashL10n.string("Alert policies")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
-      )
-    }
-
     // Push cleanup can refresh and rotate the detached credential. Revoke the
     // latest access token it actually used, never the pre-cleanup snapshot.
     if let cleanupAccessToken = await cleanupStore.getAccessToken() {
@@ -2045,7 +1858,6 @@ final class AppModel {
     // The active credential is conclusively gone; drop every account's disk
     // cache so a relaunch cannot resurrect a signed-out account's data.
     featureCache.clearAllPersistence()
-    UIApplication.shared.unregisterForRemoteNotifications()
     deferredDeletions.discardCredentialState()
     avatars.clearMemory()
     await r2Thumbnails.clear()
@@ -2058,8 +1870,6 @@ final class AppModel {
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
-    pendingLegacyNotificationRoute = nil
-    pendingDeviceToken = nil
     LegacyWatchtowerNotificationSettings.clear()
     WatchtowerRemoteRefreshInvalidationStore.clearAll()
     toasts.clearAll()
@@ -2361,62 +2171,8 @@ final class AppModel {
         profileID: identity.0.id,
         availableAccountIDs: availableAccountIDs)
     }
-    resolvePendingLegacyNotificationRoute()
-    await retryPendingPushCleanups(expectedGeneration: accountGeneration)
-    scheduleDefaultPushRegistration()
   }
 
-  private func retryPendingPushCleanups(expectedGeneration: UInt64) async {
-    guard accountGeneration == expectedGeneration, !isSigningOut else { return }
-    let available = Set(accounts.map(\.id))
-    let pending = PushRegistrationService.pendingCleanupAccountIDs()
-      .filter(available.contains)
-    guard !pending.isEmpty else { return }
-    var failures = 0
-    for accountID in pending {
-      guard accountGeneration == expectedGeneration, !isSigningOut else { return }
-      do {
-        try await PushRegistrationService.disable(accountID: accountID, client: client)
-      } catch {
-        guard accountGeneration == expectedGeneration, !isSigningOut else { return }
-        failures += 1
-      }
-    }
-    if failures > 0, accountGeneration == expectedGeneration, !isSigningOut {
-      toasts.warning(
-        "\(DashL10n.string("Alert policies")): \(DashL10n.string("Cloudflare couldn’t complete this request. Try again."))"
-      )
-    }
-  }
-}
-
-extension AppModel: PushTokenInbox {
-  /// Woken by the relay's silent push. Forces a Watchtower reload — the TTL
-  /// says the snapshot is fresh, but a delivery just landed, so it isn't.
-  func performPushTriggeredRefresh(accountID: String) async -> Bool {
-    guard !isDemoSession,
-      NotificationAccountAuthorizationStore.contains(accountID)
-    else { return false }
-    WatchtowerRemoteRefreshInvalidationStore.mark(accountID: accountID)
-    guard accountRequestContext?.accountID == accountID else {
-      // Do not query through another account's mounted UI state. The durable
-      // dirty bit forces a source-aware refresh as soon as this account opens.
-      return true
-    }
-    return await watchtowerSnapshot(force: true) != nil
-  }
-
-  func receivePushRegistrationChallenge(
-    _ challenge: PushRegistrationChallenge
-  ) async -> Bool {
-    await PushRegistrationChallengeInbox.shared.receive(challenge)
-  }
-
-  func receiveDeviceToken(_ token: Data) {
-    let hex = PushRegistration.hexToken(from: token)
-    pendingDeviceToken = hex
-    scheduleDefaultPushRegistration()
-  }
 }
 
 private final class WebAuthenticationContext: NSObject,

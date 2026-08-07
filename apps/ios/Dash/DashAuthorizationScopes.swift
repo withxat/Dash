@@ -84,8 +84,6 @@ enum DashAuthorizationScopes {
     "account-settings.write",
     "zone-settings.write",
     "dns.write",
-    "cache.purge",
-    "notifications.write",
     "registrar-domains.admin",
   ]
 

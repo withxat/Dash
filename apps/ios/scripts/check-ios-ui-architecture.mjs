@@ -7,6 +7,14 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
 const DASH_WORKSPACE_PATH = join(ROOT, "apps/ios/Dash/DashWorkspace.swift");
+const WORKSPACE_HEADER_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashWorkspaceHeader.swift",
+);
+const HEADER_CHROME_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashHeaderScrollChrome.swift",
+);
 const WATCHTOWER_PATH = join(ROOT, "apps/ios/Dash/WatchtowerView.swift");
 const DASH_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashChrome.swift");
 const DASH_THEME_PATH = join(ROOT, "apps/ios/Dash/DashTheme.swift");
@@ -17,6 +25,12 @@ const PROFILE_SETTINGS_PATH = join(
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
+);
+const workspaceHeader = stripSwiftComments(
+  readFileSync(WORKSPACE_HEADER_PATH, "utf8"),
+);
+const headerChrome = stripSwiftComments(
+  readFileSync(HEADER_CHROME_PATH, "utf8"),
 );
 const watchtower = stripSwiftComments(readFileSync(WATCHTOWER_PATH, "utf8"));
 const dashChrome = stripSwiftComments(readFileSync(DASH_CHROME_PATH, "utf8"));
@@ -202,15 +216,15 @@ if (!watchtowerView) {
 
 for (const identifier of editorControlIDs) {
   const watchtowerCount = occurrences(watchtower, identifier);
-  const mainTabCount = occurrences(mainTab, identifier);
+  const headerCount = occurrences(workspaceHeader, identifier);
   if (watchtowerCount !== 0) {
     issues.push(
       `${identifier} occurs ${watchtowerCount} time(s) in WatchtowerView; expected 0.`,
     );
   }
-  if (mainTabCount !== 1) {
+  if (headerCount !== 1) {
     issues.push(
-      `${identifier} occurs ${mainTabCount} time(s) in MainTabView; expected exactly 1.`,
+      `${identifier} occurs ${headerCount} time(s) in DashWorkspaceHeader; expected exactly 1.`,
     );
   }
 }
@@ -273,7 +287,7 @@ if (
 if (
   occurrences(mainTab, ".accessibilityHidden(outgoingSelection != nil)") < 1 ||
   !mainTab.includes(
-    ".accessibilityHidden(sharedHeaderIsDisplaced || outgoingSelection != nil)",
+    ".accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)",
   ) ||
   !dashWorkspace.includes("source.view.isUserInteractionEnabled = false") ||
   !dashWorkspace.includes("target.view.isUserInteractionEnabled = false") ||
@@ -351,53 +365,136 @@ const sharedHeader = declarationBody(
   mainTab,
   "private var sharedHeaderOverlay: some View",
 );
-if (!sharedHeader) {
+const headerBarSlot = declarationBody(mainTab, "private var headerBar: some View");
+if (!sharedHeader || !headerBarSlot) {
   issues.push("Could not locate MainTabView.sharedHeaderOverlay.");
 } else {
-  if (!sharedHeader.includes("GlassEffectContainer")) {
-    issues.push("sharedHeaderOverlay must own the Liquid Glass morph container.");
+  if (!sharedHeader.includes("headerBar")) {
+    issues.push("sharedHeaderOverlay must render the ONE shared header bar.");
   }
-  if (!sharedHeader.includes("sharedHeaderControls")) {
-    issues.push("sharedHeaderOverlay must render sharedHeaderControls.");
+  if (!headerBarSlot.includes("DashWorkspaceHeaderBar(")) {
+    issues.push("headerBar must be the ONE DashWorkspaceHeaderBar.");
+  }
+  // Liquid Glass composites outside a normal opacity group, so a displaced
+  // header has to leave the tree rather than fade to zero.
+  if (/\.opacity\(\s*headerIsDisplaced/.test(sharedHeader)) {
+    issues.push("A displaced shared header must be removed, not faded to zero opacity.");
   }
 }
 
-const sharedControls = declarationBody(
-  mainTab,
-  "private var sharedHeaderControls: some View",
+const headerBar = declarationBody(
+  workspaceHeader,
+  "struct DashWorkspaceHeaderBar: View",
 );
-const addChartMenu = declarationBody(
-  mainTab,
-  "private var watchtowerAddChartMenu: some View",
-);
-if (!sharedControls || !addChartMenu) {
-  issues.push("Could not locate the shared Watchtower editor control declarations.");
+if (!headerBar) {
+  issues.push("Could not locate DashWorkspaceHeaderBar.");
 } else {
-  for (const identifier of [editorControlIDs[0], editorControlIDs[2]]) {
-    if (!sharedControls.includes(identifier)) {
-      issues.push(`${identifier} must be declared inside sharedHeaderControls.`);
-    }
+  if (!headerBar.includes("GlassEffectContainer")) {
+    issues.push("DashWorkspaceHeaderBar must own the Liquid Glass morph container.");
   }
-  if (!addChartMenu.includes(editorControlIDs[1])) {
-    issues.push("watchtower-add-chart must be declared inside watchtowerAddChartMenu.");
+  // The header is the store's ONE reader: a page action change must never
+  // refresh MainTabView's body while a page transition is settling.
+  if (!headerBar.includes("navigator.pageChrome.chrome(")) {
+    issues.push("DashWorkspaceHeaderBar must resolve its slots from the page chrome store.");
+  }
+  if (mainTab.includes("pageChrome")) {
+    issues.push("MainTabView must not read page chrome; the shared header is its only reader.");
   }
 
-  const addIndex = sharedControls.indexOf("watchtowerAddChartMenu");
-  const doneIndex = sharedControls.indexOf(editorControlIDs[2]);
+  for (const identifier of [editorControlIDs[0], editorControlIDs[2]]) {
+    if (!headerBar.includes(identifier)) {
+      issues.push(`${identifier} must be declared inside DashWorkspaceHeaderBar.`);
+    }
+  }
+  if (!headerBar.includes(editorControlIDs[1])) {
+    issues.push("watchtower-add-chart must be declared inside DashWorkspaceHeaderBar.");
+  }
+
+  const addIndex = headerBar.indexOf("addChartMenu");
+  const doneIndex = headerBar.indexOf(editorControlIDs[2]);
   if (addIndex === -1 || doneIndex === -1 || addIndex > doneIndex) {
     issues.push("The shared trailing editor group must place Add before Done.");
   }
 
+  // Back, Close, the avatar and a page's own leading action are ONE seat, so
+  // the leading glass identity is applied once — to the slot, not per control.
   const glassIDCounts = new Map([
-    [".workspaceHeaderGlassID(.leading", 2],
-    [".workspaceHeaderGlassID(.trailingPrimary", 2],
+    [".workspaceHeaderGlassID(.leading", 1],
+    [".workspaceHeaderGlassID(.trailingPrimary", 3],
     [".workspaceHeaderGlassID(.trailingSecondary", 1],
   ]);
   for (const [token, expected] of glassIDCounts) {
-    const actual = occurrences(sharedControls, token);
+    const actual = occurrences(headerBar, token);
     if (actual !== expected) {
       issues.push(`${token} occurs ${actual} time(s); expected ${expected}.`);
     }
+  }
+
+  // Every workspace page publishes its slots instead of painting them.
+  for (const token of [
+    'DestinationNavigator(chromeHosting: .workspace)',
+  ]) {
+    if (occurrences(mainTab, token) !== 3) {
+      issues.push(
+        "All three tab navigators must hand their page chrome to the shared header.",
+      );
+      break;
+    }
+  }
+  if (!dashWorkspace.includes("if let entry, chromeHosting == .page {")) {
+    issues.push(
+      "A workspace-hosted page must not paint its own navigation bar; only the shared header may.",
+    );
+  }
+}
+
+// DashRoutePageChromeHost reads a preference OUT of its content and feeds this
+// inset BACK IN as a top safe area — a closed loop held shut solely by the
+// inset's constant height. Measure it from the bar's own content instead and a
+// taller title grows the inset, which re-lays-out the content that published
+// the title: the same measure -> apply -> measure re-entry SwiftUI reports as a
+// cycling geometry action.
+const chromeInset = declarationBody(
+  dashWorkspace,
+  "@ViewBuilder private var routeChromeInset: some View",
+);
+if (!chromeInset) {
+  issues.push("Could not locate DashRoutePageChromeHost.routeChromeInset.");
+} else if (
+  !chromeInset.includes(".frame(height: DashPageChromeMetrics.reservedHeight)")
+) {
+  issues.push(
+    "routeChromeInset must reserve a CONSTANT height (DashPageChromeMetrics.reservedHeight). Deriving it from the bar's content closes the preference-to-safe-area loop this host depends on staying open.",
+  );
+}
+
+// Every occupant of the shared header's two seats must lay out at the same
+// 44pt slot. The glass ring on the avatar and the inbox is pulled in with a
+// negative padding, which shrinks the layout BOX while the circle still draws
+// at full size — leading-aligned against a 44pt Back that puts the two circles
+// 7pt apart, which is a visible jump now that they share one seat.
+for (const [name, source] of [
+  ["HeaderProfileButton", headerChrome],
+  ["HeaderInboxButton", headerChrome],
+]) {
+  const control = declarationBody(source, `struct ${name}: View`);
+  if (!control) {
+    issues.push(`Could not locate ${name} for header slot validation.`);
+    continue;
+  }
+  // Two frames, not one: the inner frame sizes the glyph the negative padding
+  // then pulls the glass in around, and a second one has to put the SLOT back
+  // at 44pt afterwards. Counting is what discriminates — a check that merely
+  // looks for the token is satisfied by the inner frame and can never fail.
+  const slotFrames = (
+    control.match(
+      /\.frame\(\s*width:\s*AvatarHeaderMetrics\.barSize,\s*height:\s*AvatarHeaderMetrics\.barSize\s*\)/g,
+    ) ?? []
+  ).length;
+  if (control.includes(".padding(-7)") && slotFrames < 2) {
+    issues.push(
+      `${name} pulls its glass in with a negative padding, which shrinks its layout box to 30pt while the circle still draws at 44. It must lock the slot back to AvatarHeaderMetrics.barSize, or it will sit 7pt off the page controls sharing its seat.`,
+    );
   }
 }
 
