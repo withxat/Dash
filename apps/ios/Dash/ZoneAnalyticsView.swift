@@ -511,6 +511,7 @@ struct ZoneAnalyticsView: View {
     ) { target, snap in
       (
         summaryValue: snap.totalRequests.formatted(.number.locale(DashL10n.activeLocale)),
+        summaryNumericValue: Double(snap.totalRequests),
         trend: DashChartTrend(
           current: Double(snap.totalRequests),
           previous: snap.previousTotalRequests.map(Double.init),
@@ -535,6 +536,7 @@ struct ZoneAnalyticsView: View {
     ) { target, snap in
       (
         summaryValue: snap.peakUniques.formatted(.number.locale(DashL10n.activeLocale)),
+        summaryNumericValue: Double(snap.peakUniques),
         trend: DashChartTrend(
           current: Double(snap.peakUniques),
           previous: snap.previousPeakUniques.map(Double.init),
@@ -559,6 +561,7 @@ struct ZoneAnalyticsView: View {
     ) { target, snap in
       (
         summaryValue: bandwidth(snap.totalBytes),
+        summaryNumericValue: Double(snap.totalBytes),
         trend: DashChartTrend(
           current: Double(snap.totalBytes),
           previous: snap.previousTotalBytes.map(Double.init),
@@ -580,6 +583,7 @@ struct ZoneAnalyticsView: View {
     isLine: Bool,
     payload: (AnalyticsRange, ZoneAnalyticsSnapshot) -> (
       summaryValue: String,
+      summaryNumericValue: Double,
       trend: DashChartTrend?,
       data: [DitherDatum],
       series: [DitherSeries],
@@ -605,6 +609,7 @@ struct ZoneAnalyticsView: View {
         range: target,
         rangeLabel: target.totalsHeading,
         summaryValue: built.summaryValue,
+        summaryNumericValue: built.summaryNumericValue,
         trend: built.trend,
         categoryAxisLabel: target == .day ? "Hour" : "Day",
         accessibilitySummary: built.accessibilitySummary,
@@ -617,6 +622,7 @@ struct ZoneAnalyticsView: View {
       title: title,
       rangeLabel: current?.rangeLabel ?? range.totalsHeading,
       summaryValue: current?.summaryValue,
+      summaryNumericValue: current?.summaryNumericValue,
       trend: current?.trend,
       categoryAxisLabel: current?.categoryAxisLabel ?? (range == .day ? "Hour" : "Day"),
       valueAxisLabel: valueAxisLabel,

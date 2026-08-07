@@ -334,6 +334,11 @@ struct DashCollapsedChartCard: View {
   /// reserved title lines over the total and trend — instead of a title-only
   /// strip above the sparkline.
   var summaryValue: String? = nil
+  /// `summaryValue`'s raw magnitude, for `.numericText(value:)` direction when
+  /// a screen-level range control swaps the figure in place (Web Analytics'
+  /// 7d / 30d). Cards on tabless screens leave it nil — their figure only
+  /// changes outside an animated transaction, where no transition fires.
+  var summaryNumericValue: Double? = nil
   /// Catalog key naming the window the total covers ("Last 24 hours").
   ///
   /// For a card that stands alone: a total needs its window stated, and a lone
@@ -353,6 +358,7 @@ struct DashCollapsedChartCard: View {
   var detail: DashChartDetail?
   var detailAccessibilityIdentifier: String?
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private var shape: RoundedRectangle {
     RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
@@ -360,6 +366,14 @@ struct DashCollapsedChartCard: View {
 
   private var showsMetricHeader: Bool {
     summaryValue != nil || trend != nil
+  }
+
+  /// Same rolling digits as every other primary metric — the range tabs swap
+  /// the figure inside a fixed frame, so it rolls rather than cross-fades.
+  private var summaryValueTransition: ContentTransition {
+    guard !reduceMotion else { return .opacity }
+    guard let summaryNumericValue else { return .numericText() }
+    return .numericText(value: summaryNumericValue)
   }
 
   /// The caption is deliberately absent: `accessibilitySummary` already names
@@ -437,6 +451,7 @@ struct DashCollapsedChartCard: View {
           if let summaryValue {
             Text(verbatim: summaryValue)
               .dashChartPrimaryMetricValue()
+              .contentTransition(summaryValueTransition)
           }
           DashCollapsedChartTrendLabel(trend: trend)
           Spacer(minLength: 4)

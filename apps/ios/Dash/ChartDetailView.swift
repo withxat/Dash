@@ -174,6 +174,10 @@ struct DashChartDetailRange: Hashable, Sendable {
   let range: AnalyticsRange
   let rangeLabel: String
   let summaryValue: String?
+  /// `summaryValue`'s raw magnitude, for `.numericText(value:)` direction when
+  /// the tabs swap it — the formatted string alone cannot say which way to
+  /// roll.
+  let summaryNumericValue: Double?
   let trend: DashChartTrend?
   let categoryAxisLabel: String
   let accessibilitySummary: String
@@ -184,6 +188,9 @@ struct DashChartDetail: Hashable, Sendable {
   let title: String
   let rangeLabel: String
   let summaryValue: String?
+  /// See `DashChartDetailRange.summaryNumericValue`. Single-snapshot pushes
+  /// may leave it nil — with no tabs the figure never swaps.
+  let summaryNumericValue: Double?
   let trend: DashChartTrend?
   let categoryAxisLabel: String
   let valueAxisLabel: String
@@ -211,6 +218,7 @@ struct DashChartDetail: Hashable, Sendable {
     title: String,
     rangeLabel: String,
     summaryValue: String? = nil,
+    summaryNumericValue: Double? = nil,
     trend: DashChartTrend? = nil,
     categoryAxisLabel: String,
     valueAxisLabel: String,
@@ -227,6 +235,7 @@ struct DashChartDetail: Hashable, Sendable {
     self.title = title
     self.rangeLabel = rangeLabel
     self.summaryValue = summaryValue
+    self.summaryNumericValue = summaryNumericValue
     self.trend = trend
     self.categoryAxisLabel = categoryAxisLabel
     self.valueAxisLabel = valueAxisLabel
@@ -403,6 +412,7 @@ struct DashChartDetailButton: View {
 struct DashChartDetailView: View {
   let detail: DashChartDetail
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var range: AnalyticsRange
 
   init(detail: DashChartDetail) {
@@ -477,6 +487,7 @@ struct DashChartDetailView: View {
           if let summaryValue = active.summaryValue {
             Text(verbatim: summaryValue)
               .dashChartPrimaryMetricValue()
+              .contentTransition(summaryValueTransition)
           }
           Spacer(minLength: 4)
           DashChartDetailTrendLabel(trend: active.trend)
@@ -491,6 +502,16 @@ struct DashChartDetailView: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// The tabs swap the figure inside a fixed frame — same metric, new window —
+  /// so the digits roll like every other primary metric (Watchtower cards,
+  /// zone totals) instead of cross-fading. `DashTextTabs` already writes the
+  /// selection inside `withAnimation`, so the transition fires on its own.
+  private var summaryValueTransition: ContentTransition {
+    guard !reduceMotion else { return .opacity }
+    guard let numeric = active.summaryNumericValue else { return .numericText() }
+    return .numericText(value: numeric)
   }
 
   @ViewBuilder
@@ -596,6 +617,7 @@ extension String {
 private struct DashChartDetailActiveSnapshot {
   let rangeLabel: String
   let summaryValue: String?
+  let summaryNumericValue: Double?
   let trend: DashChartTrend?
   let categoryAxisLabel: String
   let accessibilitySummary: String
@@ -604,6 +626,7 @@ private struct DashChartDetailActiveSnapshot {
   init(range: DashChartDetailRange) {
     rangeLabel = range.rangeLabel
     summaryValue = range.summaryValue
+    summaryNumericValue = range.summaryNumericValue
     trend = range.trend
     categoryAxisLabel = range.categoryAxisLabel
     accessibilitySummary = range.accessibilitySummary
@@ -613,6 +636,7 @@ private struct DashChartDetailActiveSnapshot {
   init(detail: DashChartDetail) {
     rangeLabel = detail.rangeLabel
     summaryValue = detail.summaryValue
+    summaryNumericValue = detail.summaryNumericValue
     trend = detail.trend
     categoryAxisLabel = detail.categoryAxisLabel
     accessibilitySummary = detail.accessibilitySummary

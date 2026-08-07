@@ -396,6 +396,7 @@ struct WebAnalyticsView: View {
     return DashCollapsedChartCard(
       title: metric.title,
       summaryValue: value,
+      summaryNumericValue: payload.current,
       trend: DashChartTrend(
         current: payload.current,
         previous: payload.previous,
@@ -453,6 +454,7 @@ struct WebAnalyticsView: View {
         range: target,
         rangeLabel: target.totalsHeading,
         summaryValue: value,
+        summaryNumericValue: payload.current,
         trend: DashChartTrend(
           current: payload.current,
           previous: payload.previous,
@@ -466,6 +468,7 @@ struct WebAnalyticsView: View {
       title: metric.title,
       rangeLabel: current?.rangeLabel ?? range.totalsHeading,
       summaryValue: current?.summaryValue,
+      summaryNumericValue: current?.summaryNumericValue,
       trend: current?.trend,
       categoryAxisLabel: "Day",
       valueAxisLabel: metric.valueAxisLabel,

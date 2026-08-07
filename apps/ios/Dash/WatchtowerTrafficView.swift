@@ -2636,6 +2636,7 @@ private struct WatchtowerMetricChartCard: View {
       title: metric.title,
       rangeLabel: current.rangeLabel,
       summaryValue: current.summaryValue,
+      summaryNumericValue: current.summaryNumericValue,
       trend: current.trend,
       categoryAxisLabel: current.categoryAxisLabel,
       valueAxisLabel: metric.valueAxisLabel,
@@ -2687,6 +2688,7 @@ private struct WatchtowerMetricChartCard: View {
       range: target,
       rangeLabel: target.totalsHeading,
       summaryValue: total.text,
+      summaryNumericValue: total.numeric,
       trend: trend,
       categoryAxisLabel: target == .month ? "Day" : "Hour",
       accessibilitySummary: WatchtowerAnalyticsChartModel.accessibilitySummary(
