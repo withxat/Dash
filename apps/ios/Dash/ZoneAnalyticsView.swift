@@ -235,13 +235,6 @@ struct ZoneAnalyticsView: View {
   private var isLoadingCurrent: Bool { loadingRanges.contains(range) }
   private var currentError: String? { errorByRange[range] }
 
-  private var metricColumns: [GridItem] {
-    let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
-    return Array(
-      repeating: GridItem(.flexible(), spacing: DashTheme.Spacing.itemGap),
-      count: count)
-  }
-
   var body: some View {
     DashFeatureList(
       isLoading: isLoadingCurrent,
@@ -268,19 +261,15 @@ struct ZoneAnalyticsView: View {
     .task { await loadAll() }
   }
 
-  /// Fuller first-paint reserve: metric tiles + Requests / Visitors / Bandwidth
+  /// Fuller first-paint reserve: totals panel + Requests / Visitors / Bandwidth
   /// chart panels. Live mode drops Visitors / Bandwidth when empty; those
   /// slots exit upward. Threats ride the Requests chart, not a peer tile.
   @ViewBuilder
   private func zoneAnalyticsBody(mode: DashBodyMode) -> some View {
     DashSurfaceStack {
       if mode.isPlaceholder {
-        LazyVGrid(columns: metricColumns, spacing: DashTheme.Spacing.itemGap) {
-          ForEach(0..<3, id: \.self) { _ in
-            DashMetricTilePlaceholder()
-          }
-        }
-        .dashBodySlot(reduceMotion: reduceMotion)
+        DashMetricPanelPlaceholder(tiles: 3)
+          .dashBodySlot(reduceMotion: reduceMotion)
         DashChartPanelPlaceholder()
           .dashBodySlot(reduceMotion: reduceMotion)
         DashChartPanelPlaceholder()
@@ -288,7 +277,7 @@ struct ZoneAnalyticsView: View {
         DashChartPanelPlaceholder()
           .dashBodySlot(reduceMotion: reduceMotion)
       } else {
-        metricsGrid
+        metricsPanel
           .dashBodySlot(reduceMotion: reduceMotion)
         requestsChartCard
           .dashBodySlot(reduceMotion: reduceMotion)
@@ -304,44 +293,68 @@ struct ZoneAnalyticsView: View {
     }
   }
 
-  private var metricsGrid: some View {
-    LazyVGrid(columns: metricColumns, spacing: DashTheme.Spacing.itemGap) {
-      metricCard(
-        title: "Requests",
-        value: totalRequests.formatted(),
-        numericValue: Double(totalRequests))
-      metricCard(
-        title: "Bandwidth",
-        value: bandwidth(totalBytes),
-        numericValue: Double(totalBytes))
-      metricCard(
-        title: "Cached",
-        value: cacheHitRatio.formatted(
-          .percent.precision(.fractionLength(0)).locale(DashL10n.activeLocale)),
-        numericValue: cacheHitRatio)
-    }
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel(DashL10n.ui(range.totalsHeading))
-  }
-
-  private func metricCard(title: String, value: String, numericValue: Double) -> some View {
+  /// One glass panel — same shape as the Worker detail totals card — holding
+  /// Requests / Bandwidth / Cached for the selected window.
+  private var metricsPanel: some View {
     DashGlassCard {
-      VStack(alignment: .leading, spacing: 4) {
-        Text(DashL10n.ui(title))
+      VStack(alignment: .leading, spacing: 10) {
+        Text(DashL10n.ui(range.totalsHeading))
           .dashTextStyle(.footnoteSemibold)
           .foregroundStyle(DashTheme.subtle)
-        Text(value)
-          .dashTextStyle(.sectionTitle)
-          .monospacedDigit()
-          .foregroundStyle(DashTheme.strong)
-          .lineLimit(1)
-          .minimumScaleFactor(0.7)
-          .contentTransition(
-            reduceMotion ? .opacity : .numericText(value: numericValue))
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: 12) {
+            zoneMetric(
+              "Requests",
+              totalRequests.formatted(),
+              numericValue: Double(totalRequests))
+            zoneMetric(
+              "Bandwidth",
+              bandwidth(totalBytes),
+              numericValue: Double(totalBytes))
+            zoneMetric(
+              "Cached",
+              cacheHitRatio.formatted(
+                .percent.precision(.fractionLength(0)).locale(DashL10n.activeLocale)),
+              numericValue: cacheHitRatio)
+          }
+        } else {
+          HStack(spacing: 12) {
+            zoneMetric(
+              "Requests",
+              totalRequests.formatted(),
+              numericValue: Double(totalRequests))
+            zoneMetric(
+              "Bandwidth",
+              bandwidth(totalBytes),
+              numericValue: Double(totalBytes))
+            zoneMetric(
+              "Cached",
+              cacheHitRatio.formatted(
+                .percent.precision(.fractionLength(0)).locale(DashL10n.activeLocale)),
+              numericValue: cacheHitRatio)
+          }
+        }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel(DashL10n.ui(range.totalsHeading))
     }
-    .accessibilityElement(children: .combine)
+  }
+
+  private func zoneMetric(_ title: String, _ value: String, numericValue: Double) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(value)
+        .dashTextStyle(.sectionTitle)
+        .foregroundStyle(DashTheme.text)
+        .monospacedDigit()
+        .lineLimit(1)
+        .minimumScaleFactor(0.7)
+        .contentTransition(
+          reduceMotion ? .opacity : .numericText(value: numericValue))
+      Text(DashL10n.ui(title))
+        .dashTextStyle(.caption)
+        .foregroundStyle(DashTheme.subtle)
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// Detail freezes every warm window at push; wait out in-flight ranges that

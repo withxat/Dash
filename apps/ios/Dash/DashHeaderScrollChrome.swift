@@ -3,15 +3,6 @@ import SwiftUI
 import UIKit
 import VariableBlur
 
-#if DEBUG
-  private enum DashHeaderFrostDebug {
-    static let log = Logger(subsystem: "sh.xat.dash.app", category: "HeaderFrost")
-    static var enabled: Bool {
-      ProcessInfo.processInfo.environment["DASH_DEBUG_HEADER_FROST"] == "1"
-    }
-  }
-#endif
-
 // MARK: - Root chrome
 
 /// Shared profile avatar control: ONE instance, floated by `MainTabView`
@@ -58,6 +49,16 @@ struct HeaderProfileButton: View {
         .buttonStyle(DashPressButtonStyle())
       }
     }
+    // Lock the layout back to the 44pt slot the inbox and every page control
+    // occupy. The negative padding above shrinks the BOX to 30pt while the
+    // circle still draws at 44, so a leading-aligned avatar and a leading-
+    // aligned Back put their circles 7pt apart — invisible while they lived in
+    // different layers, a visible jump now that they share one seat. It also
+    // keeps the identity crossfade on the circle's own rect.
+    .frame(
+      width: AvatarHeaderMetrics.barSize,
+      height: AvatarHeaderMetrics.barSize
+    )
     .simultaneousGesture(
       LongPressGesture(minimumDuration: 0.35).onEnded { _ in
         guard let onLongPress else { return }
@@ -87,8 +88,8 @@ struct HeaderProfileButton: View {
   }
 }
 
-/// Trailing Watchtower inbox control — same 44pt glass circle as the leading
-/// profile avatar. Floated by `MainTabView` (not a toolbar item) so the nav
+/// Trailing Watchtower inbox control — same 44pt slot as the leading profile
+/// avatar, locked the same way and for the same reason. Floated by `MainTabView` (not a toolbar item) so the nav
 /// bar's item-height clamp cannot squash it into a capsule. The count badge
 /// overlays the glass corner (not a sibling ZStack that floats away).
 struct HeaderInboxButton: View {
@@ -843,25 +844,9 @@ final class DashHeaderScrollProbeView: UIView {
     offsetObservation = nil
     guard let scroll = DashScreenScrollLocator.contentScrollView(from: self) else {
       scrollView = nil
-      #if DEBUG
-        if DashHeaderFrostDebug.enabled {
-          let host = DashScreenScrollLocator.enclosingViewController(from: self)
-          DashHeaderFrostDebug.log.warning(
-            "probe attach missed scroll host=\(String(describing: host.map { type(of: $0) }), privacy: .public)"
-          )
-        }
-      #endif
       return
     }
     scrollView = scroll
-    #if DEBUG
-      if DashHeaderFrostDebug.enabled {
-        let host = DashScreenScrollLocator.enclosingViewController(from: self)
-        DashHeaderFrostDebug.log.info(
-          "probe attached scrollType=\(String(describing: type(of: scroll)), privacy: .public) h=\(scroll.bounds.height, format: .fixed(precision: 1)) paging=\(scroll.isPagingEnabled) host=\(String(describing: host.map { type(of: $0) }), privacy: .public)"
-        )
-      }
-    #endif
     offsetObservation = scroll.observe(\.contentOffset) { [weak self] _, _ in
       MainActor.assumeIsolated { self?.report() }
     }
@@ -872,24 +857,11 @@ final class DashHeaderScrollProbeView: UIView {
     guard let scrollView, scrollView.window != nil else {
       scroll.clear()
       wash?.clear()
-      #if DEBUG
-        if DashHeaderFrostDebug.enabled {
-          DashHeaderFrostDebug.log.warning("probe cleared — scroll missing window")
-        }
-      #endif
       return
     }
     let distance = scrollView.contentOffset.y + scrollView.adjustedContentInset.top
-    let wasFrosted = scroll.isFrosted
     scroll.report(distance: distance)
     wash?.report(distance: distance)
-    #if DEBUG
-      if DashHeaderFrostDebug.enabled, wasFrosted != scroll.isFrosted {
-        DashHeaderFrostDebug.log.info(
-          "frost \(scroll.isFrosted ? "armed" : "disarmed", privacy: .public) distance=\(distance, format: .fixed(precision: 1))"
-        )
-      }
-    #endif
   }
 }
 
@@ -953,11 +925,6 @@ enum DashScreenClipScope {
   /// Dynamic Island and flash the workspace wash behind the arriving page.
   static func lift(from view: UIView) {
     guard let contentRoot = DashScreenScrollLocator.enclosingContentView(from: view) else {
-      #if DEBUG
-        if DashHeaderFrostDebug.enabled {
-          DashHeaderFrostDebug.log.warning("clip lift missed content root")
-        }
-      #endif
       return
     }
     var node = view.superview

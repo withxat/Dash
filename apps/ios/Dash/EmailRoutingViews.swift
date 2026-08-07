@@ -599,12 +599,18 @@ struct EmailRoutingView: View {
         caption: reason
       )
     } else {
-      catchAllToggleCard(catchAll)
+      DashToggleRow(
+        title: "Catch-all",
+        // The one place this is explained. Delivery sits directly below and
+        // used to repeat the same sentence verbatim as its own caption.
+        subtitle: "What happens to mail sent to any other address at this domain.",
+        isOn: catchAllEnabledBinding(catchAll),
+        isEnabled: featureAllowsWrites,
+        isLoading: catchAllUpdating)
       if catchAll.enabled == true {
         DashMenuRow(
           title: "Delivery",
           value: catchAllDeliveryValue,
-          caption: "What happens to mail sent to any other address at this domain.",
           options: deliveryOptions,
           isEnabled: featureAllowsWrites && addresses != nil,
           isLoading: catchAllUpdating
@@ -615,33 +621,13 @@ struct EmailRoutingView: View {
     }
   }
 
-  @ViewBuilder
-  private func catchAllToggleCard(_ rule: EmailRoutingCatchAllRule) -> some View {
-    DashCard {
-      Button {
-        updateCatchAll(enabled: !(rule.enabled ?? false), delivery: nil)
-      } label: {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text("Catch-all")
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.text)
-            Text("What happens to mail sent to any other address at this domain.")
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-              .lineLimit(2)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-          DashSwitch(isOn: rule.enabled ?? false)
-            .opacity(catchAllUpdating ? 0.72 : 1)
-        }
-      }
-      .buttonStyle(DashSurfaceButtonStyle())
-      .disabled(!featureAllowsWrites || catchAllUpdating)
-      .accessibilityLabel(DashL10n.string("Catch-all"))
-      .accessibilityValue(rule.enabled == true ? "On" : "Off")
-      .accessibilityAddTraits(.isToggle)
-    }
+  private func catchAllEnabledBinding(_ rule: EmailRoutingCatchAllRule) -> Binding<Bool> {
+    Binding(
+      get: { rule.enabled ?? false },
+      set: { enabled in
+        guard featureAllowsWrites, !catchAllUpdating else { return }
+        updateCatchAll(enabled: enabled, delivery: nil)
+      })
   }
 
   private var catchAllDeliveryValue: String {
@@ -1783,7 +1769,7 @@ struct EmailRoutingRuleEditor: View {
         return
       }
       model.featureCache.remove(FeatureCacheKey.emailRouting(zoneID))
-      model.toasts.success(DashL10n.string("Saved successfully."))
+      model.toasts.success(DashL10n.string("Saved successfully"))
       await onSaved()
       guard model.isCurrentAccount(context), !Task.isCancelled else {
         actionPhase = .idle
@@ -1810,7 +1796,7 @@ struct EmailRoutingRuleEditor: View {
         return
       }
       model.featureCache.remove(FeatureCacheKey.emailRouting(zoneID))
-      model.toasts.success(DashL10n.string("Deleted successfully."))
+      model.toasts.success(DashL10n.string("Deleted successfully"))
       await onSaved()
       guard model.isCurrentAccount(context), !Task.isCancelled else {
         actionPhase = .idle

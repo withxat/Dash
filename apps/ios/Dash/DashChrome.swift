@@ -16,7 +16,7 @@ struct DashTrayPresentation: Equatable {
 @MainActor
 @Observable
 final class DashWorkspacePresentationState {
-  private struct Reporter {
+  private struct Reporter: Equatable {
     let entryID: UUID?
     var presented: Bool
   }
@@ -32,17 +32,31 @@ final class DashWorkspacePresentationState {
     coverPresentations.values.contains { $0.presented }
   }
 
+  /// Guarded, because `@Observable` notifies on every write — equal or not —
+  /// and `MainTabView`'s body reads `trayPresented` to decide the dock, the
+  /// header displacement, and route consumption. Each `dashTray` reports from
+  /// both `onAppear` and an `initial: true` `onChange`, so a screen carrying
+  /// several of them (Settings has four) re-invalidated the view that lays it
+  /// out once per report, on the frame it mounted.
   func setTrayPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
-    trayPresentations[reporterID] = Reporter(entryID: entryID, presented: presented)
+    let reporter = Reporter(entryID: entryID, presented: presented)
+    guard trayPresentations[reporterID] != reporter else { return }
+    trayPresentations[reporterID] = reporter
   }
 
   func setCoverPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
-    coverPresentations[reporterID] = Reporter(entryID: entryID, presented: presented)
+    let reporter = Reporter(entryID: entryID, presented: presented)
+    guard coverPresentations[reporterID] != reporter else { return }
+    coverPresentations[reporterID] = reporter
   }
 
+  /// Same guard: pruning an entry that reported nothing must not rewrite the
+  /// dictionaries, or every replaced entry invalidates `MainTabView` for free.
   func removePresentationReporters(forEntryID entryID: UUID) {
-    trayPresentations = trayPresentations.filter { $0.value.entryID != entryID }
-    coverPresentations = coverPresentations.filter { $0.value.entryID != entryID }
+    let trays = trayPresentations.filter { $0.value.entryID != entryID }
+    if trays.count != trayPresentations.count { trayPresentations = trays }
+    let covers = coverPresentations.filter { $0.value.entryID != entryID }
+    if covers.count != coverPresentations.count { coverPresentations = covers }
   }
 }
 
@@ -100,12 +114,6 @@ private struct DashTrayBodyMaxHeightKey: EnvironmentKey {
   static let defaultValue: CGFloat? = nil
 }
 
-#if DEBUG
-  private struct DashTrayReduceMotionOverrideKey: EnvironmentKey {
-    static let defaultValue: Bool? = nil
-  }
-#endif
-
 extension EnvironmentValues {
   var dashTrayDismiss: () -> Void {
     get { self[DashTrayDismissKey.self] }
@@ -140,27 +148,7 @@ extension EnvironmentValues {
     get { self[DashTrayBodyMaxHeightKey.self] }
     set { self[DashTrayBodyMaxHeightKey.self] = newValue }
   }
-
-  #if DEBUG
-    fileprivate var dashTrayReduceMotionOverride: Bool? {
-      get { self[DashTrayReduceMotionOverrideKey.self] }
-      set { self[DashTrayReduceMotionOverrideKey.self] = newValue }
-    }
-  #endif
 }
-
-#if DEBUG
-  extension View {
-    func dashTrayTestReduceMotionOverride(_ value: Bool?) -> some View {
-      environment(\.dashTrayReduceMotionOverride, value)
-    }
-  }
-
-  extension Notification.Name {
-    static let dashTraySuccessFlightDidBegin = Notification.Name(
-      "dash.tray.success-flight.did-begin")
-  }
-#endif
 
 // MARK: - Paired tray action presentation
 
@@ -1133,9 +1121,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-  #if DEBUG
-    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
-  #endif
   /// Card / paired-shell reveal. Springs with the bottom train — not the dim.
   @State private var progress: CGFloat = 0
   /// Full-screen page dim. Opacity only; never shares the card's offset spring.
@@ -1177,22 +1162,21 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// Result-destination flight: liftoff (the submit pill's success check) and
   /// landing (the toast's leading mark), held only while eligible. The mark
   /// carries its toast identity so the check can never fly into an unrelated
-  /// success toast that happens to hold the slot.
+  /// success toast that happens to hold the slot. The tray schedules the
+  /// flight; `dashToastLayer` draws it, because it has to land on top of the
+  /// toast and the toast lives above this cover.
   @State private var successFlightCoordinator = DashTraySuccessFlightCoordinator()
   @State private var toastMark: DashToastLeadingMark?
-  @State private var flight: DashTrayCheckFlight?
-  @State private var flightProgress: CGFloat = 0
+  @Environment(\.dashToastLayerState) private var toastLayerState
   @State private var remainingExitStages = 0
   @State private var flightExitStagePending = false
   @State private var pendingDismissCompletion: (() -> Void)?
 
+  private var liveToastLeadingMark: DashToastLeadingMark? { toastLayerState?.leadingMark }
+
   private var resolvedTitle: String { contentTitle ?? title }
   private var reduceMotion: Bool {
-    #if DEBUG
-      reduceMotionOverride ?? accessibilityReduceMotion
-    #else
-      accessibilityReduceMotion
-    #endif
+    accessibilityReduceMotion
   }
 
   /// Initial Reduce Motion never resolves a shared action. A mid-presentation
@@ -1300,15 +1284,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .padding(.bottom, bottomLift(proxy))
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
           .allowsHitTesting(keyboardAction == nil && !isClosing)
-          #if DEBUG
-            .overlay(alignment: .topLeading) {
-              Color.clear
-              .frame(width: 1, height: 1)
-              .accessibilityElement()
-              .accessibilityIdentifier("dash.tray.card")
-              .accessibilityValue(sharedRevealActive ? "paired" : "standard")
-            }
-          #endif
           .mask {
             if sharedRevealActive, let sourceFrame {
               DashTraySharedContentMask(
@@ -1356,7 +1331,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     )
     .environment(\.dashTrayTone, tone)
     .environment(\.dashTraySuccessFlightCoordinator, successFlightCoordinator)
-    .environment(\.dashTraySuccessFlightInProgress, flight != nil)
+    .environment(
+      \.dashTraySuccessFlightInProgress, toastLayerState?.successFlightInProgress ?? false
+    )
     .onPreferenceChange(DashSheetFittedHeightKey.self) { cardHeight = $0 }
     .onPreferenceChange(DashSheetHeaderActionKey.self) { headerAction = $0 }
     .onPreferenceChange(DashTrayBackActionKey.self) { backAction = $0 }
@@ -1404,12 +1381,19 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       perform(keyboardAction)
     }
     .presentationBackground(.clear)
-    .dashToastHost(successFlightInProgress: flight != nil)
-    // Above the toast: the check lands *on* the toast's leading mark.
-    .overlay { flightOverlay }
-    .onPreferenceChange(DashToastLeadingMarkPreferenceKey.self) { mark in
+    // No toast host here. The tray used to mount a second one so toasts would
+    // clear its scrim, and both copies read the same `DashToastCenter.current`
+    // — a toast raised over a tray rendered twice, out of phase. The single
+    // host is `dashToastLayer`'s, in a window above this cover, and the check
+    // flight that lands on it moved up there too.
+    //
+    // Mirrored through `liveToastLeadingMark` because that flattens the double
+    // optional: on `toastLayerState?.leadingMark`, `mark != nil` is also true
+    // for "there is a layer but no toast" — the one case this guard rejects.
+    .onChange(of: liveToastLeadingMark, initial: true) { _, mark in
       if mark != nil || !isClosing { toastMark = mark }
     }
+    .onDisappear { toastLayerState?.cancelSuccessFlight() }
     .onChange(of: reduceMotion, initial: true) { previous, reduced in
       guard reduced else { return }
       // The initial callback reports the same value twice; `onAppear` owns the
@@ -1441,10 +1425,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
         scrimProgress = isClosing ? 0 : 1
         sharedProxyOwnsAction = false
         sharedRevealReleased = true
-        if isClosing {
-          flightProgress = 1
-          flight = nil
-        }
+        // Cancel rather than end: this path owes the exit stage itself, just
+        // below, and the layer must not also run the completion.
+        if isClosing { toastLayerState?.cancelSuccessFlight() }
       }
       releaseSharedSource()
       if isClosing { finishFlightExitStage() }
@@ -1525,55 +1508,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     DashTraySourceRegistry.shared.release(sharedAction.id)
   }
 
-  /// One-shot overlay for the success-check flight. Mounted at progress 0 and
-  /// animated from its own `onAppear` so the insertion is committed before the
-  /// travel starts (an implicit animation on a freshly inserted view would
-  /// render straight at the target). Two same-silhouette glyphs crossfade
-  /// along the arc — the check lifts off in the pill's ink and lands in the
-  /// toast's green, so neither endpoint pops a foreign color.
-  @ViewBuilder private var flightOverlay: some View {
-    if let flight {
-      GeometryReader { proxy in
-        let origin = proxy.frame(in: .global).origin
-        ZStack {
-          Color.clear
-            .contentShape(Rectangle())
-          flightCheck(
-            flight, in: origin, color: tone?.vividLabel ?? DashTheme.inverse, role: .liftoff)
-          flightCheck(flight, in: origin, color: DashTheme.success, role: .landing)
-        }
-        .onAppear {
-          withAnimation(DashTheme.Motion.settle) {
-            flightProgress = 1
-          } completion: {
-            finishFlightExitStage()
-          }
-        }
-      }
-      .ignoresSafeArea()
-      // The terminal flight owns this brief handoff. Blocking touches keeps
-      // the destination toast from being dismissed before the check lands.
-      .allowsHitTesting(true)
-      .accessibilityHidden(true)
-    }
-  }
-
-  private func flightCheck(
-    _ flight: DashTrayCheckFlight, in origin: CGPoint,
-    color: Color, role: DashTrayCheckFlightEffect.ColorRole
-  ) -> some View {
-    SolarIcon(
-      asset: SolarAsset.checkCircleFill,
-      size: max(flight.start.height, 1),
-      color: color
-    )
-    .modifier(
-      DashTrayCheckFlightEffect(
-        progress: flightProgress,
-        start: flight.start, end: flight.end,
-        containerOrigin: origin, colorRole: role))
-  }
-
   /// A hero replaces the title row outright, so it has nowhere to seat a
   /// description — `dashTrayDescription` is inert under one, by design.
   @ViewBuilder private var trayHeader: some View {
@@ -1600,12 +1534,15 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
   }
 
-  /// Page dim: material blur under a light black veil. Reduce Transparency
-  /// keeps the solid veil only so the entrance never depends on a filter.
+  /// Page dim: a softened material blur under a light black veil. Reduce
+  /// Transparency keeps the solid veil only so the entrance never depends on
+  /// a filter.
   @ViewBuilder private var trayScrim: some View {
     ZStack {
       if !reduceTransparency {
-        Rectangle().fill(.ultraThinMaterial)
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .opacity(DashTheme.Sheet.scrimMaterialOpacity)
       }
       Color.black.opacity(DashTheme.Sheet.scrimOpacity)
     }
@@ -1689,19 +1626,20 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// The check leaves the pill only on a programmatic (submit-success)
   /// dismissal while the succeeded check and a success toast are both on
   /// screen — failure paths never produced either frame, and ✕ / drag / scrim
-  /// carry their own exit semantics. The flight view animates itself from its
-  /// `onAppear`; see `flightOverlay`.
+  /// carry their own exit semantics. The tone resolves here, while the tray
+  /// still exists; the layer that draws the arc has none of its own.
   private func beginSuccessFlightIfEligible(reason: DashTrayCloseReason) -> Bool {
     guard reason == .programmatic, !reduceMotion,
+      let toastLayerState,
       let start = successFlightCoordinator.sourceFrame,
       let mark = toastMark,
       let target = successFlightCoordinator.targetToastID,
       mark.id == target
     else { return false }
-    flight = DashTrayCheckFlight(start: start, end: mark.frame)
-    #if DEBUG
-      NotificationCenter.default.post(name: .dashTraySuccessFlightDidBegin, object: nil)
-    #endif
+    toastLayerState.beginSuccessFlight(
+      DashTrayCheckFlight(
+        start: start, end: mark.frame, liftoffColor: tone?.vividLabel ?? DashTheme.inverse),
+      completion: { finishFlightExitStage() })
     return true
   }
 
@@ -1717,7 +1655,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     remainingExitStages -= 1
     guard remainingExitStages <= 0 else { return }
     drag = 0
-    flight = nil
     let completion = pendingDismissCompletion ?? {}
     pendingDismissCompletion = nil
     onDismiss(completion)
@@ -1862,19 +1799,13 @@ private struct DashTraySuccessFlightCoordinatorKey: EnvironmentKey {
 }
 
 /// The visible success toast's leading mark: its toast identity plus global
-/// frame — the flight's landing point. Published by `DashToastCard`;
-/// unobserved outside tray hosts. Carrying the identity lets the host refuse
-/// to land on an unrelated success toast that happens to hold the slot.
+/// frame — the flight's landing point. Published by `DashToastCard` into
+/// `DashToastLayerState`; read only by a tray scheduling a flight. Carrying the
+/// identity lets the tray refuse to land on an unrelated success toast that
+/// happens to hold the slot.
 struct DashToastLeadingMark: Equatable {
   let id: DashToast.ID
   let frame: CGRect
-}
-
-struct DashToastLeadingMarkPreferenceKey: PreferenceKey {
-  static var defaultValue: DashToastLeadingMark? { nil }
-  static func reduce(value: inout DashToastLeadingMark?, nextValue: () -> DashToastLeadingMark?) {
-    value = nextValue() ?? value
-  }
 }
 
 private struct DashTraySuccessFlightEnabledKey: EnvironmentKey {
@@ -1999,52 +1930,6 @@ enum DashTrayFlightMath {
     if progress <= 0.3 { return 0 }
     if progress >= 0.7 { return 1 }
     return (progress - 0.3) / 0.4
-  }
-}
-
-/// One scheduled flight: where the check lifts off and where it lands.
-private struct DashTrayCheckFlight: Equatable {
-  let start: CGRect
-  let end: CGRect
-}
-
-private struct DashTrayCheckFlightEffect: ViewModifier, Animatable {
-  /// Which side of the ink → green crossfade this glyph carries. The two
-  /// same-silhouette layers ride identical arcs; only their opacity ramps
-  /// mirror each other.
-  enum ColorRole {
-    case liftoff
-    case landing
-  }
-
-  var progress: CGFloat
-  let start: CGRect
-  let end: CGRect
-  /// The overlay container's global origin, subtracted so global endpoint
-  /// frames position correctly inside it.
-  let containerOrigin: CGPoint
-  var colorRole = ColorRole.landing
-
-  // Nonisolated for the same SE-0434 reason as DashTrayCardReveal.
-  nonisolated var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
-  }
-
-  func body(content: Content) -> some View {
-    let center = DashTrayFlightMath.point(
-      from: CGPoint(x: start.midX, y: start.midY),
-      to: CGPoint(x: end.midX, y: end.midY),
-      progress: progress
-    )
-    let blend = DashTrayFlightMath.colorBlend(progress)
-    content
-      .scaleEffect(
-        DashTrayFlightMath.scale(from: start.height, to: end.height, progress: progress)
-      )
-      .position(x: center.x - containerOrigin.x, y: center.y - containerOrigin.y)
-      .opacity(
-        DashTrayFlightMath.opacity(progress) * (colorRole == .landing ? blend : 1 - blend))
   }
 }
 
@@ -2412,15 +2297,15 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
       }
     }
     .onPreferenceChange(DashSheetHeaderHeightKey.self) { height in
-      guard height.isFinite, height >= 0 else { return }
+      guard DashTrayMeasuredHeight.shouldCommit(headerHeight, height) else { return }
       headerHeight = height
     }
     .onPreferenceChange(DashSheetFooterHeightKey.self) { height in
-      guard height.isFinite, height >= 0 else { return }
+      guard DashTrayMeasuredHeight.shouldCommit(footerHeight, height) else { return }
       footerHeight = height
     }
     .onPreferenceChange(DashSheetBodyIdealKey.self) { ideal in
-      guard ideal.isFinite, ideal >= 0 else { return }
+      guard DashTrayMeasuredHeight.shouldCommit(bodyIdeal, ideal) else { return }
       bodyIdeal = ideal
       applyBody(animated: bodyDisplay != 0)
     }
@@ -2430,6 +2315,7 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
   private func applyBody(animated: Bool) {
     let target = min(bodyIdeal, maxBodyHeight)
     guard target.isFinite, target > 0 else { return }
+    guard DashTrayMeasuredHeight.shouldCommit(bodyDisplay, target) else { return }
     if animated, !reduceMotion {
       withAnimation(DashTrayMotion.resize) { bodyDisplay = target }
     } else {
@@ -2459,6 +2345,17 @@ enum DashTrayScrollBoundaryRules {
   static func bodyHeight(ideal: CGFloat, action: CGFloat, available: CGFloat?) -> CGFloat? {
     guard let available, ideal > 0 else { return nil }
     return min(ideal, max(minimumBody, available - action))
+  }
+}
+
+/// GeometryReader → preference → `@State` → frame is how trays size themselves.
+/// Sub-point measure chatter must not rewrite that state, or the loop re-enters
+/// AttributeGraph (seen when an in-tray list animates a constant-count reorder).
+enum DashTrayMeasuredHeight {
+  static let changeThreshold: CGFloat = 0.5
+
+  static func shouldCommit(_ current: CGFloat, _ next: CGFloat) -> Bool {
+    next.isFinite && next >= 0 && abs(next - current) > changeThreshold
   }
 }
 
@@ -2521,9 +2418,15 @@ struct DashTrayScrollBoundary<Content: View, Action: View>: View {
       .frame(height: bodyHeight)
 
       action()
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { actionHeight = $0 }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
+          guard DashTrayMeasuredHeight.shouldCommit(actionHeight, $0) else { return }
+          actionHeight = $0
+        }
     }
-    .onPreferenceChange(DashTrayBoundaryBodyIdealKey.self) { bodyIdeal = $0 }
+    .onPreferenceChange(DashTrayBoundaryBodyIdealKey.self) { ideal in
+      guard DashTrayMeasuredHeight.shouldCommit(bodyIdeal, ideal) else { return }
+      bodyIdeal = ideal
+    }
   }
 }
 
@@ -2622,9 +2525,6 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-  #if DEBUG
-    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
-  #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Bool>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
@@ -2633,11 +2533,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @Environment(\.dashNavigationEntryID) private var navigationEntryID
 
   private var reduceMotion: Bool {
-    #if DEBUG
-      reduceMotionOverride ?? accessibilityReduceMotion
-    #else
-      accessibilityReduceMotion
-    #endif
+    accessibilityReduceMotion
   }
 
   @ViewBuilder
@@ -2710,9 +2606,6 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
   var hero: ((Item) -> Hero)?
   @ViewBuilder var trayContent: (Item) -> TrayContent
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-  #if DEBUG
-    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
-  #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Item>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
@@ -2722,11 +2615,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
 
   private var isPresented: Bool { item != nil }
   private var reduceMotion: Bool {
-    #if DEBUG
-      reduceMotionOverride ?? accessibilityReduceMotion
-    #else
-      accessibilityReduceMotion
-    #endif
+    accessibilityReduceMotion
   }
 
   @ViewBuilder

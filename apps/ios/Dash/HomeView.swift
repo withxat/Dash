@@ -33,7 +33,6 @@ struct HomeView: View {
   }
   @State private var showsAddDomain = false
   @State private var showsR2Upload = false
-  @State private var showsPurgeCache = false
   @State private var showsAddDNSRecord = false
   @State private var showsCreateKVKey = false
   @State private var showsCreateR2Bucket = false
@@ -104,7 +103,7 @@ struct HomeView: View {
 
         HomeQuickActionsSection(
           actions: quickActions,
-          navigationDestination: quickActionNavigationDestination,
+          navigationDestination: { _ in nil },
           perform: perform,
           edit: { showsEditActions = true }
         )
@@ -178,18 +177,6 @@ struct HomeView: View {
           RecentResource(
             accountID: accountID, kind: .r2Bucket, resourceID: bucket, title: bucket),
           in: recentsRaw)
-      }
-    }
-    .dashTray(
-      isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache"),
-      tone: FeatureVisualIdentity.tone(for: .zones)
-    ) {
-      HomePurgeCachePicker(zones: displayedZones) { zone, navigate in
-        guard zonesContext == model.accountRequestContext else {
-          showsPurgeCache = false
-          return
-        }
-        navigate()
       }
     }
     .dashTray(
@@ -361,8 +348,6 @@ struct HomeView: View {
       beginZoneMode(scopes: ["zone.read", "zone-settings.read", "zone-settings.write"]) {
         showsEnableUnderAttackMode = true
       }
-    case .purgeCache:
-      beginPurgeCache()
     }
   }
 
@@ -400,33 +385,6 @@ struct HomeView: View {
       return
     }
     showsR2Upload = true
-  }
-
-  private func beginPurgeCache() {
-    guard let context = model.accountRequestContext, zonesContext == context else { return }
-    let scopes: Set<String> = ["zone.read", "cache.purge"]
-    guard model.hasScopes(scopes) else {
-      model.requestAccess(to: scopes)
-      return
-    }
-    if zones.count == 1, let zone = zones.first {
-      // Pending/deep-linked actions have no concrete control occurrence. The
-      // visible quick-action tile routes through DashNavigationSource below.
-      navigator?.push(.cache(zone.id))
-    } else {
-      showsPurgeCache = true
-    }
-  }
-
-  private func quickActionNavigationDestination(_ action: HomeActionID) -> Destination? {
-    guard action == .purgeCache,
-      let context = model.accountRequestContext,
-      zonesContext == context,
-      model.hasScopes(["zone.read", "cache.purge"]),
-      zones.count == 1,
-      let zone = zones.first
-    else { return nil }
-    return .cache(zone.id)
   }
 
   private func isLocked(_ feature: FeatureID) -> Bool {
@@ -500,7 +458,6 @@ struct HomeView: View {
     zonesError = nil
     showsAddDomain = false
     showsR2Upload = false
-    showsPurgeCache = false
     showsAddDNSRecord = false
     showsCreateKVKey = false
     showsCreateR2Bucket = false
@@ -790,10 +747,10 @@ private struct HomeQuickActionsSection: View {
 
 extension HomeActionID {
   /// Zone-picker actions need the Home zones fetch to finish before the tray
-  /// can list domains (same guard `perform` uses for DNS / mode / purge).
+  /// can list domains (same guard `perform` uses for DNS / mode trays).
   fileprivate var needsLoadedZones: Bool {
     switch self {
-    case .addDNSRecord, .enableDevelopmentMode, .enableUnderAttackMode, .purgeCache:
+    case .addDNSRecord, .enableDevelopmentMode, .enableUnderAttackMode:
       true
     case .addDomain, .uploadR2, .createKVKey, .createR2Bucket, .addPagesDomain, .addWorkerDomain:
       false
@@ -811,7 +768,6 @@ extension HomeActionID {
     case .addWorkerDomain: DashL10n.string("Worker domain")
     case .enableDevelopmentMode: DashL10n.string("Dev mode")
     case .enableUnderAttackMode: DashL10n.string("Under Attack")
-    case .purgeCache: DashL10n.string("Purge cache")
     }
   }
 
@@ -826,7 +782,6 @@ extension HomeActionID {
     case .addWorkerDomain: DashL10n.string("Attach a hostname to a Worker")
     case .enableDevelopmentMode: DashL10n.string("Bypass cache for three hours")
     case .enableUnderAttackMode: DashL10n.string("Challenge every visitor")
-    case .purgeCache: DashL10n.string("Clear cached assets for a domain")
     }
   }
 
@@ -841,7 +796,6 @@ extension HomeActionID {
     case .addWorkerDomain: SolarAsset.Content.code
     case .enableDevelopmentMode: SolarAsset.Content.slider
     case .enableUnderAttackMode: SolarAsset.Content.shieldCheck
-    case .purgeCache: SolarAsset.Content.bolt
     }
   }
 
@@ -856,7 +810,6 @@ extension HomeActionID {
     case .addWorkerDomain: "home-quick-add-worker-domain"
     case .enableDevelopmentMode: "home-quick-enable-development-mode"
     case .enableUnderAttackMode: "home-quick-enable-under-attack-mode"
-    case .purgeCache: "home-quick-purge-cache"
     }
   }
 }
@@ -864,18 +817,40 @@ extension HomeActionID {
 private struct EditHomeActionsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var selectionRaw: String
+  /// Draft until Done — ✕ / drag / scrim discard without writing AppStorage.
+  @State private var draftRaw: String?
+  @State private var didSeedDraft = false
 
-  private var selection: [HomeActionID] {
-    HomeActions.decode(selectionRaw)
+  private var draft: String { draftRaw ?? selectionRaw }
+
+  private var selected: [HomeActionID] {
+    HomeActions.decode(draft)
+  }
+
+  private var selectedSet: Set<HomeActionID> {
+    Set(selected)
+  }
+
+  /// Selected first (draft order), then the rest in catalog order — the DNS
+  /// filter morph’s sibling: toggling slides a row between the two bands.
+  private var orderedItems: [HomeActionID] {
+    let rest = HomeActionID.allCases.filter { !selectedSet.contains($0) }
+    return selected + rest
   }
 
   var body: some View {
-    // Quick actions and shortcuts share the same compact tray and selection rows.
-    DashFormSheet(saveTitle: DashL10n.string("Done"), onSave: dismiss) {
-      HomeEditSelectionList(items: Array(HomeActionID.allCases)) { action in
-        let isSelected = selection.contains(action)
-        let canToggle = isSelected || selection.count < HomeActions.limit
+    DashFormSheet(
+      saveTitle: DashL10n.string("Done"),
+      onSave: {
+        selectionRaw = draft
+        dismiss()
+      }
+    ) {
+      HomeEditSelectionList(items: orderedItems) { action in
+        let isSelected = selectedSet.contains(action)
+        let canToggle = isSelected || selected.count < HomeActions.limit
         HomeEditSelectionRow(
           title: action.title,
           subtitle: action.subtitle,
@@ -886,29 +861,38 @@ private struct EditHomeActionsView: View {
         } action: {
           guard canToggle else {
             model.toasts.warning(
-              DashL10n.string("You can choose up to 3 quick actions."))
+              DashL10n.string("You can choose up to 3 quick actions"))
             return
           }
           DashDelight.selectionChanged()
-          selectionRaw = HomeActions.toggled(action, in: selectionRaw)
+          withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
+            draftRaw = HomeActions.toggled(action, in: draft)
+          }
         }
       }
+    }
+    .onAppear {
+      guard !didSeedDraft else { return }
+      draftRaw = selectionRaw
+      didSeedDraft = true
     }
   }
 }
 
 /// Shared edit-tray list chrome for Home Quick actions and Shortcuts.
+/// Identity-stable `ForEach`: a draft toggle only reorders the same ids, so
+/// `withAnimation` slides survivors into new seats. Do NOT hang `.dashMorph`
+/// here — that transition is for appear/disappear (DNS filter). On a reorder
+/// its removal scale briefly inflates the measured stack inside the tray's
+/// preference→frame height loop and trips AttributeGraph cycles.
 private struct HomeEditSelectionList<Item: Identifiable, Row: View>: View {
   let items: [Item]
   @ViewBuilder let row: (Item) -> Row
 
   var body: some View {
-    LazyVStack(alignment: .leading, spacing: 0) {
-      ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(items) { item in
         row(item)
-        if index < items.count - 1 {
-          DashListGroupDivider()
-        }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
@@ -917,7 +901,7 @@ private struct HomeEditSelectionList<Item: Identifiable, Row: View>: View {
 
 private struct HomeEditSelectionRow<Icon: View>: View {
   let title: String
-  let subtitle: String
+  var subtitle: String? = nil
   let isSelected: Bool
   /// Softened look for at-limit quick-action rows. Kept tappable so the caller
   /// can toast the three-slot ceiling instead of swallowing the tap.
@@ -927,39 +911,55 @@ private struct HomeEditSelectionRow<Icon: View>: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
-    Button(action: action) {
-      HStack(spacing: 12) {
-        icon()
-        VStack(alignment: .leading, spacing: 2) {
-          Text(title)
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-          Text(subtitle)
-            .dashTextStyle(.supporting)
-            .foregroundStyle(DashTheme.rowSubtitle)
-            .lineLimit(1)
+    HStack(spacing: 12) {
+      Button(action: action) {
+        HStack(spacing: 12) {
+          icon()
+          VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.text)
+            if let subtitle {
+              Text(subtitle)
+                .dashTextStyle(.supporting)
+                .foregroundStyle(DashTheme.rowSubtitle)
+                .lineLimit(1)
+            }
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // Instant Solar swap (same chrome as Profile / R2). SF Symbol name
-        // changes under the tray's resize animation read as a slow morph.
-        SolarIcon(
-          asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-          size: 22,
-          color: isSelected ? DashTheme.brand : DashTheme.placeholder
+        .padding(.vertical, 10)
+        .frame(
+          maxWidth: .infinity,
+          minHeight: DashTheme.Layout.minimumHitTarget,
+          alignment: .leading
         )
-        .transaction { $0.animation = nil }
+        .contentShape(Rectangle())
       }
-      .padding(.vertical, 10)
-      .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-      .contentShape(Rectangle())
+      .buttonStyle(DashSurfaceButtonStyle())
+
+      // Press shrink belongs to the hollow / check pair only — the row label
+      // stays a flat surface so the cue reads on the control that changes.
+      Button(action: action) {
+        DashSelectionMark(isSelected: isSelected)
+          .frame(
+            width: DashTheme.Layout.minimumHitTarget,
+            height: DashTheme.Layout.minimumHitTarget
+          )
+          .contentShape(Rectangle())
+      }
+      .buttonStyle(DashPressButtonStyle())
+      .accessibilityHidden(true)
     }
-    .buttonStyle(DashSurfaceButtonStyle())
     .opacity(isDimmed ? 0.48 : 1)
     .animation(reduceMotion ? nil : DashTheme.Motion.iconSwap, value: isDimmed)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(.isButton)
     .accessibilityValue(
       isSelected ? DashL10n.string("Selected") : DashL10n.string("Not selected")
     )
     .accessibilityAddTraits(.isToggle)
+    .accessibilityAction { action() }
   }
 }
 
@@ -1000,7 +1000,9 @@ private struct HomeShortcutsSection: View {
       } else {
         ForEach(features) { feature in
           DashListGroupLink(value: .feature(feature)) {
-            FeatureRow(feature: feature)
+            // Title only — the feature blurb stays on Resources. Height comes
+            // from the two-tone card's 44pt list seat.
+            FeatureRow(feature: feature, showsSubtitle: false)
           }
         }
       }
@@ -1010,12 +1012,22 @@ private struct HomeShortcutsSection: View {
 
 private struct EditShortcutsView: View {
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Binding var selectionRaw: String
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
+  /// Draft until Done — ✕ / drag / scrim discard without writing AppStorage.
+  @State private var draftRaw: String?
+  @State private var didSeedDraft = false
 
-  private var selected: Set<FeatureID> {
-    Set(HomeShortcuts.decode(selectionRaw))
+  private var draft: String { draftRaw ?? selectionRaw }
+
+  private var selected: [FeatureID] {
+    HomeShortcuts.decode(draft)
+  }
+
+  private var selectedSet: Set<FeatureID> {
+    Set(selected)
   }
 
   private var catalogItems: [FeatureID] {
@@ -1026,20 +1038,38 @@ private struct EditShortcutsView: View {
     }
   }
 
+  /// Selected first (draft order), then the rest in catalog order.
+  private var orderedItems: [FeatureID] {
+    let rest = catalogItems.filter { !selectedSet.contains($0) }
+    return selected + rest
+  }
+
   var body: some View {
-    DashFormSheet(saveTitle: DashL10n.string("Done"), onSave: dismiss) {
-      HomeEditSelectionList(items: catalogItems) { feature in
+    DashFormSheet(
+      saveTitle: DashL10n.string("Done"),
+      onSave: {
+        selectionRaw = draft
+        dismiss()
+      }
+    ) {
+      HomeEditSelectionList(items: orderedItems) { feature in
         HomeEditSelectionRow(
           title: feature.title,
-          subtitle: feature.subtitle,
-          isSelected: selected.contains(feature)
+          isSelected: selectedSet.contains(feature)
         ) {
           CatalogFeatureIcon(feature: feature, style: .fill, size: .list)
         } action: {
           DashDelight.selectionChanged()
-          selectionRaw = HomeShortcuts.toggled(feature, in: selectionRaw)
+          withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.morph) {
+            draftRaw = HomeShortcuts.toggled(feature, in: draft)
+          }
         }
       }
+    }
+    .onAppear {
+      guard !didSeedDraft else { return }
+      draftRaw = selectionRaw
+      didSeedDraft = true
     }
   }
 }
@@ -1117,7 +1147,7 @@ private struct HomeCreateKVKeyAction: View {
             .foregroundStyle(DashTheme.subtle)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 12)
+        .padding(.vertical, DashTheme.Spacing.listRow)
       } else if let error {
         DashNotice(kind: .error, message: error)
       } else if namespaces.isEmpty {
@@ -1540,7 +1570,7 @@ private struct HomeActionLoadingRow: View {
         .foregroundStyle(DashTheme.subtle)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.vertical, 12)
+    .padding(.vertical, DashTheme.Spacing.listRow)
   }
 }
 
@@ -1635,7 +1665,7 @@ private struct HomeR2UploadSheet: View {
                 .foregroundStyle(DashTheme.subtle)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 12)
+            .padding(.vertical, DashTheme.Spacing.listRow)
           } else if buckets.isEmpty {
             DashNotice(
               kind: .warning,
@@ -1872,7 +1902,7 @@ private struct HomeR2UploadSheet: View {
       R2ShareDestination.record(destination)
       onUploaded(request.bucket)
       let message = DashL10n.string(
-        "Uploaded \(request.fileURL.lastPathComponent) to \(request.bucket).")
+        "Uploaded \(request.fileURL.lastPathComponent) to \(request.bucket)")
       pendingUploadedMessage = message
       model.toasts.success(message)
       actionPhase = .succeeded
@@ -1984,51 +2014,11 @@ private enum HomeR2UploadError: LocalizedError {
   var errorDescription: String? {
     switch self {
     case .unreadableFile:
-      DashL10n.string("Can't read that file's size.")
+      DashL10n.string("Can't read that file's size")
     case .fileTooLarge(let name, let size):
       DashL10n.string(
         "\(name) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(R2Media.transferSizeLimit.formatted(.byteCount(style: .file)))."
       )
-    }
-  }
-}
-
-private struct HomePurgeCachePicker: View {
-  @Environment(\.dashTrayDismissAfter) private var dismissAfter
-  let zones: [CloudflareZone]
-  let onSelect: (CloudflareZone, @escaping () -> Void) -> Void
-
-  var body: some View {
-    Group {
-      if zones.isEmpty {
-        DashNotice(
-          kind: .warning,
-          message: DashL10n.string("Add a domain before purging cache."))
-      } else {
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(zones.enumerated()), id: \.element.id) { index, zone in
-            DashNavigationSource(
-              destination: .cache(zone.id),
-              schedule: dismissAfter
-            ) { navigate in
-              Button {
-                onSelect(zone, navigate)
-              } label: {
-                DashListRow(
-                  title: zone.name,
-                  subtitle: (zone.status ?? "unknown").capitalized,
-                  avatarSeed: zone.name
-                )
-              }
-              .buttonStyle(DashSurfaceButtonStyle())
-            }
-            if index < zones.count - 1 {
-              DashListGroupDivider()
-            }
-          }
-        }
-        .dashTrayDescription(DashL10n.string("Choose the domain whose cache you want to clear."))
-      }
     }
   }
 }
@@ -2152,7 +2142,7 @@ struct AddDomainSheet: View {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Created successfully."))
+      model.toasts.success(DashL10n.string("Created successfully"))
       onCreated()
       pendingCreated = zone
       actionPhase = .succeeded
@@ -2337,7 +2327,7 @@ private struct HomeDomainsSection: View {
           }
           Spacer(minLength: 0)
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, DashTheme.Spacing.listRow)
         .frame(minHeight: DashTheme.Layout.minimumHitTarget)
       }
     }
@@ -2500,8 +2490,8 @@ private struct HomeDomainRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .padding(.vertical, 12)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .padding(.vertical, DashTheme.Spacing.listRow)
+    .frame(minHeight: DashTheme.Layout.twoToneListRow)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
     .accessibilityLabel(
@@ -2605,9 +2595,13 @@ struct FeatureRow: View {
 
   @Environment(AppModel.self) private var model
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
   let feature: FeatureID
   var iconStyle: CatalogFeatureIcon.Style = .fill
   var presentation: Presentation = .catalog
+  /// Resources keeps the feature blurb; Home Shortcuts drops it. Row height
+  /// follows `dashTwoToneListRows` (60 inside eyebrow cards, 72 elsewhere).
+  var showsSubtitle: Bool = true
 
   private var accessLevel: FeatureAccessLevel {
     feature.capability.accessLevel(grantedScopes: model.grantedScopes)
@@ -2648,7 +2642,7 @@ struct FeatureRow: View {
 
   private var catalogBody: some View {
     Group {
-      if isAccessibilitySize {
+      if isAccessibilitySize && showsSubtitle {
         VStack(alignment: .leading, spacing: 10) {
           HStack(spacing: 12) {
             featureChrome
@@ -2664,8 +2658,11 @@ struct FeatureRow: View {
         }
       }
     }
-    .padding(.vertical, 12)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .padding(.vertical, DashTheme.Spacing.listRow)
+    .frame(
+      minHeight: inTwoToneList
+        ? DashTheme.Layout.twoToneListRow : DashTheme.Layout.subtitledListRow
+    )
   }
 
   private var featureChrome: some View {
@@ -2677,7 +2674,7 @@ struct FeatureRow: View {
           .dashTextStyle(.bodySemibold)
           .foregroundStyle(DashTheme.text)
           .lineLimit(isAccessibilitySize ? nil : 1)
-        if !isAccessibilitySize {
+        if showsSubtitle, !isAccessibilitySize {
           catalogSubtitle
         }
       }
@@ -2691,10 +2688,12 @@ struct FeatureRow: View {
         .dashTextStyle(.bodySemibold)
         .foregroundStyle(onCard)
         .lineLimit(isAccessibilitySize ? nil : 1)
-      Text(feature.subtitle)
-        .dashTextStyle(.supporting)
-        .foregroundStyle(onCard.opacity(0.75))
-        .lineLimit(isAccessibilitySize ? nil : 2)
+      if showsSubtitle {
+        Text(feature.subtitle)
+          .dashTextStyle(.supporting)
+          .foregroundStyle(onCard.opacity(0.75))
+          .lineLimit(isAccessibilitySize ? nil : 2)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
@@ -2725,7 +2724,11 @@ struct FeatureRow: View {
   }
 
   private var accessibilityLabel: String {
-    "\(feature.title), \(feature.subtitle), \(accessAccessibilityValue)"
+    if showsSubtitle {
+      "\(feature.title), \(feature.subtitle), \(accessAccessibilityValue)"
+    } else {
+      "\(feature.title), \(accessAccessibilityValue)"
+    }
   }
 
   private var accessAccessibilityValue: String {

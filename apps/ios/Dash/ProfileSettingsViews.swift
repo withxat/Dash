@@ -285,11 +285,7 @@ private struct ProfileTrayAccountRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
 
-      SolarIcon(
-        asset: isActive ? SolarAsset.checkCircleFill : SolarAsset.circle,
-        size: 22,
-        color: isActive ? DashTheme.brand : DashTheme.placeholder
-      )
+      DashSelectionMark(isSelected: isActive)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 14)
@@ -409,7 +405,7 @@ struct SettingsPlainRow<Accessory: View>: View {
         trailingContent
       }
     }
-    .padding(.vertical, 12)
+    .padding(.vertical, DashTheme.Spacing.listRow)
     .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.minimumHitTarget, alignment: .leading)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
@@ -589,9 +585,6 @@ private struct SettingsFeaturedRow<Leading: View>: View {
 }
 
 private enum DashHelpLink {
-  static let privacy = URL(string: "https://dash.xat.sh/privacy")!
-  static let terms = URL(string: "https://dash.xat.sh/terms")!
-
   static var feedback: URL {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "Unknown"
@@ -759,10 +752,6 @@ struct SettingsView: View {
           .accessibilityIdentifier("icloud-settings-sync")
         }
 
-        SettingsPlainSection(title: "Watchtower") {
-          PushAlertsSettingsRows()
-        }
-
         SettingsPlainSection(title: "Experimental") {
           SettingsPlainToggleRow(
             title: DashL10n.string("Tunnels"),
@@ -772,62 +761,31 @@ struct SettingsView: View {
           .accessibilityIdentifier("settings-experimental-tunnels")
         }
 
-        // Help, legal, and About were three-row and two-row sections stacked at
-        // the foot of the page; the titles carry these rows on their own, so
-        // the subtitles and the extra header are gone.
+        // Help and About were separate sections at the foot of the page; the
+        // titles carry these rows on their own, so the subtitles and the extra
+        // headers are gone. Legal links stay on sign-in, not here.
         SettingsPlainSection(title: "Help & about") {
-          // Two `Group`s: one merged section now holds more rows than a single
-          // `ViewBuilder` accepts, and `Group` nests them without changing the
-          // enclosing stack's layout.
-          Group {
-            externalRow(
-              title: DashL10n.string("Send feedback"),
-              icon: SolarAsset.inbox,
-              destination: DashHelpLink.feedback,
-              accessibilityHint: DashL10n.string("Opens your email app")
-            )
+          externalRow(
+            title: DashL10n.string("Send feedback"),
+            icon: SolarAsset.inbox,
+            destination: DashHelpLink.feedback,
+            accessibilityHint: DashL10n.string("Opens your email app")
+          )
 
-            externalRow(
-              title: DashL10n.string("Privacy Policy"),
-              icon: SolarAsset.shieldCheck,
-              destination: DashHelpLink.privacy,
-              accessibilityHint: DashL10n.string("Opens the policy on dash.xat.sh")
-            )
-
-            externalRow(
-              title: DashL10n.string("Terms of Use"),
-              icon: SolarAsset.file,
-              destination: DashHelpLink.terms,
-              accessibilityHint: DashL10n.string("Opens the terms on dash.xat.sh")
+          DashListGroupLink(value: .about) {
+            SettingsPlainRow(
+              title: DashL10n.string("About Dash"),
+              icon: SolarAsset.userCircle,
+              showsChevron: true
             )
           }
 
-          Group {
-            DashListGroupLink(value: .about) {
-              SettingsPlainRow(
-                title: DashL10n.string("About Dash"),
-                icon: SolarAsset.userCircle,
-                showsChevron: true
-              )
-            }
-
-            DashListGroupLink(value: .openSource) {
-              SettingsPlainRow(
-                title: DashL10n.string("Open source"),
-                icon: SolarAsset.code,
-                showsChevron: true
-              )
-            }
-
-            #if DEBUG
-              DashListGroupLink(value: .debug) {
-                SettingsPlainRow(
-                  title: "Debug",
-                  icon: SolarAsset.codeCircle,
-                  showsChevron: true
-                )
-              }
-            #endif
+          DashListGroupLink(value: .openSource) {
+            SettingsPlainRow(
+              title: DashL10n.string("Open source"),
+              icon: SolarAsset.code,
+              showsChevron: true
+            )
           }
         }
 
@@ -930,13 +888,7 @@ struct SettingsAccountsView: View {
                 ? DashL10n.string("Active account") : nil,
               icon: SolarAsset.users
             ) {
-              SolarIcon(
-                asset: account.id == model.activeAccountID
-                  ? SolarAsset.checkCircleFill : SolarAsset.circle,
-                size: 22,
-                color: account.id == model.activeAccountID
-                  ? DashTheme.brand : DashTheme.placeholder
-              )
+              DashSelectionMark(isSelected: account.id == model.activeAccountID)
             }
           }
           .buttonStyle(DashSurfaceButtonStyle())
@@ -1048,11 +1000,7 @@ private struct WorkspaceWashPickerTray: View {
               .foregroundStyle(DashTheme.text)
               .lineLimit(1)
             Spacer(minLength: 0)
-            SolarIcon(
-              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-              size: 22,
-              color: isSelected ? DashTheme.brand : DashTheme.placeholder
-            )
+            DashSelectionMark(isSelected: isSelected)
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
@@ -1095,11 +1043,7 @@ private struct ChartStylePickerTray: View {
               .foregroundStyle(DashTheme.text)
               .lineLimit(1)
             Spacer(minLength: 0)
-            SolarIcon(
-              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-              size: 22,
-              color: isSelected ? DashTheme.brand : DashTheme.placeholder
-            )
+            DashSelectionMark(isSelected: isSelected)
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
@@ -1146,11 +1090,7 @@ private struct LanguagePickerTray: View {
               .foregroundStyle(DashTheme.text)
               .lineLimit(1)
             Spacer(minLength: 0)
-            SolarIcon(
-              asset: isSelected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-              size: 22,
-              color: isSelected ? DashTheme.brand : DashTheme.placeholder
-            )
+            DashSelectionMark(isSelected: isSelected)
           }
           .padding(.horizontal, 12)
           .padding(.vertical, 8)
@@ -1208,7 +1148,7 @@ struct AboutView: View {
             }
 
             Text(
-              "Purge cache, inspect traffic, roll back deployments, and browse R2. Domains, Workers, Pages, and KV stay native and portrait."
+              "Inspect traffic, roll back deployments, and browse R2. Domains, Workers, Pages, and KV stay native and portrait."
             )
             .dashTextStyle(.supporting)
             .foregroundStyle(DashTheme.subtle)
@@ -1687,7 +1627,7 @@ struct ProfileView: View {
       try Task.checkCancellation()
       try await model.avatars.setCustomImage(imported.image, for: userID)
       try Task.checkCancellation()
-      model.toasts.success(DashL10n.string("Saved successfully."))
+      model.toasts.success(DashL10n.string("Saved successfully"))
       avatarActionPhase = .succeeded
     } catch is CancellationError {
       avatarActionPhase = .idle
@@ -1695,7 +1635,7 @@ struct ProfileView: View {
     } catch {
       avatarActionPhase = .idle
       model.toasts.error(
-        DashL10n.string("Dash couldn’t use this photo. Try another image."))
+        DashL10n.string("Dash couldn’t use this photo. Try another image"))
     }
   }
 
@@ -1707,7 +1647,7 @@ struct ProfileView: View {
       try await model.avatars.removeCustomImage(
         for: userID, email: model.user?.email ?? "")
       try Task.checkCancellation()
-      model.toasts.success(DashL10n.string("Saved successfully."))
+      model.toasts.success(DashL10n.string("Saved successfully"))
       avatarActionPhase = .succeeded
     } catch is CancellationError {
       avatarActionPhase = .idle
@@ -1715,7 +1655,7 @@ struct ProfileView: View {
     } catch {
       avatarActionPhase = .idle
       model.toasts.error(
-        DashL10n.string("Dash couldn’t update your profile photo. Try again."))
+        DashL10n.string("Dash couldn’t update your profile photo. Try again"))
     }
   }
 

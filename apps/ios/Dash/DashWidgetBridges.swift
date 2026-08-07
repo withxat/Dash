@@ -82,7 +82,6 @@ enum HomeActionID: String, CaseIterable, Hashable, Identifiable, Sendable {
   case addWorkerDomain
   case enableDevelopmentMode
   case enableUnderAttackMode
-  case purgeCache
 
   var id: String { rawValue }
 }
@@ -95,7 +94,7 @@ enum HomeActions {
   static let limit = 3
   /// Used only while `key` is absent. `@AppStorage` continues to return a
   /// person's saved raw selection after an app update.
-  static let defaults: [HomeActionID] = [.purgeCache, .enableUnderAttackMode, .uploadR2]
+  static let defaults: [HomeActionID] = [.enableUnderAttackMode, .uploadR2, .addDomain]
   static let defaultValue = encode(defaults)
 
   static func decode(_ raw: String) -> [HomeActionID] {

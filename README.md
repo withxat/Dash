@@ -16,7 +16,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 
 | Feature | What you can do |
 | --- | --- |
-| **Domains** | Zones, DNS, cache purge, domain settings, traffic / WAF / Web Analytics |
+| **Domains** | Zones, DNS, cache settings, domain settings, traffic / WAF / Web Analytics |
 | **Registrations** | Registrar domains you own, status and expiry |
 | **Email Routing** | Per-domain routes, settings, destination addresses |
 | **Workers** | Scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics, Workers Builds |

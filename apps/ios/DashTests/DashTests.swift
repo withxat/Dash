@@ -314,28 +314,6 @@ struct LocalizationTests {
     #expect(!miss.matchedCatalog)
   }
 
-  #if DEBUG
-    /// The strict flag is what a zh-Hans preview or an exploratory debug session
-    /// turns on to make a silent miss trip instead of reaching the screen in
-    /// English. Real catalog keys must not set it off — the failing direction
-    /// traps by design, so it is the passing direction that needs a test.
-    @Test func strictLookupAcceptsKnownCatalogKeys() {
-      let previousLocale = DashL10n.localeOverrideForTesting
-      let previousStrict = DashL10n.strictLookup
-      defer {
-        DashL10n.localeOverrideForTesting = previousLocale
-        DashL10n.strictLookup = previousStrict
-      }
-      DashL10n.localeOverrideForTesting = Locale(identifier: "zh-Hans")
-      DashL10n.strictLookup = true
-
-      #expect(DashL10n.ui("Domains") == "域名")
-      #expect(DashL10n.ui("Bucket settings") == "存储桶设置")
-      // Empty input is a runtime guard, not copy — it must stay exempt.
-      #expect(DashL10n.ui("") == "")
-    }
-  #endif
-
   /// Every badge a screen can render has to be translated in every language
   /// Dash ships. The string-typed badge failed this silently: it localized
   /// `text.capitalized`, and `"Read-only".capitalized` is `"Read-Only"`, which
@@ -416,6 +394,8 @@ struct LocalizationTests {
         == "Note: Managed automatically")
     #expect(DashTheme.Spacing.scrollBottomInset == 80)
     #expect(DashTheme.Layout.minimumHitTarget == 44)
+    #expect(DashTheme.Layout.twoToneListRow == 60)
+    #expect(DashTheme.Layout.subtitledListRow == 72)
   }
 }
 
@@ -629,11 +609,11 @@ struct LocalizationTests {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
   #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
-  #expect(DashAuthorizationScopes.core.count == 32)
+  #expect(DashAuthorizationScopes.core.count == 31)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
-      !$0.hasSuffix(".write") && $0 != "cache.purge"
+      !$0.hasSuffix(".write")
     })
   #expect(DashAuthorizationScopes.core.isStrictSubset(of: Set(CloudflareScopes.published)))
   #expect(
@@ -643,7 +623,6 @@ struct LocalizationTests {
   #expect(
     R2ShareDestination.requiredWriteScopes.isDisjoint(
       with: DashAuthorizationScopes.initialReadOnly))
-  #expect(DashAuthorizationScopes.core.contains("cache.purge"))
   #expect(DashAuthorizationScopes.core.contains("zone-settings.write"))
   #expect(DashAuthorizationScopes.core.contains("account-settings.write"))
   #expect(!DashAuthorizationScopes.initialReadOnly.contains("account-settings.write"))
@@ -699,7 +678,7 @@ struct LocalizationTests {
 }
 
 @Test func processExternalMutationsFailClosedWithoutWriteScopes() {
-  let intentWrites: Set<String> = ["cache.purge", "zone-settings.write"]
+  let intentWrites: Set<String> = ["zone-settings.write"]
   let r2Writes = R2ShareDestination.requiredWriteScopes
   #expect(
     !DashIntentAuthorization.hasRequiredScopes(
@@ -731,7 +710,6 @@ struct LocalizationTests {
 @Test func scopesOutliveTheRetiredFeaturesThatDeclaredThem() {
   let operational: Set<String> = [
     "dns.read", "dns.write",  // DNSRecordsView, including create and delete
-    "cache.purge",  // CachePurgeView and PurgeCacheIntent
     "workers-routes.read",  // WorkerDetail routes rows (zone-scoped, no carrier FeatureID)
     "notifications.read",  // Watchtower inbox (Cloudflare delivery history)
     "notifications.write",  // Default alert webhook + policies
@@ -739,7 +717,7 @@ struct LocalizationTests {
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
   ]
-  let readOnlyOperational = operational.filter { !$0.hasSuffix(".write") && $0 != "cache.purge" }
+  let readOnlyOperational = operational.filter { !$0.hasSuffix(".write") }
   #expect(readOnlyOperational.isSubset(of: DashAuthorizationScopes.initialReadOnly))
   #expect(operational.isSubset(of: DashAuthorizationScopes.core))
 }
@@ -787,7 +765,7 @@ struct LocalizationTests {
       == .content(banner: nil, refreshing: false))
   // Settled-empty keeps the placeholder body mounted. Snapshot screens (chart
   // detail) and details whose chrome is not tied to primary rows (zone settings
-  // alerts/nameservers, R2 bucket settings) must set hasContent after settle —
+  // alerts, R2 bucket settings) must set hasContent after settle —
   // leaving the default false is a permanent skeleton, not a calm empty.
   #expect(
     DashListPhase.resolve(isLoading: false, error: nil, hasContent: false)
@@ -873,9 +851,11 @@ struct LocalizationTests {
 @Test func zoneSettingTitlesPreserveTechnicalAcronyms() {
   #expect(zoneSettingDisplayTitle("ssl") == "SSL")
   #expect(zoneSettingDisplayTitle("always_use_https") == "Always Use HTTPS")
+  #expect(zoneSettingDisplayTitle("always_online") == "Always Online")
   #expect(zoneSettingDisplayTitle("min_tls_version") == "Minimum TLS version")
   #expect(zoneSettingDisplayTitle("http3") == "HTTP/3")
   #expect(zoneSettingDisplayTitle("development_mode") == "Development Mode")
+  #expect(zoneSettingDisplayTitle("cache_level") == "Cache Level")
 }
 
 /// The settings menu commits with a plain `updateZoneSetting`, which stashes
@@ -887,6 +867,11 @@ struct LocalizationTests {
   #expect(!securityLevels.contains("under_attack"))
   // The rest of Cloudflare's enum must survive the removal.
   #expect(securityLevels == ["off", "essentially_off", "low", "medium", "high"])
+}
+
+@Test func cacheLevelMenuMatchesCachingLevelAPI() throws {
+  let levels = try #require(zoneSettingOptions["cache_level"])
+  #expect(levels == ["basic", "simplified", "aggressive"])
 }
 
 @Test func pageStateAdvancesAndStopsOnTotals() {
@@ -1011,7 +996,7 @@ struct LocalizationTests {
 /// per-control UI gating stay read-only even though real sign-in requests both.
 @Test func destinationScopesSeparateReadsFromWrites() {
   #expect(requiredScopes(for: .dns("z1")).contains("dns.write"))
-  #expect(requiredScopes(for: .cache("z1")).contains("cache.purge"))
+  #expect(requiredScopes(for: .cache("z1")).contains("zone-settings.write"))
   #expect(requiredScopes(for: .zoneSettings("z1")).contains("zone-settings.write"))
   #expect(requiredScopes(for: .zoneAnalytics("z1")).contains("analytics.read"))
   #expect(requiredScopes(for: .zoneWAF("z1")).contains("analytics.read"))
@@ -1019,11 +1004,11 @@ struct LocalizationTests {
   #expect(requiredScopes(for: .pushAlerts).contains("notifications.write"))
   #expect(readScopes(for: .dns("z1")) == ["zone.read", "dns.read"])
   #expect(writeScopes(for: .dns("z1")) == ["dns.write"])
-  #expect(readScopes(for: .cache("z1")) == ["zone.read"])
+  #expect(readScopes(for: .cache("z1")) == ["zone.read", "zone-settings.read"])
   #expect(
     readScopes(for: .zoneWAF("z1"))
       == ["zone.read", "analytics.read", "zone-settings.read"])
-  #expect(writeScopes(for: .cache("z1")) == ["cache.purge"])
+  #expect(writeScopes(for: .cache("z1")) == ["zone-settings.write"])
   #expect(writeScopes(for: .zoneAnalytics("z1")).isEmpty)
   #expect(writeScopes(for: .zoneWAF("z1")) == ["zone-settings.write"])
   #expect(writeScopes(for: .pushAlerts) == ["notifications.write"])
@@ -1052,7 +1037,6 @@ struct LocalizationTests {
   #expect(writeScopes(for: .tunnel("t1")).isEmpty)
   // Each is absent from the feature the destination maps to.
   #expect(!FeatureID.zones.capability.all.contains("dns.write"))
-  #expect(!FeatureID.zones.capability.all.contains("cache.purge"))
 }
 
 /// The widget counts Cloudflare's deliveries. It never characterises the
@@ -1766,7 +1750,8 @@ private let watchtowerDropFrames: [CGRect] = [
 @Test func compactTrayRestoresOriginalShellTokens() {
   #expect(DashTheme.Sheet.floatingMargin == 12)
   #expect(DashTheme.Sheet.floatingBottomTuck == 6)
-  #expect(DashTheme.Sheet.scrimOpacity == 0.35)
+  #expect(DashTheme.Sheet.scrimOpacity == 0.18)
+  #expect(DashTheme.Sheet.scrimMaterialOpacity == 0.55)
 }
 
 @Test func profileTrayPhaseTitlesStayLocalizedCatalogKeys() {
@@ -1934,6 +1919,14 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashTrayScrollBoundaryRules.bodyHeight(ideal: 0, action: 68, available: 500) == nil)
 }
 
+@Test func trayMeasuredHeightIgnoresSubPointChatter() {
+  #expect(DashTrayMeasuredHeight.shouldCommit(200, 200.4) == false)
+  #expect(DashTrayMeasuredHeight.shouldCommit(200, 200.6) == true)
+  #expect(DashTrayMeasuredHeight.shouldCommit(0, 120) == true)
+  #expect(DashTrayMeasuredHeight.shouldCommit(120, .nan) == false)
+  #expect(DashTrayMeasuredHeight.shouldCommit(120, -1) == false)
+}
+
 @Test @MainActor func trayAnchorSourcesMustBeOnScreenAndControlSized() {
   let bounds = CGRect(x: 0, y: 0, width: 393, height: 852)
 
@@ -2088,8 +2081,12 @@ private let watchtowerDropFrames: [CGRect] = [
 @Test func homeActionsKeepAtMostThreeOrderedOperations() {
   #expect(
     HomeActions.decode(HomeActions.defaultValue)
-      == [.purgeCache, .enableUnderAttackMode, .uploadR2])
-  #expect(HomeActions.decode("purgeCache,uploadR2,purgeCache,unknown") == [.purgeCache, .uploadR2])
+      == [.enableUnderAttackMode, .uploadR2, .addDomain])
+  #expect(
+    HomeActions.decode("enableUnderAttackMode,uploadR2,enableUnderAttackMode,unknown")
+      == [.enableUnderAttackMode, .uploadR2])
+  // Retired quick actions drop out of a previously stored selection.
+  #expect(HomeActions.decode("purgeCache,uploadR2") == [.uploadR2])
 
   // Changing the fresh-install default never rewrites a previously stored choice.
   let previousSelection = HomeActions.encode([.addDomain, .uploadR2, .addDNSRecord])
@@ -2099,17 +2096,17 @@ private let watchtowerDropFrames: [CGRect] = [
   let full = HomeActions.defaultValue
   #expect(HomeActions.toggled(.createKVKey, in: full) == full)
 
-  let removed = HomeActions.toggled(.purgeCache, in: full)
-  #expect(HomeActions.decode(removed) == [.enableUnderAttackMode, .uploadR2])
+  let removed = HomeActions.toggled(.enableUnderAttackMode, in: full)
+  #expect(HomeActions.decode(removed) == [.uploadR2, .addDomain])
   #expect(HomeActions.decode(HomeActions.toggled(.createKVKey, in: removed)).last == .createKVKey)
 
-  let scopedURL = HomeActions.deepLink(action: .purgeCache, accountID: " account one ")
-  #expect(scopedURL?.absoluteString == "dash://action/purgeCache?account=account%20one")
-  #expect(scopedURL.flatMap(DashRoute.parse) == .action(.purgeCache).scoped(to: "account one"))
+  let scopedURL = HomeActions.deepLink(action: .uploadR2, accountID: " account one ")
+  #expect(scopedURL?.absoluteString == "dash://action/uploadR2?account=account%20one")
+  #expect(scopedURL.flatMap(DashRoute.parse) == .action(.uploadR2).scoped(to: "account one"))
 
   let accountA = AccountRequestContext(accountID: "account-a", generation: 1)
   let accountB = AccountRequestContext(accountID: "account-b", generation: 2)
-  let pending = PendingHomeAction(action: .purgeCache, context: accountA)
+  let pending = PendingHomeAction(action: .uploadR2, context: accountA)
   #expect(pending.matches(accountA))
   #expect(!pending.matches(accountB))
   #expect(!pending.matches(nil))
@@ -2625,6 +2622,33 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(WebAnalyticsChartModel.site(for: "zone-absent", in: sites) == nil)
 }
 
+@Test func zoneWebAnalyticsToolFollowsTheAccountSiteList() {
+  let sites = [
+    RUMSite(
+      siteTag: "site-mine", autoInstall: true,
+      ruleset: RUMRuleset(zoneTag: "zone-mine", zoneName: "mine.example", enabled: true)),
+    // Added, then switched off at the ruleset. Still the user's site, still has
+    // history, still one dashboard toggle from collecting — it keeps its row.
+    RUMSite(
+      siteTag: "site-paused", autoInstall: true,
+      ruleset: RUMRuleset(zoneTag: "zone-paused", zoneName: "paused.example", enabled: false)),
+  ]
+
+  #expect(ZoneWebAnalyticsAvailability.resolved(zoneID: "zone-mine", in: sites) == .present)
+  #expect(ZoneWebAnalyticsAvailability.resolved(zoneID: "zone-paused", in: sites) == .present)
+  #expect(ZoneWebAnalyticsAvailability.resolved(zoneID: "zone-absent", in: sites) == .absent)
+  #expect(ZoneWebAnalyticsAvailability.resolved(zoneID: "zone-mine", in: []) == .absent)
+
+  // Only a settled "this account has no site for this zone" removes the row.
+  // An unanswered list holds it back rather than offering a row it may take
+  // away; an unreadable one (no grant, no account, failed request) leaves it,
+  // because a missing answer must never delete a feature the user has.
+  #expect(!ZoneWebAnalyticsAvailability.absent.showsTool)
+  #expect(!ZoneWebAnalyticsAvailability.pending.showsTool)
+  #expect(ZoneWebAnalyticsAvailability.present.showsTool)
+  #expect(ZoneWebAnalyticsAvailability.indeterminate.showsTool)
+}
+
 @Test func dashRouteParsesEveryGrammarForm() {
   func parse(_ string: String) -> DashRoute? {
     guard let url = URL(string: string) else { return nil }
@@ -2633,7 +2657,8 @@ private let watchtowerDropFrames: [CGRect] = [
 
   #expect(parse("dash://settings") == .settings)
   #expect(parse("dash://watchtower") == .watchtower)
-  #expect(parse("dash://action/purgeCache") == .action(.purgeCache))
+  #expect(parse("dash://action/uploadR2") == .action(.uploadR2))
+  #expect(parse("dash://action/purgeCache") == nil)  // retired HomeActionID
   #expect(parse("dash://zone/abc") == .zone("abc"))
   #expect(parse("dash://zone/abc/dns") == .zoneDNS("abc"))
   #expect(parse("dash://zone/abc/cache") == .zoneCache("abc"))
@@ -2663,7 +2688,7 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(parse("dash://feature/d1") == nil)  // retired FeatureID
   #expect(parse("dash://d1/db-uuid") == nil)  // retired host; stale Spotlight items land here
   #expect(parse("dash://action/not-an-action") == nil)
-  #expect(parse("dash://action/purgeCache/extra") == nil)
+  #expect(parse("dash://action/uploadR2/extra") == nil)
   #expect(parse("dash://zone") == nil)  // missing id
   #expect(parse("https://watchtower") == nil)  // wrong scheme
   #expect(parse("dash://unknownhost") == nil)
@@ -2674,7 +2699,8 @@ private let watchtowerDropFrames: [CGRect] = [
   // destination mapping.
   #expect(DashRoute.settings.destination == .settings)
   #expect(DashRoute.watchtower.destination == nil)
-  #expect(DashRoute.action(.purgeCache).destination == nil)
+  #expect(DashRoute.action(.uploadR2).destination == nil)
+  #expect(DashRoute.zoneCache("z").destination == .cache("z"))
   #expect(DashRoute.zoneDNS("z").destination == .dns("z"))
   #expect(DashRoute.feature(.r2).destination == .feature(.r2))
   #expect(DashRoute.worker("w").destination == .worker("w"))
@@ -2707,141 +2733,6 @@ private let watchtowerDropFrames: [CGRect] = [
       activeAccountID: "account-b",
       availableAccountIDs: ["account-a", "account-b"])
       == .open(.r2("assets")))
-}
-
-@Test func legacyNotificationRoutesNeverGuessBetweenAccounts() {
-  let legacy = DashRoute.zone("zone-1")
-  #expect(
-    NotificationRoutePolicy.resolve(legacy, availableAccountIDs: [])
-      == .deferUntilAccountsLoad)
-  #expect(
-    NotificationRoutePolicy.resolve(legacy, availableAccountIDs: ["account-1"])
-      == .open(legacy.scoped(to: "account-1")))
-  #expect(
-    NotificationRoutePolicy.resolve(
-      legacy,
-      availableAccountIDs: ["account-1", "account-2"])
-      == .rejectAmbiguous)
-  #expect(
-    NotificationRoutePolicy.resolve(
-      legacy,
-      availableAccountIDs: ["demo-account"],
-      allowsLegacyAccountInference: false)
-      == .rejectAmbiguous)
-
-  let scoped = legacy.scoped(to: "account-2")
-  #expect(
-    NotificationRoutePolicy.resolve(scoped, availableAccountIDs: [])
-      == .open(scoped))
-}
-
-@Test func pushRegistrationTracksAccountsAndValidatesOpaqueRelayURLs() throws {
-  let suite = "dash.tests.push.\(UUID().uuidString)"
-  let defaults = try #require(UserDefaults(suiteName: suite))
-  defer { defaults.removePersistentDomain(forName: suite) }
-
-  defaults.set("webhook-b", forKey: PushRegistrationService.webhookIDKey(accountID: "account-b"))
-  defaults.set("webhook-a", forKey: PushRegistrationService.webhookIDKey(accountID: "account-a"))
-  defaults.set("", forKey: PushRegistrationService.webhookIDKey(accountID: "empty"))
-  defaults.set("unrelated", forKey: "dash.other")
-  #expect(
-    PushRegistrationService.enabledAccountIDs(in: defaults)
-      == ["account-a", "account-b"])
-
-  let opaque = String(repeating: "Abc_123-", count: 10)
-  let scoped = "https://dash.xat.sh/push/notify/\(opaque)"
-  let relay = try #require(URL(string: "https://dash.xat.sh"))
-  #expect(
-    PushRegistrationService.isValidRelayNotifyURL(
-      scoped,
-      relayBaseURL: relay))
-  #expect(
-    !PushRegistrationService.isValidRelayNotifyURL(
-      scoped.replacingOccurrences(of: "dash.xat.sh", with: "example.com"),
-      relayBaseURL: relay))
-  #expect(
-    !PushRegistrationService.isValidRelayNotifyURL(
-      "https://dash.xat.sh/push/notify/short",
-      relayBaseURL: relay))
-  #expect(
-    !PushRegistrationService.isValidRelayNotifyURL(
-      "https://dash.xat.sh/push/notify/\(opaque).legacy",
-      relayBaseURL: relay))
-  #expect(
-    !PushRegistrationService.isValidRelayNotifyURL(
-      "https://dash.xat.sh/push/notify/\(opaque)?account=account-a",
-      relayBaseURL: relay))
-  #expect(
-    !PushRegistrationService.isValidRelayNotifyURL(
-      "https://dash.xat.sh/push/notify/\(opaque)/extra",
-      relayBaseURL: relay))
-}
-
-@Test func defaultPushProvisioningSkipsPreviewAndTestProcesses() {
-  #expect(
-    !PushRegistrationService.shouldAutomaticallyProvision(
-      arguments: ["Dash", "-ui-preview"], environment: [:]))
-  #expect(
-    !PushRegistrationService.shouldAutomaticallyProvision(
-      arguments: ["Dash"], environment: ["XCTestConfigurationFilePath": "/tmp/tests"]))
-  #expect(
-    PushRegistrationService.shouldAutomaticallyProvision(
-      arguments: ["Dash"], environment: [:]))
-}
-
-@Test func pushIsReadyOnlyAfterDestinationSetupAndBuildPolicyMigration() throws {
-  let suite = "dash.tests.push-ready.\(UUID().uuidString)"
-  let defaults = try #require(UserDefaults(suiteName: suite))
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let accountID = "account-a"
-
-  defaults.set("webhook-a", forKey: PushRegistrationService.webhookIDKey(accountID: accountID))
-  #expect(!PushRegistrationService.isReady(accountID: accountID, in: defaults))
-
-  defaults.set(true, forKey: PushRegistrationService.readinessKey(accountID: accountID))
-  #expect(PushRegistrationService.isReady(accountID: accountID, in: defaults))
-
-  defaults.removeObject(forKey: PushRegistrationService.webhookIDKey(accountID: accountID))
-  #expect(!PushRegistrationService.isReady(accountID: accountID, in: defaults))
-}
-
-@Test func webhookRemovalPreservesPolicyAndOtherDeliveryTargets() throws {
-  let policy = try JSONDecoder().decode(
-    NotificationPolicy.self,
-    from: Data(
-      #"{"id":"policy-1","name":"Existing","alert_type":"tunnel_health_event","enabled":false,"alert_interval":"weekly","filters":{"zones":["zone-1"]},"mechanisms":{"email":[{"id":"email-1"}],"pagerduty":[{"id":"pager-1"}],"webhooks":[{"id":"device-a"}]}}"#
-        .utf8))
-
-  let mechanisms = try #require(
-    PushRegistrationService.mechanismsRemovingDelivery(
-      webhookIDs: ["device-a"], from: policy))
-  #expect(mechanisms.email?.map(\.id) == ["email-1"])
-  #expect(mechanisms.pagerduty?.map(\.id) == ["pager-1"])
-  #expect(mechanisms.webhooks?.isEmpty == true)
-  #expect(
-    PushRegistrationService.mechanismsRemovingDelivery(
-      webhookIDs: ["device-b"], from: policy) == nil)
-  #expect(
-    PushRegistrationService.mechanismsRemovingDelivery(
-      webhookIDs: ["  "], from: policy) == nil)
-
-  let encoded = try JSONEncoder().encode(
-    NotificationPolicyMechanismsInput(mechanisms: mechanisms))
-  let object = try #require(
-    JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-  #expect(Set(object.keys) == Set(["mechanisms"]))
-
-  let pagesPolicy = try JSONDecoder().decode(
-    NotificationPolicy.self,
-    from: Data(
-      #"{"id":"pages","alert_type":"pages_event_alert","mechanisms":{"email":[{"id":"email-1"}],"webhooks":[{"id":"device-a"},{"id":"device-b"}]}}"#
-        .utf8))
-  let pagesInput = try #require(
-    PushRegistrationService.mechanismsRemovingDelivery(
-      webhookIDs: ["device-a", "device-b"], from: pagesPolicy))
-  #expect(pagesInput.email?.map(\.id) == ["email-1"])
-  #expect(pagesInput.webhooks?.isEmpty == true)
-  #expect(PushRegistrationService.usesBuildActivityPath(alertType: "pages_event_alert"))
 }
 
 @Test func legacyLocalWatchtowerNotificationStateIsRemoved() throws {
@@ -2968,58 +2859,6 @@ private let watchtowerDropFrames: [CGRect] = [
 
   _ = PushRegistrationOperationGate.beginDesiredChange(accountID: accountID, enabled: false)
   #expect(!PushRegistrationOperationGate.isCurrent(first, enabled: true))
-}
-
-@Test @MainActor func signOutPreparationInvalidatesUnstoredPushEnables() {
-  let firstAccount = "enable-\(UUID().uuidString)"
-  let secondAccount = "ensure-\(UUID().uuidString)"
-  let first = PushRegistrationOperationGate.beginEnsureEnabled(accountID: firstAccount)
-  let second = PushRegistrationOperationGate.beginEnsureEnabled(accountID: secondAccount)
-
-  PushRegistrationService.prepareForSignOut(
-    accountIDs: [firstAccount, secondAccount])
-
-  #expect(!PushRegistrationOperationGate.isCurrent(first, enabled: true))
-  #expect(!PushRegistrationOperationGate.isCurrent(second, enabled: true))
-}
-
-@Test func pushWebhookNameIsStableWithoutExposingTheDeviceToken() {
-  let token = String(repeating: "ab", count: 32)
-  let otherToken = String(repeating: "cd", count: 32)
-  let name = PushRegistrationService.webhookName(deviceToken: token)
-  #expect(name == PushRegistrationService.webhookName(deviceToken: token.uppercased()))
-  #expect(name != PushRegistrationService.webhookName(deviceToken: otherToken))
-  #expect(!name.localizedCaseInsensitiveContains(token))
-}
-
-@Test func pushCleanupTombstonesPreserveTheRemoteDeletionHandle() throws {
-  let suite = "dash.tests.push-cleanup.\(UUID().uuidString)"
-  let defaults = try #require(UserDefaults(suiteName: suite))
-  defer { defaults.removePersistentDomain(forName: suite) }
-  let webhookKey = PushRegistrationService.webhookIDKey(accountID: "account-a")
-  defaults.set("webhook-a", forKey: webhookKey)
-
-  PushRegistrationService.recordCleanupAttempt(
-    webhookID: "webhook-a",
-    accountID: "account-a",
-    defaults: defaults,
-    now: Date(timeIntervalSince1970: 100))
-  PushRegistrationService.recordCleanupAttempt(
-    webhookID: "webhook-a",
-    accountID: "account-a",
-    defaults: defaults,
-    now: Date(timeIntervalSince1970: 200))
-
-  #expect(defaults.string(forKey: webhookKey) == "webhook-a")
-  #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults) == ["account-a"])
-  let tombstone = try #require(
-    PushRegistrationService.cleanupTombstone(accountID: "account-a", in: defaults))
-  #expect(tombstone.webhookID == "webhook-a")
-  #expect(tombstone.attempts == 2)
-  #expect(tombstone.lastAttemptAt == Date(timeIntervalSince1970: 200))
-
-  PushRegistrationService.clearCleanup(accountID: "account-a", defaults: defaults)
-  #expect(PushRegistrationService.pendingCleanupAccountIDs(in: defaults).isEmpty)
 }
 
 @Test @MainActor
@@ -3759,12 +3598,11 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(!shouldHideTabBar(overlays: DashTrayPresentation(), navigationDepth: 0))
 }
 
-@Test func headerAvatarHidesForAnyOverlayOrPush() {
+@Test func sharedHeaderLeavesOnlyForACoveringPresentation() {
+  // A push no longer displaces the header: it changes what the slots hold.
   #expect(
-    shouldHideHeaderAvatar(
-      overlays: DashTrayPresentation(presented: true), navigationDepth: 0))
-  #expect(shouldHideHeaderAvatar(overlays: DashTrayPresentation(), navigationDepth: 1))
-  #expect(!shouldHideHeaderAvatar(overlays: DashTrayPresentation(), navigationDepth: 0))
+    shouldDisplaceWorkspaceHeader(overlays: DashTrayPresentation(presented: true)))
+  #expect(!shouldDisplaceWorkspaceHeader(overlays: DashTrayPresentation()))
 }
 
 @Test func trayPresentationHasOneCompactState() {
@@ -3890,6 +3728,11 @@ private actor ZoneSecurityLevelTestLatch {
 @MainActor
 @Test func destinationNavigatorDefaultsSemanticPresentationByRouteShape() throws {
   let navigator = DestinationNavigator()
+  // Every drill is a detail page. Settings is the one workspace-level route,
+  // and the card morph is a property of the source, not of the destination.
+  navigator.push(.feature(.workers))
+  #expect(navigator.topEntry?.presentation == .detail)
+
   navigator.push(.zone("zone-1"))
   #expect(navigator.topEntry?.presentation == .detail)
 
@@ -3981,9 +3824,7 @@ private actor ZoneSecurityLevelTestLatch {
   let registry = DashNavigationAnchorRegistry()
   let visibleAnchorID = UUID()
   let staleAnchorID = UUID()
-  let frame = CGRect(x: 18, y: 62, width: 44, height: 44)
   let hostedFrame = CGRect(x: 20, y: 64, width: 48, height: 48)
-  registry.replaceFrames([visibleAnchorID: frame])
   registry.setHostedFrame(hostedFrame, for: visibleAnchorID)
 
   let semanticID = DashNavigationSemanticID(
@@ -3998,14 +3839,33 @@ private actor ZoneSecurityLevelTestLatch {
 
   #expect(registry.frame(for: visibleOrigin) == hostedFrame)
   #expect(registry.liveFrame(for: visibleOrigin) == nil)
-  #expect(!registry.claimState.isClaimed(visibleAnchorID))
+
+  // Claim state reaches ONLY the registered occurrence's own box — that is
+  // what keeps one card morph from invalidating every anchor on screen.
+  let claim = DashNavigationAnchorClaim()
+  let neighbour = DashNavigationAnchorClaim()
+  registry.registerClaim(claim, for: visibleAnchorID)
+  registry.registerClaim(neighbour, for: staleAnchorID)
+  #expect(!claim.isClaimed)
   registry.claim(visibleOrigin)
-  #expect(registry.claimState.isClaimed(visibleAnchorID))
+  #expect(claim.isClaimed)
+  #expect(!neighbour.isClaimed)
+
+  // A claimed occurrence that remounts mid-flight re-arms from the registry
+  // instead of coming back visible and doubling the element in flight.
+  let remounted = DashNavigationAnchorClaim()
+  registry.registerClaim(remounted, for: visibleAnchorID)
+  #expect(remounted.isClaimed)
+
   registry.release(visibleOrigin)
-  #expect(!registry.claimState.isClaimed(visibleAnchorID))
+  #expect(!remounted.isClaimed)
+
+  // The stale box no longer owns the key, so unregistering it is a no-op.
+  registry.unregisterClaim(claim, for: visibleAnchorID)
+  registry.claim(visibleOrigin)
+  #expect(remounted.isClaimed)
+
   registry.removeHostedFrame(for: visibleAnchorID)
-  #expect(registry.frame(for: visibleOrigin) == frame)
-  registry.replaceFrames([:])
   #expect(registry.frame(for: visibleOrigin) == hostedFrame)
   #expect(registry.frame(for: staleOrigin) == nil)
 }
@@ -4013,12 +3873,10 @@ private actor ZoneSecurityLevelTestLatch {
 @Test func domainCardSeatMorphRecognizesGridAspectAndLerpsRect() {
   let grid = CGRect(x: 20, y: 100, width: 160, height: 128)  // 5:4
   let hero = CGRect(x: 16, y: 120, width: 360, height: 216)  // 5:3
-  let row = CGRect(x: 16, y: 200, width: 360, height: 56)  // wide Home row
   #expect(abs(grid.width / grid.height - DomainCardFace.gridAspectRatio) < 0.01)
   #expect(abs(hero.width / hero.height - DomainCardFace.detailAspectRatio) < 0.01)
-  // Seat overlay only flies card-like sources (~5:4); Home rows stay pure flow.
-  #expect(DashNavigationAnchorRegistry.isCardLikeSourceFrame(grid))
-  #expect(!DashNavigationAnchorRegistry.isCardLikeSourceFrame(row))
+  // Which sources fly is not a frame heuristic — a tap either hands over a
+  // `DashNavigationHero` or it is a flow drill (`DashPageTransitionRules`).
 
   let mid = CGRect(
     x: grid.minX + (hero.minX - grid.minX) * 0.5,

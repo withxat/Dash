@@ -9,11 +9,6 @@ private enum OnboardingStep: Equatable {
   case permissions
 
   static var initial: Self {
-    #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("-ui-preview-onboarding-permissions") {
-        return .permissions
-      }
-    #endif
     return .welcome
   }
 }
@@ -368,7 +363,9 @@ private struct OnboardingView: View {
     }
     .frame(maxWidth: 448)
     .padding(.horizontal, 24)
-    .padding(.bottom, 28)
+    // Sits the footer lower in the page: the action block rides nearer the
+    // home indicator and the legal caption lower still.
+    .padding(.bottom, 12)
     .frame(maxWidth: .infinity)
   }
 
@@ -482,8 +479,9 @@ private struct OnboardingView: View {
       // App Review's path past the OAuth wall (and anyone's no-account tour):
       // a read-only session served from in-app fixtures by DemoBackend.
       // The demo is an alternative to signing in, not a way out of it, so the
-      // two stay stacked instead of sharing a confirm row.
-      DashTrayActionPair(axis: .vertical) {
+      // two stay stacked instead of sharing a confirm row — opened up past the
+      // tray-tight default so the text action reads as its own choice.
+      DashTrayActionPair(axis: .vertical, verticalGap: 12) {
         DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
           model.enterDemo()
         }
@@ -642,7 +640,7 @@ private struct OnboardingView: View {
     .multilineTextAlignment(.center)
     .fixedSize(horizontal: false, vertical: true)
     .frame(maxWidth: .infinity)
-    .padding(.top, 20)
+    .padding(.top, 24)
   }
 
 }
@@ -765,8 +763,7 @@ private struct OnboardingBackButton: View {
 
   private var icon: some View {
     SolarIcon(asset: SolarAsset.chevronLeft, size: 22, color: DashTheme.strong)
-      // The chevron's visual weight sits to the right of its geometric box.
-      .offset(x: -1)
+      .offset(x: DashChevronOpticalRules.offsetX(for: SolarAsset.chevronLeft))
       .frame(width: 44, height: 44)
       .contentShape(Circle())
   }

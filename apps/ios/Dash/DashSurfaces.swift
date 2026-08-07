@@ -71,9 +71,10 @@ extension View {
   /// Tactile tile treatment — the sanctioned exception to the flat system,
   /// used by Home quick-action tiles and Domain color cards. Light-from-above
   /// modeling with neutral overlays only, so the surface's own color never
-  /// shifts hue: a bevel ring (lit top edge, weighted bottom), a whisper of
-  /// face sheen, and a soft two-layer drop shadow. Dark mode leans on the
-  /// rim light instead — shadows can't read against the near-black canvas.
+  /// shifts hue: a bevel ring (lit top edge, weighted bottom) and a whisper of
+  /// face sheen. Nothing is cast onto the canvas — the drop shadows were
+  /// removed on purpose; restrained skeuomorphism lights the surface itself
+  /// and stops at its edge. Action pills take no emboss at all.
   ///
   /// Pass `.pigmented` for saturated fills (Domain cards): the face needs a
   /// soft top specular so the enamel reads on dark greens/indigos where a
@@ -96,17 +97,10 @@ extension View {
     ) { self }
   }
 
-  /// Capsule emboss for primary action pills — same enamel as Domain cards.
-  func dashEmbossedPill(_ style: DashEmbossStyle = .pigmented) -> some View {
-    DashEmbossedContainer(
-      style: style,
-      shape: Capsule(style: .continuous)
-    ) { self }
-  }
-
-  /// Bevel / sheen / drop shadow only — no press-sink duplicate. Use when the
-  /// view already owns its hit target (`DashPressButtonStyle`, hold gesture)
-  /// or carries a `matchedGeometryEffect` that must stay single-instance.
+  /// Bevel / sheen only — no press-sink duplicate. Use when the view already
+  /// owns its hit target (`DashPressButtonStyle`, hold gesture) or carries a
+  /// `matchedGeometryEffect` that must stay single-instance. Action pills
+  /// deliberately take NO emboss at all (`DashActionButton` is flat).
   func dashEmbossChrome<S: InsettableShape>(
     _ style: DashEmbossStyle = .tile,
     shape: S
@@ -222,18 +216,13 @@ private struct DashEmbossedContainer<Content: View, S: InsettableShape>: View {
             startPoint: .top, endPoint: .bottom),
           lineWidth: 1)
       }
-      .shadow(color: .black.opacity(dark ? 0.4 : 0.05), radius: 1, y: 1)
-      // Pressing sinks optically: 1pt downward shift (visual layer only),
-      // tighter ambient shadow, and face dim — see `body` for hit testing.
-      .shadow(
-        color: .black.opacity(dark ? 0.3 : (pigmented ? 0.10 : 0.07)),
-        radius: pressed ? 3 : (pigmented ? 10 : 8),
-        y: pressed ? 1 : (pigmented ? 5 : 4)
-      )
+    // No drop shadows — the emboss stays restrained: light on the face (sheen)
+    // and on the edge (bevel), nothing cast onto the canvas. Pressing still
+    // reads through the 1pt sink shift and the face dim (see `body`).
   }
 }
 
-/// Static enamel chrome (sheen + bevel + shadows) without duplicating content.
+/// Static enamel chrome (sheen + bevel) without duplicating content.
 private struct DashEmbossChromeModifier<S: InsettableShape>: ViewModifier {
   let style: DashEmbossStyle
   let shape: S
@@ -259,12 +248,7 @@ private struct DashEmbossChromeModifier<S: InsettableShape>: ViewModifier {
             startPoint: .top, endPoint: .bottom),
           lineWidth: 1)
       }
-      .shadow(color: .black.opacity(dark ? 0.4 : 0.05), radius: 1, y: 1)
-      .shadow(
-        color: .black.opacity(dark ? 0.3 : (pigmented ? 0.10 : 0.07)),
-        radius: pigmented ? 10 : 8,
-        y: pigmented ? 5 : 4
-      )
+    // No drop shadows — same restraint as the pressed container above.
   }
 }
 
@@ -729,6 +713,7 @@ func dashTwoToneCardRows<Item: Identifiable, Row: View>(
     let isFirst = entry.offset == 0
     let isLast = entry.offset == lastIndex
     row(entry.element)
+      .environment(\.dashTwoToneListRows, true)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 14)
       .background(DashTheme.homeCardSurface)
@@ -817,7 +802,7 @@ enum DashListPhase: Equatable {
     if isLoading { return .loading }
     if let error { return .fullScreenError(error) }
     // Settled with nothing to show. Call sites that always paint chrome
-    // (chart detail snapshots, settings screens with alerts/nameservers,
+    // (chart detail snapshots, settings screens with alerts,
     // dual-fetch pages where one half can be empty) must pass
     // `hasContent: true` / `hasPresentedContent` after settle — the default
     // `false` leaves the skeleton up forever, with or without `empty:`.
@@ -1254,23 +1239,31 @@ struct DashListGroupHeader: View {
 ///
 /// Home's Shortcuts and Recently used cards and every pushed screen's info
 /// group (`DashInfoGroup`); plain `DashListGroup` stays bandless.
+///
+/// Everything in the inner card is a list at the `twoToneListRow` seat — one
+/// row or many. `\.dashTwoToneListRows` publishes that so `DashListRow` /
+/// `FeatureRow` / `DashInfoRow` share one height without a per-call-site flag.
 struct DashTwoToneListGroup<Content: View>: View {
   let title: String
   var actionTitle: String?
   var actionIcon: String?
   var action: (() -> Void)?
-  private let content: Content
+  /// Kept as a builder (not an eagerly stored `Content`) so the two-tone list
+  /// environment is in force when child `@Environment` values resolve —
+  /// capturing `content()` in `init` made Watchtower's CF status row miss the
+  /// flag and fall through to the 72pt catalog seat.
+  @ViewBuilder var content: () -> Content
 
   init(
     title: String, actionTitle: String? = nil, actionIcon: String? = nil,
     action: (() -> Void)? = nil,
-    @ViewBuilder content: () -> Content
+    @ViewBuilder content: @escaping () -> Content
   ) {
     self.title = title
     self.actionTitle = actionTitle
     self.actionIcon = actionIcon
     self.action = action
-    self.content = content()
+    self.content = content
   }
 
   var body: some View {
@@ -1284,20 +1277,37 @@ struct DashTwoToneListGroup<Content: View>: View {
       .padding(.horizontal, 16)
       .padding(.vertical, 12)
 
-      VStack(alignment: .leading, spacing: 0) { content }
-        // 14 + the 2pt inset below = rows land on the header title's 16.
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(DashTheme.homeCardSurface)
-        // Concentric with the plate: one radius step per point of inset.
-        .clipShape(
-          RoundedRectangle(cornerRadius: DashTheme.Radius.card - 2, style: .continuous)
-        )
-        .padding(.horizontal, 2)
-        .padding(.bottom, 2)
+      VStack(alignment: .leading, spacing: 0) {
+        content()
+      }
+      .environment(\.dashTwoToneListRows, true)
+      // 14 + the 2pt inset below = rows land on the header title's 16.
+      .padding(.horizontal, 14)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(DashTheme.homeCardSurface)
+      // Concentric with the plate: one radius step per point of inset.
+      .clipShape(
+        RoundedRectangle(cornerRadius: DashTheme.Radius.card - 2, style: .continuous)
+      )
+      .padding(.horizontal, 2)
+      .padding(.bottom, 2)
     }
     .background(DashTheme.listGroupHeaderSurface)
     .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+  }
+}
+
+/// True inside a two-tone eyebrow card (`DashTwoToneListGroup` /
+/// `dashTwoToneCardRows`). Rows there use `twoToneListRow` (60); service
+/// catalogs outside the band keep 72.
+private struct DashTwoToneListRowsKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
+extension EnvironmentValues {
+  var dashTwoToneListRows: Bool {
+    get { self[DashTwoToneListRowsKey.self] }
+    set { self[DashTwoToneListRowsKey.self] = newValue }
   }
 }
 
@@ -1402,7 +1412,7 @@ struct DashInfoGroup<Content: View>: View {
           // taller, so a long message grows the section instead of clipping.
           DashSectionFailureVeil(
             message: failureMessage,
-            covers: CGFloat(max(placeholderRows, 1)) * DashTheme.Layout.minimumHitTarget,
+            covers: CGFloat(max(placeholderRows, 1)) * DashTheme.Layout.twoToneListRow,
             retry: retry
           )
           .dashFailureRemovalTransition()
@@ -1464,10 +1474,9 @@ struct DashInfoRow<Accessory: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     }
-    // Row height floor shared with `DashListRow` (and with
-    // `DashInfoRowPlaceholders`), so an info group keeps the same rhythm as the
-    // Home cards it borrows its frame from.
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    // Same `twoToneListRow` seat as Home Shortcuts / Recently used /
+    // `DashInfoRowPlaceholders`.
+    .frame(minHeight: DashTheme.Layout.twoToneListRow)
     .accessibilityElement(children: .combine)
   }
 
@@ -1521,7 +1530,7 @@ struct DashInfoRowPlaceholders: View {
             .dashSkeletonFill(DashSkeletonStyle.soft)
             .frame(width: index.isMultiple(of: 2) ? 132 : 100, height: 12)
         }
-        .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+        .frame(minHeight: DashTheme.Layout.twoToneListRow)
       }
     }
     .frame(maxWidth: .infinity)
@@ -2305,7 +2314,7 @@ struct DashListRowPlaceholder: View {
       }
       Spacer(minLength: 0)
     }
-    .padding(.vertical, 12)
+    .padding(.vertical, DashTheme.Spacing.listRow)
     // Match subtitled `DashListRow` (Actions / catalog-like rows).
     .frame(
       maxWidth: .infinity, minHeight: DashTheme.Layout.subtitledListRow,
@@ -2333,8 +2342,9 @@ struct DashListRowPlaceholders: View {
   }
 }
 
-/// Heading bar over a row of metric tiles inside a glass card — the Worker
-/// totals panel and the same tile/bar vocabulary its cold-failure fallback uses.
+/// Heading bar over a row of metric tiles inside a glass card — Worker detail
+/// and zone HTTP traffic totals, and the same tile/bar vocabulary their
+/// cold-failure fallbacks use.
 struct DashMetricPanelPlaceholder: View {
   var tiles: Int = 3
 
@@ -2361,27 +2371,6 @@ struct DashMetricPanelPlaceholder: View {
     }
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Loading")
-  }
-}
-
-/// Compact glass metric tile — Zone analytics grid cells.
-struct DashMetricTilePlaceholder: View {
-  var body: some View {
-    DashGlassCard {
-      VStack(alignment: .leading, spacing: 4) {
-        RoundedRectangle(cornerRadius: 4, style: .continuous)
-          .dashSkeletonFill(DashSkeletonStyle.soft)
-          .frame(width: 72, height: 12)
-        Text(verbatim: "888,888")
-          .dashTextStyle(.sectionTitle)
-          .monospacedDigit()
-          .lineLimit(1)
-          .redacted(reason: .placeholder)
-          .dashSkeletonPulse()
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .accessibilityHidden(true)
   }
 }
 

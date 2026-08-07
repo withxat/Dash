@@ -430,9 +430,9 @@ final class DashUITests: XCTestCase {
     launch(app, arguments: ["-ui-preview"])
 
     XCTAssertTrue(app.staticTexts["What are we doing today?"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["home-quick-purge-cache"].exists)
     XCTAssertTrue(app.buttons["home-quick-enable-under-attack-mode"].exists)
     XCTAssertTrue(app.buttons["home-quick-upload-r2"].exists)
+    XCTAssertTrue(app.buttons["home-quick-add-domain"].exists)
 
     // Domains ships collapsed: the group header is there, zone names are not.
     let domainsToggle = app.buttons["home-domains-toggle"]
@@ -457,14 +457,14 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    let purgeCache = app.buttons["home-quick-purge-cache"]
-    XCTAssertTrue(purgeCache.waitForExistence(timeout: 5))
-    purgeCache.tap()
+    let underAttack = app.buttons["home-quick-enable-under-attack-mode"]
+    XCTAssertTrue(underAttack.waitForExistence(timeout: 5))
+    underAttack.tap()
 
     XCTAssertTrue(
-      app.staticTexts["Choose the domain whose cache you want to clear."]
+      app.staticTexts["Choose the domain to update."]
         .waitForExistence(timeout: 5))
-    XCTAssertFalse(purgeCache.isHittable)
+    XCTAssertFalse(underAttack.isHittable)
 
     let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
     XCTAssertTrue(card.waitForExistence(timeout: 2))
@@ -477,18 +477,17 @@ final class DashUITests: XCTestCase {
     close.tap()
 
     XCTAssertTrue(close.waitForNonExistence(timeout: 5))
-    let restoredPurgeCache = app.buttons["Purge cache"]
-    XCTAssertTrue(restoredPurgeCache.waitForExistence(timeout: 2))
+    let restoredUnderAttack = app.buttons["Under Attack"]
+    XCTAssertTrue(restoredUnderAttack.waitForExistence(timeout: 2))
 
-    restoredPurgeCache.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    restoredUnderAttack.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     let zone = app.buttons.matching(
       NSPredicate(format: "label BEGINSWITH %@", "example.com")
     ).firstMatch
     XCTAssertTrue(Self.waitForHittable(zone))
     zone.tap()
 
-    XCTAssertTrue(card.waitForNonExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Purge URL"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Enable Under Attack"].waitForExistence(timeout: 5))
   }
 
   func testProfileTrayStackRetargetsCloseControlToBack() {

@@ -188,23 +188,20 @@ import Testing
       == .greenUpRedDown)
 }
 
-@Test func webMetricsUseCompleteUTCWindowsAndExactPageLoadTrend() {
+@Test func webMetricsUseCompleteUTCWindows() {
   // window = 2: the two complete UTC days before `now` are current. Today is
   // intentionally present in the fixture and must be excluded.
   let now = ISO8601DateFormatter().date(from: "2026-07-24T12:00:00Z")!
   let days = [
-    RUMDailyMetrics(date: "2026-07-20", pageviews: 10, visits: 4, pageLoadTimeP50Ms: 500),
-    RUMDailyMetrics(date: "2026-07-21", pageviews: 20, visits: 6, pageLoadTimeP50Ms: 700),
-    RUMDailyMetrics(date: "bad-date", pageviews: 999, visits: 999, pageLoadTimeP50Ms: 999),
-    RUMDailyMetrics(date: "2026-07-22", pageviews: 30, visits: 10, pageLoadTimeP50Ms: nil),
-    RUMDailyMetrics(date: "2026-07-23", pageviews: 40, visits: 12, pageLoadTimeP50Ms: 200),
-    RUMDailyMetrics(date: "2026-07-24", pageviews: 900, visits: 400, pageLoadTimeP50Ms: 100),
+    RUMDailyMetrics(date: "2026-07-20", pageviews: 10, visits: 4),
+    RUMDailyMetrics(date: "2026-07-21", pageviews: 20, visits: 6),
+    RUMDailyMetrics(date: "bad-date", pageviews: 999, visits: 999),
+    RUMDailyMetrics(date: "2026-07-22", pageviews: 30, visits: 10),
+    RUMDailyMetrics(date: "2026-07-23", pageviews: 40, visits: 12),
+    RUMDailyMetrics(date: "2026-07-24", pageviews: 900, visits: 400),
   ]
-  let comparison = RUMMetricsComparison(
-    days: days,
-    currentPageLoadTimeP50Ms: 250,
-    previousPageLoadTimeP50Ms: 600)
-  let snapshot = WebAnalyticsChartModel.metrics(from: comparison, window: 2, now: now)
+  let snapshot = WebAnalyticsChartModel.metrics(
+    from: RUMMetricsComparison(days: days), window: 2, now: now)
 
   #expect(snapshot.hasData)
   // Current window = 07-22 + 07-23; bad date and partial 07-24 dropped.
@@ -219,37 +216,12 @@ import Testing
   // Previous window = 07-20 + 07-21.
   #expect(snapshot.pageViews.previous == 30)
   #expect(snapshot.pageViews.delta == (70.0 - 30.0) / 30.0)
-  // Headline/trend use Cloudflare's exact whole-window p50s, not an average of
-  // daily medians. Missing daily performance becomes no point, never 0ms.
-  #expect(snapshot.pageLoadTimeMs.current == 250)
-  #expect(snapshot.pageLoadTimeMs.previous == 600)
-  #expect(snapshot.pageLoadTimeMs.series == [200])
-  #expect(
-    snapshot.pageLoadTimeMs.points.map { $0.date.ISO8601Format() } == [
-      "2026-07-23T00:00:00Z"
-    ])
-  #expect((snapshot.pageLoadTimeMs.delta ?? 0) < 0)
+  #expect(snapshot.visits.previous == 10)
 
   let empty = WebAnalyticsChartModel.metrics(
     from: RUMMetricsComparison(days: []), window: 7, now: now)
   #expect(empty.isEmpty)
   #expect(empty.pageViews.delta == nil)
-}
-
-@Test func legacyWebMetricsNeverInventPageLoadTrendWithoutWindowTotals() {
-  let now = ISO8601DateFormatter().date(from: "2026-07-24T12:00:00Z")!
-  let comparison = RUMMetricsComparison(days: [
-    RUMDailyMetrics(date: "2026-07-20", pageviews: 10, visits: 4, pageLoadTimeP50Ms: 800),
-    RUMDailyMetrics(date: "2026-07-21", pageviews: 10, visits: 4, pageLoadTimeP50Ms: 700),
-    RUMDailyMetrics(date: "2026-07-22", pageviews: 10, visits: 4, pageLoadTimeP50Ms: 600),
-    RUMDailyMetrics(date: "2026-07-23", pageviews: 10, visits: 4, pageLoadTimeP50Ms: 500),
-  ])
-
-  let snapshot = WebAnalyticsChartModel.metrics(from: comparison, window: 2, now: now)
-
-  #expect(snapshot.pageLoadTimeMs.current == 550)
-  #expect(snapshot.pageLoadTimeMs.previous == nil)
-  #expect(snapshot.pageLoadTimeMs.delta == nil)
 }
 
 @Test func webAnalyticsDomainDestinationUsesDomainReadScopesOnly() {
@@ -272,8 +244,6 @@ import Testing
     accountID: DemoBackend.accountID, siteTag: "demo-site", days: 7)
   #expect(detail.days.count == 14)
   #expect(detail.days.allSatisfy { $0.pageviews > 0 && $0.visits > 0 })
-  #expect(detail.currentPageLoadTimeP50Ms != nil)
-  #expect(detail.previousPageLoadTimeP50Ms != nil)
 }
 
 @Test func chartDetailWaitsOnlyForInFlightRangesWithoutSnapshots() {

@@ -31,35 +31,22 @@ struct WebAnalyticsMetric: Hashable, Sendable {
   }
 }
 
-/// Headline Web Analytics figures plus optional Core Web Vitals p75s.
+/// Headline Web Analytics figures.
 struct WebAnalyticsMetricsSnapshot: Hashable, Sendable {
   static let empty = WebAnalyticsMetricsSnapshot(
-    pageLoadTimeMs: .zero, visits: .zero, pageViews: .zero,
-    lcpP75Ms: .zero, inpP75Ms: .zero, clsP75: .zero, hasData: false)
+    visits: .zero, pageViews: .zero, hasData: false)
 
-  let pageLoadTimeMs: WebAnalyticsMetric
   let visits: WebAnalyticsMetric
   let pageViews: WebAnalyticsMetric
-  let lcpP75Ms: WebAnalyticsMetric
-  let inpP75Ms: WebAnalyticsMetric
-  let clsP75: WebAnalyticsMetric
   let hasData: Bool
 
   var isEmpty: Bool { !hasData }
-  var hasWebVitals: Bool {
-    lcpP75Ms.current > 0 || inpP75Ms.current > 0 || clsP75.current > 0
-      || !lcpP75Ms.points.isEmpty || !inpP75Ms.points.isEmpty || !clsP75.points.isEmpty
-  }
 }
 
 private struct WebAnalyticsDay {
   let date: Date
   let pageviews: Int
   let visits: Int
-  let pageLoadTimeP50Ms: Int?
-  let lcpP75Ms: Double?
-  let inpP75Ms: Double?
-  let clsP75: Double?
 }
 
 /// Pure parsing + summaries, unit-tested away from the view.
@@ -78,11 +65,10 @@ enum WebAnalyticsChartModel {
     sites.first { $0.zoneTag == zoneID }
   }
 
-  /// Folds `comparison.days` (which spans `window * 2` calendar days) into the three
+  /// Folds `comparison.days` (which spans `window * 2` calendar days) into the two
   /// dashboard metrics. The most recent `window` days form the current period;
   /// the `window` days before that form the comparison period. Page views and
-  /// visits sum. Page-load time uses Cloudflare's exact whole-window p50; the
-  /// daily p50 buckets are retained only for the chart.
+  /// visits sum over each.
   static func metrics(from comparison: RUMMetricsComparison, window: Int, now: Date)
     -> WebAnalyticsMetricsSnapshot
   {
@@ -92,10 +78,7 @@ enum WebAnalyticsChartModel {
 
     let parsed = comparison.days.compactMap { day -> WebAnalyticsDay? in
       guard let date = parser.date(from: day.date) else { return nil }
-      return WebAnalyticsDay(
-        date: date, pageviews: day.pageviews, visits: day.visits,
-        pageLoadTimeP50Ms: day.pageLoadTimeP50Ms,
-        lcpP75Ms: day.lcpP75Ms, inpP75Ms: day.inpP75Ms, clsP75: day.clsP75)
+      return WebAnalyticsDay(date: date, pageviews: day.pageviews, visits: day.visits)
     }
 
     let step = max(window, 1)
@@ -124,72 +107,74 @@ enum WebAnalyticsChartModel {
 
     let pageViews = summed { $0.pageviews }
     let visits = summed { $0.visits }
-    // Older GraphQL fixtures do not contain the two whole-window aliases. Keep
-    // their current headline useful, but never manufacture a comparison trend
-    // from an average of daily medians.
-    let currentPageLoad =
-      comparison.currentPageLoadTimeP50Ms.map(Double.init)
-      ?? weightedMedian(current)
-      ?? 0
-    let previousPageLoad =
-      comparison.currentPageLoadTimeP50Ms == nil
-      ? nil
-      : comparison.previousPageLoadTimeP50Ms.map(Double.init)
-    let pageLoad = WebAnalyticsMetric(
-      current: currentPageLoad,
-      previous: previousPageLoad,
-      points: current.compactMap { day in
-        day.pageLoadTimeP50Ms.map {
-          WebAnalyticsSeriesPoint(date: day.date, value: Double($0))
-        }
-      })
-
-    func vital(
-      currentTotal: Double?,
-      previousTotal: Double?,
-      daily: @escaping (WebAnalyticsDay) -> Double?
-    ) -> WebAnalyticsMetric {
-      WebAnalyticsMetric(
-        current: currentTotal ?? 0,
-        previous: previousTotal,
-        points: current.compactMap { day in
-          daily(day).map { WebAnalyticsSeriesPoint(date: day.date, value: $0) }
-        })
-    }
 
     return WebAnalyticsMetricsSnapshot(
-      pageLoadTimeMs: pageLoad,
       visits: visits,
       pageViews: pageViews,
-      lcpP75Ms: vital(
-        currentTotal: comparison.currentLcpP75Ms,
-        previousTotal: comparison.previousLcpP75Ms,
-        daily: \.lcpP75Ms),
-      inpP75Ms: vital(
-        currentTotal: comparison.currentInpP75Ms,
-        previousTotal: comparison.previousInpP75Ms,
-        daily: \.inpP75Ms),
-      clsP75: vital(
-        currentTotal: comparison.currentClsP75,
-        previousTotal: comparison.previousClsP75,
-        daily: \.clsP75),
       hasData: pageViews.current > 0 || visits.current > 0)
   }
 
-  /// Compatibility fallback for old fixtures that predate whole-window totals.
-  /// This is display-only; it must never feed a period-over-period trend.
-  private static func weightedMedian(_ days: [WebAnalyticsDay]) -> Double? {
-    let sampled = days.compactMap { day in
-      day.pageLoadTimeP50Ms.map { (p50: $0, weight: day.pageviews) }
+}
+
+/// The account's Web Analytics site list, fetched once per account and read by
+/// both surfaces that need it: this screen, to find the zone's `siteTag`, and
+/// the zone screen, to decide whether the Web analytics row exists at all. One
+/// loader over one cache key, so the two can never disagree about whether a
+/// zone has a site.
+@MainActor
+enum WebAnalyticsSiteIndex {
+  /// The list this session already holds, if any. Reading it before any `await`
+  /// is what keeps a warm account from inserting the zone screen's row a beat
+  /// after the rest of its tools.
+  static func cached(accountID: String, model: AppModel) -> [RUMSite]? {
+    model.featureCache.get(FeatureCacheKey.webAnalyticsSites(accountID))
+  }
+
+  static func load(accountID: String, model: AppModel, force: Bool = false) async throws
+    -> [RUMSite]
+  {
+    if !force, let cached = cached(accountID: accountID, model: model) { return cached }
+    let sites = try await model.client.webAnalyticsSites(accountID: accountID)
+    model.featureCache.set(FeatureCacheKey.webAnalyticsSites(accountID), sites)
+    return sites
+  }
+}
+
+/// Whether the zone screen offers Web Analytics at all.
+///
+/// Web Analytics is not a zone setting Cloudflare turns on: someone has to add
+/// a site for the domain first, and until one exists the screen has nothing to
+/// show but a link back to the dashboard — Cloudflare publishes no OAuth scope
+/// for Web Analytics writes, so Dash cannot even offer to add it. That makes
+/// the tool row a fact about the account's site list, not a fixed part of a
+/// zone's toolset.
+///
+/// A site whose injecting ruleset is switched off still counts as present: it
+/// has history, it is one dashboard toggle from collecting again, and hiding it
+/// would strand data the user deliberately set up. Only a zone with no site at
+/// all loses the row.
+enum ZoneWebAnalyticsAvailability: Hashable, Sendable {
+  /// The site list has not answered yet. The row stays out rather than
+  /// appearing and then being taken back from under a reaching finger.
+  case pending
+  /// A site on this account injects into this zone.
+  case present
+  /// The account's site list is known and this zone is not in it.
+  case absent
+  /// The list could not be read — no account, no grant, or a failed request. A
+  /// missing answer must never hide a feature the user may well have, so the
+  /// row stays and its own screen reports what it found.
+  case indeterminate
+
+  var showsTool: Bool {
+    switch self {
+    case .present, .indeterminate: true
+    case .pending, .absent: false
     }
-    guard !sampled.isEmpty else { return nil }
-    let weight = sampled.reduce(0) { $0 + $1.weight }
-    if weight > 0 {
-      let total = sampled.reduce(0.0) { $0 + Double($1.p50) * Double($1.weight) }
-      return total / Double(weight)
-    }
-    let total = sampled.reduce(0.0) { $0 + Double($1.p50) }
-    return total / Double(sampled.count)
+  }
+
+  static func resolved(zoneID: String, in sites: [RUMSite]) -> Self {
+    WebAnalyticsChartModel.site(for: zoneID, in: sites) == nil ? .absent : .present
   }
 }
 
@@ -203,27 +188,16 @@ enum WebAnalyticsChartModel {
 /// `mapAlert` already forbid: identity and presentation must never be
 /// re-derived from wording, because the wording is what gets localized.
 private enum WebAnalyticsChartMetric: String, Hashable, CaseIterable, Identifiable {
-  case pageLoadTime
   case visits
   case pageViews
-  case lcpP75
-  case inpP75
-  case clsP75
-
-  /// Shown whenever the beacon reported page loads at all.
-  static let headline: [Self] = [.pageLoadTime, .visits, .pageViews]
 
   var id: String { rawValue }
 
   /// Catalog key; also the pushed detail's title.
   var title: String {
     switch self {
-    case .pageLoadTime: "Page load time"
     case .visits: "Visits"
     case .pageViews: "Page views"
-    case .lcpP75: "LCP p75"
-    case .inpP75: "INP p75"
-    case .clsP75: "CLS p75"
     }
   }
 
@@ -233,63 +207,29 @@ private enum WebAnalyticsChartMetric: String, Hashable, CaseIterable, Identifiab
   /// Where this card's figures live in a loaded snapshot.
   var keyPath: KeyPath<WebAnalyticsMetricsSnapshot, WebAnalyticsMetric> {
     switch self {
-    case .pageLoadTime: \.pageLoadTimeMs
     case .visits: \.visits
     case .pageViews: \.pageViews
-    case .lcpP75: \.lcpP75Ms
-    case .inpP75: \.inpP75Ms
-    case .clsP75: \.clsP75
     }
   }
 
-  /// Timings and layout shift are better when they fall; traffic counts carry no
-  /// opinion.
-  var trendPolarity: DashChartTrend.Polarity {
-    switch self {
-    case .visits, .pageViews: .neutral
-    case .pageLoadTime, .lcpP75, .inpP75, .clsP75: .lowerIsBetter
-    }
-  }
+  /// Traffic counts carry no opinion about which direction is better.
+  var trendPolarity: DashChartTrend.Polarity { .neutral }
 
   var valueAxisLabel: String {
     switch self {
-    case .pageLoadTime, .lcpP75, .inpP75: "Milliseconds"
     case .visits: "Visits"
     case .pageViews: "Page views"
-    case .clsP75: "CLS"
     }
   }
 
-  var axisValueFormat: DashChartValueFormat {
-    switch self {
-    case .pageLoadTime, .lcpP75, .inpP75: .milliseconds(maximumFractionDigits: 0)
-    case .visits, .pageViews: .compact
-    case .clsP75: .number(maximumFractionDigits: 3)
-    }
-  }
+  var axisValueFormat: DashChartValueFormat { .compact }
 
-  var tableValueFormat: DashChartValueFormat {
-    switch self {
-    case .pageLoadTime, .lcpP75, .inpP75: .milliseconds(maximumFractionDigits: 0)
-    case .visits, .pageViews: .number(maximumFractionDigits: 0)
-    case .clsP75: .number(maximumFractionDigits: 3)
-    }
-  }
+  var tableValueFormat: DashChartValueFormat { .number(maximumFractionDigits: 0) }
 
   /// A card's headline, a detail's summary, and a range tab's total all read the
   /// same figure, so they format in one place.
   func valueText(_ value: Double) -> String {
-    switch self {
-    case .pageLoadTime, .lcpP75, .inpP75:
-      let milliseconds = Int(value.rounded())
-        .formatted(.number.locale(DashL10n.activeLocale))
-      return "\(milliseconds)ms"
-    case .visits, .pageViews:
-      return Int(value.rounded()).formatted(.number.locale(DashL10n.activeLocale))
-    case .clsP75:
-      return value.formatted(
-        .number.precision(.fractionLength(0...3)).locale(DashL10n.activeLocale))
-    }
+    Int(value.rounded()).formatted(.number.locale(DashL10n.activeLocale))
   }
 }
 
@@ -354,36 +294,25 @@ struct WebAnalyticsView: View {
     .task(id: model.accountRequestContext) { await load() }
   }
 
-  /// Core Web Vitals only exist on sites whose beacon collects them. Placeholder
-  /// reserves every metric so extras recede when the beacon has none.
-  private var visibleMetrics: [WebAnalyticsChartMetric] {
-    snapshot.hasWebVitals
-      ? WebAnalyticsChartMetric.allCases
-      : WebAnalyticsChartMetric.headline
-  }
-
-  /// Shared card grid for cold + live. Placeholder paints allCases; live keeps
-  /// headline (and vitals when present) so surplus cards recede.
-  /// Beacon-off replaces the grid.
+  /// Shared body for cold + live: the two headline cards in their 2-up row.
+  /// Beacon-off replaces the whole thing.
   @ViewBuilder
   private func webAnalyticsBody(mode: DashBodyMode) -> some View {
     if !mode.isPlaceholder, isBeaconOff {
       beaconMissingState
         .dashBodySlot(reduceMotion: reduceMotion)
     } else {
-      let metrics =
-        mode.isPlaceholder
-        ? Array(WebAnalyticsChartMetric.allCases)
-        : visibleMetrics
-      cardGrid(metrics) { metric in
-        Group {
-          if mode.isPlaceholder {
-            DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
-          } else {
-            metricCard(metric)
+      DashSurfaceStack {
+        cardGrid(WebAnalyticsChartMetric.allCases) { metric in
+          Group {
+            if mode.isPlaceholder {
+              DashCollapsedChartPlaceholder(title: metric.title, showsMetricHeader: true)
+            } else {
+              metricCard(metric)
+            }
           }
+          .dashBodySlot(reduceMotion: reduceMotion)
         }
-        .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
   }
@@ -397,17 +326,17 @@ struct WebAnalyticsView: View {
     _ metrics: [WebAnalyticsChartMetric],
     @ViewBuilder card: @escaping (WebAnalyticsChartMetric) -> Card
   ) -> some View {
-    DashSurfaceStack {
-      ForEach(rows(metrics), id: \.self) { row in
-        HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
-          ForEach(row) { metric in
-            card(metric)
-              .frame(maxWidth: .infinity)
-          }
-          if row.count == 1, !dynamicTypeSize.isAccessibilitySize {
-            Color.clear
-              .frame(maxWidth: .infinity)
-          }
+    // No DashSurfaceStack here: the caller owns the outer stack so these rows
+    // sit in its rhythm.
+    ForEach(rows(metrics), id: \.self) { row in
+      HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(row) { metric in
+          card(metric)
+            .frame(maxWidth: .infinity)
+        }
+        if row.count == 1, !dynamicTypeSize.isAccessibilitySize {
+          Color.clear
+            .frame(maxWidth: .infinity)
         }
       }
     }
@@ -494,17 +423,11 @@ struct WebAnalyticsView: View {
 
   private func color(for metric: WebAnalyticsChartMetric) -> DitherColor {
     switch metric {
-    case .pageLoadTime:
-      DashTheme.DitherChart.accentBlue(
-        colorScheme: colorScheme, contrast: colorSchemeContrast)
-    case .visits, .inpP75:
+    case .visits:
       DashTheme.DitherChart.accentPurple(
         colorScheme: colorScheme, contrast: colorSchemeContrast)
-    case .pageViews, .clsP75:
+    case .pageViews:
       DashTheme.DitherChart.accentTeal(
-        colorScheme: colorScheme, contrast: colorSchemeContrast)
-    case .lcpP75:
-      DashTheme.DitherChart.warning(
         colorScheme: colorScheme, contrast: colorSchemeContrast)
     }
   }
@@ -608,11 +531,7 @@ struct WebAnalyticsView: View {
   }
 
   private func resolveSites(accountID: String, force: Bool) async throws -> [RUMSite] {
-    let key = FeatureCacheKey.webAnalyticsSites(accountID)
-    if !force, let cached: [RUMSite] = model.featureCache.get(key) { return cached }
-    let sites = try await model.client.webAnalyticsSites(accountID: accountID)
-    model.featureCache.set(key, sites)
-    return sites
+    try await WebAnalyticsSiteIndex.load(accountID: accountID, model: model, force: force)
   }
 
   private func loadRange(

@@ -26,6 +26,7 @@ struct DashListRow<Accessory: View>: View {
   @ViewBuilder var accessory: () -> Accessory
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.featureIdentity) private var featureIdentity
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
   @ScaledMetric(relativeTo: .body) private var iconScale: CGFloat = 1
 
   init(
@@ -110,14 +111,12 @@ struct DashListRow<Accessory: View>: View {
         }
       }
     }
-    // Resources `FeatureRow` is also 12 + wrap, but catalog blurbs usually
-    // fill two lines so the row lands taller. Detail Actions carry short
-    // one-liners — reserve the two-line slot so they keep that rhythm
-    // instead of collapsing into a denser stack.
-    .padding(.vertical, 12)
+    // Two-tone eyebrow cards publish `dashTwoToneListRows` → 60. Service
+    // catalogs / detail Actions keep 72.
+    .padding(.vertical, DashTheme.Spacing.listRow)
     .frame(
-      minHeight: subtitle == nil
-        ? DashTheme.Layout.minimumHitTarget : DashTheme.Layout.subtitledListRow
+      minHeight: inTwoToneList
+        ? DashTheme.Layout.twoToneListRow : DashTheme.Layout.subtitledListRow
     )
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
@@ -245,6 +244,80 @@ struct DashValueRow: View {
           .foregroundStyle(DashTheme.subtle)
       }
     }
+  }
+}
+
+// MARK: - Glyph handover
+
+/// One member of a glyph pair that hands over to another — `DashSelectionMark`
+/// and the toast's kind mark. Opacity alone reads as a dip to nothing between
+/// two states; receding into a smaller, softer version of itself and growing
+/// back out of one makes the pair read as a single mark changing.
+///
+/// `scaleEffect` and `blur` are render transforms: the layout slot never moves,
+/// and a 22pt glyph is not the animated *text* blur that got the workspace
+/// header's title morph deleted (`DashPageChromeTitleView`). Reduce Motion
+/// keeps opacity and drops both.
+private struct DashGlyphSwapModifier: ViewModifier {
+  let isActive: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    content
+      .opacity(isActive ? 1 : 0)
+      .scaleEffect(scale)
+      .blur(radius: blurRadius)
+  }
+
+  private var scale: CGFloat {
+    guard !reduceMotion else { return 1 }
+    return isActive ? 1 : DashTheme.Motion.glyphSwapScale
+  }
+
+  private var blurRadius: CGFloat {
+    guard !reduceMotion, !isActive else { return 0 }
+    return DashTheme.Motion.glyphSwapBlur
+  }
+}
+
+extension View {
+  /// Marks this glyph as the present or the departing half of a handover. The
+  /// *container* owns the curve — `.animation(DashTheme.Motion.glyphSwap,
+  /// value:)` — so both halves move on one timeline.
+  func dashGlyphSwap(isActive: Bool) -> some View {
+    modifier(DashGlyphSwapModifier(isActive: isActive))
+  }
+}
+
+// MARK: - Selection mark
+
+/// The one hollow-circle → filled-check mark. Every selection list in the app
+/// shows this pair — quick actions, shortcuts, account switch, R2 multi-select,
+/// the Settings pickers — and it must change the same way in all of them.
+///
+/// Shared because the obvious spelling cannot animate at all: `SolarIcon(asset:
+/// isSelected ? .checkCircleFill : .circle)` swaps an `Image`'s content, and
+/// image content is not animatable, so six sites hard-cut while the shortcuts
+/// editor hand-rolled an opacity pair. Both glyphs stay mounted here and hand
+/// over on `glyphSwap`.
+struct DashSelectionMark: View {
+  let isSelected: Bool
+  var size: CGFloat = 22
+  var selectedColor: Color = DashTheme.brand
+  var unselectedColor: Color = DashTheme.placeholder
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    ZStack {
+      SolarIcon(asset: SolarAsset.circle, size: size, color: unselectedColor)
+        .dashGlyphSwap(isActive: !isSelected)
+      SolarIcon(asset: SolarAsset.checkCircleFill, size: size, color: selectedColor)
+        .dashGlyphSwap(isActive: isSelected)
+    }
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.glyphSwap,
+      value: isSelected
+    )
   }
 }
 
@@ -674,8 +747,38 @@ struct DashToolbarActionIcon: View {
     // 24pt matches the system back chevron, which renders its 24×24 Solar
     // asset at natural size.
     SolarIcon(asset: asset, size: 24, color: color)
+      // A left/right chevron carries more ink on the open side of the stem, so
+      // a geometrically centred mark reads biased toward the circle's far
+      // edge — nudge it toward the tip so the seat looks centred.
+      .offset(x: DashChevronOpticalRules.offsetX(for: asset))
       .frame(width: 24, height: 24)
       .accessibilityHidden(true)
+  }
+}
+
+/// Optical seat for chevron glyphs inside circular chrome (Back, onboarding,
+/// expanded-chart detail disclosure).
+enum DashChevronOpticalRules {
+  /// The correction belongs to the *seat*, not to the glyph.
+  ///
+  /// It was measured on the navigation circle: a 24pt mark with ~10pt of
+  /// clearance on each side, where nudging toward the tip does read centred.
+  /// The chart card's disclosure is a 14pt mark in a 32pt plate — the same flat
+  /// 1.5pt is nearly twice the correction in proportion, which put the tip
+  /// visibly toward the plate's edge. Keyed by asset alone, the rule could not
+  /// tell those two apart.
+  enum Seat {
+    case navigationCircle
+    case compactDisclosure
+  }
+
+  static func offsetX(for asset: String, seat: Seat = .navigationCircle) -> CGFloat {
+    guard seat == .navigationCircle else { return 0 }
+    return switch asset {
+    case SolarAsset.chevronLeft: -1.5
+    case SolarAsset.chevronRight: 1.5
+    default: 0
+    }
   }
 }
 

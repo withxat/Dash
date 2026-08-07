@@ -106,9 +106,11 @@ struct MainTabView: View {
   @State private var tabTransitionDirection = DashTabTransitionDirection.stationary
   @State private var tabTransitionProgress: CGFloat = 0
   @State private var tabTransitionGeneration: UInt64 = 0
-  @State private var homeNavigator = DestinationNavigator()
-  @State private var featuresNavigator = DestinationNavigator()
-  @State private var watchtowerNavigator = DestinationNavigator()
+  // Pages in the workspace publish their header slots instead of painting
+  // them; `sharedHeaderOverlay` is the ONE bar that draws them.
+  @State private var homeNavigator = DestinationNavigator(chromeHosting: .workspace)
+  @State private var featuresNavigator = DestinationNavigator(chromeHosting: .workspace)
+  @State private var watchtowerNavigator = DestinationNavigator(chromeHosting: .workspace)
   @State private var navigationCoordinator = DashNavigationCoordinator()
   @State private var navigationAnchorRegistry = DashNavigationAnchorRegistry()
   @State private var workspacePresentationState = DashWorkspacePresentationState()
@@ -179,31 +181,20 @@ struct MainTabView: View {
     ) || outgoingPageOccupiesWorkspace || watchtowerCustomization.isEditing
   }
 
-  private var sharedHeaderIsDisplaced: Bool {
-    shouldHideHeaderAvatar(
-      overlays: overlayTrays,
-      navigationDepth: activeNavigationDepth,
-      pageTransitionActive: activePagePresentationState.isTransitioning
-    ) || outgoingPageOccupiesWorkspace
+  private var headerIsDisplaced: Bool {
+    shouldDisplaceWorkspaceHeader(overlays: overlayTrays)
   }
 
-  private var hidesHeaderAvatar: Bool {
-    sharedHeaderIsDisplaced || watchtowerCustomization.isEditing
-  }
-
-  /// Floated Watchtower inbox — same hide rules as the avatar, Watchtower root only.
+  /// The floated Watchtower inbox is a root occupant of the shared trailing
+  /// slot; a pushed page takes that slot over on its own.
   private var showsWatchtowerInboxButton: Bool {
-    selection == .watchtower
-      && model.activeAccountID != nil
-      && !hidesHeaderAvatar
+    selection == .watchtower && model.activeAccountID != nil
   }
 
-  /// Watchtower editing stays on the root canvas, so all of its header actions
-  /// belong in the same floated layer as the avatar and inbox.
+  /// Watchtower editing stays on the root canvas, and its actions are just
+  /// another pair of occupants for the same two slots.
   private var showsWatchtowerEditorHeader: Bool {
-    selection == .watchtower
-      && watchtowerCustomization.isEditing
-      && !sharedHeaderIsDisplaced
+    selection == .watchtower && watchtowerCustomization.isEditing
   }
 
   private var activeNavigationDepth: Int {
@@ -302,14 +293,18 @@ struct MainTabView: View {
     case .confirmSwitch(let accountID, let route):
       guard let account = model.accounts.first(where: { $0.id == accountID }) else {
         model.toasts.error(
-          "The Cloudflare account for this link isn't available in Dash. Check your access and try again."
+          DashL10n.string(
+            "The Cloudflare account for this link isn't available in Dash. Check your access and try again"
+          )
         )
         return
       }
       accountRouteConfirmation = AccountScopedRouteRequest(account: account, route: route)
     case .rejectUnavailable:
       model.toasts.error(
-        "The Cloudflare account for this link isn't available in Dash. Check your access and try again."
+        DashL10n.string(
+          "The Cloudflare account for this link isn't available in Dash. Check your access and try again"
+        )
       )
     }
   }
@@ -318,7 +313,9 @@ struct MainTabView: View {
     accountRouteConfirmation = nil
     guard let account = model.accounts.first(where: { $0.id == request.account.id }) else {
       model.toasts.error(
-        "That Cloudflare account is no longer available in Dash. Refresh your accounts and try again."
+        DashL10n.string(
+          "That Cloudflare account is no longer available in Dash. Refresh your accounts and try again"
+        )
       )
       return
     }
@@ -343,9 +340,6 @@ struct MainTabView: View {
       .environment(\.dashNavigationCoordinator, navigationCoordinator)
       .environment(\.dashNavigationAnchorRegistry, navigationAnchorRegistry)
       .environment(\.dashWorkspacePresentationState, workspacePresentationState)
-      .onPreferenceChange(DashNavigationAnchorFramesKey.self) {
-        navigationAnchorRegistry.replaceFrames($0)
-      }
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
       .onReceive(
         NotificationCenter.default.publisher(
@@ -361,7 +355,6 @@ struct MainTabView: View {
         switch phase {
         case .active:
           model.deferredDeletions.resumeReconciliation()
-          model.retryDefaultPushRegistrationIfNeeded()
           Task {
             await model.retryIdentityIfNeeded()
             await model.refreshWatchtowerIfStale()
@@ -520,7 +513,8 @@ struct MainTabView: View {
       }
       .ignoresSafeArea()
     }
-    .dashToastHost()
+    // No toast host here either: the canvas copy and the tray cover's copy
+    // were the two that doubled. `dashToastLayer` owns the only one.
   }
 
   private var tabFlow: some View {
@@ -577,145 +571,58 @@ struct MainTabView: View {
     .animation(nil, value: watchtowerNavigator.depth)
   }
 
-  /// ONE header layer above the tab flow. Normal roots show avatar + Watchtower
-  /// inbox; chart editing hands those exact slots to Cancel + Add/Done. Keeping
-  /// every source and destination inside one Liquid Glass container lets iOS 26
-  /// morph the shapes instead of compositing a second page-chrome layer.
+  /// ONE header layer above the tab flow — leading control, title, trailing
+  /// controls, for every page in the workspace. Roots seat the avatar and the
+  /// Watchtower inbox in the same slots a pushed page fills with Back, its
+  /// title and its actions; chart editing hands those slots to Cancel +
+  /// Add/Done. The bar itself never moves, and `MainTabView` deliberately does
+  /// not read page chrome here — `DashWorkspaceHeaderBar` is the store's only
+  /// reader, so a page's action change cannot refresh a cached page host.
   private var sharedHeaderOverlay: some View {
-    Group {
-      if #available(iOS 26.0, *) {
-        GlassEffectContainer(spacing: WorkspaceHeaderMetrics.actionSpacing) {
-          sharedHeaderControls
-        }
-      } else {
-        sharedHeaderControls
+    // Removed, not faded to zero: Liquid Glass is composited outside a normal
+    // opacity group on iOS 26, so an opacity-zero control can still paint over
+    // the presentation that displaced it.
+    ZStack {
+      if !headerIsDisplaced {
+        headerBar
       }
     }
-    // Pushes and trays do not carry a SwiftUI transaction, so the shared layer
-    // supplies their fade. Tab switches and editor enter/exit already originate
-    // in explicit settle/morph transactions and keep their directional timing.
-    .animation(tabBarVisibilityAnimation, value: sharedHeaderIsDisplaced)
-    // Selection still changes Watchtower's root-only trailing controls; keep
-    // that handoff independent from editor visibility and page motion.
+    // A covering presentation does not carry a SwiftUI transaction, so the
+    // shared layer supplies that fade. Tab switches and editor enter/exit
+    // already originate in explicit settle/morph transactions.
+    .animation(tabBarVisibilityAnimation, value: headerIsDisplaced)
+    // Selection changes which navigator the slots read; keep that handoff
+    // independent from displacement.
     .animation(tabBarVisibilityAnimation, value: selection)
     .allowsHitTesting(
-      outgoingSelection == nil
-        && (!hidesHeaderAvatar
-          || showsWatchtowerInboxButton
-          || showsWatchtowerEditorHeader)
+      outgoingSelection == nil && !activePagePresentationState.isTransitioning
     )
-    .accessibilityHidden(sharedHeaderIsDisplaced || outgoingSelection != nil)
+    .accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)
   }
 
-  private var sharedHeaderControls: some View {
-    ZStack {
-      ZStack(alignment: .topLeading) {
-        if showsWatchtowerEditorHeader {
-          DashToolbarIconButton(
-            asset: SolarAsset.editClose,
-            accessibilityLabel: DashL10n.string("Cancel")
-          ) {
-            watchtowerCancelRequest &+= 1
-          }
-          .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
-          .accessibilityIdentifier("watchtower-customize-cancel")
-          .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
-          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          .transition(.opacity)
-        } else if !hidesHeaderAvatar {
-          DashNavigationSource(
-            destination: .settings,
-            presentation: .workspaceOverlay,
-            onNavigate: synchronizeNavigatorAccountScopes
-          ) { navigate in
-            HeaderProfileButton(
-              action: { navigate() },
-              onLongPress: {
-                // The path used to live inside the freshly mounted tray body.
-                // Reset before presentation so an exit never swaps its content
-                // back to Accounts while the card is still animating away.
-                profileTrayPath = []
-                showsProfile = true
-              }
-            )
-          }
-          // The avatar floats above all three page hosts, so it cannot inherit
-          // the active tab's navigator from a hosted root.
-          .environment(\.destinationNavigator, activeNavigator)
-          .workspaceHeaderGlassID(.leading, in: workspaceHeaderGlass)
-          .padding(.leading, WorkspaceHeaderMetrics.edgeInset)
-          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          // Liquid Glass is composited outside a normal opacity group on iOS
-          // 26, so an opacity-zero avatar can still render above page-local
-          // Back. Remove the root occurrence once the compositor has captured
-          // its source; remount it only after the returning page has settled.
-          .transition(.identity)
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-      ZStack(alignment: .topTrailing) {
-        if showsWatchtowerEditorHeader {
-          HStack(spacing: WorkspaceHeaderMetrics.actionSpacing) {
-            watchtowerAddChartMenu
-              .workspaceHeaderGlassID(.trailingSecondary, in: workspaceHeaderGlass)
-            DashToolbarIconButton(
-              asset: SolarAsset.unread,
-              accessibilityLabel: DashL10n.string("Done"),
-              variant: .confirmation
-            ) {
-              watchtowerCommitRequest &+= 1
-            }
-            // Done occupies the inbox's former rightmost slot, so its glass
-            // shape has a stable source while Add separates to the left.
-            .workspaceHeaderGlassID(.trailingPrimary, in: workspaceHeaderGlass)
-            .accessibilityIdentifier("watchtower-customize-done")
-          }
-          .padding(.trailing, WorkspaceHeaderMetrics.edgeInset)
-          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          .transition(.opacity)
-        } else if showsWatchtowerInboxButton {
-          DashNavigationSource(destination: .watchtowerInbox) { navigate in
-            HeaderInboxButton(
-              count: model.watchtowerUnreadAlertCount ?? 0,
-              action: { navigate() },
-              onLongPress: { showsIgnoreAllAlerts = true }
-            )
-          }
-          // Like the avatar, the inbox lives above the hosted tab page.
-          .environment(\.destinationNavigator, watchtowerNavigator)
-          .workspaceHeaderGlassID(.trailingPrimary, in: workspaceHeaderGlass)
-          .padding(.trailing, WorkspaceHeaderMetrics.edgeInset)
-          .padding(.top, WorkspaceHeaderMetrics.edgeInset)
-          .transition(.opacity)
-        }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-    }
-  }
-
-  private var watchtowerAddChartMenu: some View {
-    Menu {
-      if watchtowerCustomization.addableMetrics.isEmpty {
-        Button(DashL10n.string("All charts are shown")) {}
-          .disabled(true)
-      } else {
-        ForEach(watchtowerCustomization.addableMetrics) { metric in
-          Button(DashL10n.ui(metric.title)) {
-            withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-              watchtowerCustomization.add(metric)
-            }
-            DashDelight.selectionChanged()
-          }
-        }
-      }
-    } label: {
-      WatchtowerAddChartToolbarLabel()
-    }
-    .buttonStyle(DashPressButtonStyle())
-    .disabled(!watchtowerEditorInteractionsReady)
-    .accessibilityLabel(DashL10n.string("Add chart"))
-    .accessibilityIdentifier("watchtower-add-chart")
+  private var headerBar: some View {
+    DashWorkspaceHeaderBar(
+      navigator: activeNavigator,
+      glassNamespace: workspaceHeaderGlass,
+      showsProfileControl: true,
+      showsWatchtowerInbox: showsWatchtowerInboxButton,
+      watchtowerUnreadCount: model.watchtowerUnreadAlertCount ?? 0,
+      watchtowerCustomization: watchtowerCustomization,
+      isEditingWatchtower: showsWatchtowerEditorHeader,
+      editorInteractionsReady: watchtowerEditorInteractionsReady,
+      onPrepareNavigation: synchronizeNavigatorAccountScopes,
+      onProfileLongPress: {
+        // The path used to live inside the freshly mounted tray body. Reset
+        // before presentation so an exit never swaps its content back to
+        // Accounts while the card is still animating away.
+        profileTrayPath = []
+        showsProfile = true
+      },
+      onInboxLongPress: { showsIgnoreAllAlerts = true },
+      onCancelEditing: { watchtowerCancelRequest &+= 1 },
+      onCommitEditing: { watchtowerCommitRequest &+= 1 }
+    )
+    .transition(.opacity)
   }
 
   /// The floating bar rides in on first appearance without animation and slides
@@ -774,53 +681,6 @@ struct MainTabView: View {
   /// Re-tapping the active tab clears its navigation path.
   private func popActiveTabToRoot() {
     activeNavigator.popToRoot()
-  }
-}
-
-private enum WorkspaceHeaderMetrics {
-  static let edgeInset: CGFloat = AvatarHeaderMetrics.chromeInset
-  static let actionSpacing: CGFloat = 8
-}
-
-private enum WorkspaceHeaderGlassID: Hashable, Sendable {
-  case leading
-  case trailingPrimary
-  case trailingSecondary
-}
-
-extension View {
-  /// Stable Liquid Glass identities for the controls that trade places inside
-  /// `MainTabView.sharedHeaderOverlay`. Earlier systems keep the same aligned
-  /// opacity handoff without adopting iOS 26-only material APIs.
-  @MainActor
-  @ViewBuilder
-  fileprivate func workspaceHeaderGlassID(
-    _ id: WorkspaceHeaderGlassID,
-    in namespace: Namespace.ID
-  ) -> some View {
-    if #available(iOS 26.0, *) {
-      glassEffectID(id, in: namespace)
-        .glassEffectTransition(.matchedGeometry)
-    } else {
-      self
-    }
-  }
-}
-
-private struct WatchtowerAddChartToolbarLabel: View {
-  var body: some View {
-    if #available(iOS 26.0, *) {
-      DashToolbarActionIcon(asset: SolarAsset.plus)
-        .frame(
-          width: AvatarHeaderMetrics.barSize,
-          height: AvatarHeaderMetrics.barSize
-        )
-        .contentShape(Circle())
-        .glassEffect(.regular.interactive(), in: .circle)
-    } else {
-      DashToolbarActionIcon(asset: SolarAsset.plus)
-        .dashCompactHitTarget()
-    }
   }
 }
 
@@ -1108,12 +968,10 @@ func shouldHideTabBar(
   navigationDepth > 0 || overlays.presented || pageTransitionActive
 }
 
-/// Root header controls stay displaced until the page compositor has actually
-/// settled, not merely until the target navigation path reaches depth zero.
-func shouldHideHeaderAvatar(
-  overlays: DashTrayPresentation,
-  navigationDepth: Int,
-  pageTransitionActive: Bool = false
-) -> Bool {
-  navigationDepth > 0 || overlays.presented || pageTransitionActive
+/// The ONE workspace header leaves only for a presentation that covers it.
+/// Navigation depth and page-transition state deliberately stay out of this:
+/// a push no longer displaces the header, it changes what the header's slots
+/// hold. The dock is the surface that still leaves on a push.
+func shouldDisplaceWorkspaceHeader(overlays: DashTrayPresentation) -> Bool {
+  overlays.presented
 }

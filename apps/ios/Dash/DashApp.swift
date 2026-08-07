@@ -6,7 +6,6 @@ import SwiftUI
 
 @main
 struct DashApp: App {
-  @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
   @State private var model: AppModel
 
   init() {
@@ -17,30 +16,11 @@ struct DashApp: App {
     // one toggle still silences every buzz in the app.
     DitherHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
     GlobeHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
-    #if DEBUG
-      let model: AppModel
-      if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion")
-        || ProcessInfo.processInfo.arguments.contains("-uiTestR2TrayFlight")
-      {
-        DeferredDeletionUITestBackend.reset()
-        model = AppModel(
-          tokenStore: DeferredDeletionUITestTokenStore(),
-          session: DeferredDeletionUITestBackend.session,
-          deferredDeletionPersistence: nil)
-      } else {
-        model = AppModel(featureCachePersistence: FeatureCachePersistence())
-      }
-    #else
-      let model = AppModel(featureCachePersistence: FeatureCachePersistence())
-    #endif
+    let model = AppModel(featureCachePersistence: FeatureCachePersistence())
     _model = State(initialValue: model)
     if ICloudPreferencesSync.shouldStartForCurrentProcess {
       ICloudPreferencesSync.shared.start()
     }
-    // System callbacks can arrive before SwiftUI mounts a scene (notably a
-    // content-available launch). Wire the delegate during app construction,
-    // rather than waiting for the root view's first onAppear.
-    pushDelegate.inbox = model
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
     AppDependencyManager.shared.add(dependency: model)
@@ -97,31 +77,8 @@ struct DashApp: App {
 
   var body: some Scene {
     WindowGroup {
-      #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-uiTestR2TrayFlight") {
-          R2TrayFlightTestHost()
-            .tint(DashTheme.brand)
-            .environment(model)
-        } else if ProcessInfo.processInfo.arguments.contains("-uiTestTrayMotion") {
-          TrayMotionTestHost()
-            .tint(DashTheme.brand)
-            .environment(model)
-        } else if ProcessInfo.processInfo.arguments.contains("-uiTestKeyboardForm") {
-          KeyboardDismissalTestHost()
-            .tint(DashTheme.brand)
-            .environment(model)
-        } else if ProcessInfo.processInfo.arguments.contains("-uiTestDeferredDeletion") {
-          DeferredDeletionTestHost()
-            .tint(DashTheme.brand)
-            .environment(model)
-        } else {
-          RootWithSplash(model: model)
-            .tint(DashTheme.brand)
-        }
-      #else
-        RootWithSplash(model: model)
-          .tint(DashTheme.brand)
-      #endif
+      RootWithSplash(model: model)
+        .tint(DashTheme.brand)
     }
   }
 }
@@ -141,11 +98,11 @@ private struct RootWithSplash: View {
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system
     .rawValue
   @State private var phase: Phase = .holding
-  /// Layout size of the magnified overlay lockup; the position/scale math
-  /// needs it to keep the icon's center on target through every phase.
-  @State private var lockupSize: CGSize = .zero
+  /// Shared with the toast layer's window and with every tray that schedules a
+  /// success-check flight into it.
+  @State private var toastLayerState = DashToastLayerState()
 
-  private enum Phase {
+  enum Phase {
     case holding, shrinking, branding, landing, done
 
     /// The icon is alone and centered until the shrink settles; the wordmark
@@ -160,36 +117,31 @@ private struct RootWithSplash: View {
   private static let shrinkDamping: Double = 0.62
   /// Lets the shrink's bounce read before the wordmark opens beside it.
   private static let shrinkHold: Duration = .milliseconds(360)
-  private static let brandDuration: TimeInterval = 0.5
+  fileprivate static let brandDuration: TimeInterval = 0.5
   /// Wordmark expansion plus a read beat before the lockup departs.
   private static let brandHold: Duration = .milliseconds(880)
   /// While branding, the wordmark renders at this fraction of lockup
   /// proportion — smaller beside the icon — and grows back to full proportion
   /// during landing.
-  private static let brandWordmarkScale: CGFloat = 0.8
+  fileprivate static let brandWordmarkScale: CGFloat = 0.8
   private static let landDuration: TimeInterval = 0.6
-  private static let holdingIconSize = OnboardingBrandTypography.launchIconSize
+  fileprivate static let holdingIconSize = OnboardingBrandTypography.launchIconSize
   /// Size the icon springs down to before the wordmark joins it. The lockup's
   /// own proportion sets the wordmark off the icon, so at launch-logo size the
   /// word "Dash" arrives near 76pt and overpowers the beat it introduces;
   /// shrinking first keeps the brand row in proportion at ~48pt.
   private static let brandIconSize: CGFloat = 56
-  private static let brandScale = brandIconSize / holdingIconSize
+  fileprivate static let brandScale = brandIconSize / holdingIconSize
   /// The overlay lockup lays out at launch-logo size and scales *down* onto
   /// the welcome header — supersampled, so the wordmark stays crisp through
   /// the whole morph.
-  private static let magnification = OnboardingBrandTypography.launchMagnification
+  fileprivate static let magnification = OnboardingBrandTypography.launchMagnification
 
   private var appLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
   }
 
   private var effectiveDynamicTypeSize: DynamicTypeSize {
-    #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("-ui-preview-accessibility-text") {
-        return .accessibility3
-      }
-    #endif
     return dynamicTypeSize
   }
 
@@ -205,7 +157,10 @@ private struct RootWithSplash: View {
           // at handoff (the root view's frame is inset by asymmetric safe
           // areas).
           GeometryReader { proxy in
-            splashOverlay(in: proxy, target: anchor.map { proxy[$0] })
+            SplashOverlay(
+              phase: phase,
+              target: anchor.map { proxy[$0] },
+              containerSize: proxy.size)
           }
           .ignoresSafeArea()
           .allowsHitTesting(false)
@@ -215,12 +170,22 @@ private struct RootWithSplash: View {
       .environment(model)
       .environment(\.locale, appLanguage.locale)
       .environment(\.dynamicTypeSize, effectiveDynamicTypeSize)
+      .environment(\.dashToastLayerState, toastLayerState)
       .environment(\.dashSplashLifted, phase != .holding)
       .environment(\.dashLoginIconCloaked, phase != .done)
       // `DashL10n` and absolute date/time formatting resolve against the
       // in-app locale; rebinding identity applies a language change without
       // relaunching.
       .id(languageRaw)
+      // Outside that identity on purpose: a language change must refresh the
+      // layer's root view, not tear its window down and raise a new one under
+      // a toast that is already on screen.
+      .dashToastLayer(
+        toastLayerState,
+        model: model,
+        locale: appLanguage.locale,
+        dynamicTypeSize: effectiveDynamicTypeSize
+      )
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
       }
@@ -228,14 +193,12 @@ private struct RootWithSplash: View {
         appLanguage.applyToProcess()
         // The notification extension has its own defaults suite; the App Group
         // mirror is the only way the language choice reaches it.
-        DashAlertStrings.mirrorLanguage(languageRaw)
         DashChartStylePreference.mirrorToWidgets()
         HomeActions.mirrorToAppGroup(
           UserDefaults.standard.string(forKey: HomeActions.key) ?? HomeActions.defaultValue)
       }
       .onChange(of: languageRaw) { _, _ in
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()
-        DashAlertStrings.mirrorLanguage(languageRaw)
         DashWidgetBridges.reloadMetricsWidgets()
         model.discardLocalizedCaches()
       }
@@ -277,9 +240,27 @@ private struct RootWithSplash: View {
       }
   }
 
-  /// Matches `UILaunchScreen` composition while holding. `target` is the
-  /// welcome lockup icon's frame when onboarding is mounted underneath.
-  private func splashOverlay(in proxy: GeometryProxy, target: CGRect?) -> some View {
+}
+
+/// The launch lockup that glides onto the welcome header.
+///
+/// It owns `lockupSize` — the geometry action that measures it must NOT live on
+/// the view that hosts `AppRootView` and reads the landing anchor. It did, and
+/// every measurement re-ran the whole app tree AND re-resolved the anchor
+/// preference, which moved the very lockup being measured: SwiftUI reported the
+/// re-entry as "Geometry action is cycling between duplicate values". Scoping
+/// the state to this leaf is the same rule the workspace wash and the header
+/// scroll probe already follow — a geometry value gets exactly one reader.
+private struct SplashOverlay: View {
+  let phase: RootWithSplash.Phase
+  /// The welcome lockup icon's frame, once onboarding is mounted underneath.
+  let target: CGRect?
+  let containerSize: CGSize
+  /// Layout size of the magnified overlay lockup; the position/scale math
+  /// needs it to keep the icon's center on target through every phase.
+  @State private var lockupSize: CGSize = .zero
+
+  var body: some View {
     let hasBackdrop = phase == .holding || phase == .shrinking || phase == .branding
     let measured = lockupSize.width > 0
     let wordmarkShown = phase.showsWordmark && target != nil
@@ -294,35 +275,48 @@ private struct RootWithSplash: View {
         Image("LaunchLogo")
           .resizable()
           .scaledToFit()
-          .frame(width: Self.holdingIconSize, height: Self.holdingIconSize)
+          .frame(width: RootWithSplash.holdingIconSize, height: RootWithSplash.holdingIconSize)
           .clipShape(
             RoundedRectangle(
-              cornerRadius: Self.holdingIconSize * OnboardingBrandIcon.cornerFactor,
+              cornerRadius: RootWithSplash.holdingIconSize * OnboardingBrandIcon.cornerFactor,
               style: .continuous
             )
           )
-          .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+          .position(x: containerSize.width / 2, y: containerSize.height / 2)
       }
 
       OnboardingBrandLockup(
         icon: "LaunchLogo",
-        magnification: Self.magnification,
+        magnification: RootWithSplash.magnification,
         wordmarkShown: wordmarkShown,
-        wordmarkScale: phase == .landing || phase == .done ? 1 : Self.brandWordmarkScale,
+        wordmarkScale: phase == .landing || phase == .done ? 1 : RootWithSplash.brandWordmarkScale,
         staggersWordmark: true
       )
       // Belt over the phase transaction: if the landing anchor arrives late
       // (slow bootstrap), the wordmark still expands instead of popping in.
       .animation(
-        .spring(response: Self.brandDuration, dampingFraction: 0.85), value: wordmarkShown
+        .spring(response: RootWithSplash.brandDuration, dampingFraction: 0.85), value: wordmarkShown
       )
+      // `proxy` here is the LOCKUP's own geometry, not the container's — the
+      // two are different proxies and the position math needs this one.
+      //
+      // Deadbanded like the tray's measured heights (`DashTrayMeasuredHeight`):
+      // this measures a view that is ANIMATING — the wordmark springs open
+      // beside the icon — and re-proposals inside a single frame hand the
+      // action two values that differ by a fraction of a point, which SwiftUI
+      // reports as a cycling geometry action. Real size changes here are tens
+      // of points, so a sub-point gate cannot swallow one.
       .onGeometryChange(for: CGSize.self) { proxy in
         proxy.size
       } action: { size in
+        guard
+          DashTrayMeasuredHeight.shouldCommit(lockupSize.width, size.width)
+            || DashTrayMeasuredHeight.shouldCommit(lockupSize.height, size.height)
+        else { return }
         lockupSize = size
       }
-      .scaleEffect(lockupScale(target: target, in: proxy), anchor: lockupIconAnchor)
-      .position(lockupPosition(target: target, in: proxy))
+      .scaleEffect(lockupScale, anchor: lockupIconAnchor)
+      .position(lockupPosition)
       .opacity(measured && (hasBackdrop || target != nil) ? 1 : 0)
     }
   }
@@ -331,12 +325,12 @@ private struct RootWithSplash: View {
   /// the icon exactly regardless of the current scale.
   private var lockupIconAnchor: UnitPoint {
     guard lockupSize.width > 0 else { return .center }
-    return UnitPoint(x: Self.holdingIconSize / 2 / lockupSize.width, y: 0.5)
+    return UnitPoint(x: RootWithSplash.holdingIconSize / 2 / lockupSize.width, y: 0.5)
   }
 
   /// Distance from the lockup's layout center to its icon's center.
   private var iconCenterInset: CGFloat {
-    lockupSize.width / 2 - Self.holdingIconSize / 2
+    lockupSize.width / 2 - RootWithSplash.holdingIconSize / 2
   }
 
   /// What the branding lockup actually spans on screen: icon + gap + the
@@ -344,21 +338,21 @@ private struct RootWithSplash: View {
   /// while `brandWordmarkScale` < 1, so centering and overflow math must use
   /// this instead of `lockupSize`.
   private var brandingVisualWidth: CGFloat {
-    let gap = 8 * Self.magnification
-    let textWidth = max(0, lockupSize.width - Self.holdingIconSize - gap)
-    return Self.holdingIconSize + gap + textWidth * Self.brandWordmarkScale
+    let gap = 8 * RootWithSplash.magnification
+    let textWidth = max(0, lockupSize.width - RootWithSplash.holdingIconSize - gap)
+    return RootWithSplash.holdingIconSize + gap + textWidth * RootWithSplash.brandWordmarkScale
   }
 
   /// Brand size unless the expanded lockup would still overflow the screen
   /// (large Dynamic Type), in which case the whole group contracts further to
   /// fit. Shared with the shrink phase so the icon settles on the size the
   /// wordmark then opens beside — one size change, not two.
-  private func brandingScale(in proxy: GeometryProxy) -> CGFloat {
-    guard lockupSize.width > 0 else { return Self.brandScale }
-    return min(Self.brandScale, (proxy.size.width - 48) / brandingVisualWidth)
+  private var brandingScale: CGFloat {
+    guard lockupSize.width > 0 else { return RootWithSplash.brandScale }
+    return min(RootWithSplash.brandScale, (containerSize.width - 48) / brandingVisualWidth)
   }
 
-  private func lockupScale(target: CGRect?, in proxy: GeometryProxy) -> CGFloat {
+  private var lockupScale: CGFloat {
     switch phase {
     case .holding:
       return 1
@@ -366,15 +360,15 @@ private struct RootWithSplash: View {
       // Deliberately not gated on the landing anchor: the shrink is the
       // splash's own beat, and gating it would make a late anchor snap the
       // icon down with no animation to carry it.
-      return brandingScale(in: proxy)
+      return brandingScale
     case .landing, .done:
       guard let target, target.width > 0 else { return 1 }
-      return target.width / Self.holdingIconSize
+      return target.width / RootWithSplash.holdingIconSize
     }
   }
 
-  private func lockupPosition(target: CGRect?, in proxy: GeometryProxy) -> CGPoint {
-    let center = CGPoint(x: proxy.size.width / 2, y: proxy.size.height / 2)
+  private var lockupPosition: CGPoint {
+    let center = CGPoint(x: containerSize.width / 2, y: containerSize.height / 2)
     guard lockupSize.width > 0 else { return center }
     switch phase {
     case .holding, .shrinking:
@@ -389,8 +383,8 @@ private struct RootWithSplash: View {
       guard target != nil else {
         return CGPoint(x: center.x + iconCenterInset, y: center.y)
       }
-      let scale = brandingScale(in: proxy)
-      let shift = (brandingVisualWidth - Self.holdingIconSize) / 2 * scale
+      let scale = brandingScale
+      let shift = (brandingVisualWidth - RootWithSplash.holdingIconSize) / 2 * scale
       return CGPoint(x: center.x - shift + iconCenterInset, y: center.y)
     case .landing, .done:
       guard let target else {
@@ -400,311 +394,3 @@ private struct RootWithSplash: View {
     }
   }
 }
-
-#if DEBUG
-  private struct R2TrayFlightTestHost: View {
-    @Environment(AppModel.self) private var model
-    private let sourceID = "ui-test-r2-create-source"
-    @State private var ready = false
-    @State private var presentsTray = false
-    @State private var created = false
-    @State private var flightRan = false
-
-    var body: some View {
-      VStack(spacing: 12) {
-        if ready {
-          Button {
-            presentsTray = true
-          } label: {
-            Text(verbatim: "Open R2 create")
-              .frame(width: 160, height: 72)
-          }
-          .accessibilityIdentifier(sourceID)
-          .dashTraySource(id: sourceID)
-        } else {
-          ProgressView()
-        }
-        if created { Text(verbatim: "Bucket created") }
-        if flightRan { Text(verbatim: "Success flight ran") }
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .dashTray(
-        isPresented: $presentsTray,
-        title: "Create R2 bucket",
-        tone: FeatureVisualIdentity.tone(for: .r2),
-        sourceID: sourceID
-      ) {
-        R2CreateBucketSheet { created = true }
-      }
-      .dashToastHost()
-      .onReceive(
-        NotificationCenter.default.publisher(for: .dashTraySuccessFlightDidBegin)
-      ) { _ in
-        flightRan = true
-      }
-      .task {
-        model.activeAccountID = "ui-account"
-        model.grantedScopes = DashAuthorizationScopes.core
-        model.selectedScopes = DashAuthorizationScopes.core
-        ready = true
-      }
-    }
-  }
-
-  private struct TrayMotionTestHost: View {
-    private let sourceID = "ui-test-tray-source"
-    @State private var presentsTray = false
-    @State private var reduceMotion = false
-
-    var body: some View {
-      VStack {
-        Button {
-          presentsTray = true
-        } label: {
-          Text(verbatim: "Open anchored tray")
-            .frame(width: 160, height: 72)
-        }
-        .accessibilityIdentifier(sourceID)
-        .dashTraySource(id: sourceID)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .dashTray(
-        isPresented: $presentsTray,
-        title: "Actions",
-        sourceID: sourceID
-      ) {
-        VStack(spacing: 16) {
-          Text(verbatim: "Tray content")
-          Button {
-            reduceMotion = true
-          } label: {
-            Text(verbatim: "Enable Reduce Motion")
-          }
-          .accessibilityIdentifier("ui-test-enable-reduce-motion")
-        }
-        .frame(maxWidth: .infinity, minHeight: 120)
-      }
-      .dashTrayTestReduceMotionOverride(reduceMotion)
-    }
-  }
-
-  private struct KeyboardDismissalTestHost: View {
-    @State private var text = ""
-    @State private var presentsForm = true
-
-    var body: some View {
-      Color.clear
-        .dashTray(isPresented: $presentsForm, title: "Keyboard test") {
-          DashFormSheet(
-            onSave: {},
-            content: {
-              VStack(spacing: 24) {
-                DashFormField(label: "Name", text: $text)
-                Text(verbatim: "Form background")
-                  .frame(maxWidth: .infinity, minHeight: 80)
-              }
-            }
-          )
-        }
-    }
-  }
-
-  private struct DeferredDeletionTestHost: View {
-    @Environment(AppModel.self) private var model
-    @State private var ready = false
-    @State private var navigator = DestinationNavigator()
-
-    var body: some View {
-      Group {
-        if ready {
-          DestinationStackHost(navigator: navigator, isTabActive: true) {
-            Color.clear
-          }
-        } else {
-          ProgressView()
-        }
-      }
-      .dashToastHost()
-      .task {
-        model.activeAccountID = "ui-account"
-        model.grantedScopes = DashAuthorizationScopes.core
-        model.selectedScopes = DashAuthorizationScopes.core
-        model.featureCache.set(
-          FeatureCacheKey.dnsRecords("ui-zone"),
-          Self.records,
-          ttl: nil)
-        model.deferredDeletions.activateCredential(
-          profileID: "ui-deferred-profile",
-          availableAccountIDs: ["ui-account"])
-        navigator.setAccountScope("ui-account")
-        navigator.reset(to: .dns("ui-zone"))
-        ready = true
-      }
-    }
-
-    private static var records: [DNSRecord] {
-      let data = Data(DeferredDeletionUITestBackend.recordsJSON.utf8)
-      return (try? JSONDecoder().decode([DNSRecord].self, from: data)) ?? []
-    }
-  }
-
-  private struct DeferredDeletionUITestTokenStore: TokenStore {
-    func clear() async throws {}
-    func getAccessToken() async throws -> String? { "ui-test-token" }
-    func getRefreshToken() async throws -> String? { nil }
-    func setTokens(_: TokenSet) async throws {}
-  }
-
-  /// Deterministic URLProtocol backend for the production DNS screen used by
-  /// the UI test. It prevents either the refresh callback or a slow test run
-  /// from reaching Cloudflare or the simulator's persisted Keychain.
-  private final class DeferredDeletionUITestBackend: URLProtocol {
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var deletedRecordIDs: Set<String> = []
-
-    static let session: URLSession = {
-      let configuration = URLSessionConfiguration.ephemeral
-      configuration.protocolClasses = [DeferredDeletionUITestBackend.self]
-      return URLSession(configuration: configuration)
-    }()
-
-    static let recordJSONByID = [
-      "record-1":
-        """
-      {
-        "id": "record-1",
-        "zone_id": "ui-zone",
-        "type": "A",
-        "name": "api.example.com",
-        "content": "192.0.2.1",
-        "proxied": false,
-        "ttl": 1
-      }
-      """,
-      "record-2":
-        """
-      {
-        "id": "record-2",
-        "zone_id": "ui-zone",
-        "type": "CNAME",
-        "name": "www.example.com",
-        "content": "api.example.com",
-        "proxied": true,
-        "ttl": 1
-      }
-      """,
-    ]
-
-    static var recordsJSON: String {
-      let records = lock.withLock {
-        recordJSONByID.keys.sorted().compactMap { id in
-          deletedRecordIDs.contains(id) ? nil : recordJSONByID[id]
-        }
-      }
-      return "[\(records.joined(separator: ","))]"
-    }
-
-    static func reset() {
-      lock.withLock { deletedRecordIDs.removeAll() }
-    }
-
-    override class func canInit(with _: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-      let reply = Self.reply(to: request)
-      let response = HTTPURLResponse(
-        url: request.url ?? URL(string: "https://api.cloudflare.com")!,
-        statusCode: reply.status,
-        httpVersion: nil,
-        headerFields: ["Content-Type": "application/json"])!
-      client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-      client?.urlProtocol(self, didLoad: Data(reply.body.utf8))
-      client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
-
-    private static func reply(to request: URLRequest) -> (status: Int, body: String) {
-      guard let url = request.url else { return missingResponse }
-      var path = url.path
-      if path.hasPrefix("/client/v4") {
-        path.removeFirst("/client/v4".count)
-      }
-      let parts = path.split(separator: "/").map(String.init)
-      let method = (request.httpMethod ?? "GET").uppercased()
-      if parts == ["accounts", "ui-account", "r2", "buckets"], method == "POST" {
-        return (
-          200,
-          """
-          {
-            "success": true,
-            "errors": [],
-            "messages": [],
-            "result": {
-              "name": "ui-bucket",
-              "creation_date": "2026-08-04T00:00:00Z"
-            }
-          }
-          """
-        )
-      }
-      guard
-        parts.count >= 3,
-        parts[0] == "zones",
-        parts[1] == "ui-zone",
-        parts[2] == "dns_records"
-      else { return missingResponse }
-
-      if parts.count == 3, method == "GET" {
-        let records = recordsJSON
-        let count = lock.withLock { recordJSONByID.count - deletedRecordIDs.count }
-        return (
-          200,
-          """
-          {
-            "success": true,
-            "errors": [],
-            "messages": [],
-            "result": \(records),
-            "result_info": {
-              "page": 1,
-              "per_page": 50,
-              "count": \(count),
-              "total_count": \(count),
-              "total_pages": 1
-            }
-          }
-          """
-        )
-      }
-
-      guard parts.count == 4 else { return missingResponse }
-      let recordID = parts[3]
-      if method == "DELETE", recordJSONByID[recordID] != nil {
-        lock.withLock { _ = deletedRecordIDs.insert(recordID) }
-        return (
-          200,
-          #"{"success":true,"errors":[],"messages":[],"result":{"id":"\#(recordID)"}}"#
-        )
-      }
-      if method == "GET",
-        let record = recordJSONByID[recordID],
-        lock.withLock({ !deletedRecordIDs.contains(recordID) })
-      {
-        return (
-          200,
-          #"{"success":true,"errors":[],"messages":[],"result":\#(record)}"#
-        )
-      }
-      return missingResponse
-    }
-
-    private static var missingResponse: (status: Int, body: String) {
-      (
-        404,
-        #"{"success":false,"errors":[{"code":81044,"message":"Record not found"}],"messages":[],"result":null}"#
-      )
-    }
-  }
-#endif

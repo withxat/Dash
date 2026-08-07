@@ -543,73 +543,36 @@ public struct RUMPageviewsDay: Codable, Hashable, Sendable {
   }
 }
 
-/// One day of Web Analytics (RUM) beacon metrics for a site, matching the three
-/// headline figures on Cloudflare's Web Analytics dashboard. `pageviews` and
-/// `visits` come from the pageload dataset; `pageLoadTimeP50Ms` is the median
-/// page-load time in milliseconds from the separate performance dataset, and is
-/// `nil` on days that reported no Performance-API timings.
+/// One day of Web Analytics (RUM) beacon metrics for a site. `pageviews` and
+/// `visits` both come from the pageload dataset — the only one this endpoint
+/// queries. Page-load time and Core Web Vitals are deliberately absent: the
+/// screen dropped both, and with them the only reason to query the performance
+/// and web-vitals datasets at all.
 public struct RUMDailyMetrics: Codable, Hashable, Sendable {
   public let date: String
   public let pageviews: Int
   public let visits: Int
-  public let pageLoadTimeP50Ms: Int?
-  /// Core Web Vitals p75 for the day. LCP / INP are milliseconds; CLS is the
-  /// unitless shift score. Absent when the vitals dataset has no samples.
-  public let lcpP75Ms: Double?
-  public let inpP75Ms: Double?
-  public let clsP75: Double?
 
-  public init(
-    date: String, pageviews: Int, visits: Int, pageLoadTimeP50Ms: Int?,
-    lcpP75Ms: Double? = nil, inpP75Ms: Double? = nil, clsP75: Double? = nil
-  ) {
+  public init(date: String, pageviews: Int, visits: Int) {
     self.date = date
     self.pageviews = pageviews
     self.visits = visits
-    self.pageLoadTimeP50Ms = pageLoadTimeP50Ms
-    self.lcpP75Ms = lcpP75Ms
-    self.inpP75Ms = inpP75Ms
-    self.clsP75 = clsP75
   }
 }
 
 /// Two adjacent complete-day Web Analytics windows. `days` contains the daily
-/// buckets for both windows so charts can draw the current period. The two
-/// optional totals are the exact whole-window medians returned by Cloudflare;
-/// they remain `nil` when an older fixture or compatible backend omits the
-/// ungrouped performance aliases. Whole-window Web Vitals p75s follow the same
-/// pattern from `rumWebVitalsEventsAdaptiveGroups`.
+/// buckets for both windows, so the caller splits the current period from its
+/// comparison by date without a second request.
+///
+/// There are no whole-window totals here any more: they existed for page-load
+/// time and Core Web Vitals, the two metrics whose exact p50 / p75 could not be
+/// re-derived by averaging daily quantiles. Both are gone from the screen, and
+/// page views and visits simply sum.
 public struct RUMMetricsComparison: Codable, Hashable, Sendable {
   public let days: [RUMDailyMetrics]
-  public let currentPageLoadTimeP50Ms: Int?
-  public let previousPageLoadTimeP50Ms: Int?
-  public let currentLcpP75Ms: Double?
-  public let previousLcpP75Ms: Double?
-  public let currentInpP75Ms: Double?
-  public let previousInpP75Ms: Double?
-  public let currentClsP75: Double?
-  public let previousClsP75: Double?
 
-  public init(
-    days: [RUMDailyMetrics],
-    currentPageLoadTimeP50Ms: Int? = nil,
-    previousPageLoadTimeP50Ms: Int? = nil,
-    currentLcpP75Ms: Double? = nil,
-    previousLcpP75Ms: Double? = nil,
-    currentInpP75Ms: Double? = nil,
-    previousInpP75Ms: Double? = nil,
-    currentClsP75: Double? = nil,
-    previousClsP75: Double? = nil
-  ) {
+  public init(days: [RUMDailyMetrics]) {
     self.days = days
-    self.currentPageLoadTimeP50Ms = currentPageLoadTimeP50Ms
-    self.previousPageLoadTimeP50Ms = previousPageLoadTimeP50Ms
-    self.currentLcpP75Ms = currentLcpP75Ms
-    self.previousLcpP75Ms = previousLcpP75Ms
-    self.currentInpP75Ms = currentInpP75Ms
-    self.previousInpP75Ms = previousInpP75Ms
-    self.currentClsP75 = currentClsP75
-    self.previousClsP75 = previousClsP75
   }
 }
 

@@ -356,7 +356,15 @@ struct ZoneDetailView: View {
   /// instead of inserting a card under the hero when the answer arrives.
   @State private var rdapPhase: DashSectionPhase = .loading
 
-  private let tools: [ZoneTool] = [
+  /// Whether this zone has a Web Analytics site, and so whether its row exists.
+  /// The lookup is account-wide and session-cached, so it costs one request per
+  /// account no matter how many zones the user opens.
+  @State private var webAnalytics: ZoneWebAnalyticsAvailability = .pending
+
+  /// Every tool a zone can carry. `needsWebAnalyticsSite` marks the one entry
+  /// that is conditional, declared here rather than filtered by title so the
+  /// rule never rides on a localizable string.
+  private static let allTools: [ZoneTool] = [
     ZoneTool(
       title: "DNS", icon: SolarAsset.globus, route: Destination.dns,
       blurb: "Records and proxy status"),
@@ -366,17 +374,26 @@ struct ZoneDetailView: View {
     ZoneTool(
       title: "Web analytics", icon: SolarAsset.graph,
       route: Destination.zoneWebAnalytics,
-      blurb: "Page views and Core Web Vitals"),
+      blurb: "Browser-reported page views and visits",
+      needsWebAnalyticsSite: true),
     ZoneTool(
       title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF,
       blurb: "Blocks, countries, Under Attack"),
     ZoneTool(
       title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
-      blurb: "Purge by URL or everything"),
+      blurb: "Development Mode, Always Online, Cache Level"),
     ZoneTool(
       title: "Settings", icon: SolarAsset.settings, route: Destination.zoneSettings,
-      blurb: "Under Attack, SSL, and dev mode"),
+      blurb: "Security level, SSL, and HTTPS"),
   ]
+
+  /// The rows this zone actually gets. Web analytics joins them only once the
+  /// account's site list says a site injects into this zone — see
+  /// `ZoneWebAnalyticsAvailability`.
+  private var tools: [ZoneTool] {
+    guard !webAnalytics.showsTool else { return Self.allTools }
+    return Self.allTools.filter { !$0.needsWebAnalyticsSite }
+  }
 
   var body: some View {
     DashFeatureList(
@@ -428,7 +445,15 @@ struct ZoneDetailView: View {
           }
         ]
     )
-    .refreshable { await load(force: true) }.task { await load() }
+    .refreshable {
+      // The site list is its own request; the zone must not queue behind it,
+      // and a pull is exactly how a user who just added a site asks for the row.
+      async let zone: Void = load(force: true)
+      async let sites: Void = resolveWebAnalytics(force: true)
+      _ = await (zone, sites)
+    }
+    .task { await load() }
+    .task { await resolveWebAnalytics() }
     .overlay {
       if showsCustomizeOverlay {
         DomainCardColorCustomizeOverlay(
@@ -506,6 +531,42 @@ struct ZoneDetailView: View {
         pin: PinnedZone(accountID: accountID, zoneID: zoneID, name: zone.name))
     }
     DashDelight.lightImpact()
+  }
+
+  /// Answers whether this zone has a Web Analytics site, which is what decides
+  /// the tool row. The account's site list is read from the session cache
+  /// *before* the first `await`, so a second zone visited in the same session
+  /// resolves in the same frame as its tools and the row never inserts late.
+  ///
+  /// Failure of any kind settles `.indeterminate`, not `.absent`: a missing
+  /// grant, a dropped request, or a signed-out moment must affect only its own
+  /// feature, never quietly delete a screen the user's account may well have.
+  private func resolveWebAnalytics(force: Bool = false) async {
+    guard let context = model.accountRequestContext,
+      model.hasScopes(DashAuthorizationScopes.webAnalytics)
+    else {
+      webAnalytics = .indeterminate
+      return
+    }
+    if !force,
+      let cached = WebAnalyticsSiteIndex.cached(accountID: context.accountID, model: model)
+    {
+      webAnalytics = .resolved(zoneID: zoneID, in: cached)
+      return
+    }
+    do {
+      let sites = try await WebAnalyticsSiteIndex.load(
+        accountID: context.accountID, model: model, force: force)
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+      // Only the answer that arrives after a wait animates; the cached path
+      // above lands with the rest of the page.
+      withAnimation(DashTheme.Motion.content) {
+        webAnalytics = .resolved(zoneID: zoneID, in: sites)
+      }
+    } catch {
+      guard !error.dashIsCancellation, !Task.isCancelled else { return }
+      withAnimation(DashTheme.Motion.content) { webAnalytics = .indeterminate }
+    }
   }
 
   private func load(force: Bool = false) async {
@@ -641,7 +702,10 @@ struct ZoneDetailView: View {
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Actions") {
-        DashListRowPlaceholders(rows: tools.count)
+        // The cold reserve is the full toolset, Web analytics included: this
+        // stack over-reserves by design, and a placeholder row that recedes
+        // reads better than one that inserts under the live rows.
+        DashListRowPlaceholders(rows: Self.allTools.count)
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
@@ -650,6 +714,11 @@ struct ZoneDetailView: View {
         identifiersGroup
           .dashSectionBoundary()
           .dashBodySlot(reduceMotion: reduceMotion)
+        if let servers = zone.nameServers, !servers.isEmpty {
+          ZoneNameserversGroup(servers: servers)
+            .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
         registrationGroup()
         primaryActions()
           .dashSectionBoundary()
@@ -757,12 +826,12 @@ struct ZoneDetailView: View {
 
   private func copyZoneID() {
     UIPasteboard.general.string = zoneID
-    model.toasts.success(DashL10n.string("Zone ID copied."))
+    model.toasts.success(DashL10n.string("Zone ID copied"))
   }
 
   private func copyAccountID(_ accountID: String) {
     UIPasteboard.general.string = accountID
-    model.toasts.success(DashL10n.string("Account ID copied."))
+    model.toasts.success(DashL10n.string("Account ID copied"))
   }
 
   private func zoneHero(_ zone: CloudflareZone) -> some View {
@@ -876,7 +945,7 @@ struct ZoneDetailView: View {
     } else {
       navigator?.removeAll(ownedBy: .zone(zoneID))
     }
-    model.toasts.success(DashL10n.string("Removed from account."))
+    model.toasts.success(DashL10n.string("Removed from account"))
   }
 
   private func activationBlurb(_ zone: CloudflareZone) -> String {
@@ -929,7 +998,7 @@ struct ZoneDetailView: View {
       }
       model.toasts.success(
         DashL10n.string(
-          "Cloudflare is rechecking now — the status usually updates within a few minutes."))
+          "Cloudflare is rechecking now — the status usually updates within a few minutes"))
       activationCheckPhase = .succeeded
     } catch {
       activationCheckPhase = .idle
@@ -998,8 +1067,9 @@ struct ZoneDetailView: View {
   }
 }
 
-/// Assigned-nameserver reference shared by zone detail (activation states only)
-/// and the top of zone Settings. Cloudflare assigns two, so this stays bounded
+/// Assigned-nameserver reference on zone detail — above Registration when the
+/// domain is active, and with the activation chrome while Cloudflare still
+/// needs the records pointed. Cloudflare assigns two, so this stays bounded
 /// and can live in `DashInfoGroup`'s eager stack.
 struct ZoneNameserversGroup: View {
   let servers: [String]
@@ -1078,13 +1148,29 @@ struct DomainCardCustomizeButton: View {
 private struct DomainCardExtraRevealLayout: Layout {
   let progress: CGFloat
 
+  /// The child's own ideal height at a given width. Measuring with an
+  /// unspecified HEIGHT is the point: the container's height must be a
+  /// function of (width, progress) and nothing else. Passing the incoming
+  /// proposal's height straight through made the container flexible, so
+  /// SwiftUI's `.zero` / `.infinity` probes both came back scaled by an
+  /// animating `progress` — the parent `VStack` then re-did its flexible-child
+  /// arithmetic on every frame of the card morph, with a `lineLimit(2)`
+  /// `minimumScaleFactor` name in the same stack to flip between one and two
+  /// lines mid-flight.
+  private func naturalSize(
+    _ subview: LayoutSubview,
+    width: CGFloat?
+  ) -> CGSize {
+    subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+  }
+
   func sizeThatFits(
     proposal: ProposedViewSize,
     subviews: Subviews,
     cache: inout ()
   ) -> CGSize {
     guard let subview = subviews.first else { return .zero }
-    let natural = subview.sizeThatFits(proposal)
+    let natural = naturalSize(subview, width: proposal.width)
     let resolved = min(max(progress, 0), 1)
     return CGSize(width: natural.width, height: natural.height * resolved)
   }
@@ -1096,7 +1182,11 @@ private struct DomainCardExtraRevealLayout: Layout {
     cache: inout ()
   ) {
     guard let subview = subviews.first else { return }
-    let natural = subview.sizeThatFits(proposal)
+    // Measured at the width the child is actually GIVEN, not at the width it
+    // was proposed: those differ whenever the parent resolves something other
+    // than the proposal, and a height measured for the wrong width is the
+    // wrong height to place with — wrapping copy would be cut mid-line.
+    let natural = naturalSize(subview, width: bounds.width)
     subview.place(
       at: CGPoint(x: bounds.minX, y: bounds.maxY),
       anchor: .bottomLeading,
@@ -1418,6 +1508,10 @@ private struct ZoneTool: Identifiable {
   let icon: String
   let route: (String) -> Destination
   var blurb: String? = nil
+  /// True for a tool the zone only has when Cloudflare says so — today just
+  /// Web analytics, which needs a site added for the domain before its screen
+  /// has anything at all.
+  var needsWebAnalyticsSite: Bool = false
   var id: String { title }
 }
 
@@ -2259,10 +2353,10 @@ struct DNSRecordEditor: View {
       if let record {
         _ = try await model.client.updateDNSRecord(
           zoneID: zoneID, recordID: record.id, input: input)
-        successMessage = DashL10n.string("DNS record updated.")
+        successMessage = DashL10n.string("DNS record updated")
       } else {
         _ = try await model.client.createDNSRecord(zoneID: zoneID, input: input)
-        successMessage = DashL10n.string("DNS record created.")
+        successMessage = DashL10n.string("DNS record created")
       }
       guard !Task.isCancelled, model.isCurrentAccount(context) else {
         savePhase = .idle

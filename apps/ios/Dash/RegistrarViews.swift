@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// Registrar is not a catalog `FeatureID`, so these are literals rather than a
 /// capability lookup — the same shape `readScopes(for:)` already uses for
-/// `dns.*` and `cache.purge`. `readScopes` / `writeScopes` for
+/// `dns.*`. `readScopes` / `writeScopes` for
 /// `.registrarDomain` read them from here, so the pushed screen and the OAuth
 /// audit can never disagree about what it needs.
 enum RegistrarAccess {

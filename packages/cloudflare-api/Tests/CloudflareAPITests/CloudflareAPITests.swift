@@ -927,21 +927,16 @@ struct NetworkTests {
     #expect(recorder.paths.first?.contains("/graphql") == true)
   }
 
-  @Test func webAnalyticsMetricsJoinPageloadAndPerformanceByDate() async throws {
+  @Test func webAnalyticsMetricsDecodePageloadDaysAscending() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()
     let session = mockSession { request in
       recorder.record(request.url?.absoluteString ?? "")
-      // The performance dataset is missing 2026-07-23 on purpose: a day with no
-      // timing samples must join to a nil median, not drop the pageview row.
       let body = #"""
         {"data":{"viewer":{"accounts":[{
         "pageload":[
         {"count":46,"sum":{"visits":20},"dimensions":{"date":"2026-07-22"}},
         {"count":51,"sum":{"visits":25},"dimensions":{"date":"2026-07-23"}}
-        ],
-        "performance":[
-        {"quantiles":{"pageLoadTimeP50":812.4},"dimensions":{"date":"2026-07-22"}}
         ]}]}},"errors":null}
         """#
       return (200, Data(body.utf8))
@@ -953,18 +948,13 @@ struct NetworkTests {
     let result = try await client.webAnalyticsMetrics(
       accountID: "acct", siteTag: "site-1", days: 7)
 
+    #expect(result.days.map(\.date) == ["2026-07-22", "2026-07-23"])
     #expect(result.days.map(\.pageviews) == [46, 51])
     #expect(result.days.map(\.visits) == [20, 25])
-    #expect(result.days.first?.pageLoadTimeP50Ms == 812)  // 812.4 rounded to nearest ms
-    #expect(result.days.last?.pageLoadTimeP50Ms == nil)  // no performance row for 07-23
-    // Older fixtures have no ungrouped aliases. They still decode, but cannot
-    // truthfully provide a whole-window page-load trend.
-    #expect(result.currentPageLoadTimeP50Ms == nil)
-    #expect(result.previousPageLoadTimeP50Ms == nil)
     #expect(recorder.paths.first?.contains("/graphql") == true)
   }
 
-  @Test func webAnalyticsMetricsUsesCompleteEqualUTCWindowsAndWholeWindowP50s() async throws {
+  @Test func webAnalyticsMetricsQueriesOnlyPageloadOverCompleteUTCDays() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()
     let session = mockSession { request in
@@ -972,12 +962,7 @@ struct NetworkTests {
         recorder.record(String(decoding: body, as: UTF8.self))
       }
       let body = #"""
-        {"data":{"viewer":{"accounts":[{
-        "pageload":[],
-        "performance":[],
-        "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":731.6}}],
-        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":845.2}}]
-        }]}},"errors":null}
+        {"data":{"viewer":{"accounts":[{"pageload":[]}]}},"errors":null}
         """#
       return (200, Data(body.utf8))
     }
@@ -988,15 +973,16 @@ struct NetworkTests {
     let result = try await client.webAnalyticsMetrics(
       accountID: "acct", siteTag: "site-1", days: 7)
 
-    #expect(result.currentPageLoadTimeP50Ms == 732)
-    #expect(result.previousPageLoadTimeP50Ms == 845)
+    #expect(result.days.isEmpty)
     let body = try #require(recorder.paths.first)
     let request = try JSONDecoder().decode([String: String].self, from: Data(body.utf8))
     let query = try #require(request["query"])
-    #expect(query.contains("currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
-    #expect(query.contains("previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups"))
-    #expect(query.contains("vitals: rumWebVitalsEventsAdaptiveGroups"))
-    #expect(query.contains("currentVitalsTotals: rumWebVitalsEventsAdaptiveGroups"))
+    // The performance dataset carried only page-load time and the web-vitals
+    // dataset only LCP / INP / CLS. Both metrics left the screen — querying
+    // either again would pay for numbers nothing reads.
+    #expect(!query.contains("rumPerformanceEventsAdaptiveGroups"))
+    #expect(!query.contains("rumWebVitalsEventsAdaptiveGroups"))
+    #expect(query.contains("pageload: rumPageloadEventsAdaptiveGroups"))
 
     let regex = try NSRegularExpression(
       pattern: #"datetime_(?:geq|lt): "([^"]+)""#)
@@ -1005,16 +991,12 @@ struct NetworkTests {
       guard let valueRange = Range(match.range(at: 1), in: query) else { return nil }
       return ISO8601DateFormatter().date(from: String(query[valueRange]))
     }
-    // Daily window is reused for pageload / performance / vitals; current and
-    // previous windows each appear on performance + vitals totals.
-    #expect(timestamps.count == 14)
-    let boundaries = Array(Set(timestamps)).sorted()
-    #expect(boundaries.count == 3)
-    let previousStart = try #require(boundaries.first)
-    let currentStart = try #require(boundaries.dropFirst().first)
-    let end = try #require(boundaries.last)
-    #expect(end.timeIntervalSince(currentStart) == 7 * 86400)
-    #expect(currentStart.timeIntervalSince(previousStart) == 7 * 86400)
+    // One filter, spanning both windows: the caller splits current from
+    // comparison by date rather than paying for a second aliased query.
+    #expect(timestamps.count == 2)
+    let start = try #require(timestamps.first)
+    let end = try #require(timestamps.last)
+    #expect(end.timeIntervalSince(start) == 14 * 86400)
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC")!
     #expect(

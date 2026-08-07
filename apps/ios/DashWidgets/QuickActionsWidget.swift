@@ -112,7 +112,6 @@ extension HomeActionID {
     case .addWorkerDomain: String(localized: "Worker domain")
     case .enableDevelopmentMode: String(localized: "Dev mode")
     case .enableUnderAttackMode: String(localized: "Under Attack")
-    case .purgeCache: String(localized: "Purge cache")
     }
   }
 
@@ -128,7 +127,6 @@ extension HomeActionID {
     case .addWorkerDomain: "curlybraces"
     case .enableDevelopmentMode: "slider.horizontal.3"
     case .enableUnderAttackMode: "shield.fill"
-    case .purgeCache: "bolt.fill"
     }
   }
 }

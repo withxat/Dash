@@ -33,11 +33,11 @@ enum DashOptimisticVerb: Equatable, Sendable {
 
   var successMessage: String {
     switch self {
-    case .enabling: DashL10n.string("Enabled successfully.")
-    case .disabling: DashL10n.string("Disabled successfully.")
-    case .setting: DashL10n.string("Set successfully.")
-    case .updating: DashL10n.string("Updated successfully.")
-    case .operating: DashL10n.string("Completed successfully.")
+    case .enabling: DashL10n.string("Enabled successfully")
+    case .disabling: DashL10n.string("Disabled successfully")
+    case .setting: DashL10n.string("Set successfully")
+    case .updating: DashL10n.string("Updated successfully")
+    case .operating: DashL10n.string("Completed successfully")
     }
   }
 }

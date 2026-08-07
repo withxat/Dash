@@ -3,16 +3,18 @@ import SwiftDitherKit
 import SwiftGlobeKit
 import SwiftUI
 
-struct CachePurgeView: View {
+/// Cache settings for one zone: Development Mode, Always Online, and Cache
+/// Level.
+struct ZoneCacheView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let zoneID: String
-  @State private var url = ""
-  @State private var status: String?
-  @State private var failed = false
-  @State private var actionPhase: DashActionPhase = .idle
-  @State private var showsMore = false
+  @State private var settings: [ZoneSetting] = []
+  @State private var error: String?
+  @State private var loading = true
+  @State private var updatingSettingIDs: Set<String> = []
+  @State private var hasPresentedContent = false
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .cache(zoneID))
@@ -22,137 +24,205 @@ struct CachePurgeView: View {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
   }
 
-  var body: some View {
-    DashFeatureScreen {
-      ScrollView {
-        VStack(spacing: DashTheme.Spacing.section) {
-          DashCard {
-            VStack(alignment: .leading, spacing: 16) {
-              if !allowsWrites {
-                FeatureWriteAccessNotice(
-                  message: "Read-only — grant cache purge access before removing cached assets.",
-                  scopes: requiredWriteScopes)
-              }
-              VStack(alignment: .leading, spacing: 4) {
-                Text("Purge by URL")
-                  .dashTextStyle(.sectionTitle)
-                  .foregroundStyle(DashTheme.strong)
-                Text("Remove one cached asset without disturbing the rest of the domain.")
-                  .dashTextStyle(.supporting)
-                  .foregroundStyle(DashTheme.subtle)
-              }
-              DashFormField(
-                label: "Asset URL",
-                text: $url,
-                keyboard: .URL,
-                contentType: .URL
-              )
-              .disabled(!allowsWrites)
-              DashPillButton(
-                title: "Purge URL",
-                phase: actionPhase,
-                isEnabled: allowsWrites && !url.isEmpty,
-                onSuccessPresentationCompleted: { actionPhase = .idle }
-              ) {
-                Task { await purge(files: [url]) }
-              }
-            }
-          }
-
-          if let status {
-            DashNotice(kind: failed ? .error : .success, message: status)
-              .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.98)))
-          }
-        }
-        .padding(.horizontal, DashTheme.Spacing.screen)
-        .padding(.top, DashTheme.Spacing.section)
-        .padding(.bottom, DashTheme.Spacing.scrollBottomInset)
-        .animation(
-          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.quick, value: status)
-      }
-      .dashKeyboardDismissal()
-    }
-    .detailHeader(icon: .solar(SolarAsset.Content.bolt), title: "Cache")
-    .dashPageActions(
-      trailing: allowsWrites
-        ? [
-          .icon(
-            id: "cache-more-actions",
-            asset: SolarAsset.menuDots,
-            accessibilityLabel: "More actions"
-          ) {
-            showsMore = true
-          }
-        ]
-        : []
-    )
-    .dashMoreMenu(
-      isPresented: $showsMore,
-      title: "Purge cache",
-      actions: [
-        DashDangerAction(
-          title: "Purge everything",
-          message:
-            "This removes every cached asset in this domain. Requests may temporarily reach your origin.",
-          confirmTitle: "Purge everything"
-        ) {
-          try await performPurge(files: nil)
-        }
-      ]
-    )
+  private var curated: [ZoneSetting] {
+    curatedCacheSettings.compactMap { id in settings.first { $0.id == id } }
   }
 
-  private func purge(files: [String]?) async {
+  private var toggleSettings: [ZoneSetting] {
+    curated.filter { $0.id != "cache_level" }
+  }
+
+  private var cacheLevelSetting: ZoneSetting? {
+    curated.first { $0.id == "cache_level" }
+  }
+
+  var body: some View {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: hasPresentedContent,
+      retry: { Task { await load() } }
+    ) { mode in
+      if mode.isPlaceholder {
+        DashSurfaceStack {
+          DashToggleRowPlaceholder()
+          DashToggleRowPlaceholder()
+        }
+        .dashBodySlot(reduceMotion: reduceMotion)
+        DashToggleRowPlaceholder()
+          .dashSectionBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else {
+        if !allowsWrites {
+          FeatureWriteAccessNotice(
+            message: "Read-only — grant zone settings write access to change cache settings.",
+            scopes: requiredWriteScopes
+          )
+          .dashBodySlot(reduceMotion: reduceMotion)
+        }
+        DashSurfaceStack {
+          ForEach(toggleSettings) { setting in
+            cacheSettingRow(setting)
+          }
+        }
+        .dashSectionBoundary(!allowsWrites)
+        .dashBodySlot(reduceMotion: reduceMotion)
+        if let cacheLevelSetting {
+          cacheSettingRow(cacheLevelSetting)
+            .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      }
+    }
+    .detailHeader(icon: .solar(SolarAsset.Content.bolt), title: "Cache")
+    .refreshable { await load(force: true) }
+    .task { await load() }
+  }
+
+  @ViewBuilder
+  private func cacheSettingRow(_ setting: ZoneSetting) -> some View {
+    if setting.editable == false {
+      DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
+    } else {
+      switch setting.value {
+      case .string(let value):
+        if let options = zoneSettingOptions[setting.id] {
+          DashMenuRow(
+            title: setting.displayTitle,
+            value: value,
+            options: options,
+            isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
+            isLoading: updatingSettingIDs.contains(setting.id)
+          ) { chosen in
+            scheduleUpdate(setting, value: .string(chosen))
+          }
+        } else if value == "on" || value == "off" {
+          DashToggleRow(
+            title: setting.displayTitle,
+            isOn: Binding(
+              get: { value == "on" },
+              set: { enabled in
+                scheduleUpdate(setting, value: .string(enabled ? "on" : "off"))
+              }),
+            isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
+            isLoading: updatingSettingIDs.contains(setting.id)
+          )
+        } else {
+          DashValueCard(title: setting.displayTitle, value: DashL10n.ui(value))
+        }
+      case .bool(let enabled):
+        DashToggleRow(
+          title: setting.displayTitle,
+          isOn: Binding(
+            get: { enabled },
+            set: { value in scheduleUpdate(setting, value: .bool(value)) }),
+          isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
+          isLoading: updatingSettingIDs.contains(setting.id)
+        )
+      default:
+        DashValueCard(title: setting.displayTitle, value: setting.value.displayText)
+      }
+    }
+  }
+
+  private func load(force: Bool = false) async {
+    let key = FeatureCacheKey.zoneSettings(zoneID)
+    if !force, let cached: [ZoneSetting] = model.featureCache.get(key) {
+      settings = cached
+      error = nil
+      loading = false
+      hasPresentedContent = true
+      return
+    }
+    defer { loading = false }
+    do {
+      settings = try await model.client.listZoneSettings(zoneID: zoneID)
+      model.featureCache.set(key, settings)
+      error = nil
+      hasPresentedContent = true
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func scheduleUpdate(_ setting: ZoneSetting, value: JSONValue) {
     guard model.hasScopes(requiredWriteScopes) else {
       model.requestAccess(to: requiredWriteScopes)
       return
     }
-    actionPhase = .loading
-    do {
-      try await performPurge(files: files)
-      actionPhase = .succeeded
-    } catch {
-      actionPhase = .idle
-      guard !error.dashIsCancellation else { return }
-      status = error.dashActionableMessage
-      failed = true
-    }
+    guard !updatingSettingIDs.contains(setting.id) else { return }
+    guard let index = settings.firstIndex(where: { $0.id == setting.id }) else { return }
+    let previous = settings[index]
+    settings[index] = previous.withValue(value)
+    updatingSettingIDs.insert(setting.id)
+    Task { await commitUpdate(settingID: setting.id, value: value, previous: previous) }
   }
 
-  private func performPurge(files: [String]?) async throws {
-    let op = model.optimistic.begin(.operating)
+  private func commitUpdate(settingID: String, value: JSONValue, previous: ZoneSetting) async {
+    let verb = zoneCacheOptimisticVerb(value)
+    let op = model.optimistic.begin(verb) {
+      if let latest = settings.firstIndex(where: { $0.id == settingID }) {
+        settings[latest] = previous
+      }
+      updatingSettingIDs.remove(settingID)
+    }
     do {
       try await model.optimistic.waitForCommit(op)
-      try await model.client.purgeCache(zoneID: zoneID, files: files)
-      try Task.checkCancellation()
-      status = DashL10n.string("Cache purged.")
-      failed = false
+      let updated = try await model.client.updateZoneSetting(
+        zoneID: zoneID, settingID: settingID, value: value)
+      if let latest = settings.firstIndex(where: { $0.id == settingID }) {
+        settings[latest] = updated
+      }
+      model.featureCache.set(FeatureCacheKey.zoneSettings(zoneID), settings)
       model.optimistic.finishSuccess(op)
     } catch is CancellationError {
-      throw CancellationError()
+      // Undo during grace already reverted local state.
     } catch {
+      if let latest = settings.firstIndex(where: { $0.id == settingID }) {
+        settings[latest] = previous
+      }
       model.optimistic.finishFailure(op)
-      throw error
+      model.toasts.error(error.dashActionableMessage)
+    }
+    updatingSettingIDs.remove(settingID)
+  }
+
+  private func zoneCacheOptimisticVerb(_ value: JSONValue) -> DashOptimisticVerb {
+    switch value {
+    case .bool(let enabled):
+      .toggle(enabled)
+    case .string(let raw) where raw == "on" || raw == "off":
+      .toggle(raw == "on")
+    case .string:
+      .setting
+    default:
+      .updating
     }
   }
 }
+
+/// Cache screen controls, in display order. Toggles first; Cache Level sits
+/// under them as its own control.
+private let curatedCacheSettings: [String] = [
+  "development_mode",
+  "always_online",
+  "cache_level",
+]
 
 /// Dashboard-style buckets for the flat zone-settings list.
 /// The settings this screen offers, in display order.
 ///
 /// Cloudflare returns 50-60 settings per zone; all but these are decisions you
-/// make once, from a laptop, when you set the zone up. These five are the ones
-/// worth reaching for away from your desk — the top two are the same pair the
-/// App Intents expose.
+/// make once, from a laptop, when you set the zone up. Development Mode and
+/// Always Online live on the Cache screen with Cache Level.
 ///
 /// Values whose valid range depends on the zone's plan stay out: browser_cache_ttl
 /// rejects anything under two hours on Free, so a fixed menu would offer choices
 /// that can only fail.
 private let curatedZoneSettings: [String] = [
   "security_level",
-  "development_mode",
   "ssl",
-  "always_online",
   "always_use_https",
   "min_tls_version",
   "http3",
@@ -160,8 +230,8 @@ private let curatedZoneSettings: [String] = [
 
 /// Enum-valued settings the API accepts as plain strings; everything listed here
 /// renders as an editable menu instead of a read-only value row. Values come
-/// from Cloudflare's OpenAPI schema (zones_*_value enums). The rest of
-/// `curatedZoneSettings` is on/off.
+/// from Cloudflare's OpenAPI schema (zones_*_value enums). On/off strings stay
+/// on toggles.
 ///
 /// `security_level` deliberately omits `under_attack`, even though the API
 /// accepts it: this menu commits through a plain `updateZoneSetting`, so raising
@@ -171,16 +241,14 @@ private let curatedZoneSettings: [String] = [
 /// raised and lowered only through `ZoneSecurityLevelOperation`. A zone already
 /// at `under_attack` still reads correctly here — `DashMenuRow` labels itself
 /// from `value`, not from `options`.
+///
+/// `cache_level` is the Caching level API enum (dashboard: No Query String /
+/// Ignore Query String / Standard).
 let zoneSettingOptions: [String: [String]] = [
   "ssl": ["off", "flexible", "full", "strict"],
   "security_level": ["off", "essentially_off", "low", "medium", "high"],
   "min_tls_version": ["1.0", "1.1", "1.2", "1.3"],
-]
-
-/// Names the control that owns a value the menu above cannot offer, so the
-/// missing choice reads as "elsewhere" rather than "gone".
-private let zoneSettingCaptions: [String: String] = [
-  "security_level": "Under Attack mode lives on the zone's WAF screen."
+  "cache_level": ["basic", "simplified", "aggressive"],
 ]
 
 struct ZoneSettingsView: View {
@@ -192,9 +260,9 @@ struct ZoneSettingsView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
-  /// Nameservers + `ZoneAlertsSection` mount even when the plan omits every
-  /// curated setting — do not gate the list phase on `curated` alone or a
-  /// successful empty curated answer stays on the bare skeleton forever.
+  /// `ZoneAlertsSection` mounts even when the plan omits every curated
+  /// setting — do not gate the list phase on `curated` alone or a successful
+  /// empty curated answer stays on the bare skeleton forever.
   @State private var hasPresentedContent = false
 
   private var requiredWriteScopes: Set<String> {
@@ -203,14 +271,6 @@ struct ZoneSettingsView: View {
 
   private var allowsWrites: Bool {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
-  }
-
-  /// Settings is only reachable from zone detail, so the zone is already
-  /// cached; this is where active zones keep their assigned nameservers now
-  /// that the detail card only appears during activation.
-  private var nameservers: [String] {
-    model.featureCache.cachedZone(id: zoneID, accountID: model.activeAccountID)?
-      .nameServers ?? []
   }
 
   var body: some View {
@@ -227,8 +287,8 @@ struct ZoneSettingsView: View {
     .task { await load() }
   }
 
-  /// Fuller first-paint reserve: curated setting rows + alerts. Nameservers and
-  /// the write notice appear only when live content warrants them.
+  /// Fuller first-paint reserve: curated setting rows + alerts. The write
+  /// notice appears only when live content warrants it.
   @ViewBuilder
   private func zoneSettingsBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
@@ -251,21 +311,13 @@ struct ZoneSettingsView: View {
         )
         .dashBodySlot(reduceMotion: reduceMotion)
       }
-      if !nameservers.isEmpty {
-        ZoneNameserversGroup(servers: nameservers)
-          .dashSectionBoundary(!allowsWrites)
-          .dashBodySlot(reduceMotion: reduceMotion)
-      }
       DashSurfaceStack {
         ForEach(curated) { setting in
           settingRow(setting)
         }
       }
-      .dashSectionBoundary(!allowsWrites || !nameservers.isEmpty)
+      .dashSectionBoundary(!allowsWrites)
       .dashBodySlot(reduceMotion: reduceMotion)
-      ZoneAlertsSection(zoneID: zoneID)
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -290,7 +342,6 @@ struct ZoneSettingsView: View {
           DashMenuRow(
             title: setting.displayTitle,
             value: value,
-            caption: zoneSettingCaptions[setting.id],
             options: options,
             isEnabled: allowsWrites && !updatingSettingIDs.contains(setting.id),
             isLoading: updatingSettingIDs.contains(setting.id)
@@ -417,6 +468,9 @@ func zoneSettingDisplayTitle(_ id: String) -> String {
   switch id {
   case "ssl": "SSL"
   case "always_use_https": "Always Use HTTPS"
+  case "always_online": "Always Online"
+  case "development_mode": "Development Mode"
+  case "cache_level": "Cache Level"
   case "min_tls_version": "Minimum TLS version"
   case "http3": "HTTP/3"
   default: id.replacingOccurrences(of: "_", with: " ").capitalized

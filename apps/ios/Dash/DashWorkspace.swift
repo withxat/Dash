@@ -6,10 +6,10 @@ import UIKit
 // MARK: - Destination navigator
 
 enum DashNavigationPresentation: Hashable {
-  /// A conventional child page whose chrome exposes Back.
+  /// A conventional child page whose chrome exposes Back. Whether it morphs out
+  /// of its source or hands off horizontally is decided by the source, not by
+  /// the route: only a card that publishes a hero earns the expansion.
   case detail
-  /// A resource/card expansion. The custom renderer may bridge source identity.
-  case entityDetail
   /// A workspace-level page whose root chrome exposes Close instead of Back.
   case workspaceOverlay
 }
@@ -27,12 +27,6 @@ struct DashNavigationSemanticID: Hashable {
 }
 
 extension DashNavigationSemanticID {
-  /// The settings page's profile avatar — the seat the header avatar's
-  /// workspace-present flight lands on, and where the return flight departs.
-  static let settingsProfileAvatar = DashNavigationSemanticID(
-    namespace: "workspace-landing",
-    value: "settings-profile-avatar")
-
   static func zoneHero(_ zoneID: String) -> DashNavigationSemanticID {
     DashNavigationSemanticID(namespace: "zone-hero", value: zoneID)
   }
@@ -97,6 +91,11 @@ struct DashNavigationMutation: Hashable {
   let reason: DashNavigationMutationReason
   let previousEntryIDs: [UUID]
   let currentEntryIDs: [UUID]
+  /// The page this mutation is about — the one arriving on a push, the one
+  /// leaving on every dismissal. It carries the presentation and origin, which
+  /// is what lets shared chrome resolve the SAME transition role the page
+  /// compositor picked instead of guessing one from the reason alone.
+  let entry: DashNavigationEntry?
 }
 
 /// A stable page instance. Repeating the same `Destination` later in the stack
@@ -111,7 +110,7 @@ struct DashNavigationEntry: Identifiable, Hashable {
 
   var dismissal: DashNavigationDismissal {
     switch presentation {
-    case .detail, .entityDetail:
+    case .detail:
       .back
     case .workspaceOverlay:
       .closeToWorkspaceRoot
@@ -147,9 +146,6 @@ extension Destination {
     case .settingsAccounts: .init(namespace: "settings", value: "accounts")
     case .about: .init(namespace: "settings", value: "about")
     case .openSource: .init(namespace: "settings", value: "open-source")
-    #if DEBUG
-      case .debug: .init(namespace: "settings", value: "debug")
-    #endif
     case .feature(let feature): .init(namespace: "feature", value: feature.rawValue)
     case .zone(let id): .init(namespace: "zone", value: id)
     case .dns(let id): .init(namespace: "zone-dns", value: id)
@@ -160,7 +156,6 @@ extension Destination {
     case .zoneSettings(let id): .init(namespace: "zone-settings", value: id)
     case .zoneEmailRouting(let id): .init(namespace: "zone-email-routing", value: id)
     case .auditLogs: .init(namespace: "account", value: "audit-logs")
-    case .pushAlerts: .init(namespace: "account", value: "push-alerts")
     case .watchtowerInbox: .init(namespace: "watchtower", value: "inbox")
     case .cloudflareStatus: .init(namespace: "watchtower", value: "cloudflare-status")
     case .emailAddresses: .init(namespace: "email-routing", value: "addresses")
@@ -181,15 +176,15 @@ extension Destination {
     }
   }
 
+  /// Settings is the only route that leaves the page stack's own language — it
+  /// is the workspace train. Everything else is a `detail` drill: Resources
+  /// into a feature, a feature into a resource, a resource into its settings.
+  /// A route never claims the card expansion for itself; the concrete source
+  /// does, by publishing a hero (`DashNavigationHero`).
   fileprivate var dashDefaultNavigationPresentation: DashNavigationPresentation {
     switch self {
     case .settings:
       .workspaceOverlay
-    case .feature, .zone, .registrarDomain, .chartDetail, .worker, .tunnel,
-      .pagesProject, .kvNamespace:
-      .entityDetail
-    case .r2Bucket(_, let prefix):
-      prefix.isEmpty ? .entityDetail : .detail
     default:
       .detail
     }
@@ -198,9 +193,8 @@ extension Destination {
   /// The in-page landmark a workspace present flies its source visual onto.
   /// Only pages that visibly re-seat their source element publish one; every
   /// other destination keeps the in-place identity crossfade.
-  fileprivate var dashNavigationLandingSemanticID: DashNavigationSemanticID? {
+  var dashNavigationLandingSemanticID: DashNavigationSemanticID? {
     switch self {
-    case .settings: .settingsProfileAvatar
     case .zone(let id): .zoneHero(id)
     default: nil
     }
@@ -231,14 +225,28 @@ final class DestinationNavigator {
   private(set) var revision: UInt64 = 0
   private(set) var lastMutation: DashNavigationMutation?
 
+  /// Where this stack's pages publish their header slots. Deliberately a stored
+  /// `let` on the navigator rather than one more value threaded through the tab
+  /// flow: every page already reads the navigator from the environment, and so
+  /// does the shared header.
+  let pageChrome = DashPageChromeStore()
+  /// Who paints those slots. `.workspace` is the product path — one bar above
+  /// the pager. `.page` keeps a stack hosted outside `MainTabView` (previews,
+  /// UI-test harnesses) drawing its own bar, so it never loses Back.
+  let chromeHosting: DashPageChromeHosting
+
   var path: [Destination] { entries.map(\.destination) }
   var entryIDs: [DashNavigationEntry.ID] { entries.map(\.id) }
   var depth: Int { entries.count }
   var top: Destination? { entries.last?.destination }
   var topEntry: DashNavigationEntry? { entries.last }
 
-  init(accountID: String? = nil) {
+  init(
+    accountID: String? = nil,
+    chromeHosting: DashPageChromeHosting = .page
+  ) {
     self.accountID = accountID
+    self.chromeHosting = chromeHosting
   }
 
   @discardableResult
@@ -339,13 +347,27 @@ final class DestinationNavigator {
   ) {
     guard recordsNoop || nextEntries != entries else { return }
     let previousEntryIDs = entryIDs
+    // The page the mutation is about, resolved before the swap: a push is
+    // about the page arriving, every dismissal is about the page leaving —
+    // the same two entries the compositor picks its style from.
+    let mutatedEntry: DashNavigationEntry? =
+      switch reason {
+      case .push: nextEntries.last
+      case .back, .popToRoot, .closeToWorkspaceRoot, .resourcePruned: entries.last
+      case .reset, .accountScopeChanged: nil
+      }
     entries = nextEntries
+    // Slots leave with their page. Pruning here — the one mutation funnel —
+    // means a re-push of the same route can never inherit the last instance's
+    // title or actions while its own body is still resolving.
+    pageChrome.prune(keeping: Set(entryIDs))
     revision &+= 1
     lastMutation = DashNavigationMutation(
       revision: revision,
       reason: reason,
       previousEntryIDs: previousEntryIDs,
-      currentEntryIDs: entryIDs)
+      currentEntryIDs: entryIDs,
+      entry: mutatedEntry)
   }
 }
 
@@ -377,21 +399,11 @@ final class DashNavigationCoordinator {
 /// moment an animation starts and falls back when the source is no longer live.
 @MainActor
 final class DashNavigationAnchorRegistry {
-  @MainActor
-  @Observable
-  final class ClaimState {
-    private var claimedInstanceIDs: Set<UUID> = []
+  private final class WeakClaim {
+    weak var value: DashNavigationAnchorClaim?
 
-    func claim(_ instanceID: UUID) {
-      claimedInstanceIDs.insert(instanceID)
-    }
-
-    func release(_ instanceID: UUID) {
-      claimedInstanceIDs.remove(instanceID)
-    }
-
-    func isClaimed(_ instanceID: UUID) -> Bool {
-      claimedInstanceIDs.contains(instanceID)
+    init(_ value: DashNavigationAnchorClaim) {
+      self.value = value
     }
   }
 
@@ -409,7 +421,6 @@ final class DashNavigationAnchorRegistry {
     let frame: CGRect
   }
 
-  private var preferenceFrames: [UUID: CGRect] = [:]
   private var hostedFrames: [UUID: CGRect] = [:]
   private var sourceViews: [UUID: WeakSourceView] = [:]
   private var capturedVisuals: [UUID: CapturedVisual] = [:]
@@ -418,15 +429,22 @@ final class DashNavigationAnchorRegistry {
   /// anchor UUID; the concrete occurrence re-registers under the same key on
   /// every page instance.
   private var landingInstanceIDs: [DashNavigationSemanticID: UUID] = [:]
-  let claimState = ClaimState()
+  /// Which occurrences the compositor currently owns. Plain storage, and the
+  /// source of truth across a remount — the observable half is per anchor.
+  private var claimedInstanceIDs: Set<UUID> = []
+  /// One observable box per mounted anchor. This is deliberately NOT one
+  /// shared observable set: `@Observable` tracks per PROPERTY, so a single
+  /// `Set<UUID>` read by every anchor's body meant claiming ONE occurrence
+  /// invalidated EVERY anchor in the app — all sixty Domains cards, every Home
+  /// row — and a card morph claims twice on the frame it starts and releases
+  /// twice on the frame it lands. That is four whole-app relayouts landing
+  /// exactly where the morph needs its frame budget.
+  private var claims: [UUID: WeakClaim] = [:]
 
-  func replaceFrames(_ frames: [UUID: CGRect]) {
-    preferenceFrames = frames
-  }
-
-  /// Preferences do not cross a `UIHostingController` boundary. Custom-stack
-  /// pages therefore publish their source frames directly into this shared
-  /// registry, while outer workspace chrome can keep using preferences.
+  /// Preferences do not cross a `UIHostingController` boundary, and every route
+  /// is one — a preference-published frame could therefore only ever describe
+  /// the outer workspace chrome, which the live probe and this store already
+  /// cover. Pages publish here directly.
   func setHostedFrame(_ frame: CGRect, for instanceID: UUID) {
     hostedFrames[instanceID] = frame
   }
@@ -466,7 +484,6 @@ final class DashNavigationAnchorRegistry {
   func frame(for origin: DashNavigationOrigin) -> CGRect? {
     sourceWindowFrame(for: origin.anchorInstanceID)
       ?? hostedFrames[origin.anchorInstanceID]
-      ?? preferenceFrames[origin.anchorInstanceID]
       ?? origin.sourceFrame
   }
 
@@ -479,12 +496,27 @@ final class DashNavigationAnchorRegistry {
 
   func claim(_ origin: DashNavigationOrigin?) {
     guard let origin else { return }
-    claimState.claim(origin.anchorInstanceID)
+    claimedInstanceIDs.insert(origin.anchorInstanceID)
+    claims[origin.anchorInstanceID]?.value?.isClaimed = true
   }
 
   func release(_ origin: DashNavigationOrigin?) {
     guard let origin else { return }
-    claimState.release(origin.anchorInstanceID)
+    claimedInstanceIDs.remove(origin.anchorInstanceID)
+    claims[origin.anchorInstanceID]?.value?.isClaimed = false
+  }
+
+  /// A claimed occurrence can remount mid-flight (a page host reattaching, a
+  /// lazy row scrolling back in), so the box re-arms from the plain set rather
+  /// than defaulting to visible and double-rendering the element in flight.
+  func registerClaim(_ claim: DashNavigationAnchorClaim, for instanceID: UUID) {
+    claims[instanceID] = WeakClaim(claim)
+    claim.isClaimed = claimedInstanceIDs.contains(instanceID)
+  }
+
+  func unregisterClaim(_ claim: DashNavigationAnchorClaim, for instanceID: UUID) {
+    guard claims[instanceID]?.value === claim else { return }
+    claims[instanceID] = nil
   }
 
   func captureOrigin(
@@ -495,7 +527,6 @@ final class DashNavigationAnchorRegistry {
     let frame =
       sourceWindowFrame(for: anchorInstanceID)
       ?? hostedFrames[anchorInstanceID]
-      ?? preferenceFrames[anchorInstanceID]
     if hero == nil,
       let source = sourceViews[anchorInstanceID]?.value,
       let window = source.window,
@@ -538,14 +569,6 @@ final class DashNavigationAnchorRegistry {
   }
 }
 
-struct DashNavigationAnchorFramesKey: PreferenceKey {
-  static let defaultValue: [UUID: CGRect] = [:]
-
-  static func reduce(value: inout [UUID: CGRect], nextValue: () -> [UUID: CGRect]) {
-    value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
-  }
-}
-
 // MARK: - Environment
 
 private struct DestinationNavigatorKey: EnvironmentKey {
@@ -578,7 +601,7 @@ private struct DashCanPresentPendingHomeActionKey: EnvironmentKey {
 
 /// When set, an inner control (the header avatar circle) registers the
 /// navigation source anchor instead of the outer `DashNavigationSource` wrapper
-/// — so a workspace morph captures the face, not the glass chrome around it.
+/// — so a transition captures the face, not the glass chrome around it.
 private struct DashNavigationEmbeddedAnchorIDKey: EnvironmentKey {
   static let defaultValue: UUID? = nil
 }
@@ -640,10 +663,10 @@ extension View {
     modifier(DashNavigationAnchorModifier(instanceID: instanceID, landing: landing))
   }
 
-  /// Publishes this view as a destination-page landing seat: the spot a
-  /// workspace morph flies the source visual onto. The claim mechanism hides
-  /// the live view while the flight proxy owns its identity, exactly like a
-  /// navigation source.
+  /// Publishes this view as a destination-page landing seat: the spot a card
+  /// morph grows its source onto. The claim mechanism hides the live view
+  /// while the flight proxy owns its identity, exactly like a navigation
+  /// source. Today only the zone hero publishes one.
   func dashNavigationLanding(_ semanticID: DashNavigationSemanticID) -> some View {
     modifier(DashNavigationLandingModifier(semanticID: semanticID))
   }
@@ -658,13 +681,23 @@ private struct DashNavigationLandingModifier: ViewModifier {
   }
 }
 
+/// One anchor's "the compositor owns me right now" flag. Per occurrence on
+/// purpose: an anchor's body observes ONLY its own box, so claiming one source
+/// cannot invalidate every other anchor on screen.
+@MainActor
+@Observable
+final class DashNavigationAnchorClaim {
+  var isClaimed = false
+}
+
 private struct DashNavigationAnchorModifier: ViewModifier {
   let instanceID: UUID
   var landing: DashNavigationSemanticID?
   @Environment(\.dashNavigationAnchorRegistry) private var registry
+  @State private var claim = DashNavigationAnchorClaim()
 
   func body(content: Content) -> some View {
-    let isClaimed = registry?.claimState.isClaimed(instanceID) == true
+    let isClaimed = claim.isClaimed
     content
       // The compositor owns this exact occurrence while its proxy is active.
       // Keep the layout/probe alive, but never render or activate a duplicate.
@@ -676,15 +709,17 @@ private struct DashNavigationAnchorModifier: ViewModifier {
         GeometryReader { proxy in
           let frame = proxy.frame(in: .global)
           Color.clear
-            .preference(
-              key: DashNavigationAnchorFramesKey.self,
-              value: [instanceID: frame]
-            )
-            .onAppear { registry?.setHostedFrame(frame, for: instanceID) }
+            .onAppear {
+              registry?.setHostedFrame(frame, for: instanceID)
+              registry?.registerClaim(claim, for: instanceID)
+            }
             .onChange(of: frame) { _, nextFrame in
               registry?.setHostedFrame(nextFrame, for: instanceID)
             }
-            .onDisappear { registry?.removeHostedFrame(for: instanceID) }
+            .onDisappear {
+              registry?.removeHostedFrame(for: instanceID)
+              registry?.unregisterClaim(claim, for: instanceID)
+            }
             .overlay {
               DashNavigationAnchorProbe(
                 instanceID: instanceID,
@@ -921,12 +956,45 @@ private struct DashHostedDestination: View {
 enum DashCardMorphRules {
   static let movesPages = false
 
+  /// Distance the invisible timeline driver's position travels for progress
+  /// 0 → 1. Any value works — larger buys sampling resolution; the driver is
+  /// zero-sized and never seen.
+  static let timelineTravel: CGFloat = 320
+
+  /// One duration for every flight makes speed proportional to distance: a
+  /// bottom-row card covers three times the ground of a top-row card in the
+  /// same window and reads as lunging. Flights at or under `referenceTravel`
+  /// (the top rows) keep the base pace; longer ones stretch linearly up to
+  /// `maxFlightStretch` at `farTravel`, so every card GROWS at roughly the
+  /// same felt rate. Applies to pops too — a far card rushing home is the
+  /// same lunge backwards.
+  static let referenceTravel: CGFloat = 220
+  static let farTravel: CGFloat = 640
+  static let maxFlightStretch: Double = 1.3
+
+  static func flightDuration(
+    base: TimeInterval,
+    from source: CGRect,
+    to landing: CGRect
+  ) -> TimeInterval {
+    let travel = hypot(landing.midX - source.midX, landing.midY - source.midY)
+    guard travel > referenceTravel else { return base }
+    let unit = Double(
+      min((travel - referenceTravel) / (farTravel - referenceTravel), 1))
+    return base * (1 + (maxFlightStretch - 1) * unit)
+  }
+
+  /// Floor-clamped only. The enter spring is slightly underdamped and its
+  /// overshoot past 1 extrapolates the flight a few points past the landing
+  /// seat before settling back — that extrapolation IS the bounce. Every
+  /// non-spatial curve (`smoothSegment` consumers) clamps internally, so the
+  /// hero frame is the one place the overshoot lands.
   static func heroFrame(
     from source: CGRect,
     to landing: CGRect,
     detailProgress: CGFloat
   ) -> CGRect {
-    let progress = min(max(detailProgress, 0), 1)
+    let progress = max(detailProgress, 0)
     return CGRect(
       x: source.minX + (landing.minX - source.minX) * progress,
       y: source.minY + (landing.minY - source.minY) * progress,
@@ -942,11 +1010,15 @@ enum DashCardMorphRules {
     smoothSegment(detailProgress, from: 0.44, to: 0.94)
   }
 
+  /// The veil only ever grows. It used to pulse — rise, then fade back off —
+  /// and a full-screen blur that both arrives and leaves inside one 380ms
+  /// flight reads as a blink no matter how wide the ramps are. Riding *under*
+  /// the arriving page instead, it is retired by being covered: the opaque
+  /// destination resolves on top of it (`detailPageOpacity`) and the veil
+  /// never has to travel back down while anyone can see it. A reversed push
+  /// runs this same curve backwards, continuously, under the finger.
   static func backdropOpacity(at detailProgress: CGFloat) -> CGFloat {
-    if detailProgress <= 0.5 {
-      return smoothSegment(detailProgress, from: 0.04, to: 0.42)
-    }
-    return 1 - smoothSegment(detailProgress, from: 0.58, to: 0.96)
+    smoothSegment(detailProgress, from: 0, to: 0.6)
   }
 
   static func detailAccessoryOpacity(at detailProgress: CGFloat) -> CGFloat {
@@ -1006,11 +1078,69 @@ private struct DashNavigationHeroView: View {
   }
 }
 
+/// The three page languages Dash speaks, and nothing else. `flow` is the
+/// horizontal handoff every drill-down uses — the outgoing page leaves while
+/// the arriving one enters, the same step a tab change makes. `card` is the
+/// Family-style expansion, reserved for a source that hands over a concrete
+/// card (Domains → zone detail). `workspace` is the Settings train.
+enum DashPageTransitionRole: Hashable {
+  case flow
+  case card
+  case workspace
+}
+
+enum DashPageTransitionRules {
+  /// The source decides between flow and card, never the destination: the same
+  /// zone opened from a Home row or a recent is a plain drill, and only the
+  /// domain card that publishes a hero morphs.
+  static func role(
+    presentation: DashNavigationPresentation,
+    hasHero: Bool
+  ) -> DashPageTransitionRole {
+    switch presentation {
+    case .workspaceOverlay: .workspace
+    case .detail: hasHero ? .card : .flow
+    }
+  }
+
+  /// ONE pace table. The page compositor animates in UIKit and the shared
+  /// header in SwiftUI, but they are two halves of the same step — read the
+  /// timing from here in both, or Close outlives the train it left with.
+  static func duration(for role: DashPageTransitionRole, isPush: Bool) -> TimeInterval {
+    switch role {
+    case .flow:
+      isPush
+        ? DashTheme.Motion.Page.flowEnterDuration
+        : DashTheme.Motion.Page.flowExitDuration
+    case .card:
+      isPush
+        ? DashTheme.Motion.Page.cardEnterDuration
+        : DashTheme.Motion.Page.cardExitDuration
+    case .workspace:
+      isPush
+        ? DashTheme.Motion.Page.workspaceEnterDuration
+        : DashTheme.Motion.Page.workspaceExitDuration
+    }
+  }
+
+  static func dampingRatio(for role: DashPageTransitionRole, isPush: Bool) -> CGFloat {
+    switch role {
+    case .flow: DashTheme.Motion.Page.flowDampingRatio
+    case .card:
+      isPush
+        ? DashTheme.Motion.Page.cardEnterDampingRatio
+        : DashTheme.Motion.Page.cardExitDampingRatio
+    case .workspace:
+      isPush
+        ? DashTheme.Motion.Page.workspaceEnterDampingRatio
+        : DashTheme.Motion.Page.workspaceExitDampingRatio
+    }
+  }
+}
+
 private enum DashPageTransitionStyle {
   case flowPush
   case flowPop
-  case entityPush(DashNavigationEntry)
-  case entityPop(DashNavigationEntry)
   case cardPush(DashNavigationEntry)
   case cardPop(DashNavigationEntry)
   case workspacePresent(DashNavigationEntry)
@@ -1018,15 +1148,14 @@ private enum DashPageTransitionStyle {
 
   var isPush: Bool {
     switch self {
-    case .flowPush, .entityPush, .cardPush, .workspacePresent: true
-    case .flowPop, .entityPop, .cardPop, .workspaceDismiss: false
+    case .flowPush, .cardPush, .workspacePresent: true
+    case .flowPop, .cardPop, .workspaceDismiss: false
     }
   }
 
   var entry: DashNavigationEntry? {
     switch self {
-    case .entityPush(let entry), .entityPop(let entry),
-      .cardPush(let entry), .cardPop(let entry),
+    case .cardPush(let entry), .cardPop(let entry),
       .workspacePresent(let entry), .workspaceDismiss(let entry):
       entry
     case .flowPush, .flowPop:
@@ -1034,27 +1163,20 @@ private enum DashPageTransitionStyle {
     }
   }
 
-  var duration: TimeInterval {
+  var role: DashPageTransitionRole {
     switch self {
-    case .flowPush: DashTheme.Motion.Page.flowEnterDuration
-    case .flowPop: DashTheme.Motion.Page.flowExitDuration
-    case .entityPush: DashTheme.Motion.Page.entityEnterDuration
-    case .entityPop: DashTheme.Motion.Page.entityExitDuration
-    case .cardPush: DashTheme.Motion.Page.cardEnterDuration
-    case .cardPop: DashTheme.Motion.Page.cardExitDuration
-    case .workspacePresent: DashTheme.Motion.Page.workspaceEnterDuration
-    case .workspaceDismiss: DashTheme.Motion.Page.workspaceExitDuration
+    case .flowPush, .flowPop: .flow
+    case .cardPush, .cardPop: .card
+    case .workspacePresent, .workspaceDismiss: .workspace
     }
   }
 
+  var duration: TimeInterval {
+    DashPageTransitionRules.duration(for: role, isPush: isPush)
+  }
+
   var dampingRatio: CGFloat {
-    switch self {
-    case .cardPush, .cardPop: DashTheme.Motion.Page.cardDampingRatio
-    case .flowPush, .flowPop: DashTheme.Motion.Page.flowDampingRatio
-    case .workspacePresent: DashTheme.Motion.Page.workspaceEnterDampingRatio
-    case .workspaceDismiss: DashTheme.Motion.Page.workspaceExitDampingRatio
-    case .entityPush, .entityPop: DashTheme.Motion.Page.dampingRatio
-    }
+    DashPageTransitionRules.dampingRatio(for: role, isPush: isPush)
   }
 }
 
@@ -1079,14 +1201,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let controller: UIHostingController<DashHostedDestination>
   }
 
-  /// How a workspace morph samples its moving seat while the page train runs.
-  private enum WorkspaceMorphTracking {
-    /// Present: header is fixed, the settings seat rides in on the arriving page.
-    case landingIsEnd
-    /// Dismiss: the settings seat rides out on the departing page, header is fixed.
-    case landingIsStart
-  }
-
   /// A neutral full-screen surface separates the outgoing and arriving page
   /// timelines. Raster content stays at its natural size and only crossfades;
   /// the concrete source snapshot is the one local element carried across.
@@ -1107,12 +1221,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     /// Second claim for a destination-page landing seat, held for the same
     /// span as `claimedOrigin` so the live seat never doubles the flight.
     let claimedLanding: DashNavigationOrigin?
-    /// Fixed end of a morph flight (present: settled seat; dismiss: header slot).
+    /// Fixed end of a card morph's flight — the settled hero seat.
     let morphTargetFrame: CGRect?
     /// Fixed start of a morph flight, captured before the page train moves.
     let morphStartFrame: CGRect?
-    /// Which endpoint tracks the live landing seat through the page transform.
-    let morphTracking: WorkspaceMorphTracking?
 
     init(
       overlay: UIView,
@@ -1125,8 +1237,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       claimedOrigin: DashNavigationOrigin?,
       claimedLanding: DashNavigationOrigin? = nil,
       morphTargetFrame: CGRect? = nil,
-      morphStartFrame: CGRect? = nil,
-      morphTracking: WorkspaceMorphTracking? = nil
+      morphStartFrame: CGRect? = nil
     ) {
       self.overlay = overlay
       self.shell = shell
@@ -1139,7 +1250,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       self.claimedLanding = claimedLanding
       self.morphTargetFrame = morphTargetFrame
       self.morphStartFrame = morphStartFrame
-      self.morphTracking = morphTracking
     }
 
     var isCardMorph: Bool { heroController != nil }
@@ -1464,26 +1574,30 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     switch request.mutation?.reason {
     case .push:
       guard let entry = request.entries.last else { return .flowPush }
-      return switch entry.presentation {
-      case .detail: .flowPush
-      case .entityDetail:
-        entry.origin?.hero == nil ? .entityPush(entry) : .cardPush(entry)
-      case .workspaceOverlay: .workspacePresent(entry)
+      return switch role(for: entry) {
+      case .flow: .flowPush
+      case .card: .cardPush(entry)
+      case .workspace: .workspacePresent(entry)
       }
     case .closeToWorkspaceRoot:
       guard let entry = settledEntries.last else { return .flowPop }
       return .workspaceDismiss(entry)
     case .back, .popToRoot, .resourcePruned:
       guard let entry = settledEntries.last else { return .flowPop }
-      return switch entry.presentation {
-      case .detail: .flowPop
-      case .entityDetail:
-        entry.origin?.hero == nil ? .entityPop(entry) : .cardPop(entry)
-      case .workspaceOverlay: .workspaceDismiss(entry)
+      return switch role(for: entry) {
+      case .flow: .flowPop
+      case .card: .cardPop(entry)
+      case .workspace: .workspaceDismiss(entry)
       }
     case .reset, .accountScopeChanged, nil:
       return .flowPush
     }
+  }
+
+  private func role(for entry: DashNavigationEntry) -> DashPageTransitionRole {
+    DashPageTransitionRules.role(
+      presentation: entry.presentation,
+      hasHero: entry.origin?.hero != nil)
   }
 
   private func performTransition(
@@ -1533,7 +1647,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       style: style,
       source: source.view,
       target: target.view,
-      hasProxy: proxy != nil,
       reduceMotion: request.reduceMotion)
 
     let appearanceWasBegun = isContainerVisible && !parentAppearanceIsDisappearing
@@ -1542,10 +1655,19 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       target.beginAppearanceTransition(true, animated: true)
     }
 
-    let duration =
+    var duration =
       request.reduceMotion
       ? DashTheme.Motion.Page.reducedDuration
       : style.duration
+    // A card flight paces itself to the ground it covers; see the rule.
+    if !request.reduceMotion, let proxy, proxy.isCardMorph,
+      let start = proxy.morphStartFrame, let landing = proxy.morphTargetFrame
+    {
+      duration = DashCardMorphRules.flightDuration(
+        base: duration,
+        from: start,
+        to: landing)
+    }
     let animator = UIViewPropertyAnimator(
       duration: duration,
       dampingRatio: request.reduceMotion ? 1 : style.dampingRatio)
@@ -1584,12 +1706,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     style: DashPageTransitionStyle,
     source: UIView,
     target: UIView,
-    hasProxy: Bool,
     reduceMotion: Bool
   ) {
-    let travel = min(max(view.bounds.width * 0.08, 22), 34)
     let rightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
-    let direction: CGFloat = rightToLeft ? -1 : 1
     switch style {
     case .flowPush, .flowPop:
       applyTabStepInitial(
@@ -1598,19 +1717,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         target: target,
         rightToLeft: rightToLeft,
         reduceMotion: reduceMotion)
-    case .entityPush:
-      target.alpha = 0
-      if !reduceMotion, !hasProxy {
-        target.transform = CGAffineTransform(translationX: travel * direction, y: 0)
-      }
-    case .entityPop:
-      target.alpha = hasProxy ? 1 : (reduceMotion ? 0 : 0.94)
-      if !reduceMotion, !hasProxy {
-        target.transform = CGAffineTransform(
-          translationX: -travel * 0.35 * direction,
-          y: 0)
-      }
-      if hasProxy { source.alpha = 0 }
     case .cardPush:
       target.alpha = 0
     case .cardPop:
@@ -1694,29 +1800,16 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         target: target,
         rightToLeft: rightToLeft,
         reduceMotion: reduceMotion)
-    case .entityPush:
-      if proxy == nil {
-        target.alpha = 1
-        target.transform = .identity
-      } else {
-        // The full-size proxy is the sole owner of arriving content until the
-        // completion handoff. Fading the live target here double-exposes every
-        // title, card, and row underneath the expanding snapshot.
-        target.alpha = 0
-      }
-      if !reduceMotion, proxy == nil {
-        source.alpha = 0.9
-        source.transform = CGAffineTransform(scaleX: 0.985, y: 0.985)
-      }
-      proxy?.timelineDriver?.alpha = 1
-    case .entityPop:
-      target.alpha = 1
-      target.transform = .identity
-      source.alpha = 0
-      proxy?.timelineDriver?.alpha = 1
     case .cardPush, .cardPop:
       if let proxy {
-        proxy.timelineDriver?.alpha = 1
+        // The card timeline rides POSITION, not opacity: a slightly
+        // underdamped enter spring overshoots its end value, and a layer's
+        // presentation opacity clamps at 1 — sampling it would flatten the
+        // bounce into a dead stop at the seat. Position reports the raw
+        // spring, so progress can pass 1 and come back.
+        proxy.timelineDriver?.center = CGPoint(
+          x: DashCardMorphRules.timelineTravel,
+          y: 0)
       } else {
         // Reduce Motion and invalid-endpoint fallback keep a short crossfade.
         target.alpha = 1
@@ -1741,28 +1834,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       } else {
         source.transform = CGAffineTransform(translationX: 0, y: -view.bounds.height)
       }
-      if proxy?.morphTracking == nil {
-        proxy?.outgoingContent?.alpha = 0
-        proxy?.arrivingContent?.alpha = 1
-      }
-    // Morph dismiss keeps the flying pixels — fading toward the empty header
-    // slot would dissolve the element the eye is tracking home.
+      proxy?.outgoingContent?.alpha = 0
+      proxy?.arrivingContent?.alpha = 1
     }
-  }
-
-  /// Places every morph layer on one circular rect. Frames are set without
-  /// implicit actions so the display-link timeline owns the interpolation.
-  private func applyMorphFlightFrame(_ proxy: TransitionProxy, at frame: CGRect) {
-    let cornerRadius = min(frame.width, frame.height) / 2
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    for surface in [proxy.shell, proxy.outgoingContent, proxy.arrivingContent] {
-      guard let surface else { continue }
-      surface.frame = frame
-      surface.layer.cornerRadius = cornerRadius
-      surface.layer.masksToBounds = true
-    }
-    CATransaction.commit()
   }
 
   /// The semantic card is laid out at every intermediate size. Updating bounds
@@ -1837,9 +1911,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     target: UIView
   ) -> TransitionProxy? {
     let requiresLiveFrame: Bool
-    if case .entityPop = style {
-      requiresLiveFrame = true
-    } else if case .cardPop = style {
+    if case .cardPop = style {
       requiresLiveFrame = true
     } else {
       requiresLiveFrame = false
@@ -1866,36 +1938,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     var claimedLanding: DashNavigationOrigin?
     var morphTargetFrame: CGRect?
     var morphStartFrame: CGRect?
-    var morphTracking: WorkspaceMorphTracking?
 
     switch style {
-    case .entityPush:
-      let capturedFrame: CGRect
-      if let captured = anchorRegistry?.takeCapturedVisual(for: entry.origin) {
-        capturedFrame = frameInContainer(fromWindowFrame: captured.frame) ?? sourceFrame
-        outgoingContent = captured.view
-      } else {
-        capturedFrame = sourceFrame
-        outgoingContent = snapshotFromWindow(at: sourceFrame)
-      }
-      if let outgoingContent {
-        outgoingContent.frame = capturedFrame
-      }
-      shell = makeFullScreenTransitionShell(alpha: 0)
-      arrivingContent = target.snapshotView(afterScreenUpdates: true)
-      arrivingContent?.frame = view.bounds
-      arrivingContent?.alpha = 0
-      timelineDriver = makeTransitionTimelineDriver()
-    case .entityPop:
-      shell = makeFullScreenTransitionShell(alpha: 1)
-      outgoingContent = source.snapshotView(afterScreenUpdates: false)
-      outgoingContent?.frame = view.bounds
-      arrivingContent = rasterSnapshotRegion(
-        from: target,
-        at: sourceFrame,
-        afterScreenUpdates: true)
-      arrivingContent?.alpha = 0
-      timelineDriver = makeTransitionTimelineDriver()
     case .cardPush, .cardPop:
       guard let hero = entry.origin?.hero else { return nil }
       let landingPage = style.isPush ? target : source
@@ -1908,7 +1952,12 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         detailProgress: style.isPush ? 0 : 1)
       outgoingContent = liveHero.view
       heroController = liveHero
-      backgroundEffect = makeCardMorphBackgroundEffect()
+      // Push only. Returning, the veil would have to clear before the sharp
+      // list it is covering *is* the destination — the same blink, backwards.
+      // The card flies home over a list that was never softened.
+      if style.isPush {
+        backgroundEffect = makeCardMorphBackgroundEffect()
+      }
       morphStartFrame = sourceFrame
       morphTargetFrame = landingFrame
       claimedOrigin = entry.origin
@@ -1925,66 +1974,38 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         outgoingContent?.frame = sourceFrame
       }
       shell = makeIdentityTransitionShell(frame: sourceFrame)
-      // Preferred: fly the avatar from the header slot onto the page's own
-      // landing seat, resolved live now that the arriving page has laid out.
-      // The raster variant keeps text-backed avatars (initials) atomic on a
-      // freshly attached hierarchy. No seat means the page publishes none or
-      // it sits off-screen — crossfade in place like every other overlay.
-      if let landing = resolvedLandingOrigin(for: entry, in: target),
-        let landingFrame = anchorFrameInContainer(for: landing, liveOnly: true),
-        let seatVisual = rasterSnapshotRegion(
-          from: target,
-          at: landingFrame,
-          afterScreenUpdates: true)
-      {
-        seatVisual.alpha = 0
-        arrivingContent = seatVisual
-        configureMorphFlightLayer(seatVisual, departingFrom: sourceFrame)
-        configureMorphFlightLayer(outgoingContent, departingFrom: sourceFrame)
-        morphStartFrame = sourceFrame
-        morphTargetFrame = landingFrame
-        morphTracking = .landingIsEnd
-        claimedLanding = landing
-        timelineDriver = makeTransitionTimelineDriver()
-      } else {
-        arrivingContent = snapshotRegion(
-          from: target,
-          at: sourceFrame,
-          afterScreenUpdates: true)
-        arrivingContent?.alpha = 0
-      }
+      // The avatar stays put and crossfades into whatever the arriving page
+      // puts in that slot. It used to fly onto a landing seat on the Settings
+      // profile row; that flight is gone — see `DashNavigationSemanticID`.
+      arrivingContent = snapshotRegion(
+        from: target,
+        at: sourceFrame,
+        afterScreenUpdates: true)
+      arrivingContent?.alpha = 0
+      // The source is captured as a SQUARE window snapshot that carries the
+      // canvas behind it, so the crossfade drew it raw over the arriving page
+      // — a warm square with hard corners around a round control. The shell
+      // already commits to the source's circle; its content has to agree.
+      configureMorphFlightLayer(outgoingContent, departingFrom: sourceFrame)
+      configureMorphFlightLayer(arrivingContent, departingFrom: sourceFrame)
       claimedOrigin = entry.origin
     case .workspaceDismiss:
-      // Preferred: detach the avatar from the departing page and fly it home;
-      // the floated header avatar remounts under the landed proxy once the
-      // workspace settles.
-      if let landing = resolvedLandingOrigin(for: entry, in: source),
-        let departFrame = anchorFrameInContainer(for: landing, liveOnly: true),
-        let flying = snapshotRegion(
-          from: source,
-          at: departFrame,
-          afterScreenUpdates: false)
-      {
-        outgoingContent = flying
-        shell = makeIdentityTransitionShell(frame: departFrame)
-        configureMorphFlightLayer(flying, departingFrom: departFrame)
-        morphStartFrame = departFrame
-        morphTargetFrame = sourceFrame
-        morphTracking = .landingIsStart
-        claimedLanding = landing
-        timelineDriver = makeTransitionTimelineDriver()
-      } else {
-        outgoingContent = snapshotRegion(
-          from: source,
-          at: sourceFrame,
-          afterScreenUpdates: false)
-        arrivingContent = snapshotRegion(
-          from: target,
-          at: sourceFrame,
-          afterScreenUpdates: true)
-        arrivingContent?.alpha = 0
-        shell = makeIdentityTransitionShell(frame: sourceFrame)
-      }
+      // The mirror of present: an in-place crossfade in the header slot, no
+      // flight home.
+      outgoingContent = snapshotRegion(
+        from: source,
+        at: sourceFrame,
+        afterScreenUpdates: false)
+      arrivingContent = snapshotRegion(
+        from: target,
+        at: sourceFrame,
+        afterScreenUpdates: true)
+      arrivingContent?.alpha = 0
+      shell = makeIdentityTransitionShell(frame: sourceFrame)
+      // Same reason as present: square snapshots of a round control must wear
+      // the shell's circle.
+      configureMorphFlightLayer(outgoingContent, departingFrom: sourceFrame)
+      configureMorphFlightLayer(arrivingContent, departingFrom: sourceFrame)
       claimedOrigin = entry.origin
     case .flowPush, .flowPop:
       return nil
@@ -1993,7 +2014,12 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     guard shell != nil || outgoingContent != nil || arrivingContent != nil else {
       return nil
     }
-    if let backgroundEffect { overlay.addSubview(backgroundEffect) }
+    // Between the pages, not in the proxy overlay above them: the veil has to
+    // be something the arriving page can cover, or it can only leave by fading
+    // in full view. Every teardown path removes it from its own superview.
+    if let backgroundEffect {
+      view.insertSubview(backgroundEffect, belowSubview: target)
+    }
     if let shell { overlay.addSubview(shell) }
     if let outgoingContent {
       if heroController == nil {
@@ -2026,8 +2052,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       claimedOrigin: claimedOrigin,
       claimedLanding: claimedLanding,
       morphTargetFrame: morphTargetFrame,
-      morphStartFrame: morphStartFrame,
-      morphTracking: morphTracking)
+      morphStartFrame: morphStartFrame)
   }
 
   /// A flight layer travels over both moving pages, so its baked-in corner
@@ -2144,10 +2169,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     target: UIView
   ) -> DashPageTransitionStyle {
     switch style {
-    case .entityPop(let entry):
-      return transitionFrame(for: entry.origin, liveOnly: true) == nil
-        ? .flowPop
-        : style
     case .cardPush(let entry), .cardPop(let entry):
       let isPush = style.isPush
       let landingPage = isPush ? target : source
@@ -2158,7 +2179,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         DashCardMorphRules.isUsableEndpoint(sourceFrame, in: view.bounds),
         DashCardMorphRules.isUsableEndpoint(landingFrame, in: view.bounds)
       else {
-        return isPush ? .entityPush(entry) : .flowPop
+        // No usable pair of seats: fall back to the same handoff every other
+        // drill uses rather than inventing a third language for the failure.
+        return isPush ? .flowPush : .flowPop
       }
       return style
     default:
@@ -2182,15 +2205,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       localFrame.intersects(view.bounds.insetBy(dx: -2, dy: -2))
     else { return nil }
     return localFrame
-  }
-
-  private func makeFullScreenTransitionShell(alpha: CGFloat) -> UIView {
-    let shell = UIView(frame: view.bounds)
-    shell.backgroundColor = UIColor(DashTheme.canvas).resolvedColor(with: traitCollection)
-    shell.isOpaque = true
-    shell.isUserInteractionEnabled = false
-    shell.alpha = alpha
-    return shell
   }
 
   private func makeTransitionTimelineDriver() -> UIView {
@@ -2534,22 +2548,15 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     view.transform = .identity
   }
 
-  /// Entity pages fade through an opaque canvas instead of crossfading through
-  /// one another. The source snapshot lingers locally while outgoing content
-  /// clears, then the full-size destination arrives without masks or scaling.
-  /// Workspace morphs also ride this link so the flying avatar can track the
-  /// landing seat through the page train's live transform.
-  /// Reading the active animator's fraction keeps immediate Back reversible.
+  /// The card morph's only timeline: its hero is re-laid-out per frame between
+  /// two live seats. Every other style settles inside the property animator —
+  /// workspace routes are a plain crossfade in a fixed slot and need no link.
   private func startTransitionContentTimelineIfNeeded() {
-    guard let transition = activeTransition, let proxy = transition.proxy else { return }
+    guard let transition = activeTransition, transition.proxy != nil else { return }
     switch transition.style {
-    case .entityPush, .entityPop:
-      break
     case .cardPush, .cardPop:
       break
-    case .workspacePresent, .workspaceDismiss:
-      guard proxy.morphTracking != nil else { return }
-    case .flowPush, .flowPop:
+    case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop:
       return
     }
     stopTransitionContentTimeline()
@@ -2571,7 +2578,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       let driver = transition.proxy?.timelineDriver,
       let presentation = driver.layer.presentation()
     {
-      progress = CGFloat(presentation.opacity)
+      // Deliberately unclamped: the enter spring's overshoot past 1 IS the
+      // bounce, and only the hero frame consumes it — every opacity curve
+      // clamps internally.
+      progress = presentation.position.x / DashCardMorphRules.timelineTravel
     } else {
       progress = CGFloat(transition.animator.fractionComplete)
     }
@@ -2586,21 +2596,12 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let progress = min(max(rawProgress, 0), 1)
     UIView.performWithoutAnimation {
       switch transition.style {
-      case .entityPush:
-        proxy.shell?.alpha = transitionSegment(progress, from: 0, to: 0.3)
-        proxy.outgoingContent?.alpha =
-          1 - transitionSegment(progress, from: 0.08, to: 0.36)
-        proxy.arrivingContent?.alpha =
-          transitionSegment(progress, from: 0.3, to: 0.82)
-      case .entityPop:
-        proxy.outgoingContent?.alpha =
-          1 - transitionSegment(progress, from: 0, to: 0.34)
-        proxy.arrivingContent?.alpha =
-          transitionSegment(progress, from: 0.38, to: 0.68)
-        proxy.shell?.alpha =
-          1 - transitionSegment(progress, from: 0.38, to: 0.76)
       case .cardPush, .cardPop:
-        let detailProgress = transition.style.isPush ? progress : 1 - progress
+        // Push keeps the raw value so the enter spring's overshoot reaches the
+        // hero frame. Pop is critically damped and reads the clamped copy —
+        // a collapse must never extrapolate ahead of the seat it returns to.
+        let detailProgress =
+          transition.style.isPush ? max(rawProgress, 0) : 1 - progress
         if transition.style.isPush {
           transition.source.view.alpha = 1
           transition.target.view.alpha =
@@ -2632,59 +2633,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
               to: landingFrame,
               detailProgress: detailProgress))
         }
-      case .workspacePresent, .workspaceDismiss:
-        updateWorkspaceMorphTimeline(proxy, progress: progress)
-      case .flowPush, .flowPop:
+      case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop:
         break
       }
     }
-  }
-
-  /// Interpolates the flying avatar between the fixed header slot and the live
-  /// settings seat. Using the seat's current on-screen frame (not the settled
-  /// one) keeps the morph glued to the page train instead of racing ahead to
-  /// where the seat will eventually rest.
-  private func updateWorkspaceMorphTimeline(
-    _ proxy: TransitionProxy,
-    progress: CGFloat
-  ) {
-    guard let tracking = proxy.morphTracking,
-      let start = proxy.morphStartFrame,
-      let end = proxy.morphTargetFrame
-    else { return }
-    let liveLanding = anchorFrameInContainer(
-      for: proxy.claimedLanding,
-      liveOnly: true)
-    let from: CGRect
-    let to: CGRect
-    switch tracking {
-    case .landingIsEnd:
-      from = start
-      to = liveLanding ?? end
-    case .landingIsStart:
-      from = liveLanding ?? start
-      to = end
-    }
-    applyMorphFlightFrame(proxy, at: lerpedRect(from, to, progress: progress))
-  }
-
-  private func lerpedRect(_ from: CGRect, _ to: CGRect, progress: CGFloat) -> CGRect {
-    let t = min(max(progress, 0), 1)
-    return CGRect(
-      x: from.minX + (to.minX - from.minX) * t,
-      y: from.minY + (to.minY - from.minY) * t,
-      width: from.width + (to.width - from.width) * t,
-      height: from.height + (to.height - from.height) * t)
-  }
-
-  private func transitionSegment(
-    _ progress: CGFloat,
-    from start: CGFloat,
-    to end: CGFloat
-  ) -> CGFloat {
-    guard end > start else { return progress >= end ? 1 : 0 }
-    let unit = min(max((progress - start) / (end - start), 0), 1)
-    return unit * unit * (3 - 2 * unit)
   }
 
   private func stopTransitionContentTimeline(settlingAt progress: CGFloat? = nil) {
@@ -3517,21 +3469,17 @@ struct DestinationRoutedContent: View {
       case .settingsAccounts: SettingsAccountsView()
       case .about: AboutView()
       case .openSource: OpenSourceView()
-      #if DEBUG
-        case .debug: DebugView()
-      #endif
       case .feature(let feature):
         FeatureRouterContent(feature: feature)
       case .zone(let id): ZoneDetailView(zoneID: id)
       case .dns(let id): DNSRecordsView(zoneID: id)
-      case .cache(let id): CachePurgeView(zoneID: id)
+      case .cache(let id): ZoneCacheView(zoneID: id)
       case .zoneAnalytics(let id): ZoneAnalyticsView(zoneID: id)
       case .zoneWebAnalytics(let id): WebAnalyticsView(zoneID: id)
       case .zoneWAF(let id): WAFEventsView(zoneID: id)
       case .zoneSettings(let id): ZoneSettingsView(zoneID: id)
       case .zoneEmailRouting(let id): EmailRoutingView(zoneID: id)
       case .auditLogs: AuditLogView()
-      case .pushAlerts: PushAlertsView()
       case .watchtowerInbox: WatchtowerInboxView()
       case .cloudflareStatus: CloudflareStatusView()
       case .emailAddresses: EmailDestinationAddressesView()
@@ -3559,7 +3507,9 @@ struct DestinationRoutedContent: View {
 // MARK: - Detail header
 
 /// The identity glyph a detail screen shows ahead of its inline title.
-enum DetailIcon: Equatable {
+/// `Hashable` because the shared header keys the glyph's morph on it: the icon
+/// and the title change as two independent parts, not one block.
+enum DetailIcon: Hashable {
   case feature(FeatureID)
   case avatar(String)
   case solar(String)
@@ -3691,7 +3641,48 @@ struct DashPageChromePreferenceKey: PreferenceKey {
   }
 }
 
-private struct DashPageActionControl: View {
+/// Who paints a page's header slots.
+enum DashPageChromeHosting: Hashable {
+  /// The page draws its own bar — previews and UI-test harnesses that host a
+  /// stack outside `MainTabView`.
+  case page
+  /// The page only publishes; the ONE workspace header draws the slots.
+  case workspace
+}
+
+/// The one channel page chrome travels out of a page on.
+///
+/// SwiftUI preferences do not cross a `UIHostingController`, and every route is
+/// its own hosting controller, so the shared header cannot read a page's
+/// `detailHeader` / `dashPageActions` the way a page-local bar could. Each page
+/// publishes its resolved descriptor here under its entry id instead.
+///
+/// Like `DashHeaderScrollState` and `DashWorkspaceWashScroll`, this store has
+/// exactly ONE reader — `DashWorkspaceHeaderBar`. Nothing in `MainTabView`'s
+/// body may read it: a trailing-action change (an R2 selection, a Save becoming
+/// enabled) would otherwise refresh every cached page host mid-transition.
+@MainActor
+@Observable
+final class DashPageChromeStore {
+  private(set) var pages: [DashNavigationEntry.ID: DashPageChromePreference] = [:]
+
+  func publish(_ chrome: DashPageChromePreference, for id: DashNavigationEntry.ID) {
+    guard pages[id] != chrome else { return }
+    pages[id] = chrome
+  }
+
+  func prune(keeping ids: Set<DashNavigationEntry.ID>) {
+    guard !pages.isEmpty else { return }
+    pages = pages.filter { ids.contains($0.key) }
+  }
+
+  func chrome(for id: DashNavigationEntry.ID?) -> DashPageChromePreference? {
+    guard let id else { return nil }
+    return pages[id]
+  }
+}
+
+struct DashPageActionControl: View {
   let descriptor: DashPageActionDescriptor
   var allowsInteraction = true
 
@@ -3726,7 +3717,7 @@ private struct DashPageActionControl: View {
   }
 }
 
-private struct DashPageActionGroupView: View {
+struct DashPageActionGroupView: View {
   let actions: [DashPageActionDescriptor]
   var allowsInteraction = true
 
@@ -3744,7 +3735,10 @@ private struct DashPageActionGroupView: View {
 enum DashPageChromeMetrics {
   static let controlSize = AvatarHeaderMetrics.barSize
   static let topInset = AvatarHeaderMetrics.chromeInset
-  static let horizontalInset = AvatarHeaderMetrics.chromeInset
+  /// Same gutter as catalog / feature scrolls (`DashTheme.Spacing.screen`) so
+  /// the floated Back / avatar / inbox line up with the content column — not
+  /// the tighter top chrome inset, which only owns the status-bar gap.
+  static let horizontalInset = DashTheme.Spacing.screen
   static let reservedHeight = controlSize + topInset
   static let actionSpacing: CGFloat = 8
   static let maximumPrincipalWidth: CGFloat = 160
@@ -3782,6 +3776,35 @@ enum DashDestinationCanvasRules {
   }
 }
 
+/// The centred identity of a page bar — glyph plus inline title. Shared so the
+/// page-local fallback bar and the workspace header cannot drift apart in
+/// glyph size, spacing, truncation, or the identifier UI tests query.
+///
+/// The title deliberately does NOT animate its own change. It briefly did — a
+/// keyed glyph morph beside a `contentTransition` text dissolve — and the
+/// animated blur ran per-frame main-thread work in the same window where the
+/// page compositor's display link is already re-laying-out a live hero, which
+/// dropped frames. A title change now lands whole; the header's seats keep
+/// their animations, which are render-server work, not per-frame CPU.
+struct DashPageChromeTitleView: View {
+  let header: DashPageHeaderDescriptor
+
+  var body: some View {
+    HStack(spacing: 6) {
+      DetailIconView(icon: header.icon, tint: header.tint)
+        .layoutPriority(1)
+      Text(header.title)
+        .dashTextStyle(.sectionTitle)
+        .foregroundStyle(DashTheme.strong)
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("dash.navigation.title")
+    }
+    .frame(maxWidth: DashPageChromeMetrics.maximumPrincipalWidth)
+  }
+}
+
 private struct DashPageNavigationBar: View {
   let entry: DashNavigationEntry
   let chrome: DashPageChromePreference
@@ -3792,18 +3815,7 @@ private struct DashPageNavigationBar: View {
   var body: some View {
     ZStack {
       if let header = chrome.header {
-        HStack(spacing: 6) {
-          DetailIconView(icon: header.icon, tint: header.tint)
-            .layoutPriority(1)
-          Text(header.title)
-            .dashTextStyle(.sectionTitle)
-            .foregroundStyle(DashTheme.strong)
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .accessibilityAddTraits(.isHeader)
-            .accessibilityIdentifier("dash.navigation.title")
-        }
-        .frame(maxWidth: DashPageChromeMetrics.maximumPrincipalWidth)
+        DashPageChromeTitleView(header: header)
       }
 
       HStack(spacing: DashPageChromeMetrics.actionSpacing) {
@@ -3929,6 +3941,17 @@ struct DashRoutePageChromeHost<Content: View>: View {
     .onPreferenceChange(DashPageChromePreferenceKey.self) { [$pageChrome] chrome in
       $pageChrome.wrappedValue = chrome
     }
+    // The slots leave the page here — and deliberately NOT with `initial:
+    // true`. The first body evaluation runs before the page's preferences have
+    // propagated, so an initial publish speaks with the DEFAULT-EMPTY voice:
+    // it blanks the shared title slot on the very frame the push lands, the
+    // header's holdover never sees a "has not spoken" window, and every title
+    // change degrades from a content morph into remove → gap → insert. The
+    // store only ever hears chrome the page actually resolved; until then the
+    // header holds the previous page's title.
+    .onChange(of: pageChrome) { _, chrome in
+      publishChrome(chrome)
+    }
     .safeAreaInset(edge: .top, spacing: 0) {
       routeChromeInset
     }
@@ -3951,10 +3974,20 @@ struct DashRoutePageChromeHost<Content: View>: View {
   }
 
   /// Fixed-height top chrome so roots and destinations share one safe-area
-  /// reservation. Clear on tab roots; destinations paint the same slot.
+  /// reservation. The reservation is the invariant and never moves; only the
+  /// painting does. Under `.workspace` hosting the slot stays clear on every
+  /// page, because the ONE header above the pager draws it.
+  ///
+  /// The constant height is also what keeps this host acyclic. The chrome
+  /// preference is read OUT of the content and this inset is fed BACK IN as a
+  /// top safe area — a closed loop by construction. It stays shut only because
+  /// the inset's height is a compile-time constant: measure it from the bar's
+  /// own content and a taller title would grow the inset, which re-lays-out
+  /// the content that published the title. `check-ios-ui-architecture` asserts
+  /// the constant for exactly this reason.
   @ViewBuilder private var routeChromeInset: some View {
     Group {
-      if let entry {
+      if let entry, chromeHosting == .page {
         DashPageNavigationBar(
           entry: entry,
           chrome: pageChrome,
@@ -3967,6 +4000,20 @@ struct DashRoutePageChromeHost<Content: View>: View {
     }
     .frame(height: DashPageChromeMetrics.reservedHeight)
     .frame(maxWidth: .infinity, alignment: .top)
+  }
+
+  /// A stored `let` on the navigator, so reading it registers no observation.
+  private var chromeHosting: DashPageChromeHosting {
+    navigator?.chromeHosting ?? .page
+  }
+
+  /// Published, never withdrawn on disappear: the page container detaches a
+  /// covered page's view, and a page that came back would have no second
+  /// `initial` change to republish from — it would return under a titleless
+  /// bar. `DestinationNavigator` prunes the store when the entry itself goes.
+  private func publishChrome(_ chrome: DashPageChromePreference) {
+    guard chromeHosting == .workspace, let entry else { return }
+    navigator?.pageChrome.publish(chrome, for: entry.id)
   }
 }
 

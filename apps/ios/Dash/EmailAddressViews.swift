@@ -283,7 +283,7 @@ struct EmailAddressAddForm: View {
         return
       }
       model.featureCache.remove(FeatureCacheKey.emailAddresses(context.accountID))
-      model.toasts.success(DashL10n.string("Cloudflare sent a verification email to \(address)."))
+      model.toasts.success(DashL10n.string("Cloudflare sent a verification email to \(address)"))
       await onAdded()
       guard model.isCurrentAccount(context), !Task.isCancelled else {
         actionPhase = .idle

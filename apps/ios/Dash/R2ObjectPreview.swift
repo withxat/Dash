@@ -386,7 +386,7 @@ private struct R2ObjectActionsSheet: View {
         if let publicURL {
           DashActionButton(title: "Copy public URL") {
             UIPasteboard.general.url = publicURL
-            model.toasts.success(DashL10n.string("Public URL copied."))
+            model.toasts.success(DashL10n.string("Public URL copied"))
           }
         } else if let accountID = model.activeAccountID,
           R2Media.isWithinTransferLimit(object.size)
@@ -417,7 +417,7 @@ private struct R2ObjectActionsSheet: View {
     deleteError = nil
     do {
       try await model.client.deleteR2Object(accountID: accountID, bucket: bucket, key: object.key)
-      model.toasts.success(DashL10n.string("Deleted \(filename)."))
+      model.toasts.success(DashL10n.string("Deleted \(filename)"))
       deleteActionPhase = .succeeded
     } catch {
       deleteActionPhase = .idle

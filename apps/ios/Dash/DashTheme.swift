@@ -8,9 +8,11 @@ enum DashTheme {
   enum Layout {
     static let emptyStateMinHeight: CGFloat = 420
     static let minimumHitTarget: CGFloat = 44
-    /// Title + subtitle list row. Resources `FeatureRow` usually settles on two
-    /// subtitle lines; detail Actions with short blurbs reserve the same slot
-    /// so they don't stack denser than the catalog.
+    /// Two-tone eyebrow card list-row seat (`DashTwoToneListGroup` /
+    /// `DashInfoGroup` / lazy `dashTwoToneCardRows`). Published via
+    /// `dashTwoToneListRows`. Not the hit-target floor — that stays 44.
+    static let twoToneListRow: CGFloat = 60
+    /// Service-catalog / detail-Actions list-row seat (72).
     static let subtitledListRow: CGFloat = 72
     /// Fixed height for every primary / secondary tray pill. Never `minHeight`
     /// alone — pills must not grow with Dynamic Type or leftover tray space.
@@ -241,6 +243,8 @@ enum DashTheme {
     static let card: CGFloat = 16
     /// Gap between tiles in home shortcut grids and similar 2-up layouts.
     static let itemGap: CGFloat = 12
+    /// Vertical padding of bare list / settings option rows.
+    static let listRow: CGFloat = 8
     /// Optical inset for bare list rows, matching the group title above them.
     static let rowInset: CGFloat = 4
     /// Tight inline rhythm — search rows, tool-tile stacks, banner internals.
@@ -299,6 +303,18 @@ enum DashTheme {
     /// out: the arriving glyph is already legible in the first third instead of
     /// crossing a half-faded midpoint the user waits through.
     static let iconSwap = Animation.easeOut(duration: 0.16)
+    /// One glyph handing over to another: a selection mark filling in, a
+    /// toast's kind changing under a queue advance. Distinct from `iconSwap`
+    /// because the pair trades scale and softness as well as opacity, and a
+    /// timing curve lands a size change flatly — under-damped just enough that
+    /// an arriving check pops, which is the confirmation of the tap that
+    /// caused it. `iconSwap` keeps the ring → check case, where the write is
+    /// already finished and a bounce would be celebrating twice.
+    static let glyphSwap = Animation.spring(response: 0.34, dampingFraction: 0.7)
+    /// How small and how soft a glyph is at the far end of that handover.
+    /// Scale is `scaleEffect`, so the mark's layout slot never moves.
+    static let glyphSwapScale: CGFloat = 0.82
+    static let glyphSwapBlur: CGFloat = 4
     /// Staggered text entrance: Transitions.dev's 12pt / 3pt-blur reveal.
     static let textReveal = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.5)
     /// Failure-reveal exit is deliberately independent: one quiet, synchronous
@@ -322,17 +338,22 @@ enum DashTheme {
       static let reducedDuration: TimeInterval = 0.12
       static let flowEnterDuration: TimeInterval = 0.3
       static let flowExitDuration: TimeInterval = 0.3
-      static let entityEnterDuration: TimeInterval = 0.29
-      static let entityExitDuration: TimeInterval = 0.23
       /// Family's wallet-card pattern: geometry settles first, with destination
       /// chrome resolving during the latter half. Collapse is a firmer inverse.
-      static let cardEnterDuration: TimeInterval = 0.38
-      static let cardExitDuration: TimeInterval = 0.34
-      static let cardDampingRatio: CGFloat = 1
+      static let cardEnterDuration: TimeInterval = 0.46
+      static let cardExitDuration: TimeInterval = 0.38
+      /// Underdamped so the expanding card overgrows its seat (~5%, one clean
+      /// bounce; the second oscillation is invisible) and settles back — the
+      /// overshoot only reaches the hero frame (the timeline rides an
+      /// unclamped position spring for exactly this). Tuned by eye between
+      /// 0.72 (read as stiff) and 0.62 (read as rubbery).
+      static let cardEnterDampingRatio: CGFloat = 0.68
+      /// Collapse never bounces: a card returning to its grid seat with an
+      /// overshoot would dip INTO the grid before settling.
+      static let cardExitDampingRatio: CGFloat = 1
       // The full-height workspace train stays close to the flow handoff pace.
       static let workspaceEnterDuration: TimeInterval = 0.28
       static let workspaceExitDuration: TimeInterval = 0.22
-      static let dampingRatio: CGFloat = 0.9
       /// Flow drills use the tab settle spring so push and tab swipe read as
       /// one horizontal language (`tabStepSettleDampingRatio`).
       static let flowDampingRatio: CGFloat = 0.68
@@ -381,6 +402,10 @@ enum DashTheme {
     /// are not complementary: at the crossover both sit near 30%, so the swap
     /// briefly breathes toward the canvas instead of double-exposing two pages.
     static let tabStepSlide: CGFloat = 24
+    /// The shared header's title travel. The bar itself never moves — only the
+    /// content of one slot does, so it reads as the page's direction without
+    /// restating the page's distance.
+    static let headerTitleStepSlide: CGFloat = 14
     static let tabStepOutgoingFadeDuration: TimeInterval = 0.12
     static let tabStepOutgoingFadeControlPoint1 = CGPoint(x: 0.2, y: 0.7)
     static let tabStepOutgoingFadeControlPoint2 = CGPoint(x: 0.4, y: 1)
@@ -420,18 +445,20 @@ enum DashTheme {
     // MARK: Floating surfaces — Toast and free-moving interaction vocabulary.
     // Raw springs: call sites gate reduce-motion, and some deliberately skip the
     // gate to keep a drag-release physical.
-    static let present = Animation.spring(
-      response: 0.35, dampingFraction: 0.88, blendDuration: 0.12)
+    /// Tray card entrance. Ease-out (not a spring, not ease-in): answers on the
+    /// first frames and soft-lands. The old 0.35s spring spent too long settling;
+    /// ease-in would delay the first motion and feel even slower to open.
+    static let present = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
     static let release = Animation.spring(
       response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
     static let dismiss = Animation.spring(
       response: 0.28, dampingFraction: 0.94, blendDuration: 0.08)
     /// Tray scrim opacity fades in/out in place while the card rides its own
-    /// spring. Opacity carries no physics, so a timing curve reads cleaner than
-    /// a spring and stays in step with the card's settle: present eases out so
-    /// the scrim arrives and holds, dismiss eases in so it lingers then drops.
-    static let scrimPresent = Animation.easeOut(duration: 0.3)
-    static let scrimDismiss = Animation.easeIn(duration: 0.22)
+    /// present curve. Opacity carries no physics, so a timing curve stays in
+    /// step with the card: present eases out so the scrim arrives with it,
+    /// dismiss eases in so it lingers then drops.
+    static let scrimPresent = Animation.easeOut(duration: 0.22)
+    static let scrimDismiss = Animation.easeIn(duration: 0.2)
   }
 
   enum Sheet {
@@ -458,7 +485,13 @@ enum DashTheme {
     static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
-    static let scrimOpacity: CGFloat = 0.35
+    /// Black veil over the page. Kept light on purpose — the material below
+    /// already softens the backdrop, and 0.35 + full-strength blur stacked
+    /// into a muddy slab behind the floating card.
+    static let scrimOpacity: CGFloat = 0.18
+    /// How hard the material blur paints. Full `.ultraThinMaterial` was the
+    /// heavy half of the old scrim; fade it so the page still reads through.
+    static let scrimMaterialOpacity: CGFloat = 0.55
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
     /// Lets the compact tray sit slightly inside the home-indicator safe area.
@@ -468,6 +501,10 @@ enum DashTheme {
   enum Toast {
     /// Toasts and trays share the established floating-chrome edge margin.
     static let horizontalMargin: CGFloat = 12
+    /// Drop below the safe area, on the floated avatar's band. Its own dial
+    /// rather than `AvatarHeaderMetrics.chromeInset` directly: a toast has to
+    /// clear the Dynamic Island, which is not a reason to move the avatar.
+    static let topInset: CGFloat = AvatarHeaderMetrics.chromeInset
   }
 
   // Palette mirrors https://kumo-ui.com/colors/ token reference (sRGB hex
@@ -532,9 +569,9 @@ enum DashTheme {
   /// Quiet icon actions — between `subtle` and `inactive`.
   static let faint = adaptive(
     light: 0xA1A1A1, dark: 0x737373, highLight: 0x737373, highDark: 0xA1A1A1)
-  /// Leading icons on neutral tray menu rows — `text-kumo-subtle`.
+  /// Leading icons on Settings / neutral list rows — `#9696A1`.
   static let iconMuted = adaptive(
-    light: 0x737373, dark: 0xA1A1A1, highLight: 0x525252, highDark: 0xD4D4D4)
+    light: 0x9696A1, dark: 0x9696A1, highLight: 0x525252, highDark: 0xD4D4D4)
   /// `text-kumo-placeholder`
   static let placeholder = adaptive(
     light: 0xA1A1A1, dark: 0x737373, highLight: 0x737373, highDark: 0xA1A1A1)

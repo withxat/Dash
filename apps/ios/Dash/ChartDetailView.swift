@@ -363,6 +363,13 @@ struct DashChartDetailButton: View {
       size: DashTheme.Chevron.compact,
       color: DashTheme.strong
     )
+    // NOT the nav bar's seat: this is a 14pt mark in a 32pt plate, where the
+    // navigation circle's flat nudge is proportionally about twice as large and
+    // pushes the tip toward the plate's edge.
+    .offset(
+      x: DashChevronOpticalRules.offsetX(
+        for: SolarAsset.chevronRight, seat: .compactDisclosure)
+    )
     .frame(width: Self.diameter, height: Self.diameter)
   }
 
@@ -640,11 +647,10 @@ private struct DashChartTableRow: View {
         compactLayout
       }
     }
-    // The 44pt floor is the row rhythm the two-tone card carries everywhere
-    // (`DashInfoRow`, Home's Recently used); only the taller two-series cells
-    // need padding of their own.
+    // Same `twoToneListRow` seat as `DashInfoRow` / Home's Recently used;
+    // only the taller two-series cells need padding of their own.
     .padding(.vertical, row.values.count == 1 ? 0 : 6)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+    .frame(minHeight: DashTheme.Layout.twoToneListRow)
     .accessibilityElement(children: .combine)
   }
 

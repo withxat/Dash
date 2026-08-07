@@ -205,17 +205,6 @@ final class PagesBuildActivityControllerBox {
     self.fetchDeployment = fetchDeployment
   }
 
-  #if DEBUG
-    func debugRefreshWaiterCount(for key: PagesBuildMonitorKey) -> Int {
-      refreshTasks[key]?.waiterCount ?? 0
-    }
-
-    func debugConsecutiveFailureCount(for key: PagesBuildMonitorKey) -> Int? {
-      guard monitor?.key == key else { return nil }
-      return monitor?.consecutiveFailures
-    }
-  #endif
-
   func updates(
     for key: PagesBuildMonitorKey,
     client: CloudflareClient

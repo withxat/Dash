@@ -263,11 +263,6 @@ public actor CloudflareClient {
     let _: JSONValue = try await request(
       "/zones/\(zoneID)/dns_records/\(recordID)", method: "DELETE")
   }
-  public func purgeCache(zoneID: String, files: [String]? = nil) async throws {
-    let body: [String: JSONValue] =
-      files.map { ["files": .array($0.map(JSONValue.string))] } ?? ["purge_everything": .bool(true)]
-    let _: JSONValue = try await request("/zones/\(zoneID)/purge_cache", method: "POST", body: body)
-  }
   public func listZoneSettings(zoneID: String) async throws -> [ZoneSetting] {
     try await list("/zones/\(zoneID)/settings").items
   }
@@ -1278,17 +1273,17 @@ public actor CloudflareClient {
     }
   }
 
-  /// Web Analytics metrics for one RUM site — page views, visits, and median
-  /// page-load time (ms) — the three figures the Web Analytics dashboard shows.
-  /// Page views and visits come from `rumPageloadEventsAdaptiveGroups`;
-  /// page-load time lives on the separate `rumPerformanceEventsAdaptiveGroups`
-  /// dataset (only it carries the timing quantiles).
+  /// Web Analytics metrics for one RUM site — page views and visits from
+  /// `rumPageloadEventsAdaptiveGroups`, which is the only dataset queried.
+  /// `rumPerformanceEventsAdaptiveGroups` (page-load time) and
+  /// `rumWebVitalsEventsAdaptiveGroups` (LCP / INP / CLS) are deliberately NOT
+  /// queried: both metrics were removed from the screen, and querying them again
+  /// would pay for numbers nothing reads.
   ///
-  /// Both datasets are account-scoped, so the account is selected by `accountTag`
+  /// The dataset is account-scoped, so the account is selected by `accountTag`
   /// and the site by `siteTag`. Daily buckets span two adjacent complete UTC-day
-  /// windows and are ascending by date. Two ungrouped aliases return the exact
-  /// whole-window page-load medians for a period-over-period comparison without
-  /// another HTTP request.
+  /// windows and are ascending by date, which is what lets one request serve both
+  /// the current period and its comparison.
   public func webAnalyticsMetrics(accountID: String, siteTag: String, days: Int = 7) async throws
     -> RUMMetricsComparison
   {
@@ -1300,38 +1295,13 @@ public actor CloudflareClient {
     let bounds = webAnalyticsComparisonWindow(days: window)
     let dailyFilter =
       "{siteTag: \"\(siteTag)\", "
-      + "datetime_geq: \"\(formatter.string(from: bounds.previousStart))\", "
+      + "datetime_geq: \"\(formatter.string(from: bounds.start))\", "
       + "datetime_lt: \"\(formatter.string(from: bounds.end))\"}"
-    let currentFilter =
-      "{siteTag: \"\(siteTag)\", "
-      + "datetime_geq: \"\(formatter.string(from: bounds.currentStart))\", "
-      + "datetime_lt: \"\(formatter.string(from: bounds.end))\"}"
-    let previousFilter =
-      "{siteTag: \"\(siteTag)\", "
-      + "datetime_geq: \"\(formatter.string(from: bounds.previousStart))\", "
-      + "datetime_lt: \"\(formatter.string(from: bounds.currentStart))\"}"
     let query = """
       { viewer { accounts(filter: {accountTag: "\(accountID)"}) { \
       pageload: rumPageloadEventsAdaptiveGroups(limit: \(span), \
       filter: \(dailyFilter), orderBy: [date_ASC]) { \
-      count sum { visits } dimensions { date } } \
-      performance: rumPerformanceEventsAdaptiveGroups(limit: \(span), \
-      filter: \(dailyFilter), orderBy: [date_ASC]) { \
-      quantiles { pageLoadTimeP50 } dimensions { date } } \
-      vitals: rumWebVitalsEventsAdaptiveGroups(limit: \(span), \
-      filter: \(dailyFilter), orderBy: [date_ASC]) { \
-      quantiles { largestContentfulPaintP75 interactionToNextPaintP75 \
-      cumulativeLayoutShiftP75 } dimensions { date } } \
-      currentPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
-      filter: \(currentFilter)) { quantiles { pageLoadTimeP50 } } \
-      previousPerformanceTotals: rumPerformanceEventsAdaptiveGroups(limit: 1, \
-      filter: \(previousFilter)) { quantiles { pageLoadTimeP50 } } \
-      currentVitalsTotals: rumWebVitalsEventsAdaptiveGroups(limit: 1, \
-      filter: \(currentFilter)) { quantiles { largestContentfulPaintP75 \
-      interactionToNextPaintP75 cumulativeLayoutShiftP75 } } \
-      previousVitalsTotals: rumWebVitalsEventsAdaptiveGroups(limit: 1, \
-      filter: \(previousFilter)) { quantiles { largestContentfulPaintP75 \
-      interactionToNextPaintP75 cumulativeLayoutShiftP75 } } } } }
+      count sum { visits } dimensions { date } } } } }
       """
     let response = try await graphQL(query: query)
     let envelope = try JSONDecoder().decode(
@@ -1344,58 +1314,28 @@ public actor CloudflareClient {
     guard let account = envelope.data?.viewer.accounts.first else {
       return RUMMetricsComparison(days: [])
     }
-    var p50ByDate: [String: Int] = [:]
-    for group in account.performance {
-      if let p50 = group.quantiles.pageLoadTimeP50 {
-        p50ByDate[group.dimensions.date] = Int(p50.rounded())
-      }
-    }
-    var vitalsByDate: [String: RUMMetricsData.VitalsQuantiles] = [:]
-    for group in account.vitals ?? [] {
-      vitalsByDate[group.dimensions.date] = group.quantiles
-    }
-    let days = account.pageload.map { group -> RUMDailyMetrics in
-      let vitals = vitalsByDate[group.dimensions.date]
-      return RUMDailyMetrics(
-        date: group.dimensions.date,
-        pageviews: group.count,
-        visits: group.sum.visits,
-        pageLoadTimeP50Ms: p50ByDate[group.dimensions.date],
-        lcpP75Ms: vitals?.lcpP75Ms,
-        inpP75Ms: vitals?.inpP75Ms,
-        clsP75: vitals?.clsP75)
-    }
-    let currentVitals = account.currentVitalsTotals?.first?.quantiles
-    let previousVitals = account.previousVitalsTotals?.first?.quantiles
     return RUMMetricsComparison(
-      days: days,
-      currentPageLoadTimeP50Ms: account.currentPerformanceTotals?.first?.roundedP50,
-      previousPageLoadTimeP50Ms: account.previousPerformanceTotals?.first?.roundedP50,
-      currentLcpP75Ms: currentVitals?.lcpP75Ms,
-      previousLcpP75Ms: previousVitals?.lcpP75Ms,
-      currentInpP75Ms: currentVitals?.inpP75Ms,
-      previousInpP75Ms: previousVitals?.inpP75Ms,
-      currentClsP75: currentVitals?.clsP75,
-      previousClsP75: previousVitals?.clsP75)
+      days: account.pageload.map { group in
+        RUMDailyMetrics(
+          date: group.dimensions.date,
+          pageviews: group.count,
+          visits: group.sum.visits)
+      })
   }
 
   /// The single-site detail uses complete UTC days so a partial today never
-  /// makes the current period look artificially lower than its comparison.
+  /// makes the current period look artificially lower than its comparison. One
+  /// filter spans both windows — the caller splits them by date.
   private func webAnalyticsComparisonWindow(days: Int, now: Date = Date()) -> (
-    previousStart: Date, currentStart: Date, end: Date
+    start: Date, end: Date
   ) {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "UTC") ?? calendar.timeZone
     let window = max(days, 1)
     let end = calendar.startOfDay(for: now)
     let currentStart = calendar.date(byAdding: .day, value: -window, to: end) ?? end
-    let previousStart =
-      calendar.date(byAdding: .day, value: -window, to: currentStart) ?? currentStart
-    return (
-      previousStart: previousStart,
-      currentStart: currentStart,
-      end: end
-    )
+    let start = calendar.date(byAdding: .day, value: -window, to: currentStart) ?? currentStart
+    return (start: start, end: end)
   }
 
   /// Hourly HTTP request totals via the GraphQL `httpRequests1hGroups`
@@ -2174,12 +2114,6 @@ private struct RUMMetricsData: Decodable, Sendable {
   struct Viewer: Decodable, Sendable { let accounts: [Account] }
   struct Account: Decodable, Sendable {
     let pageload: [PageloadGroup]
-    let performance: [PerformanceGroup]
-    let vitals: [VitalsGroup]?
-    let currentPerformanceTotals: [PerformanceTotalGroup]?
-    let previousPerformanceTotals: [PerformanceTotalGroup]?
-    let currentVitalsTotals: [VitalsTotalGroup]?
-    let previousVitalsTotals: [VitalsTotalGroup]?
   }
   struct DateDimension: Decodable, Sendable { let date: String }
   struct PageloadGroup: Decodable, Sendable {
@@ -2188,45 +2122,6 @@ private struct RUMMetricsData: Decodable, Sendable {
     let dimensions: DateDimension
 
     struct Sum: Decodable, Sendable { let visits: Int }
-  }
-  struct PerformanceGroup: Decodable, Sendable {
-    let quantiles: Quantiles
-    let dimensions: DateDimension
-
-    struct Quantiles: Decodable, Sendable { let pageLoadTimeP50: Double? }
-  }
-  struct PerformanceTotalGroup: Decodable, Sendable {
-    let quantiles: PerformanceGroup.Quantiles
-
-    var roundedP50: Int? {
-      quantiles.pageLoadTimeP50.map { Int($0.rounded()) }
-    }
-  }
-  /// Cloudflare returns LCP / INP in microseconds and CLS unitless. Values
-  /// below zero mean "no sample for this group".
-  struct VitalsQuantiles: Decodable, Sendable {
-    let largestContentfulPaintP75: Double?
-    let interactionToNextPaintP75: Double?
-    let cumulativeLayoutShiftP75: Double?
-
-    var lcpP75Ms: Double? { positiveMs(fromMicroseconds: largestContentfulPaintP75) }
-    var inpP75Ms: Double? { positiveMs(fromMicroseconds: interactionToNextPaintP75) }
-    var clsP75: Double? {
-      guard let value = cumulativeLayoutShiftP75, value >= 0 else { return nil }
-      return value
-    }
-
-    private func positiveMs(fromMicroseconds value: Double?) -> Double? {
-      guard let value, value >= 0 else { return nil }
-      return value / 1000
-    }
-  }
-  struct VitalsGroup: Decodable, Sendable {
-    let quantiles: VitalsQuantiles
-    let dimensions: DateDimension
-  }
-  struct VitalsTotalGroup: Decodable, Sendable {
-    let quantiles: VitalsQuantiles
   }
 }
 private struct ZoneAnalyticsHourlyData: Decodable, Sendable {

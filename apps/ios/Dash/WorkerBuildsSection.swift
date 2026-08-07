@@ -291,7 +291,7 @@ struct WorkerBuildsSection: View {
         cancelPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Build cancelled."))
+      model.toasts.success(DashL10n.string("Build cancelled"))
       cancelPhase = .succeeded
     } catch {
       cancelPhase = .idle

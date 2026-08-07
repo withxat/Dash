@@ -122,23 +122,6 @@ struct ZoneEntityQuery: EntityStringQuery {
   }
 }
 
-struct PurgeCacheIntent: AppIntent {
-  static let title: LocalizedStringResource = "Purge Cache"
-  static let description = IntentDescription("Purge everything from a Cloudflare domain's cache.")
-
-  @Parameter(title: "Domain") var zone: ZoneEntity
-  @Dependency private var model: AppModel
-
-  @MainActor
-  func perform() async throws -> some IntentResult & ProvidesDialog {
-    try await DashIntentAuthorization.require(["cache.purge"], model: model)
-    try await dashRequestConfirmation(
-      dialog: "Purge everything from \(zone.name)'s cache?")
-    try await model.client.purgeCache(zoneID: zone.id, files: nil)
-    return .result(dialog: "Purged everything from \(zone.name).")
-  }
-}
-
 /// Serializes every Under Attack transition for a zone and owns the local
 /// restore level. The gate deliberately stays held across Cloudflare reads and
 /// writes so two entry points cannot interleave their read-modify-write cycles.
@@ -659,11 +642,6 @@ struct OpenWatchtowerIntent: AppIntent {
 
 struct DashShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
-    AppShortcut(
-      intent: PurgeCacheIntent(),
-      phrases: ["Purge cache with \(.applicationName)"],
-      shortTitle: "Purge Cache",
-      systemImageName: "trash")
     AppShortcut(
       intent: SetUnderAttackIntent(),
       phrases: ["Set under attack mode in \(.applicationName)"],

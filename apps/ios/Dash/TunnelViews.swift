@@ -312,7 +312,7 @@ struct TunnelDetailView: View {
 
   private func copyTunnelID() {
     UIPasteboard.general.string = tunnelID
-    model.toasts.success(DashL10n.string("Tunnel ID copied."))
+    model.toasts.success(DashL10n.string("Tunnel ID copied"))
   }
 
   // MARK: Section 2 — Connectors
@@ -468,7 +468,7 @@ struct TunnelDetailView: View {
         if let service = row.service {
           DashTrayPillButton(title: "Copy service") {
             UIPasteboard.general.string = service
-            model.toasts.success(DashL10n.string("Service copied."))
+            model.toasts.success(DashL10n.string("Service copied"))
           }
         }
         if let url = row.browsableURL {
@@ -479,7 +479,7 @@ struct TunnelDetailView: View {
         if !row.isCatchAll {
           DashActionButton(title: "Copy hostname") {
             UIPasteboard.general.string = row.hostname
-            model.toasts.success(DashL10n.string("Hostname copied."))
+            model.toasts.success(DashL10n.string("Hostname copied"))
           }
         }
       }

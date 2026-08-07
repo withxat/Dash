@@ -267,15 +267,21 @@ struct DashTrayTextButton: View {
 /// two are alternatives rather than a choice about the same action.
 struct DashTrayActionPair<Secondary: View, Primary: View>: View {
   var axis: Axis = .horizontal
+  /// Vertical only. The tight default keeps a stacked pair reading as one
+  /// decision inside a tray; a page-scale placement (onboarding) may open it
+  /// up so the secondary text action stops crowding the pill.
+  var verticalGap: CGFloat = 4
   private let secondary: Secondary
   private let primary: Primary
 
   init(
     axis: Axis = .horizontal,
+    verticalGap: CGFloat = 4,
     @ViewBuilder secondary: () -> Secondary,
     @ViewBuilder primary: () -> Primary
   ) {
     self.axis = axis
+    self.verticalGap = verticalGap
     self.secondary = secondary()
     self.primary = primary()
   }
@@ -288,7 +294,7 @@ struct DashTrayActionPair<Secondary: View, Primary: View>: View {
         primary
       }
     case .vertical:
-      VStack(spacing: 4) {
+      VStack(spacing: verticalGap) {
         secondary
         primary
       }
@@ -626,8 +632,10 @@ struct DashActionButton: View {
         .padding(.trailing, 18)
       }
 
-    // Chrome-only emboss so matchedGeometryEffect stays single-instance
-    // (full `dashEmbossed` duplicates its content for the press sink).
+    // Deliberately flat — no emboss chrome. Action pills briefly wore the
+    // enamel sheen/bevel/shadow set, and on a danger pill especially the
+    // skeuomorphism read as decoration on a control that should state its
+    // consequence plainly. The grain fill is the pill's whole surface.
     return Group {
       if let morphID, let morphNamespace {
         face.matchedGeometryEffect(id: morphID, in: morphNamespace)
@@ -635,7 +643,6 @@ struct DashActionButton: View {
         face
       }
     }
-    .dashEmbossChrome(.pigmented, shape: DashTheme.pillShape)
   }
 
   /// The title as a character-run morphing label; a `labelMorphID` also pins
@@ -780,61 +787,69 @@ struct DashFailurePresentation: Equatable, Sendable {
   static func from(error: Error) -> DashFailurePresentation {
     if let apiError = error as? CloudflareAPIError, apiError.isUnauthorized {
       return DashFailurePresentation(
-        message: "Your Cloudflare session is no longer valid. Sign in again.",
+        message: DashL10n.string("Your Cloudflare session is no longer valid. Sign in again."),
         action: .signInAgain)
     }
     if let apiError = error as? CloudflareAPIError, apiError.isForbidden {
       return DashFailurePresentation(
         message:
-          "Dash doesn’t have access to this resource. Grant access, or confirm the active account includes it.",
+          DashL10n.string(
+            "Dash doesn’t have access to this resource. Grant access, or confirm the active account includes it."
+          ),
         action: .grantAccess)
     }
     if let apiError = error as? CloudflareAPIError, apiError.isRateLimited {
       return DashFailurePresentation(
-        message: "Rate limited by Cloudflare — wait a moment and try again.",
+        message: DashL10n.string("Rate limited by Cloudflare — wait a moment and try again."),
         action: .tryAgain)
     }
     if let apiError = error as? CloudflareAPIError {
       switch apiError {
       case .transport:
         return DashFailurePresentation(
-          message: "Dash couldn’t reach Cloudflare. Check your connection and try again.",
+          message: DashL10n.string(
+            "Dash couldn’t reach Cloudflare. Check your connection and try again."),
           action: .tryAgain)
       case .invalidResponse:
         return DashFailurePresentation(
-          message: "Cloudflare returned a response Dash couldn’t read. Try again.",
+          message: DashL10n.string("Cloudflare returned a response Dash couldn’t read. Try again."),
           action: .tryAgain)
       case .oauth:
         return DashFailurePresentation(
-          message: "Cloudflare couldn’t complete sign-in. Try again.",
+          message: DashL10n.string("Cloudflare couldn’t complete sign-in. Try again."),
           action: .tryAgain)
       case .request(let status, let errors):
         if status == 404 {
           return DashFailurePresentation(
             message:
-              "Cloudflare couldn’t find this resource. It may have been removed or belong to another account.",
+              DashL10n.string(
+                "Cloudflare couldn’t find this resource. It may have been removed or belong to another account."
+              ),
             action: .tryAgain)
         }
         if status == 400 || status == 422 {
           return DashFailurePresentation(
             message: Self.cloudflareRequestDetail(from: errors)
-              ?? "Cloudflare couldn’t process this request. Check the resource and try again.",
+              ?? DashL10n.string(
+                "Cloudflare couldn’t process this request. Check the resource and try again."),
             action: .tryAgain)
         }
         if status >= 500 {
           return DashFailurePresentation(
-            message: "Cloudflare is temporarily unavailable. Try again in a moment.",
+            message: DashL10n.string(
+              "Cloudflare is temporarily unavailable. Try again in a moment."),
             action: .tryAgain)
         }
         return DashFailurePresentation(
           message: Self.cloudflareRequestDetail(from: errors)
-            ?? "Cloudflare couldn’t complete this request. Try again.",
+            ?? DashL10n.string("Cloudflare couldn’t complete this request. Try again."),
           action: .tryAgain)
       }
     }
     if error is URLError {
       return DashFailurePresentation(
-        message: "Dash couldn’t reach Cloudflare. Check your connection and try again.",
+        message: DashL10n.string(
+          "Dash couldn’t reach Cloudflare. Check your connection and try again."),
         action: .tryAgain)
     }
     return DashFailurePresentation(

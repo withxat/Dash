@@ -12,10 +12,21 @@ struct DashToast: Identifiable, Equatable, Sendable {
     case optimistic(UUID)
   }
 
-  enum Kind: Equatable, Sendable {
+  enum Kind: Equatable, Sendable, CaseIterable {
     case success
     case error
     case warning
+
+    /// Exhaustive on purpose: a new kind cannot compile without naming its
+    /// glyph, and `DashToastCard` builds its crossfade stack from every
+    /// distinct glyph this returns.
+    var glyph: String {
+      switch self {
+      case .success: SolarAsset.Content.checkCircle
+      case .error: SolarAsset.Content.danger
+      case .warning: SolarAsset.Content.danger
+      }
+    }
 
     var defaultTitle: String {
       switch self {
@@ -538,41 +549,78 @@ final class DashToastCenter {
 
 /// Floating toast host — top edge matches the floated profile avatar numerically
 /// (`AvatarHeaderMetrics.chromeInset` below the status-bar safe area).
+///
+/// Mounted exactly once, by `dashToastLayer` in the layer's own window. It used
+/// to be mounted a second time inside every tray cover, and both copies read
+/// the same `DashToastCenter.current`; see `DashToastLayerContent`.
 struct DashToastHost: View {
+  /// The window's top safe-area inset, measured by the layer before it ignores
+  /// it. Passed rather than resolved here: the layer lays out from the window's
+  /// top edge, where the environment reports no inset at all.
+  let topInset: CGFloat
   @Environment(AppModel.self) private var model
+  @Environment(\.dashToastLayerState) private var layerState
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// The card on screen — a mirror of `DashToastCenter.current`, not a
+  /// read-through, because an exit needs the toast to outlive the center by the
+  /// length of its own animation.
+  ///
+  /// The reveal used to be `.transition` + `.animation(_:value:)`. In this
+  /// layer's window insertions played and removals landed in a single frame,
+  /// every time, so a dismissal simply blinked out. View-owned state written
+  /// inside an explicit `withAnimation` is the mechanism this app has found
+  /// survives whatever host its chrome ends up in — the same one the shared
+  /// header bar and the tray reveal use. Do not "simplify" it back.
+  @State private var displayed: DashToast?
+  /// 0 = gone, 1 = seated. Deliberately unclamped: the entrance spring
+  /// overshoots, and only `offset` may express that.
+  @State private var reveal: CGFloat = 0
+  @State private var travel: CGFloat = DashToastMotion.enterTravel
   @State private var dragOffset: CGFloat = 0
-  var successFlightInProgress = false
 
   private var toast: DashToast? { model.toasts.current }
+  private var successFlightInProgress: Bool {
+    layerState?.successFlightInProgress ?? false
+  }
 
   var body: some View {
     Group {
-      if let toast {
-        DashToastCard(toast: toast, hidesLeadingMark: successFlightInProgress)
+      if let displayed {
+        DashToastCard(toast: displayed, hidesLeadingMark: successFlightInProgress)
+          // The layer's window takes touches only here. Measured before the
+          // reveal, whose offset and scale are render transforms the geometry
+          // proxy does not see — this is the card's seated rect, which is what
+          // the hit region should be. Outset covers the entrance travel.
+          .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+            layerState?.publishInteractiveFrame(frame.insetBy(dx: -8, dy: -32))
+          }
+          .modifier(
+            DashToastReveal(progress: reveal, travel: travel, reduceMotion: reduceMotion)
+          )
           .padding(.horizontal, DashTheme.Toast.horizontalMargin)
-          // Main canvas ignores the top safe area; land on the same band as
-          // the floated avatar (safe area + chrome inset), not tray margins.
-          .safeAreaPadding(.top)
-          .padding(.top, AvatarHeaderMetrics.chromeInset)
+          // Land on the same band as the floated avatar — safe area + chrome
+          // inset, clear of the Dynamic Island — not on tray margins.
+          .padding(.top, topInset + DashTheme.Toast.topInset)
           .offset(y: min(0, dragOffset))
           .opacity(dragOpacity)
-          .gesture(toast.dismissBehavior == .automatic ? dismissDrag : nil)
-          .transition(toastTransition)
+          .gesture(displayed.dismissBehavior == .automatic ? dismissDrag : nil)
           .onTapGesture {
-            if toast.dismissBehavior == .automatic, toast.action == nil {
-              dismissAnimated()
+            if displayed.dismissBehavior == .automatic, displayed.action == nil {
+              model.toasts.dismiss()
             }
           }
           .allowsHitTesting(!successFlightInProgress)
+          // The drop starts here, not in `apply`: an implicit animation on a
+          // freshly inserted view renders straight at its target, so the
+          // insertion has to be committed at `reveal == 0` first. Same reason
+          // the tray's success-check flight animates from its own `onAppear`.
+          // A queue advance keeps this view's identity, so it fires once, for
+          // the mount that actually needs it.
+          .onAppear { withAnimation(enterAnimation) { reveal = 1 } }
       }
     }
     .frame(maxWidth: .infinity, alignment: .top)
-    .animation(
-      reduceMotion ? DashTheme.Motion.reduced : DashToastMotion.present,
-      value: toast?.id
-    )
-    .onChange(of: toast?.id) { _, _ in dragOffset = 0 }
+    .onChange(of: toast, initial: true) { _, next in apply(next) }
   }
 
   private var dragOpacity: Double {
@@ -580,16 +628,51 @@ struct DashToastHost: View {
     return Double(max(0.35, 1 + dragOffset / 80))
   }
 
-  private var toastTransition: AnyTransition {
-    if reduceMotion {
-      return .opacity
+  private var enterAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashToastMotion.present
+  }
+
+  private var exitAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashToastMotion.dismiss
+  }
+
+  private func apply(_ next: DashToast?) {
+    guard let next else {
+      guard displayed != nil else { return }
+      layerState?.publishInteractiveFrame(.null)
+      // Only when it is actually set: `@Observable` notifies on every write,
+      // equal or not, and this one invalidates the tray that reads the mark —
+      // needless work in the exact frame the exit starts.
+      if layerState?.leadingMark != nil { layerState?.leadingMark = nil }
+      withAnimation(exitAnimation) {
+        travel = DashToastMotion.exitTravel
+        reveal = 0
+        dragOffset = 0
+      } completion: {
+        // A toast that arrived during the exit already owns the slot.
+        guard model.toasts.current == nil else { return }
+        displayed = nil
+        travel = DashToastMotion.enterTravel
+      }
+      return
     }
-    // Drop in from above with spring overshoot — paired with
-    // `DashToastMotion.present`'s under-damped spring.
-    return .asymmetric(
-      insertion: .offset(y: -28).combined(with: .opacity),
-      removal: .offset(y: -16).combined(with: .opacity)
-    )
+    guard displayed != nil else {
+      // Mount seated at zero; the card's `onAppear` starts the drop.
+      reveal = 0
+      travel = DashToastMotion.enterTravel
+      dragOffset = 0
+      displayed = next
+      return
+    }
+    // Already seated: a queue advance replaces the copy in place rather than
+    // playing an exit and an entrance back to back, and a same-identity refresh
+    // (Undo copy, batch count) animates its own resize.
+    if displayed?.id != next.id { dragOffset = 0 }
+    withAnimation(enterAnimation) {
+      displayed = next
+      travel = DashToastMotion.enterTravel
+      reveal = 1
+    }
   }
 
   private var dismissDrag: some Gesture {
@@ -602,25 +685,14 @@ struct DashToastHost: View {
         let shouldDismiss =
           value.translation.height < -36 || value.predictedEndTranslation.height < -80
         if shouldDismiss {
-          dismissAnimated()
+          // `apply` owns the exit, drag offset included.
+          model.toasts.dismiss()
         } else if reduceMotion {
           dragOffset = 0
         } else {
           withAnimation(DashToastMotion.release) { dragOffset = 0 }
         }
       }
-  }
-
-  private func dismissAnimated() {
-    if reduceMotion {
-      dragOffset = 0
-      model.toasts.dismiss()
-    } else {
-      withAnimation(DashToastMotion.dismiss) {
-        dragOffset = 0
-        model.toasts.dismiss()
-      }
-    }
   }
 }
 
@@ -631,10 +703,65 @@ private enum DashToastMotion {
     response: 0.42, dampingFraction: 0.68, blendDuration: 0.1)
   static let release = DashTheme.Motion.release
   static let dismiss = DashTheme.Motion.dismiss
+  /// How far the card falls. Two dials, because the toast enters and leaves for
+  /// different reasons: it drops far enough for the spring's overshoot to read,
+  /// and lifts a short way out — an exit that retraced the entrance would ask
+  /// for attention on the way to being gone.
+  static let enterTravel: CGFloat = 44
+  static let exitTravel: CGFloat = 16
+  /// How small and how soft the card is at the ends of the reveal.
+  static let revealScale: CGFloat = 0.94
+  static let revealBlur: CGFloat = 8
+  /// Opacity finishes ahead of the travel so the card is already solid while it
+  /// is still moving — that is the difference between an arrival and a fade.
+  static let revealOpacityLead: CGFloat = 1.6
+}
+
+/// The toast's whole reveal, in one animatable value: it falls into its seat
+/// while it sharpens, grows, and fades up, and leaves the same way in reverse.
+///
+/// `travel` animates alongside `progress` rather than being a plain property.
+/// The two travels differ, and swapping the constant at a non-endpoint — a new
+/// toast interrupting an exit — would jump the card by the difference.
+private struct DashToastReveal: ViewModifier, Animatable {
+  var progress: CGFloat
+  var travel: CGFloat
+  let reduceMotion: Bool
+
+  // Nonisolated for the same SE-0434 reason as the tray's reveal modifiers.
+  nonisolated var animatableData: AnimatablePair<CGFloat, CGFloat> {
+    get { AnimatablePair(progress, travel) }
+    set {
+      progress = newValue.first
+      travel = newValue.second
+    }
+  }
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    let settled = min(max(progress, 0), 1)
+    if reduceMotion {
+      content.opacity(Double(settled))
+    } else {
+      content
+        // Raw `progress` here and clamped everywhere else: past 1 the card
+        // rides a few points below its seat and settles back, which is the
+        // spring's overshoot. Opacity, blur, and scale cannot express one —
+        // they would only flatten against their own ceilings.
+        .offset(y: -(1 - progress) * travel)
+        .scaleEffect(
+          DashToastMotion.revealScale + (1 - DashToastMotion.revealScale) * settled,
+          anchor: .top
+        )
+        .blur(radius: (1 - settled) * DashToastMotion.revealBlur)
+        .opacity(Double(min(1, settled * DashToastMotion.revealOpacityLead)))
+    }
+  }
 }
 
 private struct DashToastCard: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashToastLayerState) private var layerState
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -649,13 +776,14 @@ private struct DashToastCard: View {
     }
   }
 
-  private var kindIcon: String {
-    switch toast.kind {
-    case .success: SolarAsset.Content.checkCircle
-    case .error: SolarAsset.Content.danger
-    case .warning: SolarAsset.Content.danger
+  /// Every distinct kind glyph, each mounted for the whole life of the card.
+  private static let kindGlyphs: [String] = {
+    var glyphs: [String] = []
+    for kind in DashToast.Kind.allCases where !glyphs.contains(kind.glyph) {
+      glyphs.append(kind.glyph)
     }
-  }
+    return glyphs
+  }()
 
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
@@ -675,7 +803,6 @@ private struct DashToastCard: View {
     }
     .padding(.horizontal, 14)
     .padding(.vertical, 12)
-    .frame(maxWidth: .infinity, alignment: .leading)
     .background(DashTheme.homeDomainsSurface, in: shape)
     // Soft lift only — no ring. `dashShadow` is a 1pt border and would fight
     // the Domains-plate look.
@@ -700,10 +827,36 @@ private struct DashToastCard: View {
           value: toast.message
         )
         .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
     .accessibilityElement(children: .combine)
     .accessibilityLabel(accessibilityLabel)
+  }
+
+  /// A queue advance replaces the copy in place (`DashToastHost.apply`), so a
+  /// warning handing over to a success used to animate its colour and its text
+  /// while the glyph hard-swapped underneath them.
+  ///
+  /// Every glyph stays mounted and hands over through `dashGlyphSwap` —
+  /// `DashSelectionMark`'s idiom, over a set of glyphs instead of a pair. A
+  /// keyed `.transition` is the obvious alternative, and it is how the
+  /// workspace header's title once did it, but that morph was removed for
+  /// running per-frame main-thread blur against the page compositor
+  /// (`DashPageChromeTitleView`), and in the toast layer's own window
+  /// `.transition` *removals* do not fire at all: the arriving glyph would fade
+  /// in over the hole the leaving one left instantly. An opacity stack has no
+  /// insertion or removal to lose.
+  private var kindGlyph: some View {
+    ZStack {
+      ForEach(Self.kindGlyphs, id: \.self) { glyph in
+        SolarIcon(asset: glyph, size: 20, color: accent)
+          .dashGlyphSwap(isActive: glyph == toast.kind.glyph)
+      }
+    }
+    .accessibilityHidden(true)
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.glyphSwap,
+      value: toast.kind
+    )
   }
 
   @ViewBuilder
@@ -718,20 +871,26 @@ private struct DashToastCard: View {
           lineWidth: 2.5
         )
       } else {
-        SolarIcon(asset: kindIcon, size: 20, color: accent)
-          .accessibilityHidden(true)
+        kindGlyph
       }
     }
-    // Landing mark for the tray host's success-check flight; unobserved on
-    // the main canvas host. The toast identity rides along so a flight can
-    // never land on an unrelated success toast holding the slot.
+    // Landing mark for a tray's success-check flight. It was a preference
+    // while a tray hosted its own copy of the toast; the one host now lives in
+    // its own window, which a preference crosses no better than it crosses a
+    // `UIHostingController`. Only the tray reads this, so writing it from a
+    // geometry action cannot re-enter the layer's own layout. The toast
+    // identity rides along so a flight can never land on an unrelated success
+    // toast holding the slot.
     .background {
       if toast.kind == .success {
-        GeometryReader { proxy in
-          Color.clear.preference(
-            key: DashToastLeadingMarkPreferenceKey.self,
-            value: DashToastLeadingMark(id: toast.id, frame: proxy.frame(in: .global)))
-        }
+        Color.clear
+          .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+            // Guarded: `@Observable` notifies on every write, equal or not, and
+            // the tray reads this. An unguarded geometry action would invalidate
+            // it on every layout pass that reports the same rect.
+            let mark = DashToastLeadingMark(id: toast.id, frame: frame)
+            if layerState?.leadingMark != mark { layerState?.leadingMark = mark }
+          }
       }
     }
     .opacity(hidesLeadingMark ? 0 : 1)
@@ -761,16 +920,6 @@ private struct DashToastCard: View {
         DashL10n.ui(toast.actionAccessibilityLabel ?? actionTitle)
       )
       .accessibilityIdentifier("dash-toast-action")
-    }
-  }
-}
-
-extension View {
-  /// Mounts the shared toast host above this surface. Call once on the main
-  /// canvas and again inside tray covers so toasts clear the dimmed sheet.
-  func dashToastHost(successFlightInProgress: Bool = false) -> some View {
-    overlay(alignment: .top) {
-      DashToastHost(successFlightInProgress: successFlightInProgress)
     }
   }
 }

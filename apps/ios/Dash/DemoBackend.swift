@@ -1572,6 +1572,7 @@ private enum DemoWorld {
       {"id":"ssl","value":"full","editable":true},
       {"id":"always_online","value":"on","editable":true},
       {"id":"always_use_https","value":"on","editable":true},
+      {"id":"cache_level","value":"aggressive","editable":true},
       {"id":"advanced_ddos","value":"on","editable":false},
       {"id":"min_tls_version","value":"1.2","editable":true},
       {"id":"http3","value":"on","editable":true},
@@ -1661,39 +1662,9 @@ private enum DemoWorld {
       return
         #"{"count":\#(views),"sum":{"visits":\#(max(1, views * 47 / 100))},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
     }
-    let performanceValues = (0..<count).map { day -> Int in
-      // Latency is not volume: a quiet account is not a faster one.
-      680 + wave(day, base: 0, swing: 260)
-    }
-    let performance = performanceValues.enumerated().map { day, p50 -> String in
-      return
-        #"{"quantiles":{"pageLoadTimeP50":\#(p50)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
-    }
-    let window = max(count / 2, 1)
-    let currentP50 =
-      performanceValues.suffix(window).reduce(0, +) / min(window, performanceValues.count)
-    let previousValues = performanceValues.prefix(max(performanceValues.count - window, 0))
-    let previousP50 =
-      previousValues.isEmpty
-      ? currentP50
-      : previousValues.reduce(0, +) / previousValues.count
-    // Web Vitals arrive in microseconds for LCP / INP; CLS is unitless.
-    let vitals = (0..<count).map { day -> String in
-      let lcp = (1_800_000 + wave(day, base: 0, swing: 400_000))
-      let inp = (120_000 + wave(day, base: 0, swing: 40_000))
-      let cls = String(format: "%.3f", 0.08 + Double(wave(day, base: 0, swing: 6)) / 100)
-      return
-        #"{"quantiles":{"largestContentfulPaintP75":\#(lcp),"interactionToNextPaintP75":\#(inp),"cumulativeLayoutShiftP75":\#(cls)},"dimensions":{"date":"\#(DemoClock.isoDay(daysAgo: count - day))"}}"#
-    }
     return #"""
       {"data":{"viewer":{"accounts":[{
-        "pageload":[\#(pageload.joined(separator: ","))],
-        "performance":[\#(performance.joined(separator: ","))],
-        "vitals":[\#(vitals.joined(separator: ","))],
-        "currentPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(currentP50)}}],
-        "previousPerformanceTotals":[{"quantiles":{"pageLoadTimeP50":\#(previousP50)}}],
-        "currentVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2100000,"interactionToNextPaintP75":140000,"cumulativeLayoutShiftP75":0.09}}],
-        "previousVitalsTotals":[{"quantiles":{"largestContentfulPaintP75":2300000,"interactionToNextPaintP75":160000,"cumulativeLayoutShiftP75":0.11}}]
+        "pageload":[\#(pageload.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }

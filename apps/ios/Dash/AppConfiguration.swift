@@ -101,31 +101,12 @@ enum DashL10n {
 
   static func ui(_ string: String) -> String {
     let result = lookup(string)
-    #if DEBUG
-      if strictLookup, !result.matchedCatalog, !string.isEmpty,
-        activeLocale.language.languageCode?.identifier != "en"
-      {
-        assertionFailure(
-          "DashL10n: no \(activeLocale.identifier) catalog entry for \(string.debugDescription)")
-      }
-    #endif
     return result.value
   }
 
   static func ui(_ string: String?) -> String? {
     string.map(ui)
   }
-
-  #if DEBUG
-    /// Opt-in strictness for a scope that only passes catalog keys — a test
-    /// enumerating `StatusToken`, a preview pinned to zh-Hans. Off by default
-    /// because the silent pass-through is intended behaviour for data; on, a key
-    /// that was never spliced trips here instead of shipping English.
-    ///
-    /// Never asserts under `en`, where every lookup returns its own source
-    /// string and so cannot be told apart from a miss.
-    nonisolated(unsafe) static var strictLookup = false
-  #endif
 }
 
 /// Haptic preference (Settings → General). Absent keys read as enabled so a

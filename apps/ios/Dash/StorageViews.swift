@@ -731,7 +731,7 @@ struct R2BucketView: View {
     model.featureCache.remove(
       prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: context.accountID, bucket: bucket))
     hasFolderMarker = false
-    model.toasts.success(DashL10n.string("Deleted \(currentFolderName)."))
+    model.toasts.success(DashL10n.string("Deleted \(currentFolderName)"))
   }
 
   private func toggleSelection(_ object: R2Object) {
@@ -838,7 +838,7 @@ struct R2BucketView: View {
     if failures.isEmpty {
       model.toasts.success(
         DashL10n.string(
-          "Deleted \(keys.count) \(keys.count == 1 ? DashL10n.string("object") : DashL10n.string("objects"))."
+          "Deleted \(keys.count) \(keys.count == 1 ? DashL10n.string("object") : DashL10n.string("objects"))"
         ))
       withAnimation(DashTheme.Motion.morph) { selecting = false }
     } else {
@@ -1059,14 +1059,15 @@ struct R2BucketView: View {
         guard canCommit(request) else { return }
         // Operation feedback, not a listing failure: the screen's `error`
         // channel belongs to load()/loadMore(), like the oversize branch below.
-        model.toasts.error(DashL10n.string("Can't read that file's size."))
+        model.toasts.error(DashL10n.string("Can't read that file's size"))
         return
       }
       guard size <= R2Media.transferSizeLimit else {
         guard canCommit(request) else { return }
         model.toasts.error(
-          "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(R2Media.transferSizeLimit.formatted(.byteCount(style: .file))). Use wrangler or the dashboard for this one."
-        )
+          DashL10n.string(
+            "\(url.lastPathComponent) is \(size.formatted(.byteCount(style: .file))). Dash uploads files up to \(R2Media.transferSizeLimit.formatted(.byteCount(style: .file))). Use wrangler or the dashboard for this one"
+          ))
         return
       }
       try await model.client.putR2Object(
@@ -1081,11 +1082,11 @@ struct R2BucketView: View {
         R2ShareDestination(
           accountID: id, bucket: bucket, prefix: folderPrefix,
           publicHost: domains?.publicHost ?? ""))
-      model.toasts.success(DashL10n.string("Uploaded \(url.lastPathComponent)."))
+      model.toasts.success(DashL10n.string("Uploaded \(url.lastPathComponent)"))
     } catch {
       guard matchesCurrentRequest(request) else { return }
       if error.dashIsCancellation || Task.isCancelled {
-        model.toasts.warning(DashL10n.string("Upload cancelled."))
+        model.toasts.warning(DashL10n.string("Upload cancelled"))
         return
       }
       model.toasts.error(error.dashActionableMessage)
@@ -1825,7 +1826,7 @@ struct R2CreateBucketSheet: View {
       // The toast starts while the success glyph and keyboard are still in the
       // tray. Give it one normal dwell for that handoff and one after landing.
       successToastID = model.toasts.success(
-        DashL10n.string("Created successfully."),
+        DashL10n.string("Created successfully"),
         duration: DashToast.Kind.success.duration * 2)
       actionPhase = .succeeded
     } catch {
@@ -1957,7 +1958,7 @@ struct R2CreateFolderSheet: View {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Created successfully."))
+      model.toasts.success(DashL10n.string("Created successfully"))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
@@ -2088,7 +2089,7 @@ struct KVCreateKeySheet: View {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Created successfully."))
+      model.toasts.success(DashL10n.string("Created successfully"))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
@@ -2451,7 +2452,7 @@ struct KVKeyDetailView: View {
         rawValueData = submittedData
       }
       invalidateKeys(context: context)
-      model.toasts.success(DashL10n.string("Saved successfully."))
+      model.toasts.success(DashL10n.string("Saved successfully"))
       actionPhase = .succeeded
     } catch {
       saving = false
@@ -2478,7 +2479,7 @@ struct KVKeyDetailView: View {
         return
       }
       invalidateKeys(context: context)
-      model.toasts.success(DashL10n.string("Deleted successfully."))
+      model.toasts.success(DashL10n.string("Deleted successfully"))
       actionPhase = .succeeded
     } catch {
       deleting = false

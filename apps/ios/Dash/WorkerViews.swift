@@ -638,12 +638,6 @@ struct WorkerDetailView: View {
               String(format: "%.1f ms", summary.cpuTimeP50Us / 1000))
           }
         }
-        if summary.requests > 0 {
-          let rate = Double(summary.errors) / Double(summary.requests)
-          Text("Error rate \(String(format: "%.2f%%", rate * 100))")
-            .dashTextStyle(.caption)
-            .foregroundStyle(rate > 0.05 ? DashTheme.danger : DashTheme.subtle)
-        }
       }
       .accessibilityElement(children: .combine)
       .accessibilityLabel(
@@ -1110,7 +1104,7 @@ struct WorkerDetailView: View {
       model.featureCache.remove(
         FeatureCacheKey.workerDeployments(accountID: accountID, name: name))
       invalidateWorkerDetailCache(context)
-      model.toasts.success(DashL10n.string("Deployment activated."))
+      model.toasts.success(DashL10n.string("Deployment activated"))
       activationContext = context
       activationPhase = .succeeded
     } catch {
@@ -1148,7 +1142,7 @@ struct WorkerDetailView: View {
       }
       model.featureCache.remove(FeatureCacheKey.workerDomains(accountID: accountID, name: name))
       invalidateWorkerDetailCache(context)
-      model.toasts.success(DashL10n.string("Deleted successfully."))
+      model.toasts.success(DashL10n.string("Deleted successfully"))
       await loadDomains(context: context, force: true)
       guard model.isCurrentAccount(context) else {
         deleteDomainPhase = .idle
@@ -1382,7 +1376,7 @@ struct WorkerAddDomainForm: View {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Added successfully."))
+      model.toasts.success(DashL10n.string("Added successfully"))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle

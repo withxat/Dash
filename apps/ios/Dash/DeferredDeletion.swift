@@ -380,7 +380,7 @@ final class DeferredDeletionCoordinator {
       removeConfirmedOperation(id)
     }
     openBatchID = nil
-    toasts.success(DashL10n.string("Deletion undone."), haptic: false)
+    toasts.success(DashL10n.string("Deletion undone"), haptic: false)
     renderToast()
   }
 
@@ -1265,7 +1265,7 @@ final class DeferredDeletionCoordinator {
         DashToast(
           id: .deferredDeletionBatch,
           kind: .warning,
-          title: "Confirming deletion",
+          title: DashL10n.string("Confirming deletion"),
           message: DashL10n.string("Checking whether Cloudflare completed the deletion…"),
           dismissBehavior: .programmaticOnly),
         deferredDeletionOwner: toastOwner)
@@ -1287,9 +1287,9 @@ final class DeferredDeletionCoordinator {
         DashToast(
           id: .deferredDeletionBatch,
           kind: .warning,
-          title: "Deletion still being confirmed",
+          title: DashL10n.string("Deletion still being confirmed"),
           message: DashL10n.string(
-            "Dash could not confirm the result yet. It will check again in the foreground.")),
+            "Dash could not confirm the result yet. It will check again in the foreground")),
         owner: toastOwner)
     }
 
@@ -1327,27 +1327,29 @@ final class DeferredDeletionCoordinator {
       count == 1
       ? (seconds == 1
         ? DashL10n.string(
-          "\(operations[operationIDs[0]]?.command.deletionSubject ?? "") will be deleted in 1 second."
+          "\(operations[operationIDs[0]]?.command.deletionSubject ?? "") will be deleted in 1 second"
         )
         : DashL10n.string(
-          "\(operations[operationIDs[0]]?.command.deletionSubject ?? "") will be deleted in \(seconds) seconds."
+          "\(operations[operationIDs[0]]?.command.deletionSubject ?? "") will be deleted in \(seconds) seconds"
         ))
       : (seconds == 1
-        ? DashL10n.string("\(count) items will be deleted in 1 second.")
-        : DashL10n.string("\(count) items will be deleted in \(seconds) seconds."))
+        ? DashL10n.string("\(count) items will be deleted in 1 second")
+        : DashL10n.string("\(count) items will be deleted in \(seconds) seconds"))
     let shouldAnnounce = batch.announcedDeadlineGeneration != batch.deadlineGeneration
     toasts.update(
       DashToast(
         id: .deferredDeletionBatch,
         kind: .warning,
-        title: "Pending deletion",
+        title: DashL10n.string("Pending deletion"),
         message: message,
         action: .undoDeferredDeletionBatch,
-        actionTitle: count == 1 ? "Undo" : "Undo all",
-        actionAccessibilityLabel: count == 1 ? "Undo deletion" : "Undo all deletions",
+        actionTitle: count == 1 ? DashL10n.string("Undo") : DashL10n.string("Undo all"),
+        actionAccessibilityLabel: count == 1
+          ? DashL10n.string("Undo deletion")
+          : DashL10n.string("Undo all deletions"),
         accessibilityAnnouncement: count == 1
-          ? "\(message) \(DashL10n.string("Undo available."))"
-          : "\(message) \(DashL10n.string("Undo all available."))",
+          ? "\(message) \(DashL10n.string("Undo available"))"
+          : "\(message) \(DashL10n.string("Undo all available"))",
         actionPhase: .loading,
         dismissBehavior: .programmaticOnly),
       announce: shouldAnnounce,
@@ -1364,7 +1366,7 @@ final class DeferredDeletionCoordinator {
       DashToast(
         id: .deferredDeletionBatch,
         kind: .warning,
-        title: "Deleting",
+        title: DashL10n.string("Deleting"),
         message: message,
         actionPhase: .loading,
         dismissBehavior: .programmaticOnly),
@@ -1393,10 +1395,14 @@ final class DeferredDeletionCoordinator {
     if failed.isEmpty {
       let message =
         succeeded.count == 1
-        ? DashL10n.string(
-          "\(operations[succeeded[0]]?.command.displayName ?? "") deleted."
+        ? String(
+          format: DashL10n.string("%@ deleted"),
+          operations[succeeded[0]]?.command.displayName ?? ""
         )
-        : DashL10n.string("\(succeeded.count) items deleted.")
+        : String(
+          format: DashL10n.string("%lld items deleted"),
+          succeeded.count
+        )
       toasts.enqueueDeferredDeletionToast(
         DashToast(
           id: .deferredDeletionBatch,
@@ -1415,8 +1421,9 @@ final class DeferredDeletionCoordinator {
 
     let message =
       succeeded.isEmpty
-      ? DashL10n.string(
-        "Deletion failed. \(operations[failed[0]]?.command.displayName ?? "") still exists."
+      ? String(
+        format: DashL10n.string("Deletion failed. %@ still exists"),
+        operations[failed[0]]?.command.displayName ?? ""
       )
       : DashL10n.string("\(succeeded.count) items deleted, \(failed.count) failed.")
     let toast = DashToast(
@@ -1424,9 +1431,10 @@ final class DeferredDeletionCoordinator {
       kind: .error,
       message: message,
       action: .retryDeferredDeletions(failed),
-      actionTitle: failed.count == 1 ? "Retry" : "Retry failures",
+      actionTitle: failed.count == 1 ? DashL10n.string("Retry") : DashL10n.string("Retry failures"),
       actionAccessibilityLabel: failed.count == 1
-        ? "Retry deletion" : "Retry failed deletions")
+        ? DashL10n.string("Retry deletion")
+        : DashL10n.string("Retry failed deletions"))
     for id in failed {
       if var operation = operations[id], operation.state == .failed {
         operation.retryEligible = true

@@ -34,7 +34,7 @@ import Testing
 @Test @MainActor func iCloudPreferenceSyncAdoptsAnExistingCloudValueOnFirstUse() throws {
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
-  defaults.set(HomeActions.encode([.purgeCache]), forKey: HomeActions.key)
+  defaults.set(HomeActions.encode([.enableUnderAttackMode]), forKey: HomeActions.key)
 
   let cloud = FakeICloudKeyValueStore()
   let cloudValue = HomeActions.encode([.uploadR2, .addDomain])
@@ -83,7 +83,7 @@ import Testing
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
   defaults.set(false, forKey: ICloudPreferencesSync.enabledKey)
-  let localValue = HomeActions.encode([.purgeCache])
+  let localValue = HomeActions.encode([.enableUnderAttackMode])
   defaults.set(localValue, forKey: HomeActions.key)
 
   let cloud = FakeICloudKeyValueStore()
@@ -105,7 +105,7 @@ import Testing
     keys: [ICloudPreferencesSync.Group.homeActions.cloudKey])
   #expect(defaults.string(forKey: HomeActions.key) == localValue)
 
-  let newerLocalValue = HomeActions.encode([.addDomain, .purgeCache])
+  let newerLocalValue = HomeActions.encode([.addDomain, .enableUnderAttackMode])
   defaults.set(newerLocalValue, forKey: HomeActions.key)
   sync.publish(.homeActions)
   #expect(
@@ -136,7 +136,7 @@ import Testing
     initialSyncDelay: .seconds(60),
     now: { Date(timeIntervalSince1970: 300) })
   first.start()
-  let localValue = HomeActions.encode([.addDomain, .purgeCache])
+  let localValue = HomeActions.encode([.addDomain, .enableUnderAttackMode])
   defaults.set(localValue, forKey: HomeActions.key)
   first.publish(.homeActions)
   first.stop()
@@ -176,7 +176,7 @@ import Testing
     initialSyncDelay: .seconds(60),
     now: { Date(timeIntervalSince1970: 300) })
   first.start()
-  defaults.set(HomeActions.encode([.purgeCache]), forKey: HomeActions.key)
+  defaults.set(HomeActions.encode([.enableUnderAttackMode]), forKey: HomeActions.key)
   first.publish(.homeActions)
   first.stop()
 
@@ -224,7 +224,7 @@ import Testing
   sync.start()
   sync.setEnabled(false)
 
-  defaults.set(HomeActions.encode([.purgeCache]), forKey: HomeActions.key)
+  defaults.set(HomeActions.encode([.enableUnderAttackMode]), forKey: HomeActions.key)
   sync.publish(.homeActions)
   defaults.set(appliedValue, forKey: HomeActions.key)
   sync.publish(.homeActions)
@@ -258,7 +258,7 @@ import Testing
   defer { sync.stop() }
   sync.start()
 
-  let localValue = HomeActions.encode([.addDomain, .purgeCache])
+  let localValue = HomeActions.encode([.addDomain, .enableUnderAttackMode])
   defaults.set(localValue, forKey: HomeActions.key)
   sync.publish(.homeActions)
 
@@ -284,7 +284,7 @@ import Testing
   defer { defaults.removePersistentDomain(forName: suite) }
 
   let cloud = FakeICloudKeyValueStore()
-  let oldAccountValue = HomeActions.encode([.purgeCache])
+  let oldAccountValue = HomeActions.encode([.enableUnderAttackMode])
   cloud.values[ICloudPreferencesSync.Group.homeActions.cloudKey] = try encodedEnvelope(
     values: [HomeActions.key: oldAccountValue],
     modifiedAt: Date(timeIntervalSince1970: 500))
@@ -317,7 +317,7 @@ import Testing
 @Test @MainActor func initialICloudDownloadDoesNotOverwriteANewerPendingLocalEdit() throws {
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
-  let localValue = HomeActions.encode([.addDomain, .purgeCache])
+  let localValue = HomeActions.encode([.addDomain, .enableUnderAttackMode])
   defaults.set(localValue, forKey: HomeActions.key)
   defaults.set(
     Date(timeIntervalSince1970: 200),
@@ -352,7 +352,7 @@ import Testing
 @Test @MainActor func lateInitialCloudValueWinsOverALegacyLocalSeed() throws {
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
-  defaults.set(HomeActions.encode([.purgeCache]), forKey: HomeActions.key)
+  defaults.set(HomeActions.encode([.enableUnderAttackMode]), forKey: HomeActions.key)
 
   let cloud = FakeICloudKeyValueStore()
   let sync = ICloudPreferencesSync(
@@ -409,7 +409,7 @@ import Testing
   defer { defaults.removePersistentDomain(forName: suite) }
 
   let cloud = FakeICloudKeyValueStore()
-  let initial = HomeActions.encode([.purgeCache])
+  let initial = HomeActions.encode([.enableUnderAttackMode])
   cloud.values[ICloudPreferencesSync.Group.homeActions.cloudKey] = try encodedEnvelope(
     values: [HomeActions.key: initial],
     modifiedAt: Date(timeIntervalSince1970: 100))
@@ -441,7 +441,7 @@ import Testing
 
   let cloud = FakeICloudKeyValueStore()
   cloud.values[ICloudPreferencesSync.Group.homeActions.cloudKey] = try encodedEnvelope(
-    values: [HomeActions.key: HomeActions.encode([.purgeCache])],
+    values: [HomeActions.key: HomeActions.encode([.enableUnderAttackMode])],
     modifiedAt: Date(timeIntervalSince1970: 100))
   let sync = ICloudPreferencesSync(
     defaults: defaults,

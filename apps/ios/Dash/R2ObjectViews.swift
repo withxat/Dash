@@ -260,10 +260,7 @@ struct R2ObjectRow: View {
         showsChevron: false
       ) {
         if selecting {
-          SolarIcon(
-            asset: selected ? SolarAsset.checkCircleFill : SolarAsset.circle,
-            size: 22,
-            color: selected ? DashTheme.brand : DashTheme.placeholder)
+          DashSelectionMark(isSelected: selected)
         }
       }
     }
@@ -488,10 +485,8 @@ struct R2BucketSettingsView: View {
   @ViewBuilder
   private func r2BucketSettingsBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
-      DashCard {
-        DashInfoRowPlaceholders(rows: 1)
-      }
-      .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Custom domains") {
         DashListRowPlaceholders(rows: 2)
       }
@@ -510,48 +505,40 @@ struct R2BucketSettingsView: View {
     }
   }
 
+  @ViewBuilder
   private var managedCard: some View {
-    DashCard {
-      if let managed {
-        Button {
-          toggleManaged()
-        } label: {
-          HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-              Text("Public r2.dev URL")
-                .dashTextStyle(.bodySemibold)
-                .foregroundStyle(DashTheme.text)
-              Text(managedSubtitle(managed))
-                .dashTextStyle(.footnote)
-                .foregroundStyle(DashTheme.subtle)
-                .lineLimit(2)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            DashSwitch(isOn: managed.enabled)
-              .opacity(togglingManaged ? 0.72 : 1)
-          }
-        }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .disabled(!featureAllowsWrites || togglingManaged)
-        .accessibilityLabel("Public r2.dev URL")
-        .accessibilityValue(managed.enabled ? "On" : "Off")
-        .accessibilityAddTraits(.isToggle)
-      } else {
-        // A settled managed lookup always carries the domain record, so an
-        // empty slot here means the fetch failed: hold the row's shape and
-        // let the screen banner / cold veil carry the message — "unavailable"
-        // copy for a transport error is the failure impersonating a settled
-        // answer.
-        DashInfoRowPlaceholders(rows: 1)
-          .allowsHitTesting(false)
-      }
+    if let managed {
+      DashToggleRow(
+        title: "Public r2.dev URL",
+        subtitle: managedSubtitle(managed),
+        isOn: managedBinding,
+        isEnabled: featureAllowsWrites,
+        isLoading: togglingManaged)
+    } else {
+      // A settled managed lookup always carries the domain record, so an
+      // empty slot here means the fetch failed: hold the row's shape and
+      // let the screen banner / cold veil carry the message — "unavailable"
+      // copy for a transport error is the failure impersonating a settled
+      // answer.
+      DashToggleRowPlaceholder()
     }
+  }
+
+  private var managedBinding: Binding<Bool> {
+    Binding(
+      get: { managed?.enabled ?? false },
+      set: { _ in
+        guard featureAllowsWrites, !togglingManaged else { return }
+        toggleManaged()
+      })
   }
 
   private func managedSubtitle(_ managed: R2ManagedDomain) -> String {
     if managed.enabled {
-      return "\(managed.domain) — rate-limited by Cloudflare; fine for testing, not production."
+      return DashL10n.string(
+        "\(managed.domain) — rate-limited by Cloudflare; fine for testing, not production.")
     }
+    // A literal, so `dashControlCaption`'s own `DashL10n.ui` resolves it.
     return "Serve this bucket at a Cloudflare-managed r2.dev URL."
   }
 
@@ -730,7 +717,7 @@ struct R2BucketSettingsView: View {
     do {
       try await model.client.deleteR2CustomDomain(
         accountID: accountID, bucket: bucket, domain: domain.domain)
-      model.toasts.success(DashL10n.string("Deleted successfully."))
+      model.toasts.success(DashL10n.string("Deleted successfully"))
       await load(force: true)
       deleteDomainPhase = .succeeded
     } catch {
@@ -763,7 +750,7 @@ struct R2BucketSettingsView: View {
     } else {
       navigator?.removeAll(ownedBy: .r2Bucket(bucket))
     }
-    model.toasts.success(DashL10n.string("Deleted successfully."))
+    model.toasts.success(DashL10n.string("Deleted successfully"))
   }
 }
 
@@ -901,7 +888,7 @@ private struct R2AddDomainForm: View {
     do {
       try await model.client.addR2CustomDomain(
         accountID: accountID, bucket: bucket, domain: normalizedHost, zoneID: zone.id)
-      model.toasts.success(DashL10n.string("Added successfully."))
+      model.toasts.success(DashL10n.string("Added successfully"))
       await onAdded()
       actionPhase = .succeeded
     } catch {

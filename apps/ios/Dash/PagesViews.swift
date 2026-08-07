@@ -740,7 +740,7 @@ struct PagesDeploymentDetailView: View {
       }
       model.featureCache.remove(
         FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
-      model.toasts.success(DashL10n.string("Retry started."))
+      model.toasts.success(DashL10n.string("Retry started"))
       // Jump to the new deployment when retry returns one.
       if created.id != key.deploymentID {
         let replacementKey = PagesBuildMonitorKey(
@@ -810,7 +810,7 @@ struct PagesDeploymentDetailView: View {
       }
       model.featureCache.remove(
         FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
-      model.toasts.success(DashL10n.string("Rolled back successfully."))
+      model.toasts.success(DashL10n.string("Rolled back successfully"))
       rollbackPhase = .succeeded
     } catch {
       rollbackPhase = .idle
@@ -967,7 +967,7 @@ struct PagesDomainsView: View {
       }
       model.featureCache.remove(
         FeatureCacheKey.pagesDomains(accountID: context.accountID, name: projectName))
-      model.toasts.success(DashL10n.string("Deleted successfully."))
+      model.toasts.success(DashL10n.string("Deleted successfully"))
       deletePhase = .succeeded
     } catch {
       deletePhase = .idle
@@ -1037,7 +1037,7 @@ struct PagesAddDomainForm: View {
       }
       model.featureCache.remove(
         FeatureCacheKey.pagesDomains(accountID: context.accountID, name: projectName))
-      model.toasts.success(DashL10n.string("Added successfully."))
+      model.toasts.success(DashL10n.string("Added successfully"))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
