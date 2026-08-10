@@ -183,6 +183,10 @@ struct R2BucketView: View {
   @State private var selecting = false
   @State private var selectedKeys: Set<String> = []
   @State private var confirmsBatchDelete = false
+  /// Single-object delete from the row context menu. Kept separate from batch
+  /// select so a long-press Delete does not enter multi-select first.
+  @State private var objectPendingDelete: R2Object?
+  @State private var confirmsObjectDelete = false
   @State private var showsBucketActions = false
   /// Steps of the Actions tray, as a route stack over the `.menu` root. A
   /// second `dashTray` on this screen would have to present while the first is
@@ -334,7 +338,21 @@ struct R2BucketView: View {
               object: object,
               title: objectName(object.key),
               selecting: selecting,
-              selected: selectedKeys.contains(object.key)
+              selected: selectedKeys.contains(object.key),
+              publicURL: domains?.publicURL(forKey: object.key),
+              allowsWrites: featureAllowsWrites,
+              onRequestDelete: featureAllowsWrites
+                ? {
+                  objectPendingDelete = object
+                  confirmsObjectDelete = true
+                } : nil,
+              onBeginSelect: featureAllowsWrites
+                ? {
+                  withAnimation(DashTheme.Motion.morph) {
+                    selecting = true
+                    selectedKeys = [object.key]
+                  }
+                } : nil
             ) {
               if selecting {
                 toggleSelection(object)
@@ -454,6 +472,15 @@ struct R2BucketView: View {
       title: "Delete objects",
       actions: [batchDeleteAction]
     )
+    .dashMoreMenu(
+      isPresented: $confirmsObjectDelete,
+      title: "Delete",
+      actions: objectPendingDelete.map { [objectDeleteAction(for: $0)] } ?? []
+    )
+    .onChange(of: confirmsObjectDelete) { _, presented in
+      guard !presented else { return }
+      objectPendingDelete = nil
+    }
     .dashTray(
       isPresented: $showsBucketActions, title: "Actions",
       tone: FeatureVisualIdentity.tone(for: .r2)
@@ -537,6 +564,8 @@ struct R2BucketView: View {
     selecting = false
     selectedKeys = []
     confirmsBatchDelete = false
+    objectPendingDelete = nil
+    confirmsObjectDelete = false
     showsBucketActions = false
     bucketActionsPath = []
     hasFolderMarker = false
@@ -783,6 +812,35 @@ struct R2BucketView: View {
         "Permanently deletes \(count) \(noun) from \(bucket). This can't be undone."),
       perform: { try await batchDelete() }
     )
+  }
+
+  private func objectDeleteAction(for object: R2Object) -> DashDangerAction {
+    let filename = objectName(object.key)
+    return DashDangerAction(
+      id: "object-delete-\(object.key)",
+      title: DashL10n.string("Delete"),
+      message: DashL10n.string(
+        "Permanently deletes \(filename) from \(bucket). This can't be undone."),
+      onSuccessPresentationCompleted: {
+        objectPendingDelete = nil
+      },
+      perform: { try await deleteObject(object) }
+    )
+  }
+
+  private func deleteObject(_ object: R2Object) async throws {
+    let request = requestIdentity
+    guard let context = request.context, canCommit(request) else {
+      throw CancellationError()
+    }
+    try await model.client.deleteR2Object(
+      accountID: context.accountID, bucket: bucket, key: object.key)
+    guard canCommit(request) else { throw CancellationError() }
+    model.featureCache.remove(
+      prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: context.accountID, bucket: bucket))
+    let filename = objectName(object.key)
+    model.toasts.success(DashL10n.string("Deleted \(filename)"))
+    await load(force: true, for: request)
   }
 
   /// Deletes the selection four at a time. A partial failure throws so the

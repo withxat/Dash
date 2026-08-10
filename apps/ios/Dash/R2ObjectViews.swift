@@ -236,6 +236,14 @@ struct R2ObjectRow: View {
   let title: String
   var selecting = false
   var selected = false
+  /// Preferred public URL for Copy / Share actions. Nil when the bucket has
+  /// no serving host yet — Download still works via the authenticated export.
+  var publicURL: URL? = nil
+  var allowsWrites = false
+  /// Opens the confirm tray for this row. Nil hides Delete from the menu.
+  var onRequestDelete: (() -> Void)? = nil
+  /// Enters multi-select with this object already chosen.
+  var onBeginSelect: (() -> Void)? = nil
   let action: () -> Void
   @State private var thumbnail: UIImage?
   @State private var thumbnailIdentity: R2ThumbnailRequestIdentity?
@@ -247,6 +255,10 @@ struct R2ObjectRow: View {
       bucket: bucket,
       objectKey: object.key,
       version: R2Media.versionToken(for: object))
+  }
+
+  private var canDownload: Bool {
+    model.activeAccountID != nil && R2Media.isWithinTransferLimit(object.size)
   }
 
   var body: some View {
@@ -272,6 +284,23 @@ struct R2ObjectRow: View {
         : "Double tap to preview"
     )
     .accessibilityAddTraits(selected ? .isSelected : [])
+    .modifier(
+      R2ObjectRowContextMenu(
+        enabled: !selecting,
+        canDownload: canDownload,
+        allowsWrites: allowsWrites,
+        export: downloadExport,
+        onPreview: action,
+        onCopyPublicURL: publicURL == nil
+          ? nil
+          : {
+            UIPasteboard.general.url = publicURL
+            model.toasts.success(DashL10n.string("Public URL copied"))
+          },
+        onBeginSelect: onBeginSelect,
+        onRequestDelete: onRequestDelete
+      )
+    )
     .task(id: thumbnailRequestIdentity) {
       let request = thumbnailRequestIdentity
       activeThumbnailRequest = request
@@ -301,6 +330,16 @@ struct R2ObjectRow: View {
     }
   }
 
+  private var downloadExport: R2ObjectExport? {
+    guard let accountID = model.activeAccountID, canDownload else { return nil }
+    return R2ObjectExport(
+      client: model.client,
+      accountID: accountID,
+      bucket: bucket,
+      key: object.key,
+      maximumBytes: R2Media.transferSizeLimitBytes)
+  }
+
   private var objectSubtitle: String? {
     guard let size = object.size else { return nil }
     let formattedSize = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
@@ -323,6 +362,79 @@ struct R2ObjectRow: View {
     }
     if selecting { parts.append(selected ? "Selected" : "Not selected") }
     return parts.joined(separator: ", ")
+  }
+}
+
+/// Keeps the row's `@State` identity stable when selection mode flips — an
+/// `if enabled { content.contextMenu }` branch would remount the thumbnail.
+private struct R2ObjectRowContextMenu: ViewModifier {
+  let enabled: Bool
+  let canDownload: Bool
+  let allowsWrites: Bool
+  let export: R2ObjectExport?
+  let onPreview: () -> Void
+  let onCopyPublicURL: (() -> Void)?
+  let onBeginSelect: (() -> Void)?
+  let onRequestDelete: (() -> Void)?
+
+  func body(content: Content) -> some View {
+    content.contextMenu {
+      if enabled {
+        Button {
+          onPreview()
+        } label: {
+          Label {
+            Text("Preview")
+          } icon: {
+            Image(systemName: "eye")
+          }
+        }
+
+        if let onCopyPublicURL {
+          Button(action: onCopyPublicURL) {
+            Label {
+              Text("Copy public URL")
+            } icon: {
+              Image(systemName: "link")
+            }
+          }
+        }
+
+        if let export, canDownload {
+          ShareLink(item: export, preview: SharePreview(export.key)) {
+            Label {
+              Text("Download")
+            } icon: {
+              Image(systemName: "square.and.arrow.down")
+            }
+          }
+        }
+
+        if allowsWrites, onBeginSelect != nil || onRequestDelete != nil {
+          Divider()
+        }
+
+        if allowsWrites, let onBeginSelect {
+          Button(action: onBeginSelect) {
+            Label {
+              Text("Select objects")
+            } icon: {
+              Image(systemName: "checkmark.circle")
+            }
+          }
+        }
+
+        if allowsWrites, let onRequestDelete {
+          Button(role: .destructive, action: onRequestDelete) {
+            Label {
+              Text("Delete")
+            } icon: {
+              Image(systemName: "trash")
+            }
+          }
+        }
+      }
+    }
   }
 }
 

@@ -149,9 +149,15 @@ private final class DashQLPreviewController: QLPreviewController {
 
 /// Downloads the object, then hands it to native Quick Look. Loading / oversized /
 /// failed states keep a light SwiftUI shell; the ready state is system QL only.
+///
+/// Presentation uses a clear cover background so the bucket browser stays
+/// mounted (an opaque cover would cancel in-flight uploads). The system modal
+/// transition is therefore invisible — enter/exit motion lives on this view:
+/// a short fade + soft scale that mirrors tray `present` / `dismiss`.
 struct R2ObjectPreview: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let bucket: String
   let object: R2Object
   let publicURL: URL?
@@ -161,6 +167,8 @@ struct R2ObjectPreview: View {
   @State private var localFile: R2TemporaryFile?
   @State private var status: Status = .loading
   @State private var showsActions = false
+  @State private var revealed = false
+  @State private var isDismissing = false
 
   private enum Status: Equatable { case loading, ready, tooLarge, failed }
 
@@ -168,20 +176,38 @@ struct R2ObjectPreview: View {
     object.key.split(separator: "/").last.map(String.init) ?? object.key
   }
 
+  private var presentAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.present
+  }
+
+  private var dismissAnimation: Animation {
+    reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.dismiss
+  }
+
   var body: some View {
-    Group {
+    ZStack {
       if status == .ready, let localFile {
         QuickLookPreview(
           url: localFile.fileURL,
-          onDismiss: { dismiss() },
+          onDismiss: { Task { await dismissAnimated() } },
           onMore: { showsActions = true }
         )
         .ignoresSafeArea()
+        .transition(.opacity)
       } else {
         fallbackShell
+          .transition(.opacity)
       }
     }
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content,
+      value: status
+    )
+    .opacity(revealed ? 1 : 0)
+    .scaleEffect(reduceMotion ? 1 : (revealed ? 1 : 0.96))
+    .allowsHitTesting(revealed && !isDismissing)
     .task { await download() }
+    .onAppear(perform: presentIfNeeded)
     .onDisappear(perform: cleanup)
     // Keep the browser mounted behind the cover (QuickLook and this view's own
     // stage still draw opaque on top): an opaque cover would fire the browser's
@@ -196,10 +222,12 @@ struct R2ObjectPreview: View {
         object: object,
         publicURL: publicURL,
         allowsWrites: allowsWrites,
-        // The sheet dismisses itself, then this closure (owned by the browser)
-        // clears the preview's item binding and reloads the listing — each
-        // presentation layer is torn down by its own owner.
-        onDeleted: onDeleted
+        // The sheet dismisses itself, then this closure fades the preview and
+        // hands ownership back to the browser to clear the cover + reload.
+        onDeleted: {
+          await dismissAnimated()
+          await onDeleted()
+        }
       )
     }
   }
@@ -215,7 +243,7 @@ struct R2ObjectPreview: View {
       HStack(spacing: 12) {
         PreviewChromeButton(
           asset: SolarAsset.editClose, accessibilityLabel: DashL10n.string("Close"),
-          action: { dismiss() })
+          action: { Task { await dismissAnimated() } })
         Text(filename)
           .dashTextStyle(.bodySemibold)
           .foregroundStyle(.white)
@@ -234,6 +262,29 @@ struct R2ObjectPreview: View {
           endPoint: .bottom
         )
         .allowsHitTesting(false)
+      )
+    }
+  }
+
+  private func presentIfNeeded() {
+    guard !revealed, !isDismissing else { return }
+    withAnimation(presentAnimation) { revealed = true }
+  }
+
+  @MainActor
+  private func dismissAnimated() async {
+    guard !isDismissing else { return }
+    isDismissing = true
+    showsActions = false
+    await withCheckedContinuation { continuation in
+      withAnimation(
+        dismissAnimation,
+        completionCriteria: .removed,
+        { revealed = false },
+        completion: {
+          dismiss()
+          continuation.resume()
+        }
       )
     }
   }
@@ -433,7 +484,9 @@ private struct R2ObjectActionsSheet: View {
   }
 }
 
-private struct R2ObjectExport: Transferable {
+/// File-backed ShareLink payload for an R2 object. Shared by the preview
+/// actions tray and the bucket-list context menu.
+struct R2ObjectExport: Transferable {
   let client: CloudflareClient
   let accountID: String
   let bucket: String
