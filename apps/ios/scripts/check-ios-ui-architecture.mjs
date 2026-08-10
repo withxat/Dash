@@ -202,6 +202,23 @@ function topLevelTokenIndex(source, token) {
   return -1;
 }
 
+const workspaceWashPicker = declarationBody(
+  profileSettings,
+  "private struct WorkspaceWashPickerTray: View",
+);
+if (!workspaceWashPicker) {
+  issues.push("Could not locate WorkspaceWashPickerTray for state ownership validation.");
+} else {
+  if (!workspaceWashPicker.includes(".scrollPosition(id: $centeredPresetID")) {
+    issues.push("WorkspaceWashPickerTray must keep its centered scroll-position owner.");
+  }
+  if (workspaceWashPicker.includes(".onChange(of: workspaceWashRaw)")) {
+    issues.push(
+      "WorkspaceWashPickerTray must not feed workspaceWashRaw back into its scroll position; centeredPresetID owns selection while the tray is open.",
+    );
+  }
+}
+
 const watchtowerView = declarationBody(watchtower, "struct WatchtowerView: View");
 if (!watchtowerView) {
   issues.push("Could not locate WatchtowerView for toolbar ownership validation.");

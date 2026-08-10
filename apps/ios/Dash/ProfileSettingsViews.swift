@@ -1008,6 +1008,7 @@ private struct WorkspaceWashPickerTray: View {
             }
           }
           .scrollTargetLayout()
+          .padding(.vertical, WorkspaceWashPickerMetrics.cardVerticalInset)
         }
         .contentMargins(
           .horizontal,
@@ -1016,22 +1017,34 @@ private struct WorkspaceWashPickerTray: View {
         )
         .scrollPosition(id: $centeredPresetID, anchor: .center)
         .scrollTargetBehavior(WorkspaceWashCenteredScrollTargetBehavior())
-        .modifier(WorkspaceWashScrollEdgeBlur())
+        // Unramped, unlike the vertical fades: `contentMargins` centres the end
+        // cards, so at either extreme the fade lands on empty tray surface and
+        // paints that surface over itself — invisible without any offset to
+        // track. Mid-scroll it dissolves the passing card exactly like the
+        // Domains viewport dissolves its rows.
+        .overlay(alignment: .leading) {
+          DashScrollEdgeFade(
+            edge: .leading,
+            surface: DashTheme.Sheet.background,
+            thickness: WorkspaceWashPickerMetrics.edgeFadeWidth)
+        }
+        .overlay(alignment: .trailing) {
+          DashScrollEdgeFade(
+            edge: .trailing,
+            surface: DashTheme.Sheet.background,
+            thickness: WorkspaceWashPickerMetrics.edgeFadeWidth)
+        }
       }
-      .frame(height: WorkspaceWashPickerMetrics.cardHeight)
+      .frame(height: WorkspaceWashPickerMetrics.viewportHeight)
+      // SwiftUI owns the centered target while this tray is mounted. Keep the
+      // bridge one-way: feeding the resulting preset back into scrollPosition
+      // closes an AttributeGraph loop during the same layout transaction.
       .onChange(of: centeredPresetID) { _, presetID in
         guard
           let presetID,
           let preset = DashWorkspaceWashPreset.allCases.first(where: { $0.id == presetID })
         else { return }
         select(preset)
-      }
-      .onChange(of: workspaceWashRaw) { _, _ in
-        let presetID = selectedPreset.id
-        guard centeredPresetID != presetID else { return }
-        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-          centeredPresetID = presetID
-        }
       }
     } action: {
       DashActionButton(title: DashL10n.string("Done")) {
@@ -1093,8 +1106,12 @@ private struct WorkspaceWashPickerTray: View {
         .padding(10)
       }
       .clipShape(shape)
+      // `strokeBorder`, not `stroke`: half a `stroke` sits outside the shape,
+      // so the selected card's 2pt ring left its outer pass beyond the clipped
+      // fill — a soft halo, and shaved corner arcs wherever the viewport ended
+      // at the card's own edge.
       .overlay {
-        shape.stroke(
+        shape.strokeBorder(
           isSelected ? selectionColor : DashTheme.line,
           lineWidth: isSelected ? 2 : 1
         )
@@ -1133,10 +1150,17 @@ enum WorkspaceWashPickerMetrics {
   static let cardWidth: CGFloat = 126
   static let cardHeight: CGFloat = 184
   static let cardSpacing = DashTheme.Spacing.itemGap
-  static let edgeBlurWidth: CGFloat = 30
+  /// Air above and below the cards, inside the scrolling region so the clip
+  /// includes it. The viewport used to be exactly `cardHeight`, which left a
+  /// selection ring nothing to sit in and cut its corner arcs flat.
+  static let cardVerticalInset: CGFloat = 8
+  static let viewportHeight = cardHeight + cardVerticalInset * 2
+  static let edgeFadeWidth = DashScrollEdgeFadeMetrics.thickness
 
+  /// Enough inset to centre one card, but never less than the fade that would
+  /// otherwise cover an end card the scroll can no longer move.
   static func horizontalInset(viewportWidth: CGFloat) -> CGFloat {
-    max(edgeBlurWidth, (viewportWidth - cardWidth) / 2)
+    max(edgeFadeWidth, (viewportWidth - cardWidth) / 2)
   }
 }
 
@@ -1149,44 +1173,6 @@ private struct WorkspaceWashCenteredScrollTargetBehavior: ScrollTargetBehavior {
   func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
     viewAligned.updateTarget(&target, context: context)
     target.anchor = .center
-  }
-}
-
-/// iOS 26 owns this scroll affordance natively. Earlier systems get the same
-/// two-sided backdrop softness, with a solid fade when Reduce Transparency is
-/// enabled instead of forcing a material the user has disabled.
-private struct WorkspaceWashScrollEdgeBlur: ViewModifier {
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content.scrollEdgeEffectStyle(.soft, for: [.leading, .trailing])
-    } else {
-      content
-        .overlay(alignment: .leading) { fallbackEdge(leading: true) }
-        .overlay(alignment: .trailing) { fallbackEdge(leading: false) }
-    }
-  }
-
-  private func fallbackEdge(leading: Bool) -> some View {
-    Group {
-      if reduceTransparency {
-        DashTheme.Sheet.background
-      } else {
-        Rectangle().fill(.ultraThinMaterial)
-      }
-    }
-    .mask {
-      LinearGradient(
-        colors: [.black, .clear],
-        startPoint: leading ? .leading : .trailing,
-        endPoint: leading ? .trailing : .leading
-      )
-    }
-    .frame(width: WorkspaceWashPickerMetrics.edgeBlurWidth)
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
   }
 }
 

@@ -935,6 +935,65 @@ enum DashScreenClipScope {
 
 // MARK: - Scroll edge fades
 
+enum DashScrollEdgeFadeMetrics {
+  /// How far a fade reaches in from its edge.
+  static let thickness: CGFloat = 32
+  /// Distance (pt) over which a ramped fade eases from 0 → 1.
+  static let softRange: CGFloat = 36
+}
+
+/// The one scroll-edge fade in the app: the scrolling surface's own colour
+/// ramped to clear over the last `thickness` points, so content dissolves into
+/// the surface instead of meeting a hard viewport cut.
+///
+/// `DashFadedScrollView` mounts two of these on a capped vertical viewport and
+/// ramps their opacity with the scroll offset. A region that cannot hand its
+/// scroll view over — the Glow carousel owns `contentMargins`, `scrollPosition`
+/// and a target behaviour — mounts them itself instead, so both read as the
+/// same affordance rather than a colour ramp beside a system backdrop blur.
+struct DashScrollEdgeFade: View {
+  let edge: Edge
+  /// The fill *behind* the scroll content, so the ramp lands on it invisibly.
+  let surface: Color
+  var thickness: CGFloat = DashScrollEdgeFadeMetrics.thickness
+
+  var body: some View {
+    LinearGradient(
+      colors: [surface, surface.opacity(0)],
+      startPoint: startPoint,
+      endPoint: endPoint
+    )
+    .frame(
+      width: isHorizontal ? thickness : nil,
+      height: isHorizontal ? nil : thickness
+    )
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  private var isHorizontal: Bool {
+    edge == .leading || edge == .trailing
+  }
+
+  private var startPoint: UnitPoint {
+    switch edge {
+    case .top: .top
+    case .bottom: .bottom
+    case .leading: .leading
+    case .trailing: .trailing
+    }
+  }
+
+  private var endPoint: UnitPoint {
+    switch edge {
+    case .top: .bottom
+    case .bottom: .top
+    case .leading: .trailing
+    case .trailing: .leading
+    }
+  }
+}
+
 /// Vertical `ScrollView` with soft top/bottom surface fades for nested or
 /// height-capped regions where overflow is easy to miss (Domains viewport,
 /// build log, tray bodies). Full-page canvas scrolls stay plain `ScrollView`.
@@ -964,9 +1023,7 @@ struct DashFadedScrollView<Content: View>: View {
   @State private var sample = ScrollEdgeSample()
 
   private var spaceName: String { "dashFadedScroll.\(spaceID.uuidString)" }
-  /// Distance (pt) over which the edge fade eases from 0 → 1.
-  private let softRange: CGFloat = 36
-  private let fadeHeight: CGFloat = 32
+  private let softRange = DashScrollEdgeFadeMetrics.softRange
 
   var body: some View {
     ScrollView(showsIndicators: showsIndicators) {
@@ -989,11 +1046,11 @@ struct DashFadedScrollView<Content: View>: View {
     .modifier(DashScrollDismissesKeyboard(enabled: dismissesKeyboardInteractively))
     .frame(maxHeight: maxHeight)
     .overlay(alignment: .top) {
-      edgeFade(leadingFromTop: true)
+      DashScrollEdgeFade(edge: .top, surface: surface)
         .opacity(topOpacity)
     }
     .overlay(alignment: .bottom) {
-      edgeFade(leadingFromTop: false)
+      DashScrollEdgeFade(edge: .bottom, surface: surface)
         .opacity(bottomOpacity)
     }
   }
@@ -1050,19 +1107,6 @@ struct DashFadedScrollView<Content: View>: View {
     let raw = min(1, max(0, distance / range))
     // ~20 steps: smooth enough to read, sparse enough to avoid per-frame churn.
     return (raw * 20).rounded() / 20
-  }
-
-  private func edgeFade(leadingFromTop: Bool) -> some View {
-    LinearGradient(
-      colors: leadingFromTop
-        ? [surface, surface.opacity(0)]
-        : [surface.opacity(0), surface],
-      startPoint: .top,
-      endPoint: .bottom
-    )
-    .frame(height: fadeHeight)
-    .allowsHitTesting(false)
-    .accessibilityHidden(true)
   }
 }
 

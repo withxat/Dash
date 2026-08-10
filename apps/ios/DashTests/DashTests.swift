@@ -120,12 +120,16 @@ import UIKit
   #expect(Set(rawValues).count == rawValues.count)
 }
 
-@Test func workspaceWashPickerKeepsPortraitCardsCenteredPastItsEdgeBlur() {
+@Test func workspaceWashPickerKeepsPortraitCardsCenteredPastItsEdgeFade() {
   #expect(WorkspaceWashPickerMetrics.cardHeight > WorkspaceWashPickerMetrics.cardWidth)
   #expect(WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: 390) == 132)
   #expect(
     WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: 150)
-      == WorkspaceWashPickerMetrics.edgeBlurWidth)
+      == WorkspaceWashPickerMetrics.edgeFadeWidth)
+  // The viewport has to outgrow the card, or a selection ring is clipped by the
+  // scroll's own bounds.
+  #expect(
+    WorkspaceWashPickerMetrics.viewportHeight > WorkspaceWashPickerMetrics.cardHeight)
 }
 
 @Test @MainActor func customAvatarFilesAreNormalizedPersistentAndUserScoped() async throws {
