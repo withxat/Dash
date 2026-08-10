@@ -21,7 +21,7 @@ const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/packag
 
 /** Solid Solar icons used throughout content surfaces. */
 const FILL_ICONS = {
-	SolarArrowRightDownBold: 'arrows/Bold/ArrowRightDown',
+	/// Chart-trend ↗ only — ↘ is the same mark at 90° (`DashChartTrendArrowRules`).
 	SolarArrowRightUpBold: 'arrows/Bold/ArrowRightUp',
 	SolarBoltFill: 'ui/Bold/Bolt',
 	SolarBoxMinimalisticFill: 'ui/Bold/BoxMinimalistic',
@@ -64,7 +64,6 @@ const FILL_ICONS = {
 }
 
 const WIDGET_FILL_ICONS = new Set([
-	'SolarArrowRightDownBold',
 	'SolarArrowRightUpBold',
 ])
 

@@ -47,8 +47,9 @@ enum SolarAsset {
     ]
   }
 
+  /// Chart-trend direction mark. Down is the same glyph at 90°
+  /// (`DashChartTrendArrowRules`) — do not add a second Bold asset for ↘.
   static let arrowRightUpBold = "SolarArrowRightUpBold"
-  static let arrowRightDownBold = "SolarArrowRightDownBold"
   /// Linear external-link mark (Settings rows that leave the app).
   static let arrowRightUp = "SolarArrowRightUpOutline"
   static let chevronRight = "SolarAltArrowRightOutline"

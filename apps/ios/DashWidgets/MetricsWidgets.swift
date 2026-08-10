@@ -940,34 +940,23 @@ private struct MetricsWidgetView: View {
 
   @ViewBuilder
   private func trendIcon(_ direction: DashChartTrendDirection) -> some View {
-    switch direction {
-    case .up:
-      trendImage("SolarArrowRightUpBold", direction: direction)
-    case .down:
-      trendImage("SolarArrowRightDownBold", direction: direction)
-    case .flat:
-      EmptyView()
+    if let degrees = DashChartTrendArrowRules.rotationDegrees(for: direction) {
+      Image("SolarArrowRightUpBold")
+        .resizable()
+        .renderingMode(.template)
+        .scaledToFit()
+        .frame(width: 16, height: 16)
+        .rotationEffect(.degrees(degrees))
+        .foregroundStyle(
+          MetricsWidgetTrendPalette.color(
+            direction: direction,
+            convention: DashChartTrendColorConvention.resolved(
+              locale: DashWidgetBridges.mirroredLocale()),
+            colorScheme: colorScheme,
+            increasedContrast: colorSchemeContrast == .increased)
+        )
+        .accessibilityHidden(true)
     }
-  }
-
-  private func trendImage(
-    _ asset: String,
-    direction: DashChartTrendDirection
-  ) -> some View {
-    Image(asset)
-      .resizable()
-      .renderingMode(.template)
-      .scaledToFit()
-      .frame(width: 16, height: 16)
-      .foregroundStyle(
-        MetricsWidgetTrendPalette.color(
-          direction: direction,
-          convention: DashChartTrendColorConvention.resolved(
-            locale: DashWidgetBridges.mirroredLocale()),
-          colorScheme: colorScheme,
-          increasedContrast: colorSchemeContrast == .increased)
-      )
-      .accessibilityHidden(true)
   }
 
   @ViewBuilder

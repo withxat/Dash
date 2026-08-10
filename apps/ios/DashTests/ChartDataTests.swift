@@ -188,6 +188,12 @@ import Testing
       == .greenUpRedDown)
 }
 
+@Test func chartTrendArrowRotatesOneBoldMarkForDown() {
+  #expect(DashChartTrendArrowRules.rotationDegrees(for: .up) == 0)
+  #expect(DashChartTrendArrowRules.rotationDegrees(for: .down) == 90)
+  #expect(DashChartTrendArrowRules.rotationDegrees(for: .flat) == nil)
+}
+
 @Test func webMetricsUseCompleteUTCWindows() {
   // window = 2: the two complete UTC days before `now` are current. Today is
   // intentionally present in the fixture and must be excluded.

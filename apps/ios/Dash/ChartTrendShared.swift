@@ -6,6 +6,21 @@ enum DashChartTrendDirection: Hashable, Sendable {
   case flat
 }
 
+/// One Bold ↗ mark states every chart-trend direction. `.up` is upright;
+/// `.down` is that same glyph 90° clockwise (↘). Swapping two assets cannot
+/// rotate, so range-tab changes would only cross-fade — one identity lets the
+/// tip swing and the tint recolor together. Flat has no mark.
+enum DashChartTrendArrowRules {
+  /// Degrees clockwise from the upright ↗ Bold asset. Nil when no arrow.
+  static func rotationDegrees(for direction: DashChartTrendDirection) -> Double? {
+    switch direction {
+    case .up: 0
+    case .down: 90
+    case .flat: nil
+    }
+  }
+}
+
 /// Period comparison shared by app charts and WidgetKit so direction,
 /// zero-baseline handling, and localized percentages cannot drift.
 struct DashChartTrendComparison: Hashable, Sendable {

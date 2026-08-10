@@ -303,15 +303,33 @@ struct DashCollapsedChartTrendLabel: View {
   var body: some View {
     if let trend,
       let percentage = trend.formattedPercentage,
-      let asset = trend.compactDirectionAsset
+      trend.direction != .flat
     {
-      ZStack {
-        SolarIcon(asset: asset, size: 16, color: trend.foreground)
-      }
-      .frame(width: 16, height: 16)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel(
-        "\(DashL10n.ui("Change")): \(percentage)")
+      DashChartTrendArrow(direction: trend.direction, size: 16, color: trend.foreground)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+          "\(DashL10n.ui("Change")): \(percentage)")
+    }
+  }
+}
+
+/// Single Bold ↗ that states `.up` / `.down` by rotation — see
+/// `DashChartTrendArrowRules`. Color rides the same animated transaction as
+/// the range tabs, so a direction flip spins and recolors together.
+struct DashChartTrendArrow: View {
+  let direction: DashChartTrend.Direction
+  var size: CGFloat = 16
+  var color: Color = DashTheme.subtle
+
+  var body: some View {
+    if let degrees = DashChartTrendArrowRules.rotationDegrees(for: direction) {
+      SolarIcon(
+        asset: SolarAsset.arrowRightUpBold,
+        size: size,
+        color: color,
+        rotation: .degrees(degrees)
+      )
+      .frame(width: size, height: size)
     }
   }
 }
@@ -582,9 +600,7 @@ private struct DashChartDetailTrendLabel: View {
   var body: some View {
     if let trend, let percentage = trend.formattedPercentage {
       HStack(spacing: 2) {
-        if let asset = trend.compactDirectionAsset {
-          SolarIcon(asset: asset, size: 20, color: trend.foreground)
-        }
+        DashChartTrendArrow(direction: trend.direction, size: 20, color: trend.foreground)
         Text(verbatim: percentage.trimmingSign)
           .dashTextStyle(.sectionTitle)
           .monospacedDigit()
@@ -758,14 +774,6 @@ private struct DashChartTableRow: View {
 }
 
 extension DashChartTrend {
-  fileprivate var compactDirectionAsset: String? {
-    switch direction {
-    case .up: SolarAsset.arrowRightUpBold
-    case .down: SolarAsset.arrowRightDownBold
-    case .flat: nil
-    }
-  }
-
   var formattedPercentage: String? {
     comparison.formattedPercentage(locale: DashL10n.activeLocale)
   }
