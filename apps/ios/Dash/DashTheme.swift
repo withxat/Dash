@@ -626,11 +626,6 @@ enum DashTheme {
     light: 0x056DFF, dark: 0x045EDE, highLight: 0x1447E6, highDark: 0x51A2FF)
   static let violet = adaptive(
     light: 0x8E51FF, dark: 0x8E51FF, highLight: 0x6E11B0, highDark: 0xC4B4FF)
-  /// Interactive text on Liquid Glass. Keep the regular brand blue in light
-  /// mode, but lift dark appearances so small labels stay legible when the
-  /// material samples and darkens pigmented content beneath it.
-  static let glassActionForeground = adaptive(
-    light: 0x056DFF, dark: 0x51A2FF, highLight: 0x1447E6, highDark: 0x8EC5FF)
   /// Shared edge for strokes, 1pt rules, and card rings — pure black/white at
   /// token opacity so the line reads on canvas, wash, elevated, and tinted fills.
   /// Prefer this over solid gray hexes for any border or separator.

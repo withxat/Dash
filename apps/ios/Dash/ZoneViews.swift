@@ -1085,62 +1085,39 @@ struct ZoneNameserversGroup: View {
   }
 }
 
-/// Native glass control on the detail hero card — opens the color picker.
+/// Translucent white chip on the detail hero card — opens the color picker.
+/// Deliberately NOT Liquid Glass and NOT a blur material (2026-08-07): a plain
+/// white wash to the designer's spec — display-p3 1 1 1 / 0.8, opaque under
+/// Reduce Transparency — so the pill reads identically on every card pigment.
+/// The ink is pinned near-black in both appearances because the chip itself
+/// is always light; it must not follow the card's luminance or the app theme.
 struct DomainCardCustomizeButton: View {
   let action: () -> Void
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   var body: some View {
-    Group {
-      if #available(iOS 26.0, *) {
-        Button {
-          DashDelight.lightImpact()
-          action()
-        } label: {
-          Text(DashL10n.string("Customize"))
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.glassActionForeground)
-        }
-        .buttonStyle(.glass)
-      } else if reduceTransparency {
-        Button {
-          DashDelight.lightImpact()
-          action()
-        } label: {
-          label
-            .background(DashTheme.elevated, in: Capsule(style: .continuous))
-            .overlay {
-              Capsule(style: .continuous).stroke(DashTheme.line, lineWidth: 0.5)
-            }
-        }
-        .buttonStyle(DashPressButtonStyle())
-      } else {
-        Button {
-          DashDelight.lightImpact()
-          action()
-        } label: {
-          label
-            .background(.thinMaterial, in: Capsule(style: .continuous))
-            .overlay {
-              Capsule(style: .continuous)
-                .stroke(Color.white.opacity(0.24), lineWidth: 0.5)
-            }
-        }
-        .buttonStyle(DashPressButtonStyle())
-      }
+    Button {
+      DashDelight.lightImpact()
+      action()
+    } label: {
+      Text(DashL10n.string("Customize"))
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(Color(hex: 0x0A0A0A))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .contentShape(Capsule(style: .continuous))
+        .background(wash, in: Capsule(style: .continuous))
     }
+    .buttonStyle(DashPressButtonStyle())
     .accessibilityLabel(DashL10n.string("Customize"))
     .accessibilityHint(DashL10n.string("Opens the domain card color picker"))
     .accessibilityIdentifier("domain-card-customize")
   }
 
-  private var label: some View {
-    Text(DashL10n.string("Customize"))
-      .dashTextStyle(.footnoteSemibold)
-      .foregroundStyle(DashTheme.strong)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 7)
-      .contentShape(Capsule(style: .continuous))
+  private var wash: Color {
+    Color(
+      .displayP3, red: 1, green: 1, blue: 1,
+      opacity: reduceTransparency ? 1 : 0.8)
   }
 }
 
@@ -1462,6 +1439,7 @@ private struct DomainCardColorCustomizeOverlay: View {
 /// customize-picker reference (no freeform hue wheel).
 private struct DomainCardColorPaletteGrid: View {
   @Binding var selection: UInt32
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   private let columns = Array(
     repeating: GridItem(.flexible(), spacing: 14),
@@ -1476,7 +1454,12 @@ private struct DomainCardColorPaletteGrid: View {
           isSelected: selection == hex
         ) {
           guard selection != hex else { return }
-          selection = hex
+          // Animated at the write site so the preview card's enamel (a plain
+          // `Shape.fill` under static grain) cross-fades to the new pigment —
+          // and the ink with it — instead of snapping on the tap.
+          withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+            selection = hex
+          }
           DashDelight.selectionChanged()
         }
       }
