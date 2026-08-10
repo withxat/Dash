@@ -339,14 +339,14 @@ struct EmailRoutingView: View {
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Destination addresses") {
         DashListRowPlaceholders(rows: 1)
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
       DashToggleRowPlaceholder()
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
@@ -409,9 +409,9 @@ struct EmailRoutingView: View {
       .dashBodySlot(reduceMotion: reduceMotion)
     routesSection
       .dashBodySlot(reduceMotion: reduceMotion)
-    catchAllSection
     addressesSection
       .dashBodySlot(reduceMotion: reduceMotion)
+    catchAllSection
     if settings.supportSubaddress != nil {
       subaddressingSection
         .dashBodySlot(reduceMotion: reduceMotion)
@@ -569,7 +569,46 @@ struct EmailRoutingView: View {
     return match?.isVerified == true ? nil : .unverified
   }
 
-  // MARK: §4 Catch-all
+  // MARK: §4 Destination addresses
+
+  /// Exactly one row, so this is a legitimate `DashListGroup` — bounded content
+  /// in an eager stack, unlike Routes above.
+  private var addressesSection: some View {
+    DashListGroup(title: "Destination addresses") {
+      // One row: `DashListGroup` supplies the horizontal inset, so the row
+      // takes none of its own.
+      DashListGroupLink(value: .emailAddresses) {
+        DashListRow(
+          title: DashL10n.string("Manage addresses"),
+          subtitle: addressesSubtitle,
+          icon: SolarAsset.Content.user,
+          iconColor: FeatureVisualIdentity.catalogColor(for: .emailRouting)
+        ) {
+          if unverifiedAddressCount > 0 {
+            StatusBadge(.unverified)
+          }
+        }
+        .accessibilityLabel(manageAddressesAccessibilityLabel())
+      }
+    }
+    .dashSectionBoundary()
+  }
+
+  private var unverifiedAddressCount: Int {
+    (addresses ?? []).filter { !$0.isVerified }.count
+  }
+
+  /// Absent while the address list is unknown — a count is a claim, and a
+  /// failed lookup has nothing to claim.
+  private var addressesSubtitle: String? {
+    guard let addresses else { return nil }
+    let total = DashL10n.string("\(addresses.count) addresses")
+    let unverified = unverifiedAddressCount
+    guard unverified > 0 else { return total }
+    return total + " · " + DashL10n.string("\(unverified) unverified")
+  }
+
+  // MARK: §5 Catch-all
 
   @ViewBuilder
   private var catchAllSection: some View {
@@ -708,45 +747,6 @@ struct EmailRoutingView: View {
   /// that silently drops mail.
   private var deliveryOptions: [String] {
     [emailRoutingDropOption] + (addresses ?? []).filter(\.isVerified).map(\.email)
-  }
-
-  // MARK: §5 Destination addresses
-
-  /// Exactly one row, so this is a legitimate `DashListGroup` — bounded content
-  /// in an eager stack, unlike Routes above.
-  private var addressesSection: some View {
-    DashListGroup(title: "Destination addresses") {
-      // One row: `DashListGroup` supplies the horizontal inset, so the row
-      // takes none of its own.
-      DashListGroupLink(value: .emailAddresses) {
-        DashListRow(
-          title: DashL10n.string("Manage addresses"),
-          subtitle: addressesSubtitle,
-          icon: SolarAsset.Content.user,
-          iconColor: FeatureVisualIdentity.catalogColor(for: .emailRouting)
-        ) {
-          if unverifiedAddressCount > 0 {
-            StatusBadge(.unverified)
-          }
-        }
-        .accessibilityLabel(manageAddressesAccessibilityLabel())
-      }
-    }
-    .dashSectionBoundary()
-  }
-
-  private var unverifiedAddressCount: Int {
-    (addresses ?? []).filter { !$0.isVerified }.count
-  }
-
-  /// Absent while the address list is unknown — a count is a claim, and a
-  /// failed lookup has nothing to claim.
-  private var addressesSubtitle: String? {
-    guard let addresses else { return nil }
-    let total = DashL10n.string("\(addresses.count) addresses")
-    let unverified = unverifiedAddressCount
-    guard unverified > 0 else { return total }
-    return total + " · " + DashL10n.string("\(unverified) unverified")
   }
 
   // MARK: §6 Plus addressing

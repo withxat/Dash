@@ -465,8 +465,8 @@ struct WorkerDetailView: View {
     )
   }
 
-  /// Fuller first-paint reserve: metrics + charts, deployments, workers.dev,
-  /// Domains & Routes. Builds stay live-only (often renders nothing). Empty
+  /// Fuller first-paint reserve: metrics + charts, deployments, Domains &
+  /// Routes, workers.dev. Builds stay live-only (often renders nothing). Empty
   /// live sections exit upward via `dashBodySlot`.
   @ViewBuilder
   private func workerDetailBody(mode: DashBodyMode) -> some View {
@@ -562,15 +562,19 @@ struct WorkerDetailView: View {
     }
 
     if mode.isPlaceholder {
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroup(title: "Domains & Routes") {
         DashListRowPlaceholders(rows: 2)
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
     } else {
+      // No modifier here: padding this TupleView would re-eagerize the route
+      // rows. The section boundary rides domainsGroup's own header instead.
+      domainsGroup
+        .dashBodySlot(reduceMotion: reduceMotion)
       DashToggleRow(
         title: "workers.dev",
         subtitle: workersDevSubtitle,
@@ -580,10 +584,6 @@ struct WorkerDetailView: View {
       )
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
-      // No modifier here: padding this TupleView would re-eagerize the route
-      // rows. The section boundary rides domainsGroup's own header instead.
-      domainsGroup
-        .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
