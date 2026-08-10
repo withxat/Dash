@@ -17,7 +17,7 @@ const assetsDir = path.join(__dirname, '../Dash/Resources/Assets.xcassets')
 const widgetAssetsDir = path.join(__dirname, '../DashWidgets/WidgetAssets.xcassets')
 const solarRoot = path.dirname(require.resolve('@solar-icons/react-native/package.json'))
 
-/** @typedef {{ tag: 'path' | 'circle' | 'ellipse' | 'rect' | 'g', d?: string, cx?: string, cy?: string, r?: string, rx?: string, ry?: string, x?: string, y?: string, width?: string, height?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, children?: Element[] }} Element */
+/** @typedef {{ tag: 'path' | 'circle' | 'ellipse' | 'rect' | 'g', d?: string, cx?: string, cy?: string, r?: string, rx?: string, ry?: string, x?: string, y?: string, width?: string, height?: string, stroke?: boolean, strokeWidth?: string, strokeLinecap?: string, strokeLinejoin?: string, fillRule?: string, clipRule?: string, opacity?: string, transform?: string, children?: Element[] }} Element */
 
 /** Solid Solar icons used throughout content surfaces. */
 const FILL_ICONS = {
@@ -40,11 +40,13 @@ const FILL_ICONS = {
 	SolarCloudStorageFill: 'devices/Bold/CloudStorage',
 	SolarKeyMinimalisticFill: 'security/Bold/KeyMinimalistic',
 	SolarDatabaseFill: 'ui/Bold/Database',
+	SolarInfoCircleFill: 'ui/Bold/InfoCircle',
 	SolarInboxFill: 'messages/Bold/Inbox',
 	SolarMailboxFill: 'messages/Bold/Mailbox',
 	SolarShieldUserFill: 'security/Bold/ShieldUser',
 	SolarUsersGroupRoundedFill: 'users/Bold/UsersGroupRounded',
 	SolarShieldStarFill: 'security/Bold/ShieldStar',
+	SolarStarsFill: 'weather/Bold/Stars',
 	SolarKeyFill: 'security/Bold/Key',
 	SolarRoutingFill: 'map/Bold/Routing',
 	SolarLockPasswordFill: 'security/Bold/LockPassword',
@@ -78,6 +80,8 @@ const OUTLINE_ICONS = {
 	SolarKeyMinimalisticOutline: 'security/Linear/KeyMinimalistic',
 	SolarDatabaseOutline: 'ui/Linear/Database',
 	SolarInboxOutline: 'messages/Linear/Inbox',
+	/// Settings → About.
+	SolarInfoCircleOutline: 'ui/Linear/InfoCircle',
 	SolarMailboxOutline: 'messages/Linear/Mailbox',
 	SolarBoltOutline: 'ui/Linear/Bolt',
 	SolarLockKeyholeOutline: 'security/Linear/LockKeyhole',
@@ -207,6 +211,7 @@ function elementFromAttributes(tagName, attributes) {
 		fillRule: templateAttribute(attributes, 'fillRule'),
 		clipRule: templateAttribute(attributes, 'clipRule'),
 		opacity: templateAttribute(attributes, 'opacity'),
+		transform: templateAttribute(attributes, 'transform'),
 	}
 
 	switch (tagName) {
@@ -300,6 +305,7 @@ function extractGroupedElements(source) {
 			fillRule: attrs.match(/fillRule:`([^`]+)`/)?.[1],
 			clipRule: attrs.match(/clipRule:`([^`]+)`/)?.[1],
 			opacity: attrs.match(/opacity:`([^`]+)`/)?.[1],
+			transform: attrs.match(/transform:`([^`]+)`/)?.[1],
 		})
 
 		if (tagName === 'g' && childBlock) {
@@ -376,12 +382,13 @@ function svgFor(elements, { template, strokeWidth, fillExpansionWidth }) {
 
 /** @param {Element} el */
 function renderElement(el, template, strokeWidth, fillExpansionWidth) {
+	const transform = el.transform ? ` transform="${el.transform}"` : ''
 	if (el.tag === 'g') {
 		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
 		const children = (el.children ?? [])
 			.map(child => renderElement(child, template, strokeWidth, fillExpansionWidth))
 			.join('')
-		return `<g${opacity}>${children}</g>`
+		return `<g${transform}${opacity}>${children}</g>`
 	}
 
 	if (el.tag === 'circle' || el.tag === 'ellipse' || el.tag === 'rect') {
@@ -399,7 +406,7 @@ function renderElement(el, template, strokeWidth, fillExpansionWidth) {
 				? ` stroke="#000" stroke-width="${fillExpansionWidth}"`
 				: ''}`
 		const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
-		return `<${el.tag} ${geometry} ${paint}${opacity}/>`
+		return `<${el.tag} ${geometry} ${paint}${transform}${opacity}/>`
 	}
 
 	const fillRule = el.fillRule ? ` fill-rule="${el.fillRule}"` : ''
@@ -407,14 +414,14 @@ function renderElement(el, template, strokeWidth, fillExpansionWidth) {
 	if (el.stroke) {
 		const cap = el.strokeLinecap ? ` stroke-linecap="${el.strokeLinecap}"` : ' stroke-linecap="round"'
 		const join = el.strokeLinejoin ? ` stroke-linejoin="${el.strokeLinejoin}"` : ' stroke-linejoin="round"'
-		return `<path d="${el.d}" fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"${cap}${join}/>`
+		return `<path d="${el.d}" fill="none" stroke="#000" stroke-width="${strokeWidth ?? el.strokeWidth}"${cap}${join}${transform}/>`
 	}
 
 	const expansion = fillExpansionWidth
 		? ` stroke="#000" stroke-width="${fillExpansionWidth}" stroke-linecap="round" stroke-linejoin="round"`
 		: ''
 	const opacity = el.opacity ? ` opacity="${el.opacity}"` : ''
-	return `<path d="${el.d}" fill="#000"${expansion}${fillRule}${clipRule}${opacity}/>`
+	return `<path d="${el.d}" fill="#000"${expansion}${fillRule}${clipRule}${transform}${opacity}/>`
 }
 
 /** @param {string[]} paths */

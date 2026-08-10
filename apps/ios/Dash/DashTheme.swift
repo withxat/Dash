@@ -588,34 +588,84 @@ enum DashTheme {
   /// recognizable. Not the catalog blue (`brand`).
   static let accent = adaptive(
     light: 0xF6821F, dark: 0xFF9838, highLight: 0xC45A00, highDark: 0xFFB366)
-  /// Soft brand-orange default for the workspace's configurable top light
-  /// field (`DashWorkspaceTopWash`, shared by all three tab roots). Same
-  /// adaptive stop as `accent`; call sites apply opacity so it washes into
-  /// `canvas`.
-  static let wash = accent
+  /// Canonical brand pigments used by explicitly inspired Glow
+  /// presets. Keep these separate from `accent` and categorical `teal`: those
+  /// semantic colors serve controls and charts, while these values belong to
+  /// the decorative workspace wash itself.
+  static let workspaceCloudflareBrandHex: UInt32 = 0xFF5E20
+  static let workspaceNetEaseMusicBrandHex: UInt32 = 0xFC3C4F
+  static let workspaceNetlifyBrandHex: UInt32 = 0x32E6E2
+  static let workspaceCoolapkBrandHex: UInt32 = 0x12BF72
+  static let workspaceBilibiliBrandHex: UInt32 = 0xF46F95
+  /// Ink over mid-light Glow fills: dark in normal appearances, but light when
+  /// Increased Contrast deliberately deepens the light-mode pigment.
+  static let workspaceWashMidLightLabel = adaptive(
+    light: 0x171717, dark: 0x171717, highLight: 0xF5F5F5, highDark: 0x171717)
 
-  /// Decorative workspace pigments. They retain the existing Kumo four-stop
-  /// adaptation instead of borrowing info/success/danger status roles. Purple
-  /// and teal match the app's categorical chart families.
+  /// Normal appearances preserve the exact brand pigment. Increased Contrast
+  /// alone moves to a stronger stop so card rings and compact glyphs remain
+  /// legible against the canvas.
+  private static let workspaceCloudflareWash = adaptive(
+    light: workspaceCloudflareBrandHex,
+    dark: workspaceCloudflareBrandHex,
+    highLight: 0xC43B00,
+    highDark: 0xFF9973)
+  static let workspaceNetEaseMusicWash = adaptive(
+    light: workspaceNetEaseMusicBrandHex,
+    dark: workspaceNetEaseMusicBrandHex,
+    highLight: 0xB91F31,
+    highDark: 0xFF8490)
+  private static let workspaceNetlifyWash = adaptive(
+    light: workspaceNetlifyBrandHex,
+    dark: workspaceNetlifyBrandHex,
+    highLight: 0x007F7C,
+    highDark: 0x6EF4F1)
+  static let workspaceCoolapkWash = adaptive(
+    light: workspaceCoolapkBrandHex,
+    dark: workspaceCoolapkBrandHex,
+    highLight: 0x087A49,
+    highDark: 0x65E5A6)
+  static let workspaceBilibiliWash = adaptive(
+    light: workspaceBilibiliBrandHex,
+    dark: workspaceBilibiliBrandHex,
+    highLight: 0xB8325D,
+    highDark: 0xFFA2BC)
+
+  /// Decorative workspace pigments. They retain four-stop adaptation instead
+  /// of borrowing info/success/danger status roles; explicitly inspired
+  /// presets use their dedicated brand pigments above.
   static func workspaceWash(for preset: DashWorkspaceWashPreset) -> Color {
     switch preset {
     case .none:
       .clear
     case .cloudflare:
-      wash
+      workspaceCloudflareWash
+    case .red:
+      workspaceNetEaseMusicWash
+    case .vercel:
+      adaptive(
+        light: 0x7C8DA6, dark: 0xCBD5E1, highLight: 0x526177, highDark: 0xF1F5F9)
     case .blue:
       adaptive(
         light: 0x2B7FFF, dark: 0x51A2FF, highLight: 0x1447E6, highDark: 0x8EC5FF)
+    case .green:
+      workspaceCoolapkWash
+    case .bun:
+      adaptive(
+        light: 0xF3A978, dark: 0xFFC69F, highLight: 0xB85C2C, highDark: 0xFFE0C8)
+    case .pink:
+      workspaceBilibiliWash
     case .purple:
       adaptive(
         light: 0x8E51FF, dark: 0x8E51FF, highLight: 0x6E11B0, highDark: 0xC4B4FF)
     case .teal:
-      teal
+      workspaceNetlifyWash
     }
   }
 
   /// Categorical teal — the same stop the dither charts use for a third series.
-  /// Shared with the `.teal` workspace wash and the registrar detail header.
+  /// Shared with the registrar detail header; branded Glow pigments stay
+  /// separate so chart semantics do not silently recolor the workspace.
   static let teal = adaptive(
     light: 0x009689, dark: 0x00BBA7, highLight: 0x00786F, highDark: 0x46ECD5)
 
@@ -839,6 +889,9 @@ enum FeatureVisualTone: Hashable, Sendable {
   case info
   case violet
   case teal
+  /// A Glow preset's canonical pigment, shared by its card, workspace wash,
+  /// and Tray chrome so one selection never acquires a second color identity.
+  case workspaceWash(DashWorkspaceWashPreset)
 
   var muted: Color {
     switch self {
@@ -851,6 +904,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .info: DashTheme.info.opacity(0.85)
     case .violet: DashTheme.violet.opacity(0.85)
     case .teal: DashTheme.teal.opacity(0.85)
+    case .workspaceWash(let preset): DashTheme.workspaceWash(for: preset).opacity(0.85)
     }
   }
 
@@ -865,18 +919,19 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .info: DashTheme.info
     case .violet: DashTheme.violet
     case .teal: DashTheme.teal
+    case .workspaceWash(let preset): DashTheme.workspaceWash(for: preset)
     }
   }
 
   /// Label ink for text set on the `vivid` fill (toned tray submit pills).
   /// Most vivid stops are deep in light mode and pale in dark, so adaptive
-  /// `inverse` reads on both. Brand orange (`accent`) is mid-luminance in
-  /// *both* appearances — near-white `inverse` text lands at ~2.4:1 on
-  /// `#F6821F` in light mode — so its label stays fixed near-black
-  /// (6.9:1 light, 8.4:1 dark).
+  /// `inverse` reads on both. Mid-light Glow fills keep fixed near-black ink
+  /// instead; near-white text loses contrast on them.
   var vividLabel: Color {
     switch self {
     case .accent: Color(hex: 0x171717)
+    case .workspaceWash(let preset):
+      preset.usesDarkTrayLabel ? DashTheme.workspaceWashMidLightLabel : DashTheme.inverse
     default: DashTheme.inverse
     }
   }
@@ -890,12 +945,14 @@ extension DashWorkspaceWashPreset {
   /// Lives next to `FeatureVisualTone` (app target only) — Share / File Provider
   /// also compile `AppConfiguration`, where this type is unavailable.
   var trayTone: FeatureVisualTone? {
+    guard self != .none else { return nil }
+    return .workspaceWash(self)
+  }
+
+  fileprivate var usesDarkTrayLabel: Bool {
     switch self {
-    case .none: nil
-    case .cloudflare: .accent
-    case .blue: .brand
-    case .purple: .violet
-    case .teal: .teal
+    case .cloudflare, .red, .green, .bun, .pink, .teal: true
+    case .none, .vercel, .blue, .purple: false
     }
   }
 }

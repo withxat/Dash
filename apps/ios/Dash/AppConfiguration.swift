@@ -138,10 +138,20 @@ enum DashExperimentalFeatures {
 /// Home, Resources, and Watchtower roots. Persist the preset identity rather
 /// than a color value so every choice can keep following Kumo's adaptive
 /// light, dark, and Increased Contrast stops.
+struct DashWorkspaceWashInspiration: Equatable, Sendable {
+  let source: String
+  let description: String
+}
+
 enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   case none
   case cloudflare
+  case red
+  case vercel
   case blue
+  case green
+  case bun
+  case pink
   case purple
   case teal
 
@@ -153,10 +163,55 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   var displayName: String {
     switch self {
     case .none: DashL10n.string("None")
-    case .cloudflare: DashL10n.string("Cloudflare")
-    case .blue: DashL10n.string("Blue")
-    case .purple: DashL10n.string("Purple")
-    case .teal: DashL10n.string("Teal")
+    case .cloudflare: DashL10n.string("Ember")
+    case .red: DashL10n.string("Beat")
+    case .vercel: DashL10n.string("Void")
+    case .blue: DashL10n.string("Orbit")
+    case .green: DashL10n.string("Sprout")
+    case .bun: DashL10n.string("Toast")
+    case .pink: DashL10n.string("Bloom")
+    case .purple: DashL10n.string("Pulse")
+    case .teal: DashL10n.string("Tide")
+    }
+  }
+
+  /// Only presets with a close visual relationship to an external brand earn
+  /// an inspiration affordance. Brand names stay out of the picker so they do
+  /// not read like integrations or promises of an exact palette match.
+  var inspiration: DashWorkspaceWashInspiration? {
+    switch self {
+    case .cloudflare:
+      DashWorkspaceWashInspiration(
+        source: "Cloudflare",
+        description: DashL10n.string(
+          "Cloudflare’s signature orange inspired this warm, energetic glow."))
+    case .red:
+      DashWorkspaceWashInspiration(
+        source: "NetEase Cloud Music 网易云音乐",
+        description: DashL10n.string(
+          "NetEase Cloud Music’s vivid red inspired this bold, rhythmic glow."))
+    case .bun:
+      DashWorkspaceWashInspiration(
+        source: "Bun",
+        description: DashL10n.string(
+          "Bun’s warm, playful palette inspired this soft peach glow."))
+    case .green:
+      DashWorkspaceWashInspiration(
+        source: "Coolapk 酷安",
+        description: DashL10n.string(
+          "Coolapk’s vivid green inspired this fresh, energetic glow."))
+    case .pink:
+      DashWorkspaceWashInspiration(
+        source: "bilibili 哔哩哔哩",
+        description: DashL10n.string(
+          "bilibili’s signature pink inspired this bright, playful glow."))
+    case .teal:
+      DashWorkspaceWashInspiration(
+        source: "Netlify",
+        description: DashL10n.string(
+          "Netlify’s teal identity inspired this crisp, lively glow."))
+    case .none, .vercel, .blue, .purple:
+      nil
     }
   }
 

@@ -27,6 +27,7 @@ enum SolarAsset {
     static let globus = "SolarGlobusFill"
     static let graph = "SolarGraphNewFill"
     static let inbox = "SolarInboxFill"
+    static let infoCircle = "SolarInfoCircleFill"
     static let mailbox = "SolarMailboxFill"
     static let key = "SolarKeyFill"
     static let lock = "SolarLockKeyholeFill"
@@ -42,7 +43,7 @@ enum SolarAsset {
     static let all: Set<String> = [
       addCircle, bolt, box, boxMinimalistic, chart, chartSquare, checkCircle,
       clock, cloud, code, codeCircle, danger, file, folder, globe, globus,
-      graph, inbox, key, lock, mailbox, pinList, routing, search, settings, shieldCheck,
+      graph, inbox, infoCircle, key, lock, mailbox, pinList, routing, search, settings, shieldCheck,
       slider, upload, user,
     ]
   }
@@ -74,6 +75,8 @@ enum SolarAsset {
   static let smartphone = "SolarSmartphoneOutline"
   static let smartphoneVibration = "SolarSmartphoneVibrationOutline"
   static let sun = "SolarSunOutline"
+  /// Filled Solar stars — Glow-card inspiration affordance.
+  static let starsBold = "SolarStarsFill"
   static let globe = "SolarGlobalOutline"
   static let file = "SolarFileOutline"
   static let folder = "SolarFolderOutline"
@@ -88,6 +91,8 @@ enum SolarAsset {
   static let pin = "SolarPinOutline"
   static let pinFilled = "SolarPinFill"
   static let inbox = "SolarInboxOutline"
+  /// Linear info mark — Settings → About.
+  static let infoCircle = "SolarInfoCircleOutline"
   static let mailbox = "SolarMailboxOutline"
   static let gallery = "SolarGalleryOutline"
   static let video = "SolarVideoLibraryOutline"

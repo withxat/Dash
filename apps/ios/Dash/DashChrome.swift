@@ -332,9 +332,12 @@ private struct DashTraySharedDestinationModifier: ViewModifier {
   return scenes.flatMap(\.windows).first(where: \.isKeyWindow)
 }
 
-/// Bottom safe inset from the app window. The tray's `GeometryReader` ignores
-/// the container bottom edge so its own `safeAreaInsets.bottom` is always 0 —
-/// the same hole the toast layer hits at the top (`DashToastLayerContent`).
+/// Bottom safe inset captured at the presenting-page boundary. The tray's
+/// `GeometryReader` ignores the container bottom edge so its own
+/// `safeAreaInsets.bottom` is always 0 — the same hole the toast layer hits at
+/// the top (`DashToastLayerContent`). Never query this from the cover body:
+/// resolving `UIWindow.safeAreaInsets` during presentation re-enters SwiftUI's
+/// status-bar preferences while the same AttributeGraph is being evaluated.
 @MainActor private func dashTrayBottomSafeInset() -> CGFloat {
   dashTrayKeyWindow()?.safeAreaInsets.bottom ?? 0
 }
@@ -591,6 +594,32 @@ private struct DashTrayDescriptionKey: PreferenceKey {
   }
 }
 
+/// Content can retint a presented Tray as its route changes. `specified(nil)`
+/// is distinct from no report: Glow's None preset deliberately clears the
+/// presenting tone instead of falling back to the color captured at mount.
+private enum DashTrayTonePreference: Equatable {
+  case inherited
+  case specified(FeatureVisualTone?)
+}
+
+private struct DashTrayTonePreferenceKey: PreferenceKey {
+  static let defaultValue = DashTrayTonePreference.inherited
+
+  static func reduce(
+    value: inout DashTrayTonePreference,
+    nextValue: () -> DashTrayTonePreference
+  ) {
+    let next = nextValue()
+    if next != .inherited { value = next }
+  }
+}
+
+extension View {
+  func dashTrayContentTone(_ tone: FeatureVisualTone?) -> some View {
+    preference(key: DashTrayTonePreferenceKey.self, value: .specified(tone))
+  }
+}
+
 /// Back navigation for a stack-driven multi-step tray: published by
 /// `DashTrayFlow`'s `root:path:` form whenever the path is non-empty, consumed
 /// by the tray header, whose ✕ circle then pops one step instead of dismissing
@@ -629,6 +658,16 @@ enum DashTrayStepRole: Int, Equatable, Sendable {
     case .destructive: DashTheme.Motion.trayStepDestructive
     }
   }
+}
+
+/// The visual language for a route replacement inside one Tray.
+///
+/// `step` is the standard directional drill. `heroMorph` removes that competing
+/// horizontal travel and keeps the root route mounted so a caller-owned
+/// matched-geometry surface can remain one live object between routes.
+enum DashTrayFlowTransitionStyle: Equatable, Sendable {
+  case step
+  case heroMorph
 }
 
 private struct DashTrayStepRoleKey: PreferenceKey {
@@ -734,12 +773,15 @@ private struct DashTrayStepSlide: ViewModifier, Animatable {
 ///   publishes the header back control: at any depth the tray's ✕ pops one step
 ///   instead of dismissing (the glyph stays ✕ — see `DashTrayDismissButton`).
 ///   Steps gain a directional slide (`trayStepSlide`) so progression and return
-///   read as travel, not teleport. Terminal success steps must *replace* the
-///   stack (`path = [.done]`), never push — a back control over a committed
-///   action would reopen its form.
+///   read as travel, not teleport. A caller with a real matched-geometry hero
+///   opts into `heroMorph`, which removes that competing slide. Terminal
+///   success steps must *replace* the stack (`path = [.done]`), never push — a
+///   back control over a committed action would reopen its form.
 struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
   let route: Route
   let role: DashTrayStepRole
+  let transitionStyle: DashTrayFlowTransitionStyle
+  private let rootRoute: Route?
   private let path: Binding<[Route]>?
   @ViewBuilder let content: (Route) -> Content
   @State private var direction = DashTrayFlowDirection()
@@ -749,10 +791,13 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
   init(
     route: Route,
     role: DashTrayStepRole,
+    transitionStyle: DashTrayFlowTransitionStyle = .step,
     @ViewBuilder content: @escaping (Route) -> Content
   ) {
     self.route = route
     self.role = role
+    self.transitionStyle = transitionStyle
+    self.rootRoute = nil
     self.path = nil
     self.content = content
   }
@@ -761,11 +806,14 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
     root: Route,
     path: Binding<[Route]>,
     role: (Route) -> DashTrayStepRole,
+    transitionStyle: DashTrayFlowTransitionStyle = .step,
     @ViewBuilder content: @escaping (Route) -> Content
   ) {
     let active = path.wrappedValue.last ?? root
     self.route = active
     self.role = role(active)
+    self.transitionStyle = transitionStyle
+    self.rootRoute = root
     self.path = path
     self.content = content
   }
@@ -781,23 +829,48 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
       }
     }
     return DashTrayPopLayout(activeRoute: route) {
-      content(route)
-        .frame(maxWidth: .infinity, alignment: .top)
-        .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: route)
-        .id(route)
-        .transition(stepTransition)
+      if transitionStyle == .heroMorph, let rootRoute {
+        persistentRoot(rootRoute)
+        if route != rootRoute {
+          transientStep(route)
+        }
+      } else {
+        transientStep(route)
+      }
     }
     .frame(maxWidth: .infinity, alignment: .top)
     .animation(
-      reduceMotion ? DashTheme.Motion.reduced : role.transitionAnimation,
+      reduceMotion ? DashTheme.Motion.reduced : transitionAnimation,
       value: route
     )
     .preference(key: DashTrayStepRoleKey.self, value: role)
     .preference(key: DashTrayBackActionKey.self, value: backAction)
   }
 
+  private func persistentRoot(_ root: Route) -> some View {
+    let isActive = route == root
+    return content(root)
+      .frame(maxWidth: .infinity, alignment: .top)
+      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: root)
+      .opacity(isActive ? 1 : 0)
+      .allowsHitTesting(isActive)
+      .accessibilityHidden(!isActive)
+      .zIndex(0)
+      .id(root)
+  }
+
+  private func transientStep(_ step: Route) -> some View {
+    content(step)
+      .frame(maxWidth: .infinity, alignment: .top)
+      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: step)
+      .zIndex(1)
+      .id(step)
+      .transition(stepTransition)
+  }
+
   private var stepTransition: AnyTransition {
     if reduceMotion { return .opacity }
+    if transitionStyle == .heroMorph { return .opacity }
     let base = AnyTransition.opacity.combined(with: .scale(scale: 0.96, anchor: .center))
     guard path != nil else { return base }
     let layoutSign: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
@@ -816,6 +889,15 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
       )
     )
     .combined(with: base)
+  }
+
+  private var transitionAnimation: Animation {
+    switch transitionStyle {
+    case .step:
+      role.transitionAnimation
+    case .heroMorph:
+      role == .root ? DashTheme.Motion.morphExit : DashTheme.Motion.morph
+    }
   }
 
   private var backAction: DashTrayBackAction? {
@@ -1144,6 +1226,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   var showsMenuButtons = true
   /// Contextual tone; nil keeps the neutral tray. See `\.dashTrayTone`.
   var tone: FeatureVisualTone? = nil
+  /// Frozen before the cover mounts so layout never synchronously asks UIKit
+  /// to resolve status-bar / safe-area preferences from inside this body.
+  let safeBottom: CGFloat
   /// Paired action plus its frozen presenting frame. Nil keeps the standard
   /// bottom reveal; the destination must still report the matching identity.
   var sharedAction: DashTraySharedAction? = nil
@@ -1174,6 +1259,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @State private var backAction: DashTrayBackAction?
   @State private var contentTitle: String?
   @State private var contentDescription: String?
+  @State private var contentTone = DashTrayTonePreference.inherited
   @State private var stepRole = DashTrayStepRole.root
   @State private var dismissDisabled = false
   @State private var sharedActionCoordinator = DashTraySharedActionCoordinator()
@@ -1211,6 +1297,13 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   private var liveToastLeadingMark: DashToastLeadingMark? { toastLayerState?.leadingMark }
 
   private var resolvedTitle: String { contentTitle ?? title }
+
+  private var resolvedTone: FeatureVisualTone? {
+    switch contentTone {
+    case .inherited: tone
+    case .specified(let tone): tone
+    }
+  }
   private var reduceMotion: Bool {
     accessibilityReduceMotion
   }
@@ -1367,7 +1460,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
         requestProgrammaticClose(completion: completion)
       }
     )
-    .environment(\.dashTrayTone, tone)
+    .environment(\.dashTrayTone, resolvedTone)
     .environment(\.dashTraySuccessFlightCoordinator, successFlightCoordinator)
     .environment(
       \.dashTraySuccessFlightInProgress, toastLayerState?.successFlightInProgress ?? false
@@ -1377,6 +1470,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     .onPreferenceChange(DashTrayBackActionKey.self) { backAction = $0 }
     .onPreferenceChange(DashTrayTitleKey.self) { contentTitle = $0 }
     .onPreferenceChange(DashTrayDescriptionKey.self) { contentDescription = $0 }
+    .onPreferenceChange(DashTrayTonePreferenceKey.self) { reportedTone in
+      guard contentTone != reportedTone else { return }
+      contentTone = reportedTone
+    }
     .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .task(id: sharedGeometrySnapshot) {
@@ -1587,11 +1684,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   }
 
   /// Bottom gap under the floating card from the screen edge (always ≥ 0).
-  /// Uses the window safe inset — the GeometryReader ignores the container
-  /// bottom edge, so its proxy inset is always 0.
+  /// Uses the presenter-frozen window inset — the GeometryReader ignores the
+  /// container bottom edge, so its proxy inset is always 0.
   private var bottomLift: CGFloat {
     DashTrayBottomLiftRules.padding(
-      safeBottom: dashTrayBottomSafeInset(),
+      safeBottom: safeBottom,
       keyboardCovered: max(0, keyboardHeight)
     )
   }
@@ -2538,6 +2635,7 @@ final class DashTraySharedActionLease {
 private struct DashTrayCoverPresentation<Value>: Identifiable {
   let id = UUID()
   let value: Value
+  let safeBottom: CGFloat
   let sharedAction: DashTraySharedAction?
   let sourceFrame: CGRect?
 }
@@ -2580,7 +2678,8 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
           let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
           sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
-            value: true, sharedAction: claim?.action, sourceFrame: claim?.frame)
+            value: true, safeBottom: dashTrayBottomSafeInset(),
+            sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
           sharedActionLease.release()
@@ -2605,6 +2704,7 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
         content: { presentation in
           DashCustomSheet(
             title: title, showsMenuButtons: showsMenuButtons, tone: tone,
+            safeBottom: presentation.safeBottom,
             sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
             hero: hero,
             onDismiss: { completion in
@@ -2662,7 +2762,8 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
           let claim = dashTrayResolveSharedAction(sharedAction, reduceMotion: reduceMotion)
           sharedActionLease.adopt(claim)
           let presentation = DashTrayCoverPresentation(
-            value: newItem, sharedAction: claim?.action, sourceFrame: claim?.frame)
+            value: newItem, safeBottom: dashTrayBottomSafeInset(),
+            sharedAction: claim?.action, sourceFrame: claim?.frame)
           dashPresentWithoutAnimation { coverPresentation = presentation }
         } else {
           sharedActionLease.release()
@@ -2687,6 +2788,7 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
         content: { presentation in
           DashCustomSheet<Hero, TrayContent, EmptyView>(
             title: title(presentation.value), showsMenuButtons: showsMenuButtons, tone: tone,
+            safeBottom: presentation.safeBottom,
             sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
             hero: hero.map { hero in { hero(presentation.value) } },
             onDismiss: { completion in

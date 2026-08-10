@@ -22,6 +22,11 @@ const PROFILE_SETTINGS_PATH = join(
   ROOT,
   "apps/ios/Dash/ProfileSettingsViews.swift",
 );
+const SOLAR_ICONS_PATH = join(ROOT, "apps/ios/Dash/SolarIcons.swift");
+const SOLAR_GENERATOR_PATH = join(
+  ROOT,
+  "apps/ios/scripts/generate-solar-icons.mjs",
+);
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
@@ -38,6 +43,8 @@ const dashTheme = stripSwiftComments(readFileSync(DASH_THEME_PATH, "utf8"));
 const profileSettings = stripSwiftComments(
   readFileSync(PROFILE_SETTINGS_PATH, "utf8"),
 );
+const solarIcons = stripSwiftComments(readFileSync(SOLAR_ICONS_PATH, "utf8"));
+const solarGenerator = readFileSync(SOLAR_GENERATOR_PATH, "utf8");
 const issues = [];
 
 for (const token of [
@@ -209,14 +216,82 @@ const workspaceWashPicker = declarationBody(
 if (!workspaceWashPicker) {
   issues.push("Could not locate WorkspaceWashPickerTray for state ownership validation.");
 } else {
-  if (!workspaceWashPicker.includes(".scrollPosition(id: $centeredPresetID")) {
-    issues.push("WorkspaceWashPickerTray must keep its centered scroll-position owner.");
+  for (const token of [
+    "@State private var centeredPresetID: String?",
+    "@State private var centeredPresetPositionIsReady = false",
+    "private var centeredPresetPosition: Binding<String?>",
+    "guard path.isEmpty, centeredPresetPositionIsReady else { return }",
+    "guard !centeredPresetPositionIsReady else { return }",
+    "centeredPresetID = selectedPreset.id",
+    "centeredPresetPositionIsReady = true",
+    "centeredPresetID = proposedID",
+    ".scrollPosition(id: centeredPresetPosition",
+    ".onChange(of: workspaceWashRaw)",
+    "guard centeredPresetID != externallySelected.id else { return }",
+    "centeredPresetID = externallySelected.id",
+    ".dashTrayContentTone(activeTone)",
+  ]) {
+    if (!workspaceWashPicker.includes(token)) {
+      issues.push(
+        "WorkspaceWashPickerTray must seed the selected target after its scroll mounts, then keep root-only ownership of centered-position writes.",
+      );
+      break;
+    }
   }
-  if (workspaceWashPicker.includes(".onChange(of: workspaceWashRaw)")) {
+  if (
+    workspaceWashPicker.includes("_centeredPresetID = State(") ||
+    workspaceWashPicker.includes("Task.yield") ||
+    workspaceWashPicker.includes("Task.sleep")
+  ) {
     issues.push(
-      "WorkspaceWashPickerTray must not feed workspaceWashRaw back into its scroll position; centeredPresetID owns selection while the tray is open.",
+      "WorkspaceWashPickerTray must not preload or delay its initial scroll target; the selected ID is seeded synchronously when the horizontal scroll appears.",
     );
   }
+  if (
+    occurrences(
+      workspaceWashPicker,
+      "SolarIcon(asset: SolarAsset.starsBold",
+    ) !== 2 ||
+    occurrences(workspaceWashPicker, "color: DashTheme.strong") !== 2
+  ) {
+    issues.push(
+      "Glow inspiration affordances must keep the bare Stars icon legible on both compact and expanded wash surfaces.",
+    );
+  }
+}
+
+const featureVisualTone = declarationBody(
+  dashTheme,
+  "enum FeatureVisualTone: Hashable, Sendable",
+);
+const workspaceWashTone = declarationBody(
+  dashTheme,
+  "extension DashWorkspaceWashPreset",
+);
+if (
+  !featureVisualTone?.includes("case workspaceWash(DashWorkspaceWashPreset)") ||
+  !featureVisualTone?.includes("DashTheme.workspaceWash(for: preset)") ||
+  !featureVisualTone?.includes("DashTheme.workspaceWashMidLightLabel") ||
+  !workspaceWashTone?.includes("return .workspaceWash(self)")
+) {
+  issues.push(
+    "Glow cards and Tray chrome must derive their pigment from the same workspace-wash preset.",
+  );
+}
+
+const settingsView = declarationBody(profileSettings, "struct SettingsView: View");
+const settingsAboutLink = settingsView
+  ? declarationBody(settingsView, "DashListGroupLink(value: .about)")
+  : null;
+if (
+  !settingsAboutLink ||
+  !settingsAboutLink.includes("icon: SolarAsset.infoCircle") ||
+  !solarIcons.includes('static let infoCircle = "SolarInfoCircleOutline"') ||
+  !solarGenerator.includes("SolarInfoCircleOutline: 'ui/Linear/InfoCircle'")
+) {
+  issues.push(
+    "Settings' About row must use the linear Info Circle asset; the About page header is a separate icon surface.",
+  );
 }
 
 const watchtowerView = declarationBody(watchtower, "struct WatchtowerView: View");
@@ -369,6 +444,25 @@ if (
 ) {
   issues.push(
     "Pushed pages must own an opaque full-window canvas plate that joins the route animator.",
+  );
+}
+
+// Route hosts are already attached and laid out before the compositor builds
+// its proxy. Asking UIKit for an after-screen-updates snapshot from inside
+// updateUIViewController synchronously re-enters SwiftUI's AttributeGraph.
+const pageStackController = declarationBody(
+  dashWorkspace,
+  "private final class DashPageStackViewController<Root: View>: UIViewController",
+);
+if (!pageStackController) {
+  issues.push("Could not locate DashPageStackViewController.");
+} else if (
+  pageStackController.includes("afterScreenUpdates: true") ||
+  !pageStackController.includes("view.layoutIfNeeded()") ||
+  occurrences(pageStackController, "afterScreenUpdates: false") < 3
+) {
+  issues.push(
+    "Page transitions must lay out their hosts once, then snapshot without after-screen updates; a synchronous refresh re-enters AttributeGraph from updateUIViewController.",
   );
 }
 
@@ -795,6 +889,35 @@ const customSheet = declarationBody(
   dashChrome,
   "private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View",
 );
+const trayCoverPresentation = declarationBody(
+  dashChrome,
+  "private struct DashTrayCoverPresentation<Value>: Identifiable",
+);
+if (
+  !trayCoverPresentation?.includes("let safeBottom: CGFloat") ||
+  !customSheet?.includes("let safeBottom: CGFloat") ||
+  !customSheet?.includes("safeBottom: safeBottom") ||
+  customSheet?.includes("dashTrayBottomSafeInset()") ||
+  occurrences(dashChrome, "safeBottom: dashTrayBottomSafeInset()") !== 2
+) {
+  issues.push(
+    "Tray presentation must freeze the window safe inset before mounting its cover; querying UIWindow safe areas from the sheet body re-enters AttributeGraph through status-bar preferences.",
+  );
+}
+if (
+  !customSheet?.includes(
+    "@State private var contentTone = DashTrayTonePreference.inherited",
+  ) ||
+  !customSheet?.includes(".environment(\\.dashTrayTone, resolvedTone)") ||
+  !customSheet?.includes(
+    ".onPreferenceChange(DashTrayTonePreferenceKey.self)",
+  ) ||
+  !customSheet?.includes("guard contentTone != reportedTone else { return }")
+) {
+  issues.push(
+    "Multi-step Tray content must publish its active tone to the ancestor shell without feeding equal preference values back into Observation.",
+  );
+}
 const shellIndex = customSheet?.indexOf("layer: .shell") ?? -1;
 const cardIndex = customSheet?.indexOf("DashSheetCard(") ?? -1;
 const actionIndex = customSheet?.indexOf("layer: .action") ?? -1;

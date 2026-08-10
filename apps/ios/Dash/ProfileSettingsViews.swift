@@ -776,7 +776,7 @@ struct SettingsView: View {
           DashListGroupLink(value: .about) {
             SettingsPlainRow(
               title: DashL10n.string("About Dash"),
-              icon: SolarAsset.userCircle,
+              icon: SolarAsset.infoCircle,
               showsChevron: true
             )
           }
@@ -976,24 +976,115 @@ private struct SignOutConfirmationContent: View {
   }
 }
 
+private enum WorkspaceWashTrayStep: Hashable, Sendable {
+  case picker
+  case inspiration(DashWorkspaceWashPreset)
+
+  var trayRole: DashTrayStepRole {
+    switch self {
+    case .picker: .root
+    case .inspiration: .detail
+    }
+  }
+
+  var title: String {
+    switch self {
+    case .picker: DashL10n.string("Glow")
+    case .inspiration(let preset): preset.displayName
+    }
+  }
+}
+
+private struct WorkspaceWashPanelMorphModifier: ViewModifier {
+  let id: String?
+  let namespace: Namespace.ID
+  let isSource: Bool
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let id {
+      content.matchedGeometryEffect(
+        id: id,
+        in: namespace,
+        properties: .frame,
+        anchor: .center,
+        isSource: isSource
+      )
+    } else {
+      content
+    }
+  }
+}
+
 private struct WorkspaceWashPickerTray: View {
   @Binding var workspaceWashRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var centeredPresetID: String?
-
-  init(workspaceWashRaw: Binding<String>) {
-    _workspaceWashRaw = workspaceWashRaw
-    _centeredPresetID = State(
-      initialValue: DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw.wrappedValue).id
-    )
-  }
+  @State private var centeredPresetPositionIsReady = false
+  @State private var path: [WorkspaceWashTrayStep] = []
+  @Namespace private var inspirationPanelMorph
 
   private var selectedPreset: DashWorkspaceWashPreset {
     DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
   }
 
+  private var activeStep: WorkspaceWashTrayStep {
+    path.last ?? .picker
+  }
+
+  private var activeTone: FeatureVisualTone? {
+    switch activeStep {
+    case .picker: selectedPreset.trayTone
+    case .inspiration(let preset): preset.trayTone
+    }
+  }
+
+  /// The outgoing picker remains alive while `DashTrayFlow` transitions to a
+  /// detail. Its transformed ScrollView must not feed a newly resolved target
+  /// back into selection; only the seeded, live root picker owns position
+  /// writes.
+  private var centeredPresetPosition: Binding<String?> {
+    Binding(
+      get: { centeredPresetID },
+      set: { proposedID in
+        guard path.isEmpty, centeredPresetPositionIsReady else { return }
+        centeredPresetID = proposedID
+      }
+    )
+  }
+
   var body: some View {
+    DashTrayFlow(
+      root: .picker,
+      path: $path,
+      role: \.trayRole,
+      transitionStyle: .heroMorph
+    ) { step in
+      switch step {
+      case .picker:
+        picker
+      case .inspiration(let preset):
+        inspiration(for: preset)
+      }
+    }
+    .dashTrayTitle(activeStep.title)
+    .dashTrayContentTone(activeTone)
+    .environment(\.dashTrayTone, activeTone)
+    .onChange(of: workspaceWashRaw) { _, stored in
+      guard centeredPresetPositionIsReady else { return }
+      let externallySelected = DashWorkspaceWashPreset.resolved(stored: stored)
+      // Local taps move the scroll owner before they persist the preset, so an
+      // equal ID is a no-op. A real external write (including iCloud KVS) is
+      // the only path that recentres the picker from the persisted value.
+      guard centeredPresetID != externallySelected.id else { return }
+      withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+        centeredPresetID = externallySelected.id
+      }
+    }
+  }
+
+  private var picker: some View {
     // Selection still writes immediately so the workspace wash previews live
     // behind the tray; Done is just the explicit close, same band as Language.
     // Re-publish tray tone here so the submit pill tracks the live draft even
@@ -1015,8 +1106,17 @@ private struct WorkspaceWashPickerTray: View {
           WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
           for: .scrollContent
         )
-        .scrollPosition(id: $centeredPresetID, anchor: .center)
+        .scrollPosition(id: centeredPresetPosition, anchor: .center)
         .scrollTargetBehavior(WorkspaceWashCenteredScrollTargetBehavior())
+        .onAppear {
+          guard !centeredPresetPositionIsReady else { return }
+          // A non-nil target installed before this nested lazy scroll mounts is
+          // not consumed on iOS 26: the state says Ember while the physical
+          // offset stays on None. Create the target edge only after the scroll
+          // exists, and reject its default-position write until this seed lands.
+          centeredPresetID = selectedPreset.id
+          centeredPresetPositionIsReady = true
+        }
         // Unramped, unlike the vertical fades: `contentMargins` centres the end
         // cards, so at either extreme the fade lands on empty tray surface and
         // paints that surface over itself — invisible without any offset to
@@ -1053,7 +1153,6 @@ private struct WorkspaceWashPickerTray: View {
       .padding(.top, 16)
       .accessibilityIdentifier("settings-workspace-wash-done")
     }
-    .environment(\.dashTrayTone, selectedPreset.trayTone)
   }
 
   private func washCard(for preset: DashWorkspaceWashPreset) -> some View {
@@ -1062,66 +1161,151 @@ private struct WorkspaceWashPickerTray: View {
     let selectionColor =
       preset == .none ? DashTheme.text : DashTheme.workspaceWash(for: preset)
 
-    return Button {
-      if centeredPresetID != preset.id {
-        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-          centeredPresetID = preset.id
+    return ZStack(alignment: .topLeading) {
+      Button {
+        if centeredPresetID != preset.id {
+          withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+            centeredPresetID = preset.id
+          }
         }
-      }
-      select(preset)
-    } label: {
-      ZStack(alignment: .bottom) {
-        DashTheme.canvas
+        select(preset)
+      } label: {
+        ZStack(alignment: .bottom) {
+          DashTheme.canvas
 
-        if preset != .none {
+          if preset != .none {
+            DashWorkspaceGlowField(
+              color: DashTheme.workspaceWash(for: preset),
+              depth: WorkspaceWashPickerMetrics.cardHeight
+            )
+            .frame(maxHeight: .infinity, alignment: .top)
+          } else {
+            disabledGlowMark
+              .frame(maxHeight: .infinity, alignment: .top)
+              .padding(.top, 48)
+          }
+
+          Text(preset.displayName)
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 16)
+        }
+        .frame(
+          width: WorkspaceWashPickerMetrics.cardWidth,
+          height: WorkspaceWashPickerMetrics.cardHeight
+        )
+        .overlay(alignment: .topTrailing) {
+          DashSelectionMark(
+            isSelected: isSelected,
+            size: 20,
+            selectedColor: selectionColor
+          )
+          .padding(10)
+        }
+        .clipShape(shape)
+        // `strokeBorder`, not `stroke`: half a `stroke` sits outside the shape,
+        // so the selected card's 2pt ring left its outer pass beyond the clipped
+        // fill — a soft halo, and shaved corner arcs wherever the viewport ended
+        // at the card's own edge.
+        .overlay {
+          shape.strokeBorder(
+            isSelected ? selectionColor : DashTheme.line,
+            lineWidth: isSelected ? 2 : 1
+          )
+        }
+        .modifier(
+          WorkspaceWashPanelMorphModifier(
+            id: inspirationMorphID(for: preset),
+            namespace: inspirationPanelMorph,
+            isSource: path.isEmpty
+          )
+        )
+        .contentShape(shape)
+      }
+      .buttonStyle(DashSurfaceButtonStyle())
+      .accessibilityLabel(preset.displayName)
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
+      .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
+
+      if preset.inspiration != nil {
+        Button {
+          path.append(.inspiration(preset))
+        } label: {
+          SolarIcon(asset: SolarAsset.starsBold, size: 18, color: DashTheme.strong)
+            .dashCompactHitTarget()
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(
+          String(
+            format: DashL10n.string("Inspiration for %@"),
+            preset.displayName
+          )
+        )
+        .accessibilityIdentifier("workspace-wash-inspiration-\(preset.rawValue)")
+        .padding(4)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func inspiration(for preset: DashWorkspaceWashPreset) -> some View {
+    if let inspiration = preset.inspiration {
+      let color = DashTheme.workspaceWash(for: preset)
+      let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+
+      VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
+        ZStack(alignment: .bottomLeading) {
+          DashTheme.canvas
+
           DashWorkspaceGlowField(
-            color: DashTheme.workspaceWash(for: preset),
-            depth: WorkspaceWashPickerMetrics.cardHeight
+            color: color,
+            depth: WorkspaceWashPickerMetrics.inspirationHeight
           )
           .frame(maxHeight: .infinity, alignment: .top)
-        } else {
-          disabledGlowMark
-            .frame(maxHeight: .infinity, alignment: .top)
-            .padding(.top, 48)
-        }
 
-        Text(preset.displayName)
-          .dashTextStyle(.bodySemibold)
-          .foregroundStyle(DashTheme.text)
-          .lineLimit(1)
-          .minimumScaleFactor(0.8)
-          .padding(.horizontal, 10)
-          .padding(.bottom, 16)
-      }
-      .frame(
-        width: WorkspaceWashPickerMetrics.cardWidth,
-        height: WorkspaceWashPickerMetrics.cardHeight
-      )
-      .overlay(alignment: .topTrailing) {
-        DashSelectionMark(
-          isSelected: isSelected,
-          size: 20,
-          selectedColor: selectionColor
+          Text(preset.displayName)
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
+            .padding(18)
+        }
+        .frame(height: WorkspaceWashPickerMetrics.inspirationHeight)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(DashTheme.line, lineWidth: 1) }
+        .modifier(
+          WorkspaceWashPanelMorphModifier(
+            id: inspirationMorphID(for: preset),
+            namespace: inspirationPanelMorph,
+            isSource: true
+          )
         )
-        .padding(10)
+        .accessibilityIdentifier("workspace-wash-inspiration-panel-\(preset.rawValue)")
+
+        VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
+          HStack(spacing: 8) {
+            SolarIcon(asset: SolarAsset.starsBold, size: 17, color: DashTheme.strong)
+            Text(DashL10n.string("Inspired by"))
+              .dashTextStyle(.captionSemibold)
+              .foregroundStyle(DashTheme.subtle)
+          }
+
+          VStack(alignment: .leading, spacing: DashTheme.Spacing.listRow) {
+            Text(inspiration.source)
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.text)
+
+            Text(inspiration.description)
+              .dashTextStyle(.supporting)
+              .foregroundStyle(DashTheme.subtle)
+              .fixedSize(horizontal: false, vertical: true)
+          }
+        }
       }
-      .clipShape(shape)
-      // `strokeBorder`, not `stroke`: half a `stroke` sits outside the shape,
-      // so the selected card's 2pt ring left its outer pass beyond the clipped
-      // fill — a soft halo, and shaved corner arcs wherever the viewport ended
-      // at the card's own edge.
-      .overlay {
-        shape.strokeBorder(
-          isSelected ? selectionColor : DashTheme.line,
-          lineWidth: isSelected ? 2 : 1
-        )
-      }
-      .contentShape(shape)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 8)
     }
-    .buttonStyle(DashSurfaceButtonStyle())
-    .accessibilityLabel(preset.displayName)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
   }
 
   private var disabledGlowMark: some View {
@@ -1133,6 +1317,11 @@ private struct WorkspaceWashPickerTray: View {
           .rotationEffect(.degrees(45))
       }
       .accessibilityHidden(true)
+  }
+
+  private func inspirationMorphID(for preset: DashWorkspaceWashPreset) -> String? {
+    guard !reduceMotion, preset.inspiration != nil else { return nil }
+    return "workspace-wash-inspiration-panel-\(preset.rawValue)"
   }
 
   private func select(_ preset: DashWorkspaceWashPreset) {
@@ -1149,6 +1338,7 @@ private struct WorkspaceWashPickerTray: View {
 enum WorkspaceWashPickerMetrics {
   static let cardWidth: CGFloat = 126
   static let cardHeight: CGFloat = 184
+  static let inspirationHeight: CGFloat = 160
   static let cardSpacing = DashTheme.Spacing.itemGap
   /// Air above and below the cards, inside the scrolling region so the clip
   /// includes it. The viewport used to be exactly `cardHeight`, which left a
@@ -1500,25 +1690,6 @@ struct AboutView: View {
       LazyVStack(spacing: DashTheme.Spacing.section) {
         AboutBrandHero()
 
-        DashCard {
-          VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-              SolarIcon(asset: SolarAsset.cloudflare, size: 22, color: DashTheme.accent)
-              Text("Cloudflare, on the phone you already carry.")
-                .dashTextStyle(.sectionTitle)
-                .foregroundStyle(DashTheme.strong)
-                .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Text(
-              "Inspect traffic, roll back deployments, and browse R2. Domains, Workers, Pages, and KV stay native and portrait."
-            )
-            .dashTextStyle(.supporting)
-            .foregroundStyle(DashTheme.subtle)
-            .fixedSize(horizontal: false, vertical: true)
-          }
-        }
-
         DashInfoGroup(title: "App details") {
           DashInfoRow("Version", value: version)
             .accessibilityIdentifier("about-version")
@@ -1553,13 +1724,6 @@ struct AboutView: View {
           .accessibilityIdentifier("about-x")
         }
 
-        DashInfoGroup(title: "Privacy & security") {
-          DashInfoRow("Analytics & tracking", value: DashL10n.string("None"))
-          DashInfoRow("OAuth tokens", value: DashL10n.string("This iPhone’s Keychain"))
-          DashInfoRow("Core account data", value: DashL10n.string("Direct to Cloudflare"))
-          DashInfoRow("Resource cache", value: DashL10n.string("Current session"))
-        }
-
         Text(
           verbatim:
             "\(DashL10n.string("Unofficial Cloudflare client")) · © \(copyrightYear) Xat"
@@ -1574,7 +1738,7 @@ struct AboutView: View {
       .padding(.vertical, DashTheme.Spacing.section)
     }
     .background(DashTheme.canvas)
-    .detailHeader(icon: .solar(SolarAsset.Content.cloud), title: "About")
+    .detailHeader(icon: .solar(SolarAsset.Content.infoCircle), title: "About")
   }
 
 }

@@ -662,6 +662,55 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(alertPolicies.waitForExistence(timeout: 5))
   }
 
+  func testGlowInspirationReturnsToTheSameCenteredCard() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let profile = app.buttons["header-profile-button"]
+    XCTAssertTrue(profile.waitForExistence(timeout: 5))
+    profile.tap()
+
+    let glow = app.buttons["workspace-wash-color"]
+    XCTAssertTrue(Self.waitForHittable(glow))
+    glow.tap()
+
+    let ember = app.buttons["workspace-wash-preset-cloudflare"]
+    let none = app.buttons["workspace-wash-preset-none"]
+    let inspiration = app.buttons["workspace-wash-inspiration-cloudflare"]
+    XCTAssertTrue(Self.waitForHittable(none))
+    XCTAssertTrue(Self.waitForHittable(ember))
+    XCTAssertTrue(Self.waitForHittable(inspiration))
+
+    // The stored preview starts on Ember. Its first rendered position must
+    // already agree with that selection, before a tap creates a new scroll
+    // target edge and accidentally hides a broken initial mount.
+    XCTAssertEqual(ember.frame.midX, app.frame.midX, accuracy: 2)
+
+    // Force a real target change as well so the same test covers ongoing
+    // scroll ownership and the Inspiration return path.
+    none.tap()
+    ember.tap()
+    let centerBefore = ember.frame.midX
+    let compactWidth = ember.frame.width
+    XCTAssertEqual(centerBefore, app.frame.midX, accuracy: 2)
+
+    inspiration.tap()
+    let back = app.buttons["dash.tray.back"]
+    XCTAssertTrue(Self.waitForHittable(back))
+    let expandedPanel =
+      app.descendants(matching: .any)
+      .matching(identifier: "workspace-wash-inspiration-panel-cloudflare")
+      .firstMatch
+    XCTAssertTrue(expandedPanel.waitForExistence(timeout: 5))
+    XCTAssertGreaterThan(expandedPanel.frame.width, compactWidth * 2)
+    back.tap()
+
+    XCTAssertTrue(Self.waitForHittable(ember))
+    let centerAfter = ember.frame.midX
+    XCTAssertEqual(centerAfter, centerBefore, accuracy: 2)
+    XCTAssertEqual(centerAfter, app.frame.midX, accuracy: 2)
+  }
+
   func testAvatarOpensSettingsWithProfileAsAChildPage() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])

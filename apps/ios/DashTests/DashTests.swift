@@ -105,16 +105,42 @@ import UIKit
   #expect(DashWorkspaceWashPreset.defaultPreset == .cloudflare)
   #expect(DashWorkspaceWashPreset.resolved(stored: "none") == .none)
   #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "red") == .red)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "vercel") == .vercel)
   #expect(DashWorkspaceWashPreset.resolved(stored: "blue") == .blue)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "green") == .green)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "bun") == .bun)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "pink") == .pink)
   #expect(DashWorkspaceWashPreset.resolved(stored: "purple") == .purple)
   #expect(DashWorkspaceWashPreset.resolved(stored: "teal") == .teal)
   #expect(DashWorkspaceWashPreset.resolved(stored: "unknown") == .cloudflare)
 
   #expect(DashWorkspaceWashPreset.none.trayTone == nil)
-  #expect(DashWorkspaceWashPreset.cloudflare.trayTone == .accent)
-  #expect(DashWorkspaceWashPreset.blue.trayTone == .brand)
-  #expect(DashWorkspaceWashPreset.purple.trayTone == .violet)
-  #expect(DashWorkspaceWashPreset.teal.trayTone == .teal)
+  for preset in DashWorkspaceWashPreset.allCases where preset != .none {
+    #expect(preset.trayTone == .workspaceWash(preset))
+  }
+
+  #expect(DashWorkspaceWashPreset.cloudflare.displayName != "Cloudflare")
+  #expect(DashWorkspaceWashPreset.none.inspiration == nil)
+  #expect(DashWorkspaceWashPreset.vercel.inspiration == nil)
+  #expect(DashWorkspaceWashPreset.blue.inspiration == nil)
+  #expect(DashWorkspaceWashPreset.purple.inspiration == nil)
+  #expect(DashWorkspaceWashPreset.cloudflare.inspiration?.source == "Cloudflare")
+  #expect(
+    DashWorkspaceWashPreset.red.inspiration?.source == "NetEase Cloud Music 网易云音乐")
+  #expect(DashWorkspaceWashPreset.bun.inspiration?.source == "Bun")
+  #expect(DashWorkspaceWashPreset.green.inspiration?.source == "Coolapk 酷安")
+  #expect(DashWorkspaceWashPreset.pink.inspiration?.source == "bilibili 哔哩哔哩")
+  #expect(DashWorkspaceWashPreset.teal.inspiration?.source == "Netlify")
+  #expect(DashTheme.workspaceCloudflareBrandHex == 0xFF5E20)
+  #expect(DashTheme.workspaceNetEaseMusicBrandHex == 0xFC3C4F)
+  #expect(DashTheme.workspaceNetlifyBrandHex == 0x32E6E2)
+  #expect(DashTheme.workspaceCoolapkBrandHex == 0x12BF72)
+  #expect(DashTheme.workspaceBilibiliBrandHex == 0xF46F95)
+  #expect(
+    DashWorkspaceWashPreset.allCases.compactMap(\.inspiration).allSatisfy {
+      !$0.description.isEmpty
+    })
 
   let rawValues = DashWorkspaceWashPreset.allCases.map(\.rawValue)
   #expect(Set(rawValues).count == rawValues.count)
@@ -1819,13 +1845,18 @@ private let watchtowerDropFrames: [CGRect] = [
   }
   #expect(atRoot.route == .accounts)
   #expect(atRoot.role == .root)
+  #expect(atRoot.transitionStyle == .step)
 
   path = [.switchAccount(account), .signOut]
-  let pushed = DashTrayFlow(root: .accounts, path: binding, role: \.trayRole) { _ in
-    EmptyView()
-  }
+  let pushed = DashTrayFlow(
+    root: .accounts,
+    path: binding,
+    role: \.trayRole,
+    transitionStyle: .heroMorph
+  ) { _ in EmptyView() }
   #expect(pushed.route == .signOut)
   #expect(pushed.role == .destructive)
+  #expect(pushed.transitionStyle == .heroMorph)
 }
 
 @Test func sheetHeaderActionsDefaultToTheDestructiveCircle() {

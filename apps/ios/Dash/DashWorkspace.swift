@@ -2067,13 +2067,17 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         outgoingContent?.frame = sourceFrame
       }
       shell = makeIdentityTransitionShell(frame: sourceFrame)
-      // The avatar stays put and crossfades into whatever the arriving page
-      // puts in that slot. It used to fly onto a landing seat on the Settings
-      // profile row; that flight is gone — see `DashNavigationSemanticID`.
+      // The shared header owns the in-place avatar / Close crossfade above this
+      // page snapshot. The old avatar flight to a Settings profile-row landing
+      // seat is gone — see `DashNavigationSemanticID`.
+      // `performTransition` has already attached and laid out the target. An
+      // after-screen-updates snapshot here would synchronously ask SwiftUI to
+      // update it again from inside `updateUIViewController`, re-entering the
+      // target's AttributeGraph while it is still being evaluated.
       arrivingContent = snapshotRegion(
         from: target,
         at: sourceFrame,
-        afterScreenUpdates: true)
+        afterScreenUpdates: false)
       arrivingContent?.alpha = 0
       // The source is captured as a SQUARE window snapshot that carries the
       // canvas behind it, so the crossfade drew it raw over the arriving page
@@ -2092,7 +2096,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       arrivingContent = snapshotRegion(
         from: target,
         at: sourceFrame,
-        afterScreenUpdates: true)
+        afterScreenUpdates: false)
       arrivingContent?.alpha = 0
       shell = makeIdentityTransitionShell(frame: sourceFrame)
       // Same reason as present: square snapshots of a round control must wear
