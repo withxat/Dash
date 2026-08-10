@@ -6758,6 +6758,17 @@
         }
       }
     },
+    "Glow" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "光晕"
+          }
+        }
+      }
+    },
     "Grant" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13095,17 +13106,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "按拦截请求排名的国家/地区"
-          }
-        }
-      }
-    },
-    "Top glow" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "顶部光晕"
           }
         }
       }

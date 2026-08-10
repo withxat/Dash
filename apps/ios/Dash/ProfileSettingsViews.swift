@@ -708,8 +708,8 @@ struct SettingsView: View {
             showsWorkspaceWashPicker = true
           } label: {
             SettingsPlainRow(
-              title: DashL10n.string("Top glow"),
-              icon: SolarAsset.sunset,
+              title: DashL10n.string("Glow"),
+              icon: SolarAsset.sun,
               trailing: selectedWorkspaceWash.displayName,
               trailingIcon: SolarAsset.trayDots,
               trailingIconRotation: .degrees(90)
@@ -819,7 +819,8 @@ struct SettingsView: View {
     }
     .dashTray(
       isPresented: $showsWorkspaceWashPicker,
-      title: DashL10n.string("Top glow")
+      title: DashL10n.string("Glow"),
+      tone: selectedWorkspaceWash.trayTone
     ) {
       WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
     }
@@ -968,56 +969,224 @@ private struct SignOutConfirmationContent: View {
 private struct WorkspaceWashPickerTray: View {
   @Binding var workspaceWashRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var centeredPresetID: String?
+
+  init(workspaceWashRaw: Binding<String>) {
+    _workspaceWashRaw = workspaceWashRaw
+    _centeredPresetID = State(
+      initialValue: DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw.wrappedValue).id
+    )
+  }
+
+  private var selectedPreset: DashWorkspaceWashPreset {
+    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
+  }
 
   var body: some View {
-    VStack(spacing: 12) {
-      ForEach(DashWorkspaceWashPreset.allCases) { preset in
-        let isSelected =
-          DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw) == preset
-        Button {
-          if workspaceWashRaw != preset.rawValue {
-            workspaceWashRaw = preset.rawValue
-            DashDelight.selectionChanged()
+    // Selection still writes immediately so the workspace wash previews live
+    // behind the tray; Done is just the explicit close, same band as Language.
+    // Re-publish tray tone here so the submit pill tracks the live draft even
+    // if the cover's presenting tone is sticky for the presentation.
+    DashTrayScrollBoundary {
+      GeometryReader { proxy in
+        ScrollView(.horizontal, showsIndicators: false) {
+          LazyHStack(spacing: WorkspaceWashPickerMetrics.cardSpacing) {
+            ForEach(DashWorkspaceWashPreset.allCases) { preset in
+              washCard(for: preset)
+                .id(preset.id)
+            }
           }
-          dismiss()
-        } label: {
-          HStack(spacing: 12) {
-            Circle()
-              .fill(DashTheme.workspaceWash(for: preset))
-              .frame(width: 22, height: 22)
-              .overlay(Circle().stroke(DashTheme.line, lineWidth: 1))
-              .overlay {
-                if preset == .none {
-                  Rectangle()
-                    .fill(DashTheme.iconMuted)
-                    .frame(width: 1, height: 18)
-                    .rotationEffect(.degrees(45))
-                }
-              }
-              .accessibilityHidden(true)
-            Text(preset.displayName)
-              .dashTextStyle(.bodyMedium)
-              .foregroundStyle(DashTheme.text)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            DashSelectionMark(isSelected: isSelected)
-          }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-          .background(DashTheme.Sheet.shortcutItem)
-          .clipShape(DashTheme.buttonShape)
-          .contentShape(Rectangle())
+          .scrollTargetLayout()
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
+        .contentMargins(
+          .horizontal,
+          WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
+          for: .scrollContent
+        )
+        .scrollPosition(id: $centeredPresetID, anchor: .center)
+        .scrollTargetBehavior(WorkspaceWashCenteredScrollTargetBehavior())
+        .modifier(WorkspaceWashScrollEdgeBlur())
       }
+      .frame(height: WorkspaceWashPickerMetrics.cardHeight)
+      .onChange(of: centeredPresetID) { _, presetID in
+        guard
+          let presetID,
+          let preset = DashWorkspaceWashPreset.allCases.first(where: { $0.id == presetID })
+        else { return }
+        select(preset)
+      }
+      .onChange(of: workspaceWashRaw) { _, _ in
+        let presetID = selectedPreset.id
+        guard centeredPresetID != presetID else { return }
+        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+          centeredPresetID = presetID
+        }
+      }
+    } action: {
+      DashActionButton(title: DashL10n.string("Done")) {
+        dismiss()
+      }
+      .padding(.top, 16)
+      .accessibilityIdentifier("settings-workspace-wash-done")
     }
+    .environment(\.dashTrayTone, selectedPreset.trayTone)
+  }
+
+  private func washCard(for preset: DashWorkspaceWashPreset) -> some View {
+    let isSelected = selectedPreset == preset
+    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+    let selectionColor =
+      preset == .none ? DashTheme.text : DashTheme.workspaceWash(for: preset)
+
+    return Button {
+      if centeredPresetID != preset.id {
+        withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+          centeredPresetID = preset.id
+        }
+      }
+      select(preset)
+    } label: {
+      ZStack(alignment: .bottom) {
+        DashTheme.canvas
+
+        if preset != .none {
+          DashWorkspaceGlowField(
+            color: DashTheme.workspaceWash(for: preset),
+            depth: WorkspaceWashPickerMetrics.cardHeight
+          )
+          .frame(maxHeight: .infinity, alignment: .top)
+        } else {
+          disabledGlowMark
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 48)
+        }
+
+        Text(preset.displayName)
+          .dashTextStyle(.bodySemibold)
+          .foregroundStyle(DashTheme.text)
+          .lineLimit(1)
+          .minimumScaleFactor(0.8)
+          .padding(.horizontal, 10)
+          .padding(.bottom, 16)
+      }
+      .frame(
+        width: WorkspaceWashPickerMetrics.cardWidth,
+        height: WorkspaceWashPickerMetrics.cardHeight
+      )
+      .overlay(alignment: .topTrailing) {
+        DashSelectionMark(
+          isSelected: isSelected,
+          size: 20,
+          selectedColor: selectionColor
+        )
+        .padding(10)
+      }
+      .clipShape(shape)
+      .overlay {
+        shape.stroke(
+          isSelected ? selectionColor : DashTheme.line,
+          lineWidth: isSelected ? 2 : 1
+        )
+      }
+      .contentShape(shape)
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityLabel(preset.displayName)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
+  }
+
+  private var disabledGlowMark: some View {
+    SolarIcon(asset: SolarAsset.sun, size: 36, color: DashTheme.iconMuted)
+      .overlay {
+        Rectangle()
+          .fill(DashTheme.iconMuted)
+          .frame(width: 1.5, height: 46)
+          .rotationEffect(.degrees(45))
+      }
+      .accessibilityHidden(true)
+  }
+
+  private func select(_ preset: DashWorkspaceWashPreset) {
+    guard workspaceWashRaw != preset.rawValue else { return }
+    // The same write animates the live workspace wash behind the tray and the
+    // card's static selection cues; swiping can interrupt it at any point.
+    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+      workspaceWashRaw = preset.rawValue
+    }
+    DashDelight.selectionChanged()
   }
 }
 
+enum WorkspaceWashPickerMetrics {
+  static let cardWidth: CGFloat = 126
+  static let cardHeight: CGFloat = 184
+  static let cardSpacing = DashTheme.Spacing.itemGap
+  static let edgeBlurWidth: CGFloat = 30
+
+  static func horizontalInset(viewportWidth: CGFloat) -> CGFloat {
+    max(edgeBlurWidth, (viewportWidth - cardWidth) / 2)
+  }
+}
+
+/// View-aligned momentum first chooses the nearest card, then the anchor moves
+/// that target to the viewport's centre. This keeps native, interruptible
+/// deceleration on iOS 17+ while making a swipe itself a picker interaction.
+private struct WorkspaceWashCenteredScrollTargetBehavior: ScrollTargetBehavior {
+  private let viewAligned = ViewAlignedScrollTargetBehavior(limitBehavior: .always)
+
+  func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
+    viewAligned.updateTarget(&target, context: context)
+    target.anchor = .center
+  }
+}
+
+/// iOS 26 owns this scroll affordance natively. Earlier systems get the same
+/// two-sided backdrop softness, with a solid fade when Reduce Transparency is
+/// enabled instead of forcing a material the user has disabled.
+private struct WorkspaceWashScrollEdgeBlur: ViewModifier {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content.scrollEdgeEffectStyle(.soft, for: [.leading, .trailing])
+    } else {
+      content
+        .overlay(alignment: .leading) { fallbackEdge(leading: true) }
+        .overlay(alignment: .trailing) { fallbackEdge(leading: false) }
+    }
+  }
+
+  private func fallbackEdge(leading: Bool) -> some View {
+    Group {
+      if reduceTransparency {
+        DashTheme.Sheet.background
+      } else {
+        Rectangle().fill(.ultraThinMaterial)
+      }
+    }
+    .mask {
+      LinearGradient(
+        colors: [.black, .clear],
+        startPoint: leading ? .leading : .trailing,
+        endPoint: leading ? .trailing : .leading
+      )
+    }
+    .frame(width: WorkspaceWashPickerMetrics.edgeBlurWidth)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+/// Two collapsed chart cards side by side, one pinned to each renderer.
+///
+/// The rows this replaced named the two styles and left the user to go find a
+/// chart before the words meant anything. A style is a look, so the option is
+/// the look: `DashCollapsedChartCard` is the app's one half-row chart pose, and
+/// both panels plot the same sample series so the only difference on screen is
+/// the difference being chosen.
 private struct ChartStylePickerTray: View {
   @Binding var chartStyleRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss

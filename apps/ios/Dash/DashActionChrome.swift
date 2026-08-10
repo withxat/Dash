@@ -572,6 +572,7 @@ struct DashActionButton: View {
   var onSuccessPresentationCompleted: (@MainActor () -> Void)? = nil
   let action: () -> Void
   @Environment(\.dashTrayTone) private var trayTone
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dashTraySuccessFlightEnabled) private var successFlightEnabled
   @Environment(\.dashTraySuccessFlightInProgress) private var successFlightInProgress
 
@@ -603,6 +604,10 @@ struct DashActionButton: View {
     .accessibilityLabel(DashL10n.ui(title))
     .accessibilityValue(phase.accessibilityValue)
     .dashTrayDismissDisabled(phase.isActive)
+    // Live tray-tone changes (Glow picker) reach this pill through
+    // environment, which does not always inherit the write-site transaction —
+    // same morph the domain card enamel uses so pigment cross-fades, not snaps.
+    .animation(reduceMotion ? nil : DashTheme.Motion.morph, value: trayTone)
   }
 
   private var label: some View {

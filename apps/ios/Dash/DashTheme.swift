@@ -883,6 +883,23 @@ enum FeatureVisualTone: Hashable, Sendable {
 
 }
 
+extension DashWorkspaceWashPreset {
+  /// Tray submit-pill / accent tone matching this wash. `nil` for None keeps
+  /// the default neutral action button.
+  ///
+  /// Lives next to `FeatureVisualTone` (app target only) — Share / File Provider
+  /// also compile `AppConfiguration`, where this type is unavailable.
+  var trayTone: FeatureVisualTone? {
+    switch self {
+    case .none: nil
+    case .cloudflare: .accent
+    case .blue: .brand
+    case .purple: .violet
+    case .teal: .teal
+    }
+  }
+}
+
 enum FeatureVisualIdentity {
   /// Fallback when only a section title is known (no feature id).
   static func tone(forCategory category: String) -> FeatureVisualTone {

@@ -110,8 +110,22 @@ import UIKit
   #expect(DashWorkspaceWashPreset.resolved(stored: "teal") == .teal)
   #expect(DashWorkspaceWashPreset.resolved(stored: "unknown") == .cloudflare)
 
+  #expect(DashWorkspaceWashPreset.none.trayTone == nil)
+  #expect(DashWorkspaceWashPreset.cloudflare.trayTone == .accent)
+  #expect(DashWorkspaceWashPreset.blue.trayTone == .brand)
+  #expect(DashWorkspaceWashPreset.purple.trayTone == .violet)
+  #expect(DashWorkspaceWashPreset.teal.trayTone == .teal)
+
   let rawValues = DashWorkspaceWashPreset.allCases.map(\.rawValue)
   #expect(Set(rawValues).count == rawValues.count)
+}
+
+@Test func workspaceWashPickerKeepsPortraitCardsCenteredPastItsEdgeBlur() {
+  #expect(WorkspaceWashPickerMetrics.cardHeight > WorkspaceWashPickerMetrics.cardWidth)
+  #expect(WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: 390) == 132)
+  #expect(
+    WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: 150)
+      == WorkspaceWashPickerMetrics.edgeBlurWidth)
 }
 
 @Test @MainActor func customAvatarFilesAreNormalizedPersistentAndUserScoped() async throws {

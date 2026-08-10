@@ -70,7 +70,7 @@ enum SolarAsset {
   static let bolt = "SolarBoltOutline"
   static let boltCircle = "SolarBoltCircleOutline"
   static let smartphoneVibration = "SolarSmartphoneVibrationOutline"
-  static let sunset = "SolarSunsetOutline"
+  static let sun = "SolarSunOutline"
   static let globe = "SolarGlobalOutline"
   static let file = "SolarFileOutline"
   static let folder = "SolarFolderOutline"
@@ -112,7 +112,7 @@ enum SolarAsset {
   static let editClose = "SolarEditCloseOutline"
   static let menuDots = "SolarMenuDotsOutline"
   /// `menuDots` rotated 90° — the horizontal dots that mark a row opening a
-  /// picker tray (Language / Top glow / Chart style). Shares the same glyph;
+  /// picker tray (Language / Glow / Chart style). Shares the same glyph;
   /// the rotation is applied at the call site via `SolarIcon.rotation`.
   static let trayDots = "SolarMenuDotsOutline"
   static let pen = "SolarPenNewSquareOutline"
