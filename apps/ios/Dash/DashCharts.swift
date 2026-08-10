@@ -16,12 +16,18 @@ enum DashChartStylePreference: String, CaseIterable, Identifiable, Sendable {
 
   var id: String { rawValue }
 
-  var displayName: String {
+  /// Catalog key, not a resolved name. `DashCollapsedChartCard` localizes the
+  /// title it is handed and the Chart style tray's preview panels are that
+  /// card, so it needs the key; running an already-translated name back through
+  /// the catalog is a lookup that can only miss.
+  var titleKey: String {
     switch self {
-    case .dither: DashL10n.string("Dither")
-    case .system: DashL10n.string("Swift Charts")
+    case .dither: "Dither"
+    case .system: "Swift Charts"
     }
   }
+
+  var displayName: String { DashL10n.ui(titleKey) }
 
   static func resolved(stored raw: String) -> DashChartStylePreference {
     DashChartStylePreference(rawValue: raw) ?? defaultStyle
@@ -41,12 +47,38 @@ enum DashChartStylePreference: String, CaseIterable, Identifiable, Sendable {
   }
 }
 
+// MARK: - Renderer override
+
+private struct DashChartStyleOverrideKey: EnvironmentKey {
+  static let defaultValue: DashChartStylePreference? = nil
+}
+
+extension EnvironmentValues {
+  /// Pins a subtree's charts to one renderer instead of Settings → Chart style.
+  /// `nil` — every screen — follows the preference.
+  var dashChartStyleOverride: DashChartStylePreference? {
+    get { self[DashChartStyleOverrideKey.self] }
+    set { self[DashChartStyleOverrideKey.self] = newValue }
+  }
+}
+
+extension View {
+  /// The Chart style tray only: its two preview panels have to draw both looks
+  /// side by side, and a setting cannot demonstrate itself through the value it
+  /// obeys. A feature screen must never pin its charts — the preference exists
+  /// so every chart in the app moves together.
+  func dashChartStyle(_ style: DashChartStylePreference) -> some View {
+    environment(\.dashChartStyleOverride, style)
+  }
+}
+
 // MARK: - Style-aware wrappers
 
 /// Area chart that follows Settings → Chart style.
 struct DashAreaChart: View {
   @AppStorage(DashChartStylePreference.storageKey) private var styleRaw =
     DashChartStylePreference.defaultStyle.rawValue
+  @Environment(\.dashChartStyleOverride) private var styleOverride
 
   let data: [DitherDatum]
   let series: [DitherSeries]
@@ -57,7 +89,7 @@ struct DashAreaChart: View {
   var onTap: (() -> Void)? = nil
 
   private var style: DashChartStylePreference {
-    DashChartStylePreference.resolved(stored: styleRaw)
+    styleOverride ?? DashChartStylePreference.resolved(stored: styleRaw)
   }
 
   var body: some View {
@@ -87,6 +119,7 @@ struct DashAreaChart: View {
 struct DashLineChart: View {
   @AppStorage(DashChartStylePreference.storageKey) private var styleRaw =
     DashChartStylePreference.defaultStyle.rawValue
+  @Environment(\.dashChartStyleOverride) private var styleOverride
 
   let data: [DitherDatum]
   let series: [DitherSeries]
@@ -97,7 +130,7 @@ struct DashLineChart: View {
   var onTap: (() -> Void)? = nil
 
   private var style: DashChartStylePreference {
-    DashChartStylePreference.resolved(stored: styleRaw)
+    styleOverride ?? DashChartStylePreference.resolved(stored: styleRaw)
   }
 
   var body: some View {
@@ -127,6 +160,7 @@ struct DashLineChart: View {
 struct DashPieChart: View {
   @AppStorage(DashChartStylePreference.storageKey) private var styleRaw =
     DashChartStylePreference.defaultStyle.rawValue
+  @Environment(\.dashChartStyleOverride) private var styleOverride
 
   let slices: [DitherSlice]
   var innerRadiusRatio: Double = 0.62
@@ -134,7 +168,7 @@ struct DashPieChart: View {
   var selection: Binding<String?>? = nil
 
   private var style: DashChartStylePreference {
-    DashChartStylePreference.resolved(stored: styleRaw)
+    styleOverride ?? DashChartStylePreference.resolved(stored: styleRaw)
   }
 
   var body: some View {

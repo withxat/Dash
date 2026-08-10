@@ -97,6 +97,8 @@ const OUTLINE_ICONS = {
 	SolarGalleryOutline: 'video/Linear/Gallery',
 	SolarVideoLibraryOutline: 'video/Linear/VideoLibrary',
 	SolarChart2Outline: 'business/Linear/Chart2',
+	/// Settings → Chart style (bars in a speech-square).
+	SolarChatSquare2Outline: 'business/Linear/ChatSquare2',
 	SolarGraphNewOutline: 'business/Linear/GraphNew',
 	SolarUserCircleOutline: 'users/Linear/UserCircle',
 	SolarUserOutline: 'users/Linear/User',

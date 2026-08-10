@@ -2,6 +2,7 @@ import CloudflareAPI
 import CoreTransferable
 import GradientAvatars
 import PhotosUI
+import SwiftDitherKit
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -724,7 +725,7 @@ struct SettingsView: View {
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Chart style"),
-              icon: SolarAsset.chart,
+              icon: SolarAsset.chatSquare2,
               trailing: selectedChartStyle.displayName,
               trailingIcon: SolarAsset.trayDots,
               trailingIconRotation: .degrees(90)
@@ -1199,48 +1200,133 @@ private struct WorkspaceWashScrollEdgeBlur: ViewModifier {
 private struct ChartStylePickerTray: View {
   @Binding var chartStyleRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+  /// Draft only — `chartStyleRaw` commits on Done, same band as Language and
+  /// Glow. Glow writes through immediately because its effect is the workspace
+  /// *behind* the tray; here the effect is already on the card, so there is
+  /// nothing an early write would show that the panels do not.
+  @State private var draftRaw: String
+
+  init(chartStyleRaw: Binding<String>) {
+    _chartStyleRaw = chartStyleRaw
+    _draftRaw = State(initialValue: chartStyleRaw.wrappedValue)
+  }
+
+  /// Fixed preview data, run through the same floor-lift both real collapsed
+  /// cards use. A generated series would redraw on every body pass and the two
+  /// panels would stop being comparable.
+  private static let sample = CollapsedDitherTrendSeries(values: [
+    18, 26, 21, 34, 46, 39, 55, 62, 48, 67, 79, 70, 86, 94, 88, 76,
+  ])
+  private static let sampleSeriesID = "preview"
+
+  private var draftStyle: DashChartStylePreference {
+    DashChartStylePreference.resolved(stored: draftRaw)
+  }
+
+  /// Not `isAccessibilitySize`: a half-tray panel is ~155pt wide, and the
+  /// card's one-line title runs under the selection mark well before the
+  /// accessibility sizes — "Swift Charts" reaches the corner at xxLarge.
+  private var stacksPanels: Bool {
+    dynamicTypeSize >= .xxLarge
+  }
 
   var body: some View {
-    VStack(spacing: 12) {
-      ForEach(DashChartStylePreference.allCases) { preference in
-        let isSelected =
-          DashChartStylePreference.resolved(stored: chartStyleRaw) == preference
-        Button {
-          guard chartStyleRaw != preference.rawValue else {
-            dismiss()
-            return
-          }
-          chartStyleRaw = preference.rawValue
-          DashChartStylePreference.mirrorToWidgets(preference.rawValue)
-          DashDelight.selectionChanged()
-          dismiss()
-        } label: {
-          HStack(spacing: 12) {
-            Text(preference.displayName)
-              .dashTextStyle(.bodyMedium)
-              .foregroundStyle(DashTheme.text)
-              .lineLimit(1)
-            Spacer(minLength: 0)
-            DashSelectionMark(isSelected: isSelected)
-          }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
-          .frame(maxWidth: .infinity, alignment: .leading)
-          .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-          .background(DashTheme.Sheet.shortcutItem)
-          .clipShape(DashTheme.buttonShape)
-          .contentShape(Rectangle())
+    DashTrayScrollBoundary {
+      Group {
+        if stacksPanels {
+          VStack(spacing: DashTheme.Spacing.itemGap) { panels }
+        } else {
+          HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) { panels }
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityIdentifier("chart-style-\(preference.rawValue)")
       }
-    }
-    .dashTrayDescription(
-      DashL10n.string(
-        "Dither is Dash’s dotted look. Swift Charts uses the system chart style."
+      .dashTrayDescription(
+        DashL10n.string(
+          "Dither is Dash’s dotted look. Swift Charts uses the system chart style."
+        )
       )
-    )
+    } action: {
+      DashActionButton(title: DashL10n.string("Done")) {
+        commit()
+      }
+      .padding(.top, 16)
+      .accessibilityIdentifier("settings-chart-style-done")
+    }
+  }
+
+  @ViewBuilder private var panels: some View {
+    ForEach(DashChartStylePreference.allCases) { preference in
+      panel(preference)
+    }
+  }
+
+  private func panel(_ preference: DashChartStylePreference) -> some View {
+    let isSelected = draftStyle == preference
+    return Button {
+      select(preference)
+    } label: {
+      DashCollapsedChartCard(
+        title: preference.titleKey,
+        data: sampleData,
+        series: sampleSeries,
+        valueCeiling: Self.sample.valueCeiling,
+        accessibilitySummary: DashL10n.string("Sample chart in this style.")
+      )
+      .dashChartStyle(preference)
+      // On the card's own inset grid, so the mark's trailing edge lines up with
+      // the title's leading one and their centres sit on the same line.
+      .overlay(alignment: .topTrailing) {
+        DashSelectionMark(isSelected: isSelected, size: 18)
+          .padding(DashTheme.Spacing.card)
+          .accessibilityHidden(true)
+      }
+      .frame(maxWidth: .infinity)
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityIdentifier("chart-style-\(preference.rawValue)")
+  }
+
+  private func select(_ preference: DashChartStylePreference) {
+    guard draftRaw != preference.rawValue else { return }
+    draftRaw = preference.rawValue
+    DashDelight.selectionChanged()
+  }
+
+  private func commit() {
+    guard draftRaw != chartStyleRaw else {
+      dismiss()
+      return
+    }
+    chartStyleRaw = draftRaw
+    DashChartStylePreference.mirrorToWidgets(draftRaw)
+    dismiss()
+  }
+
+  private var sampleData: [DitherDatum] {
+    Self.sample.values.enumerated().map { index, value in
+      DitherDatum(
+        id: "\(index)",
+        label: "\(index)",
+        values: [Self.sampleSeriesID: value])
+    }
+  }
+
+  /// One gradient band — the variant that carries Dither's dot ramp, so the
+  /// dithered panel states its case and the system panel answers with a smooth
+  /// fill under a stroked line.
+  private var sampleSeries: [DitherSeries] {
+    [
+      DitherSeries(
+        id: Self.sampleSeriesID,
+        label: DashL10n.string("Chart style"),
+        color: DashTheme.DitherChart.brand(
+          colorScheme: colorScheme,
+          contrast: colorSchemeContrast),
+        variant: .gradient)
+    ]
   }
 }
 

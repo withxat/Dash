@@ -91,6 +91,8 @@ enum SolarAsset {
   static let gallery = "SolarGalleryOutline"
   static let video = "SolarVideoLibraryOutline"
   static let chart = "SolarChart2Outline"
+  /// Bars inside a chat square — Settings → Chart style.
+  static let chatSquare2 = "SolarChatSquare2Outline"
   static let graph = "SolarGraphNewOutline"
   static let users = "SolarUsersGroupOutline"
   static let userCircle = "SolarUserCircleOutline"
