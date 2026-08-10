@@ -11564,6 +11564,16 @@
         }
       }
     },
+    "Sample chart in this style." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以此风格绘制的示例图表。"
+          }
+        }
+      }
+    },
     "Save" : {
       "localizations" : {
         "en" : {
@@ -11575,16 +11585,6 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-    "Sample chart in this style." : {
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "以此风格绘制的示例图表。"
-          }
-        }
-      }
-    },
             "value" : "保存"
           }
         }
