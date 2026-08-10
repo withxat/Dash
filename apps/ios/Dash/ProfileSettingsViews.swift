@@ -1737,7 +1737,10 @@ struct ProfileView: View {
               )
               .opacity(avatarPhase == .idle ? 1 : 0)
               .blur(radius: usesReducedMotion || avatarPhase == .idle ? 0 : 2)
-              .scaleEffect(usesReducedMotion || avatarPhase == .idle ? 1 : 0.25)
+              .scaleEffect(
+                usesReducedMotion || avatarPhase == .idle
+                  ? 1 : DashTheme.Motion.iconSwapScale
+              )
               .animation(usesReducedMotion ? nil : DashTheme.Motion.iconSwap, value: avatarPhase)
 
               DashActionStatusIcon(

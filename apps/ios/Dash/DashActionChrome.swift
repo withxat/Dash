@@ -104,7 +104,7 @@ struct DashActionStatusIcon: View {
     content()
       .opacity(isVisible ? 1 : 0)
       .blur(radius: reduceMotion || isVisible ? 0 : 2)
-      .scaleEffect(reduceMotion || isVisible ? 1 : 0.25)
+      .scaleEffect(reduceMotion || isVisible ? 1 : DashTheme.Motion.iconSwapScale)
   }
 
   private func transition(to newPhase: DashActionPhase) {

@@ -298,18 +298,18 @@ enum DashTheme {
     // `nil` (instant) vs `reduced` for their reduce-motion branch.
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
-    /// Loading ring ↔ success glyph. The swap is the last thing between a
-    /// finished write and the tray leaving, so it eases out rather than in and
-    /// out: the arriving glyph is already legible in the first third instead of
-    /// crossing a half-faded midpoint the user waits through.
-    static let iconSwap = Animation.easeOut(duration: 0.16)
+    /// Loading ring ↔ success glyph. Ease-in-out (not ease-out): ease-out
+    /// front-loaded the 0.25→1 scale into the transparent first frames, so the
+    /// size change never read. Still critically short and un-sprung — the
+    /// write is already finished, and a bounce would celebrate twice.
+    static let iconSwap = Animation.easeInOut(duration: 0.22)
+    /// Scale floor for `iconSwap`. Deep enough to read as a grow, shallow
+    /// enough that the glyph is already opaque while it is still changing size.
+    static let iconSwapScale: CGFloat = 0.7
     /// One glyph handing over to another: a selection mark filling in, a
     /// toast's kind changing under a queue advance. Distinct from `iconSwap`
-    /// because the pair trades scale and softness as well as opacity, and a
-    /// timing curve lands a size change flatly — under-damped just enough that
-    /// an arriving check pops, which is the confirmation of the tap that
-    /// caused it. `iconSwap` keeps the ring → check case, where the write is
-    /// already finished and a bounce would be celebrating twice.
+    /// because the pair is under-damped — an arriving check pops, which is
+    /// the confirmation of the tap that caused it.
     static let glyphSwap = Animation.spring(response: 0.34, dampingFraction: 0.7)
     /// How small and how soft a glyph is at the far end of that handover.
     /// Scale is `scaleEffect`, so the mark's layout slot never moves.
@@ -325,7 +325,7 @@ enum DashTheme {
     @MainActor static var iconSwapFallbackDelay: Duration {
       // `iconSwap` plus a frame of slack — it must outlast the real completion
       // callback, not become a second dwell the user sits through.
-      UIAccessibility.isReduceMotionEnabled ? .zero : .milliseconds(260)
+      UIAccessibility.isReduceMotionEnabled ? .zero : .milliseconds(280)
     }
 
     /// Reduce-motion fallback: position/scale drop out, a short opacity ease stays.

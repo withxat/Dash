@@ -300,24 +300,36 @@ extension View {
 /// image content is not animatable, so six sites hard-cut while the shortcuts
 /// editor hand-rolled an opacity pair. Both glyphs stay mounted here and hand
 /// over on `glyphSwap`.
+///
+/// The displayed mirror is written inside an explicit `withAnimation` so a
+/// parent `withAnimation(morph)` (Edit Shortcuts reorder, R2 multi-select) or
+/// a tray's `.transaction { disablesAnimations = true }` cannot flatten the
+/// spring into the layout curve — same survival rule as the workspace header.
 struct DashSelectionMark: View {
   let isSelected: Bool
   var size: CGFloat = 22
   var selectedColor: Color = DashTheme.brand
   var unselectedColor: Color = DashTheme.placeholder
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var displayedSelected = false
 
   var body: some View {
     ZStack {
       SolarIcon(asset: SolarAsset.circle, size: size, color: unselectedColor)
-        .dashGlyphSwap(isActive: !isSelected)
+        .dashGlyphSwap(isActive: !displayedSelected)
       SolarIcon(asset: SolarAsset.checkCircleFill, size: size, color: selectedColor)
-        .dashGlyphSwap(isActive: isSelected)
+        .dashGlyphSwap(isActive: displayedSelected)
     }
-    .animation(
-      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.glyphSwap,
-      value: isSelected
-    )
+    .onChange(of: isSelected, initial: true) { _, newValue in
+      guard displayedSelected != newValue else { return }
+      if reduceMotion {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { displayedSelected = newValue }
+      } else {
+        withAnimation(DashTheme.Motion.glyphSwap) { displayedSelected = newValue }
+      }
+    }
   }
 }
 
