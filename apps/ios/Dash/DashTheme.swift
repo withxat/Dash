@@ -494,7 +494,9 @@ enum DashTheme {
     static let scrimMaterialOpacity: CGFloat = 0.55
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
-    /// Lets the compact tray sit slightly inside the home-indicator safe area.
+    /// How far the compact tray may sit into the home-indicator safe area.
+    /// Positive tucks the card down from the safe-area line (window inset is
+    /// still the baseline — see `DashTrayBottomLiftRules`).
     static let floatingBottomTuck: CGFloat = 6
   }
 

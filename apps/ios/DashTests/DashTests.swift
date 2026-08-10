@@ -1768,6 +1768,15 @@ private let watchtowerDropFrames: [CGRect] = [
   #expect(DashTheme.Sheet.scrimMaterialOpacity == 0.55)
 }
 
+@Test func compactTrayBottomLiftClearsHomeIndicatorUsingWindowSafeInset() {
+  // The tray GeometryReader ignores the container bottom edge, so a proxy safe
+  // of 0 must not be what decides resting lift — that path left the card at
+  // floatingMargin (12) inside the home-indicator region forever.
+  #expect(DashTrayBottomLiftRules.padding(safeBottom: 0, keyboardCovered: 0) == 12)
+  #expect(DashTrayBottomLiftRules.padding(safeBottom: 34, keyboardCovered: 0) == 28)
+  #expect(DashTrayBottomLiftRules.padding(safeBottom: 34, keyboardCovered: 300) == 312)
+}
+
 @Test func profileTrayPhaseTitlesStayLocalizedCatalogKeys() {
   #expect(ProfileTrayPhase.initial == .accounts)
   #expect(ProfileTrayPhase.accounts.title == "Switch account")

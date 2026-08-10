@@ -940,8 +940,10 @@ enum DashScreenClipScope {
 /// build log, tray bodies). Full-page canvas scrolls stay plain `ScrollView`.
 ///
 /// Pass the fill *behind* the scroll content as `surface` so the fade matches
-/// (sheet, card, domains tint, …). Nested instances are safe: each keeps its
-/// own probe id so preferences do not collide.
+/// (sheet, card, domains tint, …). Nested instances are safe: each owns its
+/// own geometry sample — edge metrics never cross a Bound PreferenceKey
+/// (a dictionary preference with two writers per instance, and trays nest two
+/// instances, is what logged "tried to update multiple times per frame").
 ///
 /// Opacity ramps over the first ~36pt past an edge (tracks the finger); large
 /// layout jumps ease over 0.22s so the fade never pops.
@@ -969,40 +971,19 @@ struct DashFadedScrollView<Content: View>: View {
   var body: some View {
     ScrollView(showsIndicators: showsIndicators) {
       content()
-        .background {
-          GeometryReader { geo in
-            let frame = geo.frame(in: .named(spaceName))
-            Color.clear.preference(
-              key: DashScrollEdgeProbeKey.self,
-              value: [
-                spaceID: DashScrollEdgeProbe(
-                  offset: -frame.minY,
-                  contentHeight: geo.size.height,
-                  viewportHeight: nil
-                )
-              ]
-            )
-          }
+        // Leaf-owned geometry: writing a Bound PreferenceKey from two
+        // GeometryReaders (content + viewport) — and nesting this view inside
+        // the tray card — re-entered AttributeGraph on every open.
+        .onGeometryChange(for: ScrollEdgeContentMetrics.self) { proxy in
+          let frame = proxy.frame(in: .named(spaceName))
+          return ScrollEdgeContentMetrics(offset: -frame.minY, height: proxy.size.height)
+        } action: { metrics in
+          ingestContent(metrics)
         }
     }
     .coordinateSpace(name: spaceName)
-    .background {
-      GeometryReader { geo in
-        Color.clear.preference(
-          key: DashScrollEdgeProbeKey.self,
-          value: [
-            spaceID: DashScrollEdgeProbe(
-              offset: nil,
-              contentHeight: nil,
-              viewportHeight: geo.size.height
-            )
-          ]
-        )
-      }
-    }
-    .onPreferenceChange(DashScrollEdgeProbeKey.self) { probes in
-      guard let probe = probes[spaceID] else { return }
-      ingest(probe)
+    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+      ingestViewport(height)
     }
     .modifier(DashScrollBounceBasedOnSize(enabled: bounceBasedOnSize))
     .modifier(DashScrollDismissesKeyboard(enabled: dismissesKeyboardInteractively))
@@ -1024,16 +1005,17 @@ struct DashFadedScrollView<Content: View>: View {
     .easeInOut(duration: 0.22)
   }
 
-  private func ingest(_ probe: DashScrollEdgeProbe) {
-    if let offset = probe.offset {
-      sample.offset = offset
+  private func ingestContent(_ metrics: ScrollEdgeContentMetrics) {
+    sample.offset = metrics.offset
+    if metrics.height > 0 {
+      sample.contentHeight = metrics.height
     }
-    if let contentHeight = probe.contentHeight, contentHeight > 0 {
-      sample.contentHeight = contentHeight
-    }
-    if let viewportHeight = probe.viewportHeight, viewportHeight > 0 {
-      sample.viewportHeight = viewportHeight
-    }
+    recomputeEdges()
+  }
+
+  private func ingestViewport(_ height: CGFloat) {
+    guard height > 0 else { return }
+    sample.viewportHeight = height
     recomputeEdges()
   }
 
@@ -1084,36 +1066,18 @@ struct DashFadedScrollView<Content: View>: View {
   }
 }
 
-/// Reference-type sample so preference updates can mutate without `@State` churn.
+/// Reference-type sample so geometry actions can mutate without `@State` churn.
 private final class ScrollEdgeSample {
   var offset: CGFloat = 0
   var contentHeight: CGFloat = 0
   var viewportHeight: CGFloat = 0
 }
 
-private struct DashScrollEdgeProbe: Equatable {
-  var offset: CGFloat?
-  var contentHeight: CGFloat?
-  var viewportHeight: CGFloat?
-
-  func merging(_ other: DashScrollEdgeProbe) -> DashScrollEdgeProbe {
-    DashScrollEdgeProbe(
-      offset: other.offset ?? offset,
-      contentHeight: other.contentHeight ?? contentHeight,
-      viewportHeight: other.viewportHeight ?? viewportHeight
-    )
-  }
-}
-
-private enum DashScrollEdgeProbeKey: PreferenceKey {
-  static let defaultValue: [UUID: DashScrollEdgeProbe] = [:]
-
-  static func reduce(
-    value: inout [UUID: DashScrollEdgeProbe],
-    nextValue: () -> [UUID: DashScrollEdgeProbe]
-  ) {
-    value.merge(nextValue()) { $0.merging($1) }
-  }
+/// Equatable transform for the content leaf's `onGeometryChange` — offset in the
+/// scroll's named space plus the content height that feeds the bottom fade.
+private struct ScrollEdgeContentMetrics: Equatable {
+  var offset: CGFloat
+  var height: CGFloat
 }
 
 private struct DashScrollBounceBasedOnSize: ViewModifier {

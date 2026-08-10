@@ -879,23 +879,54 @@ private struct EditHomeActionsView: View {
   }
 }
 
+/// Viewport metrics for `HomeEditSelectionList` — kept outside the generic
+/// view because Swift forbids static stored properties on generic types.
+private enum HomeEditSelectionListMetrics {
+  /// Three selected slots plus a couple of candidates in view; overflow scrolls.
+  static let visibleCount = 5
+  /// Matches `HomeEditSelectionRow` at default Dynamic Type (36pt icon + 10pt
+  /// vertical padding each side). Larger text shows fewer rows in the same seat.
+  static let rowHeight: CGFloat = 56
+  static var viewportHeight: CGFloat { rowHeight * CGFloat(visibleCount) }
+}
+
 /// Shared edit-tray list chrome for Home Quick actions and Shortcuts.
 /// Identity-stable `ForEach`: a draft toggle only reorders the same ids, so
 /// `withAnimation` slides survivors into new seats. Do NOT hang `.dashMorph`
 /// here — that transition is for appear/disappear (DNS filter). On a reorder
 /// its removal scale briefly inflates the measured stack inside the tray's
 /// preference→frame height loop and trips AttributeGraph cycles.
+///
+/// Tall catalogs (nine quick actions) cap to a short viewport so the tray
+/// stays compact and the finger scrolls the rest — same shape as the Domains
+/// expanded list, nested inside the tray body scroll on purpose.
 private struct HomeEditSelectionList<Item: Identifiable, Row: View>: View {
   let items: [Item]
   @ViewBuilder let row: (Item) -> Row
 
   var body: some View {
+    Group {
+      if items.count > HomeEditSelectionListMetrics.visibleCount {
+        DashFadedScrollView(
+          surface: DashTheme.Sheet.background,
+          maxHeight: HomeEditSelectionListMetrics.viewportHeight,
+          bounceBasedOnSize: true
+        ) {
+          listStack
+        }
+      } else {
+        listStack
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private var listStack: some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(items) { item in
         row(item)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

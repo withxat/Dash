@@ -321,11 +321,47 @@ private struct DashTraySharedDestinationModifier: ViewModifier {
 
 /// The window bounds anchored presentations validate source frames against.
 @MainActor private func dashTrayWindowBounds() -> CGRect {
+  dashTrayKeyWindow()?.bounds
+    ?? UIApplication.shared.connectedScenes
+    .compactMap { $0 as? UIWindowScene }.first?.screen.bounds
+    ?? UIScreen.main.bounds
+}
+
+@MainActor private func dashTrayKeyWindow() -> UIWindow? {
   let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-  if let bounds = scenes.flatMap(\.windows).first(where: \.isKeyWindow)?.bounds {
-    return bounds
+  return scenes.flatMap(\.windows).first(where: \.isKeyWindow)
+}
+
+/// Bottom safe inset from the app window. The tray's `GeometryReader` ignores
+/// the container bottom edge so its own `safeAreaInsets.bottom` is always 0 —
+/// the same hole the toast layer hits at the top (`DashToastLayerContent`).
+@MainActor private func dashTrayBottomSafeInset() -> CGFloat {
+  dashTrayKeyWindow()?.safeAreaInsets.bottom ?? 0
+}
+
+/// Pure lift arithmetic for the floating tray card. Kept free of UIKit so the
+/// "window safe inset ignored → card stuck at floatingMargin" regression
+/// stays unit-testable.
+enum DashTrayBottomLiftRules {
+  /// Padding from the full-bleed container's bottom edge to the card.
+  ///
+  /// - Keyboard: `keyboardCovered` is already measured from the window bottom,
+  ///   and the reader ignores the home-indicator inset, so do not subtract safe
+  ///   again or the card under-lifts above the keyboard.
+  /// - Resting: `safeBottom` must be the *window* inset. Feeding the ignoring
+  ///   GeometryReader's 0 here collapses to `floatingMargin` and parks the
+  ///   card inside the home-indicator region forever. A small `tuck` then sits
+  ///   the card slightly into that region without negative padding.
+  static func padding(
+    safeBottom: CGFloat,
+    keyboardCovered: CGFloat,
+    floatingMargin: CGFloat = DashTheme.Sheet.floatingMargin,
+    tuck: CGFloat = DashTheme.Sheet.floatingBottomTuck
+  ) -> CGFloat {
+    if keyboardCovered > 0 { return keyboardCovered + floatingMargin }
+    if safeBottom > 0 { return max(floatingMargin, safeBottom - tuck) }
+    return floatingMargin
   }
-  return scenes.first?.screen.bounds ?? UIScreen.main.bounds
 }
 
 extension View {
@@ -1228,9 +1264,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       // lift is plain outer padding — there's no longer an edge-to-edge fill
       // that has to run under the keyboard.
       //
-      // The reader extends under the home indicator so bottom tuck is positive
-      // padding from the screen edge — negative padding inside a safe-area
-      // clipped host was cutting the card's bottom corners off.
+      // The reader extends under the home indicator so bottom padding is from
+      // the screen edge (negative padding inside a safe-area-clipped host was
+      // cutting the card's corners off). That also zeroes
+      // `proxy.safeAreaInsets.bottom`, so resting lift reads the window inset
+      // via `dashTrayBottomSafeInset` — see `DashTrayBottomLiftRules`.
       GeometryReader { proxy in
         ZStack {
           if sharedRevealActive, let sharedAction, let sourceFrame {
@@ -1249,7 +1287,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           DashSheetCard(
             maxCardHeight: Self.resolvedMaxCardHeight(
               containerHeight: proxy.size.height,
-              bottomLift: bottomLift(proxy)),
+              bottomLift: bottomLift),
             hasFooter: hasFooter,
             drawsSurface: !sharedRevealActive,
             sharedRevealProgress: sharedRevealActive ? progress : nil
@@ -1281,7 +1319,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           )
           .offset(y: drag)
           .padding(.horizontal, DashTheme.Sheet.floatingMargin)
-          .padding(.bottom, bottomLift(proxy))
+          .padding(.bottom, bottomLift)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
           .allowsHitTesting(keyboardAction == nil && !isClosing)
           .mask {
@@ -1548,24 +1586,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
 
-  /// How far to lift the card above the keyboard, in the GeometryReader's space.
-  /// The reader extends under the home indicator; `keyboardHeight` is from the
-  /// window bottom, so subtract the safe-area inset or the card over-lifts.
-  private func keyboardInset(_ proxy: GeometryProxy) -> CGFloat {
-    max(0, keyboardHeight - proxy.safeAreaInsets.bottom)
-  }
-
   /// Bottom gap under the floating card from the screen edge (always ≥ 0).
-  /// With a home indicator the gap is `safeArea - tuck` so the card sits
-  /// slightly into that region without negative padding (which clipped).
-  private func bottomLift(_ proxy: GeometryProxy) -> CGFloat {
-    let keyboard = keyboardInset(proxy)
-    if keyboard > 0 { return keyboard + DashTheme.Sheet.floatingMargin }
-    let safe = proxy.safeAreaInsets.bottom
-    if safe > 0 {
-      return max(0, safe - DashTheme.Sheet.floatingBottomTuck)
-    }
-    return DashTheme.Sheet.floatingMargin
+  /// Uses the window safe inset — the GeometryReader ignores the container
+  /// bottom edge, so its proxy inset is always 0.
+  private var bottomLift: CGFloat {
+    DashTrayBottomLiftRules.padding(
+      safeBottom: dashTrayBottomSafeInset(),
+      keyboardCovered: max(0, keyboardHeight)
+    )
   }
 
   /// Geometry can report 0 / non-finite sizes on the first cover layout pass;
