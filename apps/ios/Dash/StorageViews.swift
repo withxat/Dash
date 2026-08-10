@@ -1602,6 +1602,7 @@ struct KVNamespaceView: View {
   @State private var keys: [KVKey] = []
   @State private var cursor: String?
   @State private var showsCreateKey = false
+  @State private var selectedKey: KVKey?
   @State private var error: String?
   @State private var loading = true
   @State private var isLoadingMore = false
@@ -1657,9 +1658,16 @@ struct KVNamespaceView: View {
     ) { mode in
       dashListCard {
         dashModeListRows(mode: mode, items: keys, reduceMotion: reduceMotion) { key in
-          DashListGroupLink(value: .kvKey(namespaceID: namespaceID, key: key.name)) {
-            DashListRow(title: key.name, icon: SolarAsset.Content.key)
+          Button {
+            selectedKey = key
+          } label: {
+            DashListRow(
+              title: key.name,
+              icon: SolarAsset.Content.key,
+              showsChevron: false
+            )
           }
+          .buttonStyle(DashSurfaceButtonStyle())
           .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
         }
       }
@@ -1689,6 +1697,18 @@ struct KVNamespaceView: View {
       await resolveNamespaceTitle()
     }
     .onAppear { reloadIfKeysInvalidated() }
+    // Neutral on purpose: KV's catalog tone is `.warning`, and a toned tray
+    // would paint Copy (a reversible read) as an amber/danger submit pill —
+    // same reason Email Routing trays stay untoned.
+    .dashTray(
+      item: $selectedKey,
+      title: { $0.name }
+    ) { key in
+      KVKeyDetailTray(namespaceID: namespaceID, key: key.name) {
+        invalidateKeys()
+        Task { await load(force: true) }
+      }
+    }
     .dashTray(
       isPresented: $showsCreateKey, title: DashL10n.string("Create key"),
       tone: FeatureVisualIdentity.tone(for: .kv)
@@ -1825,6 +1845,7 @@ struct KVNamespaceView: View {
     loading = context != nil
     isLoadingMore = false
     showsCreateKey = false
+    selectedKey = nil
     resolvedNamespace = nil
   }
 }
@@ -2162,6 +2183,192 @@ struct KVCreateKeySheet: View {
       return
     }
     dismissAfter(onCreated)
+  }
+}
+
+/// List → tray peek for a KV key: value fields, Copy as the primary verb,
+/// optional Edit (pushes the full editor) and header Delete.
+private struct KVKeyDetailTray: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
+  @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  let namespaceID: String
+  let key: String
+  var onDeleted: () -> Void
+
+  @State private var value = ""
+  @State private var rawValueData: Data?
+  @State private var displayIssue: KVJSONFormatting.DisplayValue?
+  @State private var loaded = false
+  @State private var loadError: String?
+  @State private var deletePhase: DashActionPhase = .idle
+  @State private var deleteError: String?
+  @State private var loadedContext: AccountRequestContext?
+
+  private var fields: [DashDetailField] {
+    var rows = [DashDetailField(label: "Key", value: key, mono: true)]
+    if let displayIssue {
+      rows.append(DashDetailField(label: "Value", value: displayIssueMessage(displayIssue)))
+    } else if loaded {
+      rows.append(DashDetailField(label: "Value", value: value, mono: true))
+    } else if loadError == nil {
+      rows.append(DashDetailField(label: "Value", value: DashL10n.string("Loading")))
+    }
+    return rows
+  }
+
+  private var canEdit: Bool {
+    featureAllowsWrites && loaded && displayIssue == nil
+  }
+
+  var body: some View {
+    Group {
+      if let loadError, !loaded {
+        VStack(alignment: .leading, spacing: 14) {
+          DashNotice(kind: .error, message: loadError)
+          DashTrayPillButton(title: "Try again") {
+            Task { await load() }
+          }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+      } else {
+        DashDetailTray(
+          fields: fields,
+          deleteMessage: featureAllowsWrites && loaded
+            ? DashL10n.string("Permanently delete the key \(key).")
+            : nil,
+          deletePhase: deletePhase,
+          onDeleteSuccessPresentationCompleted: completeDeletePresentation,
+          deleteError: deleteError,
+          onDelete: featureAllowsWrites && loaded
+            ? { Task { await deleteKey() } }
+            : nil
+        ) {
+          if loaded {
+            VStack(spacing: 10) {
+              if canEdit {
+                DashNavigationSource(
+                  destination: .kvKey(namespaceID: namespaceID, key: key),
+                  schedule: dismissAfter
+                ) { navigate in
+                  DashTrayPillButton(title: "Edit", action: navigate)
+                }
+              }
+              DashActionButton(title: "Copy") {
+                copyValue()
+                model.toasts.success(DashL10n.string("Value copied"))
+              }
+            }
+          }
+        }
+      }
+    }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
+  }
+
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    value = ""
+    rawValueData = nil
+    displayIssue = nil
+    loaded = false
+    loadError = nil
+    deletePhase = .idle
+    deleteError = nil
+  }
+
+  private func load() async {
+    guard let context = model.accountRequestContext else { return }
+    loadError = nil
+    let client = model.client
+    do {
+      let data = try await client.getKVValue(
+        accountID: context.accountID, namespaceID: namespaceID, key: key)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      switch KVJSONFormatting.displayValue(for: data) {
+      case .text(let prepared):
+        value = prepared
+        displayIssue = nil
+        rawValueData = nil
+      case .tooLarge:
+        value = ""
+        displayIssue = .tooLarge
+        rawValueData = data
+      case .nonText:
+        value = ""
+        displayIssue = .nonText
+        rawValueData = data
+      }
+      loaded = true
+      loadError = nil
+    } catch {
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      loaded = false
+      loadError = error.dashActionableMessage
+    }
+  }
+
+  private func deleteKey() async {
+    guard featureAllowsWrites, let context = model.accountRequestContext,
+      loadedContext == context
+    else { return }
+    deletePhase = .loading
+    deleteError = nil
+    do {
+      try await model.client.deleteKVValue(
+        accountID: context.accountID, namespaceID: namespaceID, key: key)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        deletePhase = .idle
+        return
+      }
+      model.featureCache.remove(prefix: "kvKeys:\(context.accountID):\(namespaceID):")
+      model.toasts.success(DashL10n.string("Deleted successfully"))
+      deletePhase = .succeeded
+    } catch {
+      deletePhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      deleteError = error.dashActionableMessage
+      DashDelight.failError()
+    }
+  }
+
+  private func completeDeletePresentation() {
+    guard deletePhase == .succeeded else { return }
+    dismiss()
+    onDeleted()
+  }
+
+  private func copyValue() {
+    guard let rawValueData else {
+      UIPasteboard.general.string = value
+      return
+    }
+    if let text = String(data: rawValueData, encoding: .utf8) {
+      UIPasteboard.general.string = text
+    } else {
+      UIPasteboard.general.setData(rawValueData, forPasteboardType: UTType.data.identifier)
+    }
+  }
+
+  private func displayIssueMessage(_ issue: KVJSONFormatting.DisplayValue) -> String {
+    switch issue {
+    case .tooLarge:
+      DashL10n.string(
+        "This value exceeds Dash's 256 KiB viewer and editor limit. You can still copy or delete it."
+      )
+    case .nonText:
+      DashL10n.string(
+        "This value is not UTF-8 text, so it cannot be viewed or edited. You can still copy or delete it."
+      )
+    case .text:
+      ""
+    }
   }
 }
 

@@ -14120,6 +14120,17 @@
         }
       }
     },
+    "Value copied" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "值已复制"
+          }
+        }
+      }
+    },
     "Value unavailable" : {
       "localizations" : {
         "zh-Hans" : {
