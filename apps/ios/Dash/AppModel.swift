@@ -324,6 +324,12 @@ final class AppModel {
 
   static let watchtowerTTL: TimeInterval = 5 * 60
 
+  /// Full-screen canvas cover while Settings → Language remounts the root via
+  /// `.id(languageRaw)`. Owned here so the cover can live outside that
+  /// identity (and therefore survive the rebuild). Only `RootWithSplash`
+  /// should read it.
+  var isReloadingLanguage = false
+
   /// A deep link / App Intent target waiting to be consumed by MainTabView.
   /// Buffered here because a link can arrive before the tab view mounts
   /// (cold launch) or before the user is authenticated.

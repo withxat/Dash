@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Generates MingCute social/logo SVG assets for Dash iOS (About → Developer).
+ * Generates MingCute line SVG assets for Dash iOS (About → Developer, Settings).
  *
- * Sources the classic line glyphs (`social_x_line`, `github_line`) from the
- * `mingcute_icon` package, strips the icon-font spacer path, and writes
- * template fill assets so they tint with Settings' `iconMuted`.
+ * Sources classic line glyphs from the `mingcute_icon` package, strips the
+ * icon-font spacer path, and writes template fill assets so they tint with
+ * Settings' `iconMuted`.
  *
  * Run: pnpm ios:icons
  */
@@ -19,12 +19,14 @@ const assetsDir = path.join(__dirname, '../Dash/Resources/Assets.xcassets')
 const mingcuteRoot = path.dirname(require.resolve('mingcute_icon/package.json'))
 
 /**
- * Asset name → MingCute SVG under `svg/logo/`.
+ * Asset name → MingCute SVG under `svg/`.
  * Line marks match Settings' outline chrome weight better than the filled set.
  */
 const SOCIAL_ICONS = {
-	MingCuteGithubLine: 'github_line.svg',
-	MingCuteSocialXLine: 'social_x_line.svg',
+	MingCuteGithubLine: 'logo/github_line.svg',
+	MingCuteSocialXLine: 'logo/social_x_line.svg',
+	/// Settings → Language.
+	MingCuteEarthLine: 'map/earth_line.svg',
 }
 
 /**
@@ -68,7 +70,7 @@ function writeImageset(name, svg) {
 
 function generateSocialIcons() {
 	for (const [name, file] of Object.entries(SOCIAL_ICONS)) {
-		const sourcePath = path.join(mingcuteRoot, 'svg/logo', file)
+		const sourcePath = path.join(mingcuteRoot, 'svg', file)
 		const source = fs.readFileSync(sourcePath, 'utf8')
 		writeImageset(name, templateSvgFor(source))
 		console.log(`social ${name}`)

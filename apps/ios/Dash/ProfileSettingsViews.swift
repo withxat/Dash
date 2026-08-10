@@ -692,7 +692,7 @@ struct SettingsView: View {
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Language"),
-              icon: SolarAsset.globus,
+              icon: SolarAsset.earth,
               trailing: selectedLanguage.displayName,
               trailingIcon: SolarAsset.trayDots,
               trailingIconRotation: .degrees(90)
@@ -841,6 +841,15 @@ struct SettingsView: View {
     }
     .onChange(of: workspaceWashRaw) { _, _ in
       ICloudPreferencesSync.shared.publish(.workspaceWash)
+    }
+    .onAppear {
+      // The remounted Settings page is the real completion signal for a
+      // language reload. Keep the cover until this destination exists instead
+      // of guessing how long root reconstruction and routing should take.
+      guard model.isReloadingLanguage else { return }
+      withAnimation(DashTheme.Motion.iconSwap) {
+        model.isReloadingLanguage = false
+      }
     }
   }
 
@@ -1237,46 +1246,159 @@ private struct ChartStylePickerTray: View {
 
 private struct LanguagePickerTray: View {
   @Binding var languageRaw: String
+  @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Draft only — `languageRaw` commits on Done. Applying immediately remounts
+  /// the app tree (`.id(languageRaw)`), which is why Done owns the write.
+  @State private var draftRaw: String
+
+  init(languageRaw: Binding<String>) {
+    _languageRaw = languageRaw
+    _draftRaw = State(initialValue: languageRaw.wrappedValue)
+  }
 
   var body: some View {
-    VStack(spacing: 12) {
-      ForEach(DashAppLanguage.allCases) { language in
-        let isSelected = languageRaw == language.rawValue
-        Button {
-          guard languageRaw != language.rawValue else {
-            dismiss()
-            return
+    DashTrayScrollBoundary {
+      Group {
+        if dynamicTypeSize.isAccessibilitySize {
+          VStack(spacing: DashTheme.Spacing.itemGap) {
+            ForEach(DashAppLanguage.allCases) { language in
+              languageOption(language, axis: .horizontal)
+            }
           }
-          language.applyToProcess()
-          languageRaw = language.rawValue
-          DashDelight.selectionChanged()
-          dismiss()
-        } label: {
-          HStack(spacing: 12) {
+        } else {
+          HStack(spacing: DashTheme.Spacing.compact) {
+            ForEach(DashAppLanguage.allCases) { language in
+              languageOption(language, axis: .vertical)
+            }
+          }
+        }
+      }
+      .dashTrayDescription(
+        DashL10n.string(
+          "System follows the iPhone language, including Settings → Dash → Language.")
+      )
+    } action: {
+      DashActionButton(title: DashL10n.string("Done")) {
+        commit()
+      }
+      .padding(.top, 16)
+      .accessibilityIdentifier("settings-language-done")
+    }
+  }
+
+  @ViewBuilder
+  private func languageOption(
+    _ language: DashAppLanguage,
+    axis: Axis
+  ) -> some View {
+    let isSelected = draftRaw == language.rawValue
+    Button {
+      guard draftRaw != language.rawValue else { return }
+      draftRaw = language.rawValue
+      DashDelight.selectionChanged()
+    } label: {
+      Group {
+        if axis == .vertical {
+          VStack(spacing: 12) {
+            languageGlyph(for: language)
             Text(language.displayName)
               .dashTextStyle(.bodyMedium)
               .foregroundStyle(DashTheme.text)
+              .multilineTextAlignment(.center)
+              .lineLimit(2)
+              .minimumScaleFactor(0.85)
+          }
+          .padding(.horizontal, 10)
+          .padding(.vertical, 28)
+          .frame(maxWidth: .infinity)
+        } else {
+          HStack(spacing: 14) {
+            languageGlyph(for: language)
+            Text(language.displayName)
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.text)
               .lineLimit(1)
             Spacer(minLength: 0)
-            DashSelectionMark(isSelected: isSelected)
           }
-          .padding(.horizontal, 12)
-          .padding(.vertical, 8)
+          .padding(.horizontal, 14)
+          .padding(.vertical, 12)
           .frame(maxWidth: .infinity, alignment: .leading)
           .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-          .background(DashTheme.Sheet.shortcutItem)
-          .clipShape(DashTheme.buttonShape)
-          .contentShape(Rectangle())
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+      }
+      .overlay(alignment: .topTrailing) {
+        // Language cards already read as a three-way choice — an empty circle
+        // on the unselected two is furniture. Only the filled check lands.
+        if isSelected {
+          SolarIcon(
+            asset: SolarAsset.checkCircleFill,
+            size: axis == .vertical ? 26 : 28,
+            color: DashTheme.brand
+          )
+          .padding(8)
+          .transition(
+            reduceMotion
+              ? .opacity
+              : .opacity.combined(
+                with: .scale(scale: DashTheme.Motion.glyphSwapScale)))
+        }
+      }
+      .animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.glyphSwap,
+        value: isSelected
+      )
+      .background(DashTheme.Sheet.shortcutItem)
+      .clipShape(DashTheme.buttonShape)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityIdentifier("settings-language-\(language.rawValue)")
+  }
+
+  @ViewBuilder
+  private func languageGlyph(for language: DashAppLanguage) -> some View {
+    Group {
+      switch language {
+      case .system:
+        SolarIcon(asset: SolarAsset.smartphone, size: 36, color: DashTheme.iconMuted)
+      case .english:
+        Text(verbatim: "A")
+          .font(.system(size: 34, weight: .bold))
+          .foregroundStyle(DashTheme.iconMuted)
+      case .simplifiedChinese:
+        Text(verbatim: "文")
+          .font(.system(size: 32, weight: .bold))
+          .foregroundStyle(DashTheme.iconMuted)
       }
     }
-    .dashTrayDescription(
-      DashL10n.string(
-        "System follows the iPhone language, including Settings → Dash → Language.")
-    )
+    .frame(width: 36, height: 36)
+    .accessibilityHidden(true)
+  }
+
+  private func commit() {
+    guard draftRaw != languageRaw else {
+      dismiss()
+      return
+    }
+    let nextRaw = draftRaw
+    // Cover first (behind the tray), then remount only after the tray's actual
+    // dismissal completion — never a duration coupled to its current spring.
+    model.isReloadingLanguage = true
+    dismissAfter {
+      DashAppLanguage.resolved(stored: nextRaw).applyToProcess()
+      languageRaw = nextRaw
+      // `.id(languageRaw)` remounts `AppRootView` in this update. Defer the
+      // restore until the new `MainTabView` can consume it; `SettingsView`
+      // clears the cover from its own onAppear, the real landing milestone.
+      Task { @MainActor in
+        model.pendingRoute = .settings
+      }
+    }
   }
 }
 
@@ -1454,7 +1576,7 @@ private struct OpenSourceCredit: Identifiable {
       name: "Hugeicons", purpose: "File-type icons", author: "Hugeicons",
       license: "MIT", url: URL(string: "https://github.com/hugeicons/hugeicons")!),
     OpenSourceCredit(
-      name: "MingCute", purpose: "Social icons", author: "MingCute Design",
+      name: "MingCute", purpose: "Social and map icons", author: "MingCute Design",
       license: "Apache-2.0",
       url: URL(string: "https://github.com/mingcute-design/mingcute-icons")!),
   ]

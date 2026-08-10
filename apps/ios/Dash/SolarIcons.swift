@@ -69,6 +69,8 @@ enum SolarAsset {
   static let danger = "SolarDangerTriangleOutline"
   static let bolt = "SolarBoltOutline"
   static let boltCircle = "SolarBoltCircleOutline"
+  /// Plain phone — Language tray → System.
+  static let smartphone = "SolarSmartphoneOutline"
   static let smartphoneVibration = "SolarSmartphoneVibrationOutline"
   static let sun = "SolarSunOutline"
   static let globe = "SolarGlobalOutline"
@@ -122,6 +124,8 @@ enum SolarAsset {
   static let github = "MingCuteGithubLine"
   /// MingCute `social_x_line` — About → Developer.
   static let socialX = "MingCuteSocialXLine"
+  /// MingCute `earth_line` — Settings → Language.
+  static let earth = "MingCuteEarthLine"
 }
 
 struct SolarIcon: View {

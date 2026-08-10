@@ -83,6 +83,19 @@ struct DashApp: App {
   }
 }
 
+/// Canvas + ring that hides the Settings → Language root remount. Lives outside
+/// `.id(languageRaw)` so the rebuild cannot tear it down mid-flight.
+private struct LanguageReloadCover: View {
+  var body: some View {
+    ZStack {
+      DashTheme.canvas.ignoresSafeArea()
+      DashLoadingRing(color: DashTheme.brand, size: 28, lineWidth: 3)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(DashL10n.string("Loading"))
+  }
+}
+
 /// Bridges the static system launch screen into the first interactive frame:
 /// same `LaunchBackground` + centered `LaunchLogo`, held until bootstrap
 /// finishes (and a short minimum). Signed out, the centered icon first springs
@@ -186,6 +199,16 @@ private struct RootWithSplash: View {
         locale: appLanguage.locale,
         dynamicTypeSize: effectiveDynamicTypeSize
       )
+      // Also outside `.id`: the cover has to survive the remount it is hiding.
+      // Mounted before the Language tray dismisses so the exit reveals a spinner
+      // instead of a blank root rebuild. Fade-out is animated at the write site
+      // in `LanguagePickerTray.commit`.
+      .overlay {
+        if model.isReloadingLanguage {
+          LanguageReloadCover()
+            .transition(.opacity)
+        }
+      }
       .onOpenURL { url in
         if let route = DashRoute.parse(url) { model.pendingRoute = route }
       }

@@ -90,6 +90,7 @@ const OUTLINE_ICONS = {
 	SolarShieldOutline: 'security/Linear/Shield',
 	SolarRoutingOutline: 'map/Linear/Routing',
 	SolarLockPasswordOutline: 'security/Linear/LockPassword',
+	SolarSmartphoneOutline: 'devices/Linear/Smartphone',
 	SolarBoltCircleOutline: 'ui/Linear/BoltCircle',
 	SolarSmartphoneVibrationOutline: 'devices/Linear/SmartphoneVibration',
 	SolarSunOutline: 'weather/Linear/Sun',
