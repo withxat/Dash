@@ -37,6 +37,7 @@ extension DashNavigationSemanticID {
 /// real SwiftUI surface instead of stretching captured pixels.
 enum DashNavigationHero: Hashable {
   case domainCard(
+    zoneID: String,
     name: String,
     status: String,
     seed: String,
@@ -423,6 +424,11 @@ final class DashNavigationAnchorRegistry {
 
   private var hostedFrames: [UUID: CGRect] = [:]
   private var sourceViews: [UUID: WeakSourceView] = [:]
+  /// What each live occurrence currently SHOWS. Instance UUIDs follow SwiftUI
+  /// structural identity — a positional list slot keeps its UUID across a
+  /// re-sort while its resource changes — so a return morph verifies meaning
+  /// here instead of trusting that a live frame still belongs to its resource.
+  private var sourceSemanticIDs: [UUID: DashNavigationSemanticID] = [:]
   private var capturedVisuals: [UUID: CapturedVisual] = [:]
   /// Landing seats published by destination pages. Keyed by semantic identity
   /// because the transition renderer has no way to learn a fresh page's private
@@ -453,13 +459,19 @@ final class DashNavigationAnchorRegistry {
     hostedFrames[instanceID] = nil
   }
 
-  func registerSourceView(_ view: UIView, for instanceID: UUID) {
+  func registerSourceView(
+    _ view: UIView,
+    semanticID: DashNavigationSemanticID? = nil,
+    for instanceID: UUID
+  ) {
     sourceViews[instanceID] = WeakSourceView(view)
+    sourceSemanticIDs[instanceID] = semanticID
   }
 
   func unregisterSourceView(_ view: UIView, for instanceID: UUID) {
     guard sourceViews[instanceID]?.value === view else { return }
     sourceViews[instanceID] = nil
+    sourceSemanticIDs[instanceID] = nil
   }
 
   func registerLanding(instanceID: UUID, for semanticID: DashNavigationSemanticID) {
@@ -492,6 +504,45 @@ final class DashNavigationAnchorRegistry {
   /// is leaving, but it must never pull a page back into a stale list slot.
   func liveFrame(for origin: DashNavigationOrigin) -> CGRect? {
     sourceWindowFrame(for: origin.anchorInstanceID)
+  }
+
+  /// The live occurrence a return flight should land on. A covered list can
+  /// re-sort while a detail is up (pinning a domain from its own screen), and
+  /// instance UUIDs ride SwiftUI structural identity — a positional slot keeps
+  /// its UUID while its resource changes — so the captured instance can be
+  /// perfectly live yet mean a different card now. The registered semantic is
+  /// verified first; a moved resource is followed to the ONE occurrence inside
+  /// `container` that shows it today (scoping keeps a Home row for the same
+  /// zone from pulling the flight across pages). A missing occurrence and an
+  /// ambiguous one both return nil — the caller falls back to flow rather than
+  /// guessing which card to fly into.
+  func currentSourceOrigin(
+    for origin: DashNavigationOrigin,
+    within container: UIView
+  ) -> DashNavigationOrigin? {
+    let registered = sourceSemanticIDs[origin.anchorInstanceID]
+    if isLiveSource(origin.anchorInstanceID, within: container),
+      registered == nil || registered == origin.semanticID
+    {
+      return origin
+    }
+    let relocated =
+      sourceSemanticIDs
+      .filter { $0.value == origin.semanticID && $0.key != origin.anchorInstanceID }
+      .map(\.key)
+      .filter { isLiveSource($0, within: container) }
+    guard relocated.count == 1, let instanceID = relocated.first else { return nil }
+    return DashNavigationOrigin(
+      semanticID: origin.semanticID,
+      anchorInstanceID: instanceID,
+      hero: origin.hero)
+  }
+
+  private func isLiveSource(_ instanceID: UUID, within container: UIView) -> Bool {
+    guard let source = sourceViews[instanceID]?.value, source.window != nil else {
+      return false
+    }
+    return source.isDescendant(of: container)
   }
 
   func claim(_ origin: DashNavigationOrigin?) {
@@ -656,11 +707,17 @@ extension EnvironmentValues {
 extension View {
   /// Registers the frame for this exact source occurrence. A semantic resource
   /// ID alone is insufficient when the same resource is visible in two places.
+  /// `semanticID` states what the occurrence currently SHOWS — a positional
+  /// list slot keeps its instance UUID across a re-sort while its resource
+  /// changes, and a return morph must be able to notice that the meaning moved.
   func dashNavigationAnchor(
     instanceID: UUID,
+    semanticID: DashNavigationSemanticID? = nil,
     landing: DashNavigationSemanticID? = nil
   ) -> some View {
-    modifier(DashNavigationAnchorModifier(instanceID: instanceID, landing: landing))
+    modifier(
+      DashNavigationAnchorModifier(
+        instanceID: instanceID, semanticID: semanticID, landing: landing))
   }
 
   /// Publishes this view as a destination-page landing seat: the spot a card
@@ -692,6 +749,7 @@ final class DashNavigationAnchorClaim {
 
 private struct DashNavigationAnchorModifier: ViewModifier {
   let instanceID: UUID
+  var semanticID: DashNavigationSemanticID?
   var landing: DashNavigationSemanticID?
   @Environment(\.dashNavigationAnchorRegistry) private var registry
   @State private var claim = DashNavigationAnchorClaim()
@@ -723,6 +781,7 @@ private struct DashNavigationAnchorModifier: ViewModifier {
             .overlay {
               DashNavigationAnchorProbe(
                 instanceID: instanceID,
+                semanticID: semanticID,
                 landing: landing,
                 registry: registry)
             }
@@ -733,17 +792,22 @@ private struct DashNavigationAnchorModifier: ViewModifier {
 
 private struct DashNavigationAnchorProbe: UIViewRepresentable {
   let instanceID: UUID
+  var semanticID: DashNavigationSemanticID?
   var landing: DashNavigationSemanticID?
   let registry: DashNavigationAnchorRegistry?
 
   func makeUIView(context: Context) -> DashNavigationAnchorProbeView {
     let view = DashNavigationAnchorProbeView()
-    view.configure(instanceID: instanceID, landing: landing, registry: registry)
+    view.configure(
+      instanceID: instanceID, semanticID: semanticID, landing: landing,
+      registry: registry)
     return view
   }
 
   func updateUIView(_ uiView: DashNavigationAnchorProbeView, context: Context) {
-    uiView.configure(instanceID: instanceID, landing: landing, registry: registry)
+    uiView.configure(
+      instanceID: instanceID, semanticID: semanticID, landing: landing,
+      registry: registry)
   }
 
   static func dismantleUIView(_ uiView: DashNavigationAnchorProbeView, coordinator: ()) {
@@ -753,6 +817,7 @@ private struct DashNavigationAnchorProbe: UIViewRepresentable {
 
 private final class DashNavigationAnchorProbeView: UIView {
   private var instanceID: UUID?
+  private var semanticID: DashNavigationSemanticID?
   private var landing: DashNavigationSemanticID?
   private weak var registry: DashNavigationAnchorRegistry?
 
@@ -771,21 +836,25 @@ private final class DashNavigationAnchorProbeView: UIView {
 
   func configure(
     instanceID: UUID,
+    semanticID: DashNavigationSemanticID?,
     landing: DashNavigationSemanticID?,
     registry: DashNavigationAnchorRegistry?
   ) {
-    if self.instanceID != instanceID || self.landing != landing
-      || self.registry !== registry
+    if self.instanceID != instanceID || self.semanticID != semanticID
+      || self.landing != landing || self.registry !== registry
     {
       tearDown()
       self.instanceID = instanceID
+      self.semanticID = semanticID
       self.landing = landing
       self.registry = registry
     }
     // Probe registration runs inside UIKit layout, so a landing seat is
     // resolvable synchronously after the arriving page's first layoutIfNeeded —
-    // before its transition builds a proxy.
-    registry?.registerSourceView(self, for: instanceID)
+    // before its transition builds a proxy. The same pass re-registers a slot
+    // whose resource changed under it, which is what keeps the semantic map
+    // truthful across a covered list's re-sort.
+    registry?.registerSourceView(self, semanticID: semanticID, for: instanceID)
     if let landing {
       registry?.registerLanding(instanceID: instanceID, for: landing)
     }
@@ -799,6 +868,7 @@ private final class DashNavigationAnchorProbeView: UIView {
       }
     }
     instanceID = nil
+    semanticID = nil
     landing = nil
     registry = nil
   }
@@ -1048,6 +1118,10 @@ private struct DashNavigationHeroView: View {
   let detailProgress: CGFloat
   let locale: Locale
   let dynamicTypeSize: DynamicTypeSize
+  /// Read live, never baked into the hero value: the pin can flip while the
+  /// detail is up (its own header action), and the return flight must land
+  /// wearing the marker the grid card already shows.
+  @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
 
   var body: some View {
     content
@@ -1059,13 +1133,16 @@ private struct DashNavigationHeroView: View {
   @ViewBuilder
   private var content: some View {
     switch hero {
-    case .domainCard(let name, let status, let seed, let fillHex, let plan):
+    case .domainCard(let zoneID, let name, let status, let seed, let fillHex, let plan):
       DomainCardFace(
         name: name,
         status: status,
         seed: seed,
         fillHex: fillHex,
         plan: plan,
+        pinMarker: PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID)
+          ? 1 - min(max(detailProgress, 0), 1)
+          : 0,
         fillsContainer: true,
         detailReveal: detailProgress
       )
@@ -1261,9 +1338,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let target: UIViewController
     let style: DashPageTransitionStyle
     let proxy: TransitionProxy?
-    let desiredEntries: [DashNavigationEntry]
-    let revision: UInt64
+    var desiredEntries: [DashNavigationEntry]
+    var revision: UInt64
     let appearanceWasBegun: Bool
+    var isReversed = false
 
     init(
       animator: UIViewPropertyAnimator,
@@ -1317,6 +1395,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private var parentAppearanceTransitionChild: UIViewController?
   private var pendingPresentationReport: DashPagePresentationState?
   private var lastDeliveredPresentationState: DashPagePresentationState?
+  /// Bumped on every `reportPresentationState` so an older MainActor Task
+  /// cannot deliver a superseded transitioning flag after the animator has
+  /// already settled (see the delivery note on that method).
+  private var presentationReportGeneration: UInt64 = 0
 
   override var shouldAutomaticallyForwardAppearanceMethods: Bool { false }
 
@@ -1466,18 +1548,24 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     let state = DashPagePresentationState(
       settledDepth: settledEntries.count,
       isTransitioning: activeTransition != nil)
-    if lastDeliveredPresentationState == state {
-      // Also cancel a queued intermediate report if the compositor returned to
-      // the state SwiftUI already owns before that report could be delivered.
-      pendingPresentationReport = nil
+    if lastDeliveredPresentationState == state,
+      pendingPresentationReport == nil
+    {
       return
     }
-    guard pendingPresentationReport != state else { return }
+    // Generation-token delivery: coalescing on value equality used to cancel
+    // an in-flight "transitioning" report when a fast reverse returned to the
+    // pre-push state, or drop the settling "false" when a newer same-shaped
+    // report replaced `pendingPresentationReport` before the Task ran — either
+    // way SwiftUI could keep `isTransitioning == true` after the animator had
+    // already finished, which permanently hit-muted the shared header.
+    presentationReportGeneration &+= 1
+    let generation = presentationReportGeneration
     pendingPresentationReport = state
     // Reconciliation runs from updateUIViewController. Publish on the next
     // MainActor turn so SwiftUI never receives a state mutation mid-update.
     Task { @MainActor [weak self] in
-      guard let self, self.pendingPresentationReport == state else { return }
+      guard let self, self.presentationReportGeneration == generation else { return }
       self.pendingPresentationReport = nil
       self.lastDeliveredPresentationState = state
       self.onPresentationStateChange(state)
@@ -1500,6 +1588,10 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       discardPendingRequest()
       finishActiveTransitionImmediately()
       installImmediately(request.entries, revision: request.revision)
+      return
+    }
+
+    if reverseActiveTransitionIfPossible(for: request) {
       return
     }
 
@@ -1603,7 +1695,13 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   ) {
     removeLingeringProxyOverlays()
     let targetOwnsDestinationCanvas = !request.entries.isEmpty
-    prepareDestinationCanvasTransition(targetVisible: targetOwnsDestinationCanvas)
+    // Settings' vertical train dissolves the wash on the same animator; flow
+    // and card still snap the plate up before the first attached frame.
+    let fadesCoverWithTransition =
+      requestedStyle.role == .workspace && requestedStyle.isPush
+    prepareDestinationCanvasTransition(
+      targetVisible: targetOwnsDestinationCanvas,
+      fadesCoverWithTransition: fadesCoverWithTransition)
     let isPush = requestedStyle.isPush
     hostContext.interactionLockedEntryID = isPush ? request.entries.last?.id : nil
 
@@ -1624,9 +1722,9 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       source: source.view,
       target: target.view)
     source.view.isUserInteractionEnabled = false
-    // Keep the arriving hosting view alive while DashRoutePageChromeHost gates
-    // its body until the transition settles, so the page is interactive the
-    // instant it lands without click-through routes.
+    // Keep the hosting view alive for Back/Close, while DashRoutePageChromeHost
+    // gates the arriving page body until the transition settles. This makes a
+    // deliberate immediate reversal possible without click-through routes.
     target.view.isUserInteractionEnabled = isPush
     if request.reduceMotion || style.entry == nil {
       anchorRegistry?.discardCapturedVisual(for: request.entries.last?.origin)
@@ -1688,11 +1786,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       appearanceWasBegun: appearanceWasBegun)
     reportPresentationState()
     startTransitionContentTimelineIfNeeded()
-    animator.addCompletion { [weak self, weak animator] _ in
+    animator.addCompletion { [weak self, weak animator] position in
       guard let self, let animator,
         self.activeTransition?.animator === animator
       else { return }
-      self.completeActiveTransition()
+      self.completeActiveTransition(at: position)
     }
     animator.startAnimation()
   }
@@ -1861,6 +1959,43 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       detailProgress: detailProgress,
       locale: root.locale,
       dynamicTypeSize: root.dynamicTypeSize)
+  }
+
+  /// A push immediately followed by its own Back/Close is the one retarget that
+  /// must feel direct. `UIViewPropertyAnimator` reverses from its presentation
+  /// value, so there is no jump back to either endpoint before the page returns.
+  private func reverseActiveTransitionIfPossible(
+    for request: DashPageStackRequest
+  ) -> Bool {
+    guard let transition = activeTransition, transition.style.isPush,
+      request.entries.map(\.id) == settledEntries.map(\.id)
+    else { return false }
+    switch request.mutation?.reason {
+    case .back, .closeToWorkspaceRoot, .popToRoot:
+      break
+    default:
+      return false
+    }
+    guard transition.animator.state == .active, !transition.isReversed else {
+      return false
+    }
+
+    discardPendingRequest()
+    transition.desiredEntries = request.entries
+    transition.revision = request.revision
+    transition.isReversed = true
+    transition.target.view.isUserInteractionEnabled = false
+    transition.source.view.isUserInteractionEnabled = false
+
+    if transition.appearanceWasBegun {
+      // UIKit treats an opposite begin as cancellation of the in-flight
+      // appearance. One final end per child then settles source as appeared
+      // and target as disappeared, without a false didDisappear/didAppear pair.
+      transition.source.beginAppearanceTransition(true, animated: true)
+      transition.target.beginAppearanceTransition(false, animated: true)
+    }
+    transition.animator.isReversed = true
+    return true
   }
 
   private func makeTransitionProxy(
@@ -2130,9 +2265,34 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     case .cardPush(let entry), .cardPop(let entry):
       let isPush = style.isPush
       let landingPage = isPush ? target : source
-      guard entry.origin?.hero != nil,
-        let sourceFrame = transitionFrame(for: entry.origin, liveOnly: !isPush),
-        let landing = resolvedLandingOrigin(for: entry, in: landingPage),
+      // A pop flies home to wherever the source occurrence lives NOW. The list
+      // under the detail can have re-sorted (pinning the domain from its own
+      // screen), leaving the captured instance parked on a slot that paints a
+      // different resource — retarget by semantic identity, and let claims,
+      // endpoint frames, and the per-frame seat tracking all follow the entry.
+      let resolvedEntry: DashNavigationEntry?
+      if isPush {
+        resolvedEntry = entry
+      } else if let origin = entry.origin,
+        let current = anchorRegistry?.currentSourceOrigin(for: origin, within: target)
+      {
+        resolvedEntry =
+          current == origin
+          ? entry
+          : DashNavigationEntry(
+            id: entry.id,
+            destination: entry.destination,
+            presentation: entry.presentation,
+            origin: current,
+            accountID: entry.accountID,
+            ownership: entry.ownership)
+      } else {
+        resolvedEntry = nil
+      }
+      guard let resolvedEntry,
+        resolvedEntry.origin?.hero != nil,
+        let sourceFrame = transitionFrame(for: resolvedEntry.origin, liveOnly: !isPush),
+        let landing = resolvedLandingOrigin(for: resolvedEntry, in: landingPage),
         let landingFrame = anchorFrameInContainer(for: landing, liveOnly: true),
         DashCardMorphRules.isUsableEndpoint(sourceFrame, in: view.bounds),
         DashCardMorphRules.isUsableEndpoint(landingFrame, in: view.bounds)
@@ -2141,7 +2301,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
         // drill uses rather than inventing a third language for the failure.
         return isPush ? .flowPush : .flowPop
       }
-      return style
+      return isPush ? .cardPush(resolvedEntry) : .cardPop(resolvedEntry)
     default:
       return style
     }
@@ -2258,9 +2418,44 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     return snapshot
   }
 
-  private func completeActiveTransition() {
+  private func completeReversedTransition(_ transition: ActiveTransition) {
+    hostContext.interactionLockedEntryID = nil
+    resetTransitionState(transition.source.view)
+    transition.source.view.isUserInteractionEnabled = true
+    transition.target.view.isUserInteractionEnabled = true
+    if transition.appearanceWasBegun {
+      transition.source.endAppearanceTransition()
+      transition.target.endAppearanceTransition()
+    }
+    // Keep the losing page at its animated endpoint until it is out of the
+    // hierarchy. Restoring alpha first can briefly put two complete pages
+    // behind a nearly transparent proxy at the completion boundary.
+    detach(transition.target)
+    resetTransitionState(transition.target.view)
+    releaseAndRemoveAfterHandoff(transition.proxy)
+    visibleController = transition.source
+    settledEntries = transition.desiredEntries
+    settledRevision = transition.revision
+    activeTransition = nil
+    purgeEntryHosts(retaining: Set(settledEntries.map(\.id)))
+    setDestinationCanvasVisible(!settledEntries.isEmpty)
+    reportPresentationState()
+    if isContainerVisible, hostContext.isTabActive {
+      UIAccessibility.post(notification: .screenChanged, argument: transition.source.view)
+    }
+    if let pendingRequest = takePendingRequest() {
+      reconcile(pendingRequest)
+    }
+  }
+
+  private func completeActiveTransition(at position: UIViewAnimatingPosition) {
     guard let transition = activeTransition else { return }
-    stopTransitionContentTimeline(settlingAt: 1)
+    stopTransitionContentTimeline(
+      settlingAt: transition.isReversed || position == .start ? 0 : 1)
+    if transition.isReversed || position == .start {
+      completeReversedTransition(transition)
+      return
+    }
     hostContext.interactionLockedEntryID = nil
     resetTransitionState(transition.target.view)
     transition.source.view.isUserInteractionEnabled = true
@@ -2294,11 +2489,11 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   private func finishActiveTransitionImmediately() {
     removeLingeringProxyOverlays()
     guard let transition = activeTransition else { return }
-    stopTransitionContentTimeline(settlingAt: 1)
+    stopTransitionContentTimeline(settlingAt: transition.isReversed ? 0 : 1)
     hostContext.interactionLockedEntryID = nil
     transition.animator.stopAnimation(true)
-    let winner = transition.target
-    let loser = transition.source
+    let winner = transition.isReversed ? transition.source : transition.target
+    let loser = transition.isReversed ? transition.target : transition.source
     resetTransitionState(winner.view)
     transition.source.view.isUserInteractionEnabled = true
     transition.target.view.isUserInteractionEnabled = true
@@ -2366,11 +2561,15 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     destinationCanvasPlate.isHidden = !visible
   }
 
-  private func prepareDestinationCanvasTransition(targetVisible: Bool) {
+  private func prepareDestinationCanvasTransition(
+    targetVisible: Bool,
+    fadesCoverWithTransition: Bool
+  ) {
     let sourceVisible = !settledEntries.isEmpty
     let preparation = DashDestinationCanvasRules.preparation(
       sourceShowsDestinationCanvas: sourceVisible,
-      targetShowsDestinationCanvas: targetVisible)
+      targetShowsDestinationCanvas: targetVisible,
+      fadesCoverWithTransition: fadesCoverWithTransition)
     destinationCanvasPlate.layer.removeAllAnimations()
     destinationCanvasPlate.isHidden = preparation.isHidden
     destinationCanvasPlate.alpha = preparation.alpha
@@ -3682,8 +3881,14 @@ enum DashPageChromeAssetRules {
   }
 }
 
-/// The opaque destination plate must already cover the workspace wash before
-/// a root push exposes its first attached page frame.
+/// The opaque destination plate covers the workspace wash under pushed pages.
+///
+/// Flow and card root pushes still snap the plate to full opacity before the
+/// first attached frame — otherwise the wash flashes in the gap between the
+/// two pages. The Settings train is the exception: it mounts the plate at
+/// zero and lets the route animator fade it in, so the glow dissolves on the
+/// same timeline instead of cutting out under a vertical handoff. Dismiss
+/// always starts covered so the animator can dissolve the plate away.
 enum DashDestinationCanvasRules {
   struct Preparation: Equatable {
     let isHidden: Bool
@@ -3692,10 +3897,18 @@ enum DashDestinationCanvasRules {
 
   static func preparation(
     sourceShowsDestinationCanvas: Bool,
-    targetShowsDestinationCanvas: Bool
+    targetShowsDestinationCanvas: Bool,
+    fadesCoverWithTransition: Bool = false
   ) -> Preparation {
     let shows = sourceShowsDestinationCanvas || targetShowsDestinationCanvas
-    return Preparation(isHidden: !shows, alpha: shows ? 1 : 0)
+    guard shows else {
+      return Preparation(isHidden: true, alpha: 0)
+    }
+    // A workspace present from root starts uncovered; every other case that
+    // needs the plate is already covered (or must be, before the first frame).
+    let startsCovered =
+      sourceShowsDestinationCanvas || !fadesCoverWithTransition
+    return Preparation(isHidden: false, alpha: startsCovered ? 1 : 0)
   }
 }
 
@@ -4086,7 +4299,9 @@ struct DashNavigationSource<Content: View>: View {
         .environment(\.dashNavigationEmbeddedAnchorID, anchorInstanceID)
     } else {
       content(navigate)
-        .dashNavigationAnchor(instanceID: anchorInstanceID)
+        .dashNavigationAnchor(
+          instanceID: anchorInstanceID,
+          semanticID: destination.dashNavigationSemanticID)
     }
   }
 

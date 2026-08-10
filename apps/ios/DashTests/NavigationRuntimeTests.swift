@@ -205,6 +205,31 @@ import UIKit
   #expect(rootAtRest.alpha == 0)
 }
 
+@Test func workspacePresentFadesTheDestinationCanvasOverTheWash() {
+  let workspacePresent = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: false,
+    targetShowsDestinationCanvas: true,
+    fadesCoverWithTransition: true)
+  #expect(!workspacePresent.isHidden)
+  #expect(workspacePresent.alpha == 0)
+
+  // Dismiss still starts covered so the animator can dissolve the plate away.
+  let workspaceDismiss = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: true,
+    targetShowsDestinationCanvas: false,
+    fadesCoverWithTransition: false)
+  #expect(!workspaceDismiss.isHidden)
+  #expect(workspaceDismiss.alpha == 1)
+
+  // A fade flag must not uncover a plate that is already covering a detail.
+  let detailToWorkspace = DashDestinationCanvasRules.preparation(
+    sourceShowsDestinationCanvas: true,
+    targetShowsDestinationCanvas: true,
+    fadesCoverWithTransition: true)
+  #expect(!detailToWorkspace.isHidden)
+  #expect(detailToWorkspace.alpha == 1)
+}
+
 @Test func onlyACardSourceEarnsTheMorphWhileEveryOtherDrillHandsOff() {
   #expect(DashPageTransitionRules.role(presentation: .detail, hasHero: false) == .flow)
   #expect(DashPageTransitionRules.role(presentation: .detail, hasHero: true) == .card)
@@ -249,6 +274,7 @@ import UIKit
       anchorInstanceID: UUID(),
       sourceFrame: CGRect(x: 16, y: 240, width: 176, height: 128),
       hero: .domainCard(
+        zoneID: "zone-2",
         name: "example.com",
         status: "Active",
         seed: "example.com",
@@ -263,6 +289,7 @@ import UIKit
 
 @Test func navigationOriginCarriesSemanticCardContentWithoutRequiringPixels() {
   let hero = DashNavigationHero.domainCard(
+    zoneID: "zone-1",
     name: "example.com",
     status: "Active",
     seed: "example.com",
@@ -446,6 +473,7 @@ import UIKit
       anchorInstanceID: UUID(),
       sourceFrame: CGRect(x: 16, y: 240, width: 176, height: 128),
       hero: .domainCard(
+        zoneID: "zone-1",
         name: "example.com",
         status: "Active",
         seed: "example.com",

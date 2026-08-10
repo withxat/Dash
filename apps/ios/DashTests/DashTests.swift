@@ -3893,6 +3893,55 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(registry.frame(for: staleOrigin) == nil)
 }
 
+@MainActor
+@Test func navigationAnchorRegistryFollowsAResortedSourceOccurrence() throws {
+  let registry = DashNavigationAnchorRegistry()
+  let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 800))
+  let container = UIView(frame: window.bounds)
+  window.addSubview(container)
+
+  let zoneSemantic = Destination.zone("zone-1").dashNavigationSemanticID
+  let neighbourSemantic = Destination.zone("zone-2").dashNavigationSemanticID
+  let originalID = UUID()
+  let movedID = UUID()
+  let originalSlot = UIView(frame: CGRect(x: 16, y: 400, width: 176, height: 128))
+  let movedSlot = UIView(frame: CGRect(x: 16, y: 120, width: 176, height: 128))
+  container.addSubview(originalSlot)
+  container.addSubview(movedSlot)
+  registry.registerSourceView(originalSlot, semanticID: zoneSemantic, for: originalID)
+  registry.registerSourceView(movedSlot, semanticID: neighbourSemantic, for: movedID)
+
+  let origin = DashNavigationOrigin(
+    semanticID: zoneSemantic,
+    anchorInstanceID: originalID)
+
+  // The slot still shows the pushed zone: the pop keeps the exact occurrence.
+  #expect(
+    registry.currentSourceOrigin(for: origin, within: container)?
+      .anchorInstanceID == originalID)
+
+  // The covered grid re-sorted (a pin from zone detail): slot UUIDs are
+  // positional, so the captured instance now paints ANOTHER zone while the
+  // pushed zone's card lives in a different slot. The flight must follow it.
+  registry.registerSourceView(originalSlot, semanticID: neighbourSemantic, for: originalID)
+  registry.registerSourceView(movedSlot, semanticID: zoneSemantic, for: movedID)
+  let retargeted = registry.currentSourceOrigin(for: origin, within: container)
+  #expect(retargeted?.anchorInstanceID == movedID)
+  #expect(retargeted?.semanticID == zoneSemantic)
+
+  // No live occurrence shows the zone any more (unpinned below the fold, a
+  // lazy slot never mounted): no seat, and the caller falls back to flow.
+  registry.registerSourceView(movedSlot, semanticID: neighbourSemantic, for: movedID)
+  #expect(registry.currentSourceOrigin(for: origin, within: container) == nil)
+
+  // An occurrence outside the revealed page (a Home row for the same zone)
+  // must never pull the flight across pages.
+  let elsewhere = UIView(frame: CGRect(x: 16, y: 0, width: 176, height: 128))
+  window.addSubview(elsewhere)
+  registry.registerSourceView(elsewhere, semanticID: zoneSemantic, for: UUID())
+  #expect(registry.currentSourceOrigin(for: origin, within: container) == nil)
+}
+
 @Test func domainCardSeatMorphRecognizesGridAspectAndLerpsRect() {
   let grid = CGRect(x: 20, y: 100, width: 160, height: 128)  // 5:4
   let hero = CGRect(x: 16, y: 120, width: 360, height: 216)  // 5:3

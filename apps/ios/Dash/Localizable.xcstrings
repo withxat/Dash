@@ -9895,6 +9895,17 @@
         }
       }
     },
+    "Pinned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已固定"
+          }
+        }
+      }
+    },
     "Platform" : {
       "extractionState" : "manual",
       "localizations" : {

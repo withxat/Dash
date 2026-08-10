@@ -139,6 +139,7 @@ struct ZonesView: View {
     let fillHex = cardFillHex(for: zone)
     let status = (zone.status ?? "unknown").capitalized
     let hero = DashNavigationHero.domainCard(
+      zoneID: zone.id,
       name: zone.name,
       status: status,
       seed: zone.name,
@@ -149,7 +150,8 @@ struct ZonesView: View {
         name: zone.name,
         status: status,
         seed: zone.name,
-        fillHex: fillHex
+        fillHex: fillHex,
+        pinMarker: PinnedZones.isPinned(pinnedZoneData, zoneID: zone.id) ? 1 : 0
       )
     }
   }
@@ -1210,6 +1212,11 @@ struct DomainCardFace: View {
   let fillHex: UInt32
   var plan: String? = nil
   var meta: String? = nil
+  /// Presence of the pinned marker, 0…1. The grid states the fact (1 when the
+  /// zone is pinned); the flight hero fades it inversely to `detailReveal`
+  /// because the marker is grid-pose vocabulary — the detail card leaves pin
+  /// state to its header action, the way `tileExtras` is detail-pose only.
+  var pinMarker: CGFloat = 0
   var aspectRatio: CGFloat = DomainCardFace.gridAspectRatio
   /// Transition hosts own the animated bounds. In that context the card fills
   /// every intermediate rect and SwiftUI reflows its contents inside it.
@@ -1227,6 +1234,7 @@ struct DomainCardFace: View {
     var parts = [name, DashL10n.ui(status)]
     if let plan { parts.append(DashL10n.ui(plan)) }
     if let meta { parts.append(meta) }
+    if pinMarker > 0.5 { parts.append(DashL10n.string("Pinned")) }
     return parts.joined(separator: ", ")
   }
 
@@ -1244,6 +1252,13 @@ struct DomainCardFace: View {
       GradientAvatar(seed: seed, size: avatarSize, pattern: .dither, contentScale: 1.5)
         .accessibilityHidden(true)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topTrailing) {
+          if pinMarker > 0 {
+            SolarIcon(asset: SolarAsset.pinFilled, size: 16, color: secondaryForeground)
+              .opacity(min(max(pinMarker, 0), 1))
+              .accessibilityHidden(true)
+          }
+        }
       Spacer(minLength: 12)
       Text(name)
         .dashTextStyle(.bodySemibold)

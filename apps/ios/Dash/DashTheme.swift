@@ -340,14 +340,17 @@ enum DashTheme {
       static let flowExitDuration: TimeInterval = 0.3
       /// Family's wallet-card pattern: geometry settles first, with destination
       /// chrome resolving during the latter half. Collapse is a firmer inverse.
-      static let cardEnterDuration: TimeInterval = 0.46
-      static let cardExitDuration: TimeInterval = 0.38
-      /// Underdamped so the expanding card overgrows its seat (~5%, one clean
+      /// Unhurried on purpose (2026-08-07): the flight reads better given a
+      /// beat more air, and the distance rule stretches from this same base.
+      static let cardEnterDuration: TimeInterval = 0.52
+      static let cardExitDuration: TimeInterval = 0.42
+      /// Underdamped so the expanding card overgrows its seat (~4%, one clean
       /// bounce; the second oscillation is invisible) and settles back — the
       /// overshoot only reaches the hero frame (the timeline rides an
-      /// unclamped position spring for exactly this). Tuned by eye between
-      /// 0.72 (read as stiff) and 0.62 (read as rubbery).
-      static let cardEnterDampingRatio: CGFloat = 0.68
+      /// unclamped position spring for exactly this). First tuned by eye
+      /// between 0.72 (read as stiff) and 0.62 (read as rubbery), then pulled
+      /// to the stiff end on request: the bounce stays, smaller.
+      static let cardEnterDampingRatio: CGFloat = 0.72
       /// Collapse never bounces: a card returning to its grid seat with an
       /// overshoot would dip INTO the grid before settling.
       static let cardExitDampingRatio: CGFloat = 1
