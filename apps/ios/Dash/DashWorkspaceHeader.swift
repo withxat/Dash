@@ -421,6 +421,12 @@ struct DashWorkspaceHeaderBar: View {
   /// removing view still takes part in layout, so an outgoing control seated
   /// next to its replacement would shove the arriving one sideways for the
   /// length of the cross-fade. Overlaid on a reserved slot they change in place.
+  ///
+  /// `dashSeatHandoff` must ride the same view as `.id(slotKind)` — that is the
+  /// identity SwiftUI actually inserts/removes. Putting the transition only
+  /// inside `leadingControl` left the remount on the default opacity path, so a
+  /// ghost Close/avatar kept hit-testing after the spring settled (and the
+  /// clear slot reservation under it swallowed whatever the ghost muted).
   private func leadingSlot(_ shown: DashWorkspaceHeaderState) -> some View {
     ZStack(alignment: .leading) {
       slotReservation
@@ -434,6 +440,7 @@ struct DashWorkspaceHeaderBar: View {
         // or a plain drill keeps one circle; avatar → Close and Back → Close
         // still remount because their `slotKind` differs.
         .id(shown.leading.slotKind)
+        .transition(leadingTransition)
         .zIndex(seatGeneration)
     }
   }
@@ -444,7 +451,12 @@ struct DashWorkspaceHeaderBar: View {
     Color.clear
       .frame(
         width: DashPageChromeMetrics.controlSize,
-        height: DashPageChromeMetrics.controlSize)
+        height: DashPageChromeMetrics.controlSize
+      )
+      // A clear layout prop must never compete for taps. When a seat handoff
+      // briefly mutes its occupant, an interactive reservation would swallow
+      // the hit with no action — the "button looks fine but does nothing" pose.
+      .allowsHitTesting(false)
   }
 
   /// Every occupant crossfades in the same seat. The avatar used to leave
@@ -458,13 +470,10 @@ struct DashWorkspaceHeaderBar: View {
       EmptyView()
     case .profile:
       profileControl
-        .transition(leadingTransition)
     case .dismissal(let dismissal):
       dismissalControl(dismissal)
-        .transition(leadingTransition)
     case .action(let descriptor):
       DashPageActionControl(descriptor: descriptor)
-        .transition(leadingTransition)
     case .watchtowerEditorCancel:
       DashToolbarIconButton(
         asset: SolarAsset.editClose,
@@ -472,7 +481,6 @@ struct DashWorkspaceHeaderBar: View {
         action: onCancelEditing
       )
       .accessibilityIdentifier("watchtower-customize-cancel")
-      .transition(.dashSeatHandoff)
     }
   }
 
@@ -539,7 +547,8 @@ struct DashWorkspaceHeaderBar: View {
       trailingControls(shown)
         // Page actions change inside a page too (a selection, a Save becoming
         // enabled). Keying the group to the page keeps those per-button, and
-        // reserves the cross-fade for an actual page change.
+        // reserves the cross-fade for an actual page change. Transition sits
+        // with `.id` for the same reason as the leading seat.
         .id(
           DashWorkspaceHeaderSlotID(
             entryID: shown.entryID,

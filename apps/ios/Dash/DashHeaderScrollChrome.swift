@@ -25,10 +25,11 @@ struct HeaderProfileButton: View {
     model.activeAccount?.name ?? model.profileTitle
   }
 
-  /// Circular glass matching the custom page controls. Without
-  /// `buttonBorderShape(.circle)`, iOS 26 paints a square glass plate around
-  /// the 44×44 avatar bounds. The negative padding pulls the glass in so the
-  /// ring hugs the avatar instead of leaving a gap around it.
+  /// Circular glass matching `DashToolbarIconButton` — the Back/Close that
+  /// trades this seat. Do NOT use `.buttonStyle(.glass)` here: that style and
+  /// the toolbar's explicit `glassEffect` are different compositors, and a
+  /// matched-geometry handoff between them can leave an interactive glass
+  /// plate that keeps swallowing taps after the spring has settled.
   var body: some View {
     let email = model.user?.email ?? ""
     Group {
@@ -38,14 +39,10 @@ struct HeaderProfileButton: View {
         } label: {
           HeaderProfileAvatar(email: email)
             .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-            // The tap target is the drawn 44pt circle, declared on the label
-            // itself like `DashToolbarIconButton` does — never derived from
-            // the negative-padded 30pt layout box below.
             .contentShape(Circle())
-            .padding(-7)
+            .glassEffect(.regular.interactive(), in: .circle)
         }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        .buttonStyle(DashPressButtonStyle())
       } else {
         Button(action: performTap) {
           HeaderProfileAvatar(email: email)
@@ -53,12 +50,6 @@ struct HeaderProfileButton: View {
         .buttonStyle(DashPressButtonStyle())
       }
     }
-    // Lock the layout back to the 44pt slot the inbox and every page control
-    // occupy. The negative padding above shrinks the BOX to 30pt while the
-    // circle still draws at 44, so a leading-aligned avatar and a leading-
-    // aligned Back put their circles 7pt apart — invisible while they lived in
-    // different layers, a visible jump now that they share one seat. It also
-    // keeps the identity crossfade on the circle's own rect.
     .frame(
       width: AvatarHeaderMetrics.barSize,
       height: AvatarHeaderMetrics.barSize
@@ -157,14 +148,13 @@ struct HeaderInboxButton: View {
       } label: {
         SolarIcon(asset: SolarAsset.inbox, size: 24, color: DashTheme.strong)
           .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
-          // Without this the label's hit region is the 24pt glyph — a `.frame`
-          // is layout only. Declare the drawn 44pt circle, same as the avatar
-          // and `DashToolbarIconButton`.
+          // Same explicit plate as `DashToolbarIconButton` / the avatar — not
+          // `.buttonStyle(.glass)`, which morphs into a dead hit target when
+          // this seat trades with an explicit `glassEffect` sibling.
           .contentShape(Circle())
-          .padding(-7)
+          .glassEffect(.regular.interactive(), in: .circle)
       }
-      .buttonStyle(.glass)
-      .buttonBorderShape(.circle)
+      .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel(accessibilityLabel)
     } else {
       Button(action: performTap) {

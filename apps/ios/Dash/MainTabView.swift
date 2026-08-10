@@ -136,6 +136,15 @@ struct MainTabView: View {
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
   @State private var routeAfterAccountSwitch: DashRoute?
   @State private var pagePresentationStates: [AppTab: DashPagePresentationState] = [:]
+  /// Dock / header displacement mirrors — written only inside an explicit
+  /// `withAnimation`. The live `hidesDock` / `headerIsDisplaced` values arrive
+  /// through preference relays and UIKit presentation reports that carry no
+  /// usable transaction, and both `.dashTray` hosts end with
+  /// `.transaction { $0.disablesAnimations = true }`, which kills every
+  /// `.animation(_:value:)` on this tree. Same survival rule as
+  /// `DashWorkspaceHeaderBar.displayed` and the toast dismiss write.
+  @State private var displayedHidesDock: Bool?
+  @State private var displayedHeaderIsDisplaced: Bool?
 
   init() {}
 
@@ -468,8 +477,10 @@ struct MainTabView: View {
       sharedHeaderOverlay
 
       // Trays and pushed routes displace the bar; tab roots keep it mounted.
+      // Mount off the mirrored flag so the transition rides the write-site
+      // `withAnimation` below — not a modifier-attached `.animation`.
       ZStack(alignment: .bottom) {
-        if !hidesDock {
+        if !(displayedHidesDock ?? hidesDock) {
           DashFloatingTabBar(
             selection: selection,
             watchtowerUnreadCount: model.watchtowerUnreadAlertCount ?? 0,
@@ -491,8 +502,7 @@ struct MainTabView: View {
           .transition(tabBarTransition)
         }
       }
-      .animation(tabBarVisibilityAnimation, value: hidesDock)
-      .allowsHitTesting(!hidesDock && outgoingSelection == nil)
+      .allowsHitTesting(!(displayedHidesDock ?? hidesDock) && outgoingSelection == nil)
       .accessibilityHidden(outgoingSelection != nil)
     }
     // The workspace canvas and its ONE top light field stay behind the flow.
@@ -512,6 +522,27 @@ struct MainTabView: View {
         }
       }
       .ignoresSafeArea()
+    }
+    .onChange(of: hidesDock, initial: true) { _, next in
+      guard let shown = displayedHidesDock else {
+        // First frame: show, don't animate an arrival that never happened.
+        displayedHidesDock = next
+        return
+      }
+      guard shown != next else { return }
+      withAnimation(tabBarVisibilityAnimation) {
+        displayedHidesDock = next
+      }
+    }
+    .onChange(of: headerIsDisplaced, initial: true) { _, next in
+      guard let shown = displayedHeaderIsDisplaced else {
+        displayedHeaderIsDisplaced = next
+        return
+      }
+      guard shown != next else { return }
+      withAnimation(tabBarVisibilityAnimation) {
+        displayedHeaderIsDisplaced = next
+      }
     }
     // No toast host here either: the canvas copy and the tray cover's copy
     // were the two that doubled. `dashToastLayer` owns the only one.
@@ -581,22 +612,27 @@ struct MainTabView: View {
   private var sharedHeaderOverlay: some View {
     // Removed, not faded to zero: Liquid Glass is composited outside a normal
     // opacity group on iOS 26, so an opacity-zero control can still paint over
-    // the presentation that displaced it.
+    // the presentation that displaced it. The mount rides the mirrored
+    // `displayedHeaderIsDisplaced` write — ambient `.animation(_:value:)` is
+    // force-disabled by the tray hosts above this tree.
     ZStack {
-      if !headerIsDisplaced {
+      if !(displayedHeaderIsDisplaced ?? headerIsDisplaced) {
         headerBar
       }
     }
-    // A covering presentation does not carry a SwiftUI transaction, so the
-    // shared layer supplies that fade. Tab switches and editor enter/exit
-    // already originate in explicit settle/morph transactions.
-    .animation(tabBarVisibilityAnimation, value: headerIsDisplaced)
-    // Selection changes which navigator the slots read; keep that handoff
-    // independent from displacement.
-    .animation(tabBarVisibilityAnimation, value: selection)
+    // The bar stays LIVE through page transitions on purpose: tapping Close
+    // or Back mid-push must reverse the in-flight animator. Ghost occupants
+    // cannot steal those taps — `dashSeatHandoff` mutes a control on its way
+    // out, and the arriving occupant stacks above it. Tab hand-offs still
+    // gate (slots re-seat to another navigator). Displacement also gates:
+    // the whole bar's removal transition is plain opacity, and Liquid Glass
+    // can keep an interactive plate alive after the SwiftUI branch is gone.
     .allowsHitTesting(
-      outgoingSelection == nil && !activePagePresentationState.isTransitioning
+      outgoingSelection == nil
+        && !(displayedHeaderIsDisplaced ?? headerIsDisplaced)
     )
+    // Accessibility follows the live flag immediately; the visual mount rides
+    // `displayedHeaderIsDisplaced` so VoiceOver never lands on a fading ghost.
     .accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)
   }
 
@@ -625,8 +661,9 @@ struct MainTabView: View {
     .transition(.opacity)
   }
 
-  /// The floating bar rides in on first appearance without animation and slides
-  /// on later navigation changes — SwiftUI only animates the value that flips.
+  /// Pace for dock / header displacement. Applied at the mirror write site —
+  /// not via `.animation(_:value:)` — so it survives the tray hosts' animation
+  /// rewriter. First paint seeds the mirrors without this spring.
   private var tabBarVisibilityAnimation: Animation {
     reduceMotion
       ? .easeOut(duration: DashTheme.Motion.Page.reducedDuration)
@@ -732,25 +769,7 @@ struct DashWorkspaceTopWash: View, @MainActor Animatable {
   }
 
   private var washField: some View {
-    ZStack {
-      LinearGradient(
-        stops: [
-          .init(color: color.opacity(0.34), location: 0),
-          .init(color: color.opacity(0.2), location: 0.42),
-          .init(color: color.opacity(0), location: 1),
-        ],
-        startPoint: .top,
-        endPoint: .bottom
-      )
-      RadialGradient(
-        colors: [color.opacity(0.32), color.opacity(0)],
-        center: .top,
-        startRadius: 0,
-        endRadius: 290
-      )
-    }
-    .frame(height: depth)
-    .frame(maxWidth: .infinity)
+    DashWorkspaceGlowField(color: color, depth: depth)
   }
 
   @ViewBuilder
@@ -772,6 +791,43 @@ struct DashWorkspaceTopWash: View, @MainActor Animatable {
           .offset(y: -DashWorkspaceWashRules.lift(for: scrollDistance))
       }
     }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+/// The shared pigment field behind both the workspace and its Settings preview.
+/// Keeping the two gradients here means a Glow card is a crop of the same light
+/// language as Home, not a second swatch treatment that can drift from it.
+@MainActor
+struct DashWorkspaceGlowField: View {
+  let color: Color
+  var depth = DashWorkspaceWashRules.depth
+
+  private var radialRadius: CGFloat {
+    depth * (290 / DashWorkspaceWashRules.depth)
+  }
+
+  var body: some View {
+    ZStack {
+      LinearGradient(
+        stops: [
+          .init(color: color.opacity(0.34), location: 0),
+          .init(color: color.opacity(0.2), location: 0.42),
+          .init(color: color.opacity(0), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+      )
+      RadialGradient(
+        colors: [color.opacity(0.32), color.opacity(0)],
+        center: .top,
+        startRadius: 0,
+        endRadius: radialRadius
+      )
+    }
+    .frame(height: depth)
+    .frame(maxWidth: .infinity)
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }

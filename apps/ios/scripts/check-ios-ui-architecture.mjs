@@ -380,6 +380,17 @@ if (!sharedHeader || !headerBarSlot) {
   if (/\.opacity\(\s*headerIsDisplaced/.test(sharedHeader)) {
     issues.push("A displaced shared header must be removed, not faded to zero opacity.");
   }
+  // While the bar is fading out of a tray, its removal transition is plain
+  // opacity — mute hits off the mirrored displacement flag or a glass plate
+  // can keep eating taps meant for the tray's own ✕.
+  if (
+    !sharedHeader.includes("displayedHeaderIsDisplaced") ||
+    !sharedHeader.includes("allowsHitTesting(")
+  ) {
+    issues.push(
+      "sharedHeaderOverlay must hit-mute off displayedHeaderIsDisplaced while the bar is displaced.",
+    );
+  }
 }
 
 const headerBar = declarationBody(
@@ -430,6 +441,29 @@ if (!headerBar) {
     }
   }
 
+  // Seat handoff hit-mute must ride the same view as `.id(slotKind)`. An inner
+  // transition leaves the remount on the default opacity path, and a clear
+  // slot reservation that still hit-tests swallows the dead taps.
+  const leadingSlot = declarationBody(headerBar, "private func leadingSlot");
+  if (!leadingSlot) {
+    issues.push("Could not locate DashWorkspaceHeaderBar.leadingSlot.");
+  } else if (!leadingSlot.includes(".transition(leadingTransition)")) {
+    issues.push(
+      "leadingSlot must apply leadingTransition on the same view as .id(slotKind).",
+    );
+  }
+  const slotReservation = declarationBody(
+    headerBar,
+    "private var slotReservation: some View",
+  );
+  if (!slotReservation) {
+    issues.push("Could not locate DashWorkspaceHeaderBar.slotReservation.");
+  } else if (!slotReservation.includes(".allowsHitTesting(false)")) {
+    issues.push(
+      "slotReservation must set allowsHitTesting(false) so a muted occupant cannot fall through to a dead clear plate.",
+    );
+  }
+
   // Every workspace page publishes its slots instead of painting them.
   for (const token of [
     'DestinationNavigator(chromeHosting: .workspace)',
@@ -469,10 +503,10 @@ if (!chromeInset) {
 }
 
 // Every occupant of the shared header's two seats must lay out at the same
-// 44pt slot. The glass ring on the avatar and the inbox is pulled in with a
-// negative padding, which shrinks the layout BOX while the circle still draws
-// at full size — leading-aligned against a 44pt Back that puts the two circles
-// 7pt apart, which is a visible jump now that they share one seat.
+// 44pt slot and paint glass the same way Back/Close do. `.buttonStyle(.glass)`
+// is a different compositor from the toolbar's explicit `glassEffect`; a seat
+// handoff between them can leave an interactive plate that eats taps after
+// the morph has settled.
 for (const [name, source] of [
   ["HeaderProfileButton", headerChrome],
   ["HeaderInboxButton", headerChrome],
@@ -482,10 +516,16 @@ for (const [name, source] of [
     issues.push(`Could not locate ${name} for header slot validation.`);
     continue;
   }
-  // Two frames, not one: the inner frame sizes the glyph the negative padding
-  // then pulls the glass in around, and a second one has to put the SLOT back
-  // at 44pt afterwards. Counting is what discriminates — a check that merely
-  // looks for the token is satisfied by the inner frame and can never fail.
+  if (control.includes(".buttonStyle(.glass)")) {
+    issues.push(
+      `${name} must use explicit glassEffect(.regular.interactive(), in: .circle) like DashToolbarIconButton — not .buttonStyle(.glass) — so a seat morph cannot leave a dead hit target.`,
+    );
+  }
+  if (!control.includes("AvatarHeaderMetrics.barSize")) {
+    issues.push(`${name} must lock its layout to AvatarHeaderMetrics.barSize.`);
+  }
+  // Legacy: if a control still pulls glass in with negative padding, it owes
+  // a second frame that restores the 44pt slot.
   const slotFrames = (
     control.match(
       /\.frame\(\s*width:\s*AvatarHeaderMetrics\.barSize,\s*height:\s*AvatarHeaderMetrics\.barSize\s*\)/g,
