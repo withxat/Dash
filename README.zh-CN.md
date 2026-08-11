@@ -31,13 +31,28 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 
 ## 目录
 
-| 路径 | 用途 |
-| --- | --- |
-| `apps/ios` | iOS 17+ SwiftUI App、Xcode 工程、单元测试和 UI 测试 |
-| `packages/cloudflare-api` | 无第三方依赖的 Swift OAuth 与 Cloudflare REST/GraphQL 客户端 |
-| `packages/SwiftGlobeKit` | 原生 SwiftUI + Metal 点阵地球组件库 |
-| `apps/web` | 落地页 + Hono 边缘应用（`dash-relay`），域名 `https://dash.xat.sh` |
-| `packages/ui` | 从原 workspace 保留、未被 App 使用的 Web 组件库 |
+```text
+apps/
+  ios/                   原生 iPhone App（SwiftUI，iOS 17+）
+    Dash/                主 App target
+    DashShare/           分享扩展（上传到 R2）
+    DashWidgets/         Account / Domain Metrics 小组件
+    DashFileProvider/    Files 里的 R2 挂载
+    DashTests/           单元测试
+    DashUITests/         UI 测试
+  web/                   落地页 + Hono 边缘应用（`dash-relay`，dash.xat.sh）
+packages/
+  cloudflare-api/        OAuth + Cloudflare REST/GraphQL 客户端（无第三方依赖）
+  gradient-avatars/      端上确定性渐变 / 抖动头像
+  SwiftDitherKit/        抖动风格 SwiftUI 图表与按住扫读交互
+  SwiftGlobeKit/         SwiftUI + Metal 点阵地球（分析用）
+  BlossomColorPicker/    引入的 SwiftUI 取色器
+  legal/                 隐私政策与使用条款（与站点共用同一份源）
+  ui/                    原 workspace 留下、App 未使用的 Web 组件库
+docs/                    App 图标等公开文档资源
+```
+
+iOS App 链接的本地 Swift 包是 `cloudflare-api`、`gradient-avatars`、`SwiftDitherKit`、`SwiftGlobeKit`、`BlossomColorPicker`。`legal` 是 App 内与 `dash.xat.sh` 法律页的同一份源。
 
 ## 环境要求
 

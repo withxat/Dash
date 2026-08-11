@@ -29,15 +29,30 @@ Shell around those features: Home launcher, Resources catalog, Watchtower traffi
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
-## Workspace
+## Repository layout
 
-| Path | Purpose |
-| --- | --- |
-| `apps/ios` | iOS 17+ SwiftUI app, Xcode project, unit tests, and UI tests |
-| `packages/cloudflare-api` | Dependency-free Swift Package for OAuth and Cloudflare REST/GraphQL APIs |
-| `packages/SwiftGlobeKit` | Native SwiftUI + Metal dotted-globe package |
-| `apps/web` | Landing page + Hono edge app (`dash-relay`) at `https://dash.xat.sh` |
-| `packages/ui` | Unused web component library retained from the original workspace |
+```text
+apps/
+  ios/                   Native iPhone app (SwiftUI, iOS 17+)
+    Dash/                Main app target
+    DashShare/           Share extension (upload to R2)
+    DashWidgets/         Account / Domain Metrics widgets
+    DashFileProvider/    Files app R2 mount
+    DashTests/           Unit tests
+    DashUITests/         UI tests
+  web/                   Landing + Hono edge app (`dash-relay` at dash.xat.sh)
+packages/
+  cloudflare-api/        OAuth + Cloudflare REST/GraphQL client (no third-party deps)
+  gradient-avatars/      Deterministic on-device gradient / dither avatars
+  SwiftDitherKit/        Dithered SwiftUI charts and hold-to-scrub interaction
+  SwiftGlobeKit/         SwiftUI + Metal dotted globe for analytics
+  BlossomColorPicker/    Vendored SwiftUI color picker
+  legal/                 Privacy Policy and Terms of Use (shared with the site)
+  ui/                    Unused web component library from the original workspace
+docs/                    App icon and other public doc assets
+```
+
+`cloudflare-api`, `gradient-avatars`, `SwiftDitherKit`, `SwiftGlobeKit`, and `BlossomColorPicker` are the local Swift packages the iOS app links. `legal` is the single source for in-app and `dash.xat.sh` legal pages.
 
 ## Requirements
 
