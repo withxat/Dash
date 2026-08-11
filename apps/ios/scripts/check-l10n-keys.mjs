@@ -230,12 +230,14 @@ function translationPlaceholderIssue(sourceKey, translatedValue) {
 
 function auditCatalogIntegrity(catalog) {
   const emptyKeys = [];
+  const staleKeys = [];
   const positionalSourceKeys = [];
   const missingTranslations = new Map();
   const placeholderMismatches = [];
 
   for (const [key, entry] of Object.entries(catalog)) {
     if (!key) emptyKeys.push(key);
+    if (entry.extractionState === "stale") staleKeys.push(key);
     if (POSITIONAL_SOURCE_PLACEHOLDER.test(key)) {
       positionalSourceKeys.push(key);
     }
@@ -279,6 +281,7 @@ function auditCatalogIntegrity(catalog) {
   }
 
   positionalSourceKeys.sort();
+  staleKeys.sort();
   placeholderMismatches.sort((left, right) => {
     const leftID = `${left.key}\0${left.locale}\0${left.path}`;
     const rightID = `${right.key}\0${right.locale}\0${right.path}`;
@@ -289,6 +292,7 @@ function auditCatalogIntegrity(catalog) {
     missingTranslations,
     placeholderMismatches,
     positionalSourceKeys,
+    staleKeys,
   };
 }
 
@@ -638,6 +642,11 @@ function runSelfTests() {
   ]);
   assert.deepEqual(integrity.emptyKeys, [""]);
   assert.deepEqual(integrity.positionalSourceKeys, ["Positional %1$@"]);
+  assert.deepEqual(integrity.staleKeys, [
+    "",
+    "Stale bad %lld",
+    "Stale untranslated",
+  ]);
   assert.equal(integrity.placeholderMismatches.length, 0);
 }
 
@@ -677,6 +686,7 @@ function main() {
     audit.liveStale.size === 0 &&
     audit.ambiguous.size === 0 &&
     runtime.orphaned.size === 0 &&
+    integrity.staleKeys.length === 0 &&
     integrity.missingTranslations.size === 0 &&
     integrity.positionalSourceKeys.length === 0 &&
     integrity.placeholderMismatches.length === 0 &&
@@ -696,6 +706,7 @@ function main() {
       `${audit.missing.size} missing, ${audit.liveStale.size} live-stale, ` +
       `${audit.ambiguous.size} ambiguous, ` +
       `${runtime.orphaned.size} retired runtime key(s), ` +
+      `${integrity.staleKeys.length} stale catalog key(s), ` +
       `${integrity.missingTranslations.size} untranslated, ` +
       `${integrity.positionalSourceKeys.length + integrity.placeholderMismatches.length} ` +
       `placeholder issue(s), ${serializationIssues.length} serialization issue(s))\n`
@@ -756,6 +767,18 @@ function main() {
     for (const key of [...runtime.orphaned].sort()) {
       console.error(`    ${JSON.stringify(key)}`);
     }
+    console.error("");
+  }
+
+  if (integrity.staleKeys.length > 0) {
+    console.error("  Stale keys still present in Localizable.xcstrings:");
+    for (const key of integrity.staleKeys) {
+      console.error(`    ${JSON.stringify(key)}`);
+    }
+    console.error(
+      "    Remove retired entries; runtime-localized keys must be listed in " +
+        "runtime-localized-keys.json and marked manual."
+    );
     console.error("");
   }
 
