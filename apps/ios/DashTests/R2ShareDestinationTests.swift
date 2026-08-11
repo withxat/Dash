@@ -145,3 +145,35 @@ private func sampleDestination(
   #expect(R2ShareDestination.activeAccountID(in: defaults) == nil)
   #expect(defaults.string(forKey: R2ShareDestination.destinationsKey) == nil)
 }
+
+@Test func r2ShareDestinationRecordsOneEntryPerAccount() throws {
+  let suite = "dash.tests.r2share.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+
+  // JSON, not pipes: bucket names and prefixes can contain any separator.
+  let first = R2ShareDestination(
+    accountID: "a1", bucket: "pics|weird,name", prefix: "2026/", publicHost: "img.example.com")
+  let second = R2ShareDestination(accountID: "a1", bucket: "docs", prefix: "", publicHost: "")
+  let other = R2ShareDestination(accountID: "a2", bucket: "cdn", prefix: "x/", publicHost: "")
+
+  R2ShareDestination.record(first, in: defaults)
+  R2ShareDestination.record(other, in: defaults)
+  #expect(R2ShareDestination.destination(accountID: "a1", in: defaults) == first)
+
+  // Same account replaces its entry instead of stacking a history.
+  R2ShareDestination.record(second, in: defaults)
+  #expect(R2ShareDestination.destination(accountID: "a1", in: defaults) == second)
+  #expect(R2ShareDestination.destination(accountID: "a2", in: defaults) == other)
+
+  R2ShareDestination.setActiveAccountID("a2", in: defaults)
+  #expect(R2ShareDestination.activeAccountID(in: defaults) == "a2")
+  #expect(R2ShareDestination.isActiveAccount("a2", in: defaults))
+  #expect(!R2ShareDestination.isActiveAccount("a1", in: defaults))
+  R2ShareDestination.clear(in: defaults)
+  #expect(R2ShareDestination.activeAccountID(in: defaults) == nil)
+  #expect(R2ShareDestination.destination(accountID: "a1", in: defaults) == nil)
+
+  #expect(R2ShareDestination.decode("") == [])
+  #expect(R2ShareDestination.decode("not json") == [])
+}

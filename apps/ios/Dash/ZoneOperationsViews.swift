@@ -251,6 +251,14 @@ let zoneSettingOptions: [String: [String]] = [
   "cache_level": ["basic", "simplified", "aggressive"],
 ]
 
+enum ZoneSettingsPresentation {
+  static func hasContent(_ settings: [ZoneSetting]) -> Bool {
+    settings.contains { setting in
+      curatedZoneSettings.contains(setting.id)
+    }
+  }
+}
+
 struct ZoneSettingsView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -260,10 +268,6 @@ struct ZoneSettingsView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
-  /// `ZoneAlertsSection` mounts even when the plan omits every curated
-  /// setting — do not gate the list phase on `curated` alone or a successful
-  /// empty curated answer stays on the bare skeleton forever.
-  @State private var hasPresentedContent = false
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .zoneSettings(zoneID))
@@ -277,7 +281,12 @@ struct ZoneSettingsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: hasPresentedContent,
+      hasContent: ZoneSettingsPresentation.hasContent(settings),
+      empty: DashFeatureEmpty(
+        icon: SolarAsset.Content.settings,
+        title: DashL10n.string("No zone settings"),
+        message: DashL10n.string("Cloudflare returned no settings for this zone.")
+      ),
       retry: { Task { await load() } }
     ) { mode in
       zoneSettingsBody(mode: mode)
@@ -287,8 +296,8 @@ struct ZoneSettingsView: View {
     .task { await load() }
   }
 
-  /// Fuller first-paint reserve: curated setting rows + alerts. The write
-  /// notice appears only when live content warrants it.
+  /// First-paint reserve for the curated setting rows. The write notice appears
+  /// only when live content warrants it.
   @ViewBuilder
   private func zoneSettingsBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
@@ -297,11 +306,6 @@ struct ZoneSettingsView: View {
           DashToggleRowPlaceholder()
         }
       }
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Alerts") {
-        DashListRowPlaceholders(rows: ZoneAlertKind.all.count)
-      }
-      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       if !allowsWrites {
@@ -385,7 +389,6 @@ struct ZoneSettingsView: View {
       settings = cached
       error = nil
       loading = false
-      hasPresentedContent = true
       return
     }
     defer { loading = false }
@@ -393,7 +396,6 @@ struct ZoneSettingsView: View {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
       model.featureCache.set(key, settings)
       error = nil
-      hasPresentedContent = true
     } catch {
       guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
@@ -601,15 +603,10 @@ enum WAFChartModel {
 
   /// Ascending hourly blocked counts. Drops unparseable stamps.
   static func parsedSeries(_ series: [FirewallEventsSeriesPoint]) -> [(date: Date, count: Int)] {
-    let parser = ISO8601DateFormatter()
-    parser.formatOptions = [.withInternetDateTime]
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return
       series
       .compactMap { point -> (date: Date, count: Int)? in
-        guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
-        else { return nil }
+        guard let date = DashDateFormatting.date(fromISO8601: point.datetime) else { return nil }
         return (date, point.count)
       }
       .sorted { $0.date < $1.date }

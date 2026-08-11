@@ -53,7 +53,7 @@ import Testing
   #expect(defaults.string(forKey: HomeActions.key) == cloudValue)
 }
 
-@Test @MainActor func iCloudPreferenceSyncSeedsOnlyExplicitLocalPreferences() throws {
+@Test @MainActor func iCloudPreferenceSyncDoesNotUploadUnpublishedLocalPreferences() {
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
   let shortcuts = HomeShortcuts.encode([.workers, .kv])
@@ -70,12 +70,9 @@ import Testing
   sync.start()
   sync.completeInitialReconciliation()
 
-  let envelope = try decodedEnvelope(
-    cloud.values[ICloudPreferencesSync.Group.homeShortcuts.cloudKey])
-  #expect(envelope.value.presentKeys == [HomeShortcuts.key])
-  #expect(envelope.value.strings[HomeShortcuts.key] == shortcuts)
+  #expect(cloud.values[ICloudPreferencesSync.Group.homeShortcuts.cloudKey] == nil)
   #expect(cloud.values[ICloudPreferencesSync.Group.homeActions.cloudKey] == nil)
-  #expect(cloud.values[ICloudPreferencesSync.Group.workspaceWash.cloudKey] == nil)
+  #expect(cloud.values[ICloudPreferencesSync.Group.workspaceGlow.cloudKey] == nil)
   #expect(cloud.values[ICloudPreferencesSync.Group.watchtowerLayout.cloudKey] == nil)
 }
 
@@ -349,7 +346,7 @@ import Testing
   #expect(merged.value.strings[HomeActions.key] == localValue)
 }
 
-@Test @MainActor func lateInitialCloudValueWinsOverALegacyLocalSeed() throws {
+@Test @MainActor func lateInitialCloudValueReplacesUnpublishedLocalPreference() throws {
   let (defaults, suite) = iCloudTestDefaults()
   defer { defaults.removePersistentDomain(forName: suite) }
   defaults.set(HomeActions.encode([.enableUnderAttackMode]), forKey: HomeActions.key)
@@ -499,8 +496,9 @@ import Testing
   }
   defer { center.removeObserver(observer) }
 
-  cloud.values[ICloudPreferencesSync.Group.workspaceWash.cloudKey] = try encodedEnvelope(
-    values: [DashWorkspaceWashPreset.storageKey: DashWorkspaceWashPreset.teal.rawValue],
+  #expect(ICloudPreferencesSync.Group.workspaceGlow.cloudKey == "dash.preferences.v1.workspaceGlow")
+  cloud.values[ICloudPreferencesSync.Group.workspaceGlow.cloudKey] = try encodedEnvelope(
+    values: [DashWorkspaceGlowPreset.storageKey: DashWorkspaceGlowPreset.orange.rawValue],
     modifiedAt: Date(timeIntervalSince1970: 100))
   center.post(
     name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -508,14 +506,14 @@ import Testing
     userInfo: [
       NSUbiquitousKeyValueStoreChangeReasonKey: NSUbiquitousKeyValueStoreServerChange,
       NSUbiquitousKeyValueStoreChangedKeysKey: [
-        ICloudPreferencesSync.Group.workspaceWash.cloudKey
+        ICloudPreferencesSync.Group.workspaceGlow.cloudKey
       ],
     ])
 
   #expect(
-    defaults.string(forKey: DashWorkspaceWashPreset.storageKey)
-      == DashWorkspaceWashPreset.teal.rawValue)
-  #expect(recorder.groups == [.workspaceWash])
+    defaults.string(forKey: DashWorkspaceGlowPreset.storageKey)
+      == DashWorkspaceGlowPreset.orange.rawValue)
+  #expect(recorder.groups == [.workspaceGlow])
 }
 
 @Test @MainActor func watchtowerLayoutSyncsAsOneValueAndReloadsAfterEditing() throws {

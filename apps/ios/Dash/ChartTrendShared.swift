@@ -1,5 +1,9 @@
 import Foundation
 
+func formatBinaryByteCount(_ bytes: Int64, locale: Locale) -> String {
+  bytes.formatted(.byteCount(style: .binary).locale(locale))
+}
+
 enum DashChartTrendDirection: Hashable, Sendable {
   case up
   case down

@@ -103,7 +103,6 @@ const OUTLINE_ICONS = {
 	/// Settings → Chart style (bars in a speech-square).
 	SolarChatSquare2Outline: 'business/Linear/ChatSquare2',
 	SolarGraphNewOutline: 'business/Linear/GraphNew',
-	SolarUserCircleOutline: 'users/Linear/UserCircle',
 	SolarUserOutline: 'users/Linear/User',
 	SolarBoxMinimalisticOutline: 'ui/Linear/BoxMinimalistic',
 	SolarSettingsMinimalisticOutline: 'settings/Linear/SettingsMinimalistic',

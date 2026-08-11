@@ -37,11 +37,10 @@ enum WatchtowerAnalyticsCardLayout {
       hidden: Set(order).subtracting(visible))
   }
 
-  /// Resolves the stored layout. The fresh-install defaults apply only when no
-  /// preference has ever been written — a saved layout that hides nothing (an
-  /// empty string, not a missing key) stays an explicit choice across app
-  /// updates, and so does a pre-editor install that only ever stored collapsed
-  /// metrics.
+  /// Resolves the stored layout. The defaults apply only when no preference has
+  /// been written. These keys persist and sync independently, so a partial
+  /// layout is still user state rather than permission to replace it with the
+  /// defaults.
   static func layout(orderRaw: String?, collapsedRaw: String?, hiddenRaw: String?) -> Layout {
     guard orderRaw != nil || collapsedRaw != nil || hiddenRaw != nil else {
       return defaultLayout
@@ -494,7 +493,6 @@ struct DomainCardColorSelection: Hashable, Sendable {
 }
 
 /// Per-account domain card colors encoded as `accountID|zoneID|#RRGGBB`.
-/// Legacy named tints (`emerald`, `ocean`, …) still decode for existing installs.
 enum DomainCardColors {
   static let key = "dash.domain_card_colors"
 
@@ -505,15 +503,6 @@ enum DomainCardColors {
     0x2177F8, 0x349DED, 0x37A7FA, 0x3EAFC5, 0x40AE75,
     0x46BB52, 0x74C330, 0xECA82C, 0xF39328, 0xF0651D,
     0xEE3B35, 0xCEAC4B, 0xC28144, 0x0E2E5C, 0x1B191F,
-  ]
-
-  private static let legacyNames: [String: UInt32] = [
-    "emerald": 0x047857,
-    "ocean": 0x0369A1,
-    "indigo": 0x4F46E5,
-    "violet": 0x7E22CE,
-    "rose": 0xBE123C,
-    "orange": 0xB45309,
   ]
 
   static func decode(_ raw: String) -> [DomainCardColorSelection] {
@@ -567,7 +556,6 @@ enum DomainCardColors {
   }
 
   static func parseToken(_ token: String) -> UInt32? {
-    if let legacy = legacyNames[token] { return legacy }
     var hex = token
     if hex.hasPrefix("#") { hex.removeFirst() }
     guard hex.count == 6, let value = UInt32(hex, radix: 16) else { return nil }

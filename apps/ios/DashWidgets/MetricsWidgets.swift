@@ -1034,10 +1034,10 @@ private struct MetricsWidgetView: View {
     if entry.date.timeIntervalSince(fetchedAt) < 1 {
       relative = String(localized: "just now")
     } else {
-      let formatter = RelativeDateTimeFormatter()
-      formatter.locale = DashWidgetBridges.mirroredLocale()
-      formatter.unitsStyle = .abbreviated
-      relative = formatter.localizedString(for: fetchedAt, relativeTo: entry.date)
+      relative = DashDateFormatting.abbreviatedRelativeTime(
+        fetchedAt,
+        relativeTo: entry.date,
+        locale: DashWidgetBridges.mirroredLocale())
     }
     return String(localized: "Updated \(relative)")
   }

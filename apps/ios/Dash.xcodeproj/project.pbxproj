@@ -27,6 +27,15 @@
 		B0000000000000000000000E /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000E /* Assets.xcassets */; };
 		B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000000F /* PrivacyInfo.xcprivacy */; };
 		B00000000000000000000012 /* DashTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000012 /* DashTests.swift */; };
+		B00000000000000000000230 /* AppPreferencesAndLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000230 /* AppPreferencesAndLocalizationTests.swift */; };
+		B00000000000000000000231 /* FeatureCatalogAndAccessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000231 /* FeatureCatalogAndAccessTests.swift */; };
+		B00000000000000000000232 /* LoadingAndPaginationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000232 /* LoadingAndPaginationTests.swift */; };
+		B00000000000000000000233 /* WatchtowerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000233 /* WatchtowerTests.swift */; };
+		B00000000000000000000234 /* TrayAndChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000234 /* TrayAndChromeTests.swift */; };
+		B00000000000000000000235 /* HomeAndRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000235 /* HomeAndRoutingTests.swift */; };
+		B00000000000000000000236 /* ZoneOperationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000236 /* ZoneOperationsTests.swift */; };
+		B00000000000000000000237 /* StorageAndIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000237 /* StorageAndIntentTests.swift */; };
+		B00000000000000000000238 /* LegalDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000238 /* LegalDocumentTests.swift */; };
 		B00000000000000000000013 /* DashUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000013 /* DashUITests.swift */; };
 		B00000000000000000000014 /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000001 /* CloudflareAPI */; };
 		B00000000000000000000015 /* UserAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000031 /* UserAvatar.swift */; };
@@ -44,7 +53,6 @@
 		B00000000000000000000105 /* DashRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000105 /* DashRoute.swift */; };
 		B00000000000000000000106 /* DashAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000106 /* DashAppIntents.swift */; };
 		B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
-		B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000108 /* WatchtowerNotifications.swift */; };
 		B00000000000000000000109 /* DashWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000109 /* DashWidgets.swift */; };
 		B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */; };
 		B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000023 /* DashWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -60,7 +68,8 @@
 		B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B1 /* WorkerBuildsSection.swift */; };
 		B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B0 /* WorkerBuildActivityController.swift */; };
 		B00000000000000000000175 /* DashDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* DashDateFormatting.swift */; };
-		B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000171 /* ZoneAlertSubscriptions.swift */; };
+		B0000000000000000000023D /* DashDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* DashDateFormatting.swift */; };
+		B0000000000000000000023E /* DashDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000175 /* DashDateFormatting.swift */; };
 		B0000000000000000000010D /* LegalDocumentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010D /* LegalDocumentView.swift */; };
 		B0000000000000000000010E /* TermsOfUse.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010E /* TermsOfUse.md */; };
 		B0000000000000000000010F /* PrivacyPolicy.md in Resources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000010F /* PrivacyPolicy.md */; };
@@ -68,6 +77,19 @@
 		B00000000000000000000142 /* CodeEditor in Frameworks */ = {isa = PBXBuildFile; productRef = P0000000000000000000000E /* CodeEditor */; };
 		B00000000000000000000143 /* KVJSONFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000142 /* KVJSONFormatting.swift */; };
 		B00000000000000000000114 /* DashWorkspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000114 /* DashWorkspace.swift */; };
+		B00000000000000000000239 /* DashNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000239 /* DashNavigation.swift */; };
+		B0000000000000000000023A /* DashDestinationRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000023A /* DashDestinationRouting.swift */; };
+		B0000000000000000000023B /* DashPageChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000023B /* DashPageChrome.swift */; };
+		B0000000000000000000023C /* DashNavigationLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000023C /* DashNavigationLinks.swift */; };
+		B00000000000000000000240 /* DashTabFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000240 /* DashTabFlow.swift */; };
+		B00000000000000000000241 /* DashRoutePageChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000241 /* DashRoutePageChrome.swift */; };
+		B00000000000000000000242 /* DashFeatureLoading.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000242 /* DashFeatureLoading.swift */; };
+		B00000000000000000000243 /* DashSurfaceSkeletons.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000243 /* DashSurfaceSkeletons.swift */; };
+		B00000000000000000000244 /* DashSurfacePressStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000244 /* DashSurfacePressStyles.swift */; };
+		B00000000000000000000245 /* CatalogVisuals.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000245 /* CatalogVisuals.swift */; };
+		B00000000000000000000246 /* DashTrayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000246 /* DashTrayState.swift */; };
+		B00000000000000000000247 /* DashTrayFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000247 /* DashTrayFlow.swift */; };
+		B00000000000000000000248 /* DashTraySizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000248 /* DashTraySizing.swift */; };
 		B00000000000000000000115 /* SwiftDitherKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000006 /* SwiftDitherKit */; };
 		B00000000000000000000163 /* SwiftGlobeKit in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000010 /* SwiftGlobeKit */; };
 		B00000000000000000000116 /* WatchtowerTrafficView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000115 /* WatchtowerTrafficView.swift */; };
@@ -165,6 +187,17 @@
 		B000000000000000000001CF /* ChartDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001CF /* ChartDetailView.swift */; };
 		B000000000000000000001D1 /* DashCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001D1 /* DashCharts.swift */; };
 		B000000000000000000001D0 /* VariableBlur in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000014 /* VariableBlur */; };
+		D15A00000000000000000101 /* HomeOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000101 /* HomeOperations.swift */; };
+		D15A00000000000000000102 /* KVViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000102 /* KVViews.swift */; };
+		D15A00000000000000000103 /* StorageSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000103 /* StorageSupport.swift */; };
+		D15A00000000000000000104 /* WatchtowerTrafficModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000104 /* WatchtowerTrafficModel.swift */; };
+		D15A00000000000000000105 /* WatchtowerMetricDrag.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000105 /* WatchtowerMetricDrag.swift */; };
+		D15A00000000000000000106 /* WatchtowerMetricCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000106 /* WatchtowerMetricCards.swift */; };
+		D15A00000000000000000107 /* ZoneDetailViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000107 /* ZoneDetailViews.swift */; };
+		D15A00000000000000000108 /* ZoneDNSViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000108 /* ZoneDNSViews.swift */; };
+		D15A00000000000000000109 /* DeferredDeletionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000109 /* DeferredDeletionPersistenceTests.swift */; };
+		D15A0000000000000000010A /* DeferredDeletionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F0000000000000000010A /* DeferredDeletionPolicyTests.swift */; };
+		D15A0000000000000000010B /* DeferredDeletionTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F0000000000000000010B /* DeferredDeletionTestSupport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -236,6 +269,15 @@
 		F0000000000000000000000E /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F0000000000000000000000F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		F00000000000000000000012 /* DashTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000230 /* AppPreferencesAndLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferencesAndLocalizationTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000231 /* FeatureCatalogAndAccessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeatureCatalogAndAccessTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000232 /* LoadingAndPaginationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadingAndPaginationTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000233 /* WatchtowerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000234 /* TrayAndChromeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrayAndChromeTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000235 /* HomeAndRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAndRoutingTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000236 /* ZoneOperationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneOperationsTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000237 /* StorageAndIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageAndIntentTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000238 /* LegalDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000013 /* DashUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashUITests.swift; sourceTree = "<group>"; };
 		F00000000000000000000020 /* Dash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F00000000000000000000021 /* DashTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DashTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -261,7 +303,6 @@
 		F00000000000000000000105 /* DashRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashRoute.swift; sourceTree = "<group>"; };
 		F00000000000000000000106 /* DashAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppIntents.swift; sourceTree = "<group>"; };
 		F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerWidgetSnapshot.swift; sourceTree = "<group>"; };
-		F00000000000000000000108 /* WatchtowerNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerNotifications.swift; sourceTree = "<group>"; };
 		F00000000000000000000109 /* DashWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgets.swift; sourceTree = "<group>"; };
 		F000000000000000000001F0 /* DashWidgetBridges.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWidgetBridges.swift; sourceTree = "<group>"; };
 		F000000000000000000001F1 /* QuickActionsWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickActionsWidget.swift; sourceTree = "<group>"; };
@@ -273,7 +314,6 @@
 		F000000000000000000001B1 /* WorkerBuildsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildsSection.swift; sourceTree = "<group>"; };
 		F000000000000000000001B0 /* WorkerBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityController.swift; sourceTree = "<group>"; };
 		F00000000000000000000175 /* DashDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDateFormatting.swift; sourceTree = "<group>"; };
-		F00000000000000000000171 /* ZoneAlertSubscriptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneAlertSubscriptions.swift; sourceTree = "<group>"; };
 		F0000000000000000000010D /* LegalDocumentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentView.swift; sourceTree = "<group>"; };
 		F0000000000000000000010E /* TermsOfUse.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = TermsOfUse.md; sourceTree = "<group>"; };
 		F0000000000000000000010F /* PrivacyPolicy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = PrivacyPolicy.md; sourceTree = "<group>"; };
@@ -338,6 +378,19 @@
 		F000000000000000000001CB /* FileProviderDomainsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileProviderDomainsTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000112 /* DashAuthorizationScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAuthorizationScopes.swift; sourceTree = "<group>"; };
 		F00000000000000000000114 /* DashWorkspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashWorkspace.swift; sourceTree = "<group>"; };
+		F00000000000000000000239 /* DashNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashNavigation.swift; sourceTree = "<group>"; };
+		F0000000000000000000023A /* DashDestinationRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashDestinationRouting.swift; sourceTree = "<group>"; };
+		F0000000000000000000023B /* DashPageChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashPageChrome.swift; sourceTree = "<group>"; };
+		F0000000000000000000023C /* DashNavigationLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashNavigationLinks.swift; sourceTree = "<group>"; };
+		F00000000000000000000240 /* DashTabFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTabFlow.swift; sourceTree = "<group>"; };
+		F00000000000000000000241 /* DashRoutePageChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashRoutePageChrome.swift; sourceTree = "<group>"; };
+		F00000000000000000000242 /* DashFeatureLoading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashFeatureLoading.swift; sourceTree = "<group>"; };
+		F00000000000000000000243 /* DashSurfaceSkeletons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSurfaceSkeletons.swift; sourceTree = "<group>"; };
+		F00000000000000000000244 /* DashSurfacePressStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashSurfacePressStyles.swift; sourceTree = "<group>"; };
+		F00000000000000000000245 /* CatalogVisuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CatalogVisuals.swift; sourceTree = "<group>"; };
+		F00000000000000000000246 /* DashTrayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTrayState.swift; sourceTree = "<group>"; };
+		F00000000000000000000247 /* DashTrayFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTrayFlow.swift; sourceTree = "<group>"; };
+		F00000000000000000000248 /* DashTraySizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTraySizing.swift; sourceTree = "<group>"; };
 		F00000000000000000000115 /* WatchtowerTrafficView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficView.swift; sourceTree = "<group>"; };
 		F00000000000000000000116 /* R2ObjectViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ObjectViews.swift; sourceTree = "<group>"; };
 		F00000000000000000000117 /* R2ShareDestination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = R2ShareDestination.swift; sourceTree = "<group>"; };
@@ -350,6 +403,17 @@
 		F00000000000000000000122 /* PagesBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildActivity.swift; sourceTree = "<group>"; };
 		F00000000000000000000124 /* PagesBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PagesBuildActivityController.swift; sourceTree = "<group>"; };
 		F00000000000000000000126 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		D15F00000000000000000101 /* HomeOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeOperations.swift; sourceTree = "<group>"; };
+		D15F00000000000000000102 /* KVViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KVViews.swift; sourceTree = "<group>"; };
+		D15F00000000000000000103 /* StorageSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageSupport.swift; sourceTree = "<group>"; };
+		D15F00000000000000000104 /* WatchtowerTrafficModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerTrafficModel.swift; sourceTree = "<group>"; };
+		D15F00000000000000000105 /* WatchtowerMetricDrag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMetricDrag.swift; sourceTree = "<group>"; };
+		D15F00000000000000000106 /* WatchtowerMetricCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchtowerMetricCards.swift; sourceTree = "<group>"; };
+		D15F00000000000000000107 /* ZoneDetailViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneDetailViews.swift; sourceTree = "<group>"; };
+		D15F00000000000000000108 /* ZoneDNSViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneDNSViews.swift; sourceTree = "<group>"; };
+		D15F00000000000000000109 /* DeferredDeletionPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionPersistenceTests.swift; sourceTree = "<group>"; };
+		D15F0000000000000000010A /* DeferredDeletionPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionPolicyTests.swift; sourceTree = "<group>"; };
+		D15F0000000000000000010B /* DeferredDeletionTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTestSupport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -451,18 +515,24 @@
 				F00000000000000000000158 /* MainTabView.swift */,
 				F00000000000000000000159 /* ProfileSettingsViews.swift */,
 				F00000000000000000000008 /* HomeView.swift */,
+				D15F00000000000000000101 /* HomeOperations.swift */,
 				F00000000000000000000009 /* FeatureCatalogView.swift */,
 				F00000000000000000000038 /* ZoneAnalyticsView.swift */,
 				F00000000000000000000148 /* WebAnalyticsView.swift */,
 				F00000000000000000000039 /* DashDetailTray.swift */,
 				F0000000000000000000000A /* WatchtowerView.swift */,
 				F00000000000000000000115 /* WatchtowerTrafficView.swift */,
+				D15F00000000000000000104 /* WatchtowerTrafficModel.swift */,
+				D15F00000000000000000105 /* WatchtowerMetricDrag.swift */,
+				D15F00000000000000000106 /* WatchtowerMetricCards.swift */,
 				F00000000000000000000223 /* CloudflareStatusView.swift */,
 				F000000000000000000001CF /* ChartDetailView.swift */,
 				F000000000000000000001FB /* ChartTrendShared.swift */,
 				F000000000000000000001D1 /* DashCharts.swift */,
 				F0000000000000000000000B /* FeatureViews.swift */,
 				F0000000000000000000015A /* ZoneViews.swift */,
+				D15F00000000000000000107 /* ZoneDetailViews.swift */,
+				D15F00000000000000000108 /* ZoneDNSViews.swift */,
 				F000000000000000000001B8 /* EmailRoutingViews.swift */,
 				F000000000000000000001B9 /* EmailAddressViews.swift */,
 				F000000000000000000001BA /* RegistrarViews.swift */,
@@ -472,6 +542,8 @@
 				F0000000000000000000015C /* ZoneOperationsViews.swift */,
 				F00000000000000000000151 /* WorkerDetailModel.swift */,
 				F0000000000000000000000C /* StorageViews.swift */,
+				D15F00000000000000000102 /* KVViews.swift */,
+				D15F00000000000000000103 /* StorageSupport.swift */,
 				F00000000000000000000142 /* KVJSONFormatting.swift */,
 				F00000000000000000000140 /* FileTypeIcons.swift */,
 				F00000000000000000000141 /* R2ObjectPreview.swift */,
@@ -495,12 +567,10 @@
 				F00000000000000000000105 /* DashRoute.swift */,
 				F00000000000000000000106 /* DashAppIntents.swift */,
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
-				F00000000000000000000108 /* WatchtowerNotifications.swift */,
 				F000000000000000000001B2 /* WorkerBuildActivity.swift */,
 				F000000000000000000001B1 /* WorkerBuildsSection.swift */,
 				F000000000000000000001B0 /* WorkerBuildActivityController.swift */,
 				F00000000000000000000175 /* DashDateFormatting.swift */,
-				F00000000000000000000171 /* ZoneAlertSubscriptions.swift */,
 				F00000000000000000000126 /* Localizable.xcstrings */,
 				F0000000000000000000010D /* LegalDocumentView.swift */,
 				F00000000000000000000143 /* WatchtowerInboxStore.swift */,
@@ -513,6 +583,19 @@
 				F00000000000000000000190 /* DeferredDeletion.swift */,
 				F00000000000000000000112 /* DashAuthorizationScopes.swift */,
 				F00000000000000000000114 /* DashWorkspace.swift */,
+				F00000000000000000000239 /* DashNavigation.swift */,
+				F0000000000000000000023A /* DashDestinationRouting.swift */,
+				F0000000000000000000023B /* DashPageChrome.swift */,
+				F0000000000000000000023C /* DashNavigationLinks.swift */,
+				F00000000000000000000240 /* DashTabFlow.swift */,
+				F00000000000000000000241 /* DashRoutePageChrome.swift */,
+				F00000000000000000000242 /* DashFeatureLoading.swift */,
+				F00000000000000000000243 /* DashSurfaceSkeletons.swift */,
+				F00000000000000000000244 /* DashSurfacePressStyles.swift */,
+				F00000000000000000000245 /* CatalogVisuals.swift */,
+				F00000000000000000000246 /* DashTrayState.swift */,
+				F00000000000000000000247 /* DashTrayFlow.swift */,
+				F00000000000000000000248 /* DashTraySizing.swift */,
 				F00000000000000000000120 /* NetworkAccessProbe.swift */,
 				F00000000000000000000121 /* PagesViews.swift */,
 				F00000000000000000000122 /* PagesBuildActivity.swift */,
@@ -528,6 +611,15 @@
 			isa = PBXGroup;
 			children = (
 				F00000000000000000000012 /* DashTests.swift */,
+				F00000000000000000000230 /* AppPreferencesAndLocalizationTests.swift */,
+				F00000000000000000000231 /* FeatureCatalogAndAccessTests.swift */,
+				F00000000000000000000235 /* HomeAndRoutingTests.swift */,
+				F00000000000000000000238 /* LegalDocumentTests.swift */,
+				F00000000000000000000232 /* LoadingAndPaginationTests.swift */,
+				F00000000000000000000237 /* StorageAndIntentTests.swift */,
+				F00000000000000000000234 /* TrayAndChromeTests.swift */,
+				F00000000000000000000233 /* WatchtowerTests.swift */,
+				F00000000000000000000236 /* ZoneOperationsTests.swift */,
 				F00000000000000000000157 /* ChartDataTests.swift */,
 				F00000000000000000000152 /* FeatureDataCacheTests.swift */,
 				F00000000000000000000153 /* NavigationRuntimeTests.swift */,
@@ -541,6 +633,9 @@
 				F00000000000000000000212 /* KeychainTokenStoreTests.swift */,
 				F000000000000000000001B4 /* WorkerBuildActivityTests.swift */,
 				F000000000000000000001B5 /* DeferredDeletionTests.swift */,
+				D15F00000000000000000109 /* DeferredDeletionPersistenceTests.swift */,
+				D15F0000000000000000010A /* DeferredDeletionPolicyTests.swift */,
+				D15F0000000000000000010B /* DeferredDeletionTestSupport.swift */,
 				F000000000000000000001FD /* OptimisticOperationTests.swift */,
 				F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */,
 				F000000000000000000001CB /* FileProviderDomainsTests.swift */,
@@ -938,6 +1033,7 @@
 				B00000000000000000000158 /* MainTabView.swift in Sources */,
 				B00000000000000000000159 /* ProfileSettingsViews.swift in Sources */,
 				B00000000000000000000008 /* HomeView.swift in Sources */,
+				D15A00000000000000000101 /* HomeOperations.swift in Sources */,
 				B00000000000000000000009 /* FeatureCatalogView.swift in Sources */,
 				B0000000000000000000001C /* ZoneAnalyticsView.swift in Sources */,
 				B00000000000000000000149 /* WebAnalyticsView.swift in Sources */,
@@ -949,6 +1045,8 @@
 				B000000000000000000001D1 /* DashCharts.swift in Sources */,
 				B0000000000000000000000B /* FeatureViews.swift in Sources */,
 				B0000000000000000000015A /* ZoneViews.swift in Sources */,
+				D15A00000000000000000107 /* ZoneDetailViews.swift in Sources */,
+				D15A00000000000000000108 /* ZoneDNSViews.swift in Sources */,
 				B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */,
 				B000000000000000000001B9 /* EmailAddressViews.swift in Sources */,
 				B000000000000000000001BA /* RegistrarViews.swift in Sources */,
@@ -958,6 +1056,8 @@
 				B0000000000000000000015C /* ZoneOperationsViews.swift in Sources */,
 				B00000000000000000000151 /* WorkerDetailModel.swift in Sources */,
 				B0000000000000000000000C /* StorageViews.swift in Sources */,
+				D15A00000000000000000102 /* KVViews.swift in Sources */,
+				D15A00000000000000000103 /* StorageSupport.swift in Sources */,
 				B00000000000000000000143 /* KVJSONFormatting.swift in Sources */,
 				B00000000000000000000140 /* FileTypeIcons.swift in Sources */,
 				B00000000000000000000141 /* R2ObjectPreview.swift in Sources */,
@@ -982,12 +1082,10 @@
 				B00000000000000000000105 /* DashRoute.swift in Sources */,
 				B00000000000000000000106 /* DashAppIntents.swift in Sources */,
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
-				B00000000000000000000108 /* WatchtowerNotifications.swift in Sources */,
 				B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */,
 				B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */,
 				B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */,
 				B00000000000000000000175 /* DashDateFormatting.swift in Sources */,
-				B00000000000000000000171 /* ZoneAlertSubscriptions.swift in Sources */,
 				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,
 				B00000000000000000000144 /* WatchtowerInboxStore.swift in Sources */,
 				B00000000000000000000145 /* WatchtowerInboxView.swift in Sources */,
@@ -999,11 +1097,27 @@
 				B00000000000000000000190 /* DeferredDeletion.swift in Sources */,
 				B00000000000000000000112 /* DashAuthorizationScopes.swift in Sources */,
 				B00000000000000000000114 /* DashWorkspace.swift in Sources */,
+				B00000000000000000000239 /* DashNavigation.swift in Sources */,
+				B0000000000000000000023A /* DashDestinationRouting.swift in Sources */,
+				B0000000000000000000023B /* DashPageChrome.swift in Sources */,
+				B0000000000000000000023C /* DashNavigationLinks.swift in Sources */,
+				B00000000000000000000240 /* DashTabFlow.swift in Sources */,
+				B00000000000000000000241 /* DashRoutePageChrome.swift in Sources */,
+				B00000000000000000000242 /* DashFeatureLoading.swift in Sources */,
+				B00000000000000000000243 /* DashSurfaceSkeletons.swift in Sources */,
+				B00000000000000000000244 /* DashSurfacePressStyles.swift in Sources */,
+				B00000000000000000000245 /* CatalogVisuals.swift in Sources */,
+				B00000000000000000000246 /* DashTrayState.swift in Sources */,
+				B00000000000000000000247 /* DashTrayFlow.swift in Sources */,
+				B00000000000000000000248 /* DashTraySizing.swift in Sources */,
 				B00000000000000000000120 /* NetworkAccessProbe.swift in Sources */,
 				B00000000000000000000121 /* PagesViews.swift in Sources */,
 				B00000000000000000000122 /* PagesBuildActivity.swift in Sources */,
 				B00000000000000000000124 /* PagesBuildActivityController.swift in Sources */,
 				B00000000000000000000116 /* WatchtowerTrafficView.swift in Sources */,
+				D15A00000000000000000104 /* WatchtowerTrafficModel.swift in Sources */,
+				D15A00000000000000000105 /* WatchtowerMetricDrag.swift in Sources */,
+				D15A00000000000000000106 /* WatchtowerMetricCards.swift in Sources */,
 				B00000000000000000000119 /* R2ShareDestination.swift in Sources */,
 				B00000000000000000000024 /* LoginGrain.metal in Sources */,
 			);
@@ -1014,6 +1128,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				B00000000000000000000012 /* DashTests.swift in Sources */,
+				B00000000000000000000230 /* AppPreferencesAndLocalizationTests.swift in Sources */,
+				B00000000000000000000231 /* FeatureCatalogAndAccessTests.swift in Sources */,
+				B00000000000000000000235 /* HomeAndRoutingTests.swift in Sources */,
+				B00000000000000000000238 /* LegalDocumentTests.swift in Sources */,
+				B00000000000000000000232 /* LoadingAndPaginationTests.swift in Sources */,
+				B00000000000000000000237 /* StorageAndIntentTests.swift in Sources */,
+				B00000000000000000000234 /* TrayAndChromeTests.swift in Sources */,
+				B00000000000000000000233 /* WatchtowerTests.swift in Sources */,
+				B00000000000000000000236 /* ZoneOperationsTests.swift in Sources */,
 				B00000000000000000000157 /* ChartDataTests.swift in Sources */,
 				B00000000000000000000152 /* FeatureDataCacheTests.swift in Sources */,
 				B00000000000000000000153 /* NavigationRuntimeTests.swift in Sources */,
@@ -1029,6 +1152,9 @@
 				B000000000000000000001CC /* R2ItemIdentifier.swift in Sources */,
 				B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */,
 				B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */,
+				D15A00000000000000000109 /* DeferredDeletionPersistenceTests.swift in Sources */,
+				D15A0000000000000000010A /* DeferredDeletionPolicyTests.swift in Sources */,
+				D15A0000000000000000010B /* DeferredDeletionTestSupport.swift in Sources */,
 				B000000000000000000001FD /* OptimisticOperationTests.swift in Sources */,
 				B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */,
 			);
@@ -1053,6 +1179,7 @@
 				B000000000000000000001A3 /* MetricsWidgetSnapshot.swift in Sources */,
 				B00000000000000000000214 /* MetricsWidgetRefreshing.swift in Sources */,
 				B00000000000000000000210 /* AppConfiguration.swift in Sources */,
+				B0000000000000000000023D /* DashDateFormatting.swift in Sources */,
 				B00000000000000000000211 /* KeychainTokenStore.swift in Sources */,
 				B0000000000000000000010A /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B000000000000000000001F5 /* DashAppGroup.swift in Sources */,
@@ -1085,6 +1212,7 @@
 				B000000000000000000001C2 /* FileProviderErrorMapping.swift in Sources */,
 				B000000000000000000001C3 /* KeychainTokenStore.swift in Sources */,
 				B000000000000000000001C4 /* AppConfiguration.swift in Sources */,
+				B0000000000000000000023E /* DashDateFormatting.swift in Sources */,
 				B000000000000000000001F7 /* DashAppGroup.swift in Sources */,
 				B000000000000000000001C5 /* R2ShareDestination.swift in Sources */,
 				B000000000000000000001C6 /* R2TransferSupport.swift in Sources */,

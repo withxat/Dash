@@ -101,7 +101,6 @@ enum SolarAsset {
   static let chatSquare2 = "SolarChatSquare2Outline"
   static let graph = "SolarGraphNewOutline"
   static let users = "SolarUsersGroupOutline"
-  static let userCircle = "SolarUserCircleOutline"
   static let user = "SolarUserOutline"
   static let settings = "SolarSettingsMinimalisticOutline"
   static let code = "SolarCodeSquareOutline"

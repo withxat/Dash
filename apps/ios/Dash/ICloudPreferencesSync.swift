@@ -20,7 +20,7 @@ final class ICloudPreferencesSync {
   enum Group: String, CaseIterable, Sendable {
     case homeShortcuts
     case homeActions
-    case workspaceWash
+    case workspaceGlow
     case watchtowerLayout
 
     var cloudKey: String { "dash.preferences.v1.\(rawValue)" }
@@ -35,8 +35,8 @@ final class ICloudPreferencesSync {
         [HomeShortcuts.key]
       case .homeActions:
         [HomeActions.key]
-      case .workspaceWash:
-        [DashWorkspaceWashPreset.storageKey]
+      case .workspaceGlow:
+        [DashWorkspaceGlowPreset.storageKey]
       case .watchtowerLayout:
         [
           WatchtowerAnalyticsCardLayout.orderKey,
@@ -71,11 +71,6 @@ final class ICloudPreferencesSync {
   static let didApplyRemoteChanges = Notification.Name(
     "sh.xat.dash.icloud-preferences-did-apply")
   nonisolated private static let changedGroupsUserInfoKey = "changedGroups"
-  /// Pre-sync local preferences seed an empty KVS with deliberately old
-  /// metadata. If the first iCloud download arrives after the quiet period,
-  /// that cloud value still wins; only a real edit made by this version gets a
-  /// current timestamp.
-  private static let legacySeedModifiedAt = Date(timeIntervalSince1970: 0)
 
   private enum CloudEntry {
     case missing
@@ -278,12 +273,9 @@ final class ICloudPreferencesSync {
 
     switch cloudEntry(for: group) {
     case .missing:
-      guard allowUpload, !local.presentKeys.isEmpty || localModifiedAt != nil else {
-        return false
-      }
+      guard allowUpload, let localModifiedAt else { return false }
       guard isSemanticallyValid(local, for: group) else { return false }
-      let modifiedAt = localModifiedAt ?? Self.legacySeedModifiedAt
-      upload(local, modifiedAt: modifiedAt, for: group)
+      upload(local, modifiedAt: localModifiedAt, for: group)
       return false
 
     case .invalid:
@@ -411,11 +403,11 @@ final class ICloudPreferencesSync {
       guard let raw = value.strings[HomeActions.key] else { return true }
       return HomeActions.encode(HomeActions.decode(raw)) == raw
 
-    case .workspaceWash:
-      guard let raw = value.strings[DashWorkspaceWashPreset.storageKey] else {
+    case .workspaceGlow:
+      guard let raw = value.strings[DashWorkspaceGlowPreset.storageKey] else {
         return true
       }
-      return DashWorkspaceWashPreset(rawValue: raw) != nil
+      return DashWorkspaceGlowPreset(rawValue: raw) != nil
 
     case .watchtowerLayout:
       let allowed = Set(WatchtowerAnalyticsMetric.allCases.map(\.rawValue))

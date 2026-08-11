@@ -97,9 +97,16 @@ struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
   var metricID: String
   var total: Double
   /// Prior-period total in the same units as `total`, when the publisher had a
-  /// comparable window. Absent on older snapshots and metrics without a prior.
+  /// comparable window. Publishers write an explicit null when none exists.
   var previousTotal: Double?
   var points: [MetricsWidgetPoint]
+
+  private enum CodingKeys: String, CodingKey {
+    case metricID
+    case total
+    case previousTotal
+    case points
+  }
 
   init(
     metricID: String,
@@ -111,6 +118,21 @@ struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
     self.total = total
     self.previousTotal = previousTotal
     self.points = points
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.previousTotal) else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.previousTotal,
+        DecodingError.Context(
+          codingPath: container.codingPath,
+          debugDescription: "Current metric snapshots require previousTotal, including null"))
+    }
+    metricID = try container.decode(String.self, forKey: .metricID)
+    total = try container.decode(Double.self, forKey: .total)
+    previousTotal = try container.decodeIfPresent(Double.self, forKey: .previousTotal)
+    points = try container.decode([MetricsWidgetPoint].self, forKey: .points)
   }
 
   init(
@@ -313,7 +335,7 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
   static let filename = "metrics-widget-snapshots.json"
   static let fileName = filename
 
-  var schemaVersion: Int
+  private(set) var schemaVersion: Int
   var activeAccountID: String?
   var accounts: [MetricsWidgetAccount]
   var domains: [MetricsWidgetDomain]
@@ -321,14 +343,13 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
   var domainSnapshots: [DomainMetricsWidgetSnapshot]
 
   init(
-    schemaVersion: Int = Self.currentSchemaVersion,
     activeAccountID: String? = nil,
     accounts: [MetricsWidgetAccount] = [],
     domains: [MetricsWidgetDomain] = [],
     accountSnapshots: [AccountMetricsWidgetSnapshot] = [],
     domainSnapshots: [DomainMetricsWidgetSnapshot] = []
   ) {
-    self.schemaVersion = schemaVersion
+    schemaVersion = Self.currentSchemaVersion
     self.activeAccountID = activeAccountID
     self.accounts = accounts
     self.domains = domains
@@ -561,26 +582,22 @@ struct MetricsWidgetSnapshotStore: Codable, Hashable, Sendable {
 
   init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    schemaVersion =
-      try container.decodeIfPresent(Int.self, forKey: .schemaVersion)
-      ?? Self.currentSchemaVersion
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    guard schemaVersion == Self.currentSchemaVersion else {
+      throw DecodingError.dataCorruptedError(
+        forKey: .schemaVersion,
+        in: container,
+        debugDescription: "Unsupported metrics widget snapshot schema \(schemaVersion)")
+    }
     activeAccountID = try container.decodeIfPresent(String.self, forKey: .activeAccountID)
-    accounts =
-      try container.decodeIfPresent([MetricsWidgetAccount].self, forKey: .accounts)
-      ?? []
-    domains =
-      try container.decodeIfPresent([MetricsWidgetDomain].self, forKey: .domains)
-      ?? []
-    accountSnapshots =
-      try container.decodeIfPresent(
-        [AccountMetricsWidgetSnapshot].self,
-        forKey: .accountSnapshots)
-      ?? []
-    domainSnapshots =
-      try container.decodeIfPresent(
-        [DomainMetricsWidgetSnapshot].self,
-        forKey: .domainSnapshots)
-      ?? []
+    accounts = try container.decode([MetricsWidgetAccount].self, forKey: .accounts)
+    domains = try container.decode([MetricsWidgetDomain].self, forKey: .domains)
+    accountSnapshots = try container.decode(
+      [AccountMetricsWidgetSnapshot].self,
+      forKey: .accountSnapshots)
+    domainSnapshots = try container.decode(
+      [DomainMetricsWidgetSnapshot].self,
+      forKey: .domainSnapshots)
     normalize()
   }
 
@@ -678,7 +695,7 @@ struct MetricsWidgetSnapshotRepository {
 
   private struct LoadedSession {
     var record: SessionRecord
-    var needsMigration: Bool
+    var needsPersisting: Bool
   }
 
   static func read(at url: URL) throws -> State {
@@ -722,7 +739,7 @@ struct MetricsWidgetSnapshotRepository {
       if changed {
         try merged.writeUncoordinated(to: url)
       }
-      if session.needsMigration {
+      if session.needsPersisting {
         try writeSession(session.record, at: url)
       }
       return changed
@@ -752,7 +769,7 @@ struct MetricsWidgetSnapshotRepository {
       if changed {
         try store.writeUncoordinated(to: url)
       }
-      if session.needsMigration {
+      if session.needsPersisting {
         try writeSession(session.record, at: url)
       }
       return changed
@@ -776,11 +793,11 @@ struct MetricsWidgetSnapshotRepository {
       maximumAttempts: sessionTransitionLockAttempts
     ) {
       let currentSession: SessionRecord?
-      var currentSessionNeedsMigration = false
+      var currentSessionNeedsPersisting = false
       do {
         let loadedSession = try loadSession(at: url)
         currentSession = loadedSession.record
-        currentSessionNeedsMigration = loadedSession.needsMigration
+        currentSessionNeedsPersisting = loadedSession.needsPersisting
       } catch RepositoryError.invalidSessionState {
         // Only a verified activation may repair a malformed session sidecar.
         currentSession = nil
@@ -796,7 +813,7 @@ struct MetricsWidgetSnapshotRepository {
         if mergedStore != existingStore {
           try mergedStore.writeUncoordinated(to: url)
         }
-        if currentSessionNeedsMigration {
+        if currentSessionNeedsPersisting {
           try writeSession(currentSession, at: url)
         }
         return State(
@@ -880,25 +897,15 @@ struct MetricsWidgetSnapshotRepository {
     guard FileManager.default.fileExists(atPath: sessionURL.path) else {
       return LoadedSession(
         record: SessionRecord(generation: 0, mode: .remoteEnabled),
-        needsMigration: true)
+        needsPersisting: true)
     }
     let data = try Data(contentsOf: sessionURL)
-    if let rawValue = String(data: data, encoding: .utf8),
-      let legacyGeneration = UInt64(
-        rawValue.trimmingCharacters(in: .whitespacesAndNewlines))
-    {
-      return LoadedSession(
-        record: SessionRecord(
-          generation: legacyGeneration,
-          mode: .remoteEnabled),
-        needsMigration: true)
-    }
     guard
       let record = try? JSONDecoder().decode(SessionRecord.self, from: data)
     else {
       throw RepositoryError.invalidSessionState
     }
-    return LoadedSession(record: record, needsMigration: false)
+    return LoadedSession(record: record, needsPersisting: false)
   }
 
   private static func writeSession(_ session: SessionRecord, at url: URL) throws {

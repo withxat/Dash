@@ -89,11 +89,17 @@ struct EmailRoutingDomainsView: View {
     if zones.isEmpty { loading = true }
     error = nil
     do {
+      // Keep this loop separate from `DashPageLoader.loadAll`: that loader
+      // deduplicates IDs and terminates on a repeated page, while this catalog
+      // preserves the server's rows and retains its existing 40-page ceiling.
       var collected: [CloudflareZone] = []
       var pageNumber = 1
       while true {
         let page = try await model.client.listZones(
-          accountID: context.accountID, page: pageNumber, perPage: 50)
+          accountID: context.accountID,
+          page: pageNumber,
+          perPage: ZonesView.pageSize
+        )
         collected.append(contentsOf: page.items)
         let hasMore: Bool
         if let info = page.resultInfo,
@@ -103,7 +109,7 @@ struct EmailRoutingDomainsView: View {
         {
           hasMore = pageNum * perPage < total
         } else {
-          hasMore = page.items.count >= 50
+          hasMore = page.items.count >= ZonesView.pageSize
         }
         guard hasMore else { break }
         pageNumber += 1

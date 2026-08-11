@@ -98,8 +98,8 @@ struct MainTabView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
-    DashWorkspaceWashPreset.defaultPreset.rawValue
+  @AppStorage(DashWorkspaceGlowPreset.storageKey) private var workspaceGlowRaw =
+    DashWorkspaceGlowPreset.defaultPreset.rawValue
   @Namespace private var workspaceHeaderGlass
   @State private var selection: AppTab = .home
   @State private var outgoingSelection: AppTab?
@@ -170,8 +170,8 @@ struct MainTabView: View {
       pageTransitionActive: activePagePresentationState.isTransitioning)
   }
 
-  private var workspaceWashPreset: DashWorkspaceWashPreset {
-    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
+  private var workspaceGlowPreset: DashWorkspaceGlowPreset {
+    DashWorkspaceGlowPreset.resolved(stored: workspaceGlowRaw)
   }
 
   private func workspaceWashScroll(for tab: AppTab) -> DashWorkspaceWashScroll {
@@ -281,10 +281,9 @@ struct MainTabView: View {
     }
   }
 
-  /// Account-scoped links never silently resolve under the active account.
+  /// Account-bound links never silently resolve under the active account.
   /// A different known account requires confirmation; a missing account is
-  /// rejected with actionable feedback. Legacy unscoped links keep their
-  /// historical current-account behavior.
+  /// rejected. Settings remains the one intentionally global route.
   private func consume(_ route: DashRoute) {
     guard
       model.authState == .authenticated,
@@ -309,6 +308,12 @@ struct MainTabView: View {
         return
       }
       accountRouteConfirmation = AccountScopedRouteRequest(account: account, route: route)
+    case .rejectMissingAccount:
+      model.toasts.error(
+        DashL10n.string(
+          "The Cloudflare account for this link isn't available in Dash. Check your access and try again"
+        )
+      )
     case .rejectUnavailable:
       model.toasts.error(
         DashL10n.string(
@@ -511,9 +516,9 @@ struct MainTabView: View {
     .background {
       ZStack(alignment: .top) {
         DashTheme.canvas
-        if workspaceWashPreset != .none {
+        if workspaceGlowPreset != .none {
           DashWorkspaceTopWash(
-            color: DashTheme.workspaceWash(for: workspaceWashPreset),
+            color: DashTheme.workspaceWash(for: workspaceGlowPreset),
             selectedScroll: workspaceWashScroll(for: selection),
             outgoingScroll: outgoingSelection.map { workspaceWashScroll(for: $0) },
             transitionProgress: tabTransitionProgress,
@@ -959,7 +964,9 @@ private struct DashTabPressButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+      .scaleEffect(
+        configuration.isPressed && !reduceMotion ? DashTheme.Motion.pressScale : 1
+      )
       .animation(
         reduceMotion ? nil : DashTheme.Motion.press,
         value: configuration.isPressed

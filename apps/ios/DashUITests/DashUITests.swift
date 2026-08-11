@@ -587,7 +587,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Current"].exists)
   }
 
-  /// Watchtower presents Cloudflare history; delivery controls live in Settings.
+  /// Watchtower presents Cloudflare history without exposing remote push controls.
   func testWatchtowerAlertsDoNotExposeRemotePush() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
@@ -623,7 +623,7 @@ final class DashUITests: XCTestCase {
       app.buttons["watchtower-inbox-ignore-toggle"].waitForExistence(timeout: 5))
   }
 
-  func testSettingsExposesDefaultAlertPoliciesAndICloudSync() {
+  func testSettingsExposesICloudSync() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
@@ -651,15 +651,6 @@ final class DashUITests: XCTestCase {
       predicate: NSPredicate(format: "value == %@", "On"),
       object: iCloudSync)
     XCTAssertEqual(XCTWaiter.wait(for: [syncOn], timeout: 5), .completed)
-
-    let alertPolicies =
-      app.descendants(matching: .any)
-      .matching(identifier: "Alert policies")
-      .firstMatch
-    for _ in 0..<5 where !alertPolicies.exists {
-      app.swipeUp()
-    }
-    XCTAssertTrue(alertPolicies.waitForExistence(timeout: 5))
   }
 
   func testGlowInspirationReturnsToTheSameCenteredCard() {
@@ -670,13 +661,13 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(profile.waitForExistence(timeout: 5))
     profile.tap()
 
-    let glow = app.buttons["workspace-wash-color"]
+    let glow = app.buttons["workspace-glow-color"]
     XCTAssertTrue(Self.waitForHittable(glow))
     glow.tap()
 
-    let ember = app.buttons["workspace-wash-preset-cloudflare"]
-    let none = app.buttons["workspace-wash-preset-none"]
-    let inspiration = app.buttons["workspace-wash-inspiration-cloudflare"]
+    let ember = app.buttons["workspace-glow-preset-orange"]
+    let none = app.buttons["workspace-glow-preset-none"]
+    let inspiration = app.buttons["workspace-glow-inspiration-orange"]
     XCTAssertTrue(Self.waitForHittable(none))
     XCTAssertTrue(Self.waitForHittable(ember))
     XCTAssertTrue(Self.waitForHittable(inspiration))
@@ -699,7 +690,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(Self.waitForHittable(back))
     let expandedPanel =
       app.descendants(matching: .any)
-      .matching(identifier: "workspace-wash-inspiration-panel-cloudflare")
+      .matching(identifier: "workspace-glow-inspiration-panel-orange")
       .firstMatch
     XCTAssertTrue(expandedPanel.waitForExistence(timeout: 5))
     XCTAssertGreaterThan(expandedPanel.frame.width, compactWidth * 2)

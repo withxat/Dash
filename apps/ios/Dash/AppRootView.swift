@@ -2,7 +2,6 @@ import CloudflareAPI
 import CoreText
 import SwiftUI
 import UIKit
-import UserNotifications
 
 private enum OnboardingStep: Equatable {
   case welcome
@@ -61,7 +60,7 @@ struct AppRootView: View {
                 .buttonStyle(.borderedProminent)
               }
             } else {
-              Image("LoginAppIcon")
+              Image(DashTheme.Asset.appIcon)
                 .resizable()
                 .scaledToFit()
                 .frame(width: 96, height: 96)
@@ -122,7 +121,6 @@ struct AppRootView: View {
 
 enum OnboardingBrandIcon {
   static let size: CGFloat = 26
-  static let cornerFactor: CGFloat = 0.2237
 }
 
 enum OnboardingBrandTypography {
@@ -152,7 +150,7 @@ enum OnboardingBrandTypography {
 /// identical metrics — the overlay renders it magnified (icon at launch-logo
 /// size) and scales it *down* while landing, keeping the wordmark crisp.
 struct OnboardingBrandLockup: View {
-  var icon = "LoginAppIcon"
+  var icon = DashTheme.Asset.appIcon
   var magnification: CGFloat = 1
   /// Hidden while the splash holds; expanding it beside the centered icon is
   /// the first beat of the launch choreography.
@@ -208,7 +206,7 @@ struct OnboardingBrandLockup: View {
       .frame(width: size, height: size)
       .clipShape(
         RoundedRectangle(
-          cornerRadius: size * OnboardingBrandIcon.cornerFactor,
+          cornerRadius: size * DashTheme.Radius.appIconCornerFactor,
           style: .continuous
         )
       )
@@ -665,7 +663,7 @@ private struct OnboardingStaggerModifier: ViewModifier {
 
     let delay = Double(index) * 0.055
     return visible
-      ? .timingCurve(0.22, 1, 0.36, 1, duration: 0.3).delay(delay)
+      ? DashTheme.Motion.softLanding(duration: 0.3).delay(delay)
       : .timingCurve(0.4, 0, 1, 1, duration: 0.2).delay(delay)
   }
 }
@@ -924,7 +922,9 @@ private struct OnboardingPermissionButtonStyle: ButtonStyle {
 
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .scaleEffect(configuration.isPressed && !reduceMotion ? 0.97 : 1)
+      .scaleEffect(
+        configuration.isPressed && !reduceMotion ? DashTheme.Motion.pressScale : 1
+      )
       .opacity(configuration.isPressed ? 0.82 : 1)
       .animation(
         reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.press,

@@ -68,22 +68,16 @@ private struct QuickActionsWidgetView: View {
       } else {
         HStack(alignment: .top, spacing: 8) {
           ForEach(entry.actions) { action in
-            Link(destination: link(for: action)) {
-              VStack(spacing: 10) {
-                Image(systemName: action.widgetSystemImage)
-                  .font(.system(size: 22, weight: .semibold))
-                  .foregroundStyle(.primary)
-                  .frame(width: 44, height: 44)
-                  .background(
-                    .quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                Text(action.widgetTitle)
-                  .font(.caption2.weight(.semibold))
-                  .foregroundStyle(.primary)
-                  .multilineTextAlignment(.center)
-                  .lineLimit(2)
-                  .minimumScaleFactor(0.8)
+            Group {
+              if let accountID = entry.accountID,
+                let destination = HomeActions.deepLink(action: action, accountID: accountID)
+              {
+                Link(destination: destination) {
+                  actionTile(action)
+                }
+              } else {
+                actionTile(action)
               }
-              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             }
             .accessibilityLabel(action.widgetTitle)
           }
@@ -94,9 +88,22 @@ private struct QuickActionsWidgetView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 
-  private func link(for action: HomeActionID) -> URL {
-    HomeActions.deepLink(action: action, accountID: entry.accountID)
-      ?? URL(string: "dash://action/\(action.rawValue)")!
+  private func actionTile(_ action: HomeActionID) -> some View {
+    VStack(spacing: 10) {
+      Image(systemName: action.widgetSystemImage)
+        .font(.system(size: 22, weight: .semibold))
+        .foregroundStyle(.primary)
+        .frame(width: 44, height: 44)
+        .background(
+          .quaternary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+      Text(action.widgetTitle)
+        .font(.caption2.weight(.semibold))
+        .foregroundStyle(.primary)
+        .multilineTextAlignment(.center)
+        .lineLimit(2)
+        .minimumScaleFactor(0.8)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 }
 

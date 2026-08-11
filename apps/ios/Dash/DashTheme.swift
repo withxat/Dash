@@ -1,10 +1,15 @@
-import CloudflareAPI
 import GradientAvatars
 import SwiftDitherKit
 import SwiftUI
 import UIKit
 
 enum DashTheme {
+  enum Asset {
+    /// Standalone bitmap used when the compiled AppIcon layer stack is unsafe
+    /// to load through `UIImage(named:)`.
+    static let appIcon = "LoginAppIcon"
+  }
+
   enum Layout {
     static let emptyStateMinHeight: CGFloat = 420
     static let minimumHitTarget: CGFloat = 44
@@ -226,6 +231,8 @@ enum DashTheme {
     static let button: CGFloat = 18
     static let card: CGFloat = 24
     static let sheet: CGFloat = 36
+    /// Apple's app-icon mask proportion, shared by every rendered app icon.
+    static let appIconCornerFactor: CGFloat = 0.2237
   }
 
   static var buttonShape: RoundedRectangle {
@@ -298,6 +305,7 @@ enum DashTheme {
     // `nil` (instant) vs `reduced` for their reduce-motion branch.
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
+    static let pressScale: CGFloat = 0.97
     /// Loading ring ↔ success glyph. Ease-in-out (not ease-out): ease-out
     /// front-loaded the 0.25→1 scale into the transparent first frames, so the
     /// size change never read. Still critically short and un-sprung — the
@@ -315,8 +323,14 @@ enum DashTheme {
     /// Scale is `scaleEffect`, so the mark's layout slot never moves.
     static let glyphSwapScale: CGFloat = 0.82
     static let glyphSwapBlur: CGFloat = 4
+    /// Front-loaded arrival that settles without overshoot. Callers retain
+    /// their own duration because launch, stagger, and body handoff have
+    /// intentionally different paces.
+    static func softLanding(duration: TimeInterval) -> Animation {
+      Animation.timingCurve(0.22, 1, 0.36, 1, duration: duration)
+    }
     /// Staggered text entrance: Transitions.dev's 12pt / 3pt-blur reveal.
-    static let textReveal = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.5)
+    static let textReveal = softLanding(duration: 0.5)
     /// Failure-reveal exit is deliberately independent: one quiet, synchronous
     /// CSS `ease` fade with no stagger, offset, or blur played backwards.
     static let failureDismiss = Animation.timingCurve(0.25, 0.1, 0.25, 1, duration: 0.2)
@@ -367,7 +381,13 @@ enum DashTheme {
 
     /// Skeleton → loaded content: long enough for blur to read.
     @MainActor static var content: Animation {
-      isReduced ? reduced : Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.3)
+      isReduced ? reduced : softLanding(duration: 0.3)
+    }
+
+    /// Plain chart-layer replacement. Kept distinct from `morph`, whose spring
+    /// is reserved for rich placeholder/live shape handoffs.
+    static func chartSwap(duration: TimeInterval) -> Animation {
+      Animation.timingCurve(0.23, 1, 0.32, 1, duration: duration)
     }
 
     /// Hero morph for matchedGeometryEffect trays and the shared confirm
@@ -431,6 +451,26 @@ enum DashTheme {
 
     // MARK: Tray
 
+    /// Family-style compact Tray shell motion. Keep these values separate from
+    /// the generic floating-surface tokens below: Quick Look and Toast also use
+    /// `present` / `dismiss`, but only Tray owns this asymmetric rise and exit.
+    enum Tray {
+      static let presentResponse: TimeInterval = 0.21
+      static let presentDampingFraction: CGFloat = 0.89
+      static let dismissResponse: TimeInterval = 0.21
+      static let dismissDampingFraction: CGFloat = 0.97
+    }
+
+    static let trayPresent = Animation.spring(
+      response: Tray.presentResponse,
+      dampingFraction: Tray.presentDampingFraction
+    )
+    static let trayDismiss = Animation.spring(
+      response: Tray.dismissResponse,
+      dampingFraction: Tray.dismissDampingFraction,
+      blendDuration: 0.08
+    )
+
     /// During an internal route replacement, the compact card follows the active
     /// step's measured height independently of the content crossfade.
     static let trayResize = Animation.timingCurve(0.25, 1, 0.5, 1, duration: 0.27)
@@ -448,20 +488,13 @@ enum DashTheme {
     // MARK: Floating surfaces — Toast and free-moving interaction vocabulary.
     // Raw springs: call sites gate reduce-motion, and some deliberately skip the
     // gate to keep a drag-release physical.
-    /// Tray card entrance. Ease-out (not a spring, not ease-in): answers on the
-    /// first frames and soft-lands. The old 0.35s spring spent too long settling;
-    /// ease-in would delay the first motion and feel even slower to open.
+    /// Short generic floating-surface entrance. Tray has a dedicated measured
+    /// off-screen spring above; this remains shared by non-Tray surfaces.
     static let present = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
     static let release = Animation.spring(
       response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
     static let dismiss = Animation.spring(
       response: 0.28, dampingFraction: 0.94, blendDuration: 0.08)
-    /// Tray scrim opacity fades in/out in place while the card rides its own
-    /// present curve. Opacity carries no physics, so a timing curve stays in
-    /// step with the card: present eases out so the scrim arrives with it,
-    /// dismiss eases in so it lingers then drops.
-    static let scrimPresent = Animation.easeOut(duration: 0.22)
-    static let scrimDismiss = Animation.easeIn(duration: 0.2)
   }
 
   enum Sheet {
@@ -488,13 +521,9 @@ enum DashTheme {
     static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
-    /// Black veil over the page. Kept light on purpose — the material below
-    /// already softens the backdrop, and 0.35 + full-strength blur stacked
-    /// into a muddy slab behind the floating card.
-    static let scrimOpacity: CGFloat = 0.18
-    /// How hard the material blur paints. Full `.ultraThinMaterial` was the
-    /// heavy half of the old scrim; fade it so the page still reads through.
-    static let scrimMaterialOpacity: CGFloat = 0.55
+    /// Family's single, uniform black veil. There is deliberately no material
+    /// blur beneath it: the page stays spatially fixed and legible while it dims.
+    static let scrimOpacity: CGFloat = 1 / 3
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
     /// How far the compact tray may sit into the home-indicator safe area.
@@ -583,9 +612,8 @@ enum DashTheme {
   /// `text-kumo-inverse`
   static let inverse = adaptive(light: 0xF5F5F5, dark: 0x171717)
 
-  /// Cloudflare brand orange — canonical `#F6821F` in light, lifted in dark and
-  /// under Increased Contrast so storage accents and proxied-DNS badges stay
-  /// recognizable. Not the catalog blue (`brand`).
+  /// Warm application accent used by storage, proxied-DNS badges, and decorative
+  /// chrome. Glow keeps its exact inspiration pigment separate below.
   static let accent = adaptive(
     light: 0xF6821F, dark: 0xFF9838, highLight: 0xC45A00, highDark: 0xFFB366)
   /// Canonical brand pigments used by explicitly inspired Glow
@@ -597,10 +625,10 @@ enum DashTheme {
   static let workspaceNetlifyBrandHex: UInt32 = 0x32E6E2
   static let workspaceCoolapkBrandHex: UInt32 = 0x12BF72
   static let workspaceBilibiliBrandHex: UInt32 = 0xF46F95
-  /// Ink over mid-light Glow fills: dark in normal appearances, but light when
-  /// Increased Contrast deliberately deepens the light-mode pigment.
-  static let workspaceWashMidLightLabel = adaptive(
-    light: 0x171717, dark: 0x171717, highLight: 0xF5F5F5, highDark: 0x171717)
+  /// Action-label ink over every Glow pigment. Pure black/white keeps every
+  /// preset above 4.5:1 in light, dark, and Increased Contrast appearances.
+  static let workspaceGlowActionLabel = adaptive(
+    light: 0x000000, dark: 0x000000, highLight: 0xFFFFFF, highDark: 0x000000)
 
   /// Normal appearances preserve the exact brand pigment. Increased Contrast
   /// alone moves to a stronger stop so card rings and compact glyphs remain
@@ -610,7 +638,7 @@ enum DashTheme {
     dark: workspaceCloudflareBrandHex,
     highLight: 0xC43B00,
     highDark: 0xFF9973)
-  static let workspaceNetEaseMusicWash = adaptive(
+  private static let workspaceNetEaseMusicWash = adaptive(
     light: workspaceNetEaseMusicBrandHex,
     dark: workspaceNetEaseMusicBrandHex,
     highLight: 0xB91F31,
@@ -620,12 +648,12 @@ enum DashTheme {
     dark: workspaceNetlifyBrandHex,
     highLight: 0x007F7C,
     highDark: 0x6EF4F1)
-  static let workspaceCoolapkWash = adaptive(
+  private static let workspaceCoolapkWash = adaptive(
     light: workspaceCoolapkBrandHex,
     dark: workspaceCoolapkBrandHex,
     highLight: 0x087A49,
     highDark: 0x65E5A6)
-  static let workspaceBilibiliWash = adaptive(
+  private static let workspaceBilibiliWash = adaptive(
     light: workspaceBilibiliBrandHex,
     dark: workspaceBilibiliBrandHex,
     highLight: 0xB8325D,
@@ -634,7 +662,7 @@ enum DashTheme {
   /// Decorative workspace pigments. They retain four-stop adaptation instead
   /// of borrowing info/success/danger status roles; explicitly inspired
   /// presets use their dedicated brand pigments above.
-  static func workspaceWash(for preset: DashWorkspaceWashPreset) -> Color {
+  static func workspaceWash(for preset: DashWorkspaceGlowPreset) -> Color {
     switch preset {
     case .none:
       .clear
@@ -682,8 +710,6 @@ enum DashTheme {
         ? UIColor.white.withAlphaComponent(0.045)
         : UIColor.black.withAlphaComponent(0.055)
     })
-  /// Alias of `separator` — kept for older stroke call sites.
-  static var line: Color { separator }
   /// Soft solid gray for non-edge uses (globe glow). Not a border token.
   static let hairline = adaptive(light: 0xE9E9E9, dark: 0x262626)
   /// Alias of `separator` — row rules on recessed panels.
@@ -888,7 +914,7 @@ enum FeatureVisualTone: Hashable, Sendable {
   case teal
   /// A Glow preset's canonical pigment, shared by its card, workspace wash,
   /// and Tray chrome so one selection never acquires a second color identity.
-  case workspaceWash(DashWorkspaceWashPreset)
+  case workspaceGlow(DashWorkspaceGlowPreset)
 
   var muted: Color {
     switch self {
@@ -901,7 +927,7 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .info: DashTheme.info.opacity(0.85)
     case .violet: DashTheme.violet.opacity(0.85)
     case .teal: DashTheme.teal.opacity(0.85)
-    case .workspaceWash(let preset): DashTheme.workspaceWash(for: preset).opacity(0.85)
+    case .workspaceGlow(let preset): DashTheme.workspaceWash(for: preset).opacity(0.85)
     }
   }
 
@@ -916,26 +942,25 @@ enum FeatureVisualTone: Hashable, Sendable {
     case .info: DashTheme.info
     case .violet: DashTheme.violet
     case .teal: DashTheme.teal
-    case .workspaceWash(let preset): DashTheme.workspaceWash(for: preset)
+    case .workspaceGlow(let preset): DashTheme.workspaceWash(for: preset)
     }
   }
 
   /// Label ink for text set on the `vivid` fill (toned tray submit pills).
-  /// Most vivid stops are deep in light mode and pale in dark, so adaptive
-  /// `inverse` reads on both. Mid-light Glow fills keep fixed near-black ink
-  /// instead; near-white text loses contrast on them.
+  /// Semantic tones use the shared inverse token; Glow owns a contrast-tested
+  /// token because its pigments span bright and deep stops.
   var vividLabel: Color {
     switch self {
     case .accent: Color(hex: 0x171717)
-    case .workspaceWash(let preset):
-      preset.usesDarkTrayLabel ? DashTheme.workspaceWashMidLightLabel : DashTheme.inverse
+    case .workspaceGlow:
+      DashTheme.workspaceGlowActionLabel
     default: DashTheme.inverse
     }
   }
 
 }
 
-extension DashWorkspaceWashPreset {
+extension DashWorkspaceGlowPreset {
   /// Tray submit-pill / accent tone matching this wash. `nil` for None keeps
   /// the default neutral action button.
   ///
@@ -943,58 +968,7 @@ extension DashWorkspaceWashPreset {
   /// also compile `AppConfiguration`, where this type is unavailable.
   var trayTone: FeatureVisualTone? {
     guard self != .none else { return nil }
-    return .workspaceWash(self)
-  }
-
-  fileprivate var usesDarkTrayLabel: Bool {
-    switch self {
-    case .orange, .red, .green, .pink, .teal: true
-    case .none, .slate, .blue, .purple: false
-    }
-  }
-}
-
-enum FeatureVisualIdentity {
-  /// Fallback when only a section title is known (no feature id).
-  static func tone(forCategory category: String) -> FeatureVisualTone {
-    switch category {
-    case "Domains & DNS": .success
-    case "Compute": .brand
-    case "Storage & Data": .accent
-    case "Networks": .violet
-    default: .soft
-    }
-  }
-
-  /// One distinct tone per catalog feature so Resources rows stay scannable.
-  static func tone(for feature: FeatureID) -> FeatureVisualTone {
-    switch feature {
-    case .zones: .success
-    case .emailRouting: .danger
-    case .workers: .brand
-    case .pages: .info
-    case .r2: .accent
-    case .kv: .warning
-    case .tunnels: .violet
-    }
-  }
-
-  static func catalogColor(for feature: FeatureID) -> Color {
-    tone(for: feature).muted
-  }
-
-  static func heroColor(for feature: FeatureID) -> Color {
-    tone(for: feature).vivid
-  }
-
-  /// Saturated fill for rare vivid feature cards.
-  static func cardColor(for feature: FeatureID) -> Color {
-    tone(for: feature).vivid
-  }
-
-  /// Text/icon color on a vivid feature card.
-  static func onCardColor(for feature: FeatureID) -> Color {
-    DashTheme.inverse
+    return .workspaceGlow(self)
   }
 }
 

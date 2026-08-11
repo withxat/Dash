@@ -62,6 +62,35 @@ enum R2Media {
   }
 }
 
+enum R2UploadTooLargeCopy {
+  case dashLimitOnly
+  case wranglerOrDashboard
+
+  static func message(
+    fileName: String,
+    size: Int,
+    guidance: Self
+  ) -> String {
+    let formattedSize = formattedByteCount(size, locale: DashL10n.activeLocale)
+    let formattedLimit = formattedByteCount(
+      R2Media.transferSizeLimit,
+      locale: DashL10n.activeLocale)
+    switch guidance {
+    case .dashLimitOnly:
+      return DashL10n.string(
+        "\(fileName) is \(formattedSize). Dash uploads files up to \(formattedLimit).")
+    case .wranglerOrDashboard:
+      return DashL10n.string(
+        "\(fileName) is \(formattedSize). Dash uploads files up to \(formattedLimit). Use wrangler or the dashboard for this one"
+      )
+    }
+  }
+
+  static func formattedByteCount(_ size: Int, locale: Locale) -> String {
+    size.formatted(.byteCount(style: .file).locale(locale))
+  }
+}
+
 // MARK: - Virtual folders
 
 /// Path arithmetic for R2's virtual folders — key prefixes ending in `/`.

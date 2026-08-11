@@ -62,9 +62,8 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   /// (permission missing or the request failed), so an empty widget does not
   /// claim there is nothing to report.
   var alertsUnavailable: Bool
-  /// Account binding for widget taps. Optional so snapshots written by an
-  /// older app version remain decodable; an unbound snapshot is display-only.
-  var accountID: String?
+  /// Account binding for widget taps.
+  var accountID: String
   var accountName: String?
   var fetchedAt: Date
 
@@ -72,7 +71,7 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
     unreadCount: Int,
     alerts: [Alert],
     alertsUnavailable: Bool = false,
-    accountID: String? = nil,
+    accountID: String,
     accountName: String?,
     fetchedAt: Date
   ) {
@@ -82,40 +81,6 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
     self.accountID = accountID
     self.accountName = accountName
     self.fetchedAt = fetchedAt
-  }
-
-  private enum CodingKeys: String, CodingKey {
-    case unreadCount
-    case alerts
-    case alertsUnavailable
-    case accountID
-    case accountName
-    case fetchedAt
-  }
-
-  init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    // A snapshot written before Watchtower dropped its client-side health
-    // verdict carries none of these keys. Decoding it as "nothing unread" is
-    // right: the next refresh overwrites it, and the widget shows its empty
-    // state rather than resurrecting deleted issue counts.
-    unreadCount = try container.decodeIfPresent(Int.self, forKey: .unreadCount) ?? 0
-    alerts = try container.decodeIfPresent([Alert].self, forKey: .alerts) ?? []
-    alertsUnavailable =
-      try container.decodeIfPresent(Bool.self, forKey: .alertsUnavailable) ?? false
-    accountID = try container.decodeIfPresent(String.self, forKey: .accountID)
-    accountName = try container.decodeIfPresent(String.self, forKey: .accountName)
-    fetchedAt = try container.decode(Date.self, forKey: .fetchedAt)
-  }
-
-  func encode(to encoder: any Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(unreadCount, forKey: .unreadCount)
-    try container.encode(alerts, forKey: .alerts)
-    try container.encode(alertsUnavailable, forKey: .alertsUnavailable)
-    try container.encodeIfPresent(accountID, forKey: .accountID)
-    try container.encodeIfPresent(accountName, forKey: .accountName)
-    try container.encode(fetchedAt, forKey: .fetchedAt)
   }
 
   /// VoiceOver / widget headline. Counts deliveries — it never characterises
@@ -147,12 +112,8 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
   }
 
   var deepLinkURL: URL? {
-    guard
-      let accountID = accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
-      !accountID.isEmpty
-    else {
-      return nil
-    }
+    let accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !accountID.isEmpty else { return nil }
     var components = URLComponents()
     components.scheme = "dash"
     components.host = "watchtower"

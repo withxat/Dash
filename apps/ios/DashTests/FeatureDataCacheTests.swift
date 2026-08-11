@@ -212,6 +212,38 @@ import Testing
   #expect(value == 42)
 }
 
+@Test func persistenceIgnoresUnknownAndCorruptSchemas() async throws {
+  let dir = dashPersistenceTempDir("strict-schema")
+  defer { try? FileManager.default.removeItem(at: dir) }
+
+  let writer = FeatureCachePersistence(directory: dir)
+  await writer.upsert(
+    FeatureCachePersistedEntry(
+      data: try JSONEncoder().encode(42),
+      fetchedAt: .now,
+      ttl: nil),
+    key: "sample",
+    accountID: "unknown")
+  await writer.flushNow()
+
+  let unknownURL = dir.appendingPathComponent("feature-cache-unknown.json")
+  let unknownData = try Data(contentsOf: unknownURL)
+  var unknownJSON = try #require(
+    JSONSerialization.jsonObject(with: unknownData) as? [String: Any])
+  unknownJSON["schemaVersion"] = 99
+  try JSONSerialization.data(withJSONObject: unknownJSON)
+    .write(to: unknownURL, options: .atomic)
+
+  let corruptURL = dir.appendingPathComponent("feature-cache-corrupt.json")
+  try Data("{not-json".utf8).write(to: corruptURL, options: .atomic)
+
+  let reader = FeatureCachePersistence(directory: dir)
+  let unknownStore = await reader.load(accountID: "unknown")
+  let corruptStore = await reader.load(accountID: "corrupt")
+  #expect(unknownStore.isEmpty)
+  #expect(corruptStore.isEmpty)
+}
+
 @Test @MainActor func persistenceIsolationBetweenAccounts() async throws {
   let dir = dashPersistenceTempDir("isolation")
   defer { try? FileManager.default.removeItem(at: dir) }
@@ -380,4 +412,29 @@ private actor FeatureLoadCompletionProbe {
     isFinished = true
     wasCancelled = cancelled
   }
+}
+
+@Test @MainActor func featureDataCacheStoresAndClearsValues() {
+  let cache = FeatureDataCache()
+  cache.set("zones:test", ["zone-a"])
+  #expect(cache.get("zones:test") as [String]? == ["zone-a"])
+  cache.remove("zones:test")
+  #expect(cache.get("zones:test") as [String]? == nil)
+  cache.set("workers:test", 3)
+  cache.clear()
+  #expect(cache.get("workers:test") as Int? == nil)
+}
+
+@Test @MainActor func featureDataCacheHonorsTTLAndMemoryPurge() {
+  let cache = FeatureDataCache()
+  cache.set("zones:a", 1, ttl: 0.001)
+  cache.set("watchtower:acc", 2, ttl: nil)
+  // Force expiry for the short-TTL entry.
+  Thread.sleep(forTimeInterval: 0.01)
+  #expect(cache.get("zones:a") as Int? == nil)
+  #expect(cache.get("watchtower:acc") as Int? == 2)
+  cache.set("zones:b", 3)
+  cache.purgeForMemoryPressure()
+  #expect(cache.get("zones:b") as Int? == nil)
+  #expect(cache.get("watchtower:acc") as Int? == 2)
 }

@@ -909,6 +909,7 @@ private struct R2AddDomainForm: View {
   @State private var zones: [CloudflareZone] = []
   @State private var zonesLoaded = false
   @State private var zonesError: String?
+  @State private var zonesContext: AccountRequestContext?
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
 
@@ -972,39 +973,74 @@ private struct R2AddDomainForm: View {
         "Cloudflare creates the DNS record and edge certificate automatically. The bucket serves on the domain once both are active."
       )
     )
-    .task { await loadZones() }
+    .task(id: model.accountRequestContext) { await loadZones() }
   }
 
   private func loadZones() async {
-    guard let accountID = model.activeAccountID else { return }
-    if let cached: [CloudflareZone] = model.featureCache.get(FeatureCacheKey.zones(accountID)) {
-      zones = cached
+    let context = model.accountRequestContext
+    zonesContext = context
+    zones = []
+    zonesLoaded = false
+    zonesError = nil
+    guard let context else { return }
+    let result = await DashZonePickerLoader.load(model: model, context: context)
+    guard zonesContext == context else { return }
+    switch result {
+    case .loaded(let loaded):
+      zones = loaded
       zonesLoaded = true
-      return
-    }
-    do {
-      zones = try await model.client.listZones(accountID: accountID, perPage: 50).items
-      zonesLoaded = true
-    } catch {
-      // `zonesLoaded` stays false: an empty list from a thrown lookup must
-      // never present the "No zone matches" answer.
-      guard !error.dashIsCancellation else { return }
-      zonesError = error.dashActionableMessage
+    case .failed(let message):
+      zonesError = message
+    case .cancelled:
+      break
     }
   }
 
   private func save() async {
-    guard let accountID = model.activeAccountID, let zone = matchedZone else { return }
+    guard
+      let context = DashZonePickerSubmissionGuard.submissionContext(
+        zonesContext: zonesContext,
+        currentContext: model.accountRequestContext),
+      let zone = matchedZone
+    else { return }
+    let accountID = context.accountID
     actionPhase = .loading
     error = nil
     do {
       try await model.client.addR2CustomDomain(
         accountID: accountID, bucket: bucket, domain: normalizedHost, zoneID: zone.id)
-      model.toasts.success(DashL10n.string("Added successfully"))
+      guard
+        DashZonePickerSubmissionGuard.allowsEffects(
+          for: context,
+          zonesContext: zonesContext,
+          currentContext: model.accountRequestContext,
+          isCancelled: Task.isCancelled)
+      else {
+        actionPhase = .idle
+        return
+      }
       await onAdded()
+      guard
+        DashZonePickerSubmissionGuard.allowsEffects(
+          for: context,
+          zonesContext: zonesContext,
+          currentContext: model.accountRequestContext,
+          isCancelled: Task.isCancelled)
+      else {
+        actionPhase = .idle
+        return
+      }
+      model.toasts.success(DashL10n.string("Added successfully"))
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
+      guard
+        DashZonePickerSubmissionGuard.allowsEffects(
+          for: context,
+          zonesContext: zonesContext,
+          currentContext: model.accountRequestContext,
+          isCancelled: error.dashIsCancellation || Task.isCancelled)
+      else { return }
       self.error = error.dashActionableMessage
     }
   }

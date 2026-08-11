@@ -269,7 +269,7 @@ private struct ProfileTrayAccountRow: View {
         contentScale: 1.5
       )
       .overlay {
-        Circle().stroke(DashTheme.line, lineWidth: 0.5)
+        Circle().stroke(DashTheme.separator, lineWidth: 0.5)
       }
 
       VStack(alignment: .leading, spacing: 3) {
@@ -619,15 +619,15 @@ struct SettingsView: View {
   @Environment(\.openURL) private var openURL
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system.rawValue
   @AppStorage(DashInteractionPreferences.hapticsKey) private var hapticsEnabled = true
-  @AppStorage(DashWorkspaceWashPreset.storageKey) private var workspaceWashRaw =
-    DashWorkspaceWashPreset.defaultPreset.rawValue
+  @AppStorage(DashWorkspaceGlowPreset.storageKey) private var workspaceGlowRaw =
+    DashWorkspaceGlowPreset.defaultPreset.rawValue
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
     DashChartStylePreference.defaultStyle.rawValue
   @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
   @State private var showsLanguagePicker = false
-  @State private var showsWorkspaceWashPicker = false
+  @State private var showsWorkspaceGlowPicker = false
   @State private var showsChartStylePicker = false
   @State private var showsSignOutConfirmation = false
 
@@ -639,8 +639,8 @@ struct SettingsView: View {
     DashChartStylePreference.resolved(stored: chartStyleRaw)
   }
 
-  private var selectedWorkspaceWash: DashWorkspaceWashPreset {
-    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
+  private var selectedWorkspaceGlow: DashWorkspaceGlowPreset {
+    DashWorkspaceGlowPreset.resolved(stored: workspaceGlowRaw)
   }
 
   private var profileSubtitle: String? {
@@ -706,18 +706,18 @@ struct SettingsView: View {
           // header the page pays for twice.
           Button {
             DashDelight.lightImpact()
-            showsWorkspaceWashPicker = true
+            showsWorkspaceGlowPicker = true
           } label: {
             SettingsPlainRow(
               title: DashL10n.string("Glow"),
               icon: SolarAsset.sun,
-              trailing: selectedWorkspaceWash.displayName,
+              trailing: selectedWorkspaceGlow.displayName,
               trailingIcon: SolarAsset.trayDots,
               trailingIconRotation: .degrees(90)
             )
           }
           .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityIdentifier("workspace-wash-color")
+          .accessibilityIdentifier("workspace-glow-color")
 
           Button {
             DashDelight.lightImpact()
@@ -819,11 +819,11 @@ struct SettingsView: View {
       LanguagePickerTray(languageRaw: $languageRaw)
     }
     .dashTray(
-      isPresented: $showsWorkspaceWashPicker,
+      isPresented: $showsWorkspaceGlowPicker,
       title: DashL10n.string("Glow"),
-      tone: selectedWorkspaceWash.trayTone
+      tone: selectedWorkspaceGlow.trayTone
     ) {
-      WorkspaceWashPickerTray(workspaceWashRaw: $workspaceWashRaw)
+      WorkspaceGlowPickerTray(workspaceGlowRaw: $workspaceGlowRaw)
     }
     .dashTray(
       isPresented: $showsChartStylePicker,
@@ -840,8 +840,8 @@ struct SettingsView: View {
     .onChange(of: iCloudSyncEnabled) { _, enabled in
       ICloudPreferencesSync.shared.setEnabled(enabled)
     }
-    .onChange(of: workspaceWashRaw) { _, _ in
-      ICloudPreferencesSync.shared.publish(.workspaceWash)
+    .onChange(of: workspaceGlowRaw) { _, _ in
+      ICloudPreferencesSync.shared.publish(.workspaceGlow)
     }
     .onAppear {
       // The remounted Settings page is the real completion signal for a
@@ -976,9 +976,9 @@ private struct SignOutConfirmationContent: View {
   }
 }
 
-private enum WorkspaceWashTrayStep: Hashable, Sendable {
+private enum WorkspaceGlowTrayStep: Hashable, Sendable {
   case picker
-  case inspiration(DashWorkspaceWashPreset)
+  case inspiration(DashWorkspaceGlowPreset)
 
   var trayRole: DashTrayStepRole {
     switch self {
@@ -995,7 +995,7 @@ private enum WorkspaceWashTrayStep: Hashable, Sendable {
   }
 }
 
-private struct WorkspaceWashPanelMorphModifier: ViewModifier {
+private struct WorkspaceGlowPanelMorphModifier: ViewModifier {
   let id: String?
   let namespace: Namespace.ID
   let isSource: Bool
@@ -1016,20 +1016,20 @@ private struct WorkspaceWashPanelMorphModifier: ViewModifier {
   }
 }
 
-private struct WorkspaceWashPickerTray: View {
-  @Binding var workspaceWashRaw: String
+private struct WorkspaceGlowPickerTray: View {
+  @Binding var workspaceGlowRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var centeredPresetID: String?
   @State private var centeredPresetPositionIsReady = false
-  @State private var path: [WorkspaceWashTrayStep] = []
+  @State private var path: [WorkspaceGlowTrayStep] = []
   @Namespace private var inspirationPanelMorph
 
-  private var selectedPreset: DashWorkspaceWashPreset {
-    DashWorkspaceWashPreset.resolved(stored: workspaceWashRaw)
+  private var selectedPreset: DashWorkspaceGlowPreset {
+    DashWorkspaceGlowPreset.resolved(stored: workspaceGlowRaw)
   }
 
-  private var activeStep: WorkspaceWashTrayStep {
+  private var activeStep: WorkspaceGlowTrayStep {
     path.last ?? .picker
   }
 
@@ -1071,9 +1071,9 @@ private struct WorkspaceWashPickerTray: View {
     .dashTrayTitle(activeStep.title)
     .dashTrayContentTone(activeTone)
     .environment(\.dashTrayTone, activeTone)
-    .onChange(of: workspaceWashRaw) { _, stored in
+    .onChange(of: workspaceGlowRaw) { _, stored in
       guard centeredPresetPositionIsReady else { return }
-      let externallySelected = DashWorkspaceWashPreset.resolved(stored: stored)
+      let externallySelected = DashWorkspaceGlowPreset.resolved(stored: stored)
       // Local taps move the scroll owner before they persist the preset, so an
       // equal ID is a no-op. A real external write (including iCloud KVS) is
       // the only path that recentres the picker from the persisted value.
@@ -1092,22 +1092,22 @@ private struct WorkspaceWashPickerTray: View {
     DashTrayScrollBoundary {
       GeometryReader { proxy in
         ScrollView(.horizontal, showsIndicators: false) {
-          LazyHStack(spacing: WorkspaceWashPickerMetrics.cardSpacing) {
-            ForEach(DashWorkspaceWashPreset.allCases) { preset in
-              washCard(for: preset)
+          LazyHStack(spacing: WorkspaceGlowPickerMetrics.cardSpacing) {
+            ForEach(DashWorkspaceGlowPreset.allCases) { preset in
+              glowCard(for: preset)
                 .id(preset.id)
             }
           }
           .scrollTargetLayout()
-          .padding(.vertical, WorkspaceWashPickerMetrics.cardVerticalInset)
+          .padding(.vertical, WorkspaceGlowPickerMetrics.cardVerticalInset)
         }
         .contentMargins(
           .horizontal,
-          WorkspaceWashPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
+          WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
           for: .scrollContent
         )
         .scrollPosition(id: centeredPresetPosition, anchor: .center)
-        .scrollTargetBehavior(WorkspaceWashCenteredScrollTargetBehavior())
+        .scrollTargetBehavior(WorkspaceGlowCenteredScrollTargetBehavior())
         .onAppear {
           guard !centeredPresetPositionIsReady else { return }
           // A non-nil target installed before this nested lazy scroll mounts is
@@ -1126,23 +1126,23 @@ private struct WorkspaceWashPickerTray: View {
           DashScrollEdgeFade(
             edge: .leading,
             surface: DashTheme.Sheet.background,
-            thickness: WorkspaceWashPickerMetrics.edgeFadeWidth)
+            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth)
         }
         .overlay(alignment: .trailing) {
           DashScrollEdgeFade(
             edge: .trailing,
             surface: DashTheme.Sheet.background,
-            thickness: WorkspaceWashPickerMetrics.edgeFadeWidth)
+            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth)
         }
       }
-      .frame(height: WorkspaceWashPickerMetrics.viewportHeight)
+      .frame(height: WorkspaceGlowPickerMetrics.viewportHeight)
       // SwiftUI owns the centered target while this tray is mounted. Keep the
       // bridge one-way: feeding the resulting preset back into scrollPosition
       // closes an AttributeGraph loop during the same layout transaction.
       .onChange(of: centeredPresetID) { _, presetID in
         guard
           let presetID,
-          let preset = DashWorkspaceWashPreset.allCases.first(where: { $0.id == presetID })
+          let preset = DashWorkspaceGlowPreset.allCases.first(where: { $0.id == presetID })
         else { return }
         select(preset)
       }
@@ -1151,11 +1151,11 @@ private struct WorkspaceWashPickerTray: View {
         dismiss()
       }
       .padding(.top, 16)
-      .accessibilityIdentifier("settings-workspace-wash-done")
+      .accessibilityIdentifier("settings-workspace-glow-done")
     }
   }
 
-  private func washCard(for preset: DashWorkspaceWashPreset) -> some View {
+  private func glowCard(for preset: DashWorkspaceGlowPreset) -> some View {
     let isSelected = selectedPreset == preset
     let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
     let selectionColor =
@@ -1176,7 +1176,7 @@ private struct WorkspaceWashPickerTray: View {
           if preset != .none {
             DashWorkspaceGlowField(
               color: DashTheme.workspaceWash(for: preset),
-              depth: WorkspaceWashPickerMetrics.cardHeight
+              depth: WorkspaceGlowPickerMetrics.cardHeight
             )
             .frame(maxHeight: .infinity, alignment: .top)
           } else {
@@ -1194,8 +1194,8 @@ private struct WorkspaceWashPickerTray: View {
             .padding(.bottom, 16)
         }
         .frame(
-          width: WorkspaceWashPickerMetrics.cardWidth,
-          height: WorkspaceWashPickerMetrics.cardHeight
+          width: WorkspaceGlowPickerMetrics.cardWidth,
+          height: WorkspaceGlowPickerMetrics.cardHeight
         )
         .overlay(alignment: .topTrailing) {
           DashSelectionMark(
@@ -1212,12 +1212,12 @@ private struct WorkspaceWashPickerTray: View {
         // at the card's own edge.
         .overlay {
           shape.strokeBorder(
-            isSelected ? selectionColor : DashTheme.line,
+            isSelected ? selectionColor : DashTheme.separator,
             lineWidth: isSelected ? 2 : 1
           )
         }
         .modifier(
-          WorkspaceWashPanelMorphModifier(
+          WorkspaceGlowPanelMorphModifier(
             id: inspirationMorphID(for: preset),
             namespace: inspirationPanelMorph,
             isSource: path.isEmpty
@@ -1228,7 +1228,7 @@ private struct WorkspaceWashPickerTray: View {
       .buttonStyle(DashSurfaceButtonStyle())
       .accessibilityLabel(preset.displayName)
       .accessibilityAddTraits(isSelected ? .isSelected : [])
-      .accessibilityIdentifier("workspace-wash-preset-\(preset.rawValue)")
+      .accessibilityIdentifier("workspace-glow-preset-\(preset.rawValue)")
 
       if preset.inspiration != nil {
         Button {
@@ -1244,14 +1244,14 @@ private struct WorkspaceWashPickerTray: View {
             preset.displayName
           )
         )
-        .accessibilityIdentifier("workspace-wash-inspiration-\(preset.rawValue)")
+        .accessibilityIdentifier("workspace-glow-inspiration-\(preset.rawValue)")
         .padding(4)
       }
     }
   }
 
   @ViewBuilder
-  private func inspiration(for preset: DashWorkspaceWashPreset) -> some View {
+  private func inspiration(for preset: DashWorkspaceGlowPreset) -> some View {
     if let inspiration = preset.inspiration {
       let color = DashTheme.workspaceWash(for: preset)
       let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
@@ -1262,7 +1262,7 @@ private struct WorkspaceWashPickerTray: View {
 
           DashWorkspaceGlowField(
             color: color,
-            depth: WorkspaceWashPickerMetrics.inspirationHeight
+            depth: WorkspaceGlowPickerMetrics.inspirationHeight
           )
           .frame(maxHeight: .infinity, alignment: .top)
 
@@ -1271,17 +1271,17 @@ private struct WorkspaceWashPickerTray: View {
             .foregroundStyle(DashTheme.text)
             .padding(18)
         }
-        .frame(height: WorkspaceWashPickerMetrics.inspirationHeight)
+        .frame(height: WorkspaceGlowPickerMetrics.inspirationHeight)
         .clipShape(shape)
-        .overlay { shape.strokeBorder(DashTheme.line, lineWidth: 1) }
+        .overlay { shape.strokeBorder(DashTheme.separator, lineWidth: 1) }
         .modifier(
-          WorkspaceWashPanelMorphModifier(
+          WorkspaceGlowPanelMorphModifier(
             id: inspirationMorphID(for: preset),
             namespace: inspirationPanelMorph,
             isSource: true
           )
         )
-        .accessibilityIdentifier("workspace-wash-inspiration-panel-\(preset.rawValue)")
+        .accessibilityIdentifier("workspace-glow-inspiration-panel-\(preset.rawValue)")
 
         VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
           HStack(spacing: 8) {
@@ -1319,23 +1319,23 @@ private struct WorkspaceWashPickerTray: View {
       .accessibilityHidden(true)
   }
 
-  private func inspirationMorphID(for preset: DashWorkspaceWashPreset) -> String? {
+  private func inspirationMorphID(for preset: DashWorkspaceGlowPreset) -> String? {
     guard !reduceMotion, preset.inspiration != nil else { return nil }
-    return "workspace-wash-inspiration-panel-\(preset.rawValue)"
+    return "workspace-glow-inspiration-panel-\(preset.rawValue)"
   }
 
-  private func select(_ preset: DashWorkspaceWashPreset) {
-    guard workspaceWashRaw != preset.rawValue else { return }
+  private func select(_ preset: DashWorkspaceGlowPreset) {
+    guard workspaceGlowRaw != preset.rawValue else { return }
     // The same write animates the live workspace wash behind the tray and the
     // card's static selection cues; swiping can interrupt it at any point.
     withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
-      workspaceWashRaw = preset.rawValue
+      workspaceGlowRaw = preset.rawValue
     }
     DashDelight.selectionChanged()
   }
 }
 
-enum WorkspaceWashPickerMetrics {
+enum WorkspaceGlowPickerMetrics {
   static let cardWidth: CGFloat = 126
   static let cardHeight: CGFloat = 184
   static let inspirationHeight: CGFloat = 160
@@ -1357,7 +1357,7 @@ enum WorkspaceWashPickerMetrics {
 /// View-aligned momentum first chooses the nearest card, then the anchor moves
 /// that target to the viewport's centre. This keeps native, interruptible
 /// deceleration on iOS 17+ while making a swipe itself a picker interaction.
-private struct WorkspaceWashCenteredScrollTargetBehavior: ScrollTargetBehavior {
+private struct WorkspaceGlowCenteredScrollTargetBehavior: ScrollTargetBehavior {
   private let viewAligned = ViewAlignedScrollTargetBehavior(limitBehavior: .always)
 
   func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
@@ -1764,13 +1764,15 @@ struct AboutView: View {
 private struct AboutBrandHero: View {
   var body: some View {
     VStack(spacing: 16) {
-      Image("LoginAppIcon")
+      Image(DashTheme.Asset.appIcon)
         .resizable()
         .scaledToFit()
         .frame(width: 96, height: 96)
         .dashShadow(
           .raised,
-          in: RoundedRectangle(cornerRadius: 96 * 0.2237, style: .continuous)
+          in: RoundedRectangle(
+            cornerRadius: 96 * DashTheme.Radius.appIconCornerFactor,
+            style: .continuous)
         )
         .accessibilityHidden(true)
         .frame(height: 136)

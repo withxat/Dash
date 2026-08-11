@@ -3,9 +3,8 @@ import Foundation
 
 /// Device-local semantics for Cloudflare's notification history.
 ///
-/// The inbox is Cloudflare's own deliveries and nothing else: an account's
-/// notification policies are the only place Cloudflare declares that something
-/// needs attention, so Dash relays them instead of inventing its own.
+/// The inbox contains only Cloudflare's delivery history. Dash creates no
+/// entries; it only assigns device-local read and ignored state to that history.
 ///
 /// Cloudflare exposes delivery history without read state, so Dash establishes
 /// the first fetched page as history and tracks later delivery IDs as unread on
@@ -19,12 +18,11 @@ enum WatchtowerInboxStore {
   }
 
   private struct ReadPayload: Codable, Sendable {
-    var initializedAccounts: [String]
     var byAccount: [String: [String]]
     /// Local point-in-time that separates pre-existing history from later
     /// deliveries. This also protects accounts whose first history fetch was
     /// unavailable and therefore returned an empty page.
-    var baselineByAccount: [String: Date]?
+    var baselineByAccount: [String: Date]
   }
 
   // MARK: Ignore
@@ -81,10 +79,7 @@ enum WatchtowerInboxStore {
     let notificationIDs = entryIDs.filter { $0.hasPrefix("cf:") }
     guard !notificationIDs.isEmpty else { return }
     var payload = readPayload(defaults: defaults)
-    var initialized = Set(payload.initializedAccounts)
-    initialized.insert(accountID)
-    payload.initializedAccounts = Array(initialized).sorted()
-    var baselines = payload.baselineByAccount ?? [:]
+    var baselines = payload.baselineByAccount
     if baselines[accountID] == nil { baselines[accountID] = .now }
     payload.baselineByAccount = baselines
     var read = Set(payload.byAccount[accountID] ?? [])
@@ -118,7 +113,7 @@ enum WatchtowerInboxStore {
         id: "cf:\(alert.id)",
         title: alert.title,
         detail: alert.subtitle,
-        sentAt: alert.sent.flatMap(parseISO8601),
+        sentAt: alert.sent.flatMap(DashDateFormatting.date(fromISO8601:)),
         category: .history)
     }
     let read = readIDs(
@@ -145,14 +140,11 @@ enum WatchtowerInboxStore {
     defaults: UserDefaults
   ) -> Set<String> {
     var payload = readPayload(defaults: defaults)
-    var initialized = Set(payload.initializedAccounts)
-    var baselines = payload.baselineByAccount ?? [:]
+    var baselines = payload.baselineByAccount
     let currentNotificationIDs = Set(currentEntries.map(\.id))
-    if !initialized.contains(accountID) || baselines[accountID] == nil {
-      // An upgrade must not turn Cloudflare's existing delivery page into ten
-      // "new" alerts. The first page is the local read baseline.
-      initialized.insert(accountID)
-      payload.initializedAccounts = Array(initialized).sorted()
+    if baselines[accountID] == nil {
+      // The first observed page is the local read baseline, so Cloudflare's
+      // existing delivery history does not arrive as a page of "new" alerts.
       baselines[accountID] = .now
       payload.baselineByAccount = baselines
       payload.byAccount[accountID] = Array(currentNotificationIDs).sorted()
@@ -160,7 +152,7 @@ enum WatchtowerInboxStore {
       return currentNotificationIDs
     }
 
-    // If notification access was unavailable during the empty baseline, treat
+    // If delivery-history access was unavailable during the empty baseline, treat
     // older deliveries as history once access arrives. Only deliveries after
     // the local baseline become unread.
     let baseline = baselines[accountID]!
@@ -184,15 +176,6 @@ enum WatchtowerInboxStore {
 
   // MARK: Private
 
-  private static func parseISO8601(_ value: String) -> Date? {
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = fractional.date(from: value) { return date }
-    let plain = ISO8601DateFormatter()
-    plain.formatOptions = [.withInternetDateTime]
-    return plain.date(from: value)
-  }
-
   private static func ignoredPayload(defaults: UserDefaults) -> IgnoredPayload {
     guard let data = defaults.data(forKey: ignoredKey),
       let decoded = try? JSONDecoder().decode(IgnoredPayload.self, from: data)
@@ -211,9 +194,8 @@ enum WatchtowerInboxStore {
       let decoded = try? JSONDecoder().decode(ReadPayload.self, from: data)
     else {
       return ReadPayload(
-        initializedAccounts: [],
         byAccount: [:],
-        baselineByAccount: nil)
+        baselineByAccount: [:])
     }
     return decoded
   }

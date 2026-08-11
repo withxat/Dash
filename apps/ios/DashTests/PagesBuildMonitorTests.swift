@@ -4,18 +4,79 @@ import Testing
 
 @testable import Dash
 
-@Test func legacyPagesActivityPushTokensAreRemoved() throws {
-  let suite = "dash.tests.pages-activity-token.\(UUID().uuidString)"
-  let defaults = try #require(UserDefaults(suiteName: suite))
-  defer { defaults.removePersistentDomain(forName: suite) }
-  defaults.set("token-a", forKey: "\(LegacyPagesBuildPushTokenStore.keyPrefix)deployment-a")
-  defaults.set("keep", forKey: "dash.unrelated")
+private struct PagesDeploymentStatusCase: Sendable {
+  let rawStatus: String?
+  let expected: PagesDeploymentStatusClassification
+}
 
-  LegacyPagesBuildPushTokenStore.clear(defaults: defaults)
+@Test(arguments: [
+  PagesDeploymentStatusCase(rawStatus: "success", expected: .success),
+  PagesDeploymentStatusCase(rawStatus: "failure", expected: .failure),
+  PagesDeploymentStatusCase(rawStatus: "failed", expected: .failure),
+  PagesDeploymentStatusCase(rawStatus: "canceled", expected: .cancelled),
+  PagesDeploymentStatusCase(rawStatus: "cancelled", expected: .cancelled),
+  PagesDeploymentStatusCase(rawStatus: "skipped", expected: .cancelled),
+  PagesDeploymentStatusCase(rawStatus: "active", expected: .active),
+  PagesDeploymentStatusCase(rawStatus: "building", expected: .active),
+  PagesDeploymentStatusCase(rawStatus: "deploying", expected: .active),
+  PagesDeploymentStatusCase(rawStatus: "queued", expected: .active),
+  PagesDeploymentStatusCase(rawStatus: "initializing", expected: .active),
+  PagesDeploymentStatusCase(rawStatus: "idle", expected: .idle),
+])
+private func pagesDeploymentStatusClassificationClassifiesKnownStatuses(
+  _ testCase: PagesDeploymentStatusCase
+) {
+  #expect(PagesDeploymentStatusClassification.classify(testCase.rawStatus) == testCase.expected)
+}
 
-  #expect(
-    defaults.object(forKey: "\(LegacyPagesBuildPushTokenStore.keyPrefix)deployment-a") == nil)
-  #expect(defaults.string(forKey: "dash.unrelated") == "keep")
+@Test(arguments: [
+  PagesDeploymentStatusCase(rawStatus: nil, expected: .unknown),
+  PagesDeploymentStatusCase(rawStatus: "", expected: .unknown),
+  PagesDeploymentStatusCase(rawStatus: "unknown", expected: .unknown),
+  PagesDeploymentStatusCase(rawStatus: "  SuCcEsS\n", expected: .success),
+  PagesDeploymentStatusCase(rawStatus: "\tFaIlUrE  ", expected: .failure),
+  PagesDeploymentStatusCase(rawStatus: "  CaNcElLeD  ", expected: .cancelled),
+])
+private func pagesDeploymentStatusClassificationNormalizesInputAndRejectsUnknownStatuses(
+  _ testCase: PagesDeploymentStatusCase
+) {
+  #expect(PagesDeploymentStatusClassification.classify(testCase.rawStatus) == testCase.expected)
+}
+
+@Test func pagesDeploymentStatusMappingAgreesAcrossAppSurfaces() {
+  let cases:
+    [(
+      raw: String,
+      classification: PagesDeploymentStatusClassification,
+      token: StatusToken,
+      outcome: PagesDeploymentChartModel.Outcome,
+      catalogKey: String
+    )] = [
+      ("  SUCCESS\n", .success, .success, .success, "Success"),
+      ("\tFailure ", .failure, .failed, .failure, "Failed"),
+      (" FAILED ", .failure, .failed, .failure, "Failed"),
+      (" canceled ", .cancelled, .canceled, .canceled, "Canceled"),
+      ("\nCANCELLED\t", .cancelled, .canceled, .canceled, "Canceled"),
+      (" skipped ", .cancelled, .skipped, .canceled, "Canceled"),
+      (" active ", .active, .inProgress, .inFlight, "In progress"),
+      (" BUILDING ", .active, .inProgress, .inFlight, "In progress"),
+      (" deploying ", .active, .inProgress, .inFlight, "In progress"),
+      (" queued ", .active, .inProgress, .inFlight, "In progress"),
+      (" initializing ", .active, .inProgress, .inFlight, "In progress"),
+      (" idle ", .idle, .inProgress, .inFlight, "In progress"),
+      (" mystery ", .unknown, .unknown, .other, "Unknown"),
+    ]
+
+  for testCase in cases {
+    let classification = PagesDeploymentStatusClassification.classify(testCase.raw)
+    #expect(classification == testCase.classification)
+    #expect(classification.catalogKey == testCase.catalogKey)
+    #expect(StatusToken(pagesStatus: testCase.raw) == testCase.token)
+    #expect(PagesDeploymentChartModel.outcome(forStatus: testCase.raw) == testCase.outcome)
+  }
+
+  #expect(StatusToken(pagesStatus: nil, isSkipped: true) == .skipped)
+  #expect(PagesDeploymentChartModel.outcome(forStatus: nil, isSkipped: true) == .canceled)
 }
 
 @Test func pagesBuildRefreshDispositionClassifiesCancellationAndHTTPFailures() {
@@ -85,27 +146,6 @@ import Testing
       previousWasInProgress: false,
       latestIsInProgress: false,
       source: .poll))
-}
-
-@Test func pagesBuildAttributesDecodeLegacyActivitiesWithoutAnAccount() throws {
-  let legacy = try JSONDecoder().decode(
-    PagesBuildAttributes.self,
-    from: Data(
-      """
-      {"projectName":"site","deploymentID":"deployment-1"}
-      """.utf8))
-  #expect(legacy.accountID == nil)
-  #expect(legacy.projectName == "site")
-  #expect(legacy.deploymentID == "deployment-1")
-
-  let current = PagesBuildAttributes(
-    accountID: "account-1",
-    projectName: "site",
-    deploymentID: "deployment-1")
-  let roundTrip = try JSONDecoder().decode(
-    PagesBuildAttributes.self,
-    from: JSONEncoder().encode(current))
-  #expect(roundTrip.accountID == "account-1")
 }
 
 @Test func pagesBuildMonitorKeyIncludesAccountGeneration() {

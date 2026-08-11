@@ -161,7 +161,7 @@ struct HeaderInboxButton: View {
         SolarIcon(asset: SolarAsset.inbox, size: 24, color: DashTheme.strong)
           .frame(width: AvatarHeaderMetrics.barSize, height: AvatarHeaderMetrics.barSize)
           .background(DashTheme.elevated, in: Circle())
-          .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
+          .overlay { Circle().stroke(DashTheme.separator, lineWidth: 0.5) }
       }
       .buttonStyle(DashPressButtonStyle())
       .accessibilityLabel(accessibilityLabel)

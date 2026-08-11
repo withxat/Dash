@@ -1,4 +1,3 @@
-import CloudflareAPI
 import GradientAvatars
 import SwiftDitherKit
 import SwiftUI
@@ -193,57 +192,6 @@ extension DashListRow where Accessory == EmptyView {
       showsChevron: showsChevron,
       showsIconPlate: showsIconPlate,
       accessory: { EmptyView() })
-  }
-}
-
-struct DashValueRow: View {
-  let title: String
-  let value: String
-  var subtitle: String?
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-  private var isAccessibilitySize: Bool { dynamicTypeSize.isAccessibilitySize }
-
-  var body: some View {
-    Group {
-      if isAccessibilitySize {
-        VStack(alignment: .leading, spacing: 6) {
-          titleBlock
-          Text(value)
-            .dashTextStyle(.supportingMedium)
-            .monospacedDigit()
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      } else {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-          titleBlock
-          Spacer(minLength: 12)
-          Text(value)
-            .dashTextStyle(.supportingMedium)
-            .monospacedDigit()
-            .foregroundStyle(DashTheme.subtle)
-            .multilineTextAlignment(.trailing)
-            .lineLimit(2)
-        }
-      }
-    }
-    .padding(.vertical, DashTheme.Spacing.comfortable)
-    .frame(minHeight: DashTheme.Layout.minimumHitTarget)
-    .accessibilityElement(children: .combine)
-  }
-
-  private var titleBlock: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Text(title)
-        .dashTextStyle(.bodyMedium)
-        .foregroundStyle(DashTheme.text)
-      if let subtitle {
-        Text(subtitle)
-          .font(.caption)
-          .foregroundStyle(DashTheme.subtle)
-      }
-    }
   }
 }
 
@@ -531,66 +479,6 @@ struct DashValueCard: View {
         .lineLimit(2)
     }
     .dashControlCaption(caption)
-  }
-}
-
-/// A screen's inherently read-only settings, gathered into one white card at
-/// the top of the page — label/value rows with dividers — instead of dead
-/// controls scattered through the editable flow.
-struct DashReadOnlySettingsCard: View {
-  let rows: [(String, String)]
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Read only")
-        .dashTextStyle(.bodyMedium)
-        .foregroundStyle(DashTheme.subtle)
-        .padding(.horizontal, 16)
-      dashListCard {
-        ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-          DashValueRow(title: row.0, value: row.1)
-            .dashListCardInset()
-        }
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-}
-
-struct DashCodePanel: View {
-  let title: String
-  var message: String?
-  @Binding var text: String
-  var isEditable = true
-  var minHeight: CGFloat = 160
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      VStack(alignment: .leading, spacing: 3) {
-        Text(title)
-          .dashTextStyle(.sectionTitle)
-          .foregroundStyle(DashTheme.strong)
-        if let message {
-          Text(message)
-            .font(.caption)
-            .foregroundStyle(DashTheme.subtle)
-        }
-      }
-
-      TextEditor(text: $text)
-        .dashTextStyle(.code)
-        .foregroundStyle(DashTheme.text)
-        .scrollContentBackground(.hidden)
-        .disabled(!isEditable)
-        .frame(minHeight: minHeight)
-        .padding(12)
-        .background(DashTheme.base)
-        .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
-    }
-    .padding(DashTheme.Spacing.card)
-    .background(
-      DashTheme.recessed,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
@@ -923,7 +811,7 @@ struct DashToolbarTextButton: View {
           label
             .background(DashTheme.elevated, in: Capsule(style: .continuous))
             .overlay {
-              Capsule(style: .continuous).stroke(DashTheme.line, lineWidth: 0.5)
+              Capsule(style: .continuous).stroke(DashTheme.separator, lineWidth: 0.5)
             }
         }
         .buttonStyle(DashPressButtonStyle())

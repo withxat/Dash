@@ -129,14 +129,8 @@ private enum WorkerChartMetric: Hashable, CaseIterable {
 /// ascending, dropping unparseable stamps.
 enum WorkerAnalyticsChartModel {
   static func points(from buckets: [WorkerAnalyticsBucket]) -> [WorkerAnalyticsChartPoint] {
-    let parser = ISO8601DateFormatter()
-    parser.formatOptions = [.withInternetDateTime]
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return buckets.compactMap { bucket in
-      guard
-        let date = parser.date(from: bucket.datetime) ?? fractional.date(from: bucket.datetime)
-      else { return nil }
+      guard let date = DashDateFormatting.date(fromISO8601: bucket.datetime) else { return nil }
       return WorkerAnalyticsChartPoint(
         date: date,
         requests: bucket.requests,
@@ -1322,29 +1316,16 @@ struct WorkerAddDomainForm: View {
     zonesLoaded = false
     zonesError = nil
     guard let context else { return }
-    if let cached: [CloudflareZone] = model.featureCache.get(
-      FeatureCacheKey.zones(context.accountID))
-    {
-      guard model.isCurrentAccount(context), zonesContext == context else { return }
-      zones = cached
-      zonesLoaded = true
-      return
-    }
-    let client = model.client
-    do {
-      let loaded = try await client.listZones(accountID: context.accountID, perPage: 50).items
-      guard !Task.isCancelled, model.isCurrentAccount(context), zonesContext == context else {
-        return
-      }
+    let result = await DashZonePickerLoader.load(model: model, context: context)
+    guard zonesContext == context else { return }
+    switch result {
+    case .loaded(let loaded):
       zones = loaded
       zonesLoaded = true
-    } catch {
-      // `zonesLoaded` stays false: an empty list from a thrown lookup must
-      // never present the "No zone matches" answer.
-      guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context),
-        zonesContext == context
-      else { return }
-      zonesError = error.dashActionableMessage
+    case .failed(let message):
+      zonesError = message
+    case .cancelled:
+      break
     }
   }
 
@@ -1391,51 +1372,17 @@ struct WorkerAddDomainForm: View {
   }
 }
 
-@MainActor
-private enum WorkerDeploymentDateFormatting {
-  private static let fractionalISO8601: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-
-  private static let plainISO8601: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter
-  }()
-
-  private static var relativeCache: (locale: Locale, formatter: RelativeDateTimeFormatter)?
-
-  static func date(from value: String) -> Date? {
-    fractionalISO8601.date(from: value) ?? plainISO8601.date(from: value)
-  }
-
-  static func relativeString(for date: Date, relativeTo now: Date, locale: Locale) -> String {
-    let formatter: RelativeDateTimeFormatter
-    if let cached = relativeCache, cached.locale == locale {
-      formatter = cached.formatter
-    } else {
-      formatter = RelativeDateTimeFormatter()
-      formatter.unitsStyle = .abbreviated
-      formatter.locale = locale
-      relativeCache = (locale, formatter)
-    }
-    return formatter.localizedString(for: date, relativeTo: now)
-  }
-}
-
 private func workerRowAccessibilityLabel(_ worker: WorkerScript) -> String {
   DashL10n.string("\(worker.id), Worker")
 }
 
 @MainActor
 func workerDeploymentAgeText(_ value: String, now: Date = .now) -> String {
-  guard let date = WorkerDeploymentDateFormatting.date(from: value) else {
+  guard let date = DashDateFormatting.date(fromISO8601: value) else {
     return DashL10n.string("Deployed \(value)")
   }
-  let relative = WorkerDeploymentDateFormatting.relativeString(
-    for: date,
+  let relative = DashDateFormatting.abbreviatedRelativeTime(
+    date,
     relativeTo: now,
     locale: DashL10n.activeLocale)
   return DashL10n.string("Deployed \(relative)")

@@ -170,13 +170,6 @@ final class R2FileProviderItem: NSObject, NSFileProviderItem, @unchecked Sendabl
 
   private static func parseTimestamp(_ value: String?) -> Date? {
     guard let value else { return nil }
-    let fractionalFormatter = ISO8601DateFormatter()
-    fractionalFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    if let date = fractionalFormatter.date(from: value) {
-      return date
-    }
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter.date(from: value)
+    return DashDateFormatting.date(fromISO8601: value)
   }
 }

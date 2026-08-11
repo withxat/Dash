@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
 const DASH_WORKSPACE_PATH = join(ROOT, "apps/ios/Dash/DashWorkspace.swift");
+const DASH_TAB_FLOW_PATH = join(ROOT, "apps/ios/Dash/DashTabFlow.swift");
+const DASH_ROUTE_PAGE_CHROME_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashRoutePageChrome.swift",
+);
 const WORKSPACE_HEADER_PATH = join(
   ROOT,
   "apps/ios/Dash/DashWorkspaceHeader.swift",
@@ -17,6 +22,9 @@ const HEADER_CHROME_PATH = join(
 );
 const WATCHTOWER_PATH = join(ROOT, "apps/ios/Dash/WatchtowerView.swift");
 const DASH_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashChrome.swift");
+const DASH_TRAY_STATE_PATH = join(ROOT, "apps/ios/Dash/DashTrayState.swift");
+const DASH_TRAY_FLOW_PATH = join(ROOT, "apps/ios/Dash/DashTrayFlow.swift");
+const DASH_TRAY_SIZING_PATH = join(ROOT, "apps/ios/Dash/DashTraySizing.swift");
 const DASH_THEME_PATH = join(ROOT, "apps/ios/Dash/DashTheme.swift");
 const PROFILE_SETTINGS_PATH = join(
   ROOT,
@@ -36,6 +44,12 @@ const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
 );
+const dashTabFlow = stripSwiftComments(
+  readFileSync(DASH_TAB_FLOW_PATH, "utf8"),
+);
+const dashRoutePageChrome = stripSwiftComments(
+  readFileSync(DASH_ROUTE_PAGE_CHROME_PATH, "utf8"),
+);
 const workspaceHeader = stripSwiftComments(
   readFileSync(WORKSPACE_HEADER_PATH, "utf8"),
 );
@@ -44,6 +58,21 @@ const headerChrome = stripSwiftComments(
 );
 const watchtower = stripSwiftComments(readFileSync(WATCHTOWER_PATH, "utf8"));
 const dashChrome = stripSwiftComments(readFileSync(DASH_CHROME_PATH, "utf8"));
+const dashTrayState = stripSwiftComments(
+  readFileSync(DASH_TRAY_STATE_PATH, "utf8"),
+);
+const dashTrayFlow = stripSwiftComments(
+  readFileSync(DASH_TRAY_FLOW_PATH, "utf8"),
+);
+const dashTraySizing = stripSwiftComments(
+  readFileSync(DASH_TRAY_SIZING_PATH, "utf8"),
+);
+const dashTraySources = [
+  dashChrome,
+  dashTrayState,
+  dashTrayFlow,
+  dashTraySizing,
+].join("\n");
 const dashTheme = stripSwiftComments(readFileSync(DASH_THEME_PATH, "utf8"));
 const profileSettings = stripSwiftComments(
   readFileSync(PROFILE_SETTINGS_PATH, "utf8"),
@@ -59,7 +88,7 @@ for (const token of [
   "DashExpandableSheet",
   "dashTrayPinsFooter",
 ]) {
-  if (dashChrome.includes(token)) {
+  if (dashTraySources.includes(token)) {
     issues.push(`Dash tray must remain compact-only; remove legacy token ${token}.`);
   }
 }
@@ -67,6 +96,17 @@ for (const token of ["floatingMaxWidth", "floatingDetentFraction"]) {
   if (dashTheme.includes(token)) {
     issues.push(`Dash tray shell must retain its original geometry; remove ${token}.`);
   }
+}
+const trayMotionTokens = declarationBody(dashTheme, "enum Tray");
+if (
+  !trayMotionTokens?.includes("presentResponse: TimeInterval = 0.21") ||
+  !trayMotionTokens?.includes("presentDampingFraction: CGFloat = 0.89") ||
+  !trayMotionTokens?.includes("dismissResponse: TimeInterval = 0.21") ||
+  !trayMotionTokens?.includes("dismissDampingFraction: CGFloat = 0.97")
+) {
+  issues.push(
+    "Compact Tray must keep its measured asymmetric Family enter/exit spring parameters.",
+  );
 }
 
 const editorControlIDs = [
@@ -216,12 +256,12 @@ function topLevelTokenIndex(source, token) {
   return -1;
 }
 
-const workspaceWashPicker = declarationBody(
+const workspaceGlowPicker = declarationBody(
   profileSettings,
-  "private struct WorkspaceWashPickerTray: View",
+  "private struct WorkspaceGlowPickerTray: View",
 );
-if (!workspaceWashPicker) {
-  issues.push("Could not locate WorkspaceWashPickerTray for state ownership validation.");
+if (!workspaceGlowPicker) {
+  issues.push("Could not locate WorkspaceGlowPickerTray for state ownership validation.");
 } else {
   for (const token of [
     "@State private var centeredPresetID: String?",
@@ -233,33 +273,33 @@ if (!workspaceWashPicker) {
     "centeredPresetPositionIsReady = true",
     "centeredPresetID = proposedID",
     ".scrollPosition(id: centeredPresetPosition",
-    ".onChange(of: workspaceWashRaw)",
+    ".onChange(of: workspaceGlowRaw)",
     "guard centeredPresetID != externallySelected.id else { return }",
     "centeredPresetID = externallySelected.id",
     ".dashTrayContentTone(activeTone)",
   ]) {
-    if (!workspaceWashPicker.includes(token)) {
+    if (!workspaceGlowPicker.includes(token)) {
       issues.push(
-        "WorkspaceWashPickerTray must seed the selected target after its scroll mounts, then keep root-only ownership of centered-position writes.",
+        "WorkspaceGlowPickerTray must seed the selected target after its scroll mounts, then keep root-only ownership of centered-position writes.",
       );
       break;
     }
   }
   if (
-    workspaceWashPicker.includes("_centeredPresetID = State(") ||
-    workspaceWashPicker.includes("Task.yield") ||
-    workspaceWashPicker.includes("Task.sleep")
+    workspaceGlowPicker.includes("_centeredPresetID = State(") ||
+    workspaceGlowPicker.includes("Task.yield") ||
+    workspaceGlowPicker.includes("Task.sleep")
   ) {
     issues.push(
-      "WorkspaceWashPickerTray must not preload or delay its initial scroll target; the selected ID is seeded synchronously when the horizontal scroll appears.",
+      "WorkspaceGlowPickerTray must not preload or delay its initial scroll target; the selected ID is seeded synchronously when the horizontal scroll appears.",
     );
   }
   if (
     occurrences(
-      workspaceWashPicker,
+      workspaceGlowPicker,
       "SolarIcon(asset: SolarAsset.starsBold",
     ) !== 2 ||
-    occurrences(workspaceWashPicker, "color: DashTheme.strong") !== 2
+    occurrences(workspaceGlowPicker, "color: DashTheme.strong") !== 2
   ) {
     issues.push(
       "Glow inspiration affordances must keep the bare Stars icon legible on both compact and expanded wash surfaces.",
@@ -271,18 +311,18 @@ const featureVisualTone = declarationBody(
   dashTheme,
   "enum FeatureVisualTone: Hashable, Sendable",
 );
-const workspaceWashTone = declarationBody(
+const workspaceGlowTone = declarationBody(
   dashTheme,
-  "extension DashWorkspaceWashPreset",
+  "extension DashWorkspaceGlowPreset",
 );
 if (
-  !featureVisualTone?.includes("case workspaceWash(DashWorkspaceWashPreset)") ||
+  !featureVisualTone?.includes("case workspaceGlow(DashWorkspaceGlowPreset)") ||
   !featureVisualTone?.includes("DashTheme.workspaceWash(for: preset)") ||
-  !featureVisualTone?.includes("DashTheme.workspaceWashMidLightLabel") ||
-  !workspaceWashTone?.includes("return .workspaceWash(self)")
+  !featureVisualTone?.includes("DashTheme.workspaceGlowActionLabel") ||
+  !workspaceGlowTone?.includes("return .workspaceGlow(self)")
 ) {
   issues.push(
-    "Glow cards and Tray chrome must derive their pigment from the same workspace-wash preset.",
+    "Glow cards and Tray chrome must derive their pigment and action ink from the same Glow preset.",
   );
 }
 
@@ -290,18 +330,23 @@ const settingsView = declarationBody(profileSettings, "struct SettingsView: View
 const settingsAboutLink = settingsView
   ? declarationBody(settingsView, "DashListGroupLink(value: .about)")
   : null;
+const aboutView = declarationBody(profileSettings, "struct AboutView: View");
 if (
   !settingsAboutLink ||
   !settingsAboutLink.includes("icon: SolarAsset.infoCircle") ||
+  !aboutView?.includes(
+    '.detailHeader(icon: .solar(SolarAsset.Content.infoCircle), title: "About")',
+  ) ||
   !solarIcons.includes('static let infoCircle = "SolarInfoCircleOutline"') ||
-  !solarGenerator.includes("SolarInfoCircleOutline: 'ui/Linear/InfoCircle'")
+  !solarIcons.includes('static let infoCircle = "SolarInfoCircleFill"') ||
+  !solarGenerator.includes("SolarInfoCircleOutline: 'ui/Linear/InfoCircle'") ||
+  !solarGenerator.includes("SolarInfoCircleFill: 'ui/Bold/InfoCircle'")
 ) {
   issues.push(
-    "Settings' About row must use the linear Info Circle asset; the About page header is a separate icon surface.",
+    "Settings' About row must use linear Info Circle while the About header keeps the filled family variant.",
   );
 }
 
-const aboutView = declarationBody(profileSettings, "struct AboutView: View");
 const buildMetadata = declarationBody(profileSettings, "enum DashBuildMetadata");
 const dashTarget = declarationBody(
   iosProject,
@@ -389,15 +434,21 @@ if (!tabContainer) {
   }
 }
 
-for (const legacyPagerToken of [
-  "TabView(selection:",
-  ".tabViewStyle(.page",
-  "TabPagerScrollLock",
-]) {
-  if (mainTab.includes(legacyPagerToken)) {
-    issues.push(
-      `MainTabView must use the identity tab flow, not legacy pager token ${legacyPagerToken}.`,
-    );
+const tabFlowSources = [
+  ["MainTabView", mainTab],
+  ["DashTabFlow", dashTabFlow],
+];
+for (const [sourceName, source] of tabFlowSources) {
+  for (const legacyPagerToken of [
+    "TabView(selection:",
+    ".tabViewStyle(.page",
+    "TabPagerScrollLock",
+  ]) {
+    if (source.includes(legacyPagerToken)) {
+      issues.push(
+        `${sourceName} must use the identity tab flow, not legacy pager token ${legacyPagerToken}.`,
+      );
+    }
   }
 }
 
@@ -423,12 +474,12 @@ if (
   !mainTab.includes(
     ".accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)",
   ) ||
-  !dashWorkspace.includes("source.view.isUserInteractionEnabled = false") ||
-  !dashWorkspace.includes("target.view.isUserInteractionEnabled = false") ||
-  !dashWorkspace.includes("source.view.accessibilityElementsHidden = true") ||
-  !dashWorkspace.includes("target.view.accessibilityElementsHidden = true") ||
-  !dashWorkspace.includes("view.accessibilityElementsHidden = true") ||
-  !dashWorkspace.includes("enforceInteractionGate(for: transition)")
+  !dashTabFlow.includes("source.view.isUserInteractionEnabled = false") ||
+  !dashTabFlow.includes("target.view.isUserInteractionEnabled = false") ||
+  !dashTabFlow.includes("source.view.accessibilityElementsHidden = true") ||
+  !dashTabFlow.includes("target.view.accessibilityElementsHidden = true") ||
+  !dashTabFlow.includes("view.accessibilityElementsHidden = true") ||
+  !dashTabFlow.includes("enforceInteractionGate(for: transition)")
 ) {
   issues.push(
     "Tab handoffs must disable touch and accessibility routing in both UIKit pages and shared SwiftUI chrome until they settle.",
@@ -443,8 +494,8 @@ if (
   selectTab.includes("Task.sleep") ||
   selectTab.includes("Task.yield") ||
   !mainTab.includes("onTransitionCompleted:") ||
-  !dashWorkspace.includes("animator.addCompletion") ||
-  !dashWorkspace.includes("callback(sourceTab, targetTab, generation)") ||
+  !dashTabFlow.includes("animator.addCompletion") ||
+  !dashTabFlow.includes("callback(sourceTab, targetTab, generation)") ||
   tabSettleIndex === -1 ||
   sameTabGuardIndex === -1 ||
   tabSettleIndex > sameTabGuardIndex
@@ -456,16 +507,16 @@ if (
 
 if (
   !mainTab.includes("DashTabFlowHost(") ||
-  !dashWorkspace.includes("final class DashTabFlowViewController") ||
-  !dashWorkspace.includes("addChild(child)") ||
-  !dashWorkspace.includes("child.didMove(toParent: self)") ||
-  !dashWorkspace.includes("child.willMove(toParent: nil)") ||
-  !dashWorkspace.includes("child.removeFromParent()") ||
-  !dashWorkspace.includes("detach(transition.source)") ||
-  !dashWorkspace.includes("case .deferUntilVisible:") ||
-  !dashWorkspace.includes("settlePendingRequestOffscreenIfNeeded()") ||
-  !dashWorkspace.includes("view.accessibilityElements = nil") ||
-  !dashWorkspace.includes("view.accessibilityElementsHidden = false")
+  !dashTabFlow.includes("final class DashTabFlowViewController") ||
+  !dashTabFlow.includes("addChild(child)") ||
+  !dashTabFlow.includes("child.didMove(toParent: self)") ||
+  !dashTabFlow.includes("child.willMove(toParent: nil)") ||
+  !dashTabFlow.includes("child.removeFromParent()") ||
+  !dashTabFlow.includes("detach(transition.source)") ||
+  !dashTabFlow.includes("case .deferUntilVisible:") ||
+  !dashTabFlow.includes("settlePendingRequestOffscreenIfNeeded()") ||
+  !dashTabFlow.includes("view.accessibilityElements = nil") ||
+  !dashTabFlow.includes("view.accessibilityElementsHidden = false")
 ) {
   issues.push(
     "The identity tab flow must be one UIKit container that owns child containment and exposes only the settled page to accessibility.",
@@ -508,7 +559,11 @@ if (!pageStackController) {
   );
 }
 
-if (!/case \.closeToWorkspaceRoot:\s*SolarAsset\.editClose/.test(dashWorkspace)) {
+if (
+  !/case \.closeToWorkspaceRoot:\s*SolarAsset\.editClose/.test(
+    dashRoutePageChrome,
+  )
+) {
   issues.push(
     "Workspace Close must use the fine editClose mark; the heavier close glyph is tray-only.",
   );
@@ -628,7 +683,7 @@ if (!headerBar) {
       break;
     }
   }
-  if (!dashWorkspace.includes("if let entry, chromeHosting == .page {")) {
+  if (!dashRoutePageChrome.includes("if let entry, chromeHosting == .page {")) {
     issues.push(
       "A workspace-hosted page must not paint its own navigation bar; only the shared header may.",
     );
@@ -642,7 +697,7 @@ if (!headerBar) {
 // the title: the same measure -> apply -> measure re-entry SwiftUI reports as a
 // cycling geometry action.
 const chromeInset = declarationBody(
-  dashWorkspace,
+  dashRoutePageChrome,
   "@ViewBuilder private var routeChromeInset: some View",
 );
 if (!chromeInset) {
@@ -762,7 +817,7 @@ if (!confirmMorphBody) {
 }
 
 const scrollBoundary = declarationBody(
-  dashChrome,
+  dashTraySizing,
   "struct DashTrayScrollBoundary<Content: View, Action: View>: View",
 );
 if (!scrollBoundary) {
@@ -823,6 +878,12 @@ const storageViews = stripSwiftComments(
 );
 const homeView = stripSwiftComments(
   readFileSync(join(ROOT, "apps/ios/Dash/HomeView.swift"), "utf8"),
+);
+const homeOperations = stripSwiftComments(
+  readFileSync(join(ROOT, "apps/ios/Dash/HomeOperations.swift"), "utf8"),
+);
+const kvViews = stripSwiftComments(
+  readFileSync(join(ROOT, "apps/ios/Dash/KVViews.swift"), "utf8"),
 );
 if (!storageViews.includes("tone: FeatureVisualIdentity.tone(for: .r2)")) {
   issues.push(
@@ -919,18 +980,63 @@ if (!sharedReveal) {
   );
 }
 if (
-  dashChrome.includes("DashTrayAnchorMath.Transform") ||
+  dashTraySources.includes("DashTrayAnchorMath.Transform") ||
   /\bscale[XY]\b/.test(sharedReveal ?? "")
 ) {
   issues.push("Paired tray reveal must not use nonuniform whole-card scaling.");
 }
-if (dashChrome.includes("DashTrayAnchorReveal")) {
+if (dashTraySources.includes("DashTrayAnchorReveal")) {
   issues.push("Remove the legacy whole-card tray anchor reveal.");
 }
 const customSheet = declarationBody(
   dashChrome,
   "private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View",
 );
+const trayMotion = declarationBody(dashChrome, "private enum DashTrayMotion");
+if (
+  !trayMotion?.includes("static let present = DashTheme.Motion.trayPresent") ||
+  !trayMotion?.includes("static let scrimPresent = DashTheme.Motion.trayPresent") ||
+  !trayMotion?.includes("static let scrimDismiss = DashTheme.Motion.trayDismiss") ||
+  !trayMotion?.includes("static let dismiss = DashTheme.Motion.trayDismiss")
+) {
+  issues.push(
+    "Tray card and scrim must use the dedicated asymmetric Tray motion tokens.",
+  );
+}
+const standardTrayReveal = declarationBody(
+  dashChrome,
+  "private struct DashTrayCardReveal: ViewModifier, Animatable",
+);
+if (!standardTrayReveal) {
+  issues.push("Could not locate the standard Tray card reveal.");
+} else {
+  if (occurrences(standardTrayReveal, ".offset(") !== 1) {
+    issues.push("Standard Tray reveal must move the rigid card through one Y offset.");
+  }
+  for (const token of [".scaleEffect(", ".blur(", ".delay("]) {
+    if (standardTrayReveal.includes(token)) {
+      issues.push(`Standard Tray reveal must not use ${token}`);
+    }
+  }
+  if (
+    occurrences(standardTrayReveal, ".opacity(") !== 1 ||
+    !standardTrayReveal.includes(".opacity(progress)")
+  ) {
+    issues.push(
+      "Standard Tray reveal may use opacity only for its Reduce Motion branch.",
+    );
+  }
+}
+const trayScrim = customSheet
+  ? declarationBody(customSheet, "private var trayScrim: some View")
+  : null;
+if (
+  !trayScrim?.includes("Color.black.opacity(DashTheme.Sheet.scrimOpacity)") ||
+  trayScrim?.includes(".ultraThinMaterial") ||
+  trayScrim?.includes(".blur(")
+) {
+  issues.push("Tray scrim must remain one uniform black veil with no material blur.");
+}
 const trayCoverPresentation = declarationBody(
   dashChrome,
   "private struct DashTrayCoverPresentation<Value>: Identifiable",
@@ -1000,7 +1106,14 @@ if (
 // Result-destination flight (P6): a deliberately single-instance exploration.
 // Exactly one production tray — R2 Create bucket — opts in.
 const flightOptIns = occurrences(storageViews, ".dashTraySuccessFlight(");
-const flightElsewhere = [homeView, profileSettings, mainTab].reduce(
+const otherProductionTrayCallSites = [
+  homeView,
+  homeOperations,
+  kvViews,
+  profileSettings,
+  mainTab,
+];
+const flightElsewhere = otherProductionTrayCallSites.reduce(
   (count, source) => count + occurrences(source, ".dashTraySuccessFlight("),
   0,
 );

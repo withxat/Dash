@@ -452,7 +452,7 @@ final class DemoBackend: URLProtocol {
         {"domain_name":"acme-labs.dev","status":"registration_pending","created_at":"2026-07-27T14:30:00Z","expires_at":"2027-07-27T14:30:00Z","auto_renew":false,"privacy_mode":"redaction","locked":true}
         """#,
       ]
-      let legacyDomains = [
+      let pageNumberedDomains = [
         #"""
         {"id":"example.com","available":false,"can_register":false,"created_at":"2024-04-18T10:00:00Z","current_registrar":"Cloudflare, Inc.","expires_at":"2027-04-18T10:00:00Z","locked":true,"updated_at":"2026-07-20T08:00:00Z","registry_statuses":"clientTransferProhibited,clientUpdateProhibited","supported_tld":true,"registrant_contact":{"id":"contact-example","first_name":"Demo","last_name":"Explorer","organization":"Example Labs","address":"123 Demo Street","city":"Singapore","state":"Singapore","zip":"018956","country":"SG","phone":"+65.60000000","email":"owner@example.com"},"transfer_in":null}
         """#,
@@ -489,7 +489,7 @@ final class DemoBackend: URLProtocol {
 
       case "domains"?:
         if registrarRest.count == 1 {
-          let rows = account.id == DemoBackend.accountID ? legacyDomains : []
+          let rows = account.id == DemoBackend.accountID ? pageNumberedDomains : []
           return ok(
             "[\(rows.joined(separator: ","))]",
             info:
@@ -504,8 +504,8 @@ final class DemoBackend: URLProtocol {
           )
         }
         let domain = registrarRest[1].lowercased()
-        if domain == "example.com" { return ok(legacyDomains[0]) }
-        if domain == "acme-labs.dev" { return ok(legacyDomains[1]) }
+        if domain == "example.com" { return ok(pageNumberedDomains[0]) }
+        if domain == "acme-labs.dev" { return ok(pageNumberedDomains[1]) }
         return Reply(
           status: 404,
           json:

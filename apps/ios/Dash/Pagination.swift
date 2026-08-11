@@ -57,6 +57,73 @@ enum DashPageLoader {
   }
 }
 
+/// Settled outcomes for a zone picker. A failed lookup is deliberately not an
+/// empty loaded result: callers use that distinction to avoid claiming that no
+/// zone matches when the account's zones are merely unavailable.
+enum DashZonePickerLoadResult: Equatable, Sendable {
+  case loaded([CloudflareZone])
+  case failed(String)
+  case cancelled
+}
+
+/// Binds a zone-picker submission to the account generation that supplied its
+/// matched zone. The same decision is checked before the request and after
+/// every suspension point so an account switch cannot apply stale effects.
+enum DashZonePickerSubmissionGuard {
+  static func submissionContext(
+    zonesContext: AccountRequestContext?,
+    currentContext: AccountRequestContext?
+  ) -> AccountRequestContext? {
+    guard let zonesContext, zonesContext == currentContext else { return nil }
+    return zonesContext
+  }
+
+  static func allowsEffects(
+    for submissionContext: AccountRequestContext,
+    zonesContext: AccountRequestContext?,
+    currentContext: AccountRequestContext?,
+    isCancelled: Bool
+  ) -> Bool {
+    !isCancelled
+      && zonesContext == submissionContext
+      && currentContext == submissionContext
+  }
+}
+
+/// Cache-first loading shared by forms that infer an owning zone from a typed
+/// hostname. The picker contract is one catalog page, matching `ZonesView`.
+@MainActor
+enum DashZonePickerLoader {
+  static func load(
+    model: AppModel,
+    context: AccountRequestContext
+  ) async -> DashZonePickerLoadResult {
+    if let cached: [CloudflareZone] = model.featureCache.get(
+      FeatureCacheKey.zones(context.accountID))
+    {
+      guard model.isCurrentAccount(context) else { return .cancelled }
+      return .loaded(cached)
+    }
+
+    let client = model.client
+    do {
+      let zones = try await client.listZones(
+        accountID: context.accountID,
+        perPage: ZonesView.pageSize
+      ).items
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        return .cancelled
+      }
+      return .loaded(zones)
+    } catch {
+      guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context) else {
+        return .cancelled
+      }
+      return .failed(error.dashActionableMessage)
+    }
+  }
+}
+
 /// Page-number pagination bookkeeping for lists that fetch a first page
 /// eagerly and append further pages on demand. `nextPage` is always the page
 /// to request next; call `reset()` before a fresh load, `absorb` after every

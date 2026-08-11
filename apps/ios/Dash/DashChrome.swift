@@ -2,154 +2,6 @@ import Combine
 import SwiftUI
 import UIKit
 
-// MARK: - Sheet presentation
-
-/// Whether a subtree currently presents the app's single compact tray, bubbled
-/// to `MainTabView` so root chrome can hide the dock and header avatar.
-struct DashTrayPresentation: Equatable {
-  var presented = false
-}
-
-/// Cross-host bridge for page-owned trays. Preferences cannot cross from a
-/// cached `UIHostingController` into `MainTabView`, so each tray also reports
-/// its stable modifier instance here while the custom page stack is active.
-@MainActor
-@Observable
-final class DashWorkspacePresentationState {
-  private struct Reporter: Equatable {
-    let entryID: UUID?
-    var presented: Bool
-  }
-
-  private var trayPresentations: [UUID: Reporter] = [:]
-  private var coverPresentations: [UUID: Reporter] = [:]
-
-  var trayPresented: Bool {
-    trayPresentations.values.contains { $0.presented }
-  }
-
-  var coverPresented: Bool {
-    coverPresentations.values.contains { $0.presented }
-  }
-
-  /// Guarded, because `@Observable` notifies on every write — equal or not —
-  /// and `MainTabView`'s body reads `trayPresented` to decide the dock, the
-  /// header displacement, and route consumption. Each `dashTray` reports from
-  /// both `onAppear` and an `initial: true` `onChange`, so a screen carrying
-  /// several of them (Settings has four) re-invalidated the view that lays it
-  /// out once per report, on the frame it mounted.
-  func setTrayPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
-    let reporter = Reporter(entryID: entryID, presented: presented)
-    guard trayPresentations[reporterID] != reporter else { return }
-    trayPresentations[reporterID] = reporter
-  }
-
-  func setCoverPresented(_ presented: Bool, reporterID: UUID, entryID: UUID?) {
-    let reporter = Reporter(entryID: entryID, presented: presented)
-    guard coverPresentations[reporterID] != reporter else { return }
-    coverPresentations[reporterID] = reporter
-  }
-
-  /// Same guard: pruning an entry that reported nothing must not rewrite the
-  /// dictionaries, or every replaced entry invalidates `MainTabView` for free.
-  func removePresentationReporters(forEntryID entryID: UUID) {
-    let trays = trayPresentations.filter { $0.value.entryID != entryID }
-    if trays.count != trayPresentations.count { trayPresentations = trays }
-    let covers = coverPresentations.filter { $0.value.entryID != entryID }
-    if covers.count != coverPresentations.count { coverPresentations = covers }
-  }
-}
-
-private struct DashWorkspacePresentationStateKey: EnvironmentKey {
-  static let defaultValue: DashWorkspacePresentationState? = nil
-}
-
-extension EnvironmentValues {
-  var dashWorkspacePresentationState: DashWorkspacePresentationState? {
-    get { self[DashWorkspacePresentationStateKey.self] }
-    set { self[DashWorkspacePresentationStateKey.self] = newValue }
-  }
-}
-
-struct TrayPresentedPreferenceKey: PreferenceKey {
-  static let defaultValue = DashTrayPresentation()
-  static func reduce(value: inout DashTrayPresentation, nextValue: () -> DashTrayPresentation) {
-    let next = nextValue()
-    value.presented = value.presented || next.presented
-  }
-}
-
-/// Layout constants for the floating dock capsule (`DashFloatingTabBar`).
-enum DashDockMetrics {
-  /// Width of one tab cell; the bar is `cell × tab count` wide.
-  static let cell: CGFloat = 80
-  static let height: CGFloat = 64
-  /// How far `MainTabView` sinks the bar into the home-indicator inset.
-  static let bottomSink: CGFloat = 10
-}
-
-private struct DashTrayDismissKey: EnvironmentKey {
-  nonisolated(unsafe) static let defaultValue: () -> Void = {}
-}
-
-private struct DashTrayDismissAfterKey: EnvironmentKey {
-  nonisolated(unsafe) static let defaultValue: (@escaping () -> Void) -> Void = {
-    completion in completion()
-  }
-}
-
-struct DashTrayDismissDisabledPreferenceKey: PreferenceKey {
-  static let defaultValue = false
-
-  static func reduce(value: inout Bool, nextValue: () -> Bool) {
-    value = value || nextValue()
-  }
-}
-
-private struct DashTrayToneKey: EnvironmentKey {
-  static let defaultValue: FeatureVisualTone? = nil
-}
-
-private struct DashTrayBodyMaxHeightKey: EnvironmentKey {
-  static let defaultValue: CGFloat? = nil
-}
-
-extension EnvironmentValues {
-  var dashTrayDismiss: () -> Void {
-    get { self[DashTrayDismissKey.self] }
-    set { self[DashTrayDismissKey.self] = newValue }
-  }
-
-  /// Closes through the tray's complete keyboard/exit choreography, then runs
-  /// work that would otherwise tear down or navigate away from its presenter.
-  var dashTrayDismissAfter: (@escaping () -> Void) -> Void {
-    get { self[DashTrayDismissAfterKey.self] }
-    set { self[DashTrayDismissAfterKey.self] = newValue }
-  }
-
-  /// Contextual tone of the presenting flow — Family's "the tray dresses for
-  /// the room it walks into". `nil` (the default) is the neutral tray. Set via
-  /// `dashTray(tone:)`; feature-launched trays pass
-  /// `FeatureVisualIdentity.tone(for:)`, Profile/Settings trays stay neutral.
-  /// Applied sparingly: the footer submit pill, a non-destructive header
-  /// action circle, and a whisper of wash at the card top. The tray background
-  /// token itself never changes.
-  var dashTrayTone: FeatureVisualTone? {
-    get { self[DashTrayToneKey.self] }
-    set { self[DashTrayToneKey.self] = newValue }
-  }
-
-  /// How tall the tray's content may grow before the card runs out of room —
-  /// published by `DashSheetCard`, spent by `DashTrayScrollBoundary`, which
-  /// hands what is left after its action band to the scrolling body. `nil`
-  /// outside a tray (and on the first frame, before the header is measured):
-  /// no budget, so the boundary lays out at natural height and never scrolls.
-  var dashTrayBodyMaxHeight: CGFloat? {
-    get { self[DashTrayBodyMaxHeightKey.self] }
-    set { self[DashTrayBodyMaxHeightKey.self] = newValue }
-  }
-}
-
 // MARK: - Paired tray action presentation
 
 /// The one source transition Dash supports: the same primary action persists
@@ -342,39 +194,7 @@ private struct DashTraySharedDestinationModifier: ViewModifier {
   dashTrayKeyWindow()?.safeAreaInsets.bottom ?? 0
 }
 
-/// Pure lift arithmetic for the floating tray card. Kept free of UIKit so the
-/// "window safe inset ignored → card stuck at floatingMargin" regression
-/// stays unit-testable.
-enum DashTrayBottomLiftRules {
-  /// Padding from the full-bleed container's bottom edge to the card.
-  ///
-  /// - Keyboard: `keyboardCovered` is already measured from the window bottom,
-  ///   and the reader ignores the home-indicator inset, so do not subtract safe
-  ///   again or the card under-lifts above the keyboard.
-  /// - Resting: `safeBottom` must be the *window* inset. Feeding the ignoring
-  ///   GeometryReader's 0 here collapses to `floatingMargin` and parks the
-  ///   card inside the home-indicator region forever. A small `tuck` then sits
-  ///   the card slightly into that region without negative padding.
-  static func padding(
-    safeBottom: CGFloat,
-    keyboardCovered: CGFloat,
-    floatingMargin: CGFloat = DashTheme.Sheet.floatingMargin,
-    tuck: CGFloat = DashTheme.Sheet.floatingBottomTuck
-  ) -> CGFloat {
-    if keyboardCovered > 0 { return keyboardCovered + floatingMargin }
-    if safeBottom > 0 { return max(floatingMargin, safeBottom - tuck) }
-    return floatingMargin
-  }
-}
-
 extension View {
-  /// Compatibility-only geometry reporter for old debug hosts. A one-ended
-  /// source no longer changes presentation; production source transitions use
-  /// `dashTraySharedSource` plus a matching destination.
-  func dashTraySource(id: AnyHashable) -> some View {
-    modifier(DashTraySourceModifier(id: id))
-  }
-
   /// Marks the presenting endpoint of one persistent tray action.
   func dashTraySharedSource(_ action: DashTraySharedAction) -> some View {
     modifier(DashTraySourceModifier(id: action.id))
@@ -413,22 +233,6 @@ extension View {
         isPresented: isPresented, title: title,
         showsMenuButtons: showsMenuButtons, tone: tone, sharedAction: sharedAction, hero: nil,
         trayContent: content, footer: { EmptyView() }, hasFooter: false))
-  }
-
-  /// Source-only compatibility for debug hosts. It deliberately presents with
-  /// the standard reveal; a frame without a destination is not a shared action.
-  func dashTray<Content: View>(
-    isPresented: Binding<Bool>,
-    title: String,
-    showsMenuButtons: Bool = true,
-    tone: FeatureVisualTone? = nil,
-    sourceID _: AnyHashable,
-    @ViewBuilder content: @escaping () -> Content
-  ) -> some View {
-    dashTray(
-      isPresented: isPresented, title: title,
-      showsMenuButtons: showsMenuButtons, tone: tone,
-      sharedAction: nil, content: content)
   }
 
   /// A floating content tray with three stable chrome regions: fixed header,
@@ -634,7 +438,7 @@ struct DashTrayBackAction: Equatable {
   static func == (lhs: Self, rhs: Self) -> Bool { lhs.depth == rhs.depth }
 }
 
-private struct DashTrayBackActionKey: PreferenceKey {
+struct DashTrayBackActionKey: PreferenceKey {
   static var defaultValue: DashTrayBackAction? { nil }
   static func reduce(value: inout DashTrayBackAction?, nextValue: () -> DashTrayBackAction?) {
     value = nextValue() ?? value
@@ -651,7 +455,7 @@ enum DashTrayStepRole: Int, Equatable, Sendable {
 
   fileprivate var isDetail: Bool { self != .root }
 
-  fileprivate var transitionAnimation: Animation {
+  var transitionAnimation: Animation {
     switch self {
     case .root: DashTheme.Motion.trayStepReturn
     case .detail: DashTheme.Motion.trayStep
@@ -660,253 +464,12 @@ enum DashTrayStepRole: Int, Equatable, Sendable {
   }
 }
 
-/// The visual language for a route replacement inside one Tray.
-///
-/// `step` is the standard directional drill. `heroMorph` removes that competing
-/// horizontal travel and keeps the root route mounted so a caller-owned
-/// matched-geometry surface can remain one live object between routes.
-enum DashTrayFlowTransitionStyle: Equatable, Sendable {
-  case step
-  case heroMorph
-}
-
-private struct DashTrayStepRoleKey: PreferenceKey {
+struct DashTrayStepRoleKey: PreferenceKey {
   static let defaultValue = DashTrayStepRole.root
 
   static func reduce(value: inout DashTrayStepRole, nextValue: () -> DashTrayStepRole) {
     let next = nextValue()
     if next.rawValue > value.rawValue { value = next }
-  }
-}
-
-private struct DashTrayRouteLayoutKey<Route: Hashable & Sendable>: LayoutValueKey {
-  static var defaultValue: Route? { nil }
-}
-
-/// SwiftUI counterpart to a pop-layout presence transition: outgoing and
-/// incoming routes remain visual siblings, but only the active route contributes
-/// the layout size. The enclosing card can therefore begin moving to the target
-/// height on the first frame instead of waiting for the old route to disappear.
-private struct DashTrayPopLayout<Route: Hashable & Sendable>: Layout {
-  let activeRoute: Route
-
-  func sizeThatFits(
-    proposal: ProposedViewSize,
-    subviews: Subviews,
-    cache: inout ()
-  ) -> CGSize {
-    guard let active = activeSubview(in: subviews) else { return .zero }
-    return active.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
-  }
-
-  func placeSubviews(
-    in bounds: CGRect,
-    proposal: ProposedViewSize,
-    subviews: Subviews,
-    cache: inout ()
-  ) {
-    let childProposal = ProposedViewSize(width: bounds.width, height: nil)
-    for subview in subviews {
-      subview.place(
-        at: CGPoint(x: bounds.midX, y: bounds.minY),
-        anchor: .top,
-        proposal: childProposal
-      )
-    }
-  }
-
-  private func activeSubview(in subviews: Subviews) -> LayoutSubview? {
-    subviews.first { $0[DashTrayRouteLayoutKey<Route>.self] == activeRoute } ?? subviews.last
-  }
-}
-
-/// Mutable direction shared between a stack flow and its step transitions.
-/// A removal transition is captured with the outgoing view's *last rendered*
-/// modifiers, so a value stored there would still carry the direction of the
-/// push that inserted it; routing every read through one reference lets the
-/// flow flip the sign at pop time and have the already-scheduled exit follow.
-private final class DashTrayFlowDirection {
-  var lastDepth = 0
-  /// +1 while stepping forward (deeper), -1 while popping back.
-  var sign: CGFloat = 1
-}
-
-/// Directional travel for one stack-driven step. Forward: the incoming route
-/// settles in from the trailing edge while the outgoing route exits leading —
-/// fly instead of teleport. A pop mirrors both. Combined with the flow's
-/// shared opacity + 0.96-scale transition; this modifier only owns the offset.
-private struct DashTrayStepSlide: ViewModifier, Animatable {
-  enum Phase {
-    case insertion
-    case removal
-  }
-
-  var progress: CGFloat
-  let direction: DashTrayFlowDirection
-  let phase: Phase
-  /// -1 flips travel for right-to-left layouts.
-  let layoutSign: CGFloat
-
-  // Nonisolated for the same SE-0434 reason as DashTrayCardReveal: the
-  // accessor only touches a Sendable stored property.
-  nonisolated var animatableData: CGFloat {
-    get { progress }
-    set { progress = newValue }
-  }
-
-  func body(content: Content) -> some View {
-    let side: CGFloat = phase == .insertion ? 1 : -1
-    content.offset(
-      x: progress * DashTheme.Motion.trayStepSlide * side * direction.sign * layoutSign)
-  }
-}
-
-/// Canonical multi-step Tray content. Business views provide a stable route and
-/// its semantic role; this view keeps the outgoing route alive for its visual
-/// exit while handing layout ownership to the target route immediately.
-///
-/// Two forms:
-/// - `route:role:` — one stable route value, symmetric fade/0.96-scale
-///   replacement. For two-state morphs (confirm affordances) and terminal
-///   replacements where "back" would reopen a committed step.
-/// - `root:path:role:` — a route stack. Forward is `path.append`, and the flow
-///   publishes the header back control: at any depth the tray's ✕ pops one step
-///   instead of dismissing (the glyph stays ✕ — see `DashTrayDismissButton`).
-///   Steps gain a directional slide (`trayStepSlide`) so progression and return
-///   read as travel, not teleport. A caller with a real matched-geometry hero
-///   opts into `heroMorph`, which removes that competing slide. Terminal
-///   success steps must *replace* the stack (`path = [.done]`), never push — a
-///   back control over a committed action would reopen its form.
-struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
-  let route: Route
-  let role: DashTrayStepRole
-  let transitionStyle: DashTrayFlowTransitionStyle
-  private let rootRoute: Route?
-  private let path: Binding<[Route]>?
-  @ViewBuilder let content: (Route) -> Content
-  @State private var direction = DashTrayFlowDirection()
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.layoutDirection) private var layoutDirection
-
-  init(
-    route: Route,
-    role: DashTrayStepRole,
-    transitionStyle: DashTrayFlowTransitionStyle = .step,
-    @ViewBuilder content: @escaping (Route) -> Content
-  ) {
-    self.route = route
-    self.role = role
-    self.transitionStyle = transitionStyle
-    self.rootRoute = nil
-    self.path = nil
-    self.content = content
-  }
-
-  init(
-    root: Route,
-    path: Binding<[Route]>,
-    role: (Route) -> DashTrayStepRole,
-    transitionStyle: DashTrayFlowTransitionStyle = .step,
-    @ViewBuilder content: @escaping (Route) -> Content
-  ) {
-    let active = path.wrappedValue.last ?? root
-    self.route = active
-    self.role = role(active)
-    self.transitionStyle = transitionStyle
-    self.rootRoute = root
-    self.path = path
-    self.content = content
-  }
-
-  var body: some View {
-    if let path {
-      // Recorded during body on purpose: `onChange` lands after this render,
-      // but the insertion transition for the arriving route is captured now.
-      let depth = path.wrappedValue.count
-      if depth != direction.lastDepth {
-        direction.sign = depth > direction.lastDepth ? 1 : -1
-        direction.lastDepth = depth
-      }
-    }
-    return DashTrayPopLayout(activeRoute: route) {
-      if transitionStyle == .heroMorph, let rootRoute {
-        persistentRoot(rootRoute)
-        if route != rootRoute {
-          transientStep(route)
-        }
-      } else {
-        transientStep(route)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .top)
-    .animation(
-      reduceMotion ? DashTheme.Motion.reduced : transitionAnimation,
-      value: route
-    )
-    .preference(key: DashTrayStepRoleKey.self, value: role)
-    .preference(key: DashTrayBackActionKey.self, value: backAction)
-  }
-
-  private func persistentRoot(_ root: Route) -> some View {
-    let isActive = route == root
-    return content(root)
-      .frame(maxWidth: .infinity, alignment: .top)
-      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: root)
-      .opacity(isActive ? 1 : 0)
-      .allowsHitTesting(isActive)
-      .accessibilityHidden(!isActive)
-      .zIndex(0)
-      .id(root)
-  }
-
-  private func transientStep(_ step: Route) -> some View {
-    content(step)
-      .frame(maxWidth: .infinity, alignment: .top)
-      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: step)
-      .zIndex(1)
-      .id(step)
-      .transition(stepTransition)
-  }
-
-  private var stepTransition: AnyTransition {
-    if reduceMotion { return .opacity }
-    if transitionStyle == .heroMorph { return .opacity }
-    let base = AnyTransition.opacity.combined(with: .scale(scale: 0.96, anchor: .center))
-    guard path != nil else { return base }
-    let layoutSign: CGFloat = layoutDirection == .rightToLeft ? -1 : 1
-    return .asymmetric(
-      insertion: .modifier(
-        active: DashTrayStepSlide(
-          progress: 1, direction: direction, phase: .insertion, layoutSign: layoutSign),
-        identity: DashTrayStepSlide(
-          progress: 0, direction: direction, phase: .insertion, layoutSign: layoutSign)
-      ),
-      removal: .modifier(
-        active: DashTrayStepSlide(
-          progress: 1, direction: direction, phase: .removal, layoutSign: layoutSign),
-        identity: DashTrayStepSlide(
-          progress: 0, direction: direction, phase: .removal, layoutSign: layoutSign)
-      )
-    )
-    .combined(with: base)
-  }
-
-  private var transitionAnimation: Animation {
-    switch transitionStyle {
-    case .step:
-      role.transitionAnimation
-    case .heroMorph:
-      role == .root ? DashTheme.Motion.morphExit : DashTheme.Motion.morph
-    }
-  }
-
-  private var backAction: DashTrayBackAction? {
-    guard let path, !path.wrappedValue.isEmpty else { return nil }
-    return DashTrayBackAction(depth: path.wrappedValue.count) {
-      var stack = path.wrappedValue
-      _ = stack.popLast()
-      path.wrappedValue = stack
-    }
   }
 }
 
@@ -950,12 +513,12 @@ enum TrayDragDecision {
 /// The established Dash shell motion. Route replacement keeps its separate
 /// timing vocabulary inside `DashTrayFlow`.
 private enum DashTrayMotion {
-  static let present = DashTheme.Motion.present
-  static let scrimPresent = DashTheme.Motion.scrimPresent
-  static let scrimDismiss = DashTheme.Motion.scrimDismiss
+  static let present = DashTheme.Motion.trayPresent
+  static let scrimPresent = DashTheme.Motion.trayPresent
+  static let scrimDismiss = DashTheme.Motion.trayDismiss
   static let resize = DashTheme.Motion.trayResize
   static let release = DashTheme.Motion.release
-  static let dismiss = DashTheme.Motion.dismiss
+  static let dismiss = DashTheme.Motion.trayDismiss
 }
 
 /// The trailing button cluster — optional action circle plus close — shared by
@@ -1219,8 +782,8 @@ private struct DashSheetHeroHeader<Hero: View>: View {
 /// Compact trays use a full-screen transparent cover with our own dim and a
 /// bottom-pinned card. The card animates its own target height (DashSheetCard) so
 /// content morphs resize smoothly — there's no native detent to clip or snap.
-/// Card and scrim share the cover but not the motion: the card springs up from
-/// the bottom, while the dim fades in place over the page behind.
+/// Card and scrim share one presentation progress vocabulary: the card springs
+/// up from below while the uniform dim changes opacity in place behind it.
 private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   let title: String
   var showsMenuButtons = true
@@ -1241,13 +804,17 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-  /// Card / paired-shell reveal. Springs with the bottom train — not the dim.
+  /// Card / paired-shell reveal. The scrim has separate state so it never moves,
+  /// but both states use the same directional spring vocabulary.
   @State private var progress: CGFloat = 0
   /// Full-screen page dim. Opacity only; never shares the card's offset spring.
   @State private var scrimProgress: CGFloat = 0
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
+  /// The standard shell freezes one measured travel for each direction. Card
+  /// content can resize independently without steering a spring already in flight.
+  @State private var openingCardTravel: CGFloat?
+  @State private var closingCardTravel: CGFloat?
   @State private var keyboardHeight: CGFloat = 0
   @State private var keyboardIsPresented = false
   /// Closing or popping while a software keyboard owns the layout would make
@@ -1324,6 +891,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     else { return nil }
     return DashTraySharedGeometrySnapshot(
       action: sharedAction, destination: destination, card: liveCardFrame)
+  }
+
+  /// Nil while a paired reveal owns the shell. A standard reveal starts only
+  /// after the fitted card height is stable for one rendered frame, so removing
+  /// its old opacity mask cannot expose a partially measured card.
+  private var pendingStandardRevealTravel: CGFloat? {
+    guard !reduceMotion, !sharedRevealActive else { return nil }
+    return DashTrayRevealRules.travel(cardHeight: cardHeight, bottomLift: bottomLift)
   }
 
   private var presentedCardFrame: CGRect {
@@ -1407,7 +982,8 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           // the page dim is traveling with the tray.
           .modifier(
             DashTrayCardReveal(
-              progress: progress, drag: drag, revealOffset: revealOffset,
+              progress: progress, drag: drag,
+              revealOffset: revealOffset(containerHeight: proxy.size.height),
               reduceMotion: reduceMotion, active: !sharedRevealActive)
           )
           .offset(y: drag)
@@ -1476,6 +1052,25 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
     .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
+    .task(id: pendingStandardRevealTravel) {
+      guard let snapshot = pendingStandardRevealTravel,
+        !presentationStarted, !isClosing
+      else {
+        return
+      }
+      // Match the paired path's one-frame stability barrier. Dynamic content can
+      // report more than one fitted height while its first layout resolves.
+      try? await Task.sleep(for: .milliseconds(16))
+      guard !Task.isCancelled, !presentationStarted, !isClosing,
+        pendingStandardRevealTravel == snapshot
+      else {
+        return
+      }
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { openingCardTravel = snapshot }
+      startPresentation()
+    }
     .task(id: sharedGeometrySnapshot) {
       guard let snapshot = sharedGeometrySnapshot, !presentationStarted, !isClosing else { return }
       // One rendered-frame stability barrier: if either endpoint changes, the
@@ -1568,7 +1163,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       if isClosing { finishFlightExitStage() }
     }
     .onAppear {
-      if !sharedRevealActive { startPresentation() }
+      // Spatial presentation waits for a stable fitted height above. Reduced
+      // Motion is opacity-only and therefore has no geometry dependency.
+      if reduceMotion, !sharedRevealActive { startPresentation() }
     }
     .task {
       // A malformed/conditional destination must not leave a transparent cover
@@ -1602,7 +1199,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
 
     presentationStarted = true
-    // Scrim fades in place over the page; the card keeps its own bottom spring.
+    // Scrim changes opacity in place while the card rides the matching spring.
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimPresent) {
       scrimProgress = 1
     }
@@ -1635,7 +1232,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       openingCardFrame = nil
     }
     releaseSharedSource()
-    startPresentation()
+    if reduceMotion { startPresentation() }
   }
 
   private func releaseSharedSource() {
@@ -1663,24 +1260,25 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
 
-  /// A bounded travel distance keeps tall trays from shooting through hundreds
-  /// of points. Fade, blur, and a tiny bottom-anchored scale carry the rest.
-  private var revealOffset: CGFloat {
-    min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
+  /// The standard card moves as one rigid surface. At hidden progress its top
+  /// edge sits at the screen bottom; opening and closing each freeze the current
+  /// measured travel so later content remeasurement cannot bend the path.
+  private func revealOffset(containerHeight: CGFloat) -> CGFloat {
+    if let closingCardTravel { return closingCardTravel }
+    if let openingCardTravel { return openingCardTravel }
+    if let measured = DashTrayRevealRules.travel(
+      cardHeight: cardHeight, bottomLift: bottomLift)
+    {
+      return measured
+    }
+    // The first pass can precede the fitted-height preference. Keep the card
+    // wholly below the viewport until that measurement stabilizes.
+    return max(0, containerHeight) + max(0, bottomLift)
   }
 
-  /// Page dim: a softened material blur under a light black veil. Reduce
-  /// Transparency keeps the solid veil only so the entrance never depends on
-  /// a filter.
-  @ViewBuilder private var trayScrim: some View {
-    ZStack {
-      if !reduceTransparency {
-        Rectangle()
-          .fill(.ultraThinMaterial)
-          .opacity(DashTheme.Sheet.scrimMaterialOpacity)
-      }
-      Color.black.opacity(DashTheme.Sheet.scrimOpacity)
-    }
+  /// Family-style page dim: one uniform veil, with no blur or page transform.
+  private var trayScrim: some View {
+    Color.black.opacity(DashTheme.Sheet.scrimOpacity)
   }
 
   /// Bottom gap under the floating card from the screen edge (always ≥ 0).
@@ -1710,6 +1308,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   private func close(reason: DashTrayCloseReason = .programmatic) {
     guard !isClosing else { return }
     isClosing = true
+    if !reduceMotion,
+      let travel = DashTrayRevealRules.travel(
+        cardHeight: cardHeight, bottomLift: bottomLift) ?? openingCardTravel
+    {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { closingCardTravel = travel }
+    }
     let reversesUnsettledSharedReveal = sharedRevealActive && !presentationSettled
     if sharedRevealActive, presentationSettled {
       if reason == .control {
@@ -2058,8 +1664,8 @@ enum DashTrayFlightMath {
   }
 }
 
-/// The established compact-tray reveal: a bounded rise with fade, blur, and a
-/// whisper of bottom-anchored scale, driven by presentation progress.
+/// The standard compact Tray reveal: one full-size surface translating along Y.
+/// Its title, controls, rows, and corners keep one rigid identity throughout.
 private struct DashTrayCardReveal: ViewModifier, Animatable {
   var progress: CGFloat
   var drag: CGFloat
@@ -2085,13 +1691,8 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
       content
         .opacity(progress)
     } else {
-      // Card-only fade (the modifier sits on the card, not the full-screen host).
-      // Opacity still covers the bounded travel's peek; the page dim is a
-      // separate `scrimProgress` and must never ride this spring.
       content
         .offset(y: (1 - progress) * (max(revealOffset, drag + 48) - drag))
-        .scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)
-        .opacity(min(1, progress * 2))
     }
   }
 }
@@ -2447,110 +2048,6 @@ private struct DashSheetCard<Header: View, Body: View, Footer: View>: View {
       var transaction = Transaction()
       transaction.disablesAnimations = reduceMotion
       withTransaction(transaction) { bodyDisplay = target }
-    }
-  }
-}
-
-/// Height arithmetic for the tray's scroll boundary, kept out of the view so
-/// the one rule that decides what scrolls is testable.
-enum DashTrayScrollBoundaryRules {
-  /// The floor the scrolling body keeps whatever the action band costs. Below
-  /// it the boundary stops shrinking and the card's own body scroll takes the
-  /// overflow — a squeezed tray (a tall band under a raised keyboard) scrolls
-  /// as a whole rather than showing a body region too short to read.
-  static let minimumBody: CGFloat = 80
-
-  /// The height of the scrolling region, or `nil` for "lay out naturally".
-  ///
-  /// - `available`: the content budget from `\.dashTrayBodyMaxHeight`; `nil`
-  ///   outside a tray, where nothing constrains the card.
-  /// - `action`: the measured action band, which never scrolls and is paid
-  ///   for first.
-  /// - `ideal`: the body's own measured height; 0 before it is measured.
-  static func bodyHeight(ideal: CGFloat, action: CGFloat, available: CGFloat?) -> CGFloat? {
-    guard let available, ideal > 0 else { return nil }
-    return min(ideal, max(minimumBody, available - action))
-  }
-}
-
-/// GeometryReader → preference → `@State` → frame is how trays size themselves.
-/// Sub-point measure chatter must not rewrite that state, or the loop re-enters
-/// AttributeGraph (seen when an in-tray list animates a constant-count reorder).
-enum DashTrayMeasuredHeight {
-  static let changeThreshold: CGFloat = 0.5
-
-  static func shouldCommit(_ current: CGFloat, _ next: CGFloat) -> Bool {
-    next.isFinite && next >= 0 && abs(next - current) > changeThreshold
-  }
-}
-
-private struct DashTrayBoundaryBodyIdealKey: PreferenceKey {
-  static let defaultValue: CGFloat = 0
-  static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-    value = max(value, nextValue())
-  }
-}
-
-/// The tray's scroll boundary: the body scrolls, the action band under it does
-/// not. Every tray's title sits in the fixed header and its submit pill sits on
-/// the fixed floor of the card — reaching a form's action must never mean
-/// scrolling to find it, and a long list must never push it off the card.
-///
-/// The card publishes what room it has (`\.dashTrayBodyMaxHeight`); the band is
-/// measured and paid for first, and the body takes what is left, scrolling
-/// inside it. With no budget — outside a tray, or on the first frame before the
-/// header is measured — both regions lay out at natural height and the scroll
-/// view never scrolls, which is exactly what the card's own body scroll used to
-/// do on its own.
-///
-/// It nests inside the card's body scroll on purpose: sized this way the
-/// content always fits that scroll exactly, so the outer one stays inert (no
-/// bounce, no edge fade, no gesture) while this one owns the finger. Do not
-/// hoist it into `DashSheetCard`'s footer slot — body and band share the state
-/// that morphs them together (`DashConfirmMorph`'s `confirming`, its matched
-/// geometry), and a slot in the card is a different view tree.
-struct DashTrayScrollBoundary<Content: View, Action: View>: View {
-  @ViewBuilder let content: () -> Content
-  @ViewBuilder let action: () -> Action
-  @Environment(\.dashTrayBodyMaxHeight) private var available
-  @State private var bodyIdeal: CGFloat = 0
-  @State private var actionHeight: CGFloat = 0
-
-  private var bodyHeight: CGFloat? {
-    DashTrayScrollBoundaryRules.bodyHeight(
-      ideal: bodyIdeal, action: actionHeight, available: available)
-  }
-
-  var body: some View {
-    VStack(spacing: 0) {
-      DashFadedScrollView(
-        surface: DashTheme.Sheet.background,
-        bounceBasedOnSize: true,
-        dismissesKeyboardInteractively: true
-      ) {
-        content()
-          .frame(maxWidth: .infinity, alignment: .top)
-          .background {
-            GeometryReader { proxy in
-              Color.clear.preference(
-                key: DashTrayBoundaryBodyIdealKey.self, value: proxy.size.height)
-            }
-          }
-      }
-      // An exact height, not a cap: inside the card's scroll the incoming
-      // proposal carries no useful height, and a `maxHeight` would leave a
-      // greedy scroll view to resolve against whatever it was handed.
-      .frame(height: bodyHeight)
-
-      action()
-        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) {
-          guard DashTrayMeasuredHeight.shouldCommit(actionHeight, $0) else { return }
-          actionHeight = $0
-        }
-    }
-    .onPreferenceChange(DashTrayBoundaryBodyIdealKey.self) { ideal in
-      guard DashTrayMeasuredHeight.shouldCommit(bodyIdeal, ideal) else { return }
-      bodyIdeal = ideal
     }
   }
 }

@@ -59,7 +59,8 @@ actor FeatureCachePersistence {
     if let store = stores[accountID] { return store }
     var store: [String: FeatureCachePersistedEntry] = [:]
     if let data = try? Data(contentsOf: fileURL(accountID: accountID)),
-      let decoded = try? JSONDecoder().decode(Store.self, from: data)
+      let decoded = try? JSONDecoder().decode(Store.self, from: data),
+      decoded.schemaVersion == Self.schemaVersion
     {
       store = decoded.entries
     }

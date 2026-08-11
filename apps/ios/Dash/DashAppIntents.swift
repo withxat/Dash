@@ -463,7 +463,8 @@ struct R2BucketEntityQuery: EntityStringQuery {
       guard let decoded = R2BucketEntity.decodeIdentifier(identifier) else {
         throw DashIntentError(
           localizedStringResource:
-            "This shortcut uses an older unscoped bucket. Edit it and choose the R2 bucket again.")
+            "This shortcut uses an invalid R2 bucket selection. Edit it and choose the bucket again."
+        )
       }
       let accountName =
         model.accounts.first(where: { $0.id == decoded.accountID })?.name
@@ -635,7 +636,10 @@ struct OpenWatchtowerIntent: AppIntent {
   @MainActor
   func perform() async throws -> some IntentResult {
     guard let accountID = model.activeAccountID else { throw DashIntentError.signedOut }
-    model.pendingRoute = DashRoute.watchtower.scoped(to: accountID)
+    guard let route = DashRoute.watchtower.scoped(to: accountID) else {
+      throw DashIntentError.signedOut
+    }
+    model.pendingRoute = route
     return .result()
   }
 }

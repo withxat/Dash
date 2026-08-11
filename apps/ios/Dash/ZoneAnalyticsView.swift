@@ -50,14 +50,6 @@ struct ZoneAnalyticsSnapshot: Hashable, Sendable {
 /// Pure conversion + parsing, so the date handling is unit-tested away from
 /// the view. Both builders return ascending, dropping unparseable stamps.
 enum ZoneAnalyticsChartModel {
-  private static func makeDayParser() -> DateFormatter {
-    let parser = DateFormatter()
-    parser.dateFormat = "yyyy-MM-dd"
-    parser.locale = Locale(identifier: "en_US_POSIX")
-    parser.timeZone = TimeZone(identifier: "UTC")
-    return parser
-  }
-
   static func chartAccessibilitySummary(rangeLabel: String, requests: Int, threats: Int) -> String {
     if threats > 0 {
       return DashL10n.string(
@@ -84,10 +76,18 @@ enum ZoneAnalyticsChartModel {
     DashL10n.string("Bandwidth chart for \(rangeLabel). Total \(total).")
   }
 
-  static func points(fromDaily days: [ZoneAnalyticsDay]) -> [ZoneAnalyticsChartPoint] {
-    let dayParser = makeDayParser()
+  static func points(
+    fromDaily days: [ZoneAnalyticsDay],
+    timeZone: TimeZone = .current
+  ) -> [ZoneAnalyticsChartPoint] {
     return days.compactMap { day in
-      guard let date = dayParser.date(from: day.date) else { return nil }
+      guard
+        let date = DashDateFormatting.date(
+          fromCalendarDay: day.date,
+          timeZone: timeZone)
+      else {
+        return nil
+      }
       return ZoneAnalyticsChartPoint(
         date: date, requests: day.requests, threats: day.threats, bytes: day.bytes,
         pageViews: day.pageViews, uniques: day.uniques, cachedRequests: day.cachedRequests)
@@ -96,13 +96,8 @@ enum ZoneAnalyticsChartModel {
   }
 
   static func points(fromHourly hourly: [ZoneAnalyticsPoint]) -> [ZoneAnalyticsChartPoint] {
-    let parser = ISO8601DateFormatter()
-    parser.formatOptions = [.withInternetDateTime]
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return hourly.compactMap { point in
-      guard let date = parser.date(from: point.datetime) ?? fractional.date(from: point.datetime)
-      else { return nil }
+      guard let date = DashDateFormatting.date(fromISO8601: point.datetime) else { return nil }
       return ZoneAnalyticsChartPoint(
         date: date, requests: point.requests, threats: point.threats, bytes: point.bytes,
         pageViews: point.pageViews, uniques: point.uniques, cachedRequests: point.cachedRequests)
@@ -114,14 +109,16 @@ enum ZoneAnalyticsChartModel {
     points: [ZoneAnalyticsChartPoint],
     previousPoints: [ZoneAnalyticsChartPoint]? = nil,
     range: AnalyticsRange,
-    locale: Locale
+    locale: Locale,
+    timeZone: TimeZone = .current
   ) -> ZoneAnalyticsSnapshot {
-    let labelStyle: Date.FormatStyle
+    var labelStyle: Date.FormatStyle
     if range == .day {
       labelStyle = Date.FormatStyle.dateTime.hour().locale(locale)
     } else {
       labelStyle = Date.FormatStyle.dateTime.month(.abbreviated).day().locale(locale)
     }
+    labelStyle.timeZone = timeZone
 
     var totalRequests = 0
     var totalThreats = 0
@@ -188,14 +185,17 @@ enum ZoneAnalyticsChartModel {
   static func detailLabel(
     _ date: Date,
     range: AnalyticsRange,
-    locale: Locale
+    locale: Locale,
+    timeZone: TimeZone = .current
   ) -> String {
+    var style: Date.FormatStyle
     if range == .day {
-      return date.formatted(
-        .dateTime.month(.abbreviated).day().hour().minute().locale(locale))
+      style = .dateTime.month(.abbreviated).day().hour().minute().locale(locale)
+    } else {
+      style = .dateTime.year().month(.abbreviated).day().locale(locale)
     }
-    return date.formatted(
-      .dateTime.year().month(.abbreviated).day().locale(locale))
+    style.timeZone = timeZone
+    return date.formatted(style)
   }
 }
 
@@ -652,7 +652,7 @@ struct ZoneAnalyticsView: View {
   private var totalBytes: Int64 { snapshot.totalBytes }
 
   private func bandwidth(_ bytes: Int64) -> String {
-    bytes.formatted(.byteCount(style: .binary).locale(DashL10n.activeLocale))
+    formatBinaryByteCount(bytes, locale: DashL10n.activeLocale)
   }
 
   private func loadAll(force: Bool = false) async {

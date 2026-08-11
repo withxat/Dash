@@ -138,19 +138,15 @@ enum HomeActions {
     decode(mirroredRaw(in: store))
   }
 
-  /// `dash://action/<id>?account=<account-id>` — account is optional but
-  /// producers that know the active account should include it.
-  static func deepLink(action: HomeActionID, accountID: String?) -> URL? {
+  /// `dash://action/<id>?account=<account-id>`.
+  static func deepLink(action: HomeActionID, accountID: String) -> URL? {
+    let accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !accountID.isEmpty else { return nil }
     var components = URLComponents()
     components.scheme = "dash"
     components.host = "action"
     components.path = "/\(action.rawValue)"
-    if let accountID {
-      let trimmed = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
-      if !trimmed.isEmpty {
-        components.queryItems = [URLQueryItem(name: "account", value: trimmed)]
-      }
-    }
+    components.queryItems = [URLQueryItem(name: "account", value: accountID)]
     return components.url
   }
 }

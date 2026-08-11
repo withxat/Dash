@@ -22,6 +22,20 @@ private func r2Object(
   #expect(!R2Media.isWithinTransferLimit(R2Media.transferSizeLimit + 1))
 }
 
+@Test func r2UploadTooLargeByteCountsHonorTheSelectedLocale() {
+  let bytes = 1_500_000
+  let english = R2UploadTooLargeCopy.formattedByteCount(
+    bytes,
+    locale: Locale(identifier: "en_US"))
+  let german = R2UploadTooLargeCopy.formattedByteCount(
+    bytes,
+    locale: Locale(identifier: "de_DE"))
+
+  #expect(english != german)
+  #expect(english.contains("1.5"))
+  #expect(german.contains("1,5"))
+}
+
 @Test func r2TemporaryFileUsesASanitizedLeafAndOwnDirectory() {
   let scratch = R2TemporaryFile.make(
     purpose: "dash-r2-tests",

@@ -1125,62 +1125,22 @@ private func pagesDeploymentSubtitle(_ deployment: PagesDeployment) -> String {
   return parts.joined(separator: " · ")
 }
 
-/// Keep in sync with `WidgetColor.pagesStatus` in DashWidgets.swift.
 private func pagesStatusColor(_ status: String?) -> Color {
-  switch status?.lowercased() {
-  case "success": DashTheme.brand
-  case "failure", "canceled": DashTheme.danger
-  case "active", "idle": DashTheme.accent
-  default: DashTheme.iconMuted
-  }
-}
-
-/// Formatters are expensive to build and this ran three times per deployment
-/// row. Held on the main actor because the relative formatter is not `Sendable`.
-@MainActor
-private enum PagesDeploymentDateFormatting {
-  private static let fractionalISO8601: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return formatter
-  }()
-
-  private static let plainISO8601: ISO8601DateFormatter = {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    return formatter
-  }()
-
-  /// Keyed by locale, not a bare `static let`: Settings → Language is in-app, and
-  /// a formatter cached for the process lifetime would keep printing "3d ago"
-  /// beside Chinese copy after the switch.
-  private static var relativeCache: (locale: Locale, formatter: RelativeDateTimeFormatter)?
-
-  static func date(from value: String) -> Date? {
-    fractionalISO8601.date(from: value) ?? plainISO8601.date(from: value)
-  }
-
-  static func relativeString(for date: Date, relativeTo now: Date, locale: Locale) -> String {
-    let formatter: RelativeDateTimeFormatter
-    if let cached = relativeCache, cached.locale == locale {
-      formatter = cached.formatter
-    } else {
-      formatter = RelativeDateTimeFormatter()
-      formatter.unitsStyle = .abbreviated
-      formatter.locale = locale
-      relativeCache = (locale, formatter)
-    }
-    return formatter.localizedString(for: date, relativeTo: now)
+  switch PagesDeploymentStatusClassification.classify(status) {
+  case .success: DashTheme.success
+  case .failure, .cancelled: DashTheme.danger
+  case .active, .idle: DashTheme.warning
+  case .unknown: DashTheme.iconMuted
   }
 }
 
 @MainActor
 private func pagesRelativeDate(_ value: String) -> String {
-  guard let date = PagesDeploymentDateFormatting.date(from: value) else {
+  guard let date = DashDateFormatting.date(fromISO8601: value) else {
     return value
   }
-  return PagesDeploymentDateFormatting.relativeString(
-    for: date,
+  return DashDateFormatting.abbreviatedRelativeTime(
+    date,
     relativeTo: .now,
     locale: DashL10n.activeLocale)
 }
@@ -1205,19 +1165,17 @@ enum PagesDeploymentChartModel {
   }
 
   static func outcome(forStatus status: String?, isSkipped: Bool = false) -> Outcome {
-    switch status?.lowercased() {
-    case "success":
+    switch PagesDeploymentStatusClassification.classify(status) {
+    case .success:
       return .success
-    case "failure", "failed":
+    case .failure:
       return .failure
-    case "canceled", "cancelled", "skipped":
+    case .cancelled:
       return .canceled
-    case "active", "idle", "building", "deploying", "queued", "initializing":
+    case .active, .idle:
       return .inFlight
-    case nil where isSkipped:
-      return .canceled
-    default:
-      return .other
+    case .unknown:
+      return isSkipped ? .canceled : .other
     }
   }
 

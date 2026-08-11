@@ -135,7 +135,7 @@ struct WorkerBuildsSection: View {
     if let branch = build.buildTriggerMetadata?.branch { parts.append(branch) }
     if let commit = build.buildTriggerMetadata?.shortCommit { parts.append(commit) }
     if let created = build.createdOn.flatMap(DashDateFormatting.date(fromISO8601:)) {
-      parts.append(watchtowerRelativeTime(created))
+      parts.append(DashDateFormatting.fullRelativeTime(created))
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }

@@ -718,23 +718,6 @@ struct DashTrayPillButton: View {
   }
 }
 
-// MARK: - Header more menu
-
-/// Trailing toolbar button that opens a `dashMoreMenu` tray of danger actions.
-struct DashMoreButton: View {
-  @Binding var isPresented: Bool
-  var accessibilityLabel = "More actions"
-
-  var body: some View {
-    DashToolbarIconButton(
-      asset: SolarAsset.menuDots,
-      accessibilityLabel: accessibilityLabel
-    ) {
-      isPresented = true
-    }
-  }
-}
-
 extension View {
   /// Attaches a tray of high-risk actions, each morphing to a confirmation step.
   func dashMoreMenu(

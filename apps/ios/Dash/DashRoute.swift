@@ -3,6 +3,7 @@ import Foundation
 enum DashRouteAccountResolution: Equatable, Sendable {
   case open(DashRoute)
   case confirmSwitch(accountID: String, route: DashRoute)
+  case rejectMissingAccount
   case rejectUnavailable(accountID: String)
 }
 
@@ -12,21 +13,19 @@ enum DashRouteAccountResolution: Equatable, Sendable {
 ///
 /// Grammar:
 ///   dash://settings
-///   dash://watchtower
-///   dash://action/<HomeActionID.rawValue>
-///   dash://zone/<id>[/dns|cache|settings|analytics|waf]
-///   dash://feature/<FeatureID.rawValue>
-///   dash://worker/<name>
-///   dash://pages/<name>[/domains|/deployments/<id>]
-///   dash://r2/<name>
-///   dash://kv/<id>
-///   dash://registrar/<domain>
+///   dash://watchtower?account=<account-id>
+///   dash://action/<HomeActionID.rawValue>?account=<account-id>
+///   dash://zone/<id>[/dns|cache|settings|analytics|waf]?account=<account-id>
+///   dash://feature/<FeatureID.rawValue>?account=<account-id>
+///   dash://worker/<name>?account=<account-id>
+///   dash://pages/<name>[/domains|/deployments/<id>]?account=<account-id>
+///   dash://r2/<name>?account=<account-id>
+///   dash://kv/<id>?account=<account-id>
+///   dash://registrar/<domain>?account=<account-id>
 ///
-/// Any route may be bound to a Cloudflare account with
-/// `?account=<account-id>`. Unscoped links remain valid for backwards
-/// compatibility, but producers that know the account should always include
-/// it so the app can confirm a switch instead of opening the same resource
-/// name under whichever account happens to be active.
+/// Settings is global. Every other route must be bound to a Cloudflare account
+/// with `?account=<account-id>` so the app can confirm a switch instead of
+/// opening the same resource name under whichever account happens to be active.
 enum DashRoute: Hashable, Sendable {
   case settings
   case watchtower
@@ -60,7 +59,10 @@ enum DashRoute: Hashable, Sendable {
       URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
       .filter { $0.name == "account" } ?? []
     guard accountItems.count <= 1 else { return nil }
-    guard let accountItem = accountItems.first else { return route }
+    if case .settings = route {
+      return accountItems.isEmpty ? route : nil
+    }
+    guard let accountItem = accountItems.first else { return nil }
     guard
       let accountID = accountItem.value?.trimmingCharacters(in: .whitespacesAndNewlines),
       !accountID.isEmpty
@@ -142,10 +144,15 @@ enum DashRoute: Hashable, Sendable {
   }
 
   /// Returns one canonical account wrapper, replacing any existing scope.
-  func scoped(to accountID: String) -> DashRoute {
+  /// Global Settings and empty account identifiers cannot be scoped.
+  func scoped(to accountID: String) -> DashRoute? {
     let accountID = accountID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !accountID.isEmpty else { return unscoped }
-    return .scoped(accountID: accountID, route: unscoped)
+    let route = unscoped
+    guard !accountID.isEmpty else { return nil }
+    guard case .settings = route else {
+      return .scoped(accountID: accountID, route: route)
+    }
+    return nil
   }
 
   /// Pure account-safety policy used before a parsed external route reaches
@@ -155,8 +162,14 @@ enum DashRoute: Hashable, Sendable {
     activeAccountID: String?,
     availableAccountIDs: Set<String>
   ) -> DashRouteAccountResolution {
-    guard let accountID else { return .open(self) }
     let route = unscoped
+    if case .settings = route { return .open(.settings) }
+    guard
+      let accountID = accountID?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !accountID.isEmpty
+    else {
+      return .rejectMissingAccount
+    }
     if accountID == activeAccountID { return .open(route) }
     if availableAccountIDs.contains(accountID) {
       return .confirmSwitch(accountID: accountID, route: route)

@@ -275,7 +275,7 @@ struct WatchtowerInboxView: View {
   }
 
   private func relativeTime(_ date: Date) -> String {
-    watchtowerRelativeTime(date)
+    DashDateFormatting.fullRelativeTime(date)
   }
 
   private func load(force: Bool = false) async {
@@ -407,7 +407,7 @@ private struct WatchtowerInboxEntryTray: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         if let sentAt = entry.sentAt {
-          Text(watchtowerRelativeTime(sentAt))
+          Text(DashDateFormatting.fullRelativeTime(sentAt))
             .dashTextStyle(.caption)
             .foregroundStyle(DashTheme.subtle)
         }
@@ -437,13 +437,4 @@ private struct WatchtowerInboxEntryTray: View {
     .padding(.vertical, 4)
     .background(DashTheme.recessed, in: Capsule(style: .continuous))
   }
-}
-
-/// Delivery ages on the inbox list and in the detail tray. `RelativeDateTimeFormatter`
-/// defaults to the SYSTEM locale, so without the pin an inbox translated by
-/// Settings → Language still counted the hours in English.
-func watchtowerRelativeTime(_ date: Date, relativeTo now: Date = .now) -> String {
-  let formatter = RelativeDateTimeFormatter()
-  formatter.locale = DashL10n.activeLocale
-  return formatter.localizedString(for: date, relativeTo: now)
 }

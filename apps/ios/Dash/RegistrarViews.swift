@@ -144,15 +144,16 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
   /// name on the object and the documented example is opaque hex. Rows without
   /// a dot in that field are already dropped by the package; this drops the
   /// rest of the nameless ones rather than titling a row with a hex string.
-  init?(legacy: RegistrarDomain) {
-    let name = (legacy.identifier ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+  init?(pageNumbered: RegistrarDomain) {
+    let name = (pageNumbered.identifier ?? "").trimmingCharacters(
+      in: .whitespacesAndNewlines)
     guard !name.isEmpty else { return nil }
     self.init(
       name: name,
-      expiresAt: legacy.expiresAt,
-      createdAt: legacy.createdAt,
-      locked: legacy.locked,
-      currentRegistrar: legacy.currentRegistrar)
+      expiresAt: pageNumbered.expiresAt,
+      createdAt: pageNumbered.createdAt,
+      locked: pageNumbered.locked,
+      currentRegistrar: pageNumbered.currentRegistrar)
   }
 
   /// Field-by-field union, `primary` winning every field it has an answer for.
@@ -185,14 +186,14 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
 /// **Decision D1 is unresolved**: nobody has confirmed whether the beta
 /// `/registrar/registrations` list returns domains bought through the
 /// Cloudflare dashboard or only ones created through the beta API itself. So
-/// the legacy page-numbered list is a first-class source here, not a rescue —
+/// the page-numbered list is a first-class source here, not a rescue —
 /// both are called on every load and merged. A zone whose name is missing from
 /// the merged list simply falls through to RDAP, so neither endpoint's silence
 /// is ever reported as an answer.
 struct RegistrarAccountIndex: Sendable {
   let domains: [RegistrarDomainSummary]
   let registrations: RegistrarFetch<[RegistrarDomainSummary]>
-  let legacy: RegistrarFetch<[RegistrarDomainSummary]>
+  let pageNumbered: RegistrarFetch<[RegistrarDomainSummary]>
 
   func domain(named name: String) -> RegistrarDomainSummary? {
     let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -206,7 +207,7 @@ struct RegistrarAccountIndex: Sendable {
   /// A half-torn-down load is not a result. Caching one would freeze a partial
   /// answer for the cache's whole lifetime.
   var isCacheable: Bool {
-    !registrations.isCancelled && !legacy.isCancelled
+    !registrations.isCancelled && !pageNumbered.isCancelled
   }
 }
 
@@ -223,14 +224,14 @@ enum RegistrarIndexLoader {
       try await client.listRegistrarRegistrations(accountID: accountID)
         .map(RegistrarDomainSummary.init(registration:))
     }
-    async let legacyFetch = RegistrarFetch<[RegistrarDomainSummary]>.perform {
-      try await client.listRegistrarDomainsLegacy(accountID: accountID)
-        .compactMap(RegistrarDomainSummary.init(legacy:))
+    async let pageNumberedFetch = RegistrarFetch<[RegistrarDomainSummary]>.perform {
+      try await client.listRegistrarDomainsPageNumbered(accountID: accountID)
+        .compactMap(RegistrarDomainSummary.init(pageNumbered:))
     }
-    let (registrations, legacy) = await (registrationsFetch, legacyFetch)
+    let (registrations, pageNumbered) = await (registrationsFetch, pageNumberedFetch)
 
     var merged: [String: RegistrarDomainSummary] = [:]
-    for summary in (registrations.payload ?? []) + (legacy.payload ?? []) {
+    for summary in (registrations.payload ?? []) + (pageNumbered.payload ?? []) {
       let key = summary.name.lowercased()
       if let existing = merged[key] {
         merged[key] = RegistrarDomainSummary.merged(existing, summary)
@@ -244,7 +245,7 @@ enum RegistrarIndexLoader {
       // reorder itself the day a renewal lands.
       domains: merged.values.sorted { $0.name < $1.name },
       registrations: registrations,
-      legacy: legacy)
+      pageNumbered: pageNumbered)
   }
 }
 
@@ -336,7 +337,7 @@ struct RegistrarDomainDetailView: View {
   /// the registry-side sections wait on a request.
   @State private var seed: RegistrarDomainSummary?
   @State private var registration: RegistrarFetch<RegistrarRegistration>?
-  @State private var legacy: RegistrarFetch<RegistrarDomain>?
+  @State private var pageNumbered: RegistrarFetch<RegistrarDomain>?
   /// Optimistic overrides. Cleared back to `nil` on failure, which restores
   /// whatever Cloudflare last said rather than a second guess.
   @State private var autoRenewOverride: Bool?
@@ -360,8 +361,12 @@ struct RegistrarDomainDetailView: View {
     if let registration = registration?.payload {
       resolved = RegistrarDomainSummary(registration: registration)
     }
-    if let legacy = legacy?.payload, let fromLegacy = RegistrarDomainSummary(legacy: legacy) {
-      resolved = resolved.map { RegistrarDomainSummary.merged($0, fromLegacy) } ?? fromLegacy
+    if let pageNumberedDomain = pageNumbered?.payload,
+      let fromPageNumbered = RegistrarDomainSummary(pageNumbered: pageNumberedDomain)
+    {
+      resolved =
+        resolved.map { RegistrarDomainSummary.merged($0, fromPageNumbered) }
+        ?? fromPageNumbered
     }
     if let seed {
       resolved = resolved.map { RegistrarDomainSummary.merged($0, seed) } ?? seed
@@ -373,16 +378,16 @@ struct RegistrarDomainDetailView: View {
   private var lockedValue: Bool? { lockedOverride ?? summary?.locked }
 
   private var isCold: Bool {
-    seed == nil && registration == nil && legacy == nil
+    seed == nil && registration == nil && pageNumbered == nil
   }
 
   /// Both lookups settled and neither knows this domain: it is not a Cloudflare
   /// registration, or it belongs to another account.
   private var screenError: String? {
     guard summary == nil, !isCold else { return nil }
-    guard registration?.isCancelled != true, legacy?.isCancelled != true else { return nil }
-    if let message = registration?.failureMessage ?? legacy?.failureMessage { return message }
-    guard registration?.isSettledAnswer == true, legacy?.isSettledAnswer == true else {
+    guard registration?.isCancelled != true, pageNumbered?.isCancelled != true else { return nil }
+    if let message = registration?.failureMessage ?? pageNumbered?.failureMessage { return message }
+    guard registration?.isSettledAnswer == true, pageNumbered?.isSettledAnswer == true else {
       return nil
     }
     return DashL10n.string("Cloudflare has no registration for this domain.")
@@ -390,7 +395,7 @@ struct RegistrarDomainDetailView: View {
 
   private var factsPhase: DashSectionPhase {
     if summary != nil { return .content }
-    if let message = registration?.failureMessage ?? legacy?.failureMessage {
+    if let message = registration?.failureMessage ?? pageNumbered?.failureMessage {
       return .failed(message)
     }
     return .loading
@@ -399,7 +404,7 @@ struct RegistrarDomainDetailView: View {
   /// Registry statuses and the registrant contact both come from the
   /// page-numbered GET, so they share one phase and one retry.
   private var registryPhase: DashSectionPhase {
-    switch legacy {
+    switch pageNumbered {
     case nil, .some(.cancelled): .loading
     case .some(.value), .some(.absent): .content
     case .some(.denied(let message)), .some(.failed(let message)): .failed(message)
@@ -409,11 +414,11 @@ struct RegistrarDomainDetailView: View {
   private var registryStatuses: [String] {
     // Bounded by the EPP vocabulary, but bounded here too: an info group owns
     // an eager stack and must never take an unbounded `ForEach`.
-    Array((legacy?.payload?.registryStatusList ?? []).prefix(12))
+    Array((pageNumbered?.payload?.registryStatusList ?? []).prefix(12))
   }
 
   private var registrant: RegistrarContact? {
-    legacy?.payload?.registrantContact
+    pageNumbered?.payload?.registrantContact
   }
 
   var body: some View {
@@ -573,7 +578,7 @@ struct RegistrarDomainDetailView: View {
   @ViewBuilder
   private var registrantGroup: some View {
     // A settled-absent contact is dropped. Loading and failure keep the frame
-    // so the section cannot silently disappear when the shared legacy request
+    // so the section cannot silently disappear when the shared page-numbered request
     // throws.
     if registryPhase != .content || registrant != nil {
       DashInfoGroup(
@@ -626,7 +631,7 @@ struct RegistrarDomainDetailView: View {
     }
     if force {
       registration = nil
-      legacy = nil
+      pageNumbered = nil
     }
     // Hoisted before the child tasks so neither closure captures `self`.
     let client = model.client
@@ -634,11 +639,11 @@ struct RegistrarDomainDetailView: View {
     async let registrationFetch = RegistrarFetch<RegistrarRegistration>.perform {
       try await client.getRegistrarRegistration(accountID: accountID, domain: domain)
     }
-    async let legacyFetch = RegistrarFetch<RegistrarDomain>.perform {
+    async let pageNumberedFetch = RegistrarFetch<RegistrarDomain>.perform {
       try await client.getRegistrarDomain(accountID: accountID, domain: domain)
     }
     let detail = RegistrarDomainDetail(
-      registration: await registrationFetch, legacy: await legacyFetch)
+      registration: await registrationFetch, pageNumbered: await pageNumberedFetch)
     guard
       !Task.isCancelled,
       model.isCurrentAccount(context),
@@ -652,7 +657,7 @@ struct RegistrarDomainDetailView: View {
     loadedContext = context
     seed = nil
     registration = nil
-    legacy = nil
+    pageNumbered = nil
     autoRenewOverride = nil
     lockedOverride = nil
     inFlight = nil
@@ -661,7 +666,7 @@ struct RegistrarDomainDetailView: View {
   private func apply(_ detail: RegistrarDomainDetail) {
     withAnimation(DashTheme.Motion.content) {
       registration = detail.registration
-      legacy = detail.legacy
+      pageNumbered = detail.pageNumbered
       autoRenewOverride = nil
       lockedOverride = nil
     }
@@ -739,10 +744,10 @@ struct RegistrarDomainDetailView: View {
 /// without re-asking either endpoint.
 struct RegistrarDomainDetail: Sendable {
   let registration: RegistrarFetch<RegistrarRegistration>
-  let legacy: RegistrarFetch<RegistrarDomain>
+  let pageNumbered: RegistrarFetch<RegistrarDomain>
 
   var isCacheable: Bool {
-    !registration.isCancelled && !legacy.isCancelled
+    !registration.isCancelled && !pageNumbered.isCancelled
   }
 }
 

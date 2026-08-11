@@ -10,10 +10,10 @@ struct AppConfiguration: Sendable {
       && !redirectURI.contains("$(")
   }
 
-  /// Origin of the OAuth redirect worker, used as the push registration base.
-  /// Nil when redirect URI is missing, unexpanded, or not https — push then
-  /// degrades silently, same as an unavailable Keychain access group.
-  var pushBaseURL: URL? {
+  /// HTTPS origin of the OAuth and registration relay, derived from the
+  /// configured redirect URI. Nil when the URI is missing, unexpanded, or not
+  /// HTTPS; registration lookup then falls back to the public RDAP bootstrap.
+  var relayBaseURL: URL? {
     guard !redirectURI.isEmpty, !redirectURI.contains("$("),
       let url = URL(string: redirectURI),
       let scheme = url.scheme?.lowercased(), scheme == "https",
@@ -134,20 +134,19 @@ enum DashExperimentalFeatures {
   }
 }
 
-/// Device-local color preference for the one shared light field behind the
-/// Home, Resources, and Watchtower roots. Persist the preset identity rather
-/// than a color value so every choice can keep following Kumo's adaptive
-/// light, dark, and Increased Contrast stops.
-struct DashWorkspaceWashInspiration: Equatable, Sendable {
+/// UserDefaults-backed color preference for the one shared light field behind
+/// the Home, Resources, and Watchtower roots. Its whitelisted value can also
+/// sync through iCloud. Persist the preset identity rather than a color value
+/// so every choice can keep following Kumo's adaptive light, dark, and
+/// Increased Contrast stops.
+struct DashWorkspaceGlowInspiration: Equatable, Sendable {
   let source: String
   let description: String
 }
 
-enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
+enum DashWorkspaceGlowPreset: String, CaseIterable, Identifiable, Sendable {
   case none
-  // Keep the established raw value so existing local and iCloud preferences
-  // continue to resolve after the code-facing preset name becomes color-based.
-  case orange = "cloudflare"
+  case orange
   case red
   case slate
   case blue
@@ -156,8 +155,8 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   case purple
   case teal
 
-  static let storageKey = "dash.workspace_wash"
-  static let defaultPreset = DashWorkspaceWashPreset.orange
+  static let storageKey = "dash.workspace_glow"
+  static let defaultPreset = DashWorkspaceGlowPreset.orange
 
   var id: String { rawValue }
 
@@ -178,30 +177,30 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   /// Only presets with a close visual relationship to an external brand earn
   /// an inspiration affordance. Brand names stay out of the picker so they do
   /// not read like integrations or promises of an exact palette match.
-  var inspiration: DashWorkspaceWashInspiration? {
+  var inspiration: DashWorkspaceGlowInspiration? {
     switch self {
     case .orange:
-      DashWorkspaceWashInspiration(
+      DashWorkspaceGlowInspiration(
         source: "Cloudflare",
         description: DashL10n.string(
           "Cloudflare’s signature orange inspired this warm, energetic glow."))
     case .red:
-      DashWorkspaceWashInspiration(
+      DashWorkspaceGlowInspiration(
         source: "NetEase Cloud Music 网易云音乐",
         description: DashL10n.string(
           "NetEase Cloud Music’s vivid red inspired this bold, rhythmic glow."))
     case .green:
-      DashWorkspaceWashInspiration(
+      DashWorkspaceGlowInspiration(
         source: "Coolapk 酷安",
         description: DashL10n.string(
           "Coolapk’s vivid green inspired this fresh, energetic glow."))
     case .pink:
-      DashWorkspaceWashInspiration(
+      DashWorkspaceGlowInspiration(
         source: "bilibili 哔哩哔哩",
         description: DashL10n.string(
           "bilibili’s signature pink inspired this bright, playful glow."))
     case .teal:
-      DashWorkspaceWashInspiration(
+      DashWorkspaceGlowInspiration(
         source: "Netlify",
         description: DashL10n.string(
           "Netlify’s teal identity inspired this crisp, lively glow."))
@@ -210,8 +209,8 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
     }
   }
 
-  static func resolved(stored raw: String) -> DashWorkspaceWashPreset {
-    DashWorkspaceWashPreset(rawValue: raw) ?? defaultPreset
+  static func resolved(stored raw: String) -> DashWorkspaceGlowPreset {
+    DashWorkspaceGlowPreset(rawValue: raw) ?? defaultPreset
   }
 }
 

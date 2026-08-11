@@ -108,12 +108,12 @@ private func workerBuildStatusLine(_ state: WorkerBuildAttributes.ContentState) 
 }
 
 private func workerBuildDeepLink(_ context: ActivityViewContext<WorkerBuildAttributes>) -> URL? {
-  guard let accountID = context.attributes.accountID, !accountID.isEmpty else { return nil }
+  guard !context.attributes.accountID.isEmpty else { return nil }
   var components = URLComponents()
   components.scheme = "dash"
   components.host = "worker"
   components.path = "/\(context.attributes.scriptName)"
-  components.queryItems = [URLQueryItem(name: "account", value: accountID)]
+  components.queryItems = [URLQueryItem(name: "account", value: context.attributes.accountID)]
   return components.url
 }
 
@@ -205,38 +205,36 @@ private func pagesBuildStatusLine(_ state: PagesBuildAttributes.ContentState) ->
   // Cloudflare's stage ids are snake_case ("clone_repo"), and `.capitalized`
   // alone shipped them that way — "Clone_Repo · Active".
   let stage = state.stage.replacingOccurrences(of: "_", with: " ").capitalized
-  let status = state.status.capitalized
-  return "\(String(localized: .init(stage))) · \(String(localized: .init(status)))"
+  let statusKey = PagesDeploymentStatusClassification.classify(state.status).catalogKey
+  let status = String(localized: .init(statusKey))
+  return "\(String(localized: .init(stage))) · \(status)"
 }
 
 private func pagesBuildDeepLink(_ context: ActivityViewContext<PagesBuildAttributes>) -> URL? {
-  // Older activities have no account binding. Leaving them untappable is
-  // safer than resolving a same-named project under the current account.
-  guard let accountID = context.attributes.accountID, !accountID.isEmpty else { return nil }
+  guard !context.attributes.accountID.isEmpty else { return nil }
   var components = URLComponents()
   components.scheme = "dash"
   components.host = "pages"
   components.path =
     "/\(context.attributes.projectName)/deployments/\(context.attributes.deploymentID)"
-  components.queryItems = [URLQueryItem(name: "account", value: accountID)]
+  components.queryItems = [URLQueryItem(name: "account", value: context.attributes.accountID)]
   return components.url
 }
 
-/// Status colors mirror DashTheme's ok/warning/critical tokens; DashTheme
-/// itself isn't compiled into the widget, so the three values are duplicated
-/// here. Keep in sync with DashTheme.success/.warning/.danger.
+/// Status colors mirror DashTheme's semantic tokens; DashTheme itself isn't
+/// compiled into the widget, so their target-local constructions live here.
 private enum WidgetColor {
   static let ok = Color(light: 0x10B981, dark: 0x34D399)
   static let warning = Color(light: 0xEAB308, dark: 0xFACC15)
   static let critical = Color(light: 0xEF4444, dark: 0xF87171)
+  static let neutral = Color.secondary
 
-  /// Pages deployment stages — keep in sync with `pagesStatusColor` in PagesViews.
   static func pagesStatus(_ raw: String) -> Color {
-    switch raw.lowercased() {
-    case "success": ok
-    case "failure", "canceled", "cancelled": critical
-    case "active", "idle": warning
-    default: ok
+    switch PagesDeploymentStatusClassification.classify(raw) {
+    case .success: ok
+    case .failure, .cancelled: critical
+    case .active, .idle: warning
+    case .unknown: neutral
     }
   }
 
@@ -281,6 +279,7 @@ struct WatchtowerProvider: TimelineProvider {
       snapshot: WatchtowerWidgetSnapshot(
         unreadCount: 1,
         alerts: [.init(id: "cf:preview", title: "Certificate expiring", detail: "example.com")],
+        accountID: "preview-account",
         accountName: "Your account", fetchedAt: Date()))
   }
 

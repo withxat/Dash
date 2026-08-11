@@ -501,7 +501,7 @@ struct UserAvatar: View {
       // Flatten the circular clip so nav-bar transition snapshots don't briefly
       // reveal the underlying square Gravatar bitmap.
       .compositingGroup()
-      .overlay { Circle().stroke(DashTheme.line, lineWidth: 0.5) }
+      .overlay { Circle().stroke(DashTheme.separator, lineWidth: 0.5) }
       .contentShape(Circle())
       .task(id: "\(userID ?? ""):\(Gravatar.normalize(email))") {
         model.avatars.ensureLoaded(userID: userID, email: email)

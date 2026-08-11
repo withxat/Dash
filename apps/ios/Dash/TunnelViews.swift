@@ -559,7 +559,7 @@ struct TunnelDetailView: View {
       parts.append(origin)
     }
     if let started = connector.runAt.flatMap(DashDateFormatting.date(fromISO8601:)) {
-      parts.append(DashL10n.string("Started \(watchtowerRelativeTime(started))"))
+      parts.append(DashL10n.string("Started \(DashDateFormatting.fullRelativeTime(started))"))
     }
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
@@ -1007,7 +1007,7 @@ func tunnelListSubtitle(_ tunnel: CloudflareTunnel) -> String? {
     guard let last = tunnel.connsInactiveAt.flatMap(DashDateFormatting.date(fromISO8601:)) else {
       return nil
     }
-    return DashL10n.string("Last connected \(watchtowerRelativeTime(last))")
+    return DashL10n.string("Last connected \(DashDateFormatting.fullRelativeTime(last))")
   case .unknown:
     return nil
   }

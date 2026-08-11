@@ -3,11 +3,22 @@ import Testing
 
 @testable import Dash
 
-@Test func metricsWidgetMetricSnapshotDecodesWithoutPreviousTotal() throws {
-  let legacy = """
+@Test func metricsWidgetMetricSnapshotRequiresExplicitPreviousTotal() throws {
+  let payloadWithoutPreviousTotal = """
     {"metricID":"webTraffic","total":42,"points":[]}
     """.data(using: .utf8)!
-  let decoded = try JSONDecoder().decode(MetricsWidgetMetricSnapshot.self, from: legacy)
+  #expect(throws: DecodingError.self) {
+    try JSONDecoder().decode(
+      MetricsWidgetMetricSnapshot.self,
+      from: payloadWithoutPreviousTotal)
+  }
+
+  let payloadWithNullPreviousTotal = """
+    {"metricID":"webTraffic","total":42,"previousTotal":null,"points":[]}
+    """.data(using: .utf8)!
+  let decoded = try JSONDecoder().decode(
+    MetricsWidgetMetricSnapshot.self,
+    from: payloadWithNullPreviousTotal)
   #expect(decoded.metricID == "webTraffic")
   #expect(decoded.total == 42)
   #expect(decoded.previousTotal == nil)
@@ -22,6 +33,26 @@ import Testing
     MetricsWidgetMetricSnapshot.self,
     from: JSONEncoder().encode(withPrevious))
   #expect(roundTrip.previousTotal == 40)
+}
+
+@Test func metricsWidgetStoreRejectsIncompleteAndUnknownSchemas() throws {
+  let incompletePayload = Data(
+    """
+    {"schemaVersion":1,"activeAccountID":null,"accounts":[],"domains":[]}
+    """.utf8)
+  let unknownSchemaPayload = Data(
+    """
+    {"schemaVersion":99,"activeAccountID":null,"accounts":[],"domains":[],"accountSnapshots":[],"domainSnapshots":[]}
+    """.utf8)
+
+  for payload in [incompletePayload, unknownSchemaPayload] {
+    do {
+      _ = try JSONDecoder().decode(MetricsWidgetSnapshotStore.self, from: payload)
+      Issue.record("A non-current metrics widget store must not decode")
+    } catch is DecodingError {
+      // Expected: persisted widget state has one exact current schema.
+    }
+  }
 }
 
 @Test func metricsWidgetTrendMatchesChartDirectionAndPercentageRules() throws {
@@ -524,37 +555,6 @@ import Testing
     _ = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
   }
   #expect(try Data(contentsOf: fileURL) == originalData)
-}
-
-@Test func metricsWidgetRepositoryMigratesLegacyNumericSessionState() throws {
-  let account = MetricsWidgetAccount(id: "account-a", name: "Account A")
-  let directory = FileManager.default.temporaryDirectory
-    .appending(
-      path: "dash-metrics-widget-legacy-session-tests-\(UUID().uuidString)",
-      directoryHint: .isDirectory)
-  let fileURL = directory.appending(path: MetricsWidgetSnapshotStore.filename)
-  defer { try? FileManager.default.removeItem(at: directory) }
-  try FileManager.default.createDirectory(
-    at: directory,
-    withIntermediateDirectories: true)
-  try MetricsWidgetSnapshotStore(accounts: [account]).write(to: fileURL)
-  try Data("41\n".utf8).write(
-    to: MetricsWidgetSnapshotRepository.generationFileURL(for: fileURL),
-    options: .atomic)
-
-  let legacy = try MetricsWidgetSnapshotRepository.read(at: fileURL)
-  #expect(legacy.generation == 41)
-  #expect(legacy.mode == .remoteEnabled)
-  #expect(legacy.store?.accounts == [account])
-
-  let changed = try MetricsWidgetSnapshotRepository.update(at: fileURL) { _ in }
-  #expect(!changed)
-  let migratedData = try Data(
-    contentsOf: MetricsWidgetSnapshotRepository.generationFileURL(for: fileURL))
-  #expect(String(decoding: migratedData, as: UTF8.self).hasPrefix("{"))
-  let migrated = try MetricsWidgetSnapshotRepository.read(at: fileURL)
-  #expect(migrated.generation == 41)
-  #expect(migrated.mode == .remoteEnabled)
 }
 
 @Test func metricsWidgetRepositoryInvalidationHidesStoreAndIsIdempotent() throws {

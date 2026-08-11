@@ -836,10 +836,14 @@ private func makeAccountPayload(
   analytics: AccountAnalyticsSnapshot
 ) -> MetricsWidgetRefreshPayload {
   let httpPoints = analytics.httpPoints.compactMap { point in
-    MetricsWidgetTimestampParser.parse(point.datetime).map { (timestamp: $0, point: point) }
+    DashDateFormatting.date(fromISO8601: point.datetime).map {
+      (timestamp: $0, point: point)
+    }
   }
   let workerPoints = analytics.workerPoints.compactMap { point in
-    MetricsWidgetTimestampParser.parse(point.datetime).map { (timestamp: $0, point: point) }
+    DashDateFormatting.date(fromISO8601: point.datetime).map {
+      (timestamp: $0, point: point)
+    }
   }
   let metrics = AccountMetricsWidgetMetric.allCases.map { metric in
     let source = metric.usesHTTPSeries ? httpPoints : workerPoints
@@ -927,7 +931,7 @@ private struct MetricsWidgetDomainPoint: Hashable, Sendable {
   }
 
   init?(_ point: ZoneAnalyticsPoint) {
-    guard let timestamp = MetricsWidgetTimestampParser.parse(point.datetime) else { return nil }
+    guard let timestamp = DashDateFormatting.date(fromISO8601: point.datetime) else { return nil }
     self.init(
       timestamp: timestamp,
       requests: point.requests,
@@ -938,7 +942,7 @@ private struct MetricsWidgetDomainPoint: Hashable, Sendable {
   }
 
   init?(_ point: ZoneAnalyticsDay) {
-    guard let timestamp = MetricsWidgetTimestampParser.parseDay(point.date) else { return nil }
+    guard let timestamp = DashDateFormatting.date(fromISO8601: point.date) else { return nil }
     self.init(
       timestamp: timestamp,
       requests: point.requests,
@@ -1029,25 +1033,5 @@ extension DomainMetricsWidgetMetric {
     case .threats: return Double(point.threats)
     case .uniqueVisitors: return Double(point.uniques)
     }
-  }
-}
-
-private enum MetricsWidgetTimestampParser {
-  static func parse(_ value: String) -> Date? {
-    let standard = ISO8601DateFormatter()
-    standard.formatOptions = [.withInternetDateTime]
-    if let date = standard.date(from: value) { return date }
-    let fractional = ISO8601DateFormatter()
-    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return fractional.date(from: value) ?? parseDay(value)
-  }
-
-  static func parseDay(_ value: String) -> Date? {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    formatter.dateFormat = "yyyy-MM-dd"
-    return formatter.date(from: value)
   }
 }

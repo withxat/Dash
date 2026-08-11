@@ -21,9 +21,8 @@ enum WorkerBuildMonitorEvent: Sendable {
 /// manual, and polling refreshes can converge on one deployment. A Worker build
 /// uses one screen-driven monitor with one in-flight load.
 ///
-/// Cloudflare's Workers build notifications ship through Queue Event
-/// Subscriptions rather than notification policies, so Dash's alert bridge does
-/// not cover them and this poll is the only signal the app has.
+/// Worker build activities are updated by this screen/activity-driven poll.
+/// They request no ActivityKit push token and have no separate delivery path.
 @MainActor
 enum WorkerBuildActivityController {
   static let shared = WorkerBuildActivityControllerBox()
@@ -313,8 +312,7 @@ final class WorkerBuildActivityControllerBox {
       scriptName: key.scriptName,
       scriptTag: key.scriptTag,
       buildID: buildID)
-    // No push token: the relay only forwards Cloudflare notification policies,
-    // and Workers builds do not publish through those.
+    // Polling owns every update, so the Live Activity deliberately has no push token.
     return (try? Activity.request(attributes: attributes, content: content, pushType: nil)) != nil
   }
 
@@ -326,7 +324,7 @@ final class WorkerBuildActivityControllerBox {
 
     for activity in Activity<WorkerBuildAttributes>.activities
     where activity.attributes.scriptTag == key.scriptTag
-      && (activity.attributes.accountID == key.accountID || activity.attributes.accountID == nil)
+      && activity.attributes.accountID == key.accountID
     {
       let content = build.map {
         ActivityContent(
@@ -344,7 +342,7 @@ final class WorkerBuildActivityControllerBox {
 
     for activity in Activity<WorkerBuildAttributes>.activities
     where activity.attributes.scriptTag == key.scriptTag
-      && (activity.attributes.accountID == key.accountID || activity.attributes.accountID == nil)
+      && activity.attributes.accountID == key.accountID
     {
       await activity.end(nil, dismissalPolicy: .immediate)
     }

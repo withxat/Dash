@@ -24,14 +24,6 @@ struct DashApp: App {
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
     AppDependencyManager.shared.add(dependency: model)
-    LegacyWatchtowerNotificationSettings.clear()
-    LegacyPagesBuildPushTokenStore.clear()
-    Task { @MainActor in
-      await PagesBuildActivityController.addStaleDatesToLegacyActivities()
-      await DashNotificationSupport.removeLegacyGeneratedNotifications()
-      await DashNotificationSupport.migrateLegacyBadgeAuthorizationIfNeeded()
-    }
-
     let largeTitleAttributes: [NSAttributedString.Key: Any] = [
       .font: UIFont.dashTitle(size: AvatarHeaderMetrics.titleSize, weight: .bold),
       .foregroundColor: UIColor.label,
@@ -255,7 +247,7 @@ private struct RootWithSplash: View {
           }
           try? await Task.sleep(for: Self.brandHold)
         }
-        withAnimation(.timingCurve(0.22, 1, 0.36, 1, duration: Self.landDuration)) {
+        withAnimation(DashTheme.Motion.softLanding(duration: Self.landDuration)) {
           phase = .landing
         }
         try? await Task.sleep(for: .milliseconds(Int(Self.landDuration * 1000) + 50))
@@ -301,7 +293,8 @@ private struct SplashOverlay: View {
           .frame(width: RootWithSplash.holdingIconSize, height: RootWithSplash.holdingIconSize)
           .clipShape(
             RoundedRectangle(
-              cornerRadius: RootWithSplash.holdingIconSize * OnboardingBrandIcon.cornerFactor,
+              cornerRadius:
+                RootWithSplash.holdingIconSize * DashTheme.Radius.appIconCornerFactor,
               style: .continuous
             )
           )

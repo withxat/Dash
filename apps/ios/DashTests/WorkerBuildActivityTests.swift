@@ -8,26 +8,28 @@ private func build(_ json: String) throws -> WorkerBuild {
   try JSONDecoder().decode(WorkerBuild.self, from: Data(json.utf8))
 }
 
-@Test @MainActor func liveActivityStateCarriesAMachineTokenAndLocalizedCopy() throws {
-  let previousLocale = DashL10n.localeOverrideForTesting
-  DashL10n.localeOverrideForTesting = Locale(identifier: "en")
-  defer { DashL10n.localeOverrideForTesting = previousLocale }
+extension LocalizationTests {
+  @Test @MainActor func liveActivityStateCarriesAMachineTokenAndLocalizedCopy() throws {
+    let previousLocale = DashL10n.localeOverrideForTesting
+    DashL10n.localeOverrideForTesting = Locale(identifier: "en")
+    defer { DashL10n.localeOverrideForTesting = previousLocale }
 
-  let running = try build(
-    #"""
-    {"build_uuid":"b-1","status":"running","running_on":"t",
-     "build_trigger_metadata":{"branch":"main","commit_hash":"0123456789abcdef"}}
-    """#)
-  let state = WorkerBuildActivityControllerBox.contentState(for: running)
+    let running = try build(
+      #"""
+      {"build_uuid":"b-1","status":"running","running_on":"t",
+       "build_trigger_metadata":{"branch":"main","commit_hash":"0123456789abcdef"}}
+      """#)
+    let state = WorkerBuildActivityControllerBox.contentState(for: running)
 
-  // The widget colours off the token, so it must stay machine-readable even as
-  // `phase` is translated. Shipping only a localized string would paint every
-  // build the same colour in Chinese.
-  #expect(state.phaseToken == "running")
-  #expect(state.phase == "Building")
-  #expect(state.branch == "main")
-  #expect(state.shortCommit == "0123456")
-  #expect(state.outcome == nil)
+    // The widget colours off the token, so it must stay machine-readable even as
+    // `phase` is translated. Shipping only a localized string would paint every
+    // build the same colour in Chinese.
+    #expect(state.phaseToken == "running")
+    #expect(state.phase == "Building")
+    #expect(state.branch == "main")
+    #expect(state.shortCommit == "0123456")
+    #expect(state.outcome == nil)
+  }
 }
 
 @Test func phaseTokensCoverEveryPhaseAndStayDistinct() {

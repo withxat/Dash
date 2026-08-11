@@ -27,66 +27,6 @@ private enum OAuthCredentialReplacement: Sendable {
   case protocolStore(previousCredential: TokenSet?)
 }
 
-/// Once sign-out atomically removes the shared Keychain credential, remote
-/// webhook cleanup still gets one best-effort chance. This detached store can
-/// rotate the captured refresh token without ever republishing it to Widget,
-/// Share, Files, or the app's normal client.
-private actor SignOutCleanupTokenStore: TokenStore {
-  private var accessToken: String?
-  private var refreshToken: String?
-  private var scopes: Set<String>?
-
-  init(accessToken: String?, refreshToken: String?, scopes: Set<String>?) {
-    self.accessToken = accessToken
-    self.refreshToken = refreshToken
-    self.scopes = scopes
-  }
-
-  func clear() {
-    accessToken = nil
-    refreshToken = nil
-    scopes = nil
-  }
-
-  func getAccessToken() -> String? { accessToken }
-  func getRefreshToken() -> String? { refreshToken }
-  func getGrantedScopes() -> Set<String>? { scopes }
-  func setGrantedScopes(_ scopes: Set<String>) { self.scopes = scopes }
-
-  func setTokens(_ tokens: TokenSet) {
-    if let refreshToken = tokens.refreshToken { self.refreshToken = refreshToken }
-    if let scope = tokens.scope {
-      scopes = Set(scope.split(separator: " ").map(String.init))
-    }
-    accessToken = tokens.accessToken
-  }
-
-  func replaceTokens(
-    _ tokens: TokenSet,
-    ifCurrentAccessToken expectedAccessToken: String?,
-    refreshToken expectedRefreshToken: String?
-  ) -> Bool {
-    guard
-      accessToken == expectedAccessToken,
-      refreshToken == expectedRefreshToken
-    else { return false }
-    setTokens(tokens)
-    return true
-  }
-
-  func clearTokens(
-    ifCurrentAccessToken expectedAccessToken: String?,
-    refreshToken expectedRefreshToken: String?
-  ) -> Bool {
-    guard
-      accessToken == expectedAccessToken,
-      refreshToken == expectedRefreshToken
-    else { return false }
-    clear()
-    return true
-  }
-}
-
 /// A background-task completion can arrive after a newer lease has replaced
 /// it. Binding every expiration/waiter to a generation prevents an older
 /// callback from ending the newer task.
@@ -144,80 +84,6 @@ struct PendingHomeAction: Equatable, Sendable {
 
   func matches(_ currentContext: AccountRequestContext?) -> Bool {
     context == currentContext
-  }
-}
-
-@MainActor
-enum WatchtowerRemoteRefreshInvalidationStore {
-  private static let prefix = "dash.watchtower.remote_refresh."
-  private static let generationPrefix = "\(prefix)generation."
-  private static let handledPrefix = "\(prefix)handled."
-
-  static func generationKey(accountID: String) -> String {
-    "\(generationPrefix)\(accountID)"
-  }
-
-  static func handledKey(accountID: String) -> String {
-    "\(handledPrefix)\(accountID)"
-  }
-
-  static func generation(
-    accountID: String,
-    defaults: UserDefaults = .standard
-  ) -> UInt64 {
-    UInt64(max(0, defaults.integer(forKey: generationKey(accountID: accountID))))
-  }
-
-  static func handledGeneration(
-    accountID: String,
-    defaults: UserDefaults = .standard
-  ) -> UInt64 {
-    UInt64(max(0, defaults.integer(forKey: handledKey(accountID: accountID))))
-  }
-
-  @discardableResult
-  static func mark(
-    accountID: String,
-    defaults: UserDefaults = .standard
-  ) -> UInt64 {
-    let next =
-      max(
-        generation(accountID: accountID, defaults: defaults),
-        handledGeneration(accountID: accountID, defaults: defaults)
-      ) &+ 1
-    defaults.set(Int(next), forKey: generationKey(accountID: accountID))
-    return next
-  }
-
-  static func pendingGeneration(
-    accountID: String,
-    defaults: UserDefaults = .standard
-  ) -> UInt64? {
-    let current = generation(accountID: accountID, defaults: defaults)
-    return current > handledGeneration(accountID: accountID, defaults: defaults)
-      ? current : nil
-  }
-
-  static func contains(accountID: String, defaults: UserDefaults = .standard) -> Bool {
-    pendingGeneration(accountID: accountID, defaults: defaults) != nil
-  }
-
-  static func clear(
-    accountID: String,
-    matching generation: UInt64? = nil,
-    defaults: UserDefaults = .standard
-  ) {
-    let current = self.generation(accountID: accountID, defaults: defaults)
-    if let generation, current != generation {
-      return
-    }
-    defaults.set(Int(current), forKey: handledKey(accountID: accountID))
-  }
-
-  static func clearAll(defaults: UserDefaults = .standard) {
-    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
-      defaults.removeObject(forKey: key)
-    }
   }
 }
 
@@ -292,26 +158,12 @@ final class AppModel {
   private var authenticationPresentationGeneration = 0
   private var signOutPresentationFallbackTask: Task<Void, Never>?
   private var signOutPresentationGeneration = 0
-  var grantedScopes: Set<String>? {
-    didSet {
-      // Permission upgrades publish their wider grant only after the success
-      // presentation completes. Reconcile then as well as on account/auth
-      // changes, otherwise a legacy read-only session never reaches default
-      // webhook setup without revisiting Settings.
-    }
-  }
+  var grantedScopes: Set<String>?
   var selectedScopes: Set<String>
   var user: CloudflareUser?
   /// True while the session is trusted but the identity fetch failed
   /// (offline, Cloudflare outage). Cleared by the next successful retry.
-  var identityStale = false {
-    didSet {
-      // A successful in-place identity retry keeps `authState` authenticated,
-      // so no auth-state observer fires to resume deferred webhook setup.
-      if !identityStale {
-      }
-    }
-  }
+  var identityStale = false
   /// Set only when an OAuth replacement could neither restore the prior
   /// credential nor conclusively clear the new one. Until Cloudflare identity
   /// succeeds, the in-memory account catalog must not be paired with that
@@ -338,12 +190,6 @@ final class AppModel {
   /// Set by MainTabView after account scope is verified; cleared by Home once
   /// zones (when needed) are ready to drive the same path as a tile tap.
   var pendingHomeAction: PendingHomeAction?
-  /// An older notification that predates account-bound routes. It stays
-  /// buffered until identity proves there is exactly one possible account.
-
-  /// APNs device token hex, buffered because the system callback can arrive
-  /// before bootstrap finishes (RootWithSplash holds ~800ms).
-  var pendingDeviceToken: String?
 
   private var authSession: ASWebAuthenticationSession?
   /// Every OAuth browser hand-off owns one generation. Signing out advances
@@ -558,8 +404,9 @@ final class AppModel {
   /// list so every surface picks up the new label.
   func renameActiveAccount(to name: String) async throws {
     guard let id = activeAccountID else { return }
-    _ = try await client.mutate(
-      path: "/accounts/\(id)", method: "PUT", body: ["name": .string(name)])
+    _ = try await client.updateAccount(
+      accountID: id,
+      input: AccountUpdateInput(name: name))
     accounts = try await client.listAccounts()
   }
 
@@ -583,8 +430,7 @@ final class AppModel {
             PinnedZones.key, PinnedZones.initializedAccountsKey, RecentResources.key,
             WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
             WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
-            WatchtowerInboxStore.readKey, LegacyWatchtowerNotificationSettings.baselinesKey,
-            LegacyWatchtowerNotificationSettings.optInKey, DashWorkspaceWashPreset.storageKey,
+            WatchtowerInboxStore.readKey, DashWorkspaceGlowPreset.storageKey,
             ICloudPreferencesSync.enabledKey,
           ]
           + ICloudPreferencesSync.Group.allCases.flatMap {
@@ -672,7 +518,7 @@ final class AppModel {
           RegistrarAccountIndex(
             domains: [previewRegistrarDomain],
             registrations: .value([previewRegistrarDomain]),
-            legacy: .value([previewRegistrarDomain])))
+            pageNumbered: .value([previewRegistrarDomain])))
         // A realistic slice of the ~60 settings Cloudflare returns: the five the
         // curated panel keeps, plus ones it must drop (a plan-locked toggle, a
         // set-once choice, and the array-valued key that used to render as
@@ -842,9 +688,10 @@ final class AppModel {
       appendErrorMessage(error.localizedDescription)
       return
     }
-    // Older installs can have a valid token without a scope mirror. Unknown is
-    // not equivalent to the latest read-only profile: claiming otherwise can
-    // suppress OAuth even when the server rejects a newly added read endpoint.
+    // A valid token can coexist with a missing or unreadable scope mirror.
+    // Unknown is not equivalent to the latest read-only profile: claiming
+    // otherwise can suppress OAuth when the server rejects a newly added read
+    // endpoint.
     grantedScopes = try? await tokenStore.getGrantedScopes()
     selectedScopes = DashAuthorizationScopes.core
     do {
@@ -1172,7 +1019,7 @@ final class AppModel {
           requiresVerifiedIdentityBeforeAuthentication = false
           activateRemoteMetricsWidgetSession()
           if preservesExistingSession {
-            // A legacy grant upgrade stays on the current screen so the user
+            // An incremental grant upgrade stays on the current screen so the user
             // can retry the action that led them to the consent sheet.
             if presentsCompletion {
               authenticationActionPhase = .succeeded
@@ -1732,7 +1579,6 @@ final class AppModel {
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
-    LegacyWatchtowerNotificationSettings.clear()
     toasts.clearAll()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
@@ -1790,9 +1636,8 @@ final class AppModel {
     }
 
     // Freeze deferred work before the local commit. Nothing below this await
-    // has removed Files data, disabled a webhook, or changed notification
-    // authorization, so a Keychain lock failure can still preserve the whole
-    // signed-in experience.
+    // has removed Files data or changed notification authorization, so a
+    // Keychain lock failure can still preserve the whole signed-in experience.
     await deferredDeletions.prepareForCredentialReplacement()
     let removedCredential: KeychainStoredCredentialSnapshot?
     do {
@@ -1832,12 +1677,7 @@ final class AppModel {
 
     // From this point onward the shared credential is conclusively gone. A
     // cleanup failure is reported but can no longer roll the app back to an
-    // authenticated state. The detached store may rotate only its private
-    // copy while finishing remote teardown.
-    let cleanupStore = SignOutCleanupTokenStore(
-      accessToken: removedCredential?.accessToken,
-      refreshToken: removedCredential?.refreshToken,
-      scopes: removedCredential?.grantedScopes)
+    // authenticated state.
     var cleanupMessages: [String] = []
 
     fileProviderReconcileGeneration &+= 1
@@ -1852,9 +1692,7 @@ final class AppModel {
         ))
     }
 
-    // Push cleanup can refresh and rotate the detached credential. Revoke the
-    // latest access token it actually used, never the pre-cleanup snapshot.
-    if let cleanupAccessToken = await cleanupStore.getAccessToken() {
+    if let cleanupAccessToken = removedCredential?.accessToken {
       try? await OAuth.revoke(
         clientID: configuration.clientID, token: cleanupAccessToken,
         session: DashAPISession.shared)
@@ -1876,11 +1714,7 @@ final class AppModel {
     watchtowerUnreadAlertCount = nil
     pendingRoute = nil
     pendingHomeAction = nil
-    LegacyWatchtowerNotificationSettings.clear()
-    WatchtowerRemoteRefreshInvalidationStore.clearAll()
     toasts.clearAll()
-    UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-    UNUserNotificationCenter.current().removeAllDeliveredNotifications()
     clearWatchtowerWidgetSnapshot()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
@@ -1947,29 +1781,20 @@ final class AppModel {
     toasts.clearAll(preserving: .deferredDeletionBatch)
   }
 
-  /// Single entry point for Watchtower data: serves the cached snapshot when
-  /// fresh, joins an in-flight refresh for the same account instead of
-  /// doubling the fan-out, and keeps the tab-badge count in sync.
+  /// Single entry point for Watchtower data: serves the cached snapshot unless
+  /// a force refresh was requested, joins in-flight work for the same account,
+  /// and keeps the tab-badge count in sync.
   func watchtowerSnapshot(force: Bool = false) async -> WatchtowerSnapshot? {
     guard let context = accountRequestContext else { return nil }
     let key = FeatureCacheKey.watchtower(context.accountID)
-    let observedRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.generation(
-      accountID: context.accountID)
-    let pendingRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.pendingGeneration(
-      accountID: context.accountID)
-    if !force, pendingRemoteGeneration == nil,
-      let cached: WatchtowerSnapshot = featureCache.get(key)
-    {
+    if !force, let cached: WatchtowerSnapshot = featureCache.get(key) {
       syncWatchtowerInboxBadge(from: cached, accountID: context.accountID)
       return cached
     }
-    let loadKey =
-      pendingRemoteGeneration.map { "\(key):remote:\($0)" }
-      ?? key
     let client = client
     let snapshot: WatchtowerSnapshot
     do {
-      snapshot = try await featureCache.coalescedLoad(loadKey) {
+      snapshot = try await featureCache.coalescedLoad(key) {
         try Task.checkCancellation()
         let result = try await WatchtowerAlertsLoader.loadCancellable(
           client: client, accountID: context.accountID)
@@ -1983,13 +1808,6 @@ final class AppModel {
       return nil
     }
     guard !Task.isCancelled, isCurrentAccount(context) else { return nil }
-    let currentRemoteGeneration = WatchtowerRemoteRefreshInvalidationStore.generation(
-      accountID: context.accountID)
-    // A request that began before a silent push, or before a newer push, must
-    // never commit its older page or clear the newer invalidation.
-    guard currentRemoteGeneration == observedRemoteGeneration else {
-      return featureCache.get(key)
-    }
     if let committed: WatchtowerSnapshot = featureCache.get(key),
       committed.fetchedAt >= snapshot.fetchedAt
     {
@@ -1998,11 +1816,6 @@ final class AppModel {
     featureCache.set(key, snapshot, ttl: nil)
     syncWatchtowerInboxBadge(from: snapshot, accountID: context.accountID)
     publishWidgetSnapshot(snapshot, accountID: context.accountID)
-    if let pendingRemoteGeneration {
-      WatchtowerRemoteRefreshInvalidationStore.clear(
-        accountID: context.accountID,
-        matching: pendingRemoteGeneration)
-    }
     return snapshot
   }
 
@@ -2049,13 +1862,9 @@ final class AppModel {
   }
 
   /// SpringBoard has one badge, so the app-owned Watchtower count is its only
-  /// writer. The Notification Service Extension deliberately never guesses
-  /// `snapshot + 1`: visible and silent pushes can arrive in either order, and
-  /// an extension may be processing a different account.
-  ///
-  /// Writes are chained and obsolete queued values are skipped. This prevents
-  /// an older asynchronous `setBadgeCount` completion from landing after a
-  /// newer read/ignore/refresh transition.
+  /// writer. Writes are chained, and obsolete queued values are skipped. This
+  /// prevents an older asynchronous `setBadgeCount` completion from landing
+  /// after a newer read/ignore/refresh transition.
   private func setSystemBadgeCount(_ count: Int) {
     systemBadgeGeneration &+= 1
     let generation = systemBadgeGeneration
@@ -2069,8 +1878,8 @@ final class AppModel {
   }
 
   /// Writes the slim snapshot into the App Group container and refreshes the
-  /// widget. Cloudflare webhook delivery is the only Watchtower notification
-  /// source; a history refresh never schedules a second local alert.
+  /// widget. Cloudflare notification history remains the source of Watchtower
+  /// deliveries; refreshing it never schedules a local alert.
   private func publishWidgetSnapshot(
     _ snapshot: WatchtowerSnapshot,
     accountID: String
@@ -2104,11 +1913,9 @@ final class AppModel {
   /// TTL, otherwise re-runs the checks in the background.
   func refreshWatchtowerIfStale() async {
     guard let accountID = activeAccountID else { return }
-    let wasRemotelyInvalidated = WatchtowerRemoteRefreshInvalidationStore.contains(
-      accountID: accountID)
     if let cached: WatchtowerSnapshot = featureCache.get(FeatureCacheKey.watchtower(accountID)) {
       syncWatchtowerInboxBadge(from: cached, accountID: accountID)
-      guard wasRemotelyInvalidated || cached.isStale(ttl: Self.watchtowerTTL) else { return }
+      guard cached.isStale(ttl: Self.watchtowerTTL) else { return }
     }
     _ = await watchtowerSnapshot(force: true)
   }

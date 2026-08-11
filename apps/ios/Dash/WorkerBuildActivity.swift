@@ -23,7 +23,7 @@ struct WorkerBuildAttributes: ActivityAttributes {
     var outcome: String?
   }
 
-  var accountID: String?
+  var accountID: String
   var scriptName: String
   var scriptTag: String
   var buildID: String

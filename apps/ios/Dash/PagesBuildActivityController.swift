@@ -9,16 +9,6 @@ struct PagesBuildMonitorKey: Hashable, Sendable {
   let deploymentID: String
 }
 
-enum LegacyPagesBuildPushTokenStore {
-  static let keyPrefix = "dash.pages.live_activity_push_token."
-
-  static func clear(defaults: UserDefaults = .standard) {
-    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
-      defaults.removeObject(forKey: key)
-    }
-  }
-}
-
 enum PagesBuildRefreshSource: Equatable, Sendable {
   case initial
   case poll
@@ -99,20 +89,6 @@ enum BuildActivityPresentationRules {
 @MainActor
 enum PagesBuildActivityController {
   static let shared = PagesBuildActivityControllerBox()
-
-  /// Activities created by older releases had no stale date because Pages used
-  /// a background task and requested an unused push token. Constrain those
-  /// survivors on upgrade so removing both mechanisms cannot leave an eternal
-  /// "Building…" state on the Lock Screen.
-  static func addStaleDatesToLegacyActivities() async {
-    for activity in Activity<PagesBuildAttributes>.activities
-    where activity.content.staleDate == nil {
-      await activity.update(
-        ActivityContent(
-          state: activity.content.state,
-          staleDate: Date(timeIntervalSinceNow: BuildActivityPresentationRules.staleAfter)))
-    }
-  }
 }
 
 @MainActor
@@ -654,7 +630,7 @@ final class PagesBuildActivityControllerBox {
 
     for activity in Activity<PagesBuildAttributes>.activities
     where activity.attributes.deploymentID == deployment.id
-      && (activity.attributes.accountID == accountID || activity.attributes.accountID == nil)
+      && activity.attributes.accountID == accountID
     {
       await activity.end(
         ActivityContent(
@@ -675,7 +651,7 @@ final class PagesBuildActivityControllerBox {
 
     for activity in Activity<PagesBuildAttributes>.activities
     where activity.attributes.deploymentID == key.deploymentID
-      && (activity.attributes.accountID == key.accountID || activity.attributes.accountID == nil)
+      && activity.attributes.accountID == key.accountID
     {
       await activity.end(nil, dismissalPolicy: .immediate)
     }
