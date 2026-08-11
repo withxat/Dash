@@ -430,6 +430,63 @@ private enum DashRevealCadence {
   static let section = 0.1
 }
 
+/// Shared item-by-item entrance used by onboarding and settled cold-state copy.
+/// Each item rises into place; siblings cascade top to bottom instead of
+/// appearing as one faded block.
+enum DashItemStaggerMotion {
+  static let lift: CGFloat = 18
+  static let interval: TimeInterval = 0.055
+  static let entranceDuration: TimeInterval = 0.3
+  static let exitDuration: TimeInterval = 0.2
+
+  struct Plan: Equatable {
+    let opacity: Double
+    let offsetY: CGFloat
+    let delay: TimeInterval
+  }
+
+  static func plan(
+    visible: Bool,
+    index: Int,
+    reduceMotion: Bool
+  ) -> Plan {
+    Plan(
+      opacity: visible ? 1 : 0,
+      offsetY: visible || reduceMotion ? 0 : lift,
+      delay: reduceMotion ? 0 : Double(max(index, 0)) * interval)
+  }
+}
+
+private struct DashItemStaggerModifier: ViewModifier {
+  let visible: Bool
+  let index: Int
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  func body(content: Content) -> some View {
+    let plan = DashItemStaggerMotion.plan(
+      visible: visible,
+      index: index,
+      reduceMotion: reduceMotion)
+    content
+      .opacity(plan.opacity)
+      .offset(y: plan.offsetY)
+      .animation(animation(delay: plan.delay), value: visible)
+      .allowsHitTesting(visible)
+  }
+
+  private func animation(delay: TimeInterval) -> Animation {
+    if reduceMotion {
+      return DashTheme.Motion.reduced
+    }
+
+    return visible
+      ? DashTheme.Motion.softLanding(duration: DashItemStaggerMotion.entranceDuration)
+        .delay(delay)
+      : .timingCurve(0.4, 0, 1, 1, duration: DashItemStaggerMotion.exitDuration)
+        .delay(delay)
+  }
+}
+
 private struct DashRevealModifier: ViewModifier {
   let index: Int
   let shown: Bool
@@ -453,6 +510,12 @@ private struct DashRevealModifier: ViewModifier {
 }
 
 extension View {
+  /// Onboarding-style item entrance: a short upward lift with a 55ms
+  /// top-to-bottom cascade. Reduced Motion keeps one synchronous opacity fade.
+  func dashItemStagger(visible: Bool, index: Int) -> some View {
+    modifier(DashItemStaggerModifier(visible: visible, index: index))
+  }
+
   /// Staggered entrance; drive `shown` from state flipped on appear (waiting
   /// for `dashSplashLifted` when the view can sit under the launch splash).
   func dashReveal(_ index: Int = 0, shown: Bool) -> some View {

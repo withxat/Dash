@@ -38,8 +38,9 @@ extension DashFeatureScreen where Chrome == EmptyView {
 /// - **Cold** (`loading`): no cached primary payload → one feature body in
 ///   `DashBodyMode.placeholder` (same structure as live; redacted / geometric
 ///   stand-ins). Never paint an empty shell with “Updating…”.
-/// - **Warm** (`content` + `refreshing`): body stays in `.live` with the inline
-///   “Updating…” strip (and optional error banner). Refresh never remounts
+/// - **Warm** (`content` + `refreshing`): body stays in `.live` while automatic
+///   refresh is visually quiet; pull-to-refresh owns its native indicator and
+///   an optional error still lands as a shared banner. Refresh never remounts
 ///   placeholder mode.
 /// - **Empty settled** (`empty`): zero items after a successful load → the same
 ///   placeholder body stays mounted and empty copy lands on the cold wash
@@ -48,8 +49,9 @@ extension DashFeatureScreen where Chrome == EmptyView {
 ///   live content.
 /// - **Handoff**: the first cold → live transition animates with
 ///   `DashBodyTransition` — surplus placeholder slots recede (scale 0.97 +
-///   blur + fade), extra live slots insert; index-aligned slots replace in
-///   place. Navigation push and warm refresh must not add a second reveal.
+///   blur + fade), overlapping slots cross-fade in place, and live rows keep
+///   their entity identity through later inserts/reorders. Navigation push and
+///   warm refresh must not add a second reveal.
 /// - **Section cold** (not this enum): secondary fetches inside an already-loaded
 ///   detail (build log, traffic chart, preview) may use a local ring + short copy.
 ///
@@ -83,6 +85,30 @@ enum DashListPhase: Equatable {
   }
 }
 
+/// Whether the settled cold body owns a prompt. Keeping this rule separate
+/// from copy construction makes the loading-first contract explicit: a retry
+/// with an old error still shows only the breathing placeholder until it ends.
+enum DashColdOverlayIntent: Equatable {
+  case failure(String)
+  case empty
+}
+
+enum DashColdOverlayRules {
+  static func intent(
+    phase: DashListPhase,
+    hasEmptyCopy: Bool
+  ) -> DashColdOverlayIntent? {
+    switch phase {
+    case .loading, .content:
+      return nil
+    case .fullScreenError(let message):
+      return .failure(message)
+    case .empty:
+      return hasEmptyCopy ? .empty : nil
+    }
+  }
+}
+
 /// Paint mode for a feature body's single structure tree.
 enum DashBodyMode: Equatable, Sendable {
   /// Cold / empty / failure — same layout as live, non-interactive stand-ins.
@@ -91,6 +117,34 @@ enum DashBodyMode: Equatable, Sendable {
   case live
 
   var isPlaceholder: Bool { self == .placeholder }
+}
+
+struct DashBodyHandoffUpdate: Equatable {
+  let mode: DashBodyMode
+  let animates: Bool
+}
+
+/// Keeps the first frame honest while reserving motion for the one transition
+/// that explains a load completing. A reverse live → placeholder reset is
+/// immediate; Reduce Motion also switches without animating layout. A later
+/// cold → live handoff may animate again for a new load.
+enum DashBodyHandoffRules {
+  static func update(
+    displayed: DashBodyMode?,
+    target: DashBodyMode,
+    reduceMotion: Bool = false
+  ) -> DashBodyHandoffUpdate? {
+    guard displayed != target else { return nil }
+    return DashBodyHandoffUpdate(
+      mode: target,
+      animates: !reduceMotion && displayed == .placeholder && target == .live)
+  }
+}
+
+enum DashBodyListSlotRules {
+  static func placeholderRecedes(index: Int, liveItemCount: Int) -> Bool {
+    index >= max(liveItemCount, 0)
+  }
 }
 
 /// Soft blur stand-in for body-slot removal (same device as tray `.dashMorph`).
@@ -177,6 +231,9 @@ struct DashFeatureList<Header: View, Content: View>: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureRequiredScopes) private var featureRequiredScopes
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  /// Write-site mirror: page-local tray modifiers disable descendant implicit
+  /// animations, so the cold → live handoff must own its transaction here.
+  @State private var displayedBodyMode: DashBodyMode?
 
   init(
     isLoading: Bool = false,
@@ -208,38 +265,20 @@ struct DashFeatureList<Header: View, Content: View>: View {
         // Spacing must stay 0: `dashListCardRows` flattens its ForEach into this
         // stack so rows stay lazy. Section spacing here would gap every row
         // (Workers/Pages looked sparse vs Resources' DashListGroup VStack(0)).
-        // Pad chrome blocks (Updating… / error banner) explicitly instead.
+        // Pad the shared error banner explicitly instead.
         LazyVStack(spacing: 0) {
-          if case .content(let banner, let refreshing) = phase {
-            if refreshing {
-              HStack(spacing: DashTheme.Spacing.compact) {
-                DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
-                Text("Updating…")
-                  .dashTextStyle(.footnote)
-                  .foregroundStyle(DashTheme.subtle)
-                Spacer(minLength: 0)
-              }
-              .accessibilityElement(children: .combine)
-              .accessibilityLabel("Updating")
+          if case .content(let banner, _) = phase, let banner {
+            failureBanner(banner)
               .padding(.bottom, DashTheme.Spacing.itemGap)
-            }
-            if let banner {
-              failureBanner(banner)
-                .padding(.bottom, DashTheme.Spacing.itemGap)
-            }
           }
 
           // One body identity across loading → failure/empty → live. Mode flips
           // drive slot replace / recede / append; the wash only veils
           // placeholder. Warm refresh never remounts `.placeholder`.
-          content(bodyMode)
+          content(displayedBodyMode ?? bodyMode)
             .dashColdOverlay(copy: coldOverlayCopy, extent: .scrollViewport)
             .dashFailureRemovalTransition()
         }
-        .animation(
-          reduceMotion ? DashTheme.Motion.reduced : DashBodyTransition.handoff,
-          value: bodyMode
-        )
         .padding(.horizontal, DashTheme.Spacing.screen)
         // This gap belongs to the scroll content. Putting it on
         // DashFeatureScreen turns it into fixed header chrome.
@@ -249,20 +288,48 @@ struct DashFeatureList<Header: View, Content: View>: View {
       .scrollDismissesKeyboard(.interactively)
       .modifier(DashScrollEdgeEffectsHidden())
     }
+    .onChange(of: bodyMode, initial: true) { _, next in
+      updateDisplayedBodyMode(to: next)
+    }
+  }
+
+  private func updateDisplayedBodyMode(to target: DashBodyMode) {
+    guard
+      let update = DashBodyHandoffRules.update(
+        displayed: displayedBodyMode,
+        target: target,
+        reduceMotion: reduceMotion)
+    else { return }
+
+    if update.animates {
+      withAnimation(DashBodyTransition.handoff) {
+        displayedBodyMode = update.mode
+      }
+    } else {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        displayedBodyMode = update.mode
+      }
+    }
   }
 
   private var coldOverlayCopy: DashColdOverlayCopy? {
-    switch phase {
-    case .loading:
-      return nil
-    case .fullScreenError:
-      guard let message = coldFailureMessage else { return nil }
+    guard
+      let intent = DashColdOverlayRules.intent(
+        phase: phase,
+        hasEmptyCopy: empty != nil)
+    else { return nil }
+
+    switch intent {
+    case .failure(let message):
+      let presentation = DashFailurePresentation.from(message: message)
       return DashColdOverlayCopy(
         icon: SolarAsset.Content.danger,
         title: "Couldn’t load",
-        message: message,
-        actionTitle: coldFailureActionTitle,
-        action: coldFailureAction
+        message: coldFailureMessage(for: presentation),
+        actionTitle: presentation.action.title,
+        action: { performColdFailureAction(presentation.action) }
       )
     case .empty:
       guard let empty else { return nil }
@@ -273,21 +340,10 @@ struct DashFeatureList<Header: View, Content: View>: View {
         actionTitle: empty.actionTitle,
         action: empty.action
       )
-    case .content:
-      return nil
     }
   }
 
-  private var coldFailurePresentation: DashFailurePresentation? {
-    error.map(DashFailurePresentation.from(message:))
-  }
-
-  private var coldFailureActionTitle: String {
-    coldFailurePresentation?.action.title ?? "Try again"
-  }
-
-  private var coldFailureMessage: String? {
-    guard let presentation = coldFailurePresentation else { return nil }
+  private func coldFailureMessage(for presentation: DashFailurePresentation) -> String {
     if presentation.action == .grantAccess, !model.isDemoSession {
       return [
         presentation.message,
@@ -299,15 +355,15 @@ struct DashFeatureList<Header: View, Content: View>: View {
     return presentation.message
   }
 
-  private func coldFailureAction() {
-    switch coldFailurePresentation?.action {
+  private func performColdFailureAction(_ action: DashFailureAction) {
+    switch action {
     case .signInAgain:
       Task { await model.signOut() }
     case .grantAccess:
       model.requestAccess(
         to: featureRequiredScopes.isEmpty
           ? DashAuthorizationScopes.initialReadOnly : featureRequiredScopes)
-    case .tryAgain, .none:
+    case .tryAgain:
       retry()
     }
   }
@@ -377,8 +433,33 @@ extension View {
   }
 }
 
-/// Index-stable catalog rows: placeholder count → live count with receding
-/// surplus slots (scale + blur + fade) and in-place replace for overlap.
+private enum DashModeListSlotID<ItemID: Hashable>: Hashable {
+  case placeholder(Int)
+  case live(ItemID)
+}
+
+private enum DashModeListSlot<Item: Identifiable>: Identifiable {
+  case placeholder(Int)
+  case live(Item)
+
+  var id: DashModeListSlotID<Item.ID> {
+    switch self {
+    case .placeholder(let index): .placeholder(index)
+    case .live(let item): .live(item.id)
+    }
+  }
+}
+
+/// The one mode-aware list primitive. Cold placeholders own independent
+/// positional slots; overlap cross-fades in place while only surplus
+/// placeholders recede. Live rows keep `Item.ID`, so later inserts, removals,
+/// filtering, and reordering never make surviving rows change identity. Live
+/// rows deliberately get no helper-owned transition: the animated cold handoff
+/// gives an inserted row SwiftUI's default fade, while a later live diff keeps
+/// any transition the row itself declares (DNS / Pages use `.dashMorph`).
+///
+/// Keep this as a free `@ViewBuilder` function: wrapping the emitted `ForEach` in
+/// an opaque `View` or eager stack would defeat `DashFeatureList`'s lazy rows.
 @MainActor
 @ViewBuilder
 func dashModeListRows<Item: Identifiable, Row: View>(
@@ -389,17 +470,23 @@ func dashModeListRows<Item: Identifiable, Row: View>(
   inset: Bool = true,
   @ViewBuilder row: @escaping (Item) -> Row
 ) -> some View {
-  let count = mode.isPlaceholder ? max(placeholderRows, 1) : items.count
-  ForEach(0..<count, id: \.self) { index in
-    Group {
-      if mode.isPlaceholder {
-        DashListRowPlaceholder()
-      } else {
-        row(items[index])
-      }
+  let slots: [DashModeListSlot<Item>] =
+    mode.isPlaceholder
+    ? (0..<max(placeholderRows, 1)).map { .placeholder($0) }
+    : items.map { .live($0) }
+  ForEach(slots) { slot in
+    switch slot {
+    case .placeholder(let index):
+      let transition =
+        DashBodyListSlotRules.placeholderRecedes(index: index, liveItemCount: items.count)
+        ? DashBodyTransition.content(reduceMotion) : AnyTransition.opacity
+      DashListRowPlaceholder()
+        .modifier(DashListCardInsetModifier(enabled: inset))
+        .transition(transition)
+    case .live(let item):
+      row(item)
+        .modifier(DashListCardInsetModifier(enabled: inset))
     }
-    .modifier(DashListCardInsetModifier(enabled: inset))
-    .dashBodySlot(reduceMotion: reduceMotion)
   }
 }
 

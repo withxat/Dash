@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// The Watchtower tab: account traffic charts, the floated inbox of
-/// Cloudflare's own notification deliveries, and the Cloudflare status panel
-/// fixed at the foot of the scroll.
+/// The Watchtower tab: account traffic charts and the floated inbox of
+/// Cloudflare's own notification deliveries.
 ///
 /// There is no Diagnostics section. Dash used to roll zones, tunnels, pools,
 /// registrar, Pages, certificates and Health Checks into a client-side health
@@ -25,7 +24,6 @@ struct WatchtowerView: View {
   @Binding var commitRequest: Int
   @Binding var editorInteractionsReady: Bool
   @State private var trafficState = WatchtowerTrafficState()
-  @State private var statusState = CloudflareStatusState()
   @State private var dragVisual = WatchtowerMetricDragVisualState()
   @State private var editorControlsVisible = false
   @State private var editorTransitionGeneration = 0
@@ -90,18 +88,6 @@ struct WatchtowerView: View {
           chartsSection
             .dashSectionContentReveal()
         }
-
-        // Cloudflare's own status page, fixed at the tab's foot. Not one of
-        // the reorderable metric cards, so it hides with the rest of the
-        // non-editing chrome while the layout editor is up. It needs no
-        // account at all, which is why it sits outside the branch above.
-        if !customization.isEditing {
-          CloudflareStatusSection(state: statusState) {
-            Task { await statusState.load(model: model, force: true) }
-          }
-          .dashSectionContentReveal()
-          .transition(.opacity)
-        }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
       // Same gap `DashFeatureList` leaves between fixed text tabs and content.
@@ -161,14 +147,10 @@ struct WatchtowerView: View {
     }
   }
 
-  /// The inbox loads its own deliveries; the tab owns the charts and the
-  /// status panel. The status fetch is unauthenticated and independent, so it
-  /// runs alongside the analytics load instead of queueing behind it.
+  /// The inbox loads its own deliveries; this tab owns the charts.
   private func load(force: Bool = false) async {
-    async let status: Void = statusState.load(model: model, force: force)
     await trafficState.load(model: model, force: force)
     await model.refreshWatchtowerAlerts(force: force)
-    await status
   }
 
   private var accountUnavailableCard: some View {

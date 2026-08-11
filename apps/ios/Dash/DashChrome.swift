@@ -843,6 +843,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// at 1, where both reveal modifiers render identity. The only moment an
   /// exit may hand off between them or retarget the anchor rect.
   @State private var presentationSettled = false
+  /// Travel frozen at liftoff. `cardHeight` keeps settling for a frame or two
+  /// after the spring starts (body pinning, footer measurement), and
+  /// `revealOffset` is not animatable — a mid-flight input change is a
+  /// discontinuous jump, not a retarget. Cleared once the entrance settles so
+  /// later resizes and the exit read the live value again; an exit that
+  /// interrupts the unsettled entrance keeps the frozen travel and reverses
+  /// continuously.
+  @State private var entranceRevealOffset: CGFloat?
   @State private var isClosing = false
   /// Result-destination flight: liftoff (the submit pill's success check) and
   /// landing (the toast's leading mark), held only while eligible. The mark
@@ -963,6 +971,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .frame(maxWidth: .infinity)
           .fixedSize(horizontal: false, vertical: true)
           .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+            // Only the anchored morph reads this rect (geometry snapshot, ✕
+            // retrace). The standard reveal rides an offset for its whole
+            // flight, so an unconditional write would invalidate this body
+            // once per animated frame for a value nothing consumes.
+            guard sharedAction != nil else { return }
             liveCardFrame = frame
           }
           // Rise only the card — never the GeometryReader host. Transforming
@@ -971,7 +984,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .modifier(
             DashTrayCardReveal(
               progress: progress, drag: drag,
-              revealOffset: revealOffset,
+              revealOffset: entranceRevealOffset ?? revealOffset,
               reduceMotion: reduceMotion, active: !sharedRevealActive)
           )
           .offset(y: drag)
@@ -1095,8 +1108,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     .onDisappear { toastLayerState?.cancelSuccessFlight() }
     .onChange(of: reduceMotion, initial: true) { previous, reduced in
       guard reduced else { return }
-      // The initial callback reports the same value twice; `onAppear` owns the
-      // normal reduced-opacity entrance regardless of callback ordering.
+      // The initial callback reports the same value twice; the entrance
+      // barrier task owns the normal reduced-opacity entrance regardless of
+      // callback ordering.
       guard previous != reduced else { return }
       if !presentationStarted {
         if sharedRevealActive {
@@ -1124,6 +1138,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
         scrimProgress = isClosing ? 0 : 1
         sharedProxyOwnsAction = false
         sharedRevealReleased = true
+        entranceRevealOffset = nil
         // Cancel rather than end: this path owes the exit stage itself, just
         // below, and the layer must not also run the completion.
         if isClosing { toastLayerState?.cancelSuccessFlight() }
@@ -1131,8 +1146,19 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       releaseSharedSource()
       if isClosing { finishFlightExitStage() }
     }
-    .onAppear {
-      if !sharedRevealActive { startPresentation() }
+    .task {
+      // Standard reveal: the same one-rendered-frame barrier the paired path
+      // takes above. The cover's first frame pays the hosting-controller
+      // mount, the card's first layout, the scrim material's first composite,
+      // and the height-measurement cascade — and a time-based spring started
+      // inside that long frame skips ahead when the next frame finally
+      // renders, which reads as a dropped-frame entrance. Everything rests at
+      // progress 0 (invisible) for that frame; the spring then starts on a
+      // clean clock with `cardHeight` already measured.
+      guard !sharedRevealActive, !isClosing else { return }
+      try? await Task.sleep(for: .milliseconds(16))
+      guard !Task.isCancelled, !presentationStarted, !isClosing else { return }
+      startPresentation()
     }
     .task {
       // A malformed/conditional destination must not leave a transparent cover
@@ -1166,6 +1192,8 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
 
     presentationStarted = true
+    // Freeze the travel the spring launches with; see `entranceRevealOffset`.
+    entranceRevealOffset = revealOffset
     // Scrim fades independently in place while the card rides its own spring.
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimPresent) {
       scrimProgress = 1
@@ -1184,6 +1212,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       withTransaction(transaction) {
         presentationSettled = true
         sharedProxyOwnsAction = false
+        entranceRevealOffset = nil
       }
     }
   }

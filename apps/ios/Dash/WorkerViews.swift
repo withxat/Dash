@@ -198,7 +198,7 @@ struct WorkerDetailView: View {
   /// Composed `{script}.{account}.workers.dev` when the account subdomain is known.
   @State private var workersDevHostname: String?
   /// False until the five primary sections settle, so route discovery cannot
-  /// prematurely replace the Cold skeleton with an Updating… strip.
+  /// prematurely replace the Cold skeleton with a partial live body.
   @State private var hasPresentedContent = false
 
   private var hasPrimaryContent: Bool {
@@ -302,60 +302,57 @@ struct WorkerDetailView: View {
       })
   }
 
-  @ViewBuilder private var domainsGroup: some View {
-    // Same reason as Deployments above: `routes` is the account-wide route sweep
-    // filtered to this script, which on a fan-out Worker is one row per zone.
-    // DashListGroup's eager inner VStack would mount every one of them at once.
-    DashListGroupHeader(
-      title: DashL10n.ui("Domains & Routes"),
-      actionTitle: featureAllowsWrites ? DashL10n.ui("Add") : nil,
-      actionIcon: featureAllowsWrites ? SolarAsset.plus : nil,
-      action: featureAllowsWrites ? { addsDomain = true } : nil
-    )
-    .padding(.horizontal, 4)
-    .dashSectionBoundary()
-    .padding(.bottom, 8)
+  /// One tagged collection keeps domain and route IDs in separate namespaces
+  /// while still emitting a single lazy `ForEach` into `DashFeatureList`.
+  private var domainRouteRows: [WorkerDomainRouteItem] {
+    var rows: [WorkerDomainRouteItem] = []
     if let domainsError, domains.isEmpty {
+      rows.append(.domainsFailure(domainsError))
+    } else if domains.isEmpty, routes.isEmpty, routesError == nil, !routesLoading {
+      rows.append(.empty)
+    }
+    rows.append(contentsOf: domains.map(WorkerDomainRouteItem.domain))
+    if routesLoading { rows.append(.routesLoading) }
+    rows.append(contentsOf: routes.map(WorkerDomainRouteItem.route))
+    if let routesError {
+      rows.append(routes.isEmpty ? .routesFailure(routesError) : .routesNotice(routesError))
+    }
+    return rows
+  }
+
+  @ViewBuilder
+  private func domainRouteRow(_ item: WorkerDomainRouteItem) -> some View {
+    switch item {
+    case .domainsFailure(let message):
       DashCard {
-        DashListRowPlaceholders(rows: 2)
+        DashSectionListRowPlaceholders(rows: 2)
           .dashSectionFailure(
-            domainsError,
+            message,
             retry: { Task { await loadDomains(force: true) } })
       }
-      .dashListCardInset()
-    } else if domains.isEmpty, routes.isEmpty, routesError == nil, !routesLoading {
+    case .empty:
       DashCard {
         Text("Route a hostname from one of this account's zones to this Worker.")
           .dashTextStyle(.footnote)
           .foregroundStyle(DashTheme.subtle)
           .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .dashListCardInset()
-    }
-    // Sibling ForEach collections, each insetting its own rows — never a shared
-    // wrapper, whose padding would re-eagerize both lists inside LazyVStack.
-    if !domains.isEmpty {
-      dashListCardRows(items: domains) { domain in
-        Button {
-          deleteDomainError = nil
-          selectedDomain = domain
-        } label: {
-          DashListRow(
-            title: domain.hostname,
-            subtitle: workerDomainSubtitle(domain),
-            icon: SolarAsset.Content.globe,
-            iconColor: FeatureVisualIdentity.catalogColor(for: .workers),
-            showsChevron: false
-          )
-        }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityLabel("\(domain.hostname), \(workerDomainSubtitle(domain))")
-        // dashListCardRows supplies the row's existing inset; this one
-        // replaces DashListGroup's former content inset.
-        .dashListCardInset()
+    case .domain(let domain):
+      Button {
+        deleteDomainError = nil
+        selectedDomain = domain
+      } label: {
+        DashListRow(
+          title: domain.hostname,
+          subtitle: workerDomainSubtitle(domain),
+          icon: SolarAsset.Content.globe,
+          iconColor: FeatureVisualIdentity.catalogColor(for: .workers),
+          showsChevron: false
+        )
       }
-    }
-    if routesLoading {
+      .buttonStyle(DashSurfaceButtonStyle())
+      .accessibilityLabel("\(domain.hostname), \(workerDomainSubtitle(domain))")
+    case .routesLoading:
       DashCard {
         HStack(spacing: 10) {
           DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
@@ -365,46 +362,31 @@ struct WorkerDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .dashListCardInset()
-    }
-    if !routes.isEmpty {
-      dashListCardRows(items: routes) { route in
-        Button {
-          selectedRoute = route
-        } label: {
-          DashListRow(
-            title: route.pattern,
-            subtitle: route.zoneName,
-            icon: SolarAsset.Content.globe,
-            iconColor: DashTheme.iconMuted,
-            showsChevron: false
-          ) {
-            StatusBadge(.route)
-          }
+    case .route(let route):
+      Button {
+        selectedRoute = route
+      } label: {
+        DashListRow(
+          title: route.pattern,
+          subtitle: route.zoneName,
+          icon: SolarAsset.Content.globe,
+          iconColor: DashTheme.iconMuted,
+          showsChevron: false
+        ) {
+          StatusBadge(.route)
         }
-        .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityLabel("\(route.pattern), \(route.zoneName), Route")
-        .dashListCardInset()
       }
-    }
-    if let routesError {
-      if routes.isEmpty {
-        // Cold: route discovery came back with nothing to show — keep the
-        // rows' shape under the veil instead of swapping the loading card
-        // for a one-line notice.
-        DashCard {
-          DashListRowPlaceholders(rows: 2)
-            .dashSectionFailure(
-              routesError,
-              retry: { Task { await load(force: true) } })
-        }
-        .dashListCardInset()
-      } else {
-        // Warm/partial: preserved route rows stay, the notice rides beside
-        // them.
-        DashNotice(kind: .warning, message: routesError)
-          .dashListCardInset()
+      .buttonStyle(DashSurfaceButtonStyle())
+      .accessibilityLabel("\(route.pattern), \(route.zoneName), Route")
+    case .routesFailure(let message):
+      DashCard {
+        DashSectionListRowPlaceholders(rows: 2)
+          .dashSectionFailure(
+            message,
+            retry: { Task { await load(force: true) } })
       }
+    case .routesNotice(let message):
+      DashNotice(kind: .warning, message: message)
     }
   }
 
@@ -498,34 +480,13 @@ struct WorkerDetailView: View {
       .padding(.horizontal, 4)
       .dashSectionBoundary()
       .padding(.bottom, 8)
-    if mode.isPlaceholder {
-      dashListCard {
-        DashListRowPlaceholders(rows: 3)
-          .dashListCardInset()
-      }
-      .dashBodySlot(reduceMotion: reduceMotion)
-    } else if deployments.isEmpty {
-      DashCard {
-        if deploymentError != nil {
-          // Failed is not empty: the rows' shape stays and the message
-          // veils over it. "No deployments yet." is reserved for the
-          // settled zero-row answer below.
-          DashListRowPlaceholders(rows: 3)
-            .dashSectionFailure(
-              deploymentError,
-              retry: { Task { await load(force: true) } })
-        } else {
-          Text("No deployments yet.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
-      // Replaces DashListGroup's content inset for the empty state.
-      .dashListCardInset()
-      .dashBodySlot(reduceMotion: reduceMotion)
-    } else {
-      dashListCardRows(items: deployments) { deployment in
+    if mode.isPlaceholder || !deployments.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: deployments,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion
+      ) { deployment in
         let isActive = deployment.id == deployments.first?.id
         let title = workerDeploymentTitle(deployment)
         let subtitle = workerDeploymentRowSubtitle(deployment, isActive: isActive)
@@ -549,26 +510,55 @@ struct WorkerDetailView: View {
         .accessibilityLabel(
           workerDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
         )
-        // dashListCardRows supplies the row's existing inset; this one
-        // replaces DashListGroup's former content inset.
-        .dashListCardInset()
       }
+    } else {
+      DashCard {
+        if deploymentError != nil {
+          // Failed is not empty: the rows' shape stays and the message
+          // veils over it. "No deployments yet." is reserved for the
+          // settled zero-row answer below.
+          DashSectionListRowPlaceholders(rows: 3)
+            .dashSectionFailure(
+              deploymentError,
+              retry: { Task { await load(force: true) } })
+        } else {
+          Text("No deployments yet.")
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      // Replaces DashListGroup's content inset for the empty state.
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
 
-    if mode.isPlaceholder {
-      DashListGroup(title: "Domains & Routes") {
-        DashListRowPlaceholders(rows: 2)
+    // This header is deliberately outside the mode branch: it is the stable
+    // downstream witness that rides upward when surplus deployment slots leave.
+    DashListGroupHeader(
+      title: DashL10n.ui("Domains & Routes"),
+      actionTitle: !mode.isPlaceholder && featureAllowsWrites ? DashL10n.ui("Add") : nil,
+      actionIcon: !mode.isPlaceholder && featureAllowsWrites ? SolarAsset.plus : nil,
+      action: !mode.isPlaceholder && featureAllowsWrites ? { addsDomain = true } : nil
+    )
+    .padding(.horizontal, 4)
+    .dashSectionBoundary()
+    .padding(.bottom, 8)
+    if mode.isPlaceholder || !domainRouteRows.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: domainRouteRows,
+        placeholderRows: 2,
+        reduceMotion: reduceMotion
+      ) { item in
+        domainRouteRow(item)
       }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
+    }
+    if mode.isPlaceholder {
       DashToggleRowPlaceholder()
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
     } else {
-      // No modifier here: padding this TupleView would re-eagerize the route
-      // rows. The section boundary rides domainsGroup's own header instead.
-      domainsGroup
-        .dashBodySlot(reduceMotion: reduceMotion)
       DashToggleRow(
         title: "workers.dev",
         subtitle: workersDevSubtitle,
@@ -1190,6 +1180,42 @@ struct WorkerDetailView: View {
       subdomainEnabled = !enabled
       model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
+    }
+  }
+}
+
+private enum WorkerDomainRouteItem: Identifiable {
+  enum ID: Hashable {
+    case domain(String)
+    case route(String)
+    case state(StateID)
+  }
+
+  enum StateID: Hashable {
+    case domainsFailure
+    case empty
+    case routesLoading
+    case routesFailure
+    case routesNotice
+  }
+
+  case domainsFailure(String)
+  case empty
+  case domain(WorkerDomain)
+  case routesLoading
+  case route(WorkerZoneRoute)
+  case routesFailure(String)
+  case routesNotice(String)
+
+  var id: ID {
+    switch self {
+    case .domainsFailure: .state(.domainsFailure)
+    case .empty: .state(.empty)
+    case .domain(let domain): .domain(domain.id)
+    case .routesLoading: .state(.routesLoading)
+    case .route(let route): .route(route.id)
+    case .routesFailure: .state(.routesFailure)
+    case .routesNotice: .state(.routesNotice)
     }
   }
 }

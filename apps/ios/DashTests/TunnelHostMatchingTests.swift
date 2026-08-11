@@ -92,15 +92,56 @@ private func tunnelHostMatchingCovers(cover: CoverCase) {
       #"{"hostname":"api.example.com","path":"/v1/*","service":"http://localhost:8787"}"#.utf8))
   let protectedRow = TunnelHostnameRow(
     rule: rule,
-    index: 0,
+    occurrence: 0,
     tunnelRequiresAccess: false,
     accessHosts: ["*.example.com"])
   #expect(protectedRow.isProtected)
 
   let uncovered = TunnelHostnameRow(
     rule: rule,
-    index: 0,
+    occurrence: 0,
     tunnelRequiresAccess: false,
     accessHosts: ["app.example.com"])
   #expect(!uncovered.isProtected)
+}
+
+@Test func tunnelHostnameRowIdentityUsesSemanticRuleAndDuplicateOccurrence() throws {
+  let decoder = JSONDecoder()
+  let original = try decoder.decode(
+    TunnelIngressRule.self,
+    from: Data(
+      #"{"hostname":"api.example.com","path":"/v1/*","service":"http://localhost:8787"}"#.utf8))
+  let sameRuleWithHostCaseChange = try decoder.decode(
+    TunnelIngressRule.self,
+    from: Data(
+      #"{"hostname":"API.EXAMPLE.COM","path":"/v1/*","service":"  http://localhost:8787  "}"#.utf8))
+  let sameMatcherWithDifferentService = try decoder.decode(
+    TunnelIngressRule.self,
+    from: Data(
+      #"{"hostname":"api.example.com","path":"/v1/*","service":"http://localhost:9999"}"#.utf8))
+
+  let originalRow = TunnelHostnameRow(
+    rule: original,
+    occurrence: 0,
+    tunnelRequiresAccess: false,
+    accessHosts: [])
+  let stableRow = TunnelHostnameRow(
+    rule: sameRuleWithHostCaseChange,
+    occurrence: 0,
+    tunnelRequiresAccess: false,
+    accessHosts: [])
+  let differentServiceRow = TunnelHostnameRow(
+    rule: sameMatcherWithDifferentService,
+    occurrence: 0,
+    tunnelRequiresAccess: false,
+    accessHosts: [])
+  let duplicateRow = TunnelHostnameRow(
+    rule: original,
+    occurrence: 1,
+    tunnelRequiresAccess: false,
+    accessHosts: [])
+
+  #expect(originalRow.id == stableRow.id)
+  #expect(originalRow.id != differentServiceRow.id)
+  #expect(originalRow.id != duplicateRow.id)
 }

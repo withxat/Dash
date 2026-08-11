@@ -184,34 +184,13 @@ struct PagesProjectDetailView: View {
       .padding(.horizontal, 4)
       .dashSectionBoundary()
       .padding(.bottom, 8)
-    if mode.isPlaceholder {
-      dashListCard {
-        DashListRowPlaceholders(rows: 3)
-          .dashListCardInset()
-      }
-      .dashBodySlot(reduceMotion: reduceMotion)
-    } else if deployments.isEmpty {
-      DashCard {
-        if deploymentsError != nil {
-          // A failed deployments fetch keeps the rows' shape on the ground
-          // and veils the message over it — swapping in a bare notice was
-          // the section popping out of its own frame.
-          DashListRowPlaceholders(rows: 3)
-            .dashSectionFailure(
-              deploymentsError,
-              retry: { Task { await load(force: true) } })
-        } else {
-          Text("No deployments yet.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      }
-      // Replaces DashListGroup's content inset for the empty state.
-      .dashListCardInset()
-      .dashBodySlot(reduceMotion: reduceMotion)
-    } else {
-      dashListCardRows(items: visibleDeployments) { deployment in
+    if mode.isPlaceholder || !deployments.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: visibleDeployments,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion
+      ) { deployment in
         let title = pagesDeploymentTitle(deployment)
         let subtitle = pagesDeploymentSubtitle(deployment)
         DashListGroupLink(
@@ -229,10 +208,27 @@ struct PagesProjectDetailView: View {
           )
         }
         .transition(morphTransition)
-        // dashListCardRows supplies the row's existing inset; this one
-        // replaces DashListGroup's former content inset.
-        .dashListCardInset()
       }
+    } else {
+      DashCard {
+        if deploymentsError != nil {
+          // A failed deployments fetch keeps the rows' shape on the ground
+          // and veils the message over it — swapping in a bare notice was
+          // the section popping out of its own frame.
+          DashSectionListRowPlaceholders(rows: 3)
+            .dashSectionFailure(
+              deploymentsError,
+              retry: { Task { await load(force: true) } })
+        } else {
+          Text("No deployments yet.")
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      }
+      // Replaces DashListGroup's content inset for the empty state.
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -579,6 +575,7 @@ struct PagesDeploymentDetailView: View {
             }
           }
         }
+        .dashBodySlot(reduceMotion: reduceMotion)
         if let logsError {
           // Warm: the monitor's forced refresh failed mid-build — keep the
           // visible log and say so beside it instead of tearing it down.
@@ -592,6 +589,7 @@ struct PagesDeploymentDetailView: View {
           logPlaceholder
             .dashSectionFailure(logsError, retry: retryLogs)
         }
+        .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
   }
@@ -710,8 +708,7 @@ struct PagesDeploymentDetailView: View {
       guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
         return
       }
-      logs = fetched
-      logsError = nil
+      presentLogs(fetched)
     } catch {
       guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context),
         monitorKey == key
@@ -719,6 +716,22 @@ struct PagesDeploymentDetailView: View {
         return
       }
       logsError = error.dashActionableMessage
+    }
+  }
+
+  private func presentLogs(_ fetched: PagesDeploymentLogs) {
+    if reduceMotion {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        logs = fetched
+        logsError = nil
+      }
+    } else {
+      withAnimation(DashBodyTransition.handoff) {
+        logs = fetched
+        logsError = nil
+      }
     }
   }
 

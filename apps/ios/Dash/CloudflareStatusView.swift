@@ -23,7 +23,7 @@ final class CloudflareStatusState {
   /// thing users check *during* an incident.
   private static let ttl: TimeInterval = 5 * 60
 
-  /// Watchtower panel phase. Last-known content survives a failed warm
+  /// Summary-section phase. Last-known content survives a failed warm
   /// refresh; only a cold miss veils the section.
   var sectionPhase: DashSectionPhase {
     if snapshot != nil { return .content }
@@ -68,23 +68,21 @@ private func overallStatusTitle(_ indicator: CloudflareStatusSummary.Indicator) 
   }
 }
 
-// MARK: - Watchtower panel
+// MARK: - Settings summary
 
-/// Fixed tail block of the Watchtower tab. Not a metric card on purpose: it
-/// renders Cloudflare's own published verdict (cloudflarestatus.com), so it
-/// lives outside the reorderable chart layout and the editor never sees it —
-/// and it computes nothing, which is what keeps it on the right side of the
-/// no-Diagnostics rule.
+/// Single live status item below Settings → About's app details. It keeps the
+/// existing two-tone info-group styling while the detail route carries the
+/// complete incident, service, and maintenance breakdown.
 struct CloudflareStatusSection: View {
-  let state: CloudflareStatusState
-  let retry: () -> Void
+  @Environment(AppModel.self) private var model
+  @State private var state = CloudflareStatusState()
 
   var body: some View {
     DashInfoGroup(
       title: "Cloudflare status",
       phase: state.sectionPhase,
       placeholderRows: 1,
-      retry: retry
+      retry: { Task { await state.load(model: model, force: true) } }
     ) {
       if let summary = state.snapshot?.summary {
         DashListGroupLink(value: .cloudflareStatus) {
@@ -95,23 +93,10 @@ struct CloudflareStatusSection: View {
             StatusBadge(StatusToken(statusIndicator: summary.indicator))
           }
         }
-        .accessibilityIdentifier("watchtower-cloudflare-status")
-
-        // `summary.json` carries unresolved incidents only, so this list is
-        // short-lived by construction; the detail screen shows the rest.
-        ForEach(summary.incidents.prefix(3)) { incident in
-          DashListGroupLink(value: .cloudflareStatus) {
-            DashListRow(
-              title: incident.name,
-              showsChevron: false,
-              showsIconPlate: false
-            ) {
-              StatusBadge(StatusToken(statusIncident: incident.status))
-            }
-          }
-        }
+        .accessibilityIdentifier("about-cloudflare-status")
       }
     }
+    .task { await state.load(model: model) }
   }
 }
 

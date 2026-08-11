@@ -1077,11 +1077,6 @@ struct WAFEventsView: View {
       DashToggleRowPlaceholder()
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Top rules") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       let seriesData: [DitherDatum] = summary.map { WAFChartModel.seriesData($0.series) } ?? []
       if let summary {
@@ -1127,10 +1122,13 @@ struct WAFEventsView: View {
             .dashSectionBoundary()
             .dashBodySlot(reduceMotion: reduceMotion)
         }
-        wafBucketGroup(title: "Top rules", buckets: summary.rules)
-          .dashSectionBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
       }
+    }
+    if mode.isPlaceholder || summary != nil {
+      wafBucketGroup(
+        mode: mode,
+        title: "Top rules",
+        buckets: summary?.rules ?? [])
     }
   }
 
@@ -1223,28 +1221,38 @@ struct WAFEventsView: View {
 
   @ViewBuilder
   private func wafBucketGroup(
-    title: String, buckets: [FirewallEventsBucket]
+    mode: DashBodyMode,
+    title: String,
+    buckets: [FirewallEventsBucket]
   ) -> some View {
-    DashListGroup(title: title) {
-      if buckets.isEmpty {
-        DashCard {
-          Text("No blocked events in this window.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-      } else {
-        dashListCard {
-          dashListCardRows(items: buckets) { bucket in
-            DashListRow(
-              title: bucket.label,
-              subtitle: DashL10n.string("\(bucket.count.formatted()) blocks"),
-              icon: SolarAsset.Content.shieldCheck,
-              showsChevron: false
-            )
-          }
-        }
+    DashListGroupHeader(title: DashL10n.ui(title))
+      .padding(.horizontal, 4)
+      .dashSectionBoundary()
+      .padding(.bottom, 8)
+      .dashBodySlot(reduceMotion: reduceMotion)
+    if mode.isPlaceholder || !buckets.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: buckets,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion
+      ) { bucket in
+        DashListRow(
+          title: bucket.label,
+          subtitle: DashL10n.string("\(bucket.count.formatted()) blocks"),
+          icon: SolarAsset.Content.shieldCheck,
+          showsChevron: false
+        )
       }
+    } else {
+      DashCard {
+        Text("No blocked events in this window.")
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 

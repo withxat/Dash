@@ -60,7 +60,7 @@ struct WorkerBuildsSection: View {
       } else if !unavailable, loaded, loadError != nil {
         DashListGroup(title: "Builds") {
           DashCard {
-            DashListRowPlaceholders(rows: 3)
+            DashSectionListRowPlaceholders(rows: 3)
               .dashSectionFailure(
                 loadError,
                 retry: { Task { await resolveTagAndLoad() } })

@@ -1016,6 +1016,85 @@ private struct WorkspaceGlowPanelMorphModifier: ViewModifier {
   }
 }
 
+private enum WorkspaceGlowPanelMorphElement: String {
+  case panel
+  case label
+}
+
+private struct WorkspaceGlowPanelSurface: View {
+  let preset: DashWorkspaceGlowPreset
+
+  private var shape: RoundedRectangle {
+    RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+  }
+
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack {
+        DashTheme.canvas
+
+        if preset != .none {
+          DashWorkspaceGlowField(
+            color: DashTheme.workspaceWash(for: preset),
+            depth: max(geometry.size.height, 1)
+          )
+          .frame(maxHeight: .infinity, alignment: .top)
+        } else {
+          SolarIcon(asset: SolarAsset.sun, size: 36, color: DashTheme.iconMuted)
+            .overlay {
+              Rectangle()
+                .fill(DashTheme.iconMuted)
+                .frame(width: 1.5, height: 46)
+                .rotationEffect(.degrees(45))
+            }
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, 48)
+            .accessibilityHidden(true)
+        }
+      }
+    }
+    .clipShape(shape)
+    .overlay {
+      shape.strokeBorder(DashTheme.separator, lineWidth: 1)
+    }
+  }
+}
+
+private struct WorkspaceGlowPanelOutline: View {
+  let color: Color
+
+  var body: some View {
+    RoundedRectangle(
+      cornerRadius: DashTheme.Radius.card + WorkspaceGlowPickerMetrics.outlineOutset,
+      style: .continuous
+    )
+    .strokeBorder(
+      color,
+      lineWidth: WorkspaceGlowPickerMetrics.outlineLineWidth
+    )
+    .padding(-WorkspaceGlowPickerMetrics.outlineOutset)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+/// The wash surface and its emphasized ring are one physical object. Keeping
+/// the outline inside the panel's matched seat prevents two nominally equal
+/// springs from producing visibly different intermediate frames.
+private struct WorkspaceGlowPanelHero: View {
+  let preset: DashWorkspaceGlowPreset
+  let outlineColor: Color
+  let showsOutline: Bool
+
+  var body: some View {
+    WorkspaceGlowPanelSurface(preset: preset)
+      .overlay {
+        WorkspaceGlowPanelOutline(color: outlineColor)
+          .opacity(showsOutline ? 1 : 0)
+      }
+  }
+}
+
 private struct WorkspaceGlowPickerTray: View {
   @Binding var workspaceGlowRaw: String
   @Environment(\.dashTrayDismiss) private var dismiss
@@ -1023,7 +1102,13 @@ private struct WorkspaceGlowPickerTray: View {
   @State private var centeredPresetID: String?
   @State private var centeredPresetPositionIsReady = false
   @State private var path: [WorkspaceGlowTrayStep] = []
+  @State private var morphingPreset: DashWorkspaceGlowPreset?
+  @State private var morphingOutlinedPreset: DashWorkspaceGlowPreset?
+  @State private var morphUsesCenteredAnchor = false
+  @State private var deferredExternalPresetID: String?
+  @State private var inspirationReturnGeneration = 0
   @Namespace private var inspirationPanelMorph
+  @Namespace private var centeredInspirationPanelMorph
 
   private var selectedPreset: DashWorkspaceGlowPreset {
     DashWorkspaceGlowPreset.resolved(stored: workspaceGlowRaw)
@@ -1040,6 +1125,45 @@ private struct WorkspaceGlowPickerTray: View {
     }
   }
 
+  private var centeredMorphAnchorPreset: DashWorkspaceGlowPreset? {
+    if morphUsesCenteredAnchor, let morphingPreset {
+      return morphingPreset
+    }
+    guard
+      let centeredPresetID,
+      let preset = DashWorkspaceGlowPreset.allCases.first(where: { $0.id == centeredPresetID }),
+      preset.inspiration != nil
+    else { return nil }
+    return preset
+  }
+
+  private var activeInspirationMorphNamespace: Namespace.ID {
+    morphUsesCenteredAnchor ? centeredInspirationPanelMorph : inspirationPanelMorph
+  }
+
+  /// Normal motion keeps both route canvases mounted. Supporting content fades
+  /// between them, while the visible detail hero follows the stable compact
+  /// anchor without putting route alpha over the matched surface.
+  private var pickerContentIsVisible: Bool {
+    reduceMotion || path.isEmpty
+  }
+
+  /// `DashTrayFlow.heroMorph` retains the root route even when Reduce Motion
+  /// cross-fades that whole route. Key filter lifetime to the active route, not
+  /// to supporting-content visibility, so hidden side backdrops never linger.
+  private var pickerEdgeStrength: CGFloat {
+    path.isEmpty ? 1 : 0
+  }
+
+  private var inspirationContentIsVisible: Bool {
+    reduceMotion || !path.isEmpty
+  }
+
+  private var supportingTransitionAnimation: Animation? {
+    guard !reduceMotion else { return nil }
+    return path.isEmpty ? DashTheme.Motion.morphExit : DashTheme.Motion.morph
+  }
+
   /// The outgoing picker remains alive while `DashTrayFlow` transitions to a
   /// detail. Its transformed ScrollView must not feed a newly resolved target
   /// back into selection; only the seeded, live root picker owns position
@@ -1048,8 +1172,47 @@ private struct WorkspaceGlowPickerTray: View {
     Binding(
       get: { centeredPresetID },
       set: { proposedID in
-        guard path.isEmpty, centeredPresetPositionIsReady else { return }
+        guard
+          path.isEmpty,
+          morphingPreset == nil,
+          centeredPresetPositionIsReady
+        else { return }
         centeredPresetID = proposedID
+      }
+    )
+  }
+
+  private var flowPath: Binding<[WorkspaceGlowTrayStep]> {
+    Binding(
+      get: { path },
+      set: { proposedPath in
+        let isReturningToPicker = !path.isEmpty && proposedPath.isEmpty
+        guard isReturningToPicker else {
+          path = proposedPath
+          return
+        }
+
+        inspirationReturnGeneration += 1
+        let returnGeneration = inspirationReturnGeneration
+
+        guard !reduceMotion else {
+          path = proposedPath
+          completeInspirationReturn()
+          return
+        }
+
+        withAnimation(
+          DashTheme.Motion.morphExit,
+          completionCriteria: .removed
+        ) {
+          path = proposedPath
+        } completion: {
+          guard
+            path.isEmpty,
+            inspirationReturnGeneration == returnGeneration
+          else { return }
+          completeInspirationReturn()
+        }
       }
     )
   }
@@ -1057,7 +1220,7 @@ private struct WorkspaceGlowPickerTray: View {
   var body: some View {
     DashTrayFlow(
       root: .picker,
-      path: $path,
+      path: flowPath,
       role: \.trayRole,
       transitionStyle: .heroMorph
     ) { step in
@@ -1068,6 +1231,7 @@ private struct WorkspaceGlowPickerTray: View {
         inspiration(for: preset)
       }
     }
+    .animation(supportingTransitionAnimation, value: path)
     .dashTrayTitle(activeStep.title)
     .dashTrayContentTone(activeTone)
     .environment(\.dashTrayTone, activeTone)
@@ -1077,10 +1241,45 @@ private struct WorkspaceGlowPickerTray: View {
       // Local taps move the scroll owner before they persist the preset, so an
       // equal ID is a no-op. A real external write (including iCloud KVS) is
       // the only path that recentres the picker from the persisted value.
-      guard centeredPresetID != externallySelected.id else { return }
+      guard centeredPresetID != externallySelected.id else {
+        deferredExternalPresetID = nil
+        return
+      }
+      guard path.isEmpty, morphingPreset == nil else {
+        deferredExternalPresetID = externallySelected.id
+        return
+      }
+      deferredExternalPresetID = nil
+      clearInspirationMorph()
       withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
         centeredPresetID = externallySelected.id
       }
+    }
+  }
+
+  private func clearInspirationMorph() {
+    guard morphingPreset != nil else { return }
+    inspirationReturnGeneration += 1
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      morphingPreset = nil
+      morphingOutlinedPreset = nil
+      morphUsesCenteredAnchor = false
+    }
+  }
+
+  private func completeInspirationReturn() {
+    let deferredPresetID = deferredExternalPresetID
+    deferredExternalPresetID = nil
+    clearInspirationMorph()
+
+    guard
+      let deferredPresetID,
+      centeredPresetID != deferredPresetID
+    else { return }
+    withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
+      centeredPresetID = deferredPresetID
     }
   }
 
@@ -1091,49 +1290,63 @@ private struct WorkspaceGlowPickerTray: View {
     // if the cover's presenting tone is sticky for the presentation.
     DashTrayScrollBoundary {
       GeometryReader { proxy in
-        ScrollView(.horizontal, showsIndicators: false) {
-          LazyHStack(spacing: WorkspaceGlowPickerMetrics.cardSpacing) {
-            ForEach(DashWorkspaceGlowPreset.allCases) { preset in
-              glowCard(for: preset)
-                .id(preset.id)
+        ZStack {
+          ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: WorkspaceGlowPickerMetrics.cardSpacing) {
+              ForEach(DashWorkspaceGlowPreset.allCases) { preset in
+                glowCard(for: preset)
+                  .id(preset.id)
+              }
             }
+            .scrollTargetLayout()
+            .padding(.vertical, WorkspaceGlowPickerMetrics.cardVerticalInset)
           }
-          .scrollTargetLayout()
-          .padding(.vertical, WorkspaceGlowPickerMetrics.cardVerticalInset)
-        }
-        .contentMargins(
-          .horizontal,
-          WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
-          for: .scrollContent
-        )
-        .scrollPosition(id: centeredPresetPosition, anchor: .center)
-        .scrollTargetBehavior(WorkspaceGlowCenteredScrollTargetBehavior())
-        .onAppear {
-          guard !centeredPresetPositionIsReady else { return }
-          // A non-nil target installed before this nested lazy scroll mounts is
-          // not consumed on iOS 26: the state says Ember while the physical
-          // offset stays on None. Create the target edge only after the scroll
-          // exists, and reject its default-position write until this seed lands.
-          centeredPresetID = selectedPreset.id
-          centeredPresetPositionIsReady = true
-        }
-        // Unramped, unlike the dynamic vertical fades: `contentMargins` centres
-        // the end cards, so at either extreme the treatment lands on empty tray
-        // surface and paints that surface over itself — invisible without any
-        // offset to track. Mid-scroll it defocuses, then dissolves, a passing card.
-        .overlay(alignment: .leading) {
-          DashScrollEdgeEffect(
-            edge: .leading,
-            surface: DashTheme.Sheet.background,
-            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
-            style: .fadeAndBlur)
-        }
-        .overlay(alignment: .trailing) {
-          DashScrollEdgeEffect(
-            edge: .trailing,
-            surface: DashTheme.Sheet.background,
-            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
-            style: .fadeAndBlur)
+          .contentMargins(
+            .horizontal,
+            WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: proxy.size.width),
+            for: .scrollContent
+          )
+          .scrollPosition(id: centeredPresetPosition, anchor: .center)
+          .scrollTargetBehavior(WorkspaceGlowCenteredScrollTargetBehavior())
+          .simultaneousGesture(
+            DragGesture(minimumDistance: 1)
+              .onChanged { _ in clearInspirationMorph() }
+          )
+          .onAppear {
+            guard !centeredPresetPositionIsReady else { return }
+            // A non-nil target installed before this horizontal scroll mounts is
+            // not consumed on iOS 26: the state says Ember while the physical
+            // offset stays on None. Create the target edge only after the scroll
+            // exists, and reject its default-position write until this seed lands.
+            centeredPresetID = selectedPreset.id
+            centeredPresetPositionIsReady = true
+          }
+          // Unramped, unlike the dynamic vertical fades: `contentMargins` centres
+          // the end cards, so at either extreme the treatment lands on empty tray
+          // surface and paints that surface over itself — invisible without any
+          // offset to track. Mid-scroll it defocuses, then dissolves, a passing card.
+          .overlay(alignment: .leading) {
+            DashScrollEdgeEffect(
+              edge: .leading,
+              surface: DashTheme.Sheet.background,
+              thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
+              style: .fadeAndBlur,
+              strength: pickerEdgeStrength
+            )
+          }
+          .overlay(alignment: .trailing) {
+            DashScrollEdgeEffect(
+              edge: .trailing,
+              surface: DashTheme.Sheet.background,
+              thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
+              style: .fadeAndBlur,
+              strength: pickerEdgeStrength
+            )
+          }
+
+          if let centeredPreset = centeredMorphAnchorPreset {
+            centeredMorphAnchor(for: centeredPreset)
+          }
         }
       }
       .frame(height: WorkspaceGlowPickerMetrics.viewportHeight)
@@ -1152,18 +1365,27 @@ private struct WorkspaceGlowPickerTray: View {
         dismiss()
       }
       .padding(.top, 16)
+      .opacity(pickerContentIsVisible ? 1 : 0)
       .accessibilityIdentifier("settings-workspace-glow-done")
     }
+    // The retained detail hero owns the whole return flight. Re-enabling the
+    // carousel before its rendered endpoint would let a drag tear down the
+    // matched identity mid-spring and recreate the snap this handoff prevents.
+    .allowsHitTesting(morphingPreset == nil)
   }
 
   private func glowCard(for preset: DashWorkspaceGlowPreset) -> some View {
     let isSelected = selectedPreset == preset
+    let isCentered = centeredPresetID == preset.id
     let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
     let selectionColor =
       preset == .none ? DashTheme.text : DashTheme.workspaceWash(for: preset)
 
+    let compactVisualIsVisible = reduceMotion || morphingPreset != preset
+
     return ZStack(alignment: .topLeading) {
       Button {
+        clearInspirationMorph()
         if centeredPresetID != preset.id {
           withAnimation(reduceMotion ? nil : DashTheme.Motion.morph) {
             centeredPresetID = preset.id
@@ -1171,59 +1393,53 @@ private struct WorkspaceGlowPickerTray: View {
         }
         select(preset)
       } label: {
-        ZStack(alignment: .bottom) {
-          DashTheme.canvas
-
-          if preset != .none {
-            DashWorkspaceGlowField(
-              color: DashTheme.workspaceWash(for: preset),
-              depth: WorkspaceGlowPickerMetrics.cardHeight
-            )
-            .frame(maxHeight: .infinity, alignment: .top)
-          } else {
-            disabledGlowMark
-              .frame(maxHeight: .infinity, alignment: .top)
-              .padding(.top, 48)
-          }
+        ZStack(alignment: .topTrailing) {
+          WorkspaceGlowPanelHero(
+            preset: preset,
+            outlineColor: selectionColor,
+            showsOutline: isSelected
+          )
+          .frame(
+            width: WorkspaceGlowPickerMetrics.cardWidth,
+            height: WorkspaceGlowPickerMetrics.cardHeight
+          )
+          .opacity(pickerContentIsVisible && compactVisualIsVisible ? 1 : 0)
+          .animation(
+            morphingPreset == preset ? nil : supportingTransitionAnimation,
+            value: pickerContentIsVisible
+          )
 
           Text(preset.displayName)
             .dashTextStyle(.bodySemibold)
             .foregroundStyle(DashTheme.text)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
+            .opacity(pickerContentIsVisible && compactVisualIsVisible ? 1 : 0)
+            .animation(
+              morphingPreset == preset ? nil : supportingTransitionAnimation,
+              value: pickerContentIsVisible
+            )
+            // Match the glyph itself. Positioning lives outside the identity so
+            // the title travels from the compact bottom seat to the detail's
+            // leading seat instead of scaling a card-sized text container.
             .padding(.horizontal, 10)
             .padding(.bottom, 16)
-        }
-        .frame(
-          width: WorkspaceGlowPickerMetrics.cardWidth,
-          height: WorkspaceGlowPickerMetrics.cardHeight
-        )
-        .overlay(alignment: .topTrailing) {
+            .frame(
+              width: WorkspaceGlowPickerMetrics.cardWidth,
+              height: WorkspaceGlowPickerMetrics.cardHeight,
+              alignment: .bottom
+            )
+
+          compactSideMorphAnchors(for: preset)
+
           DashSelectionMark(
             isSelected: isSelected,
             size: 20,
             selectedColor: selectionColor
           )
           .padding(10)
+          .opacity(pickerContentIsVisible ? 1 : 0)
         }
-        .clipShape(shape)
-        // `strokeBorder`, not `stroke`: half a `stroke` sits outside the shape,
-        // so the selected card's 2pt ring left its outer pass beyond the clipped
-        // fill — a soft halo, and shaved corner arcs wherever the viewport ended
-        // at the card's own edge.
-        .overlay {
-          shape.strokeBorder(
-            isSelected ? selectionColor : DashTheme.separator,
-            lineWidth: isSelected ? 2 : 1
-          )
-        }
-        .modifier(
-          WorkspaceGlowPanelMorphModifier(
-            id: inspirationMorphID(for: preset),
-            namespace: inspirationPanelMorph,
-            isSource: path.isEmpty
-          )
-        )
         .contentShape(shape)
       }
       .buttonStyle(DashSurfaceButtonStyle())
@@ -1233,6 +1449,13 @@ private struct WorkspaceGlowPickerTray: View {
 
       if preset.inspiration != nil {
         Button {
+          inspirationReturnGeneration += 1
+          morphingPreset = preset
+          // The expanded ring describes the active selection, not merely the
+          // inspiration source. A side card therefore morphs without borrowing
+          // the centred card's outline semantics.
+          morphingOutlinedPreset = isCentered ? preset : nil
+          morphUsesCenteredAnchor = !reduceMotion && isCentered
           path.append(.inspiration(preset))
         } label: {
           SolarIcon(asset: SolarAsset.starsBold, size: 18, color: DashTheme.strong)
@@ -1247,41 +1470,151 @@ private struct WorkspaceGlowPickerTray: View {
         )
         .accessibilityIdentifier("workspace-glow-inspiration-\(preset.rawValue)")
         .padding(4)
+        .opacity(pickerContentIsVisible ? 1 : 0)
       }
     }
+  }
+
+  /// The centered source is a permanent transparent anchor outside the
+  /// ScrollView coordinate space. It is registered before Stars can be tapped,
+  /// so the morph never has to migrate an identity from a scrolling occurrence.
+  private func centeredMorphAnchor(for preset: DashWorkspaceGlowPreset) -> some View {
+    return ZStack(alignment: .topTrailing) {
+      Color.clear
+        .frame(
+          width: WorkspaceGlowPickerMetrics.cardWidth,
+          height: WorkspaceGlowPickerMetrics.cardHeight
+        )
+        .modifier(
+          WorkspaceGlowPanelMorphModifier(
+            id: centeredInspirationMorphID(for: preset, element: .panel),
+            namespace: centeredInspirationPanelMorph,
+            isSource: path.isEmpty
+          )
+        )
+
+      Text(preset.displayName)
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(DashTheme.text)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .opacity(0)
+        .modifier(
+          WorkspaceGlowPanelMorphModifier(
+            id: centeredInspirationMorphID(for: preset, element: .label),
+            namespace: centeredInspirationPanelMorph,
+            isSource: path.isEmpty
+          )
+        )
+        .padding(.horizontal, 10)
+        .padding(.bottom, 16)
+        .frame(
+          width: WorkspaceGlowPickerMetrics.cardWidth,
+          height: WorkspaceGlowPickerMetrics.cardHeight,
+          alignment: .bottom
+        )
+    }
+    .frame(
+      width: WorkspaceGlowPickerMetrics.cardWidth,
+      height: WorkspaceGlowPickerMetrics.cardHeight
+    )
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  @ViewBuilder
+  private func compactSideMorphAnchors(for preset: DashWorkspaceGlowPreset) -> some View {
+    Color.clear
+      .frame(
+        width: WorkspaceGlowPickerMetrics.cardWidth,
+        height: WorkspaceGlowPickerMetrics.cardHeight
+      )
+      .modifier(
+        WorkspaceGlowPanelMorphModifier(
+          id: sideInspirationMorphID(for: preset, element: .panel),
+          namespace: inspirationPanelMorph,
+          isSource: path.isEmpty
+        )
+      )
+
+    Text(preset.displayName)
+      .dashTextStyle(.bodySemibold)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
+      .opacity(0)
+      .modifier(
+        WorkspaceGlowPanelMorphModifier(
+          id: sideInspirationMorphID(for: preset, element: .label),
+          namespace: inspirationPanelMorph,
+          isSource: path.isEmpty
+        )
+      )
+      .padding(.horizontal, 10)
+      .padding(.bottom, 16)
+      .frame(
+        width: WorkspaceGlowPickerMetrics.cardWidth,
+        height: WorkspaceGlowPickerMetrics.cardHeight,
+        alignment: .bottom
+      )
+      .accessibilityHidden(true)
   }
 
   @ViewBuilder
   private func inspiration(for preset: DashWorkspaceGlowPreset) -> some View {
     if let inspiration = preset.inspiration {
       let color = DashTheme.workspaceWash(for: preset)
-      let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-
+      let heroHeight = inspirationHeroHeight(for: preset)
       VStack(alignment: .leading, spacing: DashTheme.Spacing.section) {
         ZStack(alignment: .bottomLeading) {
-          DashTheme.canvas
+          if reduceMotion {
+            WorkspaceGlowPanelHero(
+              preset: preset,
+              outlineColor: color,
+              showsOutline: morphingOutlinedPreset == preset
+            )
+            .frame(height: WorkspaceGlowPickerMetrics.inspirationHeight)
 
-          DashWorkspaceGlowField(
-            color: color,
-            depth: WorkspaceGlowPickerMetrics.inspirationHeight
-          )
-          .frame(maxHeight: .infinity, alignment: .top)
+            Text(preset.displayName)
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+              .minimumScaleFactor(0.8)
+              .padding(18)
+          } else if morphingPreset == preset {
+            // The detail route owns the visible hero for the entire flight.
+            // On push it inherits the already-rendered compact anchor frame;
+            // on pop the retained route follows that anchor all the way home
+            // before `flowPath` hands rendering back to the real card.
+            WorkspaceGlowPanelHero(
+              preset: preset,
+              outlineColor: color,
+              showsOutline: morphingOutlinedPreset == preset
+            )
+            .frame(height: heroHeight)
+            .modifier(
+              WorkspaceGlowPanelMorphModifier(
+                id: detailInspirationMorphID(for: preset, element: .panel),
+                namespace: activeInspirationMorphNamespace,
+                isSource: !path.isEmpty
+              )
+            )
 
-          Text(preset.displayName)
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-            .padding(18)
+            Text(preset.displayName)
+              .dashTextStyle(.bodySemibold)
+              .foregroundStyle(DashTheme.text)
+              .lineLimit(1)
+              .minimumScaleFactor(0.8)
+              .modifier(
+                WorkspaceGlowPanelMorphModifier(
+                  id: detailInspirationMorphID(for: preset, element: .label),
+                  namespace: activeInspirationMorphNamespace,
+                  isSource: !path.isEmpty
+                )
+              )
+              .padding(18)
+          }
         }
-        .frame(height: WorkspaceGlowPickerMetrics.inspirationHeight)
-        .clipShape(shape)
-        .overlay { shape.strokeBorder(DashTheme.separator, lineWidth: 1) }
-        .modifier(
-          WorkspaceGlowPanelMorphModifier(
-            id: inspirationMorphID(for: preset),
-            namespace: inspirationPanelMorph,
-            isSource: true
-          )
-        )
+        .frame(height: heroHeight)
         .accessibilityIdentifier("workspace-glow-inspiration-panel-\(preset.rawValue)")
 
         VStack(alignment: .leading, spacing: DashTheme.Spacing.itemGap) {
@@ -1303,26 +1636,63 @@ private struct WorkspaceGlowPickerTray: View {
               .fixedSize(horizontal: false, vertical: true)
           }
         }
+        .opacity(inspirationContentIsVisible ? 1 : 0)
+        .transition(.opacity)
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 8)
     }
   }
 
-  private var disabledGlowMark: some View {
-    SolarIcon(asset: SolarAsset.sun, size: 36, color: DashTheme.iconMuted)
-      .overlay {
-        Rectangle()
-          .fill(DashTheme.iconMuted)
-          .frame(width: 1.5, height: 46)
-          .rotationEffect(.degrees(45))
-      }
-      .accessibilityHidden(true)
+  /// The retained detail owns the visible return all the way through the
+  /// rendered spring. Give it the compact card's real height before the final
+  /// ownership handoff so clearing the morph cannot reveal a taller view.
+  private func inspirationHeroHeight(for preset: DashWorkspaceGlowPreset) -> CGFloat {
+    guard !reduceMotion, path.isEmpty, morphingPreset == preset else {
+      return WorkspaceGlowPickerMetrics.inspirationHeight
+    }
+    return WorkspaceGlowPickerMetrics.cardHeight
   }
 
-  private func inspirationMorphID(for preset: DashWorkspaceGlowPreset) -> String? {
+  private func inspirationMorphID(
+    for preset: DashWorkspaceGlowPreset,
+    element: WorkspaceGlowPanelMorphElement
+  ) -> String? {
     guard !reduceMotion, preset.inspiration != nil else { return nil }
-    return "workspace-glow-inspiration-panel-\(preset.rawValue)"
+    // Pre-register every compact source while the picker is active, but once a
+    // detail owns the source role keep only its matching seat in the namespace.
+    // Unrelated non-source nodes add no visual value and can create needless
+    // AttributeGraph relationships during the tray's fitted-height animation.
+    guard path.isEmpty || morphingPreset == preset else { return nil }
+    return "workspace-glow-inspiration-\(preset.rawValue)-\(element.rawValue)"
+  }
+
+  private func centeredInspirationMorphID(
+    for preset: DashWorkspaceGlowPreset,
+    element: WorkspaceGlowPanelMorphElement
+  ) -> String? {
+    guard path.isEmpty || (morphUsesCenteredAnchor && morphingPreset == preset) else {
+      return nil
+    }
+    return inspirationMorphID(for: preset, element: element)
+  }
+
+  private func sideInspirationMorphID(
+    for preset: DashWorkspaceGlowPreset,
+    element: WorkspaceGlowPanelMorphElement
+  ) -> String? {
+    guard path.isEmpty || (!morphUsesCenteredAnchor && morphingPreset == preset) else {
+      return nil
+    }
+    return inspirationMorphID(for: preset, element: element)
+  }
+
+  private func detailInspirationMorphID(
+    for preset: DashWorkspaceGlowPreset,
+    element: WorkspaceGlowPanelMorphElement
+  ) -> String? {
+    guard morphingPreset == preset else { return nil }
+    return inspirationMorphID(for: preset, element: element)
   }
 
   private func select(_ preset: DashWorkspaceGlowPreset) {
@@ -1341,9 +1711,11 @@ enum WorkspaceGlowPickerMetrics {
   static let cardHeight: CGFloat = 184
   static let inspirationHeight: CGFloat = 160
   static let cardSpacing = DashTheme.Spacing.itemGap
-  /// Air above and below the cards, inside the scrolling region so the clip
-  /// includes it. The viewport used to be exactly `cardHeight`, which left a
-  /// selection ring nothing to sit in and cut its corner arcs flat.
+  static let outlineGap: CGFloat = 1
+  static let outlineLineWidth: CGFloat = 2
+  static let outlineOutset = outlineGap + outlineLineWidth
+  /// Air above and below the cards, inside the scrolling region so the outer
+  /// selection ring has room to keep its gap and continuous corner arcs.
   static let cardVerticalInset: CGFloat = 8
   static let viewportHeight = cardHeight + cardVerticalInset * 2
   static let edgeFadeWidth = DashScrollEdgeFadeMetrics.thickness
@@ -1689,8 +2061,8 @@ enum DashBuildMetadata {
   }
 }
 
-/// About screen (Settings → About): one calm brand lockup followed by the
-/// app, build, and developer facts people actually come here to find.
+/// About screen (Settings → About): one calm brand lockup followed by the app,
+/// build, Cloudflare status, and developer facts people come here to find.
 struct AboutView: View {
   private var version: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
@@ -1718,6 +2090,8 @@ struct AboutView: View {
           DashInfoRow("Requires", value: DashL10n.string("iOS 17 or later"))
           DashInfoRow("License", value: "MIT")
         }
+
+        CloudflareStatusSection()
 
         SettingsPlainSection(title: "Developer") {
           Link(destination: AboutDestination.github) {

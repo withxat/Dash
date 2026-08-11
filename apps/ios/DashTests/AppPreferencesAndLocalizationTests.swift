@@ -235,14 +235,21 @@ private func relativeLuminance(_ color: UIColor, traits: UITraitCollection) -> D
 
 @Test func workspaceGlowPickerKeepsPortraitCardsCenteredPastItsEdgeFade() {
   #expect(WorkspaceGlowPickerMetrics.cardHeight > WorkspaceGlowPickerMetrics.cardWidth)
+  #expect(WorkspaceGlowPickerMetrics.cardHeight == 184)
   #expect(WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: 390) == 132)
   #expect(
     WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: 150)
       == WorkspaceGlowPickerMetrics.edgeFadeWidth)
-  // The viewport has to outgrow the card, or a selection ring is clipped by the
-  // scroll's own bounds.
+  // The emphasized outline is a separate ring, not a thicker card edge. Its
+  // complete outward pass must fit inside the scroll viewport.
+  #expect(WorkspaceGlowPickerMetrics.outlineGap == 1)
   #expect(
-    WorkspaceGlowPickerMetrics.viewportHeight > WorkspaceGlowPickerMetrics.cardHeight)
+    WorkspaceGlowPickerMetrics.outlineOutset
+      == WorkspaceGlowPickerMetrics.outlineGap
+      + WorkspaceGlowPickerMetrics.outlineLineWidth)
+  #expect(
+    WorkspaceGlowPickerMetrics.cardVerticalInset
+      >= WorkspaceGlowPickerMetrics.outlineOutset)
 }
 
 @Test @MainActor func customAvatarFilesAreNormalizedPersistentAndUserScoped() async throws {

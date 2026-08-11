@@ -3,8 +3,10 @@ import SwiftUI
 /// The visual language for a route replacement inside one Tray.
 ///
 /// `step` is the standard directional drill. `heroMorph` removes that competing
-/// horizontal travel and keeps the root route mounted so a caller-owned
-/// matched-geometry surface can remain one live object between routes.
+/// horizontal travel and keeps both hero seats mounted so a caller-owned
+/// matched-geometry surface can remain one live object between routes. In that
+/// mode the caller owns opacity for everything except the hero; applying alpha
+/// to either whole route would cross-fade the matched surface too.
 enum DashTrayFlowTransitionStyle: Equatable, Sendable {
   case step
   case heroMorph
@@ -116,6 +118,7 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
   private let path: Binding<[Route]>?
   @ViewBuilder let content: (Route) -> Content
   @State private var direction = DashTrayFlowDirection()
+  @State private var lastHeroRoute: Route? = nil
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.layoutDirection) private var layoutDirection
 
@@ -161,9 +164,13 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
     }
     return DashTrayPopLayout(activeRoute: route) {
       if transitionStyle == .heroMorph, let rootRoute {
-        persistentRoot(rootRoute)
-        if route != rootRoute {
-          transientStep(route)
+        persistentHeroStep(rootRoute, isActive: route == rootRoute, zIndex: 0)
+        if let detailRoute = retainedHeroDetailRoute(root: rootRoute) {
+          persistentHeroStep(
+            detailRoute,
+            isActive: route != rootRoute,
+            zIndex: 1
+          )
         }
       } else {
         transientStep(route)
@@ -176,18 +183,41 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
     )
     .preference(key: DashTrayStepRoleKey.self, value: role)
     .preference(key: DashTrayBackActionKey.self, value: backAction)
+    .onChange(of: route) { _, activeRoute in
+      guard
+        transitionStyle == .heroMorph,
+        let rootRoute,
+        activeRoute != rootRoute,
+        lastHeroRoute != activeRoute
+      else { return }
+      // Retain the detail seat after a pop. Its caller-owned supporting layers
+      // fade away, while its non-source hero remains available for an
+      // interruptible matched-geometry return without a delayed teardown.
+      lastHeroRoute = activeRoute
+    }
   }
 
-  private func persistentRoot(_ root: Route) -> some View {
-    let isActive = route == root
-    return content(root)
+  private func retainedHeroDetailRoute(root: Route) -> Route? {
+    route == root ? lastHeroRoute : route
+  }
+
+  private func persistentHeroStep(
+    _ step: Route,
+    isActive: Bool,
+    zIndex: Double
+  ) -> some View {
+    content(step)
       .frame(maxWidth: .infinity, alignment: .top)
-      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: root)
-      .opacity(isActive ? 1 : 0)
+      .layoutValue(key: DashTrayRouteLayoutKey<Route>.self, value: step)
+      // Spatial morphs keep route alpha off the hero's ancestor. Reduce Motion
+      // removes the matched identity, so a short whole-route cross-fade is the
+      // appropriate non-spatial fallback there.
+      .opacity(reduceMotion ? (isActive ? 1 : 0) : 1)
       .allowsHitTesting(isActive)
       .accessibilityHidden(!isActive)
-      .zIndex(0)
-      .id(root)
+      .zIndex(zIndex)
+      .id(step)
+      .transition(reduceMotion ? .opacity : .identity)
   }
 
   private func transientStep(_ step: Route) -> some View {
@@ -201,7 +231,7 @@ struct DashTrayFlow<Route: Hashable & Sendable, Content: View>: View {
 
   private var stepTransition: AnyTransition {
     if reduceMotion { return .opacity }
-    if transitionStyle == .heroMorph { return .opacity }
+    if transitionStyle == .heroMorph { return .identity }
     let base = AnyTransition.opacity.combined(with: .scale(scale: 0.96, anchor: .center))
     guard path != nil else { return base }
     let layoutSign: CGFloat = layoutDirection == .rightToLeft ? -1 : 1

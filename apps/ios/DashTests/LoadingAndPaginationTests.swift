@@ -46,20 +46,136 @@ import UIKit
     DashListPhase.content(banner: "boom", refreshing: true).bodyMode == .live)
 }
 
-@Test func coldFailureWashRampClearsAtTopAndFillsTowardTheCenteredCopy() {
-  let stops = DashColdFailureWashRamp.stops
-  // Clear at the top of the veil so the skeleton peeks through; densest from
-  // mid to bottom so the centred tip sits on readable canvas.
-  #expect(stops.first?.location == 0)
-  #expect(stops.first?.opacity == 0)
-  #expect(stops.last?.location == 1)
-  #expect(stops.last?.opacity == 0.88)
-  // Monotonic: locations climb top → bottom and opacity only rises, so the
-  // wash never re-thins under the copy.
-  for (previous, next) in zip(stops, stops.dropFirst()) {
-    #expect(next.location > previous.location)
-    #expect(next.opacity >= previous.opacity)
+@Test func bodyHandoffAnimatesOnlyColdToLiveAfterTheFirstFrame() {
+  #expect(
+    DashBodyHandoffRules.update(displayed: nil, target: .placeholder)
+      == DashBodyHandoffUpdate(mode: .placeholder, animates: false))
+  #expect(
+    DashBodyHandoffRules.update(displayed: nil, target: .live)
+      == DashBodyHandoffUpdate(mode: .live, animates: false))
+  #expect(
+    DashBodyHandoffRules.update(displayed: .placeholder, target: .live)
+      == DashBodyHandoffUpdate(mode: .live, animates: true))
+  #expect(
+    DashBodyHandoffRules.update(
+      displayed: .placeholder,
+      target: .live,
+      reduceMotion: true
+    ) == DashBodyHandoffUpdate(mode: .live, animates: false))
+  #expect(
+    DashBodyHandoffRules.update(displayed: .live, target: .placeholder)
+      == DashBodyHandoffUpdate(mode: .placeholder, animates: false))
+  #expect(DashBodyHandoffRules.update(displayed: .live, target: .live) == nil)
+  #expect(
+    DashBodyHandoffRules.update(displayed: .placeholder, target: .placeholder) == nil)
+}
+
+@Test func bodyHandoffRecedesOnlySurplusPlaceholderRows() {
+  #expect(!DashBodyListSlotRules.placeholderRecedes(index: 0, liveItemCount: 2))
+  #expect(!DashBodyListSlotRules.placeholderRecedes(index: 1, liveItemCount: 2))
+  #expect(DashBodyListSlotRules.placeholderRecedes(index: 2, liveItemCount: 2))
+  #expect(DashBodyListSlotRules.placeholderRecedes(index: 0, liveItemCount: 0))
+  #expect(!DashBodyListSlotRules.placeholderRecedes(index: 3, liveItemCount: 4))
+}
+
+@Test func coldOverlayIntentAppearsOnlyAfterColdPhaseSettles() {
+  let retrying = DashListPhase.resolve(
+    isLoading: true,
+    error: "old failure",
+    hasContent: false)
+  #expect(retrying == .loading)
+  #expect(DashColdOverlayRules.intent(phase: retrying, hasEmptyCopy: true) == nil)
+  #expect(
+    DashColdOverlayRules.intent(
+      phase: .fullScreenError("boom"),
+      hasEmptyCopy: true
+    ) == .failure("boom"))
+  #expect(
+    DashColdOverlayRules.intent(phase: .empty, hasEmptyCopy: true) == .empty)
+  #expect(
+    DashColdOverlayRules.intent(phase: .empty, hasEmptyCopy: false) == nil)
+  #expect(
+    DashColdOverlayRules.intent(
+      phase: .content(banner: "warm failure", refreshing: false),
+      hasEmptyCopy: true
+    ) == nil)
+}
+
+@Test func coldOverlayUsesOnboardingItemStagger() {
+  #expect(DashItemStaggerMotion.lift == 18)
+  #expect(DashItemStaggerMotion.interval == 0.055)
+  #expect(DashItemStaggerMotion.entranceDuration == 0.3)
+  #expect(DashItemStaggerMotion.exitDuration == 0.2)
+
+  let hidden = DashItemStaggerMotion.plan(
+    visible: false,
+    index: 2,
+    reduceMotion: false)
+  #expect(hidden.opacity == 0)
+  #expect(hidden.offsetY == 18)
+  #expect(hidden.delay == 0.11)
+
+  let shown = DashItemStaggerMotion.plan(
+    visible: true,
+    index: 2,
+    reduceMotion: false)
+  #expect(shown.opacity == 1)
+  #expect(shown.offsetY == 0)
+  #expect(shown.delay == 0.11)
+
+  let reduced = DashItemStaggerMotion.plan(
+    visible: false,
+    index: 3,
+    reduceMotion: true)
+  #expect(reduced.opacity == 0)
+  #expect(reduced.offsetY == 0)
+  #expect(reduced.delay == 0)
+}
+
+@Test func coldFailureWashDenselyVeilsEverythingBelowTwoSkeletonRows() {
+  #expect(
+    DashColdFailureWashRamp.fadeDepth
+      == DashTheme.Layout.subtitledListRow * 2)
+  #expect(DashColdFailureWashRamp.peakOpacity >= 0.95)
+
+  for height: CGFloat in [420, 800] {
+    let stops = DashColdFailureWashRamp.stops(for: height)
+    // The gradient is expressed bottom → top: dense beneath the copy, clear
+    // at the top where roughly two placeholder seats remain visible.
+    #expect(stops.first?.location == 0)
+    #expect(stops.first?.opacity == DashColdFailureWashRamp.peakOpacity)
+    #expect(stops.last?.location == 1)
+    #expect(stops.last?.opacity == 0)
+    let measuredFadeDepth = (1 - stops[1].location) * height
+    #expect(
+      abs(measuredFadeDepth - DashColdFailureWashRamp.fadeDepth) < 0.001)
+    #expect(stops[1].opacity == DashColdFailureWashRamp.peakOpacity)
+
+    for (previous, next) in zip(stops, stops.dropFirst()) {
+      #expect(next.location > previous.location)
+      #expect(next.opacity <= previous.opacity)
+    }
   }
+
+  let compactStops = DashColdFailureWashRamp.stops(for: 100)
+  #expect(compactStops.count == 5)
+  #expect(compactStops.first?.location == 0)
+  #expect(compactStops.first?.opacity == DashColdFailureWashRamp.peakOpacity)
+  #expect(compactStops.last?.location == 1)
+  #expect(compactStops.last?.opacity == 0)
+  for (previous, next) in zip(compactStops, compactStops.dropFirst()) {
+    #expect(next.location > previous.location)
+    #expect(next.opacity <= previous.opacity)
+  }
+}
+
+@Test func coldFailureWashPhysicallyDropsBlurForReducedTransparency() {
+  #expect(
+    DashColdFailureWashLayerRules.mountsBackdropMaterial(
+      reduceTransparency: false))
+  #expect(
+    !DashColdFailureWashLayerRules.mountsBackdropMaterial(
+      reduceTransparency: true))
 }
 
 @Test func failurePresentationMapsRecoveryActions() {

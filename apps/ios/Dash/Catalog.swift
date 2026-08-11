@@ -87,8 +87,8 @@ enum Destination: Hashable {
   case auditLogs
   /// Watchtower inbox for Cloudflare's delivery history; Dash creates no alerts.
   case watchtowerInbox
-  /// Cloudflare's own status page (cloudflarestatus.com), opened as a navigation
-  /// destination from the Watchtower status panel. Public data — no scopes, no account.
+  /// Cloudflare's own status page (cloudflarestatus.com), opened from the live
+  /// summary in Settings → About. Public data — no scopes, no account.
   case cloudflareStatus
   /// Account-level Email Routing destination addresses.
   case emailAddresses

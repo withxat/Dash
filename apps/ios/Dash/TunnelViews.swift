@@ -250,26 +250,21 @@ struct TunnelDetailView: View {
         EmptyView()
       }
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Connectors") {
-        DashListRowPlaceholders(rows: 2)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Public hostnames") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let tunnel = displayedTunnel {
+      tunnelGroup(tunnel)
+        .dashBodySlot(reduceMotion: reduceMotion)
+    }
+
+    connectorsSection(mode: mode)
+    ingressSection(mode: mode)
+
+    if mode.isPlaceholder {
       DashInfoGroup(title: "Private networks", phase: .loading, placeholderRows: 2) {
         EmptyView()
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
-    } else if let tunnel = displayedTunnel {
-      tunnelGroup(tunnel)
-        .dashBodySlot(reduceMotion: reduceMotion)
-      connectorsGroup()
-      ingressSection()
+    } else if displayedTunnel != nil {
       privateNetworksGroup()
     }
   }
@@ -317,27 +312,35 @@ struct TunnelDetailView: View {
 
   // MARK: Section 2 — Connectors
 
-  @ViewBuilder private func connectorsGroup() -> some View {
-    if !connectors.isEmpty {
-      let shown = Array(connectors.prefix(Self.sectionRowCap))
-      DashListGroup(title: "Connectors") {
-        dashListCardRows(items: shown, inset: false) { connector in
-          DashListRow(
-            title: connectorTitle(connector),
-            subtitle: connectorSubtitle(connector),
-            icon: SolarAsset.Content.cloud,
-            trailing: tunnelColoSummary(connector.conns ?? []),
-            showsChevron: false
-          )
-          .accessibilityElement(children: .combine)
-          .accessibilityLabel(connectorAccessibilityLabel(connector))
-        }
-        if connectors.count > shown.count {
-          overflowRow(shown: shown.count, total: connectors.count)
-        }
+  @ViewBuilder private func connectorsSection(mode: DashBodyMode) -> some View {
+    let shown = Array(connectors.prefix(Self.sectionRowCap))
+    if mode.isPlaceholder || !shown.isEmpty {
+      DashListGroupHeader(title: DashL10n.ui("Connectors"))
+        .padding(.horizontal, 4)
+        .dashSectionBoundary()
+        .padding(.bottom, 8)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      dashModeListRows(
+        mode: mode,
+        items: shown,
+        placeholderRows: 2,
+        reduceMotion: reduceMotion
+      ) { connector in
+        DashListRow(
+          title: connectorTitle(connector),
+          subtitle: connectorSubtitle(connector),
+          icon: SolarAsset.Content.cloud,
+          trailing: tunnelColoSummary(connector.conns ?? []),
+          showsChevron: false
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(connectorAccessibilityLabel(connector))
       }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
+      if !mode.isPlaceholder, connectors.count > shown.count {
+        overflowRow(shown: shown.count, total: connectors.count)
+          .dashListCardInset()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
   }
 
@@ -348,9 +351,9 @@ struct TunnelDetailView: View {
   /// answers `GET /configurations` with `{"source":"local","config":null}`.
   /// Rendering that as an empty "Public hostnames" list reads as a broken
   /// screen; saying where the rules actually live reads as an honest one.
-  @ViewBuilder private func ingressSection() -> some View {
-    if isRemotelyManaged {
-      publicHostnamesGroup()
+  @ViewBuilder private func ingressSection(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder || isRemotelyManaged {
+      publicHostnamesSection(mode: mode)
     } else if isLocallyManaged {
       locallyManagedGroup()
     }
@@ -376,40 +379,48 @@ struct TunnelDetailView: View {
     return configuration.configSource == .local || configuration.config == nil
   }
 
-  @ViewBuilder private func publicHostnamesGroup() -> some View {
+  @ViewBuilder private func publicHostnamesSection(mode: DashBodyMode) -> some View {
     let rows = publicHostnameRows
     // A tunnel whose only ingress rule is cloudflared's mandatory catch-all
     // publishes no public hostname at all, so the section goes away rather than
     // showing a lone "Everything else".
-    if !rows.isEmpty {
-      let shown = Array(rows.prefix(Self.sectionRowCap))
-      DashListGroup(title: "Public hostnames") {
-        dashListCardRows(items: shown, inset: false) { row in
-          // The catch-all is a fallback, not a destination: it takes the muted
-          // glyph while a real hostname keeps the feature accent.
-          let iconColor: Color? = row.isCatchAll ? DashTheme.iconMuted : nil
-          Button {
-            selectedHostname = row
-          } label: {
-            DashListRow(
-              title: row.title,
-              subtitle: row.service,
-              icon: SolarAsset.Content.globe,
-              iconColor: iconColor,
-              showsChevron: false
-            ) {
-              if row.isProtected { StatusBadge(.protected) }
-            }
+    let shown = Array(rows.prefix(Self.sectionRowCap))
+    if mode.isPlaceholder || !shown.isEmpty {
+      DashListGroupHeader(title: DashL10n.ui("Public hostnames"))
+        .padding(.horizontal, 4)
+        .dashSectionBoundary()
+        .padding(.bottom, 8)
+        .dashBodySlot(reduceMotion: reduceMotion)
+      dashModeListRows(
+        mode: mode,
+        items: shown,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion
+      ) { row in
+        // The catch-all is a fallback, not a destination: it takes the muted
+        // glyph while a real hostname keeps the feature accent.
+        let iconColor: Color? = row.isCatchAll ? DashTheme.iconMuted : nil
+        Button {
+          selectedHostname = row
+        } label: {
+          DashListRow(
+            title: row.title,
+            subtitle: row.service,
+            icon: SolarAsset.Content.globe,
+            iconColor: iconColor,
+            showsChevron: false
+          ) {
+            if row.isProtected { StatusBadge(.protected) }
           }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityLabel(row.accessibilityLabel)
         }
-        if rows.count > shown.count {
-          overflowRow(shown: shown.count, total: rows.count)
-        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel(row.accessibilityLabel)
       }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
+      if !mode.isPlaceholder, rows.count > shown.count {
+        overflowRow(shown: shown.count, total: rows.count)
+          .dashListCardInset()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
   }
 
@@ -418,10 +429,14 @@ struct TunnelDetailView: View {
     let tunnelRequiresAccess = configuration?.config?.originRequest?.access?.required == true
     var hostnames: [TunnelHostnameRow] = []
     var catchAll: TunnelHostnameRow?
-    for (index, rule) in ingress.enumerated() {
+    var identityOccurrences: [TunnelHostnameRow.IdentityKey: Int] = [:]
+    for rule in ingress {
+      let identityKey = TunnelHostnameRow.identityKey(for: rule)
+      let occurrence = identityOccurrences[identityKey, default: 0]
+      identityOccurrences[identityKey] = occurrence + 1
       let row = TunnelHostnameRow(
         rule: rule,
-        index: index,
+        occurrence: occurrence,
         tunnelRequiresAccess: tunnelRequiresAccess,
         accessHosts: accessHosts)
       if row.isCatchAll {
@@ -813,7 +828,19 @@ struct TunnelDetailView: View {
 
 /// One public-hostname ingress rule, flattened for a row and its tray.
 struct TunnelHostnameRow: Identifiable, Hashable, Sendable {
-  let id: String
+  struct IdentityKey: Hashable, Sendable {
+    let hostname: String
+    let path: String
+    let service: String
+    let isCatchAll: Bool
+  }
+
+  struct ID: Hashable, Sendable {
+    let key: IdentityKey
+    let occurrence: Int
+  }
+
+  let id: ID
   let hostname: String
   let path: String?
   let service: String?
@@ -826,14 +853,14 @@ struct TunnelHostnameRow: Identifiable, Hashable, Sendable {
 
   init(
     rule: TunnelIngressRule,
-    index: Int,
+    occurrence: Int,
     tunnelRequiresAccess: Bool,
     accessHosts: Set<String>
   ) {
     let host = (rule.hostname ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     let rulePath = (rule.path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
     let ruleService = (rule.service ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-    self.id = "\(index)|\(host)|\(rulePath)"
+    self.id = ID(key: Self.identityKey(for: rule), occurrence: occurrence)
     self.hostname = host
     self.path = rulePath.isEmpty ? nil : rulePath
     self.service = ruleService.isEmpty ? nil : ruleService
@@ -844,6 +871,23 @@ struct TunnelHostnameRow: Identifiable, Hashable, Sendable {
     let inherited = rule.originRequest?.access?.required ?? tunnelRequiresAccess
     let matched = TunnelHostMatching.covers(ingressHost: host, accessHosts: accessHosts)
     self.isProtected = !host.isEmpty && (inherited || matched)
+  }
+
+  /// Semantic identity is independent of the rule's global array position, so
+  /// inserting an unrelated hostname at the front does not re-key every row.
+  /// Matcher + service identify the rule; the per-key occurrence only
+  /// distinguishes exact duplicate ingress rules.
+  static func identityKey(for rule: TunnelIngressRule) -> IdentityKey {
+    let host = (rule.hostname ?? "")
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    let path = (rule.path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    let service = (rule.service ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    return IdentityKey(
+      hostname: host,
+      path: path,
+      service: service,
+      isCatchAll: rule.isCatchAll)
   }
 
   var displayHostname: String {

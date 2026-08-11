@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,6 +26,37 @@ const DASH_TRAY_STATE_PATH = join(ROOT, "apps/ios/Dash/DashTrayState.swift");
 const DASH_TRAY_FLOW_PATH = join(ROOT, "apps/ios/Dash/DashTrayFlow.swift");
 const DASH_TRAY_SIZING_PATH = join(ROOT, "apps/ios/Dash/DashTraySizing.swift");
 const DASH_THEME_PATH = join(ROOT, "apps/ios/Dash/DashTheme.swift");
+const DASH_FEATURE_LOADING_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashFeatureLoading.swift",
+);
+const DASH_SURFACE_SKELETONS_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashSurfaceSkeletons.swift",
+);
+const DASH_SURFACES_PATH = join(ROOT, "apps/ios/Dash/DashSurfaces.swift");
+const DASH_FORM_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashFormChrome.swift");
+const APP_ROOT_PATH = join(ROOT, "apps/ios/Dash/AppRootView.swift");
+const WORKER_VIEWS_PATH = join(ROOT, "apps/ios/Dash/WorkerViews.swift");
+const WORKER_BUILDS_SECTION_PATH = join(
+  ROOT,
+  "apps/ios/Dash/WorkerBuildsSection.swift",
+);
+const PAGES_VIEWS_PATH = join(ROOT, "apps/ios/Dash/PagesViews.swift");
+const R2_OBJECT_VIEWS_PATH = join(ROOT, "apps/ios/Dash/R2ObjectViews.swift");
+const TUNNEL_VIEWS_PATH = join(ROOT, "apps/ios/Dash/TunnelViews.swift");
+const EMAIL_ROUTING_VIEWS_PATH = join(
+  ROOT,
+  "apps/ios/Dash/EmailRoutingViews.swift",
+);
+const ZONE_DETAIL_VIEWS_PATH = join(
+  ROOT,
+  "apps/ios/Dash/ZoneDetailViews.swift",
+);
+const ZONE_OPERATIONS_VIEWS_PATH = join(
+  ROOT,
+  "apps/ios/Dash/ZoneOperationsViews.swift",
+);
 const PROFILE_SETTINGS_PATH = join(
   ROOT,
   "apps/ios/Dash/ProfileSettingsViews.swift",
@@ -40,6 +71,7 @@ const GIT_COMMIT_SCRIPT_PATH = join(
   ROOT,
   "apps/ios/scripts/write-git-commit.sh",
 );
+const DASH_PRODUCTION_PATH = join(ROOT, "apps/ios/Dash");
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
@@ -74,6 +106,39 @@ const dashTraySources = [
   dashTraySizing,
 ].join("\n");
 const dashTheme = stripSwiftComments(readFileSync(DASH_THEME_PATH, "utf8"));
+const dashFeatureLoading = stripSwiftComments(
+  readFileSync(DASH_FEATURE_LOADING_PATH, "utf8"),
+);
+const dashSurfaceSkeletons = stripSwiftComments(
+  readFileSync(DASH_SURFACE_SKELETONS_PATH, "utf8"),
+);
+const dashSurfaces = stripSwiftComments(
+  readFileSync(DASH_SURFACES_PATH, "utf8"),
+);
+const dashFormChrome = stripSwiftComments(
+  readFileSync(DASH_FORM_CHROME_PATH, "utf8"),
+);
+const appRoot = stripSwiftComments(readFileSync(APP_ROOT_PATH, "utf8"));
+const workerViews = stripSwiftComments(readFileSync(WORKER_VIEWS_PATH, "utf8"));
+const workerBuildsSection = stripSwiftComments(
+  readFileSync(WORKER_BUILDS_SECTION_PATH, "utf8"),
+);
+const pagesViews = stripSwiftComments(readFileSync(PAGES_VIEWS_PATH, "utf8"));
+const r2ObjectViews = stripSwiftComments(
+  readFileSync(R2_OBJECT_VIEWS_PATH, "utf8"),
+);
+const tunnelViews = stripSwiftComments(
+  readFileSync(TUNNEL_VIEWS_PATH, "utf8"),
+);
+const emailRoutingViews = stripSwiftComments(
+  readFileSync(EMAIL_ROUTING_VIEWS_PATH, "utf8"),
+);
+const zoneDetailViews = stripSwiftComments(
+  readFileSync(ZONE_DETAIL_VIEWS_PATH, "utf8"),
+);
+const zoneOperationsViews = stripSwiftComments(
+  readFileSync(ZONE_OPERATIONS_VIEWS_PATH, "utf8"),
+);
 const profileSettings = stripSwiftComments(
   readFileSync(PROFILE_SETTINGS_PATH, "utf8"),
 );
@@ -81,7 +146,703 @@ const solarIcons = stripSwiftComments(readFileSync(SOLAR_ICONS_PATH, "utf8"));
 const solarGenerator = readFileSync(SOLAR_GENERATOR_PATH, "utf8");
 const iosProject = readFileSync(IOS_PROJECT_PATH, "utf8");
 const gitCommitScript = readFileSync(GIT_COMMIT_SCRIPT_PATH, "utf8");
+const dashProductionSwift = swiftFilesUnder(DASH_PRODUCTION_PATH)
+  .map((path) => stripSwiftComments(readFileSync(path, "utf8")))
+  .join("\n");
 const issues = [];
+
+const featureList = declarationBody(
+  dashFeatureLoading,
+  "struct DashFeatureList<Header: View, Content: View>: View",
+);
+const featureListBody = featureList
+  ? declarationBody(featureList, "var body: some View")
+  : null;
+const coldOverlayCopyProperty = featureList
+  ? declarationBody(
+      featureList,
+      "private var coldOverlayCopy: DashColdOverlayCopy?",
+    )
+  : null;
+const coldOverlayModifier = declarationBody(
+  dashSurfaceSkeletons,
+  "private struct DashColdOverlayModifier: ViewModifier",
+);
+const coldOverlayCopyView = declarationBody(
+  dashSurfaceSkeletons,
+  "private struct DashColdOverlayCopyView: View",
+);
+const coldFailureWash = declarationBody(
+  dashSurfaceSkeletons,
+  "private struct DashColdFailureWash: View",
+);
+const sectionFailureVeil = declarationBody(
+  dashSurfaces,
+  "private struct DashSectionFailureVeil: View",
+);
+const itemStaggerModifier = declarationBody(
+  dashFormChrome,
+  "private struct DashItemStaggerModifier: ViewModifier",
+);
+const onboardingStagger = declarationBody(
+  appRoot,
+  "fileprivate func onboardingStagger(visible: Bool, index: Int) -> some View",
+);
+const workerDetailBody = declarationBody(
+  workerViews,
+  "private func workerDetailBody(mode: DashBodyMode) -> some View",
+);
+const workerDomainRouteRow = declarationBody(
+  workerViews,
+  "private func domainRouteRow(_ item: WorkerDomainRouteItem) -> some View",
+);
+const workerBuildsBody = declarationBody(
+  workerBuildsSection,
+  "var body: some View",
+);
+const pagesLogsSection = declarationBody(
+  pagesViews,
+  "@ViewBuilder private var logsSection: some View",
+);
+const pagesProjectDetailBody = declarationBody(
+  pagesViews,
+  "private func pagesProjectDetailBody(mode: DashBodyMode) -> some View",
+);
+const pagesLoadLogs = declarationBody(
+  pagesViews,
+  "private func loadLogs(key: PagesBuildMonitorKey, force: Bool) async",
+);
+const pagesPresentLogs = declarationBody(
+  pagesViews,
+  "private func presentLogs(_ fetched: PagesDeploymentLogs)",
+);
+const displayedBodyModeUpdate = featureList
+  ? declarationBody(
+      featureList,
+      "private func updateDisplayedBodyMode(to target: DashBodyMode)",
+    )
+  : null;
+const bodyHandoffRules = declarationBody(
+  dashFeatureLoading,
+  "enum DashBodyHandoffRules",
+);
+const bodyHandoffWrite = displayedBodyModeUpdate
+  ? declarationBody(
+      displayedBodyModeUpdate,
+      "withAnimation(DashBodyTransition.handoff)",
+    )
+  : null;
+const modeListRows = declarationBody(
+  dashFeatureLoading,
+  "func dashModeListRows",
+);
+const modeListPlaceholderStart =
+  modeListRows?.indexOf("case .placeholder(let index):") ?? -1;
+const modeListLiveStart = modeListRows?.indexOf("case .live(let item):") ?? -1;
+const modeListPlaceholderBranch =
+  modeListPlaceholderStart >= 0 && modeListLiveStart > modeListPlaceholderStart
+    ? modeListRows?.slice(modeListPlaceholderStart, modeListLiveStart)
+    : null;
+const modeListLiveBranch =
+  modeListLiveStart >= 0 ? modeListRows?.slice(modeListLiveStart) : null;
+const r2BucketSettingsBody = declarationBody(
+  r2ObjectViews,
+  "private func r2BucketSettingsBody(mode: DashBodyMode) -> some View",
+);
+const r2CustomDomainsSection = declarationBody(
+  r2ObjectViews,
+  "private func customDomainsSection(mode: DashBodyMode) -> some View",
+);
+const tunnelDetailBody = declarationBody(
+  tunnelViews,
+  "private func tunnelDetailBody(mode: DashBodyMode) -> some View",
+);
+const tunnelConnectorsSection = declarationBody(
+  tunnelViews,
+  "private func connectorsSection(mode: DashBodyMode) -> some View",
+);
+const tunnelPublicHostnamesSection = declarationBody(
+  tunnelViews,
+  "private func publicHostnamesSection(mode: DashBodyMode) -> some View",
+);
+const tunnelIngressSection = declarationBody(
+  tunnelViews,
+  "private func ingressSection(mode: DashBodyMode) -> some View",
+);
+const tunnelPublicHostnameRows = declarationBody(
+  tunnelViews,
+  "private var publicHostnameRows: [TunnelHostnameRow]",
+);
+const tunnelHostnameRow = declarationBody(
+  tunnelViews,
+  "struct TunnelHostnameRow: Identifiable, Hashable, Sendable",
+);
+const tunnelHostnameIdentityKeyType = tunnelHostnameRow
+  ? declarationBody(tunnelHostnameRow, "struct IdentityKey: Hashable, Sendable")
+  : null;
+const tunnelHostnameIdentityKey = tunnelHostnameRow
+  ? declarationBody(
+      tunnelHostnameRow,
+      "static func identityKey(for rule: TunnelIngressRule) -> IdentityKey",
+    )
+  : null;
+const emailRoutingBody = declarationBody(
+  emailRoutingViews,
+  "private func emailRoutingBody(mode: DashBodyMode) -> some View",
+);
+const emailRoutesSection = declarationBody(
+  emailRoutingViews,
+  "private func routesSection(mode: DashBodyMode) -> some View",
+);
+const emailAddressesSection = declarationBody(
+  emailRoutingViews,
+  "private func addressesSection(mode: DashBodyMode) -> some View",
+);
+const emailConfiguredContent = declarationBody(
+  emailRoutingViews,
+  "private func configuredContent(",
+);
+const zoneDetailBody = declarationBody(
+  zoneDetailViews,
+  "private func zoneDetailBody(mode: DashBodyMode) -> some View",
+);
+const zonePrimaryActions = declarationBody(
+  zoneDetailViews,
+  "private func primaryActions(mode: DashBodyMode) -> some View",
+);
+const zoneTool = declarationBody(
+  zoneDetailViews,
+  "private struct ZoneTool: Identifiable",
+);
+const wafDetailBody = declarationBody(
+  zoneOperationsViews,
+  "private func wafDetailBody(mode: DashBodyMode) -> some View",
+);
+const wafBucketGroup = declarationBody(
+  zoneOperationsViews,
+  "private func wafBucketGroup(",
+);
+const workerDeploymentsStart =
+  workerDetailBody?.indexOf(
+    'DashListGroupHeader(title: DashL10n.ui("Deployments"))',
+  ) ?? -1;
+const workerDomainsStart =
+  workerDetailBody?.indexOf('title: DashL10n.ui("Domains & Routes")') ?? -1;
+const workerDeploymentsSection =
+  workerDeploymentsStart >= 0 && workerDomainsStart > workerDeploymentsStart
+    ? workerDetailBody?.slice(workerDeploymentsStart, workerDomainsStart)
+    : null;
+const workerDomainsSection =
+  workerDomainsStart >= 0 ? workerDetailBody?.slice(workerDomainsStart) : null;
+const workerDomainsHandoffBranch = workerDomainsSection
+  ? declarationBody(
+      workerDomainsSection,
+      "if mode.isPlaceholder || !domainRouteRows.isEmpty",
+    )
+  : null;
+const tunnelIngressHandoffBranch = tunnelIngressSection
+  ? declarationBody(
+      tunnelIngressSection,
+      "if mode.isPlaceholder || isRemotelyManaged",
+    )
+  : null;
+const emailConfiguredBranch = emailRoutingBody
+  ? declarationBody(emailRoutingBody, "else")
+  : null;
+const zoneActionsHandoffBranch = zoneDetailBody
+  ? declarationBody(
+      zoneDetailBody,
+      "if mode.isPlaceholder || displayedZoneIsActive",
+    )
+  : null;
+const wafRulesHandoffBranch = wafDetailBody
+  ? declarationBody(wafDetailBody, "if mode.isPlaceholder || summary != nil")
+  : null;
+const r2CustomRowsHandoffBranch = r2CustomDomainsSection
+  ? declarationBody(
+      r2CustomDomainsSection,
+      "if mode.isPlaceholder || !custom.isEmpty",
+    )
+  : null;
+const tunnelConnectorRowsHandoffBranch = tunnelConnectorsSection
+  ? declarationBody(
+      tunnelConnectorsSection,
+      "if mode.isPlaceholder || !shown.isEmpty",
+    )
+  : null;
+const tunnelHostnameRowsHandoffBranch = tunnelPublicHostnamesSection
+  ? declarationBody(
+      tunnelPublicHostnamesSection,
+      "if mode.isPlaceholder || !shown.isEmpty",
+    )
+  : null;
+const emailRouteRowsHandoffBranch = emailRoutesSection
+  ? declarationBody(emailRoutesSection, "if mode.isPlaceholder || !rules.isEmpty")
+  : null;
+const wafBucketRowsHandoffBranch = wafBucketGroup
+  ? declarationBody(wafBucketGroup, "if mode.isPlaceholder || !buckets.isEmpty")
+  : null;
+const workerDeploymentHelperStart =
+  workerDeploymentsSection?.indexOf("dashModeListRows(") ?? -1;
+const workerDeploymentHelperEnd =
+  workerDeploymentsSection?.indexOf(
+    ") { deployment in",
+    workerDeploymentHelperStart,
+  ) ?? -1;
+const workerDeploymentHelperCall =
+  workerDeploymentHelperStart >= 0 &&
+  workerDeploymentHelperEnd > workerDeploymentHelperStart
+    ? workerDeploymentsSection?.slice(
+        workerDeploymentHelperStart,
+        workerDeploymentHelperEnd,
+      )
+    : null;
+const pagesLoadedLogsBranch = pagesLogsSection
+  ? declarationBody(pagesLogsSection, "if let logs")
+  : null;
+const pagesLoadedLogsOffset = pagesLoadedLogsBranch
+  ? (pagesLogsSection?.indexOf(pagesLoadedLogsBranch) ?? -1)
+  : -1;
+const pagesLogsAfterLoaded =
+  pagesLoadedLogsBranch && pagesLoadedLogsOffset >= 0
+    ? pagesLogsSection?.slice(
+        pagesLoadedLogsOffset + pagesLoadedLogsBranch.length,
+      )
+    : null;
+const pagesPlaceholderLogsBranch = pagesLogsAfterLoaded
+  ? declarationBody(pagesLogsAfterLoaded, "else")
+  : null;
+const pagesLogHandoffWrite = pagesPresentLogs
+  ? declarationBody(
+      pagesPresentLogs,
+      "withAnimation(DashBodyTransition.handoff)",
+    )
+  : null;
+const pagesLogReducedWrite = pagesPresentLogs
+  ? declarationBody(pagesPresentLogs, "withTransaction(transaction)")
+  : null;
+const coldWashMaterialIndex =
+  coldFailureWash?.indexOf(".fill(.ultraThinMaterial)") ?? -1;
+const coldWashCanvasIndex =
+  coldFailureWash?.indexOf("ramp(stops: stops, tint: DashTheme.canvas)") ?? -1;
+
+if (
+  !featureListBody?.includes(
+    ".dashColdOverlay(copy: coldOverlayCopy, extent: .scrollViewport)",
+  ) ||
+  featureListBody?.includes("DashEmptyState(") ||
+  !coldOverlayCopyProperty?.includes("guard") ||
+  !coldOverlayCopyProperty?.includes("DashColdOverlayRules.intent(") ||
+  !coldOverlayCopyProperty?.includes("switch intent")
+) {
+  issues.push(
+    "Cold feature lists must keep one placeholder body mounted and derive settled empty/error copy through DashColdOverlayRules.",
+  );
+}
+if (
+  !featureListBody?.includes("failureBanner(banner)") ||
+  featureListBody?.includes("DashLoadingRing(") ||
+  featureListBody?.includes('Text("Updating…")') ||
+  featureListBody?.includes('accessibilityLabel("Updating")')
+) {
+  issues.push(
+    "DashFeatureList warm refreshes must keep live content in place without inserting a standalone progress row; error banners remain in shared chrome.",
+  );
+}
+if (
+  !pagesProjectDetailBody?.includes("dashModeListRows(") ||
+  !pagesProjectDetailBody?.includes("items: visibleDeployments") ||
+  !pagesProjectDetailBody?.includes("placeholderRows: 3") ||
+  occurrences(
+    pagesProjectDetailBody ?? "",
+    "DashSectionListRowPlaceholders(rows: 3)",
+  ) !== 1
+) {
+  issues.push(
+    "Pages Project Deployments must share the canonical per-row handoff; grouped three-row skeletons are reserved for the empty failure veil.",
+  );
+}
+if (
+  !featureList?.includes(
+    "@State private var displayedBodyMode: DashBodyMode?",
+  ) ||
+  !featureListBody?.includes("content(displayedBodyMode ?? bodyMode)") ||
+  !featureListBody?.includes(".onChange(of: bodyMode, initial: true)") ||
+  !displayedBodyModeUpdate?.includes("DashBodyHandoffRules.update(") ||
+  !displayedBodyModeUpdate?.includes("reduceMotion: reduceMotion") ||
+  !bodyHandoffRules?.includes("!reduceMotion") ||
+  !bodyHandoffWrite?.includes("displayedBodyMode = update.mode") ||
+  featureListBody?.includes("value: bodyMode")
+) {
+  issues.push(
+    "DashFeatureList cold-to-live handoff must use a view-owned displayedBodyMode written inside explicit withAnimation, while Reduce Motion disables layout movement; tray transactions suppress modifier-attached bodyMode animations.",
+  );
+}
+const modeListHelperNames = [
+  ...dashProductionSwift.matchAll(/\bfunc\s+(dash\w*ModeListRows)\b/g),
+].map((match) => match[1]);
+if (
+  modeListHelperNames.length !== 1 ||
+  modeListHelperNames[0] !== "dashModeListRows" ||
+  dashProductionSwift.includes("dashIdentifiedModeListRows") ||
+  dashProductionSwift.includes("DashIdentifiedModeListSlot") ||
+  dashProductionSwift.includes("DashListRowPlaceholders") ||
+  occurrences(dashProductionSwift, "DashSectionListRowPlaceholders(") !== 5 ||
+  !modeListRows?.includes("items.map { .live($0) }") ||
+  !modeListRows?.includes("ForEach(slots)") ||
+  modeListRows?.includes("ForEach(0..<count") ||
+  !dashFeatureLoading.includes("case live(ItemID)") ||
+  !dashFeatureLoading.includes("case live(Item)") ||
+  !dashFeatureLoading.includes("case .live(let item): .live(item.id)") ||
+  !modeListPlaceholderBranch?.includes(
+    "DashBodyListSlotRules.placeholderRecedes(",
+  ) ||
+  !modeListPlaceholderBranch?.includes(
+    "DashBodyTransition.content(reduceMotion)",
+  ) ||
+  !modeListPlaceholderBranch?.includes(".transition(transition)") ||
+  occurrences(
+    modeListPlaceholderBranch ?? "",
+    "DashListCardInsetModifier(enabled: inset)",
+  ) !== 1 ||
+  !modeListLiveBranch?.includes("row(item)") ||
+  occurrences(
+    modeListLiveBranch ?? "",
+    "DashListCardInsetModifier(enabled: inset)",
+  ) !== 1 ||
+  modeListLiveBranch?.includes("DashBodyTransition.content(") ||
+  modeListLiveBranch?.includes(".transition(")
+) {
+  issues.push(
+    "Primary cold lists must have one canonical dashModeListRows implementation with stable live item identity, surplus-only placeholder recession, and no helper-owned transition on later live diffs.",
+  );
+}
+if (
+  !workerDeploymentHelperCall?.includes("mode: mode") ||
+  !workerDeploymentHelperCall?.includes("items: deployments") ||
+  !workerDeploymentHelperCall?.includes("placeholderRows: 3") ||
+  !workerDeploymentHelperCall?.includes("reduceMotion: reduceMotion") ||
+  occurrences(
+    workerDeploymentsSection ?? "",
+    "DashSectionListRowPlaceholders(rows: 3)",
+  ) !== 1 ||
+  occurrences(
+    workerDetailBody ?? "",
+    'title: DashL10n.ui("Domains & Routes")',
+  ) !== 1
+) {
+  issues.push(
+    "Worker Deployments must use the canonical live-identity handoff, with one mode-stable Domains & Routes header riding the 3-to-N contraction below them.",
+  );
+}
+
+const primaryModeListContracts = [
+  {
+    label: "Worker Domains & Routes",
+    source: workerDomainsSection,
+    items: "items: domainRouteRows",
+    placeholderRows: "placeholderRows: 2",
+  },
+  {
+    label: "R2 custom domains",
+    source: r2CustomDomainsSection,
+    items: "items: custom",
+    placeholderRows: "placeholderRows: 2",
+  },
+  {
+    label: "Tunnel connectors",
+    source: tunnelConnectorsSection,
+    items: "items: shown",
+    placeholderRows: "placeholderRows: 2",
+  },
+  {
+    label: "Tunnel public hostnames",
+    source: tunnelPublicHostnamesSection,
+    items: "items: shown",
+    placeholderRows: "placeholderRows: 3",
+  },
+  {
+    label: "Email Routing routes",
+    source: emailRoutesSection,
+    items: "items: rules",
+    placeholderRows: "placeholderRows: 3",
+  },
+  {
+    label: "Email Routing destination addresses",
+    source: emailAddressesSection,
+    items: "items: destinationRows",
+    placeholderRows: "placeholderRows: 1",
+  },
+  {
+    label: "Zone actions",
+    source: zonePrimaryActions,
+    items: "items: tools",
+    placeholderRows: "placeholderRows: Self.allTools.count",
+  },
+  {
+    label: "WAF top rules",
+    source: wafBucketGroup,
+    items: "items: buckets",
+    placeholderRows: "placeholderRows: 3",
+  },
+];
+for (const contract of primaryModeListContracts) {
+  const call = modeListCall(contract.source, contract.items);
+  if (
+    occurrences(contract.source ?? "", "dashModeListRows(") !== 1 ||
+    !call?.includes("mode: mode") ||
+    !call?.includes(contract.placeholderRows) ||
+    !call?.includes("reduceMotion: reduceMotion")
+  ) {
+    issues.push(
+      `${contract.label} must use the one canonical dashModeListRows handoff.`,
+    );
+  }
+}
+
+const primaryColdOwnerChecks = [
+  [
+    "Worker Domains & Routes",
+    workerDomainsHandoffBranch?.includes("dashModeListRows(") === true,
+  ],
+  [
+    "R2 custom domains",
+    topLevelTokenIndex(
+      r2BucketSettingsBody ?? "",
+      "customDomainsSection(mode: mode)",
+    ) !== -1 && r2CustomRowsHandoffBranch?.includes("dashModeListRows(") === true,
+  ],
+  [
+    "Tunnel connectors and ingress",
+    topLevelTokenIndex(
+      tunnelDetailBody ?? "",
+      "connectorsSection(mode: mode)",
+    ) !== -1 &&
+      topLevelTokenIndex(
+        tunnelDetailBody ?? "",
+        "ingressSection(mode: mode)",
+      ) !== -1 &&
+      tunnelConnectorRowsHandoffBranch?.includes("dashModeListRows(") === true &&
+      tunnelIngressHandoffBranch?.includes(
+        "publicHostnamesSection(mode: mode)",
+      ) === true &&
+      tunnelHostnameRowsHandoffBranch?.includes("dashModeListRows(") === true,
+  ],
+  [
+    "Email Routing routes and destination addresses",
+    emailConfiguredBranch?.includes(
+      "configuredContent(mode: mode, settings: settings)",
+    ) === true &&
+      topLevelTokenIndex(
+        emailConfiguredContent ?? "",
+        "routesSection(mode: mode)",
+      ) !== -1 &&
+      topLevelTokenIndex(
+        emailConfiguredContent ?? "",
+        "addressesSection(mode: mode)",
+      ) !== -1 &&
+      emailRouteRowsHandoffBranch?.includes("dashModeListRows(") === true,
+  ],
+  [
+    "Zone actions",
+    zoneActionsHandoffBranch?.includes("primaryActions(mode: mode)") === true,
+  ],
+  [
+    "WAF top rules",
+    wafRulesHandoffBranch?.includes("wafBucketGroup(") === true &&
+      wafRulesHandoffBranch?.includes("mode: mode") === true &&
+      wafBucketRowsHandoffBranch?.includes("dashModeListRows(") === true,
+  ],
+];
+for (const [label, isValid] of primaryColdOwnerChecks) {
+  if (!isValid) {
+    issues.push(
+      `${label} must route its placeholder path through the canonical mode-aware section helper.`,
+    );
+  }
+}
+
+if (
+  !tunnelHostnameIdentityKeyType?.includes("let service: String") ||
+  !tunnelHostnameRow?.includes("let occurrence: Int") ||
+  !tunnelHostnameRow?.includes("Self.identityKey(for: rule)") ||
+  !tunnelHostnameIdentityKey?.includes('let service = (rule.service ?? "")') ||
+  !tunnelHostnameIdentityKey?.includes(
+    ".trimmingCharacters(in: .whitespacesAndNewlines)",
+  ) ||
+  !tunnelHostnameIdentityKey?.includes("service: service") ||
+  tunnelHostnameRow?.includes("self.id = \"\\(index)") ||
+  !tunnelPublicHostnameRows?.includes(
+    "identityOccurrences: [TunnelHostnameRow.IdentityKey: Int]",
+  ) ||
+  !zoneTool?.includes("enum ID: Hashable") ||
+  zoneTool?.includes("var id: String { title }")
+) {
+  issues.push(
+    "Conditional list rows must use semantic entity identity; global indices and display titles cannot key Tunnel hostnames or Zone actions.",
+  );
+}
+
+const legacyGroupedPrimaryBodies = [
+  ["R2 bucket settings", r2BucketSettingsBody],
+  ["Tunnel detail", tunnelDetailBody],
+  ["Email Routing", emailRoutingBody],
+  ["Zone detail", zoneDetailBody],
+  ["WAF detail", wafDetailBody],
+];
+for (const [label, source] of legacyGroupedPrimaryBodies) {
+  if (!source || source.includes("DashSectionListRowPlaceholders(")) {
+    issues.push(
+      `${label} must not bypass dashModeListRows with a grouped primary-cold placeholder block.`,
+    );
+  }
+}
+if (workerDetailBody?.includes("DashSectionListRowPlaceholders(rows: 2)")) {
+  issues.push(
+    "Worker Domains & Routes must not keep its grouped two-row primary-cold placeholder block.",
+  );
+}
+const sectionFailureVeilContracts = [
+  {
+    label: "Worker Domains & Routes failures",
+    source: workerDomainRouteRow,
+    token: "DashSectionListRowPlaceholders(rows: 2)",
+    count: 2,
+  },
+  {
+    label: "Worker Deployments failure",
+    source: workerDeploymentsSection,
+    token: "DashSectionListRowPlaceholders(rows: 3)",
+    count: 1,
+  },
+  {
+    label: "Pages Project Deployments failure",
+    source: pagesProjectDetailBody,
+    token: "DashSectionListRowPlaceholders(rows: 3)",
+    count: 1,
+  },
+  {
+    label: "Worker Builds section-cold failure",
+    source: workerBuildsBody,
+    token: "DashSectionListRowPlaceholders(rows: 3)",
+    count: 1,
+  },
+];
+for (const contract of sectionFailureVeilContracts) {
+  if (
+    occurrences(contract.source ?? "", contract.token) !== contract.count ||
+    occurrences(contract.source ?? "", ".dashSectionFailure(") !== contract.count
+  ) {
+    issues.push(
+      `${contract.label} must be the exact allowlisted grouped section-failure veil.`,
+    );
+  }
+}
+if (
+  !pagesLoadedLogsBranch?.includes(
+    ".dashBodySlot(reduceMotion: reduceMotion)",
+  ) ||
+  !pagesPlaceholderLogsBranch?.includes(
+    ".dashBodySlot(reduceMotion: reduceMotion)",
+  ) ||
+  !pagesLoadLogs?.includes("presentLogs(fetched)") ||
+  !pagesPresentLogs?.includes("if reduceMotion") ||
+  !pagesPresentLogs?.includes("transaction.disablesAnimations = true") ||
+  !pagesLogHandoffWrite?.includes("logs = fetched") ||
+  !pagesLogHandoffWrite?.includes("logsError = nil") ||
+  !pagesLogReducedWrite?.includes("logs = fetched") ||
+  !pagesLogReducedWrite?.includes("logsError = nil")
+) {
+  issues.push(
+    "Pages build-log section-cold replacement must transition both card states, use an explicit handoff write, and disable layout movement under Reduce Motion.",
+  );
+}
+if (
+  !itemStaggerModifier?.includes("DashItemStaggerMotion.plan(") ||
+  !itemStaggerModifier?.includes("visible: visible") ||
+  !itemStaggerModifier?.includes("index: index") ||
+  !itemStaggerModifier?.includes("reduceMotion: reduceMotion") ||
+  !itemStaggerModifier?.includes(".opacity(plan.opacity)") ||
+  !itemStaggerModifier?.includes(".offset(y: plan.offsetY)") ||
+  !itemStaggerModifier?.includes("animation(delay: plan.delay)") ||
+  !itemStaggerModifier?.includes("accessibilityReduceMotion") ||
+  !itemStaggerModifier?.includes("DashTheme.Motion.reduced") ||
+  !onboardingStagger?.includes(
+    "dashItemStagger(visible: visible, index: index)",
+  )
+) {
+  issues.push(
+    "Onboarding and cold prompts must render the tested item-stagger plan, including its Reduced Motion pose and delay.",
+  );
+}
+if (
+  !coldOverlayModifier?.includes("insertion: .identity") ||
+  !coldOverlayModifier?.includes("DashTheme.Motion.failureDismiss") ||
+  !coldOverlayModifier?.includes("DashTheme.Motion.reduced") ||
+  coldOverlayModifier?.includes(".transition(.opacity)")
+) {
+  issues.push(
+    "Cold overlay insertion must leave motion to its items while removal stays one reduced-motion-aware opacity fade.",
+  );
+}
+const coldItemSteps = [0, 1, 2, 3].map(
+  (index) =>
+    coldOverlayCopyView?.indexOf(
+      `.dashItemStagger(visible: revealed, index: ${index})`,
+    ) ?? -1,
+);
+const sectionItemSteps = [0, 1, 2].map(
+  (index) =>
+    sectionFailureVeil?.indexOf(
+      `.dashItemStagger(visible: revealed, index: ${index})`,
+    ) ?? -1,
+);
+if (
+  coldItemSteps.some((index) => index === -1) ||
+  !coldItemSteps.every(
+    (index, position) => position === 0 || index > coldItemSteps[position - 1],
+  ) ||
+  sectionItemSteps.some((index) => index === -1) ||
+  !sectionItemSteps.every(
+    (index, position) =>
+      position === 0 || index > sectionItemSteps[position - 1],
+  )
+) {
+  issues.push(
+    "Cold empty/error prompts must reuse the onboarding item stagger in top-to-bottom visual order.",
+  );
+}
+if (
+  !coldFailureWash?.includes(
+    "DashColdFailureWashRamp.stops(for: geometry.size.height)",
+  ) ||
+  occurrences(
+    coldFailureWash ?? "",
+    "DashColdFailureWashRamp.stops(for: geometry.size.height)",
+  ) !== 1 ||
+  !coldFailureWash?.includes("accessibilityReduceTransparency") ||
+  !coldFailureWash?.includes(
+    "DashColdFailureWashLayerRules.mountsBackdropMaterial(",
+  ) ||
+  !coldFailureWash?.includes("reduceTransparency: reduceTransparency") ||
+  !coldFailureWash?.includes(".fill(.ultraThinMaterial)") ||
+  occurrences(coldFailureWash ?? "", ".fill(.ultraThinMaterial)") !== 1 ||
+  !coldFailureWash?.includes(".mask") ||
+  !coldFailureWash?.includes("ramp(stops: stops, tint: .white)") ||
+  !coldFailureWash?.includes("ramp(stops: stops, tint: DashTheme.canvas)") ||
+  coldWashMaterialIndex === -1 ||
+  coldWashCanvasIndex === -1 ||
+  coldWashMaterialIndex > coldWashCanvasIndex ||
+  !coldFailureWash?.includes("startPoint: .bottom") ||
+  !coldFailureWash?.includes("endPoint: .top") ||
+  coldFailureWash?.includes(".blur(") ||
+  coldFailureWash?.includes("VariableBlurView(") ||
+  coldFailureWash?.includes("opacity(reduceTransparency")
+) {
+  issues.push(
+    "Cold empty/error wash must pair its tested bottom-to-top canvas ramp with a matching Reduced Transparency-aware backdrop material, never a foreground blur.",
+  );
+}
 
 for (const token of [
   "DashSheetSizing",
@@ -89,12 +850,16 @@ for (const token of [
   "dashTrayPinsFooter",
 ]) {
   if (dashTraySources.includes(token)) {
-    issues.push(`Dash tray must remain compact-only; remove legacy token ${token}.`);
+    issues.push(
+      `Dash tray must remain compact-only; remove legacy token ${token}.`,
+    );
   }
 }
 for (const token of ["floatingMaxWidth", "floatingDetentFraction"]) {
   if (dashTheme.includes(token)) {
-    issues.push(`Dash tray shell must retain its original geometry; remove ${token}.`);
+    issues.push(
+      `Dash tray shell must retain its original geometry; remove ${token}.`,
+    );
   }
 }
 const trayMotionTokens = declarationBody(dashTheme, "enum Tray");
@@ -134,6 +899,30 @@ const editorControlIDs = [
 
 function occurrences(source, token) {
   return source.split(token).length - 1;
+}
+
+function swiftFilesUnder(directory) {
+  const files = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      // Asset catalogs and bundled legal copy cannot contain production Swift.
+      if (entry.name !== "Resources") files.push(...swiftFilesUnder(path));
+    } else if (entry.isFile() && entry.name.endsWith(".swift")) {
+      files.push(path);
+    }
+  }
+  return files;
+}
+
+function modeListCall(source, itemsToken) {
+  if (!source) return null;
+  const itemsIndex = source.indexOf(itemsToken);
+  if (itemsIndex === -1) return null;
+  const callStart = source.lastIndexOf("dashModeListRows(", itemsIndex);
+  const callEnd = source.indexOf(") {", itemsIndex);
+  if (callStart === -1 || callEnd === -1 || callEnd < itemsIndex) return null;
+  return source.slice(callStart, callEnd);
 }
 
 function stripSwiftComments(source) {
@@ -277,9 +1066,33 @@ const workspaceGlowPicker = declarationBody(
   profileSettings,
   "private struct WorkspaceGlowPickerTray: View",
 );
+const workspaceGlowPickerMetrics = declarationBody(
+  profileSettings,
+  "enum WorkspaceGlowPickerMetrics",
+);
+const workspaceGlowPanelHero = declarationBody(
+  profileSettings,
+  "private struct WorkspaceGlowPanelHero",
+);
+const workspaceGlowCard = workspaceGlowPicker
+  ? declarationBody(workspaceGlowPicker, "private func glowCard")
+  : null;
+const workspaceGlowCenteredAnchor = workspaceGlowPicker
+  ? declarationBody(workspaceGlowPicker, "private func centeredMorphAnchor")
+  : null;
+const workspaceGlowSideAnchors = workspaceGlowPicker
+  ? declarationBody(workspaceGlowPicker, "private func compactSideMorphAnchors")
+  : null;
+const workspaceGlowInspiration = workspaceGlowPicker
+  ? declarationBody(workspaceGlowPicker, "private func inspiration(for")
+  : null;
 const scrollEdgeEffect = declarationBody(
   headerChrome,
   "struct DashScrollEdgeEffect: View",
+);
+const scrollEdgeBlurRules = declarationBody(
+  headerChrome,
+  "enum DashScrollEdgeBlurRules",
 );
 const fadedScrollView = declarationBody(
   headerChrome,
@@ -290,43 +1103,83 @@ if (
     "@Environment(\\.accessibilityReduceTransparency) private var reduceTransparency",
   ) ||
   !scrollEdgeEffect?.includes("var style: DashScrollEdgeStyle = .fade") ||
+  !scrollEdgeEffect?.includes("var strength: CGFloat = 1") ||
   !scrollEdgeEffect?.includes(
-    "if style == .fadeAndBlur && !reduceTransparency",
+    "DashScrollEdgeBlurRules.mountsVariableBlur(",
   ) ||
-  !scrollEdgeEffect?.includes("Rectangle().fill(.ultraThinMaterial)") ||
+  !scrollEdgeEffect?.includes("VariableBlurView(") ||
+  !scrollEdgeEffect?.includes("GeometryReader") ||
+  !scrollEdgeEffect?.includes(".rotationEffect(") ||
   !scrollEdgeEffect?.includes("LinearGradient(") ||
-  !scrollEdgeEffect?.includes(".mask {") ||
+  !scrollEdgeEffect?.includes(
+    ".opacity(DashScrollEdgeBlurRules.opacity(for: strength))",
+  ) ||
+  !scrollEdgeEffect?.includes(".clipped()") ||
   !scrollEdgeEffect?.includes(".allowsHitTesting(false)") ||
   !scrollEdgeEffect?.includes(".accessibilityHidden(true)") ||
+  scrollEdgeEffect?.includes(".ultraThinMaterial") ||
+  scrollEdgeEffect?.includes(".mask {") ||
   scrollEdgeEffect?.includes("@State") ||
   scrollEdgeEffect?.includes(".animation(") ||
-  scrollEdgeEffect?.includes(".blur(") ||
-  scrollEdgeEffect?.includes("VariableBlurView(")
+  scrollEdgeEffect?.includes(".blur(")
 ) {
   issues.push(
-    "Shared scroll edges must offer a static fade-plus-backdrop-blur style, fall back to the surface fade under Reduce Transparency, and avoid animated state.",
+    "Shared scroll edges must pair their surface fade with a static VariableBlur strip, fall back under Reduce Transparency, and avoid masked material or animated blur state.",
   );
 }
-if (!fadedScrollView || fadedScrollView.includes("style: .fadeAndBlur")) {
+if (
+  !scrollEdgeBlurRules?.includes(
+    "physicalEdge(_ edge: Edge, layoutDirection: LayoutDirection)",
+  ) ||
+  !scrollEdgeBlurRules?.includes("case (.leading, .rightToLeft): .trailing") ||
+  !scrollEdgeBlurRules?.includes("case (.trailing, .rightToLeft): .leading") ||
+  !scrollEdgeBlurRules?.includes("case .bottom: .blurredBottomClearTop") ||
+  !scrollEdgeBlurRules?.includes(
+    "case .top, .leading, .trailing: .blurredTopClearBottom",
+  ) ||
+  !scrollEdgeBlurRules?.includes("case .leading: -90") ||
+  !scrollEdgeBlurRules?.includes("case .trailing: 90") ||
+  !scrollEdgeBlurRules?.includes(
+    "case .leading, .trailing: CGSize(width: size.height, height: size.width)",
+  ) ||
+  !scrollEdgeBlurRules?.includes("style == .fadeAndBlur") ||
+  !scrollEdgeBlurRules?.includes("!reduceTransparency") ||
+  !scrollEdgeBlurRules?.includes("opacity(for: strength) > 0")
+) {
   issues.push(
-    "DashFadedScrollView must keep its dynamic vertical edges fade-only; backdrop blur is opt-in for the Glow carousel.",
+    "Scroll-edge VariableBlur must map all four physical edges, mirror leading/trailing in RTL, swap the horizontal source seat, and leave the tree when hidden or Reduce Transparency is enabled.",
+  );
+}
+if (
+  !fadedScrollView ||
+  occurrences(fadedScrollView, "style: .fadeAndBlur") !== 2 ||
+  !fadedScrollView.includes("strength: topOpacity") ||
+  !fadedScrollView.includes("strength: bottomOpacity") ||
+  fadedScrollView.includes(".opacity(topOpacity)") ||
+  fadedScrollView.includes(".opacity(bottomOpacity)")
+) {
+  issues.push(
+    "DashFadedScrollView must route both dynamic vertical edges through VariableBlur and pass strength into the shared renderer so invisible filters unmount.",
   );
 }
 if (!workspaceGlowPicker) {
-  issues.push("Could not locate WorkspaceGlowPickerTray for state ownership validation.");
+  issues.push(
+    "Could not locate WorkspaceGlowPickerTray for state ownership validation.",
+  );
 } else {
   for (const token of [
     "@State private var centeredPresetID: String?",
     "@State private var centeredPresetPositionIsReady = false",
     "private var centeredPresetPosition: Binding<String?>",
-    "guard path.isEmpty, centeredPresetPositionIsReady else { return }",
+    "morphingPreset == nil",
+    "centeredPresetPositionIsReady",
     "guard !centeredPresetPositionIsReady else { return }",
     "centeredPresetID = selectedPreset.id",
     "centeredPresetPositionIsReady = true",
     "centeredPresetID = proposedID",
     ".scrollPosition(id: centeredPresetPosition",
     ".onChange(of: workspaceGlowRaw)",
-    "guard centeredPresetID != externallySelected.id else { return }",
+    "guard centeredPresetID != externallySelected.id else {",
     "centeredPresetID = externallySelected.id",
     ".dashTrayContentTone(activeTone)",
   ]) {
@@ -340,11 +1193,14 @@ if (!workspaceGlowPicker) {
   if (
     occurrences(workspaceGlowPicker, "DashScrollEdgeEffect(") !== 2 ||
     occurrences(workspaceGlowPicker, "style: .fadeAndBlur") !== 2 ||
+    !workspaceGlowPicker.includes("private var pickerEdgeStrength: CGFloat") ||
+    !workspaceGlowPicker.includes("path.isEmpty ? 1 : 0") ||
+    occurrences(workspaceGlowPicker, "strength: pickerEdgeStrength") !== 2 ||
     !workspaceGlowPicker.includes("edge: .leading") ||
     !workspaceGlowPicker.includes("edge: .trailing")
   ) {
     issues.push(
-      "WorkspaceGlowPickerTray must use the shared horizontal fade-plus-blur edge effect.",
+      "WorkspaceGlowPickerTray must use the shared horizontal VariableBlur edges and pass route visibility as strength so retained hidden filters leave the tree.",
     );
   }
   if (
@@ -367,6 +1223,213 @@ if (!workspaceGlowPicker) {
       "Glow inspiration affordances must keep the bare Stars icon legible on both compact and expanded wash surfaces.",
     );
   }
+  if (
+    !workspaceGlowPanelHero?.includes("WorkspaceGlowPanelSurface(") ||
+    !workspaceGlowPanelHero?.includes("WorkspaceGlowPanelOutline(") ||
+    occurrences(workspaceGlowPicker, "WorkspaceGlowPanelHero(") !== 3 ||
+    occurrences(workspaceGlowPicker, "WorkspaceGlowPanelMorphModifier(") !==
+      6 ||
+    occurrences(workspaceGlowPicker, "element: .panel") !== 3 ||
+    occurrences(workspaceGlowPicker, "element: .label") !== 3 ||
+    workspaceGlowPicker.includes("element: .outline")
+  ) {
+    issues.push(
+      "Glow must keep panel plus outline as one matched object, with paired panel/label geometry at the compact and detail seats.",
+    );
+  }
+  if (
+    !workspaceGlowCard ||
+    !workspaceGlowCenteredAnchor ||
+    !workspaceGlowSideAnchors ||
+    !workspaceGlowInspiration ||
+    workspaceGlowSideAnchors.indexOf("element: .label") === -1 ||
+    workspaceGlowSideAnchors.indexOf(".padding(.horizontal, 10)") === -1 ||
+    workspaceGlowSideAnchors.indexOf("element: .label") >
+      workspaceGlowSideAnchors.indexOf(".padding(.horizontal, 10)") ||
+    workspaceGlowCenteredAnchor.indexOf("element: .label") === -1 ||
+    workspaceGlowCenteredAnchor.indexOf(".padding(.horizontal, 10)") === -1 ||
+    workspaceGlowCenteredAnchor.indexOf("element: .label") >
+      workspaceGlowCenteredAnchor.indexOf(".padding(.horizontal, 10)") ||
+    workspaceGlowInspiration.indexOf("element: .label") === -1 ||
+    workspaceGlowInspiration.indexOf(".padding(18)") === -1 ||
+    workspaceGlowInspiration.indexOf("element: .label") >
+      workspaceGlowInspiration.lastIndexOf(".padding(18)")
+  ) {
+    issues.push(
+      "Glow label morph identity must wrap the shared glyph before either route applies its distinct positioning frame or padding.",
+    );
+  }
+  if (
+    !workspaceGlowPicker.includes("@State private var morphingPreset:") ||
+    !workspaceGlowPicker.includes("@State private var morphUsesCenteredAnchor") ||
+    !workspaceGlowPicker.includes("@Namespace private var inspirationPanelMorph") ||
+    !workspaceGlowPicker.includes(
+      "@Namespace private var centeredInspirationPanelMorph",
+    ) ||
+    !workspaceGlowInspiration.includes("WorkspaceGlowPanelHero(") ||
+    !workspaceGlowInspiration.includes(
+      "showsOutline: morphingOutlinedPreset == preset",
+    ) ||
+    !workspaceGlowInspiration.includes("else if morphingPreset == preset {") ||
+    workspaceGlowInspiration.includes(
+      ".opacity(morphingPreset == preset ? 1 : 0)",
+    ) ||
+    workspaceGlowPicker.includes("private func inspirationHeroFollower") ||
+    workspaceGlowCard.includes("WorkspaceGlowPanelMorphModifier(")
+  ) {
+    issues.push(
+      "Glow must let the retained detail hero own the visible flight while stable centered/side anchors stay separate from the visible compact card.",
+    );
+  }
+  if (
+    !workspaceGlowPicker.includes("path: flowPath") ||
+    !workspaceGlowPicker.includes("private var flowPath: Binding<") ||
+    !workspaceGlowPicker.includes("completionCriteria: .removed") ||
+    workspaceGlowPicker.includes(".logicallyComplete(after:") ||
+    !workspaceGlowPicker.includes(
+      "@State private var inspirationReturnGeneration = 0",
+    ) ||
+    occurrences(workspaceGlowPicker, "inspirationReturnGeneration += 1") !== 3 ||
+    !workspaceGlowPicker.includes(
+      "inspirationReturnGeneration == returnGeneration",
+    ) ||
+    !workspaceGlowPicker.includes("completeInspirationReturn()") ||
+    !workspaceGlowPicker.includes("centeredMorphAnchor(for:") ||
+    !workspaceGlowPicker.includes("compactSideMorphAnchors(for:") ||
+    !workspaceGlowPicker.includes("private func clearInspirationMorph()") ||
+    !workspaceGlowPicker.includes("DragGesture(minimumDistance: 1)") ||
+    !workspaceGlowPicker.includes(".onChanged { _ in clearInspirationMorph() }") ||
+    !workspaceGlowPicker.includes(
+      ".allowsHitTesting(morphingPreset == nil)",
+    ) ||
+    !workspaceGlowPicker.includes("transaction.disablesAnimations = true") ||
+    !workspaceGlowPicker.includes("morphingPreset = nil") ||
+    workspaceGlowPicker.includes("pendingInspirationPreset") ||
+    workspaceGlowPicker.includes("openPendingInspiration") ||
+    workspaceGlowPicker.includes("ScrollViewReader") ||
+    workspaceGlowPicker.includes("scrollProxy.scrollTo") ||
+    workspaceGlowPicker.includes(".onChange(of: path)")
+  ) {
+    issues.push(
+      "Glow must pre-register a stable viewport anchor, retain the visible detail hero through the rendered pop endpoint, and hand back without timing or scroll side effects.",
+    );
+  }
+  if (
+    !workspaceGlowCenteredAnchor?.includes("Color.clear") ||
+    !workspaceGlowCenteredAnchor?.includes(
+      "namespace: centeredInspirationPanelMorph",
+    ) ||
+    !workspaceGlowCenteredAnchor?.includes("centeredInspirationMorphID(for:") ||
+    occurrences(workspaceGlowCenteredAnchor, "isSource: path.isEmpty") !== 2 ||
+    !workspaceGlowSideAnchors?.includes("Color.clear") ||
+    !workspaceGlowSideAnchors?.includes("namespace: inspirationPanelMorph") ||
+    !workspaceGlowSideAnchors?.includes("sideInspirationMorphID(for:") ||
+    occurrences(workspaceGlowSideAnchors, "isSource: path.isEmpty") !== 2 ||
+    !workspaceGlowInspiration?.includes("WorkspaceGlowPanelHero(") ||
+    occurrences(workspaceGlowInspiration, "isSource: !path.isEmpty") !== 2
+  ) {
+    issues.push(
+      "Glow panel and label must use transparent compact anchors and a visible retained detail hero with exactly one source per active namespace.",
+    );
+  }
+  if (
+    !workspaceGlowInspiration?.includes(
+      "let heroHeight = inspirationHeroHeight(for: preset)",
+    ) ||
+    occurrences(workspaceGlowInspiration, ".frame(height: heroHeight)") !== 2 ||
+    !workspaceGlowPicker.includes(
+      "private func inspirationHeroHeight(for preset:",
+    ) ||
+    !workspaceGlowPicker.includes(
+      "!reduceMotion, path.isEmpty, morphingPreset == preset",
+    )
+  ) {
+    issues.push(
+      "Glow must animate the retained detail hero to the compact card height before the rendered pop hands ownership back to the real card.",
+    );
+  }
+  if (
+    !workspaceGlowPicker.includes(
+      "let compactVisualIsVisible = reduceMotion || morphingPreset != preset",
+    ) ||
+    occurrences(
+      workspaceGlowCard,
+      "morphingPreset == preset ? nil : supportingTransitionAnimation",
+    ) !== 2 ||
+    !workspaceGlowPicker.includes(
+      "if morphUsesCenteredAnchor, let morphingPreset",
+    ) ||
+    !workspaceGlowPicker.includes(
+      "@State private var deferredExternalPresetID:",
+    ) ||
+    !workspaceGlowPicker.includes(
+      "deferredExternalPresetID = externallySelected.id",
+    ) ||
+    !workspaceGlowPicker.includes(
+      "guard path.isEmpty, morphingPreset == nil else {",
+    ) ||
+    !workspaceGlowPicker.includes("private func centeredInspirationMorphID(") ||
+    !workspaceGlowPicker.includes("morphUsesCenteredAnchor && morphingPreset == preset") ||
+    !workspaceGlowPicker.includes("private func sideInspirationMorphID(") ||
+    !workspaceGlowPicker.includes("!morphUsesCenteredAnchor && morphingPreset == preset")
+  ) {
+    issues.push(
+      "Glow must preserve its visible card under Reduce Motion, freeze the centered anchor during a morph, and defer external selection handoff until the picker returns.",
+    );
+  }
+  if (
+    !workspaceGlowPicker.includes(
+      "HStack(spacing: WorkspaceGlowPickerMetrics.cardSpacing)",
+    ) ||
+    workspaceGlowPicker.includes(
+      "LazyHStack(spacing: WorkspaceGlowPickerMetrics.cardSpacing)",
+    )
+  ) {
+    issues.push(
+      "Glow must keep its small fixed card set eager while the centred morph seat hands geometry ownership back to the carousel.",
+    );
+  }
+  if (
+    !workspaceGlowPicker.includes(
+      "@State private var morphingOutlinedPreset:",
+    ) ||
+    !workspaceGlowCard?.includes(
+      "let isCentered = centeredPresetID == preset.id",
+    ) ||
+    !workspaceGlowCard?.includes(
+      "morphingOutlinedPreset = isCentered ? preset : nil",
+    ) ||
+    !workspaceGlowCard?.includes(
+      "morphUsesCenteredAnchor = !reduceMotion && isCentered",
+    ) ||
+    !workspaceGlowInspiration?.includes(
+      "showsOutline: morphingOutlinedPreset == preset",
+    )
+  ) {
+    issues.push(
+      "Glow Inspiration must show an emphasized outline only when its source card was the centred active selection.",
+    );
+  }
+}
+
+if (
+  !workspaceGlowPickerMetrics?.includes("static let cardHeight: CGFloat = 184") ||
+  !workspaceGlowPickerMetrics?.includes("static let outlineGap: CGFloat = 1")
+) {
+  issues.push(
+    "Glow picker cards must keep their compact 184pt height and a restrained 1pt outline gap.",
+  );
+}
+
+if (
+  !dashTrayFlow.includes("@State private var lastHeroRoute: Route?") ||
+  !dashTrayFlow.includes("retainedHeroDetailRoute(root:") ||
+  !dashTrayFlow.includes(".opacity(reduceMotion ? (isActive ? 1 : 0) : 1)") ||
+  dashTrayFlow.includes("if transitionStyle == .heroMorph { return .opacity }")
+) {
+  issues.push(
+    "Hero-morph tray routes must retain both geometry seats without applying route opacity to their shared ancestor; Reduce Motion keeps the whole-route cross-fade.",
+  );
 }
 
 const featureVisualTone = declarationBody(
@@ -388,7 +1451,10 @@ if (
   );
 }
 
-const settingsView = declarationBody(profileSettings, "struct SettingsView: View");
+const settingsView = declarationBody(
+  profileSettings,
+  "struct SettingsView: View",
+);
 const settingsAboutLink = settingsView
   ? declarationBody(settingsView, "DashListGroupLink(value: .about)")
   : null;
@@ -409,7 +1475,10 @@ if (
   );
 }
 
-const buildMetadata = declarationBody(profileSettings, "enum DashBuildMetadata");
+const buildMetadata = declarationBody(
+  profileSettings,
+  "enum DashBuildMetadata",
+);
 const dashTarget = declarationBody(
   iosProject,
   "A00000000000000000000002 /* Dash */ =",
@@ -419,11 +1488,13 @@ const gitCommitPhase = declarationBody(
   "D00000000000000000000036 /* Embed Git Commit */ =",
 );
 const embeddedExtensionsIndex =
-  dashTarget?.indexOf("D00000000000000000000017 /* Embed Foundation Extensions */") ?? -1;
+  dashTarget?.indexOf(
+    "D00000000000000000000017 /* Embed Foundation Extensions */",
+  ) ?? -1;
 const gitCommitPhaseIndex =
   dashTarget?.indexOf("D00000000000000000000036 /* Embed Git Commit */") ?? -1;
 if (
-  !aboutView?.includes("DashBuildMetadata.shortCommit(in: .main) ?? \"—\"") ||
+  !aboutView?.includes('DashBuildMetadata.shortCommit(in: .main) ?? "—"') ||
   !buildMetadata?.includes("candidate.allSatisfy(\\.isHexDigit)") ||
   embeddedExtensionsIndex === -1 ||
   gitCommitPhaseIndex <= embeddedExtensionsIndex ||
@@ -443,15 +1514,37 @@ if (
   );
 }
 
-const watchtowerView = declarationBody(watchtower, "struct WatchtowerView: View");
+const watchtowerView = declarationBody(
+  watchtower,
+  "struct WatchtowerView: View",
+);
 if (!watchtowerView) {
-  issues.push("Could not locate WatchtowerView for toolbar ownership validation.");
+  issues.push(
+    "Could not locate WatchtowerView for toolbar ownership validation.",
+  );
 } else if (
   /\.toolbar\b/.test(watchtowerView) ||
   /\bToolbarItem(?:Group)?\s*\(/.test(watchtowerView)
 ) {
   issues.push(
     "WatchtowerView must not own navigation toolbar items; tab-root header controls belong to MainTabView's shared overlay.",
+  );
+}
+
+const aboutAppDetailsIndex =
+  aboutView?.indexOf('DashInfoGroup(title: "App details")') ?? -1;
+const aboutCloudflareStatusIndex =
+  aboutView?.indexOf("CloudflareStatusSection()") ?? -1;
+if (
+  !aboutView ||
+  occurrences(aboutView, "CloudflareStatusSection()") !== 1 ||
+  aboutAppDetailsIndex === -1 ||
+  aboutCloudflareStatusIndex <= aboutAppDetailsIndex ||
+  watchtowerView?.includes("CloudflareStatusState") ||
+  watchtowerView?.includes("CloudflareStatusSection")
+) {
+  issues.push(
+    "Cloudflare status must be a Settings → About item below App details, never part of the Watchtower tab lifecycle.",
   );
 }
 
@@ -475,23 +1568,30 @@ const tabContainer = declarationBody(
   "private var tabContainer: some View",
 );
 if (!tabContainer) {
-  issues.push("Could not locate MainTabView.tabContainer for shared-header validation.");
+  issues.push(
+    "Could not locate MainTabView.tabContainer for shared-header validation.",
+  );
 } else {
   const rootStack = declarationBody(tabContainer, "ZStack(alignment: .bottom)");
-  const flowIndex = rootStack
-    ? topLevelTokenIndex(rootStack, "tabFlow")
-    : -1;
+  const flowIndex = rootStack ? topLevelTokenIndex(rootStack, "tabFlow") : -1;
   const headerIndex = rootStack
     ? topLevelTokenIndex(rootStack, "sharedHeaderOverlay")
     : -1;
-  if (!rootStack || flowIndex === -1 || headerIndex === -1 || headerIndex < flowIndex) {
+  if (
+    !rootStack ||
+    flowIndex === -1 ||
+    headerIndex === -1 ||
+    headerIndex < flowIndex
+  ) {
     issues.push(
       "MainTabView.tabContainer must render sharedHeaderOverlay as a top-level sibling after the tab flow.",
     );
   } else {
     const headerTail = rootStack.slice(headerIndex, headerIndex + 160);
     if (/\.zIndex\s*\(\s*-/.test(headerTail)) {
-      issues.push("sharedHeaderOverlay must not be placed behind the pager with a negative zIndex.");
+      issues.push(
+        "sharedHeaderOverlay must not be placed behind the pager with a negative zIndex.",
+      );
     }
   }
 }
@@ -549,7 +1649,8 @@ if (
 }
 
 const selectTab = declarationBody(mainTab, "private func selectTab");
-const tabSettleIndex = selectTab?.indexOf("completeTabTransitionImmediately()") ?? -1;
+const tabSettleIndex =
+  selectTab?.indexOf("completeTabTransitionImmediately()") ?? -1;
 const sameTabGuardIndex = selectTab?.indexOf("guard tab != selection") ?? -1;
 if (
   !selectTab ||
@@ -595,7 +1696,9 @@ if (
   !dashWorkspace.includes(
     "destinationCanvasPlate.alpha = targetOwnsDestinationCanvas ? 1 : 0",
   ) ||
-  !dashWorkspace.includes("setDestinationCanvasVisible(!settledEntries.isEmpty)")
+  !dashWorkspace.includes(
+    "setDestinationCanvasVisible(!settledEntries.isEmpty)",
+  )
 ) {
   issues.push(
     "Pushed pages must own an opaque full-window canvas plate that joins the route animator.",
@@ -635,7 +1738,10 @@ const sharedHeader = declarationBody(
   mainTab,
   "private var sharedHeaderOverlay: some View",
 );
-const headerBarSlot = declarationBody(mainTab, "private var headerBar: some View");
+const headerBarSlot = declarationBody(
+  mainTab,
+  "private var headerBar: some View",
+);
 if (!sharedHeader || !headerBarSlot) {
   issues.push("Could not locate MainTabView.sharedHeaderOverlay.");
 } else {
@@ -648,7 +1754,9 @@ if (!sharedHeader || !headerBarSlot) {
   // Liquid Glass composites outside a normal opacity group, so a displaced
   // header has to leave the tree rather than fade to zero.
   if (/\.opacity\(\s*headerIsDisplaced/.test(sharedHeader)) {
-    issues.push("A displaced shared header must be removed, not faded to zero opacity.");
+    issues.push(
+      "A displaced shared header must be removed, not faded to zero opacity.",
+    );
   }
   // While the bar is fading out of a tray, its removal transition is plain
   // opacity — mute hits off the mirrored displacement flag or a glass plate
@@ -671,24 +1779,34 @@ if (!headerBar) {
   issues.push("Could not locate DashWorkspaceHeaderBar.");
 } else {
   if (!headerBar.includes("GlassEffectContainer")) {
-    issues.push("DashWorkspaceHeaderBar must own the Liquid Glass morph container.");
+    issues.push(
+      "DashWorkspaceHeaderBar must own the Liquid Glass morph container.",
+    );
   }
   // The header is the store's ONE reader: a page action change must never
   // refresh MainTabView's body while a page transition is settling.
   if (!headerBar.includes("navigator.pageChrome.chrome(")) {
-    issues.push("DashWorkspaceHeaderBar must resolve its slots from the page chrome store.");
+    issues.push(
+      "DashWorkspaceHeaderBar must resolve its slots from the page chrome store.",
+    );
   }
   if (mainTab.includes("pageChrome")) {
-    issues.push("MainTabView must not read page chrome; the shared header is its only reader.");
+    issues.push(
+      "MainTabView must not read page chrome; the shared header is its only reader.",
+    );
   }
 
   for (const identifier of [editorControlIDs[0], editorControlIDs[2]]) {
     if (!headerBar.includes(identifier)) {
-      issues.push(`${identifier} must be declared inside DashWorkspaceHeaderBar.`);
+      issues.push(
+        `${identifier} must be declared inside DashWorkspaceHeaderBar.`,
+      );
     }
   }
   if (!headerBar.includes(editorControlIDs[1])) {
-    issues.push("watchtower-add-chart must be declared inside DashWorkspaceHeaderBar.");
+    issues.push(
+      "watchtower-add-chart must be declared inside DashWorkspaceHeaderBar.",
+    );
   }
 
   const addIndex = headerBar.indexOf("addChartMenu");
@@ -735,9 +1853,7 @@ if (!headerBar) {
   }
 
   // Every workspace page publishes its slots instead of painting them.
-  for (const token of [
-    'DestinationNavigator(chromeHosting: .workspace)',
-  ]) {
+  for (const token of ["DestinationNavigator(chromeHosting: .workspace)"]) {
     if (occurrences(mainTab, token) !== 3) {
       issues.push(
         "All three tab navigators must hand their page chrome to the shared header.",
@@ -823,10 +1939,7 @@ if (!sheetCardStack) {
 } else {
   const headerIndex = topLevelTokenIndex(sheetCardStack, "header()");
   const bodyIndex = topLevelTokenIndex(sheetCardStack, "DashFadedScrollView(");
-  const footerIndex = topLevelTokenIndex(
-    sheetCardStack,
-    "if hasFooter",
-  );
+  const footerIndex = topLevelTokenIndex(sheetCardStack, "if hasFooter");
   if (
     headerIndex === -1 ||
     bodyIndex === -1 ||
@@ -919,7 +2032,9 @@ if (!profileTrayContent || !profileTrayFooter) {
     );
   }
   if (!profileTrayFooter.includes('"profile-tray-sign-out"')) {
-    issues.push("ProfileTrayFooter must own the stable Sign out morph identity.");
+    issues.push(
+      "ProfileTrayFooter must own the stable Sign out morph identity.",
+    );
   }
   if (occurrences(profileTrayFooter, "morphID: signOutMorphID") !== 2) {
     issues.push(
@@ -929,7 +2044,9 @@ if (!profileTrayContent || !profileTrayFooter) {
 }
 
 if (occurrences(mainTab, "ProfileTrayFooter(path:") !== 1) {
-  issues.push("MainTabView must mount ProfileTrayFooter exactly once in tray chrome.");
+  issues.push(
+    "MainTabView must mount ProfileTrayFooter exactly once in tray chrome.",
+  );
 }
 
 // Tray context tone (P3): feature-launched trays carry their feature's tone,
@@ -958,7 +2075,9 @@ if (!homeView.includes("tone: FeatureVisualIdentity.tone(for:")) {
   );
 }
 if (profileSettings.includes("tone: FeatureVisualIdentity.tone(for:")) {
-  issues.push("Profile / Settings trays must stay neutral — remove dashTray tone wiring.");
+  issues.push(
+    "Profile / Settings trays must stay neutral — remove dashTray tone wiring.",
+  );
 }
 
 // Paired tray source (P5): a source morph is legal only when the same action
@@ -1057,8 +2176,12 @@ const customSheet = declarationBody(
 const trayMotion = declarationBody(dashChrome, "private enum DashTrayMotion");
 if (
   !trayMotion?.includes("static let present = DashTheme.Motion.trayPresent") ||
-  !trayMotion?.includes("static let scrimPresent = DashTheme.Motion.scrimPresent") ||
-  !trayMotion?.includes("static let scrimDismiss = DashTheme.Motion.scrimDismiss") ||
+  !trayMotion?.includes(
+    "static let scrimPresent = DashTheme.Motion.scrimPresent",
+  ) ||
+  !trayMotion?.includes(
+    "static let scrimDismiss = DashTheme.Motion.scrimDismiss",
+  ) ||
   !trayMotion?.includes("static let dismiss = DashTheme.Motion.dismiss")
 ) {
   issues.push(
@@ -1097,14 +2220,37 @@ if (
   !customSheet?.includes(
     "min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)",
   ) ||
-  !customSheet?.includes("if !sharedRevealActive { startPresentation() }") ||
   customSheet?.includes("pendingStandardRevealTravel") ||
   customSheet?.includes("openingCardTravel") ||
   customSheet?.includes("closingCardTravel") ||
   customSheet?.includes("DashTrayRevealRules")
 ) {
   issues.push(
-    "Standard Tray must start immediately with Dash's bounded 80...160pt reveal, without the Family full-card travel barrier.",
+    "Standard Tray must keep Dash's bounded 80...160pt reveal, without the Family full-card travel machinery.",
+  );
+}
+// The standard entrance starts one rendered frame after the cover mounts —
+// the same barrier the paired path already takes — because the mount frame
+// pays the hosting-controller presentation, the card's first layout, the
+// scrim material's first composite, and the height-measurement cascade; a
+// time-based spring started inside that long frame skips ahead and reads as
+// a dropped-frame entrance. The launch travel freezes at liftoff
+// (`revealOffset` is not animatable, so a mid-flight change is a jump, not a
+// retarget), and the live card rect is observed only for the anchored morph
+// that consumes it — an unconditional write invalidates the sheet body once
+// per animated frame.
+if (
+  customSheet?.includes("if !sharedRevealActive { startPresentation() }") ||
+  !customSheet?.includes(
+    "guard !sharedRevealActive, !isClosing else { return }",
+  ) ||
+  !customSheet?.includes("entranceRevealOffset = revealOffset") ||
+  !customSheet?.includes("entranceRevealOffset ?? revealOffset") ||
+  !customSheet?.includes("entranceRevealOffset = nil") ||
+  !customSheet?.includes("guard sharedAction != nil else { return }")
+) {
+  issues.push(
+    "Standard Tray entrance must start behind the one-rendered-frame barrier with its travel frozen at liftoff, and the live card rect must be observed only for the anchored morph.",
   );
 }
 const trayScrim = customSheet
@@ -1157,7 +2303,9 @@ const cardIndex = customSheet?.indexOf("DashSheetCard(") ?? -1;
 const actionIndex = customSheet?.indexOf("layer: .action") ?? -1;
 if (
   !customSheet?.includes("drawsSurface: !sharedRevealActive") ||
-  !customSheet?.includes("sharedRevealProgress: sharedRevealActive ? progress : nil") ||
+  !customSheet?.includes(
+    "sharedRevealProgress: sharedRevealActive ? progress : nil",
+  ) ||
   !customSheet?.includes("active: !sharedRevealActive") ||
   shellIndex === -1 ||
   cardIndex === -1 ||
@@ -1186,7 +2334,9 @@ if (
   profileSettings.includes("dashTraySharedDestination(") ||
   /\.dashTray\([^)]*sharedAction:/s.test(profileSettings)
 ) {
-  issues.push("Profile / Settings trays must not use paired source presentation.");
+  issues.push(
+    "Profile / Settings trays must not use paired source presentation.",
+  );
 }
 
 // Result-destination flight (P6): a deliberately single-instance exploration.

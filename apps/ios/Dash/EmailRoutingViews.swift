@@ -236,8 +236,8 @@ let emailRoutingWriteScopes: Set<String> = [
 ///
 /// First paint waits for settings **and** routes / catch-all / addresses, then
 /// commits once. Publishing settings alone used to flip `hasContent` while the
-/// rest was still in flight — skeleton, then a half-empty live body with
-/// Updating…, then the real content.
+/// rest was still in flight — skeleton, then a half-empty live body, then the
+/// real content.
 struct EmailRoutingView: View {
   static let rulePageSize = 50
 
@@ -335,34 +335,11 @@ struct EmailRoutingView: View {
   /// content omits them.
   @ViewBuilder
   private func emailRoutingBody(mode: DashBodyMode) -> some View {
-    if mode.isPlaceholder {
-      DashInfoGroup(title: "Email routing", phase: .loading, placeholderRows: 2) {
-        EmptyView()
-      }
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Routes") {
-        DashListRowPlaceholders(rows: 3)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Destination addresses") {
-        DashListRowPlaceholders(rows: 1)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
+    if !mode.isPlaceholder, let settings, Self.isNotSetUp(settings) {
+      notSetUpState(settings)
         .dashBodySlot(reduceMotion: reduceMotion)
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
-    } else if let settings {
-      if Self.isNotSetUp(settings) {
-        notSetUpState(settings)
-          .dashBodySlot(reduceMotion: reduceMotion)
-      } else {
-        configuredContent(settings)
-      }
+    } else {
+      configuredContent(mode: mode, settings: settings)
     }
   }
 
@@ -402,29 +379,46 @@ struct EmailRoutingView: View {
   // MARK: Configured
 
   @ViewBuilder
-  private func configuredContent(_ settings: EmailRoutingSettings) -> some View {
-    if !featureAllowsWrites {
+  private func configuredContent(
+    mode: DashBodyMode,
+    settings: EmailRoutingSettings?
+  ) -> some View {
+    if !mode.isPlaceholder, !featureAllowsWrites {
       FeatureWriteAccessNotice(
         message: "Read-only — grant Email Routing write access to change routes.",
         scopes: emailRoutingWriteScopes
       )
       .dashBodySlot(reduceMotion: reduceMotion)
     }
-    statusGroup(settings)
-      .dashSectionBoundary(!featureAllowsWrites)
+    if mode.isPlaceholder {
+      DashInfoGroup(title: "Email routing", phase: .loading, placeholderRows: 2) {
+        EmptyView()
+      }
       .dashBodySlot(reduceMotion: reduceMotion)
-    routesSection
-      .dashBodySlot(reduceMotion: reduceMotion)
-    addressesSection
-      .dashBodySlot(reduceMotion: reduceMotion)
-    catchAllSection
-    if settings.supportSubaddress != nil {
-      subaddressingSection
+    } else if let settings {
+      statusGroup(settings)
+        .dashSectionBoundary(!featureAllowsWrites)
         .dashBodySlot(reduceMotion: reduceMotion)
     }
-    if featureAllowsWrites {
-      turnOffRow
+    routesSection(mode: mode)
+    addressesSection(mode: mode)
+    if mode.isPlaceholder {
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
+      DashToggleRowPlaceholder()
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let settings {
+      catchAllSection
+      if settings.supportSubaddress != nil {
+        subaddressingSection
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
+      if featureAllowsWrites {
+        turnOffRow
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
     }
   }
 
@@ -468,28 +462,26 @@ struct EmailRoutingView: View {
   /// `DashListGroup` owns an eager `VStack` (and its own horizontal inset), so
   /// wrapping these would both mount every route at once and double-inset them.
   @ViewBuilder
-  private var routesSection: some View {
+  private func routesSection(mode: DashBodyMode) -> some View {
+    let showsAction = !mode.isPlaceholder && featureAllowsWrites
     DashListGroupHeader(
       title: DashL10n.ui("Routes"),
-      actionTitle: featureAllowsWrites ? DashL10n.ui("Add") : nil,
-      actionIcon: featureAllowsWrites ? SolarAsset.plus : nil,
-      action: featureAllowsWrites ? { createsRule = true } : nil
+      actionTitle: showsAction ? DashL10n.ui("Add") : nil,
+      actionIcon: showsAction ? SolarAsset.plus : nil,
+      action: showsAction ? { createsRule = true } : nil
     )
     .padding(.horizontal, 4)
     .dashSectionBoundary()
     .padding(.bottom, 8)
+    .dashBodySlot(reduceMotion: reduceMotion)
 
-    if let rulesError, rules.isEmpty {
-      // Failed, not empty: the list stays silent about how many routes exist.
-      DashNotice(kind: .warning, message: rulesError)
-        .dashListCardInset()
-    } else if rules.isEmpty {
-      DashEmptyState(
-        icon: SolarAsset.Content.mailbox,
-        title: "No routes",
-        message: "Add a custom address to start forwarding mail.")
-    } else {
-      dashListCardRows(items: rules) { rule in
+    if mode.isPlaceholder || !rules.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: rules,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion
+      ) { rule in
         Button {
           editedRule = rule
         } label: {
@@ -508,14 +500,27 @@ struct EmailRoutingView: View {
         .buttonStyle(DashSurfaceButtonStyle())
         .accessibilityLabel(emailRoutingRouteAccessibilityLabel(rule))
       }
-      if pageState.canLoadMore || isLoadingMore {
+      if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
         DashInfiniteScrollFooter(
           loaded: rules.count,
           isLoading: isLoadingMore
         ) {
           Task { await loadMoreRules() }
         }
+        .dashBodySlot(reduceMotion: reduceMotion)
       }
+    } else if let rulesError {
+      // Failed, not empty: the list stays silent about how many routes exist.
+      DashNotice(kind: .warning, message: rulesError)
+        .dashListCardInset()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      DashEmptyState(
+        icon: SolarAsset.Content.mailbox,
+        title: "No routes",
+        message: "Add a custom address to start forwarding mail."
+      )
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -577,12 +582,20 @@ struct EmailRoutingView: View {
 
   // MARK: §4 Destination addresses
 
-  /// Exactly one row, so this is a legitimate `DashListGroup` — bounded content
-  /// in an eager stack, unlike Routes above.
-  private var addressesSection: some View {
-    DashListGroup(title: "Destination addresses") {
-      // One row: `DashListGroup` supplies the horizontal inset, so the row
-      // takes none of its own.
+  @ViewBuilder
+  private func addressesSection(mode: DashBodyMode) -> some View {
+    let destinationRows = [EmailRoutingDestinationRow.manageAddresses]
+    DashListGroupHeader(title: DashL10n.ui("Destination addresses"))
+      .padding(.horizontal, 4)
+      .dashSectionBoundary()
+      .padding(.bottom, 8)
+      .dashBodySlot(reduceMotion: reduceMotion)
+    dashModeListRows(
+      mode: mode,
+      items: destinationRows,
+      placeholderRows: 1,
+      reduceMotion: reduceMotion
+    ) { _ in
       DashListGroupLink(value: .emailAddresses) {
         DashListRow(
           title: DashL10n.string("Manage addresses"),
@@ -597,7 +610,6 @@ struct EmailRoutingView: View {
         .accessibilityLabel(manageAddressesAccessibilityLabel())
       }
     }
-    .dashSectionBoundary()
   }
 
   private var unverifiedAddressCount: Int {
@@ -850,10 +862,10 @@ struct EmailRoutingView: View {
       subaddressingUpdating = false
       catchAllUpdating = false
     }
-    // Cold stays on the skeleton; warm pull-to-refresh keeps content and the
-    // Updating… strip. Never flip `settings` early — `hasContent` follows it,
-    // and a settings-only paint left Routes / Catch-all still loading inside
-    // an already-"live" body.
+    // Cold stays on the skeleton; warm pull-to-refresh keeps content in place
+    // while the native refresh control owns feedback. Never flip `settings`
+    // early — `hasContent` follows it, and a settings-only paint left Routes /
+    // Catch-all still loading inside an already-"live" body.
     if settings == nil || force { loading = true }
     if force { isLoadingMore = false }
 
@@ -1169,6 +1181,12 @@ struct EmailRoutingView: View {
     model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
     await load(force: true)
   }
+}
+
+private enum EmailRoutingDestinationRow: String, Identifiable {
+  case manageAddresses
+
+  var id: Self { self }
 }
 
 /// Identifies which flavour of the enable tray is open. Carrying the zone name

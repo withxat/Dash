@@ -102,24 +102,26 @@ struct ZoneDetailView: View {
   /// rule never rides on a localizable string.
   private static let allTools: [ZoneTool] = [
     ZoneTool(
-      title: "DNS", icon: SolarAsset.globus, route: Destination.dns,
+      id: .dns, title: "DNS", icon: SolarAsset.globus, route: Destination.dns,
       blurb: "Records and proxy status"),
     ZoneTool(
-      title: "HTTP traffic", icon: SolarAsset.chart, route: Destination.zoneAnalytics,
+      id: .httpTraffic, title: "HTTP traffic", icon: SolarAsset.chart,
+      route: Destination.zoneAnalytics,
       blurb: "Requests, visitors, and bandwidth"),
     ZoneTool(
-      title: "Web analytics", icon: SolarAsset.graph,
+      id: .webAnalytics, title: "Web analytics", icon: SolarAsset.graph,
       route: Destination.zoneWebAnalytics,
       blurb: "Browser-reported page views and visits",
       needsWebAnalyticsSite: true),
     ZoneTool(
-      title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF,
+      id: .waf, title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF,
       blurb: "Blocks, countries, Under Attack"),
     ZoneTool(
-      title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
+      id: .cache, title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
       blurb: "Development Mode, Always Online, Cache Level"),
     ZoneTool(
-      title: "Settings", icon: SolarAsset.settings, route: Destination.zoneSettings,
+      id: .settings, title: "Settings", icon: SolarAsset.settings,
+      route: Destination.zoneSettings,
       blurb: "Security level, SSL, and HTTPS"),
   ]
 
@@ -437,14 +439,6 @@ struct ZoneDetailView: View {
         .dashBodyPlaceholder(true)
         .dashSectionBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Actions") {
-        // The cold reserve is the full toolset, Web analytics included: this
-        // stack over-reserves by design, and a placeholder row that recedes
-        // reads better than one that inserts under the live rows.
-        DashListRowPlaceholders(rows: Self.allTools.count)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
     } else if let zone = displayedZone {
       if isActive(zone) {
         identifiersGroup
@@ -456,9 +450,6 @@ struct ZoneDetailView: View {
             .dashBodySlot(reduceMotion: reduceMotion)
         }
         registrationGroup()
-        primaryActions()
-          .dashSectionBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
       } else {
         // Dash only serves active domains. Everything else is setup chrome:
         // nameservers + activation check while Cloudflare still needs them,
@@ -482,6 +473,10 @@ struct ZoneDetailView: View {
             .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
+    }
+
+    if mode.isPlaceholder || displayedZoneIsActive {
+      primaryActions(mode: mode)
     }
   }
 
@@ -584,22 +579,36 @@ struct ZoneDetailView: View {
     )
   }
 
-  private func primaryActions() -> some View {
-    DashListGroup(title: "Actions") {
-      dashListCardRows(items: tools, inset: false) { tool in
-        let destination = tool.route(zoneID)
-        DashListGroupLink(value: destination) {
-          DashListRow(
-            title: DashL10n.ui(tool.title),
-            subtitle: DashL10n.ui(tool.blurb),
-            icon: tool.icon,
-            showsIconPlate: false)
-        }
+  @ViewBuilder
+  private func primaryActions(mode: DashBodyMode) -> some View {
+    DashListGroupHeader(title: DashL10n.ui("Actions"))
+      .padding(.horizontal, 4)
+      .dashSectionBoundary()
+      .padding(.bottom, 8)
+      .dashBodySlot(reduceMotion: reduceMotion)
+    dashModeListRows(
+      mode: mode,
+      items: tools,
+      placeholderRows: Self.allTools.count,
+      reduceMotion: reduceMotion
+    ) { tool in
+      let destination = tool.route(zoneID)
+      DashListGroupLink(value: destination) {
+        DashListRow(
+          title: DashL10n.ui(tool.title),
+          subtitle: DashL10n.ui(tool.blurb),
+          icon: tool.icon,
+          showsIconPlate: false)
       }
     }
   }
 
   /// Dash tools (DNS, analytics, cache, settings) only run on active zones.
+  private var displayedZoneIsActive: Bool {
+    guard let displayedZone else { return false }
+    return isActive(displayedZone)
+  }
+
   private func isActive(_ zone: CloudflareZone) -> Bool {
     (zone.status ?? "").lowercased() == "active"
   }
@@ -1065,6 +1074,16 @@ private struct DomainCardColorSwatch: View {
 /// One row on zone detail. Every row routes to a dedicated destination, which
 /// declares its own scopes in `requiredScopes(for:)`.
 private struct ZoneTool: Identifiable {
+  enum ID: Hashable {
+    case dns
+    case httpTraffic
+    case webAnalytics
+    case waf
+    case cache
+    case settings
+  }
+
+  let id: ID
   let title: String
   let icon: String
   let route: (String) -> Destination
@@ -1073,5 +1092,4 @@ private struct ZoneTool: Identifiable {
   /// Web analytics, which needs a site added for the domain before its screen
   /// has anything at all.
   var needsWebAnalyticsSite: Bool = false
-  var id: String { title }
 }

@@ -138,22 +138,7 @@ private func dashSkeletonPulseFactor(at date: Date) -> Double {
     + (1 - DashSkeletonStyle.pulseFloor) * wave
 }
 
-/// Placeholder rows that match `DashListRow` / recessed card geometry. Prefer
-/// `dashModeListRows` inside a mode-aware `DashFeatureList` body so cold and
-/// live share one card; this group remains for section-cold veils.
-struct DashListSkeleton: View {
-  var rows: Int = DashBodyPlaceholderDepth.listRows
-
-  var body: some View {
-    DashListGroup(title: " ") {
-      DashListRowPlaceholders(rows: rows)
-    }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
-  }
-}
-
-/// One catalog row stand-in for index-stable handoff — same 36pt tone plate +
+/// One catalog row stand-in for the mode-aware handoff — same 36pt tone plate +
 /// title/subtitle column as `DashListRow` / `CatalogFeatureIcon.list` /
 /// Resources and detail Actions rows.
 struct DashListRowPlaceholder: View {
@@ -184,10 +169,10 @@ struct DashListRowPlaceholder: View {
   }
 }
 
-/// The `DashListSkeleton` row shape without the group chrome: the placeholder
-/// for a *section* of list rows — deployments, domains — that fetches on its
-/// own and veils failures with `dashSectionFailure`.
-struct DashListRowPlaceholders: View {
+/// A grouped backing shape only for a *section-cold* list or failure veil. The
+/// primary cold → live path must use `dashModeListRows`, which owns per-row
+/// identity and transitions.
+struct DashSectionListRowPlaceholders: View {
   var rows: Int = 3
 
   var body: some View {
@@ -427,6 +412,7 @@ extension View {
 private struct DashColdOverlayModifier: ViewModifier {
   let copy: DashColdOverlayCopy?
   let extent: DashColdFailureExtent
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   func body(content: Content) -> some View {
     ZStack {
@@ -447,10 +433,17 @@ private struct DashColdOverlayModifier: ViewModifier {
           DashColdFailureExtentFloor(extent: extent)
           DashColdOverlayCopyView(copy: copy)
         }
-        .transition(.opacity)
+        .transition(copyTransition)
       }
     }
-    .animation(DashTheme.Motion.content, value: copy != nil)
+  }
+
+  private var copyTransition: AnyTransition {
+    .asymmetric(
+      insertion: .identity,
+      removal: .opacity.animation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.failureDismiss)
+    )
   }
 }
 
@@ -478,79 +471,123 @@ private struct DashColdFailureExtentFloor: View {
   }
 }
 
-/// The translucent canvas wash a cold failure / empty tip lands on: clear at
-/// the top so the frozen skeleton still peeks through, densest from mid to
-/// bottom so the centred copy sits on readable canvas.
+/// The translucent canvas wash a cold failure / empty tip lands on: dense at
+/// the bottom, then dissolving upward across two list-row seats so only the
+/// first couple of frozen placeholders remain legible.
 enum DashColdFailureWashRamp {
-  /// Full-bleed stops, `location` 0 = top of the veil, 1 = bottom.
-  /// Peak opacity is translucent on purpose so bars still read through.
-  static let stops: [(location: CGFloat, opacity: Double)] = [
-    (0, 0),
-    (0.18, 0.05),
-    (0.36, 0.22),
-    (0.5, 0.55),
-    (0.62, 0.78),
-    (0.78, 0.88),
-    (1, 0.88),
-  ]
+  /// Physical rather than viewport-relative: large phones must not stretch the
+  /// ramp until all four default skeleton rows remain visible.
+  static let fadeDepth = DashTheme.Layout.subtitledListRow * 2
+  static let peakOpacity = 0.96
 
-  static var fade: LinearGradient {
-    LinearGradient(
-      stops: stops.map {
-        Gradient.Stop(color: DashTheme.canvas.opacity($0.opacity), location: $0.location)
-      },
-      startPoint: .top,
-      endPoint: .bottom)
+  /// `location` 0 = bottom and 1 = top. The dense plateau reaches the lower
+  /// edge of the second 72pt skeleton seat, then eases to clear toward the top.
+  static func stops(for height: CGFloat) -> [(location: CGFloat, opacity: Double)] {
+    let normalizedHeight = max(height, fadeDepth)
+    func location(topDepth: CGFloat) -> CGFloat {
+      1 - min(max(topDepth, 0), normalizedHeight) / normalizedHeight
+    }
+
+    let candidates = [
+      (0, peakOpacity),
+      (location(topDepth: fadeDepth), peakOpacity),
+      (location(topDepth: fadeDepth * 0.75), 0.58),
+      (location(topDepth: fadeDepth * 0.5), 0.16),
+      (location(topDepth: fadeDepth * 0.25), 0.03),
+      (1, 0),
+    ]
+    return candidates.reduce(into: []) { result, stop in
+      // A very short custom skeleton can put the bottom and plateau at the
+      // same normalized location. Keep the denser first stop rather than hand
+      // LinearGradient duplicate coordinates.
+      guard result.last?.location != stop.0 else { return }
+      result.append((location: stop.0, opacity: stop.1))
+    }
+  }
+}
+
+enum DashColdFailureWashLayerRules {
+  static func mountsBackdropMaterial(reduceTransparency: Bool) -> Bool {
+    !reduceTransparency
   }
 }
 
 private struct DashColdFailureWash: View {
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
   var body: some View {
-    DashColdFailureWashRamp.fade
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
+    GeometryReader { geometry in
+      let stops = DashColdFailureWashRamp.stops(for: geometry.size.height)
+      ZStack {
+        if DashColdFailureWashLayerRules.mountsBackdropMaterial(
+          reduceTransparency: reduceTransparency
+        ) {
+          Rectangle()
+            .fill(.ultraThinMaterial)
+            .mask {
+              ramp(stops: stops, tint: .white)
+            }
+        }
+
+        ramp(stops: stops, tint: DashTheme.canvas)
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+
+  /// The material and tint share one physical ramp, so frozen rows defocus
+  /// before the canvas wash finishes hiding them without forming two edges.
+  private func ramp(
+    stops: [(location: CGFloat, opacity: Double)],
+    tint: Color
+  ) -> LinearGradient {
+    LinearGradient(
+      stops: stops.map {
+        Gradient.Stop(color: tint.opacity($0.opacity), location: $0.location)
+      },
+      startPoint: .bottom,
+      endPoint: .top)
   }
 }
 
 private struct DashColdOverlayCopyView: View {
   let copy: DashColdOverlayCopy
-  /// Drives the bottom → top stagger; flipped on appear so the reveal always
+  /// Drives the top → bottom stagger; flipped on appear so the reveal always
   /// plays when copy lands on an already-mounted skeleton.
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  private var hasAction: Bool { copy.actionTitle != nil && copy.action != nil }
 
   var body: some View {
     // Fill the veil, centre the tip. Wash is full-bleed behind so the top stays
     // open over the skeleton and the mid/bottom carries the copy.
     ZStack {
       DashColdFailureWash()
-        .opacity(revealed || reduceMotion ? 1 : 0)
+        .opacity(revealed ? 1 : 0)
         .animation(
-          reduceMotion ? nil : DashTheme.Motion.content,
+          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content,
           value: revealed)
 
       VStack(spacing: DashTheme.Spacing.comfortable) {
         SolarIcon(asset: copy.icon, size: 34, color: DashTheme.strong)
           .frame(width: 72, height: 72)
           .background(DashTheme.recessed, in: Circle())
-          .dashReveal(hasAction ? 3 : 2, shown: revealed)
+          .dashItemStagger(visible: revealed, index: 0)
         Text(DashL10n.ui(copy.title))
           .dashTextStyle(.emptyTitle)
           .foregroundStyle(DashTheme.strong)
           .multilineTextAlignment(.center)
-          .dashReveal(hasAction ? 2 : 1, shown: revealed)
+          .dashItemStagger(visible: revealed, index: 1)
         Text(DashL10n.ui(copy.message))
           .dashTextStyle(.supporting)
           .foregroundStyle(DashTheme.subtle)
           .multilineTextAlignment(.center)
           .fixedSize(horizontal: false, vertical: true)
-          .dashReveal(hasAction ? 1 : 0, shown: revealed)
+          .dashItemStagger(visible: revealed, index: 2)
         if let actionTitle = copy.actionTitle, let action = copy.action {
           DashSecondaryPillButton(title: actionTitle, action: action)
             .padding(.top, 6)
-            .dashReveal(0, shown: revealed)
+            .dashItemStagger(visible: revealed, index: 3)
         }
       }
       .frame(maxWidth: 440)
@@ -558,7 +595,7 @@ private struct DashColdOverlayCopyView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .onAppear {
-      // Next run-loop beat so the hidden pose (offset + blur) commits before
+      // Next run-loop beat so the hidden lifted pose commits before
       // `shown` flips — otherwise the stagger lands already at rest.
       DispatchQueue.main.async { revealed = true }
     }

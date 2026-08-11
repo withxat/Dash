@@ -1054,7 +1054,7 @@ struct KVKeyDetailView: View {
   }
 
   /// The shape the value lands on: the editor's recessed frame with a few
-  /// code-line bars, matching the app's skeleton language (`DashListSkeleton`).
+  /// code-line bars, matching the app's skeleton language (`DashListRowPlaceholder`).
   private func editorSkeleton(height: CGFloat) -> some View {
     RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
       .fill(DashTheme.recessed)

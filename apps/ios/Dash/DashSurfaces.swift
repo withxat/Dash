@@ -837,7 +837,7 @@ struct DashTwoToneListGroup<Content: View>: View {
   var action: (() -> Void)?
   /// Kept as a builder (not an eagerly stored `Content`) so the two-tone list
   /// environment is in force when child `@Environment` values resolve —
-  /// capturing `content()` in `init` made Watchtower's CF status row miss the
+  /// capturing `content()` in `init` made About's CF status row miss the
   /// flag and fall through to the 72pt catalog seat.
   @ViewBuilder var content: () -> Content
 
@@ -1125,20 +1125,20 @@ private struct DashSectionFailureVeil: View {
   var body: some View {
     VStack(spacing: DashTheme.Spacing.compact) {
       SolarIcon(asset: SolarAsset.Content.danger, size: 22, color: DashTheme.subtle)
-        .dashReveal(2, shown: revealed)
+        .dashItemStagger(visible: revealed, index: 0)
       Text(DashL10n.ui(message))
         .dashTextStyle(.footnote)
         .foregroundStyle(DashTheme.subtle)
         .multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
-        .dashReveal(1, shown: revealed)
+        .dashItemStagger(visible: revealed, index: 1)
       if let retry {
         Button(DashL10n.ui(actionTitle), action: retry)
           .dashTextStyle(.supportingSemibold)
           .foregroundStyle(DashTheme.brand)
           .buttonStyle(DashPressButtonStyle())
           .dashCompactHitTarget()
-          .dashReveal(0, shown: revealed)
+          .dashItemStagger(visible: revealed, index: 2)
       }
     }
     .padding(.vertical, DashTheme.Spacing.card)

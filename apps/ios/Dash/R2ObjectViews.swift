@@ -599,21 +599,14 @@ struct R2BucketSettingsView: View {
     if mode.isPlaceholder {
       DashToggleRowPlaceholder()
         .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroup(title: "Custom domains") {
-        DashListRowPlaceholders(rows: 2)
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       managedCard
         .dashBodySlot(reduceMotion: reduceMotion)
-      customDomainsGroup
-        .dashSectionBoundary()
+    }
+    customDomainsSection(mode: mode)
+    if !mode.isPlaceholder, featureAllowsWrites {
+      deleteBucketRow
         .dashBodySlot(reduceMotion: reduceMotion)
-      if featureAllowsWrites {
-        deleteBucketRow
-          .dashBodySlot(reduceMotion: reduceMotion)
-      }
     }
   }
 
@@ -655,56 +648,62 @@ struct R2BucketSettingsView: View {
   }
 
   @ViewBuilder
-  private var customDomainsGroup: some View {
-    DashListGroup(
-      title: "Custom domains",
-      actionTitle: featureAllowsWrites ? "Add" : nil,
-      actionIcon: featureAllowsWrites ? SolarAsset.plus : nil,
-      action: featureAllowsWrites ? { addsDomain = true } : nil
-    ) {
-      if custom.isEmpty {
+  private func customDomainsSection(mode: DashBodyMode) -> some View {
+    let showsAction = !mode.isPlaceholder && featureAllowsWrites
+    DashListGroupHeader(
+      title: DashL10n.ui("Custom domains"),
+      actionTitle: showsAction ? DashL10n.ui("Add") : nil,
+      actionIcon: showsAction ? SolarAsset.plus : nil,
+      action: showsAction ? { addsDomain = true } : nil
+    )
+    .padding(.horizontal, 4)
+    .dashSectionBoundary()
+    .padding(.bottom, 8)
+
+    if mode.isPlaceholder || !custom.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: custom,
+        placeholderRows: 2,
+        reduceMotion: reduceMotion
+      ) { domain in
+        Button {
+          deleteError = nil
+          selectedDomain = domain
+        } label: {
+          DashListRow(
+            title: domain.domain,
+            subtitle: domain.statusLabel,
+            icon: SolarAsset.Content.globe,
+            iconColor: domain.isServing
+              ? FeatureVisualIdentity.catalogColor(for: .r2) : DashTheme.iconMuted,
+            showsChevron: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityLabel("\(domain.domain), \(domain.statusLabel)")
+      }
+    } else {
+      DashCard {
         switch customPhase {
         case .content:
-          DashCard {
-            Text(
-              "Connect a domain from one of this account's zones to serve the bucket without r2.dev limits."
-            )
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
-          }
+          Text(
+            "Connect a domain from one of this account's zones to serve the bucket without r2.dev limits."
+          )
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity, alignment: .leading)
         case .loading, .failed:
-          // The rows the answer will land on hold their ground; a failure
-          // veils over them instead of swapping in the empty-state
-          // instructions for a list that never arrived.
-          DashCard {
-            DashInfoRowPlaceholders(rows: 2)
-              .dashSectionFailure(
-                customFailureMessage,
-                retry: retryCustomDomains)
-          }
-        }
-      } else {
-        dashListCard {
-          dashListCardRows(items: custom) { domain in
-            Button {
-              deleteError = nil
-              selectedDomain = domain
-            } label: {
-              DashListRow(
-                title: domain.domain,
-                subtitle: domain.statusLabel,
-                icon: SolarAsset.Content.globe,
-                iconColor: domain.isServing
-                  ? FeatureVisualIdentity.catalogColor(for: .r2) : DashTheme.iconMuted,
-                showsChevron: false
-              )
-            }
-            .buttonStyle(DashSurfaceButtonStyle())
-            .accessibilityLabel("\(domain.domain), \(domain.statusLabel)")
-          }
+          // A section failure keeps its own backing shape; it is not a second
+          // primary handoff path.
+          DashInfoRowPlaceholders(rows: 2)
+            .dashSectionFailure(
+              customFailureMessage,
+              retry: retryCustomDomains)
         }
       }
+      .dashListCardInset()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 

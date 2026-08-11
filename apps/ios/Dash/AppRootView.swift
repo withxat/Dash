@@ -643,34 +643,9 @@ private struct OnboardingView: View {
 
 }
 
-private struct OnboardingStaggerModifier: ViewModifier {
-  let visible: Bool
-  let index: Int
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func body(content: Content) -> some View {
-    content
-      .opacity(visible ? 1 : 0)
-      .offset(y: visible || reduceMotion ? 0 : 18)
-      .animation(animation, value: visible)
-      .allowsHitTesting(visible)
-  }
-
-  private var animation: Animation {
-    if reduceMotion {
-      return DashTheme.Motion.reduced
-    }
-
-    let delay = Double(index) * 0.055
-    return visible
-      ? DashTheme.Motion.softLanding(duration: 0.3).delay(delay)
-      : .timingCurve(0.4, 0, 1, 1, duration: 0.2).delay(delay)
-  }
-}
-
 extension View {
   fileprivate func onboardingStagger(visible: Bool, index: Int) -> some View {
-    modifier(OnboardingStaggerModifier(visible: visible, index: index))
+    dashItemStagger(visible: visible, index: index)
   }
 
   /// Brand lockup titles (28pt base) that scale with Dynamic Type. The

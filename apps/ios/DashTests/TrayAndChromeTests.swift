@@ -417,6 +417,71 @@ import UIKit
   #expect(DashHeaderScrimMetrics.tintMiddleY == 56)
 }
 
+/// Scroll edges reuse the header's restrained variable blur, including the
+/// inverse source seat needed to rotate the package's vertical-only mask onto
+/// physical left/right edges. Semantic leading/trailing must mirror in RTL.
+@Test func scrollEdgeVariableBlurMapsAllFourEdges() {
+  #expect(DashScrollEdgeBlurRules.maxBlurRadius == DashHeaderScrimMetrics.maxBlurRadius)
+  #expect(DashScrollEdgeBlurRules.startOffset == DashHeaderScrimMetrics.startOffset)
+
+  #expect(
+    DashScrollEdgeBlurRules.physicalEdge(.leading, layoutDirection: .leftToRight)
+      == .leading
+  )
+  #expect(
+    DashScrollEdgeBlurRules.physicalEdge(.leading, layoutDirection: .rightToLeft)
+      == .trailing
+  )
+  #expect(
+    DashScrollEdgeBlurRules.physicalEdge(.trailing, layoutDirection: .rightToLeft)
+      == .leading
+  )
+
+  #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .top) == 0)
+  #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .bottom) == 0)
+  #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .leading) == -90)
+  #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .trailing) == 90)
+
+  let verticalSeat = CGSize(width: 32, height: 240)
+  #expect(
+    DashScrollEdgeBlurRules.sourceSize(forPhysicalEdge: .top, in: verticalSeat)
+      == verticalSeat
+  )
+  #expect(
+    DashScrollEdgeBlurRules.sourceSize(forPhysicalEdge: .leading, in: verticalSeat)
+      == CGSize(width: 240, height: 32)
+  )
+
+  #expect(
+    DashScrollEdgeBlurRules.mountsVariableBlur(
+      style: .fadeAndBlur,
+      reduceTransparency: false,
+      strength: 0.05
+    )
+  )
+  #expect(
+    !DashScrollEdgeBlurRules.mountsVariableBlur(
+      style: .fadeAndBlur,
+      reduceTransparency: false,
+      strength: 0
+    )
+  )
+  #expect(
+    !DashScrollEdgeBlurRules.mountsVariableBlur(
+      style: .fadeAndBlur,
+      reduceTransparency: true,
+      strength: 1
+    )
+  )
+  #expect(
+    !DashScrollEdgeBlurRules.mountsVariableBlur(
+      style: .fade,
+      reduceTransparency: false,
+      strength: 1
+    )
+  )
+}
+
 /// The conditionally mounted backdrop enters far enough from its final
 /// position to hide the filter's first frame. A full-width atmospheric layer
 /// gets the same calm duration in either direction, with a smaller exit lift.

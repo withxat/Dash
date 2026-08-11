@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-28",
+  "generatedAt": "2026-08-11",
   "scopes": [
     {
       "id": "account-api-gateway.write",
@@ -1157,13 +1157,18 @@
       "category": "developer_platform"
     },
     {
-      "id": "realtime.realtime",
+      "id": "realtime.write",
       "name": "Realtime",
       "category": "developer_platform"
     },
     {
       "id": "realtime.admin",
       "name": "Realtime Admin",
+      "category": "developer_platform"
+    },
+    {
+      "id": "realtime.read",
+      "name": "Realtime Read",
       "category": "developer_platform"
     },
     {
@@ -1207,6 +1212,11 @@
       "category": "developer_platform"
     },
     {
+      "id": "workers-scripts.edit",
+      "name": "Workers Editor",
+      "category": "developer_platform"
+    },
+    {
       "id": "workers-kv-storage.metadata_read",
       "name": "Workers KV Storage Metadata Read",
       "category": "developer_platform"
@@ -1219,6 +1229,11 @@
     {
       "id": "workers-kv-storage.write",
       "name": "Workers KV Storage Write",
+      "category": "developer_platform"
+    },
+    {
+      "id": "workers-scripts.metadata_read",
+      "name": "Workers Metadata Read-Only",
       "category": "developer_platform"
     },
     {
@@ -1284,6 +1299,11 @@
     {
       "id": "workers-routes.write",
       "name": "Workers Routes Write",
+      "category": "developer_platform"
+    },
+    {
+      "id": "workers-scripts.bind",
+      "name": "Workers Scripts Bind",
       "category": "developer_platform"
     },
     {

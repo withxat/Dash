@@ -158,7 +158,7 @@ extension Destination {
     case .zoneEmailRouting(let id): .init(namespace: "zone-email-routing", value: id)
     case .auditLogs: .init(namespace: "account", value: "audit-logs")
     case .watchtowerInbox: .init(namespace: "watchtower", value: "inbox")
-    case .cloudflareStatus: .init(namespace: "watchtower", value: "cloudflare-status")
+    case .cloudflareStatus: .init(namespace: "settings", value: "cloudflare-status")
     case .emailAddresses: .init(namespace: "email-routing", value: "addresses")
     case .registrarDomain(let domain): .init(namespace: "registration", value: domain)
     case .chartDetail(let detail): .init(namespace: "chart", value: detail.title)

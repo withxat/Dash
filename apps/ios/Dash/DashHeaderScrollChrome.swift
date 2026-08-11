@@ -933,7 +933,7 @@ enum DashScreenClipScope {
   }
 }
 
-// MARK: - Scroll edge fades
+// MARK: - Scroll edge effects
 
 enum DashScrollEdgeFadeMetrics {
   /// How far a fade reaches in from its edge.
@@ -942,41 +942,115 @@ enum DashScrollEdgeFadeMetrics {
   static let softRange: CGFloat = 36
 }
 
-enum DashScrollEdgeStyle {
+enum DashScrollEdgeStyle: Equatable {
   case fade
   case fadeAndBlur
 }
 
+enum DashScrollEdgeBlurRules {
+  /// Match the deliberately restrained header frost instead of introducing a
+  /// second, heavier blur language for small scrolling viewports.
+  static let maxBlurRadius = DashHeaderScrimMetrics.maxBlurRadius
+  static let startOffset = DashHeaderScrimMetrics.startOffset
+
+  static func physicalEdge(_ edge: Edge, layoutDirection: LayoutDirection) -> Edge {
+    switch (edge, layoutDirection) {
+    case (.leading, .rightToLeft): .trailing
+    case (.trailing, .rightToLeft): .leading
+    default: edge
+    }
+  }
+
+  static func direction(forPhysicalEdge edge: Edge) -> VariableBlurDirection {
+    switch edge {
+    case .bottom: .blurredBottomClearTop
+    case .top, .leading, .trailing: .blurredTopClearBottom
+    }
+  }
+
+  /// VariableBlur exposes a vertical mask only. Rotate that same live backdrop
+  /// for the two physical side edges; positive SwiftUI angles rotate clockwise.
+  static func rotationDegrees(forPhysicalEdge edge: Edge) -> Double {
+    switch edge {
+    case .leading: -90
+    case .trailing: 90
+    case .top, .bottom: 0
+    }
+  }
+
+  /// A rotated `width × height` representable would otherwise paint as
+  /// `height × width` outside its narrow strip. Lay it out in the inverse seat
+  /// first so its transformed pixels land exactly in the viewport edge.
+  static func sourceSize(forPhysicalEdge edge: Edge, in size: CGSize) -> CGSize {
+    switch edge {
+    case .leading, .trailing: CGSize(width: size.height, height: size.width)
+    case .top, .bottom: size
+    }
+  }
+
+  static func opacity(for strength: CGFloat) -> CGFloat {
+    guard strength.isFinite else { return 0 }
+    return min(max(strength, 0), 1)
+  }
+
+  static func mountsVariableBlur(
+    style: DashScrollEdgeStyle,
+    reduceTransparency: Bool,
+    strength: CGFloat
+  ) -> Bool {
+    style == .fadeAndBlur && !reduceTransparency && opacity(for: strength) > 0
+  }
+}
+
 /// The one scroll-edge treatment in the app: the scrolling surface's own
 /// colour ramped to clear over the last `thickness` points, optionally paired
-/// with a masked backdrop material so detailed content defocuses before it
-/// disappears instead of meeting a hard viewport cut.
+/// with a variable-radius backdrop so detailed content progressively defocuses
+/// before it disappears instead of meeting a hard viewport cut.
 ///
 /// `DashFadedScrollView` mounts two of these on a capped vertical viewport and
 /// ramps their opacity with the scroll offset. A region that cannot hand its
 /// scroll view over — the Glow carousel owns `contentMargins`, `scrollPosition`
-/// and a target behaviour — mounts the blurred style itself. The material is a
-/// static, compositor-owned strip; no blur value follows scroll or Tray motion.
+/// and a target behaviour — mounts the blurred style itself. The filter is a
+/// static, compositor-owned strip; only the whole strip's opacity follows the
+/// vertical overflow affordance, never its blur radius.
 struct DashScrollEdgeEffect: View {
   let edge: Edge
   /// The fill *behind* the scroll content, so the ramp lands on it invisibly.
   let surface: Color
   var thickness: CGFloat = DashScrollEdgeFadeMetrics.thickness
   var style: DashScrollEdgeStyle = .fade
+  /// Static horizontal edges keep the default. Dynamic vertical edges pass
+  /// their quantized overflow strength so an invisible filter can leave the tree.
+  var strength: CGFloat = 1
 
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.layoutDirection) private var layoutDirection
 
   var body: some View {
     ZStack {
-      if style == .fadeAndBlur && !reduceTransparency {
-        Rectangle().fill(.ultraThinMaterial)
-          .mask {
-            LinearGradient(
-              colors: [.white, .clear],
-              startPoint: startPoint,
-              endPoint: endPoint
+      if DashScrollEdgeBlurRules.mountsVariableBlur(
+        style: style,
+        reduceTransparency: reduceTransparency,
+        strength: strength
+      ) {
+        GeometryReader { proxy in
+          let sourceSize = DashScrollEdgeBlurRules.sourceSize(
+            forPhysicalEdge: physicalEdge,
+            in: proxy.size
+          )
+          VariableBlurView(
+            maxBlurRadius: DashScrollEdgeBlurRules.maxBlurRadius,
+            direction: DashScrollEdgeBlurRules.direction(forPhysicalEdge: physicalEdge),
+            startOffset: DashScrollEdgeBlurRules.startOffset
+          )
+          .frame(width: sourceSize.width, height: sourceSize.height)
+          .rotationEffect(
+            .degrees(
+              DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: physicalEdge)
             )
-          }
+          )
+          .frame(width: proxy.size.width, height: proxy.size.height)
+        }
       }
 
       LinearGradient(
@@ -989,16 +1063,22 @@ struct DashScrollEdgeEffect: View {
       width: isHorizontal ? thickness : nil,
       height: isHorizontal ? nil : thickness
     )
+    .clipped()
+    .opacity(DashScrollEdgeBlurRules.opacity(for: strength))
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
 
+  private var physicalEdge: Edge {
+    DashScrollEdgeBlurRules.physicalEdge(edge, layoutDirection: layoutDirection)
+  }
+
   private var isHorizontal: Bool {
-    edge == .leading || edge == .trailing
+    physicalEdge == .leading || physicalEdge == .trailing
   }
 
   private var startPoint: UnitPoint {
-    switch edge {
+    switch physicalEdge {
     case .top: .top
     case .bottom: .bottom
     case .leading: .leading
@@ -1007,7 +1087,7 @@ struct DashScrollEdgeEffect: View {
   }
 
   private var endPoint: UnitPoint {
-    switch edge {
+    switch physicalEdge {
     case .top: .bottom
     case .bottom: .top
     case .leading: .trailing
@@ -1016,9 +1096,10 @@ struct DashScrollEdgeEffect: View {
   }
 }
 
-/// Vertical `ScrollView` with soft top/bottom surface fades for nested or
-/// height-capped regions where overflow is easy to miss (Domains viewport,
-/// build log, tray bodies). Full-page canvas scrolls stay plain `ScrollView`.
+/// Vertical `ScrollView` with progressive top/bottom blur-and-surface fades for
+/// nested or height-capped regions where overflow is easy to miss (Domains
+/// viewport, build log, tray bodies). Full-page canvas scrolls stay plain
+/// `ScrollView`.
 ///
 /// Pass the fill *behind* the scroll content as `surface` so the fade matches
 /// (sheet, card, domains tint, …). Nested instances are safe: each owns its
@@ -1027,7 +1108,7 @@ struct DashScrollEdgeEffect: View {
 /// instances, is what logged "tried to update multiple times per frame").
 ///
 /// Opacity ramps over the first ~36pt past an edge (tracks the finger); large
-/// layout jumps ease over 0.22s so the fade never pops.
+/// layout jumps ease over 0.22s so the edge treatment never pops.
 struct DashFadedScrollView<Content: View>: View {
   var surface: Color
   var maxHeight: CGFloat? = nil
@@ -1068,12 +1149,20 @@ struct DashFadedScrollView<Content: View>: View {
     .modifier(DashScrollDismissesKeyboard(enabled: dismissesKeyboardInteractively))
     .frame(maxHeight: maxHeight)
     .overlay(alignment: .top) {
-      DashScrollEdgeEffect(edge: .top, surface: surface)
-        .opacity(topOpacity)
+      DashScrollEdgeEffect(
+        edge: .top,
+        surface: surface,
+        style: .fadeAndBlur,
+        strength: topOpacity
+      )
     }
     .overlay(alignment: .bottom) {
-      DashScrollEdgeEffect(edge: .bottom, surface: surface)
-        .opacity(bottomOpacity)
+      DashScrollEdgeEffect(
+        edge: .bottom,
+        surface: surface,
+        style: .fadeAndBlur,
+        strength: bottomOpacity
+      )
     }
   }
 
