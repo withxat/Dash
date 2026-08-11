@@ -285,7 +285,7 @@ extension CloudflareClient {
   /// name on the object, and an opaque hex id renders as an unlabelled row.
   /// Filtering happens after the pagination bookkeeping so a page full of
   /// hex ids cannot be mistaken for a short final page.
-  public func listRegistrarDomainsLegacy(accountID: String, perPage: Int = 50) async throws
+  public func listRegistrarDomainsPageNumbered(accountID: String, perPage: Int = 50) async throws
     -> [RegistrarDomain]
   {
     let path = "/accounts/\(accountID)/registrar/domains"
@@ -293,7 +293,7 @@ extension CloudflareClient {
     var seenIdentifiers: Set<String> = []
     var pageNumber = 1
 
-    while pageNumber <= Self.registrarLegacyPageLimit {
+    while pageNumber <= Self.registrarPageNumberedPageLimit {
       let page: Page<RegistrarDomain> = try await list(
         path, query: ["page": String(pageNumber), "per_page": String(perPage)])
       domains.append(
@@ -315,10 +315,10 @@ extension CloudflareClient {
     return domains.filter { ($0.identifier ?? "").contains(".") }
   }
 
-  /// Hard bound on the legacy loop. The endpoint reports `total_pages`, so this
+  /// Hard bound on the page-numbered loop. The endpoint reports `total_pages`, so this
   /// only ever fires for a server that stops reporting it and keeps answering
   /// full pages.
-  static let registrarLegacyPageLimit = 40
+  static let registrarPageNumberedPageLimit = 40
 }
 
 // MARK: - Lenient decoding

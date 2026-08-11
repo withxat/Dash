@@ -216,6 +216,108 @@ public enum AccountAnalyticsGranularity: Hashable, Sendable {
   }
 }
 
+/// Account-scoped overview tiles for a rolling window (Watchtower).
+/// HTTP fields come from `httpRequestsOverviewAdaptiveGroups`; Workers fields
+/// from a single-bucket `workersInvocationsAdaptive` (P90 over the whole window).
+public struct AccountAnalyticsOverview: Hashable, Sendable {
+  public var webRequests: Int
+  public var bytes: Int64
+  public var cacheRate: Double
+  public var clientErrorRate: Double
+  public var encryptedRequestRate: Double
+  public var encryptedBytes: Int64
+  public var workerInvocations: Int
+  public var workerErrors: Int
+  public var cpuTimeP90Us: Double
+  public var hours: Int
+
+  public init(
+    webRequests: Int,
+    bytes: Int64,
+    cacheRate: Double,
+    clientErrorRate: Double,
+    encryptedRequestRate: Double,
+    encryptedBytes: Int64,
+    workerInvocations: Int,
+    workerErrors: Int,
+    cpuTimeP90Us: Double,
+    hours: Int
+  ) {
+    self.webRequests = webRequests
+    self.bytes = bytes
+    self.cacheRate = cacheRate
+    self.clientErrorRate = clientErrorRate
+    self.encryptedRequestRate = encryptedRequestRate
+    self.encryptedBytes = encryptedBytes
+    self.workerInvocations = workerInvocations
+    self.workerErrors = workerErrors
+    self.cpuTimeP90Us = cpuTimeP90Us
+    self.hours = hours
+  }
+}
+
+/// One bucket in an account HTTP or Workers series.
+///
+/// HTTP rows fill traffic / bandwidth / ratio fields; Workers rows fill
+/// invocations / errors / CPU. Unused fields stay zero.
+public struct AccountAnalyticsPoint: Hashable, Sendable, Identifiable {
+  public var id: String { datetime }
+  public var datetime: String
+  public var requests: Int
+  public var bytes: Int64
+  public var errors: Int
+  public var cacheRate: Double
+  public var clientErrorRate: Double
+  public var encryptedRequestRate: Double
+  public var encryptedBytes: Int64
+  public var cpuTimeP90Us: Double
+
+  public init(
+    datetime: String,
+    requests: Int,
+    bytes: Int64 = 0,
+    errors: Int = 0,
+    cacheRate: Double = 0,
+    clientErrorRate: Double = 0,
+    encryptedRequestRate: Double = 0,
+    encryptedBytes: Int64 = 0,
+    cpuTimeP90Us: Double = 0
+  ) {
+    self.datetime = datetime
+    self.requests = requests
+    self.bytes = bytes
+    self.errors = errors
+    self.cacheRate = cacheRate
+    self.clientErrorRate = clientErrorRate
+    self.encryptedRequestRate = encryptedRequestRate
+    self.encryptedBytes = encryptedBytes
+    self.cpuTimeP90Us = cpuTimeP90Us
+  }
+}
+
+/// Totals plus HTTP / Workers time series for one Watchtower range.
+public struct AccountAnalyticsSnapshot: Hashable, Sendable {
+  public var overview: AccountAnalyticsOverview
+  public var previousOverview: AccountAnalyticsOverview?
+  public var httpPoints: [AccountAnalyticsPoint]
+  public var workerPoints: [AccountAnalyticsPoint]
+  /// Wall-clock time the snapshot was fetched; used for “Updated …” chrome.
+  public var fetchedAt: Date
+
+  public init(
+    overview: AccountAnalyticsOverview,
+    previousOverview: AccountAnalyticsOverview? = nil,
+    httpPoints: [AccountAnalyticsPoint],
+    workerPoints: [AccountAnalyticsPoint],
+    fetchedAt: Date = .now
+  ) {
+    self.overview = overview
+    self.previousOverview = previousOverview
+    self.httpPoints = httpPoints
+    self.workerPoints = workerPoints
+    self.fetchedAt = fetchedAt
+  }
+}
 private struct AccountAnalyticsData: Decodable, Sendable {
   let viewer: Viewer
 

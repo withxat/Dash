@@ -159,9 +159,9 @@ extension NetworkTests {
     #expect(registrations.last?.autoRenew == false)
   }
 
-  // MARK: Legacy domains
+  // MARK: Page-numbered domains
 
-  @Test func registrarLegacyDomainsPaginateByPageNumberAndDropUnnamedRows() async throws {
+  @Test func registrarPageNumberedDomainsPaginateAndDropUnnamedRows() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()
     let session = mockSession { request in
@@ -194,7 +194,8 @@ extension NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let domains = try await client.listRegistrarDomainsLegacy(accountID: "acct", perPage: 2)
+    let domains = try await client.listRegistrarDomainsPageNumbered(
+      accountID: "acct", perPage: 2)
 
     #expect(recorder.paths == ["1", "2"])
     // The opaque-hex row is dropped: the identifier is the only name on the
@@ -359,6 +360,104 @@ extension NetworkTests {
       #expect(!error.isNotFound)
       #expect(error.errorDescription == "Unauthorized to access requested resource")
     }
+  }
+}
+
+extension NetworkTests {
+  @Test func rdapParsesRegistrarAndExpiry() throws {
+    let body = #"""
+      {
+        "ldhName": "example.com",
+        "status": ["client transfer prohibited"],
+        "events": [
+          {"eventAction": "registration", "eventDate": "1995-08-14T04:00:00Z"},
+          {"eventAction": "expiration", "eventDate": "2027-08-13T04:00:00Z"}
+        ],
+        "nameservers": [{"ldhName": "a.iana-servers.net"}],
+        "entities": [{
+          "roles": ["registrar"],
+          "vcardArray": ["vcard", [["version", {}, "text", "4.0"], ["fn", {}, "text", "RESERVED"]]]
+        }]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "example.com"))
+    #expect(registration.registrar == "RESERVED")
+    #expect(registration.expiresOn == "2027-08-13T04:00:00Z")
+    #expect(registration.nameservers == ["a.iana-servers.net"])
+  }
+
+  @Test func rdapStripsRootDotFromNameservers() throws {
+    // bbc.co.uk answers RDAP with fully-qualified nameservers; the relay's WHOIS
+    // leg returns them bare. Both feed the same zone card, so they must agree.
+    let body = #"""
+      {
+        "ldhName": "bbc.co.uk",
+        "nameservers": [{"ldhName": "ddns0.bbc.co.uk."}, {"ldhName": "dns0.bbc.com."}]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "bbc.co.uk"))
+    #expect(registration.nameservers == ["ddns0.bbc.co.uk", "dns0.bbc.com"])
+  }
+
+  @Test func rdapPrefersRegistrarNameOverIanaHandle() throws {
+    // Verisign answers .com with handle "1910" *and* the name. Showing the
+    // handle put a bare IANA registrar id on the zone card.
+    let body = #"""
+      {
+        "ldhName": "cloudflare.com",
+        "nameservers": [{"ldhName": "NS3.CLOUDFLARE.COM."}],
+        "entities": [{
+          "roles": ["registrar"],
+          "handle": "1910",
+          "publicIds": [{"type": "IANA Registrar ID", "identifier": "1910"}],
+          "vcardArray": ["vcard", [["version", {}, "text", "4.0"],
+                                   ["fn", {}, "text", "Cloudflare, Inc."]]]
+        }]
+      }
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "cloudflare.com"))
+    #expect(registration.registrar == "Cloudflare, Inc.")
+    // Same normalization as the relay: lowercased, root dot stripped.
+    #expect(registration.nameservers == ["ns3.cloudflare.com"])
+  }
+
+  @Test func rdapFallsBackToHandleWhenNoVCardName() throws {
+    let body = #"""
+      {"ldhName": "example.test",
+       "entities": [{"roles": ["registrar"], "handle": "Registry Operator"}]}
+      """#
+    let registration = try #require(
+      RdapClient.parse(Data(body.utf8), fallbackDomain: "example.test"))
+    #expect(registration.registrar == "Registry Operator")
+  }
+
+  @Test func rdapLookupDecodesRelaySnapshot() async throws {
+    let session = mockSession { request in
+      #expect(request.url?.path == "/api/registration/xat.sh")
+      return (
+        200,
+        Data(
+          #"""
+          {"domain":"xat.sh","status":["clientTransferProhibited"],
+           "registrar":"Cloudflare, Inc",
+           "registeredOn":"2024-10-23T06:49:51Z",
+           "expiresOn":"2027-10-23T06:49:51Z",
+           "updatedOn":"2026-05-05T02:33:29Z",
+           "nameservers":["jason.ns.cloudflare.com","nola.ns.cloudflare.com"]}
+          """#.utf8)
+      )
+    }
+    let registration = try #require(
+      try await RdapClient.lookup(
+        domain: "xat.sh",
+        relayBaseURL: URL(string: "https://dash.example.test")!,
+        session: session))
+    #expect(registration.registrar == "Cloudflare, Inc")
+    #expect(registration.expiresOn == "2027-10-23T06:49:51Z")
+    #expect(registration.nameservers.count == 2)
   }
 }
 
