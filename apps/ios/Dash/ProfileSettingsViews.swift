@@ -1669,16 +1669,34 @@ private enum AboutDestination {
   static let x = URL(string: "https://x.com/withxat")!
 }
 
+enum DashBuildMetadata {
+  static let commitResourceName = "DashGitCommit"
+
+  static func shortCommit(from rawValue: String?) -> String? {
+    guard let rawValue else { return nil }
+    let candidate = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard candidate.count >= 7, candidate.allSatisfy(\.isHexDigit) else { return nil }
+    return String(candidate.prefix(7)).lowercased()
+  }
+
+  static func shortCommit(in bundle: Bundle) -> String? {
+    guard
+      let url = bundle.url(forResource: commitResourceName, withExtension: "txt"),
+      let rawValue = try? String(contentsOf: url, encoding: .utf8)
+    else { return nil }
+    return shortCommit(from: rawValue)
+  }
+}
+
 /// About screen (Settings → About): one calm brand lockup followed by the
-/// product, build, privacy, and developer facts people actually come here to
-/// find.
+/// app, build, and developer facts people actually come here to find.
 struct AboutView: View {
   private var version: String {
     Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
   }
 
   private var build: String {
-    Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    DashBuildMetadata.shortCommit(in: .main) ?? "—"
   }
 
   private var copyrightYear: Int {
@@ -1757,16 +1775,9 @@ private struct AboutBrandHero: View {
         .accessibilityHidden(true)
         .frame(height: 136)
 
-      VStack(spacing: 4) {
-        Text("Dash")
-          .dashTextStyle(.emptyTitle)
-          .foregroundStyle(DashTheme.strong)
-        Text("A native Cloudflare client for iPhone")
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-      }
+      Text("Dash")
+        .dashTextStyle(.emptyTitle)
+        .foregroundStyle(DashTheme.strong)
     }
     .frame(maxWidth: .infinity)
     .padding(.top, 8)

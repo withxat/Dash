@@ -646,6 +646,7 @@
 				D00000000000000000000001 /* Frameworks */,
 				D00000000000000000000021 /* Resources */,
 				D00000000000000000000017 /* Embed Foundation Extensions */,
+				D00000000000000000000036 /* Embed Git Commit */,
 			);
 			buildRules = (
 			);
@@ -890,6 +891,32 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D00000000000000000000036 /* Embed Git Commit */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../..",
+				"$(SRCROOT)/scripts/write-git-commit.sh",
+			);
+			name = "Embed Git Commit";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/DashGitCommit.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$SRCROOT/scripts/write-git-commit.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		D00000000000000000000011 /* Sources */ = {

@@ -49,6 +49,23 @@ import UIKit
       .isConfigured)
 }
 
+@Test func buildMetadataUsesASevenCharacterCommitIdentity() {
+  #expect(
+    DashBuildMetadata.shortCommit(from: "0E4EFE5F473BF3AD2A381F2CFA842AB791318FF4")
+      == "0e4efe5")
+  #expect(DashBuildMetadata.shortCommit(from: "\nabcdef0123 \n") == "abcdef0")
+  #expect(DashBuildMetadata.shortCommit(from: "1234567") == "1234567")
+  #expect(DashBuildMetadata.shortCommit(from: "1") == nil)
+  #expect(DashBuildMetadata.shortCommit(from: "not-a-sha") == nil)
+  #expect(DashBuildMetadata.shortCommit(from: nil) == nil)
+}
+
+@Test func hostedAppEmbedsItsBuildCommitIdentity() throws {
+  let commit = try #require(DashBuildMetadata.shortCommit(in: .main))
+  #expect(commit.count == 7)
+  #expect(commit.allSatisfy(\.isHexDigit))
+}
+
 @Test func appLanguageResolvesStoredPreference() {
   #expect(DashAppLanguage.resolved(stored: "system") == .system)
   #expect(DashAppLanguage.resolved(stored: "en") == .english)

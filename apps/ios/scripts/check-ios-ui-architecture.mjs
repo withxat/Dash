@@ -27,6 +27,11 @@ const SOLAR_GENERATOR_PATH = join(
   ROOT,
   "apps/ios/scripts/generate-solar-icons.mjs",
 );
+const IOS_PROJECT_PATH = join(ROOT, "apps/ios/Dash.xcodeproj/project.pbxproj");
+const GIT_COMMIT_SCRIPT_PATH = join(
+  ROOT,
+  "apps/ios/scripts/write-git-commit.sh",
+);
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
@@ -45,6 +50,8 @@ const profileSettings = stripSwiftComments(
 );
 const solarIcons = stripSwiftComments(readFileSync(SOLAR_ICONS_PATH, "utf8"));
 const solarGenerator = readFileSync(SOLAR_GENERATOR_PATH, "utf8");
+const iosProject = readFileSync(IOS_PROJECT_PATH, "utf8");
+const gitCommitScript = readFileSync(GIT_COMMIT_SCRIPT_PATH, "utf8");
 const issues = [];
 
 for (const token of [
@@ -291,6 +298,41 @@ if (
 ) {
   issues.push(
     "Settings' About row must use the linear Info Circle asset; the About page header is a separate icon surface.",
+  );
+}
+
+const aboutView = declarationBody(profileSettings, "struct AboutView: View");
+const buildMetadata = declarationBody(profileSettings, "enum DashBuildMetadata");
+const dashTarget = declarationBody(
+  iosProject,
+  "A00000000000000000000002 /* Dash */ =",
+);
+const gitCommitPhase = declarationBody(
+  iosProject,
+  "D00000000000000000000036 /* Embed Git Commit */ =",
+);
+const embeddedExtensionsIndex =
+  dashTarget?.indexOf("D00000000000000000000017 /* Embed Foundation Extensions */") ?? -1;
+const gitCommitPhaseIndex =
+  dashTarget?.indexOf("D00000000000000000000036 /* Embed Git Commit */") ?? -1;
+if (
+  !aboutView?.includes("DashBuildMetadata.shortCommit(in: .main) ?? \"—\"") ||
+  !buildMetadata?.includes("candidate.allSatisfy(\\.isHexDigit)") ||
+  embeddedExtensionsIndex === -1 ||
+  gitCommitPhaseIndex <= embeddedExtensionsIndex ||
+  !gitCommitPhase?.includes("alwaysOutOfDate = 1") ||
+  !gitCommitPhase?.includes("DashGitCommit.txt") ||
+  !gitCommitPhase?.includes("$(SRCROOT)/../..") ||
+  !gitCommitPhase?.includes("scripts/write-git-commit.sh") ||
+  !gitCommitScript.includes("SCRIPT_OUTPUT_FILE_0") ||
+  !gitCommitScript.includes("DASH_GIT_COMMIT") ||
+  !gitCommitScript.includes("CI_COMMIT") ||
+  !gitCommitScript.includes("GITHUB_SHA") ||
+  !gitCommitScript.includes("CI_XCODEBUILD_ACTION") ||
+  !gitCommitScript.includes("rev-parse --verify HEAD")
+) {
+  issues.push(
+    "About Build must show a validated seven-character commit embedded by the Dash target's final build phase, never CFBundleVersion.",
   );
 }
 
