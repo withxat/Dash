@@ -155,6 +155,7 @@ dist/
 *.ipa
 *.apk
 *.aab
+build/
 .build/
 .swiftpm/
 DerivedData/
