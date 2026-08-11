@@ -145,30 +145,30 @@ struct DashWorkspaceWashInspiration: Equatable, Sendable {
 
 enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   case none
-  case cloudflare
+  // Keep the established raw value so existing local and iCloud preferences
+  // continue to resolve after the code-facing preset name becomes color-based.
+  case orange = "cloudflare"
   case red
-  case vercel
+  case slate
   case blue
   case green
-  case bun
   case pink
   case purple
   case teal
 
   static let storageKey = "dash.workspace_wash"
-  static let defaultPreset = DashWorkspaceWashPreset.cloudflare
+  static let defaultPreset = DashWorkspaceWashPreset.orange
 
   var id: String { rawValue }
 
   var displayName: String {
     switch self {
     case .none: DashL10n.string("None")
-    case .cloudflare: DashL10n.string("Ember")
+    case .orange: DashL10n.string("Ember")
     case .red: DashL10n.string("Beat")
-    case .vercel: DashL10n.string("Void")
+    case .slate: DashL10n.string("Void")
     case .blue: DashL10n.string("Orbit")
     case .green: DashL10n.string("Sprout")
-    case .bun: DashL10n.string("Toast")
     case .pink: DashL10n.string("Bloom")
     case .purple: DashL10n.string("Pulse")
     case .teal: DashL10n.string("Tide")
@@ -180,7 +180,7 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
   /// not read like integrations or promises of an exact palette match.
   var inspiration: DashWorkspaceWashInspiration? {
     switch self {
-    case .cloudflare:
+    case .orange:
       DashWorkspaceWashInspiration(
         source: "Cloudflare",
         description: DashL10n.string(
@@ -190,11 +190,6 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
         source: "NetEase Cloud Music 网易云音乐",
         description: DashL10n.string(
           "NetEase Cloud Music’s vivid red inspired this bold, rhythmic glow."))
-    case .bun:
-      DashWorkspaceWashInspiration(
-        source: "Bun",
-        description: DashL10n.string(
-          "Bun’s warm, playful palette inspired this soft peach glow."))
     case .green:
       DashWorkspaceWashInspiration(
         source: "Coolapk 酷安",
@@ -210,7 +205,7 @@ enum DashWorkspaceWashPreset: String, CaseIterable, Identifiable, Sendable {
         source: "Netlify",
         description: DashL10n.string(
           "Netlify’s teal identity inspired this crisp, lively glow."))
-    case .none, .vercel, .blue, .purple:
+    case .none, .slate, .blue, .purple:
       nil
     }
   }

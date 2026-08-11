@@ -2372,17 +2372,6 @@
         }
       }
     },
-    "Bun’s warm, playful palette inspired this soft peach glow." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "灵感来自 Bun 温暖而俏皮的配色，化作柔和的桃色光晕。"
-          }
-        }
-      }
-    },
     "Business Website" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13260,17 +13249,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "时间"
-          }
-        }
-      }
-    },
-    "Toast" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "烘焙"
           }
         }
       }

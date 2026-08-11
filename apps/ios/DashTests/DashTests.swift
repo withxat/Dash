@@ -119,33 +119,31 @@ import UIKit
 }
 
 @Test func workspaceWashPresetResolvesStoredPreference() {
-  #expect(DashWorkspaceWashPreset.defaultPreset == .cloudflare)
+  #expect(DashWorkspaceWashPreset.defaultPreset == .orange)
   #expect(DashWorkspaceWashPreset.resolved(stored: "none") == .none)
-  #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "cloudflare") == .orange)
   #expect(DashWorkspaceWashPreset.resolved(stored: "red") == .red)
-  #expect(DashWorkspaceWashPreset.resolved(stored: "vercel") == .vercel)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "slate") == .slate)
   #expect(DashWorkspaceWashPreset.resolved(stored: "blue") == .blue)
   #expect(DashWorkspaceWashPreset.resolved(stored: "green") == .green)
-  #expect(DashWorkspaceWashPreset.resolved(stored: "bun") == .bun)
   #expect(DashWorkspaceWashPreset.resolved(stored: "pink") == .pink)
   #expect(DashWorkspaceWashPreset.resolved(stored: "purple") == .purple)
   #expect(DashWorkspaceWashPreset.resolved(stored: "teal") == .teal)
-  #expect(DashWorkspaceWashPreset.resolved(stored: "unknown") == .cloudflare)
+  #expect(DashWorkspaceWashPreset.resolved(stored: "unknown") == .orange)
 
   #expect(DashWorkspaceWashPreset.none.trayTone == nil)
   for preset in DashWorkspaceWashPreset.allCases where preset != .none {
     #expect(preset.trayTone == .workspaceWash(preset))
   }
 
-  #expect(DashWorkspaceWashPreset.cloudflare.displayName != "Cloudflare")
+  #expect(DashWorkspaceWashPreset.orange.displayName != "Cloudflare")
   #expect(DashWorkspaceWashPreset.none.inspiration == nil)
-  #expect(DashWorkspaceWashPreset.vercel.inspiration == nil)
+  #expect(DashWorkspaceWashPreset.slate.inspiration == nil)
   #expect(DashWorkspaceWashPreset.blue.inspiration == nil)
   #expect(DashWorkspaceWashPreset.purple.inspiration == nil)
-  #expect(DashWorkspaceWashPreset.cloudflare.inspiration?.source == "Cloudflare")
+  #expect(DashWorkspaceWashPreset.orange.inspiration?.source == "Cloudflare")
   #expect(
     DashWorkspaceWashPreset.red.inspiration?.source == "NetEase Cloud Music 网易云音乐")
-  #expect(DashWorkspaceWashPreset.bun.inspiration?.source == "Bun")
   #expect(DashWorkspaceWashPreset.green.inspiration?.source == "Coolapk 酷安")
   #expect(DashWorkspaceWashPreset.pink.inspiration?.source == "bilibili 哔哩哔哩")
   #expect(DashWorkspaceWashPreset.teal.inspiration?.source == "Netlify")
@@ -161,6 +159,8 @@ import UIKit
 
   let rawValues = DashWorkspaceWashPreset.allCases.map(\.rawValue)
   #expect(Set(rawValues).count == rawValues.count)
+  #expect(!rawValues.contains("bun"))
+  #expect(!rawValues.contains("vercel"))
 }
 
 @Test func workspaceWashPickerKeepsPortraitCardsCenteredPastItsEdgeFade() {

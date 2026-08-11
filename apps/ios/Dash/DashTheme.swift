@@ -638,11 +638,11 @@ enum DashTheme {
     switch preset {
     case .none:
       .clear
-    case .cloudflare:
+    case .orange:
       workspaceCloudflareWash
     case .red:
       workspaceNetEaseMusicWash
-    case .vercel:
+    case .slate:
       adaptive(
         light: 0x7C8DA6, dark: 0xCBD5E1, highLight: 0x526177, highDark: 0xF1F5F9)
     case .blue:
@@ -650,9 +650,6 @@ enum DashTheme {
         light: 0x2B7FFF, dark: 0x51A2FF, highLight: 0x1447E6, highDark: 0x8EC5FF)
     case .green:
       workspaceCoolapkWash
-    case .bun:
-      adaptive(
-        light: 0xF3A978, dark: 0xFFC69F, highLight: 0xB85C2C, highDark: 0xFFE0C8)
     case .pink:
       workspaceBilibiliWash
     case .purple:
@@ -951,8 +948,8 @@ extension DashWorkspaceWashPreset {
 
   fileprivate var usesDarkTrayLabel: Bool {
     switch self {
-    case .cloudflare, .red, .green, .bun, .pink, .teal: true
-    case .none, .vercel, .blue, .purple: false
+    case .orange, .red, .green, .pink, .teal: true
+    case .none, .slate, .blue, .purple: false
     }
   }
 }
