@@ -277,6 +277,41 @@ const workspaceGlowPicker = declarationBody(
   profileSettings,
   "private struct WorkspaceGlowPickerTray: View",
 );
+const scrollEdgeEffect = declarationBody(
+  headerChrome,
+  "struct DashScrollEdgeEffect: View",
+);
+const fadedScrollView = declarationBody(
+  headerChrome,
+  "struct DashFadedScrollView<Content: View>: View",
+);
+if (
+  !scrollEdgeEffect?.includes(
+    "@Environment(\\.accessibilityReduceTransparency) private var reduceTransparency",
+  ) ||
+  !scrollEdgeEffect?.includes("var style: DashScrollEdgeStyle = .fade") ||
+  !scrollEdgeEffect?.includes(
+    "if style == .fadeAndBlur && !reduceTransparency",
+  ) ||
+  !scrollEdgeEffect?.includes("Rectangle().fill(.ultraThinMaterial)") ||
+  !scrollEdgeEffect?.includes("LinearGradient(") ||
+  !scrollEdgeEffect?.includes(".mask {") ||
+  !scrollEdgeEffect?.includes(".allowsHitTesting(false)") ||
+  !scrollEdgeEffect?.includes(".accessibilityHidden(true)") ||
+  scrollEdgeEffect?.includes("@State") ||
+  scrollEdgeEffect?.includes(".animation(") ||
+  scrollEdgeEffect?.includes(".blur(") ||
+  scrollEdgeEffect?.includes("VariableBlurView(")
+) {
+  issues.push(
+    "Shared scroll edges must offer a static fade-plus-backdrop-blur style, fall back to the surface fade under Reduce Transparency, and avoid animated state.",
+  );
+}
+if (!fadedScrollView || fadedScrollView.includes("style: .fadeAndBlur")) {
+  issues.push(
+    "DashFadedScrollView must keep its dynamic vertical edges fade-only; backdrop blur is opt-in for the Glow carousel.",
+  );
+}
 if (!workspaceGlowPicker) {
   issues.push("Could not locate WorkspaceGlowPickerTray for state ownership validation.");
 } else {
@@ -301,6 +336,16 @@ if (!workspaceGlowPicker) {
       );
       break;
     }
+  }
+  if (
+    occurrences(workspaceGlowPicker, "DashScrollEdgeEffect(") !== 2 ||
+    occurrences(workspaceGlowPicker, "style: .fadeAndBlur") !== 2 ||
+    !workspaceGlowPicker.includes("edge: .leading") ||
+    !workspaceGlowPicker.includes("edge: .trailing")
+  ) {
+    issues.push(
+      "WorkspaceGlowPickerTray must use the shared horizontal fade-plus-blur edge effect.",
+    );
   }
   if (
     workspaceGlowPicker.includes("_centeredPresetID = State(") ||

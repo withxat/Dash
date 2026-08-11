@@ -942,27 +942,49 @@ enum DashScrollEdgeFadeMetrics {
   static let softRange: CGFloat = 36
 }
 
-/// The one scroll-edge fade in the app: the scrolling surface's own colour
-/// ramped to clear over the last `thickness` points, so content dissolves into
-/// the surface instead of meeting a hard viewport cut.
+enum DashScrollEdgeStyle {
+  case fade
+  case fadeAndBlur
+}
+
+/// The one scroll-edge treatment in the app: the scrolling surface's own
+/// colour ramped to clear over the last `thickness` points, optionally paired
+/// with a masked backdrop material so detailed content defocuses before it
+/// disappears instead of meeting a hard viewport cut.
 ///
 /// `DashFadedScrollView` mounts two of these on a capped vertical viewport and
 /// ramps their opacity with the scroll offset. A region that cannot hand its
 /// scroll view over — the Glow carousel owns `contentMargins`, `scrollPosition`
-/// and a target behaviour — mounts them itself instead, so both read as the
-/// same affordance rather than a colour ramp beside a system backdrop blur.
-struct DashScrollEdgeFade: View {
+/// and a target behaviour — mounts the blurred style itself. The material is a
+/// static, compositor-owned strip; no blur value follows scroll or Tray motion.
+struct DashScrollEdgeEffect: View {
   let edge: Edge
   /// The fill *behind* the scroll content, so the ramp lands on it invisibly.
   let surface: Color
   var thickness: CGFloat = DashScrollEdgeFadeMetrics.thickness
+  var style: DashScrollEdgeStyle = .fade
+
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   var body: some View {
-    LinearGradient(
-      colors: [surface, surface.opacity(0)],
-      startPoint: startPoint,
-      endPoint: endPoint
-    )
+    ZStack {
+      if style == .fadeAndBlur && !reduceTransparency {
+        Rectangle().fill(.ultraThinMaterial)
+          .mask {
+            LinearGradient(
+              colors: [.white, .clear],
+              startPoint: startPoint,
+              endPoint: endPoint
+            )
+          }
+      }
+
+      LinearGradient(
+        colors: [surface, surface.opacity(0)],
+        startPoint: startPoint,
+        endPoint: endPoint
+      )
+    }
     .frame(
       width: isHorizontal ? thickness : nil,
       height: isHorizontal ? nil : thickness
@@ -1046,11 +1068,11 @@ struct DashFadedScrollView<Content: View>: View {
     .modifier(DashScrollDismissesKeyboard(enabled: dismissesKeyboardInteractively))
     .frame(maxHeight: maxHeight)
     .overlay(alignment: .top) {
-      DashScrollEdgeFade(edge: .top, surface: surface)
+      DashScrollEdgeEffect(edge: .top, surface: surface)
         .opacity(topOpacity)
     }
     .overlay(alignment: .bottom) {
-      DashScrollEdgeFade(edge: .bottom, surface: surface)
+      DashScrollEdgeEffect(edge: .bottom, surface: surface)
         .opacity(bottomOpacity)
     }
   }

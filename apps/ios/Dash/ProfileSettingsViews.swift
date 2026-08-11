@@ -1117,22 +1117,23 @@ private struct WorkspaceGlowPickerTray: View {
           centeredPresetID = selectedPreset.id
           centeredPresetPositionIsReady = true
         }
-        // Unramped, unlike the vertical fades: `contentMargins` centres the end
-        // cards, so at either extreme the fade lands on empty tray surface and
-        // paints that surface over itself — invisible without any offset to
-        // track. Mid-scroll it dissolves the passing card exactly like the
-        // Domains viewport dissolves its rows.
+        // Unramped, unlike the dynamic vertical fades: `contentMargins` centres
+        // the end cards, so at either extreme the treatment lands on empty tray
+        // surface and paints that surface over itself — invisible without any
+        // offset to track. Mid-scroll it defocuses, then dissolves, a passing card.
         .overlay(alignment: .leading) {
-          DashScrollEdgeFade(
+          DashScrollEdgeEffect(
             edge: .leading,
             surface: DashTheme.Sheet.background,
-            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth)
+            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
+            style: .fadeAndBlur)
         }
         .overlay(alignment: .trailing) {
-          DashScrollEdgeFade(
+          DashScrollEdgeEffect(
             edge: .trailing,
             surface: DashTheme.Sheet.background,
-            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth)
+            thickness: WorkspaceGlowPickerMetrics.edgeFadeWidth,
+            style: .fadeAndBlur)
         }
       }
       .frame(height: WorkspaceGlowPickerMetrics.viewportHeight)
