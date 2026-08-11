@@ -14,6 +14,10 @@ Dash for Cloudflare is a native iPhone Cloudflare client. The installed name is 
 | --- | --- |
 | `apps/ios` | Swift 6, SwiftUI, Observation, iOS 17+ app and tests |
 | `packages/cloudflare-api` | Platform-neutral Swift Package for OAuth and Cloudflare APIs |
+| `packages/gradient-avatars` | Deterministic gradient avatars for SwiftUI |
+| `packages/SwiftDitherKit` | Vendored dithered SwiftUI charts and chart interaction |
+| `packages/SwiftGlobeKit` | SwiftUI globe visualization for analytics |
+| `packages/BlossomColorPicker` | Vendored SwiftUI color picker |
 | `apps/web` | Vite + React landing page and Hono edge app at `dash.xat.sh` (worker `dash-relay`); hosts the OAuth callback and the RDAP/WHOIS registration snapshot |
 | `packages/ui` | Web-only component library; do not import it into Dash |
 
@@ -25,7 +29,7 @@ pnpm ios:build      # signed simulator build
 pnpm ios:device     # signed device build
 pnpm ios:test       # unit + UI tests on an iPhone 17 Pro simulator (Xcode 26+)
 pnpm api:test       # Swift Package tests, no simulator needed
-pnpm typecheck      # turbo typecheck + api:test + full simulator build (slow)
+pnpm typecheck      # turbo typecheck + api:test + avatars:test + blossom:test + dither:test + globe:test + ios:build (slow)
 pnpm lint
 pnpm lint:fix
 pnpm lint:l10n      # literal DashL10n / Text keys must exist in Localizable.xcstrings (part of lint)

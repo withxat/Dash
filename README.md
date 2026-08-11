@@ -25,7 +25,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 | **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, Account / Domain Metrics widgets, default Cloudflare webhook delivery with alert-policy management, integrations, multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, an app-icon unread badge, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation.
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
@@ -74,13 +74,23 @@ pnpm typecheck
 
 The API client stores tokens through a `TokenStore` abstraction. Dash implements it with a device-only Keychain service. The client serializes refreshes, retries one request after a 401, and clears credentials on sign-out.
 
-## Landing + OAuth relay (`apps/web`)
+## Landing + edge relay (`apps/web`)
 
 `apps/web` deploys as worker `dash-relay` on `https://dash.xat.sh`. It serves the
-marketing landing page, redirects OAuth to `dash://oauth/callback`, and keeps
-the `/push/*` APNs bridge for Dash's default Cloudflare alert delivery. The relay path is
-intentionally stateless: it never logs callback parameters and never receives
-the PKCE verifier.
+landing SPA through Workers Assets and owns four public route families:
+
+```text
+GET /                         Landing SPA and asset navigations
+GET /health                   Liveness probe
+GET /oauth/callback           302 → dash://oauth/callback?…
+GET /api/registration/:domain RDAP → WHOIS registration snapshot
+```
+
+The OAuth callback and registration lookup run worker-first so SPA fallback
+routing cannot swallow them. The registration snapshot is anonymous and
+cacheable; it tries public RDAP before its port-43 WHOIS fallback. The relay has
+no storage or secrets, never receives the PKCE verifier, and keeps invocation
+logs disabled because callback URLs contain the Cloudflare authorization code.
 
 ```sh
 pnpm install
