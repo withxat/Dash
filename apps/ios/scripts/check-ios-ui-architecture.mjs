@@ -1086,6 +1086,12 @@ const workspaceGlowSideAnchors = workspaceGlowPicker
 const workspaceGlowInspiration = workspaceGlowPicker
   ? declarationBody(workspaceGlowPicker, "private func inspiration(for")
   : null;
+const workspaceGlowReturnActionProxy = workspaceGlowPicker
+  ? declarationBody(
+      workspaceGlowPicker,
+      "private func inspirationReturnActionProxy",
+    )
+  : null;
 const scrollEdgeEffect = declarationBody(
   headerChrome,
   "struct DashScrollEdgeEffect: View",
@@ -1221,6 +1227,33 @@ if (!workspaceGlowPicker) {
   ) {
     issues.push(
       "Glow inspiration affordances must keep the bare Stars icon legible on both compact and expanded wash surfaces.",
+    );
+  }
+  if (
+    !workspaceGlowReturnActionProxy?.includes("compactInspirationMark") ||
+    !workspaceGlowReturnActionProxy?.includes(".padding(4)") ||
+    !workspaceGlowReturnActionProxy?.includes(
+      ".opacity(!reduceMotion && path.isEmpty && morphingPreset == preset ? 1 : 0)",
+    ) ||
+    !workspaceGlowReturnActionProxy?.includes(
+      ".animation(reduceMotion ? nil : DashTheme.Motion.morphExit, value: path.isEmpty)",
+    ) ||
+    !workspaceGlowReturnActionProxy?.includes(".allowsHitTesting(false)") ||
+    !workspaceGlowReturnActionProxy?.includes(".accessibilityHidden(true)") ||
+    !workspaceGlowCard?.includes(
+      ".opacity(pickerContentIsVisible && compactVisualIsVisible ? 1 : 0)",
+    ) ||
+    !workspaceGlowInspiration?.includes(".overlay(alignment: .topLeading)") ||
+    !workspaceGlowInspiration?.includes(
+      "inspirationReturnActionProxy(for: preset)",
+    ) ||
+    workspaceGlowInspiration.indexOf("inspirationReturnActionProxy(for: preset)") >
+      workspaceGlowInspiration.indexOf(
+        "id: detailInspirationMorphID(for: preset, element: .panel)",
+      )
+  ) {
+    issues.push(
+      "Glow Inspiration return must fade a non-interactive compact Stars proxy on the retained hero before its matched frame hands back to the real button.",
     );
   }
   if (

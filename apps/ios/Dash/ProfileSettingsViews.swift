@@ -1039,17 +1039,6 @@ private struct WorkspaceGlowPanelSurface: View {
             depth: max(geometry.size.height, 1)
           )
           .frame(maxHeight: .infinity, alignment: .top)
-        } else {
-          SolarIcon(asset: SolarAsset.sun, size: 36, color: DashTheme.iconMuted)
-            .overlay {
-              Rectangle()
-                .fill(DashTheme.iconMuted)
-                .frame(width: 1.5, height: 46)
-                .rotationEffect(.degrees(45))
-            }
-            .frame(maxHeight: .infinity, alignment: .top)
-            .padding(.top, 48)
-            .accessibilityHidden(true)
         }
       }
     }
@@ -1431,14 +1420,6 @@ private struct WorkspaceGlowPickerTray: View {
             )
 
           compactSideMorphAnchors(for: preset)
-
-          DashSelectionMark(
-            isSelected: isSelected,
-            size: 20,
-            selectedColor: selectionColor
-          )
-          .padding(10)
-          .opacity(pickerContentIsVisible ? 1 : 0)
         }
         .contentShape(shape)
       }
@@ -1458,8 +1439,7 @@ private struct WorkspaceGlowPickerTray: View {
           morphUsesCenteredAnchor = !reduceMotion && isCentered
           path.append(.inspiration(preset))
         } label: {
-          SolarIcon(asset: SolarAsset.starsBold, size: 18, color: DashTheme.strong)
-            .dashCompactHitTarget()
+          compactInspirationMark
         }
         .buttonStyle(DashPressButtonStyle())
         .accessibilityLabel(
@@ -1470,9 +1450,26 @@ private struct WorkspaceGlowPickerTray: View {
         )
         .accessibilityIdentifier("workspace-glow-inspiration-\(preset.rawValue)")
         .padding(4)
-        .opacity(pickerContentIsVisible ? 1 : 0)
+        .opacity(pickerContentIsVisible && compactVisualIsVisible ? 1 : 0)
       }
     }
+  }
+
+  private var compactInspirationMark: some View {
+    SolarIcon(asset: SolarAsset.starsBold, size: 18, color: DashTheme.strong)
+      .dashCompactHitTarget()
+  }
+
+  /// The retained detail route sits above the returning picker, so the real
+  /// compact button cannot become visible until that route leaves. Carry this
+  /// non-interactive copy on the live hero and hand it back at the same frame.
+  private func inspirationReturnActionProxy(for preset: DashWorkspaceGlowPreset) -> some View {
+    compactInspirationMark
+      .padding(4)
+      .opacity(!reduceMotion && path.isEmpty && morphingPreset == preset ? 1 : 0)
+      .animation(reduceMotion ? nil : DashTheme.Motion.morphExit, value: path.isEmpty)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 
   /// The centered source is a permanent transparent anchor outside the
@@ -1591,6 +1588,9 @@ private struct WorkspaceGlowPickerTray: View {
               showsOutline: morphingOutlinedPreset == preset
             )
             .frame(height: heroHeight)
+            .overlay(alignment: .topLeading) {
+              inspirationReturnActionProxy(for: preset)
+            }
             .modifier(
               WorkspaceGlowPanelMorphModifier(
                 id: detailInspirationMorphID(for: preset, element: .panel),

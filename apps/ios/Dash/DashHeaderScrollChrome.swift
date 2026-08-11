@@ -937,7 +937,7 @@ enum DashScreenClipScope {
 
 enum DashScrollEdgeFadeMetrics {
   /// How far a fade reaches in from its edge.
-  static let thickness: CGFloat = 32
+  static let thickness: CGFloat = 28
   /// Distance (pt) over which a ramped fade eases from 0 → 1.
   static let softRange: CGFloat = 36
 }

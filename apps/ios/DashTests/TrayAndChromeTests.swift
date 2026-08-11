@@ -421,6 +421,7 @@ import UIKit
 /// inverse source seat needed to rotate the package's vertical-only mask onto
 /// physical left/right edges. Semantic leading/trailing must mirror in RTL.
 @Test func scrollEdgeVariableBlurMapsAllFourEdges() {
+  #expect(DashScrollEdgeFadeMetrics.thickness == 28)
   #expect(DashScrollEdgeBlurRules.maxBlurRadius == DashHeaderScrimMetrics.maxBlurRadius)
   #expect(DashScrollEdgeBlurRules.startOffset == DashHeaderScrimMetrics.startOffset)
 
@@ -442,14 +443,14 @@ import UIKit
   #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .leading) == -90)
   #expect(DashScrollEdgeBlurRules.rotationDegrees(forPhysicalEdge: .trailing) == 90)
 
-  let verticalSeat = CGSize(width: 32, height: 240)
+  let verticalSeat = CGSize(width: DashScrollEdgeFadeMetrics.thickness, height: 240)
   #expect(
     DashScrollEdgeBlurRules.sourceSize(forPhysicalEdge: .top, in: verticalSeat)
       == verticalSeat
   )
   #expect(
     DashScrollEdgeBlurRules.sourceSize(forPhysicalEdge: .leading, in: verticalSeat)
-      == CGSize(width: 240, height: 32)
+      == CGSize(width: 240, height: DashScrollEdgeFadeMetrics.thickness)
   )
 
   #expect(
