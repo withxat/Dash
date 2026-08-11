@@ -31,6 +31,11 @@ struct HomeView: View {
     return PinnedZones.prioritized(
       zones, pinsRaw: pinnedZoneData, accountID: accountID, id: \.id)
   }
+
+  private var pinnedZoneIDs: Set<String> {
+    guard let accountID = model.activeAccountID else { return [] }
+    return Set(PinnedZones.pinnedZoneIDs(in: pinnedZoneData, accountID: accountID))
+  }
   @State private var showsAddDomain = false
   @State private var showsR2Upload = false
   @State private var showsAddDNSRecord = false
@@ -111,6 +116,7 @@ struct HomeView: View {
 
         HomeDomainsSection(
           zones: displayedZones,
+          pinnedZoneIDs: pinnedZoneIDs,
           isLoading: zonesLoading,
           error: zonesError,
           locked: isLocked(.zones),
@@ -1117,6 +1123,7 @@ private struct HomeDomainsSection: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Namespace private var avatarTransition
   let zones: [CloudflareZone]
+  let pinnedZoneIDs: Set<String>
   let isLoading: Bool
   let error: String?
   let locked: Bool
@@ -1286,6 +1293,7 @@ private struct HomeDomainsSection: View {
       } else if zones.count > Self.expandedVisibleCount {
         HomeDomainsScrollViewport(
           zones: zones,
+          pinnedZoneIDs: pinnedZoneIDs,
           avatarTransition: avatarTransition,
           rowHeight: Self.expandedRowHeight,
           visibleCount: Self.expandedVisibleCount
@@ -1296,6 +1304,7 @@ private struct HomeDomainsSection: View {
             DashListGroupLink(value: .zone(zone.id)) {
               HomeDomainRow(
                 zone: zone,
+                isPinned: pinnedZoneIDs.contains(zone.id),
                 avatarTransition: avatarTransition)
             }
           }
@@ -1372,6 +1381,7 @@ private struct HomeDomainsSection: View {
 /// Nested Domains list: fixed-height viewport with shared edge-fade affordance.
 private struct HomeDomainsScrollViewport: View {
   let zones: [CloudflareZone]
+  let pinnedZoneIDs: Set<String>
   let avatarTransition: Namespace.ID
   var rowHeight: CGFloat
   var visibleCount: Int
@@ -1389,6 +1399,7 @@ private struct HomeDomainsScrollViewport: View {
           DashListGroupLink(value: .zone(zone.id)) {
             HomeDomainRow(
               zone: zone,
+              isPinned: pinnedZoneIDs.contains(zone.id),
               avatarTransition: avatarTransition)
           }
         }
@@ -1404,22 +1415,42 @@ private struct HomeDomainsScrollViewport: View {
 private struct HomeZoneAvatar: View {
   let seed: String
   var size: CGFloat = 26
+  var isPinned = false
 
   var body: some View {
     GradientAvatar(seed: seed, size: size, pattern: .dither, contentScale: 1.5)
+      .overlay(alignment: .bottomTrailing) {
+        if isPinned {
+          ZStack {
+            Circle().fill(DashTheme.homeDomainsSurface)
+            Circle().fill(DashTheme.brand).padding(2)
+            SolarIcon(asset: SolarAsset.pinFilled, size: 8, color: DashTheme.inverse)
+          }
+          .frame(width: 15, height: 15)
+          .offset(x: 2, y: 2)
+          .accessibilityHidden(true)
+        }
+      }
       .accessibilityHidden(true)
   }
 }
 
 private struct HomeDomainRow: View {
   let zone: CloudflareZone
+  let isPinned: Bool
   let avatarTransition: Namespace.ID
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+  private var accessibilityLabel: String {
+    var parts = [zone.name, DashL10n.ui((zone.status ?? "unknown").capitalized)]
+    if isPinned { parts.append(DashL10n.string("Pinned")) }
+    return parts.joined(separator: ", ")
+  }
 
   var body: some View {
     HStack(spacing: 12) {
       // Match `DashListRow` zone avatars in Recently used (30pt disc).
-      HomeZoneAvatar(seed: zone.name, size: 30)
+      HomeZoneAvatar(seed: zone.name, size: 30, isPinned: isPinned)
         .matchedGeometryEffect(id: zone.id, in: avatarTransition)
       VStack(alignment: .leading, spacing: 2) {
         Text(zone.name)
@@ -1438,8 +1469,7 @@ private struct HomeDomainRow: View {
     .frame(minHeight: DashTheme.Layout.twoToneListRow)
     .contentShape(Rectangle())
     .accessibilityElement(children: .combine)
-    .accessibilityLabel(
-      "\(zone.name), \(DashL10n.ui((zone.status ?? "unknown").capitalized))")
+    .accessibilityLabel(accessibilityLabel)
   }
 }
 

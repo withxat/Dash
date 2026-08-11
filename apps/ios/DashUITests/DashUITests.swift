@@ -450,6 +450,10 @@ final class DashUITests: XCTestCase {
     expandHomeDomains(in: app)
     XCTAssertTrue(app.staticTexts["example.com"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.staticTexts["docs.example.com"].exists)
+    let pinnedDomain = app.buttons.matching(
+      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+    ).firstMatch
+    XCTAssertTrue(pinnedDomain.label.contains("Pinned"))
     XCTAssertFalse(app.staticTexts["View all domains"].exists)
   }
 
