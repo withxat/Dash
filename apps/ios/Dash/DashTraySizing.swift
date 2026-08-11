@@ -25,20 +25,6 @@ enum DashTrayBottomLiftRules {
   }
 }
 
-/// Pure geometry for the standard Tray shell's off-screen travel. The hidden
-/// top edge rests exactly at the screen bottom: the full card height clears its
-/// resting position, then the bottom lift clears the gap below the card.
-enum DashTrayRevealRules {
-  static func travel(cardHeight: CGFloat, bottomLift: CGFloat) -> CGFloat? {
-    guard cardHeight.isFinite, cardHeight > 0,
-      bottomLift.isFinite, bottomLift >= 0
-    else {
-      return nil
-    }
-    return cardHeight + bottomLift
-  }
-}
-
 /// Height arithmetic for the tray's scroll boundary, kept out of the view so
 /// the one rule that decides what scrolls is testable.
 enum DashTrayScrollBoundaryRules {

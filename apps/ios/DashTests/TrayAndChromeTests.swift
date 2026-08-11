@@ -24,26 +24,16 @@ import UIKit
   #expect(TrayDragDecision.rubberBand(cardTop: 42, expandedTop: 0) == 42)
 }
 
-@Test func compactTrayKeepsDashGeometryWithFamilyScrim() {
+@Test func compactTrayKeepsOriginalShellTokens() {
   #expect(DashTheme.Sheet.floatingMargin == 12)
   #expect(DashTheme.Sheet.floatingBottomTuck == 6)
-  #expect(DashTheme.Sheet.scrimOpacity == 1 / 3)
+  #expect(DashTheme.Sheet.scrimOpacity == 0.18)
+  #expect(DashTheme.Sheet.scrimMaterialOpacity == 0.55)
 }
 
-@Test func compactTrayUsesAsymmetricFamilySprings() {
+@Test func compactTrayUsesSpringOnlyForPresentation() {
   #expect(DashTheme.Motion.Tray.presentResponse == 0.21)
-  #expect(DashTheme.Motion.Tray.presentDampingFraction == 0.89)
-  #expect(DashTheme.Motion.Tray.dismissResponse == 0.21)
-  #expect(DashTheme.Motion.Tray.dismissDampingFraction == 0.97)
-  #expect(
-    DashTheme.Motion.Tray.presentDampingFraction
-      < DashTheme.Motion.Tray.dismissDampingFraction)
-}
-
-@Test func compactTrayRevealTravelsFullyBelowTheScreen() {
-  #expect(DashTrayRevealRules.travel(cardHeight: 288, bottomLift: 34) == 322)
-  #expect(DashTrayRevealRules.travel(cardHeight: 0, bottomLift: 34) == nil)
-  #expect(DashTrayRevealRules.travel(cardHeight: 288, bottomLift: -1) == nil)
+  #expect(DashTheme.Motion.Tray.presentDampingFraction == 0.8)
 }
 
 @Test func compactTrayBottomLiftClearsHomeIndicatorUsingWindowSafeInset() {

@@ -306,11 +306,14 @@ enum DashTheme {
     static let quick = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.12)
     static let press = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.15)
     static let pressScale: CGFloat = 0.97
+    /// One revolution of the shared indeterminate ring. Kept brisk so waiting
+    /// reads as active without turning the small trailing glyph frantic.
+    static let loadingRingCycleDuration: TimeInterval = 0.9
     /// Loading ring ↔ success glyph. Ease-in-out (not ease-out): ease-out
-    /// front-loaded the 0.25→1 scale into the transparent first frames, so the
+    /// front-loaded the scale into the transparent first frames, so the
     /// size change never read. Still critically short and un-sprung — the
     /// write is already finished, and a bounce would celebrate twice.
-    static let iconSwap = Animation.easeInOut(duration: 0.22)
+    static let iconSwap = Animation.easeInOut(duration: 0.16)
     /// Scale floor for `iconSwap`. Deep enough to read as a grow, shallow
     /// enough that the glyph is already opaque while it is still changing size.
     static let iconSwapScale: CGFloat = 0.7
@@ -337,9 +340,9 @@ enum DashTheme {
     /// Correctness fallback when the initiating button is dismissed before its
     /// animation completion can report back.
     @MainActor static var iconSwapFallbackDelay: Duration {
-      // `iconSwap` plus a frame of slack — it must outlast the real completion
-      // callback, not become a second dwell the user sits through.
-      UIAccessibility.isReduceMotionEnabled ? .zero : .milliseconds(280)
+      // `iconSwap` plus a small scheduling buffer — it must outlast the real
+      // completion callback, not become a second dwell the user sits through.
+      UIAccessibility.isReduceMotionEnabled ? .zero : .milliseconds(220)
     }
 
     /// Reduce-motion fallback: position/scale drop out, a short opacity ease stays.
@@ -451,25 +454,22 @@ enum DashTheme {
 
     // MARK: Tray
 
-    /// Family-style compact Tray shell motion. Keep these values separate from
-    /// the generic floating-surface tokens below: Quick Look and Toast also use
-    /// `present` / `dismiss`, but only Tray owns this asymmetric rise and exit.
+    /// The compact Tray keeps Dash's established shell and exit. Only its card
+    /// presentation uses the measured spring; Quick Look and Toast continue to
+    /// use the generic floating-surface entrance below.
     enum Tray {
       static let presentResponse: TimeInterval = 0.21
-      static let presentDampingFraction: CGFloat = 0.89
-      static let dismissResponse: TimeInterval = 0.21
-      static let dismissDampingFraction: CGFloat = 0.97
+      static let presentDampingFraction: CGFloat = 0.8
     }
 
     static let trayPresent = Animation.spring(
       response: Tray.presentResponse,
       dampingFraction: Tray.presentDampingFraction
     )
-    static let trayDismiss = Animation.spring(
-      response: Tray.dismissResponse,
-      dampingFraction: Tray.dismissDampingFraction,
-      blendDuration: 0.08
-    )
+    /// The full-screen veil has no physical travel, so it keeps Dash's original
+    /// compositor-friendly opacity easing instead of sampling the card spring.
+    static let scrimPresent = Animation.easeOut(duration: 0.22)
+    static let scrimDismiss = Animation.easeIn(duration: 0.2)
 
     /// During an internal route replacement, the compact card follows the active
     /// step's measured height independently of the content crossfade.
@@ -488,8 +488,7 @@ enum DashTheme {
     // MARK: Floating surfaces — Toast and free-moving interaction vocabulary.
     // Raw springs: call sites gate reduce-motion, and some deliberately skip the
     // gate to keep a drag-release physical.
-    /// Short generic floating-surface entrance. Tray has a dedicated measured
-    /// off-screen spring above; this remains shared by non-Tray surfaces.
+    /// Short generic floating-surface entrance shared by non-Tray surfaces.
     static let present = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
     static let release = Animation.spring(
       response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
@@ -521,9 +520,13 @@ enum DashTheme {
     static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
-    /// Family's single, uniform black veil. There is deliberately no material
-    /// blur beneath it: the page stays spatially fixed and legible while it dims.
-    static let scrimOpacity: CGFloat = 1 / 3
+    /// Black veil over the page. Kept light on purpose — the material below
+    /// already softens the backdrop, and a heavy veil plus full-strength blur
+    /// stacks into a muddy slab behind the floating card.
+    static let scrimOpacity: CGFloat = 0.18
+    /// How hard the material blur paints. Full `.ultraThinMaterial` was the
+    /// heavy half of the old scrim; fade it so the page still reads through.
+    static let scrimMaterialOpacity: CGFloat = 0.55
     /// Gap between a floating tray and the screen edges.
     static let floatingMargin: CGFloat = 12
     /// How far the compact tray may sit into the home-indicator safe area.

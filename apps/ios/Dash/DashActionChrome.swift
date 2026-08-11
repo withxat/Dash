@@ -3,8 +3,8 @@ import SwiftUI
 import UIKit
 
 /// Twotone ring spinner (after iconify's line-md:loading-twotone-loop): a
-/// faint full circle under a quarter arc looping a 1.5s rotation. Sits at a
-/// pill's trailing edge so the centered label never shifts while loading.
+/// faint full circle under a quarter arc looping at the shared loading pace.
+/// Sits at a pill's trailing edge so the centered label never shifts while loading.
 struct DashLoadingRing: View {
   var color: Color = DashTheme.inverse
   var size: CGFloat = 20
@@ -25,7 +25,10 @@ struct DashLoadingRing: View {
     .padding(lineWidth / 2)
     .onAppear {
       guard !reduceMotion else { return }
-      withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+      withAnimation(
+        .linear(duration: DashTheme.Motion.loadingRingCycleDuration)
+          .repeatForever(autoreverses: false)
+      ) {
         spinning = true
       }
     }

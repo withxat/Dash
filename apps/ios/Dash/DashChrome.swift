@@ -514,11 +514,11 @@ enum TrayDragDecision {
 /// timing vocabulary inside `DashTrayFlow`.
 private enum DashTrayMotion {
   static let present = DashTheme.Motion.trayPresent
-  static let scrimPresent = DashTheme.Motion.trayPresent
-  static let scrimDismiss = DashTheme.Motion.trayDismiss
+  static let scrimPresent = DashTheme.Motion.scrimPresent
+  static let scrimDismiss = DashTheme.Motion.scrimDismiss
   static let resize = DashTheme.Motion.trayResize
   static let release = DashTheme.Motion.release
-  static let dismiss = DashTheme.Motion.trayDismiss
+  static let dismiss = DashTheme.Motion.dismiss
 }
 
 /// The trailing button cluster — optional action circle plus close — shared by
@@ -782,8 +782,8 @@ private struct DashSheetHeroHeader<Hero: View>: View {
 /// Compact trays use a full-screen transparent cover with our own dim and a
 /// bottom-pinned card. The card animates its own target height (DashSheetCard) so
 /// content morphs resize smoothly — there's no native detent to clip or snap.
-/// Card and scrim share one presentation progress vocabulary: the card springs
-/// up from below while the uniform dim changes opacity in place behind it.
+/// Card and scrim share the cover but not the motion: the card springs from
+/// below while the uniform dim uses an independent opacity fade behind it.
 private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   let title: String
   var showsMenuButtons = true
@@ -804,17 +804,13 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
-  /// Card / paired-shell reveal. The scrim has separate state so it never moves,
-  /// but both states use the same directional spring vocabulary.
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  /// Card / paired-shell reveal. Springs with the bottom train — not the dim.
   @State private var progress: CGFloat = 0
   /// Full-screen page dim. Opacity only; never shares the card's offset spring.
   @State private var scrimProgress: CGFloat = 0
   @State private var drag: CGFloat = 0
   @State private var cardHeight: CGFloat = 0
-  /// The standard shell freezes one measured travel for each direction. Card
-  /// content can resize independently without steering a spring already in flight.
-  @State private var openingCardTravel: CGFloat?
-  @State private var closingCardTravel: CGFloat?
   @State private var keyboardHeight: CGFloat = 0
   @State private var keyboardIsPresented = false
   /// Closing or popping while a software keyboard owns the layout would make
@@ -891,14 +887,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     else { return nil }
     return DashTraySharedGeometrySnapshot(
       action: sharedAction, destination: destination, card: liveCardFrame)
-  }
-
-  /// Nil while a paired reveal owns the shell. A standard reveal starts only
-  /// after the fitted card height is stable for one rendered frame, so removing
-  /// its old opacity mask cannot expose a partially measured card.
-  private var pendingStandardRevealTravel: CGFloat? {
-    guard !reduceMotion, !sharedRevealActive else { return nil }
-    return DashTrayRevealRules.travel(cardHeight: cardHeight, bottomLift: bottomLift)
   }
 
   private var presentedCardFrame: CGRect {
@@ -983,7 +971,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .modifier(
             DashTrayCardReveal(
               progress: progress, drag: drag,
-              revealOffset: revealOffset(containerHeight: proxy.size.height),
+              revealOffset: revealOffset,
               reduceMotion: reduceMotion, active: !sharedRevealActive)
           )
           .offset(y: drag)
@@ -1052,25 +1040,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
     .onPreferenceChange(DashTrayStepRoleKey.self) { stepRole = $0 }
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
-    .task(id: pendingStandardRevealTravel) {
-      guard let snapshot = pendingStandardRevealTravel,
-        !presentationStarted, !isClosing
-      else {
-        return
-      }
-      // Match the paired path's one-frame stability barrier. Dynamic content can
-      // report more than one fitted height while its first layout resolves.
-      try? await Task.sleep(for: .milliseconds(16))
-      guard !Task.isCancelled, !presentationStarted, !isClosing,
-        pendingStandardRevealTravel == snapshot
-      else {
-        return
-      }
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      withTransaction(transaction) { openingCardTravel = snapshot }
-      startPresentation()
-    }
     .task(id: sharedGeometrySnapshot) {
       guard let snapshot = sharedGeometrySnapshot, !presentationStarted, !isClosing else { return }
       // One rendered-frame stability barrier: if either endpoint changes, the
@@ -1163,9 +1132,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       if isClosing { finishFlightExitStage() }
     }
     .onAppear {
-      // Spatial presentation waits for a stable fitted height above. Reduced
-      // Motion is opacity-only and therefore has no geometry dependency.
-      if reduceMotion, !sharedRevealActive { startPresentation() }
+      if !sharedRevealActive { startPresentation() }
     }
     .task {
       // A malformed/conditional destination must not leave a transparent cover
@@ -1199,7 +1166,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
 
     presentationStarted = true
-    // Scrim changes opacity in place while the card rides the matching spring.
+    // Scrim fades independently in place while the card rides its own spring.
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimPresent) {
       scrimProgress = 1
     }
@@ -1232,7 +1199,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       openingCardFrame = nil
     }
     releaseSharedSource()
-    if reduceMotion { startPresentation() }
+    startPresentation()
   }
 
   private func releaseSharedSource() {
@@ -1260,25 +1227,24 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
 
-  /// The standard card moves as one rigid surface. At hidden progress its top
-  /// edge sits at the screen bottom; opening and closing each freeze the current
-  /// measured travel so later content remeasurement cannot bend the path.
-  private func revealOffset(containerHeight: CGFloat) -> CGFloat {
-    if let closingCardTravel { return closingCardTravel }
-    if let openingCardTravel { return openingCardTravel }
-    if let measured = DashTrayRevealRules.travel(
-      cardHeight: cardHeight, bottomLift: bottomLift)
-    {
-      return measured
-    }
-    // The first pass can precede the fitted-height preference. Keep the card
-    // wholly below the viewport until that measurement stabilizes.
-    return max(0, containerHeight) + max(0, bottomLift)
+  /// A bounded travel distance keeps tall trays from shooting through hundreds
+  /// of points. Fade and a tiny bottom-anchored scale carry the rest.
+  private var revealOffset: CGFloat {
+    min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
   }
 
-  /// Family-style page dim: one uniform veil, with no blur or page transform.
-  private var trayScrim: some View {
-    Color.black.opacity(DashTheme.Sheet.scrimOpacity)
+  /// Page dim: a softened material under a light black veil. Reduce
+  /// Transparency keeps the solid veil only so the entrance never depends on
+  /// a filter.
+  @ViewBuilder private var trayScrim: some View {
+    ZStack {
+      if !reduceTransparency {
+        Rectangle()
+          .fill(.ultraThinMaterial)
+          .opacity(DashTheme.Sheet.scrimMaterialOpacity)
+      }
+      Color.black.opacity(DashTheme.Sheet.scrimOpacity)
+    }
   }
 
   /// Bottom gap under the floating card from the screen edge (always ≥ 0).
@@ -1308,14 +1274,6 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   private func close(reason: DashTrayCloseReason = .programmatic) {
     guard !isClosing else { return }
     isClosing = true
-    if !reduceMotion,
-      let travel = DashTrayRevealRules.travel(
-        cardHeight: cardHeight, bottomLift: bottomLift) ?? openingCardTravel
-    {
-      var transaction = Transaction()
-      transaction.disablesAnimations = true
-      withTransaction(transaction) { closingCardTravel = travel }
-    }
     let reversesUnsettledSharedReveal = sharedRevealActive && !presentationSettled
     if sharedRevealActive, presentationSettled {
       if reason == .control {
@@ -1664,8 +1622,8 @@ enum DashTrayFlightMath {
   }
 }
 
-/// The standard compact Tray reveal: one full-size surface translating along Y.
-/// Its title, controls, rows, and corners keep one rigid identity throughout.
+/// The established compact Tray reveal: a bounded rise with a card-only fade
+/// and a whisper of bottom-anchored scale, driven by presentation progress.
 private struct DashTrayCardReveal: ViewModifier, Animatable {
   var progress: CGFloat
   var drag: CGFloat
@@ -1693,6 +1651,8 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
     } else {
       content
         .offset(y: (1 - progress) * (max(revealOffset, drag + 48) - drag))
+        .scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)
+        .opacity(min(1, progress * 2))
     }
   }
 }

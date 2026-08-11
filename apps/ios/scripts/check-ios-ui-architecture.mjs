@@ -99,13 +99,30 @@ for (const token of ["floatingMaxWidth", "floatingDetentFraction"]) {
 }
 const trayMotionTokens = declarationBody(dashTheme, "enum Tray");
 if (
-  !trayMotionTokens?.includes("presentResponse: TimeInterval = 0.21") ||
-  !trayMotionTokens?.includes("presentDampingFraction: CGFloat = 0.89") ||
-  !trayMotionTokens?.includes("dismissResponse: TimeInterval = 0.21") ||
-  !trayMotionTokens?.includes("dismissDampingFraction: CGFloat = 0.97")
+  !/\bpresentResponse: TimeInterval = 0\.21(?:\s|$)/.test(
+    trayMotionTokens ?? "",
+  ) ||
+  !/\bpresentDampingFraction: CGFloat = 0\.8(?:\s|$)/.test(
+    trayMotionTokens ?? "",
+  ) ||
+  trayMotionTokens?.includes("dismissResponse") ||
+  trayMotionTokens?.includes("dismissDampingFraction")
 ) {
   issues.push(
-    "Compact Tray must keep its measured asymmetric Family enter/exit spring parameters.",
+    "Compact Tray may specialize only its 0.21 / 0.8 presentation spring; dismissal stays on Dash's established token.",
+  );
+}
+const motionTokens = declarationBody(dashTheme, "enum Motion");
+if (
+  !motionTokens?.includes(
+    "static let scrimPresent = Animation.easeOut(duration: 0.22)",
+  ) ||
+  !motionTokens?.includes(
+    "static let scrimDismiss = Animation.easeIn(duration: 0.2)",
+  )
+) {
+  issues.push(
+    "Tray scrim must keep Dash's independent ease-out/ease-in opacity timing.",
   );
 }
 
@@ -995,12 +1012,12 @@ const customSheet = declarationBody(
 const trayMotion = declarationBody(dashChrome, "private enum DashTrayMotion");
 if (
   !trayMotion?.includes("static let present = DashTheme.Motion.trayPresent") ||
-  !trayMotion?.includes("static let scrimPresent = DashTheme.Motion.trayPresent") ||
-  !trayMotion?.includes("static let scrimDismiss = DashTheme.Motion.trayDismiss") ||
-  !trayMotion?.includes("static let dismiss = DashTheme.Motion.trayDismiss")
+  !trayMotion?.includes("static let scrimPresent = DashTheme.Motion.scrimPresent") ||
+  !trayMotion?.includes("static let scrimDismiss = DashTheme.Motion.scrimDismiss") ||
+  !trayMotion?.includes("static let dismiss = DashTheme.Motion.dismiss")
 ) {
   issues.push(
-    "Tray card and scrim must use the dedicated asymmetric Tray motion tokens.",
+    "Only the Tray card presentation may use the dedicated spring; scrim and dismissal keep Dash's established timing.",
   );
 }
 const standardTrayReveal = declarationBody(
@@ -1011,31 +1028,55 @@ if (!standardTrayReveal) {
   issues.push("Could not locate the standard Tray card reveal.");
 } else {
   if (occurrences(standardTrayReveal, ".offset(") !== 1) {
-    issues.push("Standard Tray reveal must move the rigid card through one Y offset.");
+    issues.push("Standard Tray reveal must keep its one bounded Y offset.");
   }
-  for (const token of [".scaleEffect(", ".blur(", ".delay("]) {
+  for (const token of [".blur(", ".delay("]) {
     if (standardTrayReveal.includes(token)) {
       issues.push(`Standard Tray reveal must not use ${token}`);
     }
   }
   if (
-    occurrences(standardTrayReveal, ".opacity(") !== 1 ||
-    !standardTrayReveal.includes(".opacity(progress)")
+    occurrences(standardTrayReveal, ".opacity(") !== 2 ||
+    !standardTrayReveal.includes(".opacity(progress)") ||
+    !standardTrayReveal.includes(".opacity(min(1, progress * 2))") ||
+    !standardTrayReveal.includes(
+      ".scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)",
+    )
   ) {
     issues.push(
-      "Standard Tray reveal may use opacity only for its Reduce Motion branch.",
+      "Standard Tray reveal must keep its original card-only fade and subtle bottom-anchored scale.",
     );
   }
+}
+if (
+  !customSheet?.includes(
+    "min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)",
+  ) ||
+  !customSheet?.includes("if !sharedRevealActive { startPresentation() }") ||
+  customSheet?.includes("pendingStandardRevealTravel") ||
+  customSheet?.includes("openingCardTravel") ||
+  customSheet?.includes("closingCardTravel") ||
+  customSheet?.includes("DashTrayRevealRules")
+) {
+  issues.push(
+    "Standard Tray must start immediately with Dash's bounded 80...160pt reveal, without the Family full-card travel barrier.",
+  );
 }
 const trayScrim = customSheet
   ? declarationBody(customSheet, "private var trayScrim: some View")
   : null;
 if (
   !trayScrim?.includes("Color.black.opacity(DashTheme.Sheet.scrimOpacity)") ||
-  trayScrim?.includes(".ultraThinMaterial") ||
+  !trayScrim?.includes(".ultraThinMaterial") ||
+  !trayScrim?.includes("DashTheme.Sheet.scrimMaterialOpacity") ||
+  !customSheet?.includes(
+    "@Environment(\\.accessibilityReduceTransparency) private var reduceTransparency",
+  ) ||
   trayScrim?.includes(".blur(")
 ) {
-  issues.push("Tray scrim must remain one uniform black veil with no material blur.");
+  issues.push(
+    "Tray scrim must keep Dash's original reduced-transparency-aware material plus black veil.",
+  );
 }
 const trayCoverPresentation = declarationBody(
   dashChrome,
