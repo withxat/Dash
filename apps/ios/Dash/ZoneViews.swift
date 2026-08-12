@@ -351,13 +351,27 @@ struct DomainCardFace: View {
   /// endpoint or crossfading a second complete card over the first one.
   var detailReveal: CGFloat = 1
 
+  /// One size in both poses, like the name and status above it: the taller
+  /// detail card is the same components with more room between them.
   private let avatarSize: CGFloat = 28
   private let cornerRadius: CGFloat = DashTheme.Radius.button
   private var foreground: Color { DomainCardColors.foreground(fillHex) }
   private var secondaryForeground: Color { DomainCardColors.secondaryForeground(fillHex) }
+  /// The card morph's spring overshoots past 1 on purpose; content reads a
+  /// clamped copy, because only the hero's frame is allowed to extrapolate.
+  private var reveal: CGFloat { min(max(detailReveal, 0), 1) }
+
+  /// Active is the default and needs no per-card label; only deviating states
+  /// (pending / initializing / moved…) get a status line. Every caller passes
+  /// the display string, so the rule lives here once — the grid, the detail
+  /// hero, the color-customize preview, and the flight morph all agree.
+  private var showsStatus: Bool {
+    status.caseInsensitiveCompare("Active") != .orderedSame
+  }
 
   private var accessibilitySummary: String {
-    var parts = [name, DashL10n.ui(status)]
+    var parts = [name]
+    if showsStatus { parts.append(DashL10n.ui(status)) }
     if let plan { parts.append(DashL10n.ui(plan)) }
     if let meta { parts.append(meta) }
     if pinMarker > 0.5 { parts.append(DashL10n.string("Pinned")) }
@@ -391,16 +405,18 @@ struct DomainCardFace: View {
         .foregroundStyle(foreground)
         .lineLimit(2)
         .minimumScaleFactor(0.85)
-      Text(DashL10n.ui(status))
-        .dashTextStyle(.footnote)
-        .foregroundStyle(secondaryForeground)
-        .lineLimit(1)
+      if showsStatus {
+        Text(DashL10n.ui(status))
+          .dashTextStyle(.footnote)
+          .foregroundStyle(secondaryForeground)
+          .lineLimit(1)
+      }
 
       if plan != nil || meta != nil {
         DomainCardExtraRevealLayout(progress: detailReveal) {
           tileExtras
-            .opacity(min(max(detailReveal, 0), 1))
-            .offset(y: (1 - min(max(detailReveal, 0), 1)) * 4)
+            .opacity(reveal)
+            .offset(y: (1 - reveal) * 4)
         }
         .clipped()
       }

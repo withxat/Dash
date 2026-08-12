@@ -236,6 +236,8 @@ private func relativeLuminance(_ color: UIColor, traits: UITraitCollection) -> D
 @Test func workspaceGlowPickerKeepsPortraitCardsCenteredPastItsEdgeFade() {
   #expect(WorkspaceGlowPickerMetrics.cardHeight > WorkspaceGlowPickerMetrics.cardWidth)
   #expect(WorkspaceGlowPickerMetrics.cardHeight == 184)
+  #expect(WorkspaceGlowPickerMetrics.edgeFadeWidth == 24)
+  #expect(WorkspaceGlowPickerMetrics.edgeFadeWidth < DashScrollEdgeFadeMetrics.thickness)
   #expect(WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: 390) == 132)
   #expect(
     WorkspaceGlowPickerMetrics.horizontalInset(viewportWidth: 150)

@@ -10,54 +10,67 @@ public struct GradientAvatar: View {
   private let cornerRadius: CGFloat?
   /// Zooms the rendered pattern inside the same outer frame (1 = fill).
   private let contentScale: CGFloat
+  /// Draws the pattern in motion instead of as one cached still.
+  ///
+  /// Honoured by `.dither` alone, and only up to
+  /// `AvatarMotion.animatablePixelSize`: every frame is a fresh CPU raster, so
+  /// a grid of animated rows would cost what one animated hero does.
+  private let animated: Bool
 
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.displayScale) private var displayScale
   @State private var renderedImage: AvatarImageSnapshot?
 
   public init(
     seed: String,
     size: CGFloat = 32,
-    pattern: AvatarPattern = .mesh,
+    pattern: AvatarPattern = .gradient,
     cornerRadius: CGFloat? = nil,
-    contentScale: CGFloat = 1
+    contentScale: CGFloat = 1,
+    animated: Bool = false
   ) {
     self.init(
       seed: AvatarSeed(seed),
       size: size,
       pattern: pattern,
       cornerRadius: cornerRadius,
-      contentScale: contentScale
+      contentScale: contentScale,
+      animated: animated
     )
   }
 
   public init(
     seed: UInt32,
     size: CGFloat = 32,
-    pattern: AvatarPattern = .mesh,
+    pattern: AvatarPattern = .gradient,
     cornerRadius: CGFloat? = nil,
-    contentScale: CGFloat = 1
+    contentScale: CGFloat = 1,
+    animated: Bool = false
   ) {
     self.init(
       seed: AvatarSeed(seed),
       size: size,
       pattern: pattern,
       cornerRadius: cornerRadius,
-      contentScale: contentScale
+      contentScale: contentScale,
+      animated: animated
     )
   }
 
   public init(
     seed: AvatarSeed,
     size: CGFloat = 32,
-    pattern: AvatarPattern = .mesh,
+    pattern: AvatarPattern = .gradient,
     cornerRadius: CGFloat? = nil,
-    contentScale: CGFloat = 1
+    contentScale: CGFloat = 1,
+    animated: Bool = false
   ) {
     self.seed = seed
     self.size = max(1, size)
     self.pattern = pattern
     self.cornerRadius = cornerRadius
     self.contentScale = max(1, contentScale)
+    self.animated = animated
   }
 
   public var body: some View {
@@ -66,17 +79,19 @@ public struct GradientAvatar: View {
       pixelSize: Int((size * displayScale).rounded(.up)),
       pattern: pattern
     )
-    let snapshot =
-      renderedImage?.request == request
-      ? renderedImage
-      : AvatarImageCache.shared.cachedImage(for: request)
+    let moves = moves(request)
 
     Group {
-      if let snapshot {
-        Image(decorative: snapshot.image, scale: displayScale)
-          .resizable()
-          .interpolation(pattern == .dither ? .none : .high)
-          .scaleEffect(contentScale)
+      if moves {
+        AnimatedAvatarFace(
+          seed: seed,
+          pixelSize: request.pixelSize,
+          pattern: pattern,
+          displayScale: displayScale,
+          contentScale: contentScale
+        )
+      } else if let snapshot = snapshot(for: request) {
+        face(snapshot.image)
       } else {
         Color.clear
       }
@@ -90,7 +105,7 @@ public struct GradientAvatar: View {
     )
     .accessibilityHidden(true)
     .task(id: request) {
-      guard renderedImage?.request != request else { return }
+      guard !moves, renderedImage?.request != request else { return }
       if let cached = AvatarImageCache.shared.cachedImage(for: request) {
         renderedImage = cached
         return
@@ -100,6 +115,78 @@ public struct GradientAvatar: View {
       }
       guard !Task.isCancelled else { return }
       renderedImage = snapshot
+    }
+  }
+
+  private func moves(_ request: AvatarImageRequest) -> Bool {
+    animated
+      && !reduceMotion
+      && pattern == .dither
+      && request.pixelSize <= AvatarMotion.animatablePixelSize
+  }
+
+  private func snapshot(for request: AvatarImageRequest) -> AvatarImageSnapshot? {
+    if renderedImage?.request == request { return renderedImage }
+    if let exact = AvatarImageCache.shared.cachedImage(for: request) { return exact }
+    return standIn(for: request)
+  }
+
+  /// The same avatar at the wrong size, held until the right one is drawn.
+  ///
+  /// `.resizable()` means any raster fills the frame, so a size the cache
+  /// already has is a sharpness away from correct — where a miss is a hole. It
+  /// must be the same face, though: a seat handed a new seed blanks rather than
+  /// spend a frame claiming to be the avatar it just stopped being.
+  private func standIn(for request: AvatarImageRequest) -> AvatarImageSnapshot? {
+    if let rendered = renderedImage,
+      rendered.request.seed == request.seed,
+      rendered.request.pattern == request.pattern
+    {
+      return rendered
+    }
+    return AvatarImageCache.shared.standInImage(for: request)
+  }
+
+  private func face(_ image: CGImage) -> some View {
+    Image(decorative: image, scale: displayScale)
+      .resizable()
+      .interpolation(pattern == .dither ? .none : .high)
+      .scaleEffect(contentScale)
+  }
+}
+
+/// The moving pose of `GradientAvatar`.
+///
+/// Deliberately outside the cache: a frame is worth drawing once and throwing
+/// away, and keeping twenty of them per second per avatar would evict every
+/// still the rest of the app is scrolling past.
+private struct AnimatedAvatarFace: View {
+  let seed: AvatarSeed
+  let pixelSize: Int
+  let pattern: AvatarPattern
+  let displayScale: CGFloat
+  let contentScale: CGFloat
+
+  var body: some View {
+    TimelineView(.animation(minimumInterval: AvatarMotion.frameInterval)) { timeline in
+      face(at: timeline.date)
+    }
+  }
+
+  @ViewBuilder
+  private func face(at date: Date) -> some View {
+    if let image = AvatarRenderer.image(
+      seed: seed,
+      size: pixelSize,
+      pattern: pattern,
+      phase: AvatarMotion.phase(at: date)
+    ) {
+      Image(decorative: image, scale: displayScale)
+        .resizable()
+        .interpolation(.none)
+        .scaleEffect(contentScale)
+    } else {
+      Color.clear
     }
   }
 }
@@ -117,6 +204,12 @@ struct AvatarImageRequest: Hashable, Sendable {
 
   fileprivate var cacheKey: NSString {
     "\(seed.rawValue):\(pixelSize):\(pattern.rawValue)" as NSString
+  }
+
+  /// Identifies the picture rather than the raster, so a request that has not
+  /// been drawn at this size yet can borrow one that has.
+  fileprivate var faceKey: NSString {
+    "\(seed.rawValue):\(pattern.rawValue)" as NSString
   }
 }
 
@@ -144,6 +237,14 @@ final class AvatarRenderedImage: @unchecked Sendable {
 /// while all expensive rendering is actor-isolated below.
 final class AvatarImageMemoryCache: @unchecked Sendable {
   private let cache = NSCache<NSString, AvatarImageSnapshot>()
+  /// The last raster drawn of each face, whatever size it was.
+  ///
+  /// An avatar that changes size — the domain card growing out of the grid into
+  /// the zone hero — asks for a raster nobody has drawn yet, and the honest
+  /// answer takes an actor hop. Handing back the size that *is* warm keeps the
+  /// picture on screen and lets the exact one replace it when it lands, instead
+  /// of punching a hole in the first frames of the morph.
+  private let faces = NSCache<NSString, AvatarImageSnapshot>()
 
   init(
     countLimit: Int = 256,
@@ -151,15 +252,24 @@ final class AvatarImageMemoryCache: @unchecked Sendable {
   ) {
     cache.countLimit = countLimit
     cache.totalCostLimit = totalCostLimit
+    faces.countLimit = countLimit
+    faces.totalCostLimit = totalCostLimit
   }
 
   func snapshot(for request: AvatarImageRequest) -> AvatarImageSnapshot? {
     cache.object(forKey: request.cacheKey)
   }
 
+  /// A raster of the same face at some other size, or nil if this avatar has
+  /// never been drawn.
+  func standIn(for request: AvatarImageRequest) -> AvatarImageSnapshot? {
+    faces.object(forKey: request.faceKey)
+  }
+
   func insert(_ snapshot: AvatarImageSnapshot) {
     let cost = snapshot.image.bytesPerRow * snapshot.image.height
     cache.setObject(snapshot, forKey: snapshot.request.cacheKey, cost: cost)
+    faces.setObject(snapshot, forKey: snapshot.request.faceKey, cost: cost)
   }
 }
 
@@ -188,6 +298,12 @@ actor AvatarImageCache {
     for request: AvatarImageRequest
   ) -> AvatarImageSnapshot? {
     memory.snapshot(for: request)
+  }
+
+  nonisolated func standInImage(
+    for request: AvatarImageRequest
+  ) -> AvatarImageSnapshot? {
+    memory.standIn(for: request)
   }
 
   func image(for request: AvatarImageRequest) -> AvatarImageSnapshot? {

@@ -1415,22 +1415,9 @@ private struct HomeDomainsScrollViewport: View {
 private struct HomeZoneAvatar: View {
   let seed: String
   var size: CGFloat = 26
-  var isPinned = false
 
   var body: some View {
     GradientAvatar(seed: seed, size: size, pattern: .dither, contentScale: 1.5)
-      .overlay(alignment: .bottomTrailing) {
-        if isPinned {
-          ZStack {
-            Circle().fill(DashTheme.homeDomainsSurface)
-            Circle().fill(DashTheme.brand).padding(2)
-            SolarIcon(asset: SolarAsset.pinFilled, size: 8, color: DashTheme.inverse)
-          }
-          .frame(width: 15, height: 15)
-          .offset(x: 2, y: 2)
-          .accessibilityHidden(true)
-        }
-      }
       .accessibilityHidden(true)
   }
 }
@@ -1447,11 +1434,26 @@ private struct HomeDomainRow: View {
     return parts.joined(separator: ", ")
   }
 
+  private var pinBadge: some View {
+    ZStack {
+      Circle().fill(DashTheme.homeDomainsSurface)
+      Circle().fill(DashTheme.strong).padding(2)
+      SolarIcon(asset: SolarAsset.pinFilled, size: 8, color: DashTheme.inverse)
+    }
+    .frame(width: 15, height: 15)
+    .offset(x: 2, y: 2)
+    .accessibilityHidden(true)
+  }
+
   var body: some View {
     HStack(spacing: 12) {
       // Match `DashListRow` zone avatars in Recently used (30pt disc).
-      HomeZoneAvatar(seed: zone.name, size: 30, isPinned: isPinned)
+      HomeZoneAvatar(seed: zone.name, size: 30)
         .matchedGeometryEffect(id: zone.id, in: avatarTransition)
+        // Keep the row-only marker out of the collapsed avatar's geometry flight.
+        .overlay(alignment: .bottomTrailing) {
+          if isPinned { pinBadge }
+        }
       VStack(alignment: .leading, spacing: 2) {
         Text(zone.name)
           .dashTextStyle(.bodyMedium)

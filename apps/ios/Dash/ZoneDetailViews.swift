@@ -24,7 +24,6 @@ struct ZoneDetailView: View {
   @State private var draftCardHex: UInt32?
   /// Non-nil while the overlay runs its settle-back exit.
   @State private var cardCustomizeExit: DomainCardCustomizeExit?
-  @State private var activationCheckPhase: DashActionPhase = .idle
   @State private var showsAbandonSetup = false
   @Namespace private var cardCustomizeNamespace
 
@@ -452,17 +451,15 @@ struct ZoneDetailView: View {
         registrationGroup()
       } else {
         // Dash only serves active domains. Everything else is setup chrome:
-        // nameservers + activation check while Cloudflare still needs them,
-        // then abandon — no DNS / traffic / WAF / cache / settings.
+        // nameservers while Cloudflare still needs them, then abandon — no
+        // DNS / traffic / WAF / cache / settings. The Actions slot below
+        // renders the tools frozen under a guidance veil instead.
         if needsActivation(zone) {
           if let servers = zone.nameServers, !servers.isEmpty {
             ZoneNameserversGroup(servers: servers)
               .dashSectionBoundary()
               .dashBodySlot(reduceMotion: reduceMotion)
           }
-          activationCard(zone)
-            .dashSectionBoundary()
-            .dashBodySlot(reduceMotion: reduceMotion)
         }
         identifiersGroup
           .dashSectionBoundary()
@@ -477,6 +474,8 @@ struct ZoneDetailView: View {
 
     if mode.isPlaceholder || displayedZoneIsActive {
       primaryActions(mode: mode)
+    } else if let zone = displayedZone {
+      frozenActions(zone)
     }
   }
 
@@ -603,6 +602,38 @@ struct ZoneDetailView: View {
     }
   }
 
+  /// Non-active zones cannot use the management tools, but the rows still
+  /// render so the shape of what activation unlocks stays visible. The
+  /// section-scale veil freezes them non-interactive (hit testing and VoiceOver
+  /// both belong to the veil) and carries the next-step guidance in place of
+  /// the loading failure it normally reports — no Try again, no locked-out
+  /// tool buttons, just the direction the user needs to go.
+  @ViewBuilder
+  private func frozenActions(_ zone: CloudflareZone) -> some View {
+    DashListGroupHeader(title: DashL10n.ui("Actions"))
+      .padding(.horizontal, 4)
+      .dashSectionBoundary()
+      .padding(.bottom, 8)
+      .dashBodySlot(reduceMotion: reduceMotion)
+    dashModeListRows(
+      mode: .live,
+      items: tools,
+      placeholderRows: Self.allTools.count,
+      reduceMotion: reduceMotion
+    ) { tool in
+      let destination = tool.route(zoneID)
+      DashListGroupLink(value: destination) {
+        DashListRow(
+          title: DashL10n.ui(tool.title),
+          subtitle: DashL10n.ui(tool.blurb),
+          icon: tool.icon,
+          showsIconPlate: false)
+      }
+    }
+    .dashSectionFailure(activationBlurb(zone))
+    .dashBodySlot(reduceMotion: reduceMotion)
+  }
+
   /// Dash tools (DNS, analytics, cache, settings) only run on active zones.
   private var displayedZoneIsActive: Bool {
     guard let displayedZone else { return false }
@@ -619,10 +650,6 @@ struct ZoneDetailView: View {
   /// setup-only pose with abandon.
   private func needsActivation(_ zone: CloudflareZone) -> Bool {
     ["pending", "initializing", "moved"].contains((zone.status ?? "").lowercased())
-  }
-
-  private var canTriggerActivationCheck: Bool {
-    model.hasScopes(FeatureID.zones.capability.write)
   }
 
   private var abandonSetupRow: some View {
@@ -693,63 +720,18 @@ struct ZoneDetailView: View {
     model.toasts.success(DashL10n.string("Removed from account"))
   }
 
+  /// The veil's guidance has no user-triggered re-check action — activation
+  /// lands on Cloudflare's own hourly sweep, so the copy never offers a check
+  /// it cannot perform.
   private func activationBlurb(_ zone: CloudflareZone) -> String {
     if (zone.status ?? "").lowercased() == "moved" {
       return DashL10n.string(
-        "Cloudflare no longer sees its name servers at the registrar. Point them back, then ask Cloudflare to check."
+        "Cloudflare no longer sees its name servers at the registrar. Point them back — Cloudflare re-checks hourly."
       )
     }
     return DashL10n.string(
-      "Waiting for the registrar to point at the name servers above. Already updated them? Ask Cloudflare to check now instead of on the hourly sweep."
+      "Waiting for the registrar to point at the name servers above. Cloudflare re-checks hourly, so the change usually lands within a few minutes."
     )
-  }
-
-  private func activationCard(_ zone: CloudflareZone) -> some View {
-    DashCard {
-      VStack(alignment: .leading, spacing: 12) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Activation")
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-          Text(activationBlurb(zone))
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.text)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        if canTriggerActivationCheck {
-          DashPillButton(
-            title: "Check now",
-            phase: activationCheckPhase,
-            onSuccessPresentationCompleted: { activationCheckPhase = .idle }
-          ) {
-            Task { await triggerActivationCheck() }
-          }
-        } else {
-          Text("Grant domain write access to trigger a check from here.")
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
-        }
-      }
-    }
-  }
-
-  private func triggerActivationCheck() async {
-    activationCheckPhase = .loading
-    do {
-      try await model.client.triggerZoneActivationCheck(zoneID: zoneID)
-      guard !Task.isCancelled else {
-        activationCheckPhase = .idle
-        return
-      }
-      model.toasts.success(
-        DashL10n.string(
-          "Cloudflare is rechecking now — the status usually updates within a few minutes"))
-      activationCheckPhase = .succeeded
-    } catch {
-      activationCheckPhase = .idle
-      guard !error.dashIsCancellation else { return }
-      model.toasts.error(error.dashActionableMessage)
-    }
   }
 
   /// Registration is a *secondary* fetch inside an already-loaded detail, so it

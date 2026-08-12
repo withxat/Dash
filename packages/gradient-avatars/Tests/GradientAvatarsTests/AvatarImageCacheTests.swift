@@ -40,8 +40,8 @@ import Testing
   let renderCount = LockedCounter()
   let cache = makeCache(renderCount: renderCount)
   let requests = [
-    AvatarImageRequest(seed: AvatarSeed(42), pixelSize: 32, pattern: .mesh),
-    AvatarImageRequest(seed: AvatarSeed(42), pixelSize: 64, pattern: .mesh),
+    AvatarImageRequest(seed: AvatarSeed(42), pixelSize: 32, pattern: .gradient),
+    AvatarImageRequest(seed: AvatarSeed(42), pixelSize: 64, pattern: .gradient),
     AvatarImageRequest(seed: AvatarSeed(42), pixelSize: 64, pattern: .dither),
   ]
 
@@ -51,6 +51,28 @@ import Testing
   }
 
   #expect(renderCount.value == requests.count)
+}
+
+@Test func imageCacheLendsAWarmSizeUntilTheAskedForOneIsDrawn() async throws {
+  let cache = makeCache(renderCount: LockedCounter())
+  let seed = AvatarSeed("card")
+  let grid = AvatarImageRequest(seed: seed, pixelSize: 84, pattern: .dither)
+  let hero = AvatarImageRequest(seed: seed, pixelSize: 168, pattern: .dither)
+
+  _ = try #require(await cache.image(for: grid))
+
+  // The grid raster covers the hero size the flight has not drawn yet.
+  #expect(cache.cachedImage(for: hero) == nil)
+  #expect(cache.standInImage(for: hero)?.request == grid)
+
+  // Never across faces: another seed or the other renderer is another picture.
+  let elsewhere = AvatarImageRequest(seed: AvatarSeed("elsewhere"), pixelSize: 84, pattern: .dither)
+  let repainted = AvatarImageRequest(seed: seed, pixelSize: 84, pattern: .gradient)
+  #expect(cache.standInImage(for: elsewhere) == nil)
+  #expect(cache.standInImage(for: repainted) == nil)
+
+  _ = try #require(await cache.image(for: hero))
+  #expect(cache.standInImage(for: hero)?.request == hero)
 }
 
 @Test func canceledQueuedImageRequestSkipsRendering() async throws {

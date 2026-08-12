@@ -1718,7 +1718,9 @@ enum WorkspaceGlowPickerMetrics {
   /// selection ring has room to keep its gap and continuous corner arcs.
   static let cardVerticalInset: CGFloat = 8
   static let viewportHeight = cardHeight + cardVerticalInset * 2
-  static let edgeFadeWidth = DashScrollEdgeFadeMetrics.thickness
+  /// Keep the carousel's side treatment optically shorter than the capped
+  /// vertical lists so it does not eat into the neighbouring portrait cards.
+  static let edgeFadeWidth: CGFloat = 24
 
   /// Enough inset to centre one card, but never less than the fade that would
   /// otherwise cover an end card the scroll can no longer move.
