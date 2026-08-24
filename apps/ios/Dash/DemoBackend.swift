@@ -736,10 +736,20 @@ final class DemoBackend: URLProtocol {
     // `workersInvocationsAdaptive`, and Overview is not a substring of the
     // zone Adaptive node.
     if query.contains("httpRequestsOverviewAdaptiveGroups") {
-      return Reply(json: DemoWorld.accountAnalyticsOverview(scale: scale))
+      // Prefer the series `limit:` (after `httpSeries:`) — the overview row
+      // also carries `limit: 1`, which must not size the chart.
+      let seriesLimit = limit(in: query, after: "httpSeries:") ?? limit(in: query) ?? 26
+      let usesDaily =
+        query.contains("date_ASC") || query.contains("dimensions { date }")
+      return Reply(
+        json: DemoWorld.accountAnalyticsOverview(
+          seriesLimit: seriesLimit,
+          usesDailyBuckets: usesDaily,
+          scale: scale))
     }
     if query.contains("workersInvocationsAdaptive") {
-      return Reply(json: DemoWorld.workerAnalytics(scale: scale))
+      let hours = hoursWindow(in: query) ?? 24
+      return Reply(json: DemoWorld.workerAnalytics(hours: hours, scale: scale))
     }
     if query.contains("httpRequests1hGroups") {
       let hours = max((limit(in: query) ?? 25) - 1, 1)
@@ -751,7 +761,8 @@ final class DemoBackend: URLProtocol {
       return Reply(json: DemoWorld.zoneAnalyticsDaily(days: limit(in: query) ?? 7, scale: scale))
     }
     if query.contains("httpRequestsAdaptiveGroups") {
-      return Reply(json: DemoWorld.zoneRequestsHourly(scale: scale))
+      let hours = max((limit(in: query) ?? 25) - 1, 1)
+      return Reply(json: DemoWorld.zoneRequestsHourly(hours: hours, scale: scale))
     }
     if query.contains("pageload: rumPageloadEventsAdaptiveGroups") {
       return Reply(json: DemoWorld.rumMetrics(days: limit(in: query) ?? 14, scale: scale))
@@ -773,6 +784,37 @@ final class DemoBackend: URLProtocol {
     guard let marker = query.range(of: "limit:") else { return nil }
     let digits = query[marker.upperBound...].drop(while: { $0 == " " }).prefix(while: \.isNumber)
     return Int(digits)
+  }
+
+  /// `limit: N` occurring after `marker` — used when a document has several
+  /// limits and only the later series one should size the fixture.
+  private static func limit(in query: String, after marker: String) -> Int? {
+    guard let range = query.range(of: marker) else { return nil }
+    return limit(in: String(query[range.upperBound...]))
+  }
+
+  /// Hours spanned by a `datetime_geq` / `datetime_lt` (or Minute) pair.
+  private static func hoursWindow(in query: String) -> Int? {
+    func stamp(after key: String) -> Date? {
+      guard let marker = query.range(of: key) else { return nil }
+      let rest = query[marker.upperBound...].drop(while: { $0 == " " || $0 == "\"" })
+      let raw = rest.prefix(while: { $0 != "\"" })
+      guard raw.count >= 19 else { return nil }
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      if let date = formatter.date(from: String(raw)) { return date }
+      formatter.formatOptions = [.withInternetDateTime]
+      return formatter.date(from: String(raw))
+    }
+    let geq =
+      stamp(after: "datetimeMinute_geq:")
+      ?? stamp(after: "datetime_geq:")
+    let lt =
+      stamp(after: "datetimeMinute_lt:")
+      ?? stamp(after: "datetime_lt:")
+    guard let geq, let lt else { return nil }
+    let hours = Int(lt.timeIntervalSince(geq) / 3600)
+    return hours > 0 ? hours : nil
   }
 
   /// First `name: "value"` filter tag in a GraphQL query — how an
@@ -894,7 +936,11 @@ private enum DemoWorld {
     Zone(id: "zone-example", name: "example.com", accountID: "demo-account", plan: pro),
     Zone(id: "zone-docs", name: "docs.example.com", accountID: "demo-account"),
     Zone(id: "zone-api", name: "api.example.net", accountID: "demo-account", status: "pending"),
-    Zone(id: "zone-shop", name: "shop.example.org", accountID: "demo-account"),
+    Zone(
+      id: "zone-shop", name: "shop.example.org", accountID: "demo-account",
+      status: "initializing"),
+    Zone(
+      id: "zone-legacy", name: "old.example.com", accountID: "demo-account", status: "moved"),
   ]
 
   /// Varied labels so large-demo Domains cards don't hash into near-identical
@@ -943,9 +989,16 @@ private enum DemoWorld {
   static var allZones: [Zone] {
     let bulk = bulkZoneNames.enumerated().map { offset, name -> Zone in
       let index = offset + 1
+      let status: String
+      switch index % 19 {
+      case 0: status = "pending"
+      case 6: status = "initializing"
+      case 13: status = "moved"
+      default: status = "active"
+      }
       return Zone(
         id: "zone-bulk-\(index)", name: name, accountID: "demo-account",
-        status: index % 11 == 0 ? "pending" : "active")
+        status: status)
     }
     return coreZones + bulk + studioZones + sideZones
   }
@@ -1222,7 +1275,11 @@ private enum DemoWorld {
     let body: Data
 
     var listJSON: String {
-      #"{"key":"\#(key)","size":\#(body.count),"etag":"demo-\#(DemoWorld.seed(key))","last_modified":"\#(DemoClock.iso(hoursAgo: 30))","http_metadata":{"contentType":"\#(contentType)"}}"#
+      // Stagger mtimes so the browser doesn't look like every object landed
+      // in the same hour.
+      let hoursAgo = 6 + Int(DemoWorld.seed(key) % 240)
+      return
+        #"{"key":"\#(key)","size":\#(body.count),"etag":"demo-\#(DemoWorld.seed(key))","last_modified":"\#(DemoClock.iso(hoursAgo: hoursAgo))","http_metadata":{"contentType":"\#(contentType)"}}"#
     }
   }
 
@@ -1582,10 +1639,11 @@ private enum DemoWorld {
 
   // MARK: GraphQL payloads
 
-  /// Deterministic traffic wave: a day-shaped curve so charts look alive
-  /// without randomness (pull-to-refresh should not rewrite history).
-  private static func wave(_ index: Int, base: Int, swing: Int) -> Int {
-    let phase = Double(index) * .pi / 12
+  /// Deterministic traffic wave so charts look alive without randomness
+  /// (pull-to-refresh should not rewrite history). `period` is half-cycles
+  /// per `π` — 12 ≈ one day of hourly slots; 3.5 ≈ a weekly beat on daily slots.
+  private static func wave(_ index: Int, base: Int, swing: Int, period: Double = 12) -> Int {
+    let phase = Double(index) * .pi / max(period, 1)
     return base + Int(Double(swing) * (0.5 + 0.5 * sin(phase - .pi / 2)))
   }
 
@@ -1611,11 +1669,12 @@ private enum DemoWorld {
       """#
   }
 
-  static func zoneRequestsHourly(scale: Double) -> String {
-    let rows = (0..<24).map { hour -> String in
-      let requests = scaled(wave(hour, base: 620, swing: 1400), scale)
+  static func zoneRequestsHourly(hours: Int = 24, scale: Double) -> String {
+    let count = max(hours, 1)
+    let rows = (0..<count).map { hour -> String in
+      let requests = scaled(wave(hour % 24, base: 620, swing: 1400) + (hour / 24) * 40, scale)
       return
-        #"{"count":\#(requests),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - hour))"}}"#
+        #"{"count":\#(requests),"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count - 1 - hour))"}}"#
     }
     return
       #"{"data":{"viewer":{"zones":[{"httpRequestsAdaptiveGroups":[\#(rows.joined(separator: ","))]}]}},"errors":null}"#
@@ -1669,53 +1728,131 @@ private enum DemoWorld {
       """#
   }
 
-  static func workerAnalytics(scale: Double) -> String {
-    let samples = (0..<12).map { slot -> (json: String, requests: Int, errors: Int) in
-      let requests = scaled(wave(slot, base: 80, swing: 160), scale)
-      let errors = slot == 7 ? scaledOrZero(3, scale) : 0
-      let cpu = Double(wave(slot, base: 640, swing: 420)) + (slot == 7 ? 380.0 : 0.0)
+  static func workerAnalytics(hours: Int = 24, scale: Double) -> String {
+    // Five-minute buckets across the requested window, capped so a long
+    // window stays a light demo payload.
+    let slots = min(max(hours, 1) * 12, 288)
+    let samples = (0..<slots).map {
+      slot -> (json: String, requests: Int, errors: Int, cpu: Double) in
+      let hourOfDay = (slot / 12) % 24
+      let requests = scaled(
+        wave(hourOfDay, base: 80, swing: 160) / 12 + wave(slot, base: 2, swing: 8), scale)
+      let errors = slot % 37 == 18 ? scaledOrZero(3, scale) : 0
+      let cpu = Double(wave(slot, base: 640, swing: 420, period: 36)) + (errors > 0 ? 380.0 : 0.0)
       return (
-        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: 11 - slot))","status":"success"}}"#,
+        #"{"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP50":\#(cpu)},"dimensions":{"datetimeFiveMinutes":"\#(DemoClock.isoFiveMinutes(slotsAgo: slots - 1 - slot))","status":"success"}}"#,
         requests,
-        errors
+        errors,
+        cpu
       )
     }
     let currentRequests = samples.reduce(0) { $0 + $1.requests }
     let currentErrors = samples.reduce(0) { $0 + $1.errors }
+    let currentCPU =
+      samples.map(\.cpu).sorted(by: <).dropFirst(samples.count / 2).first ?? 1040
     let previousRequests = currentRequests * 81 / 100
     let previousErrors = max(0, currentErrors - 1)
     return #"""
       {"data":{"viewer":{"accounts":[{
-        "currentTotals":[{"sum":{"requests":\#(currentRequests),"errors":\#(currentErrors)},"quantiles":{"cpuTimeP50":1040.0}}],
-        "previousTotals":[{"sum":{"requests":\#(previousRequests),"errors":\#(previousErrors)},"quantiles":{"cpuTimeP50":870.0}}],
+        "currentTotals":[{"sum":{"requests":\#(currentRequests),"errors":\#(currentErrors)},"quantiles":{"cpuTimeP50":\#(currentCPU)}}],
+        "previousTotals":[{"sum":{"requests":\#(previousRequests),"errors":\#(previousErrors)},"quantiles":{"cpuTimeP50":\#(currentCPU * 0.84)}}],
         "workersInvocationsAdaptive":[\#(samples.map(\.json).joined(separator: ","))]
       }]}},"errors":null}
       """#
   }
 
   /// Account overview + series for Watchtower's 24h / 7d / 30d ranges.
-  /// Hourly stamps for short windows; the client also accepts `date` buckets.
-  static func accountAnalyticsOverview(scale: Double) -> String {
-    let httpSeries = (0..<24).map { slot -> String in
-      let requests = scaled(wave(slot, base: 420, swing: 280), scale)
-      let bytes = requests * 48_000
-      let cache = 0.55 + Double(slot % 5) * 0.03
-      let encrypted = 0.94 + Double(slot % 3) * 0.01
-      let status4xx = slot == 11 ? 0.08 : 0.015
-      return #"""
-        {"sum":{"requests":\#(requests),"bytes":\#(bytes)},"ratio":{"cachedRequests":\#(cache),"encryptedRequests":\#(encrypted),"encryptedBytes":\#(encrypted - 0.02),"status4xx":\#(status4xx)},"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - slot))"}}
-        """#
+  ///
+  /// `seriesLimit` comes from the client's GraphQL document (26 / 170 / 32).
+  /// Daily buckets use `date`; hourly windows use `datetimeHour`. Totals are
+  /// summed from the series so the three ranges cannot share one fixture.
+  static func accountAnalyticsOverview(
+    seriesLimit: Int,
+    usesDailyBuckets: Bool,
+    scale: Double
+  ) -> String {
+    // Client asks for hours+2 / days+2 headroom; paint the real window.
+    let count = max(seriesLimit - 2, usesDailyBuckets ? 7 : 24)
+    let weekday: [Double] = [0.72, 1.0, 1.08, 1.12, 1.1, 0.95, 0.68]
+
+    var httpRows: [(json: String, requests: Int, bytes: Int)] = []
+    httpRows.reserveCapacity(count)
+    for slot in 0..<count {
+      let requests: Int
+      if usesDailyBuckets {
+        let dayWave = wave(slot, base: 14_500, swing: 9_500, period: 3.5)
+        requests = scaled(Int(Double(dayWave) * weekday[slot % 7]), scale)
+      } else {
+        let hourOfDay = slot % 24
+        let dayDrift = (slot / 24) * 18
+        requests = scaled(wave(hourOfDay, base: 420, swing: 280) + dayDrift, scale)
+      }
+      let bytes = requests * (usesDailyBuckets ? 52_000 : 48_000)
+      let cache = 0.52 + Double(slot % 7) * 0.025
+      let encrypted = 0.93 + Double(slot % 4) * 0.012
+      let status4xx =
+        usesDailyBuckets
+        ? (slot % 7 == 6 ? 0.045 : 0.016)
+        : (hourSpike(slot) ? 0.08 : 0.015)
+      let dimensions =
+        usesDailyBuckets
+        ? #"{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - slot))"}"#
+        : #"{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count - 1 - slot))"}"#
+      httpRows.append(
+        (
+          #"""
+          {"sum":{"requests":\#(requests),"bytes":\#(bytes)},"ratio":{"cachedRequests":\#(cache),"encryptedRequests":\#(encrypted),"encryptedBytes":\#(max(0, encrypted - 0.02)),"status4xx":\#(status4xx)},"dimensions":\#(dimensions)}
+          """#,
+          requests,
+          bytes
+        ))
     }
-    let workerSeries = (0..<24).map { slot -> String in
-      let requests = scaled(wave(slot, base: 160, swing: 90), scale)
-      let errors = slot == 11 ? scaledOrZero(4, scale) : 0
-      let cpu = Double(wave(slot, base: 900, swing: 500))
-      return #"""
-        {"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP90":\#(cpu)},"dimensions":{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: 23 - slot))"}}
-        """#
+
+    var workerRows: [(json: String, requests: Int, errors: Int, cpu: Double)] = []
+    workerRows.reserveCapacity(count)
+    for slot in 0..<count {
+      let requests: Int
+      if usesDailyBuckets {
+        let dayWave = wave(slot, base: 5_200, swing: 3_400, period: 3.5)
+        requests = scaled(Int(Double(dayWave) * weekday[slot % 7]), scale)
+      } else {
+        let hourOfDay = slot % 24
+        requests = scaled(wave(hourOfDay, base: 160, swing: 90) + (slot / 24) * 6, scale)
+      }
+      let errors =
+        usesDailyBuckets
+        ? (slot % 9 == 4 ? scaledOrZero(14, scale) : scaledOrZero(2, scale))
+        : (hourSpike(slot) ? scaledOrZero(4, scale) : 0)
+      let cpu = Double(
+        usesDailyBuckets
+          ? wave(slot, base: 1_100, swing: 700, period: 3.5)
+          : wave(slot % 24, base: 900, swing: 500))
+      let dimensions =
+        usesDailyBuckets
+        ? #"{"date":"\#(DemoClock.isoDay(daysAgo: count - 1 - slot))"}"#
+        : #"{"datetimeHour":"\#(DemoClock.isoHour(hoursAgo: count - 1 - slot))"}"#
+      workerRows.append(
+        (
+          #"""
+          {"sum":{"requests":\#(requests),"errors":\#(errors)},"quantiles":{"cpuTimeP90":\#(cpu)},"dimensions":\#(dimensions)}
+          """#,
+          requests,
+          errors,
+          cpu
+        ))
     }
-    let webRequests = scaled(12_840, scale)
-    let bytes = scaled(52_428_800, scale)
+
+    let webRequests = httpRows.reduce(0) { $0 + $1.requests }
+    let bytes = httpRows.reduce(0) { $0 + $1.bytes }
+    let workerRequests = workerRows.reduce(0) { $0 + $1.requests }
+    let workerErrors = workerRows.reduce(0) { $0 + $1.errors }
+    let workerCPU =
+      workerRows.map(\.cpu).sorted(by: <).dropFirst(workerRows.count * 9 / 10).first ?? 1_260
+    let prevWeb = webRequests * 87 / 100
+    let prevBytes = bytes * 87 / 100
+    let prevWorkers = workerRequests * 89 / 100
+    let prevErrors = max(workerErrors * 11 / 10, workerErrors)
+
     return #"""
       {"data":{"viewer":{"accounts":[{
         "overview":[{
@@ -1723,21 +1860,26 @@ private enum DemoWorld {
           "ratio":{"cachedRequests":0.62,"encryptedRequests":0.97,"encryptedBytes":0.94,"status4xx":0.018}
         }],
         "previousOverview":[{
-          "sum":{"requests":\#(scaled(11_240, scale)),"bytes":\#(scaled(46_350_000, scale))},
+          "sum":{"requests":\#(prevWeb),"bytes":\#(prevBytes)},
           "ratio":{"cachedRequests":0.57,"encryptedRequests":0.95,"encryptedBytes":0.91,"status4xx":0.024}
         }],
-        "httpSeries":[\#(httpSeries.joined(separator: ","))],
+        "httpSeries":[\#(httpRows.map(\.json).joined(separator: ","))],
         "workers":[{
-          "sum":{"requests":\#(scaled(4820, scale)),"errors":\#(scaledOrZero(12, scale))},
-          "quantiles":{"cpuTimeP90":1260.0}
+          "sum":{"requests":\#(workerRequests),"errors":\#(workerErrors)},
+          "quantiles":{"cpuTimeP90":\#(workerCPU)}
         }],
         "previousWorkers":[{
-          "sum":{"requests":\#(scaled(4310, scale)),"errors":\#(scaledOrZero(19, scale))},
-          "quantiles":{"cpuTimeP90":1490.0}
+          "sum":{"requests":\#(prevWorkers),"errors":\#(prevErrors)},
+          "quantiles":{"cpuTimeP90":\#(workerCPU * 1.12)}
         }],
-        "workerSeries":[\#(workerSeries.joined(separator: ","))]
+        "workerSeries":[\#(workerRows.map(\.json).joined(separator: ","))]
       }]}},"errors":null}
       """#
+  }
+
+  /// Mid-day spike used by the hourly Watchtower fixtures.
+  private static func hourSpike(_ slot: Int) -> Bool {
+    slot % 24 == 11
   }
 
   /// WAF summary fixture: hourly ByTimeGroups totals plus Adaptive samples for

@@ -132,24 +132,24 @@ import UIKit
   #expect(reduced.delay == 0)
 }
 
-@Test func coldFailureWashDenselyVeilsEverythingBelowTwoSkeletonRows() {
+@Test func translucentNoticeWashDenselyVeilsEverythingBelowTwoSkeletonRows() {
   #expect(
-    DashColdFailureWashRamp.fadeDepth
+    DashTranslucentNoticeWashRamp.fadeDepth
       == DashTheme.Layout.subtitledListRow * 2)
-  #expect(DashColdFailureWashRamp.peakOpacity >= 0.95)
+  #expect(DashTranslucentNoticeWashRamp.peakOpacity >= 0.95)
 
   for height: CGFloat in [420, 800] {
-    let stops = DashColdFailureWashRamp.stops(for: height)
+    let stops = DashTranslucentNoticeWashRamp.stops(for: height)
     // The gradient is expressed bottom → top: dense beneath the copy, clear
     // at the top where roughly two placeholder seats remain visible.
     #expect(stops.first?.location == 0)
-    #expect(stops.first?.opacity == DashColdFailureWashRamp.peakOpacity)
+    #expect(stops.first?.opacity == DashTranslucentNoticeWashRamp.peakOpacity)
     #expect(stops.last?.location == 1)
     #expect(stops.last?.opacity == 0)
     let measuredFadeDepth = (1 - stops[1].location) * height
     #expect(
-      abs(measuredFadeDepth - DashColdFailureWashRamp.fadeDepth) < 0.001)
-    #expect(stops[1].opacity == DashColdFailureWashRamp.peakOpacity)
+      abs(measuredFadeDepth - DashTranslucentNoticeWashRamp.fadeDepth) < 0.001)
+    #expect(stops[1].opacity == DashTranslucentNoticeWashRamp.peakOpacity)
 
     for (previous, next) in zip(stops, stops.dropFirst()) {
       #expect(next.location > previous.location)
@@ -157,10 +157,10 @@ import UIKit
     }
   }
 
-  let compactStops = DashColdFailureWashRamp.stops(for: 100)
+  let compactStops = DashTranslucentNoticeWashRamp.stops(for: 100)
   #expect(compactStops.count == 5)
   #expect(compactStops.first?.location == 0)
-  #expect(compactStops.first?.opacity == DashColdFailureWashRamp.peakOpacity)
+  #expect(compactStops.first?.opacity == DashTranslucentNoticeWashRamp.peakOpacity)
   #expect(compactStops.last?.location == 1)
   #expect(compactStops.last?.opacity == 0)
   for (previous, next) in zip(compactStops, compactStops.dropFirst()) {
@@ -169,12 +169,12 @@ import UIKit
   }
 }
 
-@Test func coldFailureWashPhysicallyDropsBlurForReducedTransparency() {
+@Test func translucentNoticeWashPhysicallyDropsBlurForReducedTransparency() {
   #expect(
-    DashColdFailureWashLayerRules.mountsBackdropMaterial(
+    DashTranslucentNoticeWashLayerRules.mountsBackdropMaterial(
       reduceTransparency: false))
   #expect(
-    !DashColdFailureWashLayerRules.mountsBackdropMaterial(
+    !DashTranslucentNoticeWashLayerRules.mountsBackdropMaterial(
       reduceTransparency: true))
 }
 
@@ -230,7 +230,7 @@ import UIKit
   // Total-driven: 50 of 120 loaded → more remain, request page 2 next.
   state.absorb(
     info: ResultInfo(page: 1, perPage: 50, totalCount: 120, cursor: nil),
-    received: 50, loaded: 50, pageSize: 50)
+    requestedPage: 1, received: 50, added: 50, loaded: 50, pageSize: 50)
   #expect(state.nextPage == 2)
   #expect(state.totalCount == 120)
   #expect(state.canLoadMore)
@@ -238,16 +238,35 @@ import UIKit
   // Final page: loaded reaches total.
   state.absorb(
     info: ResultInfo(page: 3, perPage: 50, totalCount: 120, cursor: nil),
-    received: 20, loaded: 120, pageSize: 50)
+    requestedPage: 3, received: 20, added: 20, loaded: 120, pageSize: 50)
   #expect(state.nextPage == 4)
   #expect(!state.canLoadMore)
 
   // Heuristic without result_info: a full page may have a successor.
   state.reset()
-  state.absorb(info: nil, received: 50, loaded: 50, pageSize: 50)
+  state.absorb(
+    info: nil, requestedPage: 1, received: 50, added: 50, loaded: 50,
+    pageSize: 50)
   #expect(state.nextPage == 2)
   #expect(state.canLoadMore)
-  state.absorb(info: nil, received: 12, loaded: 62, pageSize: 50)
+  state.absorb(
+    info: nil, requestedPage: 2, received: 12, added: 12, loaded: 62,
+    pageSize: 50)
+  #expect(!state.canLoadMore)
+}
+
+@Test func pageStateIgnoresStalePageMetadataAndStopsOnRepeatedIdentities() {
+  var state = DashPageState()
+  state.absorb(
+    info: ResultInfo(page: 1, perPage: 50, totalCount: nil, cursor: nil),
+    requestedPage: 4, received: 50, added: 50, loaded: 200, pageSize: 50)
+  #expect(state.nextPage == 5)
+  #expect(state.canLoadMore)
+
+  state.absorb(
+    info: ResultInfo(page: 1, perPage: 50, totalCount: nil, cursor: nil),
+    requestedPage: 5, received: 50, added: 0, loaded: 200, pageSize: 50)
+  #expect(state.nextPage == 6)
   #expect(!state.canLoadMore)
 }
 
@@ -264,6 +283,23 @@ import UIKit
   state.rehydrate(loaded: 0, pageSize: 50)
   #expect(state.nextPage == 1)
   #expect(!state.canLoadMore)
+}
+
+@Test func zonesCatalogEagerFetchStopsAtBudgetOrWhenComplete() {
+  #expect(ZonesCatalogFetchRules.pageSize == 50)
+  #expect(ZonesCatalogFetchRules.eagerPageBudget == 40)
+  #expect(
+    ZonesCatalogFetchRules.shouldContinueEagerly(pagesFetched: 1, canLoadMore: true))
+  #expect(
+    ZonesCatalogFetchRules.shouldContinueEagerly(
+      pagesFetched: ZonesCatalogFetchRules.eagerPageBudget - 1,
+      canLoadMore: true))
+  #expect(
+    !ZonesCatalogFetchRules.shouldContinueEagerly(
+      pagesFetched: ZonesCatalogFetchRules.eagerPageBudget,
+      canLoadMore: true))
+  #expect(
+    !ZonesCatalogFetchRules.shouldContinueEagerly(pagesFetched: 3, canLoadMore: false))
 }
 
 @Test func zonePickerSubmissionEffectsStayBoundToTheLoadedAccountGeneration() throws {
@@ -329,7 +365,10 @@ struct DashZonePickerLoaderTests {
     model.activeAccountID = "cached-empty-account"
     let context = try #require(model.accountRequestContext)
     let cached: [CloudflareZone] = []
-    model.featureCache.set(FeatureCacheKey.zones(context.accountID), cached)
+    model.featureCache.storeZones(
+      cached,
+      accountID: context.accountID,
+      catalogIsComplete: true)
 
     let result = await DashZonePickerLoader.load(model: model, context: context)
 
@@ -371,6 +410,46 @@ struct DashZonePickerLoaderTests {
     #expect(request.path.hasSuffix("/zones"))
     #expect(request.query["account.id"] == context.accountID)
     #expect(request.query["per_page"] == String(ZonesView.pageSize))
+  }
+
+  @Test @MainActor
+  func partialZonesCacheIsRefetchedBeforePickerSettles() async throws {
+    let recorder = DashZonePickerRequestRecorder()
+    let session = dashZonePickerSession { request in
+      recorder.record(request)
+      return (
+        200,
+        Data(
+          #"{"success":true,"errors":[],"messages":[],"result":[{"id":"remote-zone","name":"remote.example","status":"active"}],"result_info":{"page":1,"per_page":50,"count":1,"total_count":1}}"#
+            .utf8)
+      )
+    }
+    defer { DashZonePickerURLProtocol.handler = nil }
+    let model = AppModel(
+      configuration: AppConfiguration(clientID: "test", redirectURI: ""),
+      tokenStore: DemoTokenStore(),
+      session: session,
+      deferredDeletionPersistence: nil)
+    model.activeAccountID = "partial-cache-account"
+    let context = try #require(model.accountRequestContext)
+    let partial = try JSONDecoder().decode(
+      [CloudflareZone].self,
+      from: Data(
+        #"[{"id":"cached-zone","name":"cached.example","status":"active"}]"#.utf8))
+    model.featureCache.storeZones(
+      partial,
+      accountID: context.accountID,
+      catalogIsComplete: false)
+
+    let result = await DashZonePickerLoader.load(model: model, context: context)
+
+    guard case .loaded(let zones) = result else {
+      Issue.record("Expected the picker to replace its partial cache, got \(result)")
+      return
+    }
+    #expect(zones.map(\.id) == ["remote-zone"])
+    #expect(recorder.requests.count == 1)
+    #expect(model.featureCache.zonesCatalogIsComplete(accountID: context.accountID))
   }
 }
 

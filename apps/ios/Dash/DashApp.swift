@@ -18,9 +18,6 @@ struct DashApp: App {
     GlobeHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
     let model = AppModel(featureCachePersistence: FeatureCachePersistence())
     _model = State(initialValue: model)
-    if ICloudPreferencesSync.shouldStartForCurrentProcess {
-      ICloudPreferencesSync.shared.start()
-    }
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
     AppDependencyManager.shared.add(dependency: model)
@@ -99,7 +96,6 @@ private struct RootWithSplash: View {
   var model: AppModel
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.scenePhase) private var scenePhase
   @AppStorage(DashAppLanguage.storageKey) private var languageRaw = DashAppLanguage.system
     .rawValue
   @State private var phase: Phase = .holding
@@ -216,11 +212,6 @@ private struct RootWithSplash: View {
         DashAppLanguage.resolved(stored: languageRaw).applyToProcess()
         DashWidgetBridges.reloadMetricsWidgets()
         model.discardLocalizedCaches()
-      }
-      .onChange(of: scenePhase) { _, phase in
-        if phase == .active {
-          ICloudPreferencesSync.shared.refresh()
-        }
       }
       .task {
         async let bootstrap: Void = model.bootstrap()

@@ -91,15 +91,18 @@ enum DashZonePickerSubmissionGuard {
 }
 
 /// Cache-first loading shared by forms that infer an owning zone from a typed
-/// hostname. The picker contract is one catalog page, matching `ZonesView`.
+/// hostname. Prefers the Domains catalog cache (which fills eagerly); on a
+/// miss it walks the complete unique catalog so a zone beyond Domains' eager
+/// paint budget can still own a submitted hostname.
 @MainActor
 enum DashZonePickerLoader {
   static func load(
     model: AppModel,
     context: AccountRequestContext
   ) async -> DashZonePickerLoadResult {
-    if let cached: [CloudflareZone] = model.featureCache.get(
-      FeatureCacheKey.zones(context.accountID))
+    if model.featureCache.zonesCatalogIsComplete(accountID: context.accountID),
+      let cached: [CloudflareZone] = model.featureCache.get(
+        FeatureCacheKey.zones(context.accountID))
     {
       guard model.isCurrentAccount(context) else { return .cancelled }
       return .loaded(cached)
@@ -107,14 +110,23 @@ enum DashZonePickerLoader {
 
     let client = model.client
     do {
-      let zones = try await client.listZones(
-        accountID: context.accountID,
-        perPage: ZonesView.pageSize
-      ).items
+      let collected = try await DashPageLoader.loadAll(
+        pageSize: ZonesCatalogFetchRules.pageSize,
+        id: \.id
+      ) { page, perPage in
+        try await client.listZones(
+          accountID: context.accountID,
+          page: page,
+          perPage: perPage)
+      }
       guard !Task.isCancelled, model.isCurrentAccount(context) else {
         return .cancelled
       }
-      return .loaded(zones)
+      model.featureCache.storeZones(
+        collected,
+        accountID: context.accountID,
+        catalogIsComplete: true)
+      return .loaded(collected)
     } catch {
       guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context) else {
         return .cancelled
@@ -140,11 +152,23 @@ struct DashPageState: Equatable {
   }
 
   /// Folds a fetched page into the state. `loaded` is the row count after
-  /// appending. A server-provided total wins over the full-page heuristic.
-  mutating func absorb(info: ResultInfo?, received: Int, loaded: Int, pageSize: Int) {
-    nextPage = (info?.page ?? nextPage) + 1
+  /// appending and `added` is the number of new identities. The requested page
+  /// is authoritative: some endpoints repeat stale `result_info.page` values,
+  /// which must not make the caller request and append the same page forever.
+  /// A server-provided total wins over the full-page heuristic.
+  mutating func absorb(
+    info: ResultInfo?,
+    requestedPage: Int,
+    received: Int,
+    added: Int,
+    loaded: Int,
+    pageSize: Int
+  ) {
+    nextPage = requestedPage + 1
     if let total = info?.totalCount { totalCount = total }
-    if let totalCount {
+    if received > 0, added == 0 {
+      canLoadMore = false
+    } else if let totalCount {
       canLoadMore = loaded < totalCount
     } else {
       canLoadMore = received > 0 && received == pageSize

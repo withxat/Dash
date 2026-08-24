@@ -1129,19 +1129,20 @@ struct DashFadedScrollView<Content: View>: View {
   private let softRange = DashScrollEdgeFadeMetrics.softRange
 
   var body: some View {
+    let resolvedSpaceName = spaceName
     ScrollView(showsIndicators: showsIndicators) {
       content()
         // Leaf-owned geometry: writing a Bound PreferenceKey from two
         // GeometryReaders (content + viewport) — and nesting this view inside
         // the tray card — re-entered AttributeGraph on every open.
         .onGeometryChange(for: ScrollEdgeContentMetrics.self) { proxy in
-          let frame = proxy.frame(in: .named(spaceName))
+          let frame = proxy.frame(in: .named(resolvedSpaceName))
           return ScrollEdgeContentMetrics(offset: -frame.minY, height: proxy.size.height)
         } action: { metrics in
           ingestContent(metrics)
         }
     }
-    .coordinateSpace(name: spaceName)
+    .coordinateSpace(name: resolvedSpaceName)
     .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
       ingestViewport(height)
     }

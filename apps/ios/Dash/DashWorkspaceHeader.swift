@@ -34,12 +34,13 @@ struct DashWorkspaceHeaderState: Equatable {
   var trailing: DashWorkspaceHeaderTrailing = .empty
 }
 
-/// A slot's occupant identity — the page it belongs to plus which kind of
-/// occupant it is. Trailing uses this so a page change cross-fades actions
-/// while an in-page change (a Save becoming enabled) updates in place.
+/// A trailing slot's occupant identity — the page it belongs to, which kind of
+/// occupant it is, and the ordered membership of a page-owned action group.
+/// Presentation-only changes to an existing action still update in place.
 struct DashWorkspaceHeaderSlotID: Hashable {
   let entryID: DashNavigationEntry.ID?
   let kind: Int
+  let actionIDs: [String]
 }
 
 extension DashWorkspaceHeaderLeading {
@@ -67,6 +68,22 @@ extension DashWorkspaceHeaderTrailing {
     case .watchtowerEditor: 2
     case .actions: 3
     }
+  }
+
+  /// Same-page action replacement must trade the whole seat. The per-button
+  /// `ForEach` has no removal hit gate of its own, so leaving Pin/Upload
+  /// controls could otherwise remain interactive over arriving Save/Done
+  /// controls for the tail of the header spring.
+  func slotID(entryID: DashNavigationEntry.ID?) -> DashWorkspaceHeaderSlotID {
+    let actionIDs: [String] =
+      switch self {
+      case .actions(let descriptors): descriptors.map(\.id)
+      case .empty, .watchtowerInbox, .watchtowerEditor: []
+      }
+    return DashWorkspaceHeaderSlotID(
+      entryID: entryID,
+      kind: slotKind,
+      actionIDs: actionIDs)
   }
 }
 
@@ -545,15 +562,11 @@ struct DashWorkspaceHeaderBar: View {
     ZStack(alignment: .trailing) {
       slotReservation
       trailingControls(shown)
-        // Page actions change inside a page too (a selection, a Save becoming
-        // enabled). Keying the group to the page keeps those per-button, and
-        // reserves the cross-fade for an actual page change. Transition sits
-        // with `.id` for the same reason as the leading seat.
-        .id(
-          DashWorkspaceHeaderSlotID(
-            entryID: shown.entryID,
-            kind: shown.trailing.slotKind)
-        )
+        // Membership/order changes trade the whole group so the outer ghost
+        // hit gate protects same-page Pin -> Save and Upload/More -> Done
+        // handoffs. The same ordered IDs keep label/enabled updates in place.
+        // Transition sits with `.id` for the same reason as the leading seat.
+        .id(shown.trailing.slotID(entryID: shown.entryID))
         .transition(controlTransition)
         .zIndex(seatGeneration)
     }

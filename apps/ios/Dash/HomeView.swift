@@ -169,7 +169,7 @@ struct HomeView: View {
     ) {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
-        model.featureCache.remove(FeatureCacheKey.zones(accountID))
+        model.featureCache.removeZones(accountID: accountID)
         Task { await loadZones(force: true) }
       }
     }
@@ -245,11 +245,7 @@ struct HomeView: View {
       HomeDemoConnectFooter(connect: leaveDemoForConnection)
     }
     .onChange(of: actionsRaw) { _, newValue in
-      ICloudPreferencesSync.shared.publish(.homeActions)
       HomeActions.mirrorToAppGroup(newValue)
-    }
-    .onChange(of: shortcutsRaw) { _, _ in
-      ICloudPreferencesSync.shared.publish(.homeShortcuts)
     }
     .onAppear { consumePendingHomeActionIfReady() }
     .onChange(of: model.pendingHomeAction) { _, _ in
@@ -431,7 +427,6 @@ struct HomeView: View {
       guard isCurrentZonesRequest(requestID, context: context) else { return }
       zones = page.items
       seedPinsIfNeeded(from: page.items, accountID: context.accountID)
-      model.featureCache.storeZones(page.items, accountID: context.accountID)
       let catalogIsComplete: Bool
       if let totalCount = page.resultInfo?.totalCount {
         catalogIsComplete = page.items.count >= totalCount
@@ -439,6 +434,10 @@ struct HomeView: View {
         catalogIsComplete =
           page.items.count < (page.resultInfo?.perPage ?? ZonesView.pageSize)
       }
+      model.featureCache.storeZones(
+        page.items,
+        accountID: context.accountID,
+        catalogIsComplete: catalogIsComplete)
       MetricsWidgetPublisher.syncDomains(
         page.items,
         accountID: context.accountID,

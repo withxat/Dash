@@ -5,6 +5,12 @@ import UIKit
 
 enum FeatureCacheKey {
   static func zones(_ accountID: String) -> String { "zones:\(accountID)" }
+  /// Completeness travels beside the array because Home intentionally caches
+  /// only its first page, while Email Routing and hostname pickers require the
+  /// whole account catalog. A missing legacy marker is conservatively partial.
+  static func zonesCatalogComplete(_ accountID: String) -> String {
+    "zonesCatalogComplete:\(accountID)"
+  }
   static func zone(_ zoneID: String) -> String { "zone:\(zoneID)" }
   static func dnsRecords(_ zoneID: String) -> String { "dns:\(zoneID)" }
   static func emailRouting(_ zoneID: String) -> String { "emailRouting:\(zoneID)" }
@@ -334,11 +340,34 @@ final class FeatureDataCache {
 
   /// Account zone list plus per-id entries so zone detail can paint the
   /// header from Home / Domains cache without waiting on `getZone`.
-  func storeZones(_ zones: [CloudflareZone], accountID: String) {
+  func storeZones(
+    _ zones: [CloudflareZone],
+    accountID: String,
+    catalogIsComplete: Bool
+  ) {
+    // Publish a partial marker before replacing a formerly complete array; a
+    // crash between the two writes must never leave the new prefix labelled
+    // complete. A complete result flips true only after its full array lands.
+    if !catalogIsComplete {
+      set(FeatureCacheKey.zonesCatalogComplete(accountID), false)
+    }
     set(FeatureCacheKey.zones(accountID), zones)
+    if catalogIsComplete {
+      set(FeatureCacheKey.zonesCatalogComplete(accountID), true)
+    }
     for zone in zones {
       set(FeatureCacheKey.zone(zone.id), zone)
     }
+  }
+
+  func zonesCatalogIsComplete(accountID: String) -> Bool {
+    let complete: Bool? = get(FeatureCacheKey.zonesCatalogComplete(accountID))
+    return complete == true
+  }
+
+  func removeZones(accountID: String) {
+    remove(FeatureCacheKey.zones(accountID))
+    remove(FeatureCacheKey.zonesCatalogComplete(accountID))
   }
 
   /// Prefer the dedicated zone entry, then the account list snapshot.

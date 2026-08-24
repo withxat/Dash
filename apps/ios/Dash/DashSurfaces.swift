@@ -1155,6 +1155,46 @@ private struct DashSectionFailureVeil: View {
   }
 }
 
+/// Guidance over an already-loaded, temporarily unavailable section. Unlike a
+/// failure veil, this keeps the shared bottom-dense material wash and uses a
+/// neutral content glyph: the rows are real, but the product is explaining
+/// when they become available rather than reporting a request error.
+private struct DashSectionNoticeVeil: View {
+  let icon: String
+  let message: String
+
+  @State private var revealed = false
+
+  var body: some View {
+    ZStack {
+      // The modifier mounts this veil as an overlay on the rows, so the wash
+      // receives their current proposed size immediately. Keep it visible on
+      // the first frame; only the compact guidance copy staggers into place.
+      DashTranslucentNoticeWash(revealed: true)
+
+      VStack(spacing: DashTheme.Spacing.compact) {
+        SolarIcon(asset: icon, size: 22, color: DashTheme.subtle)
+          .dashItemStagger(visible: revealed, index: 0)
+        Text(DashL10n.ui(message))
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .dashItemStagger(visible: revealed, index: 1)
+      }
+      .padding(DashTheme.Spacing.card)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(DashL10n.ui(message))
+    .onAppear {
+      // Commit the hidden lifted item poses before starting their shared
+      // entrance; the wash itself is already covering the live rows.
+      DispatchQueue.main.async { revealed = true }
+    }
+  }
+}
+
 extension View {
   /// Section-scale failure for sections that are not `DashInfoGroup`s — chart
   /// cards, log cards, deployment rows. Apply it to the section's own
@@ -1181,6 +1221,15 @@ extension View {
     modifier(
       DashSectionFailureModifier(
         message: message, actionTitle: actionTitle, retry: retry))
+  }
+
+  /// Local guidance over a preserved, multi-row section. It shares the cold
+  /// empty/error wash and item cadence without inheriting full-screen sizing
+  /// or failure semantics. While present, the underlying rows keep their
+  /// layout but surrender hit testing and VoiceOver to the notice.
+  func dashSectionNotice(_ message: String?, icon: String) -> some View {
+    modifier(
+      DashSectionNoticeModifier(message: message, icon: icon))
   }
 }
 
@@ -1217,6 +1266,28 @@ private struct DashSectionFailureModifier: ViewModifier {
     // Inside `DashInfoGroup` the enclosing card trims the veil's overhang;
     // here the modifier trims it itself.
     .clipped()
+  }
+}
+
+private struct DashSectionNoticeModifier: ViewModifier {
+  let message: String?
+  let icon: String
+
+  func body(content: Content) -> some View {
+    content
+      .environment(\.dashSkeletonPulseActive, message == nil)
+      .allowsHitTesting(message == nil)
+      .accessibilityHidden(message != nil)
+      .overlay {
+        if let message {
+          DashSectionNoticeVeil(
+            icon: icon,
+            message: message
+          )
+          .dashFailureRemovalTransition()
+        }
+      }
+      .clipped()
   }
 }
 

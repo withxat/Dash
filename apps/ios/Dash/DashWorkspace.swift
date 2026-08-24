@@ -138,6 +138,11 @@ private struct DashHostedDestination: View {
     .environment(\.dashWorkspacePresentationState, presentationState)
     .environment(\.dashUsesCustomPageStack, true)
     .environment(\.dashNavigationEntryID, entry.id)
+    .environment(\.dashNavigationEntryHero, entry.origin?.hero)
+    .environment(
+      \.dashPageTransitionActive,
+      hostContext.interactionLockedEntryID == entry.id
+    )
     .environment(\.dashTabActive, hostContext.isTabActive)
     .environment(\.dashSplashLifted, hostContext.splashLifted)
     .environment(
@@ -251,6 +256,10 @@ private struct DashNavigationHeroView: View {
   /// detail is up (its own header action), and the return flight must land
   /// wearing the marker the grid card already shows.
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
+  /// Same contract for card fill — customize saves under this key on the
+  /// detail screen, and a pop that still carried the push-time `fillHex`
+  /// would fly the old color back into the grid.
+  @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
 
   var body: some View {
     content
@@ -262,12 +271,18 @@ private struct DashNavigationHeroView: View {
   @ViewBuilder
   private var content: some View {
     switch hero {
-    case .domainCard(let zoneID, let name, let status, let seed, let fillHex, let plan):
+    case .domainCard(
+      let accountID, let zoneID, let name, let status, let seed, let fillHex, let plan
+    ):
       DomainCardFace(
         name: name,
         status: status,
         seed: seed,
-        fillHex: fillHex,
+        fillHex: DomainCardColors.hex(
+          in: domainCardColorData,
+          accountID: accountID,
+          zoneID: zoneID,
+          fallback: fillHex),
         plan: plan,
         pinMarker: PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID)
           ? 1 - min(max(detailProgress, 0), 1)
@@ -280,6 +295,24 @@ private struct DashNavigationHeroView: View {
           .opacity(DashCardMorphRules.detailAccessoryOpacity(at: detailProgress))
           .padding(12)
       }
+    case .emailRoutingCard(
+      let accountID, let zoneID, let name, let status, let seed, let fillHex
+    ):
+      DomainCardFace(
+        name: name,
+        status: status,
+        seed: seed,
+        fillHex: DomainCardColors.hex(
+          in: domainCardColorData,
+          accountID: accountID,
+          zoneID: zoneID,
+          fallback: fillHex),
+        textureAsset: SolarAsset.Content.letter,
+        fillsContainer: true,
+        detailReveal: detailProgress
+      )
+    case .featureResourceCard(_, let content):
+      FeatureResourceCardFace(content: content, fillsContainer: true)
     }
   }
 }
@@ -287,8 +320,11 @@ private struct DashNavigationHeroView: View {
 /// The three page languages Dash speaks, and nothing else. `flow` is the
 /// horizontal handoff every drill-down uses — the outgoing page leaves while
 /// the arriving one enters, the same step a tab change makes. `card` is the
-/// Family-style expansion, reserved for a source that hands over a concrete
-/// card (Domains → zone detail). `workspace` is the Settings train.
+/// Family-style spatial handoff, reserved for a source that hands over a
+/// concrete card (Domains, Email Routing, Workers, or Pages → their card-led
+/// detail). Full-width resource cards keep the same size in both seats, so
+/// this role does not imply visual enlargement. `workspace` is the Settings
+/// train.
 enum DashPageTransitionRole: Hashable {
   case flow
   case card
@@ -298,7 +334,7 @@ enum DashPageTransitionRole: Hashable {
 enum DashPageTransitionRules {
   /// The source decides between flow and card, never the destination: the same
   /// zone opened from a Home row or a recent is a plain drill, and only the
-  /// domain card that publishes a hero morphs.
+  /// card that publishes a semantic hero morphs.
   static func role(
     presentation: DashNavigationPresentation,
     hasHero: Bool
@@ -347,6 +383,11 @@ enum DashPageTransitionRules {
 private enum DashPageTransitionStyle {
   case flowPush
   case flowPop
+  /// A requested card step whose endpoint seats could not be resolved. It
+  /// uses flow geometry, but retains the card role's pace so the UIKit page
+  /// and shared SwiftUI header still settle on the same timeline.
+  case cardFallbackPush
+  case cardFallbackPop
   case cardPush(DashNavigationEntry)
   case cardPop(DashNavigationEntry)
   case workspacePresent(DashNavigationEntry)
@@ -354,8 +395,8 @@ private enum DashPageTransitionStyle {
 
   var isPush: Bool {
     switch self {
-    case .flowPush, .cardPush, .workspacePresent: true
-    case .flowPop, .cardPop, .workspaceDismiss: false
+    case .flowPush, .cardFallbackPush, .cardPush, .workspacePresent: true
+    case .flowPop, .cardFallbackPop, .cardPop, .workspaceDismiss: false
     }
   }
 
@@ -364,7 +405,7 @@ private enum DashPageTransitionStyle {
     case .cardPush(let entry), .cardPop(let entry),
       .workspacePresent(let entry), .workspaceDismiss(let entry):
       entry
-    case .flowPush, .flowPop:
+    case .flowPush, .flowPop, .cardFallbackPush, .cardFallbackPop:
       nil
     }
   }
@@ -372,6 +413,7 @@ private enum DashPageTransitionStyle {
   var role: DashPageTransitionRole {
     switch self {
     case .flowPush, .flowPop: .flow
+    case .cardFallbackPush, .cardFallbackPop: .card
     case .cardPush, .cardPop: .card
     case .workspacePresent, .workspaceDismiss: .workspace
     }
@@ -799,7 +841,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       guard let entry = settledEntries.last else { return .flowPop }
       return .workspaceDismiss(entry)
     case .back, .popToRoot, .resourcePruned:
-      guard let entry = settledEntries.last else { return .flowPop }
+      guard let entry = request.mutation?.entry ?? settledEntries.last else { return .flowPop }
       return switch role(for: entry) {
       case .flow: .flowPop
       case .card: .cardPop(entry)
@@ -932,7 +974,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   ) {
     let rightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
     switch style {
-    case .flowPush, .flowPop:
+    case .flowPush, .flowPop, .cardFallbackPush, .cardFallbackPop:
       applyTabStepInitial(
         isPush: style.isPush,
         source: source,
@@ -1015,7 +1057,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
   ) {
     let rightToLeft = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
     switch style {
-    case .flowPush, .flowPop:
+    case .flowPush, .flowPop, .cardFallbackPush, .cardFallbackPop:
       applyTabStepFinal(
         isPush: style.isPush,
         source: source,
@@ -1233,7 +1275,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       configureMorphFlightLayer(outgoingContent, departingFrom: sourceFrame)
       configureMorphFlightLayer(arrivingContent, departingFrom: sourceFrame)
       claimedOrigin = entry.origin
-    case .flowPush, .flowPop:
+    case .flowPush, .flowPop, .cardFallbackPush, .cardFallbackPop:
       return nil
     }
 
@@ -1403,22 +1445,48 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       // screen), leaving the captured instance parked on a slot that paints a
       // different resource — retarget by semantic identity, and let claims,
       // endpoint frames, and the per-frame seat tracking all follow the entry.
+      // Email Routing settings can change while its detail is open. Resolve
+      // that cache before looking for a live source: an explicitly off domain
+      // has no card in the filtered catalog, so its pop must use flow. A still-
+      // configured card carries the latest status/name into relocation and the
+      // flight proxy from this single resolved entry.
+      let cacheResolvedEntry: DashNavigationEntry
+      if !isPush, let origin = entry.origin, let capturedHero = origin.hero {
+        let resolution = capturedHero.returnCacheResolution(from: model.featureCache)
+        guard let resolvedHero = resolution.resolvedHero(preserving: capturedHero) else {
+          return .cardFallbackPop
+        }
+        cacheResolvedEntry = DashNavigationEntry(
+          id: entry.id,
+          destination: entry.destination,
+          presentation: entry.presentation,
+          origin: DashNavigationOrigin(
+            semanticID: origin.semanticID,
+            anchorInstanceID: origin.anchorInstanceID,
+            sourceFrame: origin.sourceFrame,
+            hero: resolvedHero),
+          accountID: entry.accountID,
+          ownership: entry.ownership)
+      } else {
+        cacheResolvedEntry = entry
+      }
+
       let resolvedEntry: DashNavigationEntry?
       if isPush {
-        resolvedEntry = entry
-      } else if let origin = entry.origin,
+        resolvedEntry = cacheResolvedEntry
+      } else if let origin = cacheResolvedEntry.origin,
         let current = anchorRegistry?.currentSourceOrigin(for: origin, within: target)
       {
         resolvedEntry =
           current == origin
-          ? entry
+          ? cacheResolvedEntry
           : DashNavigationEntry(
-            id: entry.id,
-            destination: entry.destination,
-            presentation: entry.presentation,
+            id: cacheResolvedEntry.id,
+            destination: cacheResolvedEntry.destination,
+            presentation: cacheResolvedEntry.presentation,
             origin: current,
-            accountID: entry.accountID,
-            ownership: entry.ownership)
+            accountID: cacheResolvedEntry.accountID,
+            ownership: cacheResolvedEntry.ownership)
       } else {
         resolvedEntry = nil
       }
@@ -1432,7 +1500,7 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       else {
         // No usable pair of seats: fall back to the same handoff every other
         // drill uses rather than inventing a third language for the failure.
-        return isPush ? .flowPush : .flowPop
+        return isPush ? .cardFallbackPush : .cardFallbackPop
       }
       return isPush ? .cardPush(resolvedEntry) : .cardPop(resolvedEntry)
     default:
@@ -1811,7 +1879,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
     switch transition.style {
     case .cardPush, .cardPop:
       break
-    case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop:
+    case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop,
+      .cardFallbackPush, .cardFallbackPop:
       return
     }
     stopTransitionContentTimeline()
@@ -1888,7 +1957,8 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
               to: landingFrame,
               detailProgress: detailProgress))
         }
-      case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop:
+      case .workspacePresent, .workspaceDismiss, .flowPush, .flowPop,
+        .cardFallbackPush, .cardFallbackPop:
         break
       }
     }

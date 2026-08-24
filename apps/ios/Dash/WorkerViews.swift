@@ -26,14 +26,34 @@ struct WorkersView: View {
       ),
       retry: { Task { await load() } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: workers, reduceMotion: reduceMotion) { worker in
-          DashListGroupLink(value: .worker(worker.id)) {
-            DashListRow(title: worker.id, icon: SolarAsset.Content.code)
-              .accessibilityLabel(workerRowAccessibilityLabel(worker))
-          }
-          .accessibilityIdentifier("worker-\(worker.id)")
+      dashModeListRows(
+        mode: mode,
+        items: workers,
+        reduceMotion: reduceMotion,
+        inset: false,
+        placeholder: { index in
+          FeatureResourceCardFace(content: workerResourceCardPlaceholder(index: index))
+            .dashBodyPlaceholder(true)
+            .dashItemBoundary(index > 0)
         }
+      ) { worker in
+        let displayedWorker =
+          model.activeAccountID.flatMap {
+            WorkersResourceCardCache.latestWorker(
+              accountID: $0,
+              workerName: worker.id,
+              fallback: worker,
+              cache: model.featureCache)
+          } ?? worker
+        let content = workerResourceCardContent(displayedWorker)
+        let hero = DashNavigationHero.featureResourceCard(
+          accountID: model.activeAccountID ?? "",
+          content: content)
+        DashListGroupLink(value: .worker(worker.id), hero: hero) {
+          FeatureResourceCardFace(content: content)
+        }
+        .accessibilityIdentifier("worker-\(worker.id)")
+        .dashItemBoundary(worker.id != workers.first?.id)
       }
     }
     .refreshable { await load(force: true) }.task {
@@ -160,6 +180,8 @@ enum WorkerAnalyticsChartModel {
 
 struct WorkerDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashNavigationEntryHero) private var navigationEntryHero
+  @Environment(\.dashPageTransitionActive) private var pageTransitionActive
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -197,6 +219,10 @@ struct WorkerDetailView: View {
   @State private var subdomainUpdating = false
   /// Composed `{script}.{account}.workers.dev` when the account subdomain is known.
   @State private var workersDevHostname: String?
+  /// Account-list metadata captured before the async detail fan-out starts.
+  /// The same low-profile card can therefore occupy the destination landing
+  /// seat on the very first transition frame without adding a per-Worker API.
+  @State private var cardPreviewWorker: WorkerScript?
   /// False until the five primary sections settle, so route discovery cannot
   /// prematurely replace the Cold skeleton with a partial live body.
   @State private var hasPresentedContent = false
@@ -230,9 +256,12 @@ struct WorkerDetailView: View {
     )
     .task(id: model.accountRequestContext) {
       if let accountID = model.accountRequestContext?.accountID {
+        cardPreviewWorker = cachedWorker(accountID: accountID)
         recentsRaw = RecentResources.recording(
           RecentResource(accountID: accountID, kind: .worker, resourceID: name, title: name),
           in: recentsRaw)
+      } else {
+        cardPreviewWorker = nil
       }
       await load()
     }
@@ -446,6 +475,8 @@ struct WorkerDetailView: View {
   /// live sections exit upward via `dashBodySlot`.
   @ViewBuilder
   private func workerDetailBody(mode: DashBodyMode) -> some View {
+    workerResourceCard(mode: mode)
+
     if mode.isPlaceholder {
       DashSurfaceStack {
         DashMetricPanelPlaceholder(tiles: 3)
@@ -456,12 +487,15 @@ struct WorkerDetailView: View {
           }
         }
       }
+      .dashItemBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else if let analytics {
       workerMetricsSection(analytics)
+        .dashItemBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
     } else if analyticsError != nil {
       workerMetricsFallbackCard
+        .dashItemBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
     }
 
@@ -569,6 +603,49 @@ struct WorkerDetailView: View {
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
+  }
+
+  private func workerResourceCard(mode: DashBodyMode) -> some View {
+    let preview = cardPreviewWorker ?? model.activeAccountID.flatMap(cachedWorker(accountID:))
+    let latestContent = model.activeAccountID.flatMap {
+      WorkersResourceCardCache.latestContent(
+        accountID: $0,
+        workerName: name,
+        fallback: preview,
+        cache: model.featureCache)
+    }
+    let fallback =
+      preview.map(workerResourceCardContent)
+      ?? FeatureResourceCardContent(
+        kind: .workers,
+        resourceID: name,
+        routeKey: name,
+        title: name,
+        metadata: .worker(modifiedOn: nil, createdOn: nil))
+    let content = FeatureResourceCardLandingRules.content(
+      transitionActive: pageTransitionActive,
+      captured: capturedWorkerCardContent,
+      latest: latestContent,
+      fallback: fallback)
+    return FeatureResourceCardFace(content: content)
+      .dashBodyPlaceholder(
+        mode.isPlaceholder && latestContent == nil && capturedWorkerCardContent == nil
+      )
+      .dashNavigationLanding(.workerHero(name))
+      .frame(maxWidth: .infinity)
+  }
+
+  private var capturedWorkerCardContent: FeatureResourceCardContent? {
+    guard case .featureResourceCard(_, let content) = navigationEntryHero,
+      content.kind == .workers,
+      content.routeKey == name
+    else { return nil }
+    return content
+  }
+
+  private func cachedWorker(accountID: String) -> WorkerScript? {
+    let cached: [WorkerScript]? = model.featureCache.get(FeatureCacheKey.workers(accountID))
+    return cached?.first { $0.id == name }
   }
 
   /// The metrics panel's own shape — heading over three stat tiles — holding the
@@ -1398,8 +1475,50 @@ struct WorkerAddDomainForm: View {
   }
 }
 
-private func workerRowAccessibilityLabel(_ worker: WorkerScript) -> String {
-  DashL10n.string("\(worker.id), Worker")
+func workerResourceCardContent(_ worker: WorkerScript) -> FeatureResourceCardContent {
+  FeatureResourceCardContent(
+    kind: .workers,
+    resourceID: worker.id,
+    routeKey: worker.id,
+    title: worker.id,
+    metadata: .worker(modifiedOn: worker.modifiedOn, createdOn: worker.createdOn))
+}
+
+enum WorkersResourceCardCache {
+  @MainActor
+  static func latestWorker(
+    accountID: String,
+    workerName: String,
+    fallback: WorkerScript? = nil,
+    cache: FeatureDataCache
+  ) -> WorkerScript? {
+    let workers: [WorkerScript]? = cache.get(FeatureCacheKey.workers(accountID))
+    return workers?.first { $0.id == workerName } ?? fallback
+  }
+
+  @MainActor
+  static func latestContent(
+    accountID: String,
+    workerName: String,
+    fallback: WorkerScript? = nil,
+    cache: FeatureDataCache
+  ) -> FeatureResourceCardContent? {
+    latestWorker(
+      accountID: accountID,
+      workerName: workerName,
+      fallback: fallback,
+      cache: cache
+    ).map(workerResourceCardContent)
+  }
+}
+
+private func workerResourceCardPlaceholder(index: Int) -> FeatureResourceCardContent {
+  FeatureResourceCardContent(
+    kind: .workers,
+    resourceID: "dash.placeholder.worker.\(index)",
+    routeKey: "dash.placeholder.worker.\(index)",
+    title: "worker-script",
+    metadata: .worker(modifiedOn: "2026-01-01T00:00:00Z", createdOn: nil))
 }
 
 @MainActor

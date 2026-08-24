@@ -27,17 +27,34 @@ struct PagesProjectsView: View {
       ),
       retry: { Task { await load(force: true) } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: projects, reduceMotion: reduceMotion) { project in
-          DashListGroupLink(value: .pagesProject(project.name)) {
-            DashListRow(
-              title: project.name,
-              subtitle: pagesProjectSubtitle(project),
-              icon: SolarAsset.Content.codeCircle
-            )
-            .accessibilityLabel(pagesProjectAccessibilityLabel(project))
-          }
+      dashModeListRows(
+        mode: mode,
+        items: projects,
+        reduceMotion: reduceMotion,
+        inset: false,
+        placeholder: { index in
+          FeatureResourceCardFace(content: pagesResourceCardPlaceholder(index: index))
+            .dashBodyPlaceholder(true)
+            .dashItemBoundary(index > 0)
         }
+      ) { project in
+        let displayedProject =
+          model.activeAccountID.flatMap {
+            PagesResourceCardCache.latestProject(
+              accountID: $0,
+              projectName: project.name,
+              fallback: project,
+              cache: model.featureCache)
+          } ?? project
+        let content = pagesResourceCardContent(displayedProject)
+        let hero = DashNavigationHero.featureResourceCard(
+          accountID: model.activeAccountID ?? "",
+          content: content)
+        DashListGroupLink(value: .pagesProject(project.name), hero: hero) {
+          FeatureResourceCardFace(content: content)
+        }
+        .accessibilityIdentifier("pages-project-\(project.name)")
+        .dashItemBoundary(project.id != projects.first?.id)
       }
     }
     .refreshable { await load(force: true) }
@@ -72,6 +89,8 @@ struct PagesProjectsView: View {
 
 struct PagesProjectDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashNavigationEntryHero) private var navigationEntryHero
+  @Environment(\.dashPageTransitionActive) private var pageTransitionActive
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.colorSchemeContrast) private var colorSchemeContrast
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -84,6 +103,9 @@ struct PagesProjectDetailView: View {
   @State private var error: String?
   @State private var deploymentsError: String?
   @State private var selectedSliceID: String?
+  /// Exact project-list identity captured before the detail fetch. A card-led
+  /// push can therefore hand off into the first destination frame without a
+  /// placeholder or a second network request.
   /// False until the first load settles — Cold skeleton for the whole first
   /// paint, even if the project cache hydrates before deployments finish.
   @State private var hasPresentedContent = false
@@ -102,7 +124,7 @@ struct PagesProjectDetailView: View {
       title: projectName,
       tint: FeatureVisualIdentity.heroColor(for: .pages)
     )
-    .task {
+    .task(id: model.accountRequestContext) {
       if let accountID = model.activeAccountID {
         recentsRaw = RecentResources.recording(
           RecentResource(
@@ -119,40 +141,7 @@ struct PagesProjectDetailView: View {
   @ViewBuilder
   private func pagesProjectDetailBody(mode: DashBodyMode) -> some View {
     DashSurfaceStack {
-      if mode.isPlaceholder {
-        DashCard {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(projectName)
-              .dashTextStyle(.sheetTitle)
-              .foregroundStyle(DashTheme.text)
-            Text(verbatim: "project.pages.dev")
-              .dashTextStyle(.code)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .dashBodyPlaceholder(true)
-        .dashBodySlot(reduceMotion: reduceMotion)
-      } else if let project {
-        DashCard {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(project.name)
-              .dashTextStyle(.sheetTitle)
-              .foregroundStyle(DashTheme.text)
-            if let subdomain = project.subdomain {
-              Text(subdomain)
-                .dashTextStyle(.code)
-                .foregroundStyle(DashTheme.subtle)
-                .textSelection(.enabled)
-            }
-            if let latest = project.latestDeployment?.latestStage?.status {
-              StatusBadge(StatusToken(pagesStatus: latest))
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .dashBodySlot(reduceMotion: reduceMotion)
-      }
+      pagesProjectResourceCard(mode: mode)
 
       dashListCard {
         DashListGroupLink(value: .pagesDomains(projectName)) {
@@ -230,6 +219,45 @@ struct PagesProjectDetailView: View {
       .dashListCardInset()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
+  }
+
+  private func pagesProjectResourceCard(mode: DashBodyMode) -> some View {
+    let latestContent = model.activeAccountID.flatMap {
+      PagesResourceCardCache.latestContent(
+        accountID: $0,
+        projectName: projectName,
+        fallback: project,
+        cache: model.featureCache)
+    }
+    // The immutable push hero owns the arriving frame. Once the handoff has
+    // settled, the detail and underlying catalog converge on the same newest
+    // list/detail cache snapshot; Back resolves its proxy through that rule too.
+    let fallback = FeatureResourceCardContent(
+      kind: .pages,
+      resourceID: projectName,
+      routeKey: projectName,
+      title: projectName,
+      metadata: .pages(subdomain: "project.pages.dev", deploymentStatus: nil))
+    let content = FeatureResourceCardLandingRules.content(
+      transitionActive: pageTransitionActive,
+      captured: capturedPagesCardContent,
+      latest: latestContent,
+      fallback: fallback)
+    return FeatureResourceCardFace(content: content)
+      .dashBodyPlaceholder(
+        mode.isPlaceholder && latestContent == nil && capturedPagesCardContent == nil
+      )
+      .dashNavigationLanding(.pagesProjectHero(projectName))
+      .frame(maxWidth: .infinity)
+      .dashBodySlot(reduceMotion: reduceMotion)
+  }
+
+  private var capturedPagesCardContent: FeatureResourceCardContent? {
+    guard case .featureResourceCard(_, let content) = navigationEntryHero,
+      content.kind == .pages,
+      content.routeKey == projectName
+    else { return nil }
+    return content
   }
 
   private var buildOutcomesCard: some View {
@@ -1070,22 +1098,64 @@ struct PagesAddDomainForm: View {
   }
 }
 
-private func pagesProjectAccessibilityLabel(_ project: PagesProject) -> String {
-  if let subtitle = pagesProjectSubtitle(project) {
-    return "\(project.name), \(subtitle)"
-  }
-  return project.name
+func pagesResourceCardContent(_ project: PagesProject) -> FeatureResourceCardContent {
+  FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: project.id,
+    routeKey: project.name,
+    title: project.name,
+    metadata: .pages(
+      subdomain: project.subdomain,
+      deploymentStatus: project.latestDeployment?.latestStage?.status))
 }
 
-private func pagesProjectSubtitle(_ project: PagesProject) -> String? {
-  let status = project.latestDeployment?.latestStage?.status
-  if let status {
-    // The raw lowercase API token used to surface here ("Latest · success")
-    // while the badge one screen in localized the same value.
-    return DashL10n.string("Latest · \(StatusToken(pagesStatus: status).label)")
+/// One freshness rule for the Pages list card, detail landing, and return
+/// proxy. A newer account-wide list refresh beats a stale detail snapshot; a
+/// detail fetch made after that list beats it in turn.
+enum PagesResourceCardCache {
+  @MainActor
+  static func latestProject(
+    accountID: String,
+    projectName: String,
+    fallback: PagesProject? = nil,
+    cache: FeatureDataCache
+  ) -> PagesProject? {
+    let list: (value: [PagesProject], fetchedAt: Date)? =
+      cache.getWithFetchedAt(FeatureCacheKey.pagesProjects(accountID))
+    let listProject = list?.value.first { $0.name == projectName }
+    let detail: (value: PagesProject, fetchedAt: Date)? =
+      cache.getWithFetchedAt(
+        FeatureCacheKey.pagesProject(accountID: accountID, name: projectName))
+
+    if let detail, detail.fetchedAt >= (list?.fetchedAt ?? .distantPast) {
+      return detail.value
+    }
+    return listProject ?? detail?.value ?? fallback
   }
-  // API returns the full hostname (e.g. helloworld.pages.dev).
-  return project.subdomain
+
+  @MainActor
+  static func latestContent(
+    accountID: String,
+    projectName: String,
+    fallback: PagesProject? = nil,
+    cache: FeatureDataCache
+  ) -> FeatureResourceCardContent? {
+    latestProject(
+      accountID: accountID,
+      projectName: projectName,
+      fallback: fallback,
+      cache: cache
+    ).map(pagesResourceCardContent)
+  }
+}
+
+private func pagesResourceCardPlaceholder(index: Int) -> FeatureResourceCardContent {
+  FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: "dash.placeholder.pages.\(index)",
+    routeKey: "dash.placeholder.pages.\(index)",
+    title: "pages-project",
+    metadata: .pages(subdomain: "project.pages.dev", deploymentStatus: "success"))
 }
 
 /// Takes the row's already-computed strings: recomputing the subtitle here ran

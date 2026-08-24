@@ -139,9 +139,9 @@ struct MainTabView: View {
   /// Dock / header displacement mirrors — written only inside an explicit
   /// `withAnimation`. The live `hidesDock` / `headerIsDisplaced` values arrive
   /// through preference relays and UIKit presentation reports that carry no
-  /// usable transaction, and both `.dashTray` hosts end with
-  /// `.transaction { $0.disablesAnimations = true }`, which kills every
-  /// `.animation(_:value:)` on this tree. Same survival rule as
+  /// usable transaction, so the mirror owns the transition's exact pace. The
+  /// Tray's animation-disabled transaction is scoped to `fullScreenCover` and
+  /// must never spread across this tree. Same write-site rule as
   /// `DashWorkspaceHeaderBar.displayed` and the toast dismiss write.
   @State private var displayedHidesDock: Bool?
   @State private var displayedHeaderIsDisplaced: Bool?
@@ -355,16 +355,6 @@ struct MainTabView: View {
       .environment(\.dashNavigationAnchorRegistry, navigationAnchorRegistry)
       .environment(\.dashWorkspacePresentationState, workspacePresentationState)
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
-      .onReceive(
-        NotificationCenter.default.publisher(
-          for: ICloudPreferencesSync.didApplyRemoteChanges)
-      ) { notification in
-        if ICloudPreferencesSync.changedGroups(in: notification)
-          .contains(.watchtowerLayout)
-        {
-          watchtowerCustomization.reloadPersistedLayout()
-        }
-      }
       .onChange(of: scenePhase) { _, phase in
         switch phase {
         case .active:
@@ -618,8 +608,8 @@ struct MainTabView: View {
     // Removed, not faded to zero: Liquid Glass is composited outside a normal
     // opacity group on iOS 26, so an opacity-zero control can still paint over
     // the presentation that displaced it. The mount rides the mirrored
-    // `displayedHeaderIsDisplaced` write — ambient `.animation(_:value:)` is
-    // force-disabled by the tray hosts above this tree.
+    // `displayedHeaderIsDisplaced` write so the displacement keeps the Tray's
+    // exact pace instead of inheriting an unrelated ambient animation.
     ZStack {
       if !(displayedHeaderIsDisplaced ?? headerIsDisplaced) {
         headerBar
@@ -666,9 +656,9 @@ struct MainTabView: View {
     .transition(.opacity)
   }
 
-  /// Pace for dock / header displacement. Applied at the mirror write site —
-  /// not via `.animation(_:value:)` — so it survives the tray hosts' animation
-  /// rewriter. First paint seeds the mirrors without this spring.
+  /// Pace for dock / header displacement. Applied at the mirror write site so
+  /// preference relays and unrelated parent transactions cannot replace its
+  /// timing. First paint seeds the mirrors without this spring.
   private var tabBarVisibilityAnimation: Animation {
     reduceMotion
       ? .easeOut(duration: DashTheme.Motion.Page.reducedDuration)

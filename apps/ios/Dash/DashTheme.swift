@@ -455,16 +455,22 @@ enum DashTheme {
     // MARK: Tray
 
     /// The compact Tray keeps Dash's established shell and exit. Only its card
-    /// presentation uses the measured spring; Quick Look and Toast continue to
-    /// use the generic floating-surface entrance below.
+    /// presentation uses this spring; Quick Look and Toast continue to use the
+    /// generic floating-surface entrance below. Stiffness / damping match the
+    /// prior response 0.21 / dampingFraction 0.8 settle — soft springs make the
+    /// full off-screen rise drag and thrash the material card every frame.
+    /// `DashTrayRevealDriver` commits these same numbers to the render server
+    /// as a `CASpringAnimation`; the SwiftUI `trayPresent` spring below is the
+    /// probe-fallback voice of the same pace.
     enum Tray {
-      static let presentResponse: TimeInterval = 0.21
-      static let presentDampingFraction: CGFloat = 0.8
+      static let presentStiffness: Double = 900
+      static let presentDamping: Double = 48
     }
 
-    static let trayPresent = Animation.spring(
-      response: Tray.presentResponse,
-      dampingFraction: Tray.presentDampingFraction
+    static let trayPresent = Animation.interpolatingSpring(
+      stiffness: Tray.presentStiffness,
+      damping: Tray.presentDamping,
+      initialVelocity: 0
     )
     /// The full-screen veil has no physical travel, so it keeps Dash's original
     /// compositor-friendly opacity easing instead of sampling the card spring.
@@ -492,8 +498,14 @@ enum DashTheme {
     static let present = Animation.timingCurve(0.23, 1, 0.32, 1, duration: 0.22)
     static let release = Animation.spring(
       response: 0.34, dampingFraction: 0.82, blendDuration: 0.14)
+    /// Split out of `dismiss` so the tray's render-server exit spring
+    /// (`DashTrayRevealDriver`) converts the same pace into Core Animation
+    /// stiffness / damping — one table, two engines.
+    static let dismissResponse: Double = 0.28
+    static let dismissDampingFraction: Double = 0.94
     static let dismiss = Animation.spring(
-      response: 0.28, dampingFraction: 0.94, blendDuration: 0.08)
+      response: dismissResponse, dampingFraction: dismissDampingFraction,
+      blendDuration: 0.08)
   }
 
   enum Sheet {

@@ -250,9 +250,9 @@ extension View {
 /// over on `glyphSwap`.
 ///
 /// The displayed mirror is written inside an explicit `withAnimation` so a
-/// parent `withAnimation(morph)` (Edit Shortcuts reorder, R2 multi-select) or
-/// a tray's `.transaction { disablesAnimations = true }` cannot flatten the
-/// spring into the layout curve — same survival rule as the workspace header.
+/// parent `withAnimation(morph)` (Edit Shortcuts reorder, R2 multi-select)
+/// cannot replace the glyph spring with the surrounding layout curve — same
+/// write-site ownership rule as the workspace header.
 struct DashSelectionMark: View {
   let isSelected: Bool
   var size: CGFloat = 22

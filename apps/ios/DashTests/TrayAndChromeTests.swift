@@ -32,8 +32,36 @@ import UIKit
 }
 
 @Test func compactTrayUsesSpringOnlyForPresentation() {
-  #expect(DashTheme.Motion.Tray.presentResponse == 0.21)
-  #expect(DashTheme.Motion.Tray.presentDampingFraction == 0.8)
+  #expect(DashTheme.Motion.Tray.presentStiffness == 900)
+  #expect(DashTheme.Motion.Tray.presentDamping == 48)
+}
+
+@Test func trayRevealDriverSharesOnePaceTableAcrossEngines() {
+  // The render-server present spring reads the 900 / 48 tokens directly; they
+  // were rounded from the response 0.21 / dampingFraction 0.8 settle, which
+  // the conversion must reproduce so the SwiftUI fallback and the CA flight
+  // remain one pace.
+  #expect(abs(DashTrayRevealSpringMath.stiffness(response: 0.21) - 895.2) < 1)
+  #expect(
+    abs(DashTrayRevealSpringMath.damping(response: 0.21, dampingFraction: 0.8) - 47.87) < 0.1)
+
+  // The exit spring converts Dash's established dismiss token; the CA pair
+  // must encode the exact damping fraction it was derived from.
+  let stiffness = DashTrayRevealSpringMath.stiffness(
+    response: DashTheme.Motion.dismissResponse)
+  let damping = DashTrayRevealSpringMath.damping(
+    response: DashTheme.Motion.dismissResponse,
+    dampingFraction: DashTheme.Motion.dismissDampingFraction)
+  #expect(
+    abs(damping / (2 * stiffness.squareRoot()) - DashTheme.Motion.dismissDampingFraction)
+      < 0.0001)
+  #expect(DashTheme.Motion.dismissResponse == 0.28)
+  #expect(DashTheme.Motion.dismissDampingFraction == 0.94)
+
+  // The whole cover rides the flight, scrim included; the scrim's headroom
+  // must out-reach the tallest possible travel (full-height card + lift,
+  // bounded by the window height).
+  #expect(DashTrayRevealMetrics.scrimHeadroom >= 1000)
 }
 
 @Test func compactTrayBottomLiftClearsHomeIndicatorUsingWindowSafeInset() {
@@ -153,6 +181,116 @@ import UIKit
   #expect(FeatureVisualTone.accent.vividLabel == Color(hex: 0x171717))
   #expect(FeatureVisualTone.success.vividLabel == DashTheme.inverse)
   #expect(FeatureVisualTone.brand.vividLabel == DashTheme.inverse)
+}
+
+@Test func pillActiveTitleMovesVerticallyWhileTransientLocksStayVisuallyEnabled() {
+  #expect(
+    DashPillButtonPresentationRules.isInteractionDisabled(
+      phase: .idle,
+      isEnabled: true,
+      isInteractionLocked: true
+    )
+  )
+  #expect(DashPillButtonPresentationRules.opacity(isEnabled: true) == 1)
+  #expect(DashPillButtonPresentationRules.opacity(isEnabled: false) == 0.45)
+  #expect(
+    DashPillButtonPresentationRules.presentsActiveTitle(phase: .loading, override: nil)
+  )
+  #expect(
+    DashPillButtonPresentationRules.presentsActiveTitle(phase: .idle, override: true)
+  )
+  #expect(
+    !DashPillButtonPresentationRules.presentsActiveTitle(phase: .loading, override: false)
+  )
+
+  #expect(
+    DashPillButtonPresentationRules.titleOffset(
+      layer: .idle,
+      isActive: false,
+      reduceMotion: false
+    ) == 0
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOffset(
+      layer: .idle,
+      isActive: true,
+      reduceMotion: false
+    ) == -DashPillButtonPresentationRules.titleTravel
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOffset(
+      layer: .active,
+      isActive: false,
+      reduceMotion: false
+    ) == DashPillButtonPresentationRules.titleTravel
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOffset(
+      layer: .active,
+      isActive: true,
+      reduceMotion: false
+    ) == 0
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOffset(
+      layer: .idle,
+      isActive: true,
+      reduceMotion: true
+    ) == 0
+  )
+
+  #expect(
+    DashPillButtonPresentationRules.titleOpacity(layer: .idle, isActive: false) == 1
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOpacity(layer: .idle, isActive: true) == 0
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOpacity(layer: .active, isActive: false) == 0
+  )
+  #expect(
+    DashPillButtonPresentationRules.titleOpacity(layer: .active, isActive: true) == 1
+  )
+}
+
+@Test func onboardingNetworkRetryRulesKeepABoundedAuthorizationWindow() {
+  #expect(NetworkAccessProbeRetryRules.authorizationWindow == .seconds(25))
+  #expect(
+    NetworkAccessProbeRetryRules.requestTimeout(remaining: .seconds(10))
+      == NetworkAccessProbeRetryRules.maximumRequestTimeout
+  )
+  #expect(NetworkAccessProbeRetryRules.requestTimeout(remaining: .seconds(1)) == 1)
+  #expect(
+    NetworkAccessProbeRetryRules.retryDelay(remaining: .seconds(10))
+      == NetworkAccessProbeRetryRules.retryInterval
+  )
+  #expect(
+    NetworkAccessProbeRetryRules.retryDelay(remaining: .milliseconds(200))
+      == .milliseconds(200)
+  )
+  #expect(NetworkAccessProbeRetryRules.retryDelay(remaining: .seconds(-1)) == .zero)
+
+  // A working Wi-Fi request wins even when cellular access is restricted.
+  #expect(
+    NetworkAccessProbeRetryRules.terminalStatus(
+      probeSucceeded: true,
+      cellularRestricted: true
+    ) == .allowed
+  )
+  #expect(
+    NetworkAccessProbeRetryRules.terminalStatus(
+      probeSucceeded: false,
+      cellularRestricted: true
+    ) == .restricted
+  )
+  // Unknown/not-restricted policy alone must never launch OAuth after every
+  // actual request failed.
+  #expect(
+    NetworkAccessProbeRetryRules.terminalStatus(
+      probeSucceeded: false,
+      cellularRestricted: false
+    ) == .unavailable
+  )
 }
 
 @Test func trayBackActionEqualityIsDepthOnly() {

@@ -6,8 +6,6 @@
 	<array>
 		<string>group.sh.xat.dash.app</string>
 	</array>
-	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
-	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)sh.xat.dash.app</string>

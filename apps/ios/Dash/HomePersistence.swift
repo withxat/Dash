@@ -492,6 +492,12 @@ struct DomainCardColorSelection: Hashable, Sendable {
   let hex: UInt32
 }
 
+/// Domains catalog chrome — layout choices that should survive leaving the
+/// screen (the page host remounts, so `@State` alone always snaps back).
+enum DomainsListPreferences {
+  static let groupByStatusKey = "dash.domains_group_by_status"
+}
+
 /// Per-account domain card colors encoded as `accountID|zoneID|#RRGGBB`.
 enum DomainCardColors {
   static let key = "dash.domain_card_colors"
@@ -526,6 +532,19 @@ enum DomainCardColors {
   ) -> UInt32 {
     decode(raw).first { $0.accountID == accountID && $0.zoneID == zoneID }?.hex
       ?? defaultHex(for: seed)
+  }
+
+  /// Prefer a stored override, else the push-time color. Used by the card
+  /// morph hero so a customize on the detail screen lands on the return
+  /// flight without baking `fillHex` into the navigation origin.
+  static func hex(
+    in raw: String,
+    accountID: String,
+    zoneID: String,
+    fallback: UInt32
+  ) -> UInt32 {
+    decode(raw).first { $0.accountID == accountID && $0.zoneID == zoneID }?.hex
+      ?? fallback
   }
 
   static func setting(

@@ -30,19 +30,113 @@ extension DashNavigationSemanticID {
   static func zoneHero(_ zoneID: String) -> DashNavigationSemanticID {
     DashNavigationSemanticID(namespace: "zone-hero", value: zoneID)
   }
+
+  static func emailRoutingHero(_ zoneID: String) -> DashNavigationSemanticID {
+    DashNavigationSemanticID(namespace: "zone-email-routing-hero", value: zoneID)
+  }
+
+  static func workerHero(_ name: String) -> DashNavigationSemanticID {
+    DashNavigationSemanticID(namespace: "worker-hero", value: name)
+  }
+
+  static func pagesProjectHero(_ name: String) -> DashNavigationSemanticID {
+    DashNavigationSemanticID(namespace: "pages-project-hero", value: name)
+  }
 }
 
 /// Semantic content a card transition can redraw at every intermediate size.
 /// Keeping this data with the route origin lets the compositor re-layout a
 /// real SwiftUI surface instead of stretching captured pixels.
-enum DashNavigationHero: Hashable {
+enum DashNavigationHero: Hashable, Sendable {
+  /// `fillHex` is the color at push time (grid → detail). The flying hero
+  /// re-reads `DomainCardColors` live so a customize on the detail screen
+  /// still lands on the return flight — same idea as the pin marker.
   case domainCard(
+    accountID: String,
     zoneID: String,
     name: String,
     status: String,
     seed: String,
     fillHex: UInt32,
     plan: String?)
+  /// Email Routing uses the same enamel card geometry, but its Letter texture
+  /// replaces the Domains-only pin and customize affordances during flight.
+  case emailRoutingCard(
+    accountID: String,
+    zoneID: String,
+    name: String,
+    status: String,
+    seed: String,
+    fillHex: UInt32)
+  /// Workers and Pages share one fixed-theme, full-width resource card. Its
+  /// source and detail landing have the same low profile, so the existing card
+  /// compositor performs a spatial handoff without visually enlarging it.
+  case featureResourceCard(
+    accountID: String,
+    content: FeatureResourceCardContent)
+
+  /// Resolve the return visual against the cache shared by the detail and its
+  /// catalog. Missing cache preserves the captured source; an explicit Email
+  /// Routing off state makes the card ineligible because its filtered catalog
+  /// no longer contains a landing source.
+  @MainActor
+  func returnCacheResolution(
+    from cache: FeatureDataCache
+  ) -> DashNavigationHeroCacheResolution {
+    switch self {
+    case .emailRoutingCard(let accountID, let zoneID, _, _, _, _):
+      guard let settings = EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: cache)
+      else { return .preserveCaptured }
+      guard let token = EmailRoutingStatusMapping.listCardToken(for: settings) else {
+        return .cardIneligible
+      }
+      return .replace(
+        .emailRoutingCard(
+          accountID: accountID,
+          zoneID: zoneID,
+          name: settings.name,
+          status: token.rawValue.capitalized,
+          seed: settings.name,
+          fillHex: DomainCardColors.defaultHex(for: settings.name)))
+    case .featureResourceCard(let accountID, let content):
+      let latest =
+        switch content.kind {
+        case .workers:
+          WorkersResourceCardCache.latestContent(
+            accountID: accountID,
+            workerName: content.routeKey,
+            cache: cache)
+        case .pages:
+          PagesResourceCardCache.latestContent(
+            accountID: accountID,
+            projectName: content.routeKey,
+            cache: cache)
+        }
+      guard let latest else { return .preserveCaptured }
+      return latest == content
+        ? .preserveCaptured
+        : .replace(.featureResourceCard(accountID: accountID, content: latest))
+    default:
+      return .preserveCaptured
+    }
+  }
+}
+
+enum DashNavigationHeroCacheResolution: Hashable, Sendable {
+  /// No newer cache-backed card identity is known.
+  case preserveCaptured
+  /// The card still exists, but its visible cached identity has changed.
+  case replace(DashNavigationHero)
+  /// Email Routing is definitively off, so its filtered source card is absent.
+  case cardIneligible
+
+  func resolvedHero(preserving captured: DashNavigationHero) -> DashNavigationHero? {
+    switch self {
+    case .preserveCaptured: captured
+    case .replace(let hero): hero
+    case .cardIneligible: nil
+    }
+  }
 }
 
 /// One concrete occurrence of a semantic source. The same resource can appear
@@ -191,12 +285,15 @@ extension Destination {
     }
   }
 
-  /// The in-page landmark a workspace present flies its source visual onto.
+  /// The in-page landmark a card transition flies its source visual onto.
   /// Only pages that visibly re-seat their source element publish one; every
   /// other destination keeps the in-place identity crossfade.
   var dashNavigationLandingSemanticID: DashNavigationSemanticID? {
     switch self {
     case .zone(let id): .zoneHero(id)
+    case .zoneEmailRouting(let id): .emailRoutingHero(id)
+    case .worker(let name): .workerHero(name)
+    case .pagesProject(let name): .pagesProjectHero(name)
     default: nil
     }
   }
@@ -225,6 +322,7 @@ final class DestinationNavigator {
   private(set) var accountID: String?
   private(set) var revision: UInt64 = 0
   private(set) var lastMutation: DashNavigationMutation?
+  private var flowDismissalEntryIDs: Set<DashNavigationEntry.ID> = []
 
   /// Where this stack's pages publish their header slots. Deliberately a stored
   /// `let` on the navigator rather than one more value threaded through the tab
@@ -270,6 +368,39 @@ final class DestinationNavigator {
   func pop() {
     guard !entries.isEmpty else { return }
     replaceEntries(Array(entries.dropLast()), reason: .back)
+  }
+
+  /// Pop one card-led page as a plain flow dismissal. The leaving entry keeps
+  /// its route/account ownership but drops the hero before the mutation is
+  /// recorded, so the shared header and UIKit compositor derive the same role
+  /// and pace. Used when a detail definitively removes its own filtered source
+  /// card (Email Routing turned off).
+  func popUsingFlow(entryID: DashNavigationEntry.ID) {
+    guard let entry = topEntry, entry.id == entryID else { return }
+    let demoted = entryWithoutHero(entry)
+    replaceEntries(
+      Array(entries.dropLast()),
+      reason: .back,
+      mutatedEntryOverride: demoted)
+  }
+
+  /// Override later dismissal mutations without destroying the card identity
+  /// captured at push time. Email Routing can therefore fall back to flow
+  /// while its filtered source is absent, then restore a card return if the
+  /// same page turns routing on again.
+  func setCardSourceDismissalUsesFlow(
+    _ usesFlow: Bool,
+    entryID: DashNavigationEntry.ID
+  ) {
+    guard let entry = topEntry, entry.id == entryID else {
+      flowDismissalEntryIDs.remove(entryID)
+      return
+    }
+    if usesFlow, entry.origin?.hero != nil {
+      flowDismissalEntryIDs.insert(entryID)
+    } else {
+      flowDismissalEntryIDs.remove(entryID)
+    }
   }
 
   func dismissTop() {
@@ -344,20 +475,26 @@ final class DestinationNavigator {
   private func replaceEntries(
     _ nextEntries: [DashNavigationEntry],
     reason: DashNavigationMutationReason,
-    recordsNoop: Bool = false
+    recordsNoop: Bool = false,
+    mutatedEntryOverride: DashNavigationEntry? = nil
   ) {
     guard recordsNoop || nextEntries != entries else { return }
     let previousEntryIDs = entryIDs
     // The page the mutation is about, resolved before the swap: a push is
     // about the page arriving, every dismissal is about the page leaving —
     // the same two entries the compositor picks its style from.
-    let mutatedEntry: DashNavigationEntry? =
+    let defaultMutatedEntry: DashNavigationEntry? =
       switch reason {
       case .push: nextEntries.last
       case .back, .popToRoot, .closeToWorkspaceRoot, .resourcePruned: entries.last
       case .reset, .accountScopeChanged: nil
       }
+    let resolvedDefaultMutatedEntry = defaultMutatedEntry.map { entry in
+      flowDismissalEntryIDs.contains(entry.id) ? entryWithoutHero(entry) : entry
+    }
+    let mutatedEntry = mutatedEntryOverride ?? resolvedDefaultMutatedEntry
     entries = nextEntries
+    flowDismissalEntryIDs.formIntersection(entryIDs)
     // Slots leave with their page. Pruning here — the one mutation funnel —
     // means a re-push of the same route can never inherit the last instance's
     // title or actions while its own body is still resolving.
@@ -369,6 +506,21 @@ final class DestinationNavigator {
       previousEntryIDs: previousEntryIDs,
       currentEntryIDs: entryIDs,
       entry: mutatedEntry)
+  }
+
+  private func entryWithoutHero(_ entry: DashNavigationEntry) -> DashNavigationEntry {
+    DashNavigationEntry(
+      id: entry.id,
+      destination: entry.destination,
+      presentation: entry.presentation,
+      origin: entry.origin.map {
+        DashNavigationOrigin(
+          semanticID: $0.semanticID,
+          anchorInstanceID: $0.anchorInstanceID,
+          sourceFrame: $0.sourceFrame)
+      },
+      accountID: entry.accountID,
+      ownership: entry.ownership)
   }
 }
 
@@ -630,8 +782,16 @@ private struct DashTabActiveKey: EnvironmentKey {
   static let defaultValue = true
 }
 
+private struct DashPageTransitionActiveKey: EnvironmentKey {
+  static let defaultValue = false
+}
+
 private struct DashNavigationEntryIDKey: EnvironmentKey {
   static let defaultValue: DashNavigationEntry.ID? = nil
+}
+
+private struct DashNavigationEntryHeroKey: EnvironmentKey {
+  static let defaultValue: DashNavigationHero? = nil
 }
 
 private struct DashNavigationCoordinatorKey: EnvironmentKey {
@@ -683,6 +843,14 @@ extension EnvironmentValues {
     set { self[DashNavigationEntryIDKey.self] = newValue }
   }
 
+  /// Immutable source-card identity captured by this page instance. A detail
+  /// landing uses it for its first transition frame before adopting fresher
+  /// cache data after the handoff settles.
+  var dashNavigationEntryHero: DashNavigationHero? {
+    get { self[DashNavigationEntryHeroKey.self] }
+    set { self[DashNavigationEntryHeroKey.self] = newValue }
+  }
+
   var dashNavigationCoordinator: DashNavigationCoordinator? {
     get { self[DashNavigationCoordinatorKey.self] }
     set { self[DashNavigationCoordinatorKey.self] = newValue }
@@ -701,6 +869,14 @@ extension EnvironmentValues {
   var dashCanPresentPendingHomeAction: Bool {
     get { self[DashCanPresentPendingHomeActionKey.self] }
     set { self[DashCanPresentPendingHomeActionKey.self] = newValue }
+  }
+
+  /// True only while this destination is the arriving side of a page push.
+  /// Pages use it to avoid changing dismissal vocabulary underneath the custom
+  /// compositor's deliberately reversible in-flight animator.
+  var dashPageTransitionActive: Bool {
+    get { self[DashPageTransitionActiveKey.self] }
+    set { self[DashPageTransitionActiveKey.self] = newValue }
   }
 }
 
@@ -723,7 +899,8 @@ extension View {
   /// Publishes this view as a destination-page landing seat: the spot a card
   /// morph grows its source onto. The claim mechanism hides the live view
   /// while the flight proxy owns its identity, exactly like a navigation
-  /// source. Today only the zone hero publishes one.
+  /// source. Domains, Email Routing, Workers, and Pages detail cards each
+  /// publish one for their card-led catalog source.
   func dashNavigationLanding(_ semanticID: DashNavigationSemanticID) -> some View {
     modifier(DashNavigationLandingModifier(semanticID: semanticID))
   }

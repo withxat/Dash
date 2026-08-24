@@ -145,7 +145,6 @@ final class WatchtowerChartCustomizationState {
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private var savedDraft: Draft?
-  @ObservationIgnored private var hasPendingPersistedLayout = false
 
   private struct Draft {
     let order: [WatchtowerAnalyticsMetric]
@@ -203,11 +202,6 @@ final class WatchtowerChartCustomizationState {
   }
 
   func cancelEditing() {
-    if hasPendingPersistedLayout {
-      finishEditing()
-      applyPersistedLayout()
-      return
-    }
     if let savedDraft {
       order = savedDraft.order
       collapsed = savedDraft.collapsed
@@ -226,19 +220,7 @@ final class WatchtowerChartCustomizationState {
     defaults.set(
       WatchtowerAnalyticsCardLayout.encodeHidden(hidden),
       forKey: WatchtowerAnalyticsCardLayout.hiddenKey)
-    hasPendingPersistedLayout = false
     finishEditing()
-  }
-
-  /// Rehydrates the current instance after iCloud updates the local defaults.
-  /// An active edit owns the screen until Done or Cancel: Cancel adopts the
-  /// incoming layout, while Done persists the user's newer local draft.
-  func reloadPersistedLayout() {
-    guard !isEditing else {
-      hasPendingPersistedLayout = true
-      return
-    }
-    applyPersistedLayout()
   }
 
   func toggleExpanded(_ metric: WatchtowerAnalyticsMetric) {
@@ -332,14 +314,6 @@ final class WatchtowerChartCustomizationState {
     isEditing = false
     savedDraft = nil
     finishDragging()
-  }
-
-  private func applyPersistedLayout() {
-    let layout = Self.persistedLayout(in: defaults)
-    order = layout.order
-    collapsed = layout.collapsed
-    hidden = layout.hidden
-    hasPendingPersistedLayout = false
   }
 }
 

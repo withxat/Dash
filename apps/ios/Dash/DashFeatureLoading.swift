@@ -453,21 +453,30 @@ private enum DashModeListSlot<Item: Identifiable>: Identifiable {
 /// The one mode-aware list primitive. Cold placeholders own independent
 /// positional slots; overlap cross-fades in place while only surplus
 /// placeholders recede. Live rows keep `Item.ID`, so later inserts, removals,
-/// filtering, and reordering never make surviving rows change identity. Live
-/// rows deliberately get no helper-owned transition: the animated cold handoff
-/// gives an inserted row SwiftUI's default fade, while a later live diff keeps
-/// any transition the row itself declares (DNS / Pages use `.dashMorph`).
+/// filtering, and reordering never make surviving rows change identity. A
+/// caller may supply a shape-matched placeholder (Workers / Pages cards); the
+/// default remains the ordinary list row. Live rows deliberately get no
+/// helper-owned transition: the animated cold handoff gives an inserted row
+/// SwiftUI's default fade, while a later live diff keeps any transition the row
+/// itself declares (DNS / Pages deployments use `.dashMorph`).
 ///
 /// Keep this as a free `@ViewBuilder` function: wrapping the emitted `ForEach` in
 /// an opaque `View` or eager stack would defeat `DashFeatureList`'s lazy rows.
 @MainActor
+private func dashDefaultModeListPlaceholder(_: Int) -> DashListRowPlaceholder {
+  DashListRowPlaceholder()
+}
+
+@MainActor
 @ViewBuilder
-func dashModeListRows<Item: Identifiable, Row: View>(
+func dashModeListRows<Item: Identifiable, Placeholder: View, Row: View>(
   mode: DashBodyMode,
   items: [Item],
   placeholderRows: Int = DashBodyPlaceholderDepth.listRows,
   reduceMotion: Bool,
   inset: Bool = true,
+  @ViewBuilder placeholder: @escaping @MainActor (Int) -> Placeholder =
+    dashDefaultModeListPlaceholder,
   @ViewBuilder row: @escaping (Item) -> Row
 ) -> some View {
   let slots: [DashModeListSlot<Item>] =
@@ -480,7 +489,7 @@ func dashModeListRows<Item: Identifiable, Row: View>(
       let transition =
         DashBodyListSlotRules.placeholderRecedes(index: index, liveItemCount: items.count)
         ? DashBodyTransition.content(reduceMotion) : AnyTransition.opacity
-      DashListRowPlaceholder()
+      placeholder(index)
         .modifier(DashListCardInsetModifier(enabled: inset))
         .transition(transition)
     case .live(let item):

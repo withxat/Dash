@@ -397,8 +397,9 @@ struct DNSRecordsView: View {
     error = nil
     do {
       pageState.reset()
+      let pageNumber = pageState.nextPage
       let page = try await model.client.listDNSRecords(
-        zoneID: zoneID, page: pageState.nextPage, perPage: Self.pageSize)
+        zoneID: zoneID, page: pageNumber, perPage: Self.pageSize)
       guard
         activeRequestID == requestID,
         acceptsDNSResponse(
@@ -407,7 +408,11 @@ struct DNSRecordsView: View {
       else { return false }
       records = page.items
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: records.count,
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: page.items.count,
+        loaded: records.count,
         pageSize: Self.pageSize)
       reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(key, records)
@@ -451,9 +456,15 @@ struct DNSRecordsView: View {
           scope: requestScope,
           generation: globalRequestGeneration)
       else { return }
-      records += page.items
+      var existingIDs = Set(records.map(\.id))
+      let uniqueItems = page.items.filter { existingIDs.insert($0.id).inserted }
+      records += uniqueItems
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: records.count,
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: uniqueItems.count,
+        loaded: records.count,
         pageSize: Self.pageSize)
       reconcileDeferredDeletions(loadGeneration: globalRequestGeneration)
       model.featureCache.set(FeatureCacheKey.dnsRecords(zoneID), records)

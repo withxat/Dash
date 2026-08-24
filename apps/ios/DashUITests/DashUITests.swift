@@ -41,65 +41,24 @@ final class DashUITests: XCTestCase {
         || app.buttons["Resources"].waitForExistence(timeout: 10))
   }
 
-  func testOnboardingRequestsFullAccessAndDefersNotifications() {
+  func testOnboardingUsesOnePageWithDirectCloudflareAction() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview-onboarding"])
 
-    let start = app.buttons["Start your engine!"]
-    XCTAssertTrue(start.waitForExistence(timeout: 5))
-    let legal = app.staticTexts["By continuing, you agree to our"]
-    XCTAssertTrue(legal.waitForExistence(timeout: 2))
-    let buttonFrame = start.frame
-    let legalFrame = legal.frame
-    start.tap()
-
-    XCTAssertTrue(app.staticTexts["Connect safely"].waitForExistence(timeout: 5))
-    let connect = app.buttons["Connect Cloudflare"]
-    XCTAssertTrue(connect.exists)
-    XCTAssertFalse(app.buttons["Review permissions"].exists)
-    XCTAssertEqual(buttonFrame.minY, connect.frame.minY, accuracy: 1)
-    XCTAssertEqual(
-      legalFrame.minY,
-      app.staticTexts["By continuing, you agree to our"].frame.minY,
-      accuracy: 1
-    )
-
-    let cloudflare =
-      app.descendants(matching: .any)
-      .matching(identifier: "onboarding-permission-cloudflare")
-      .firstMatch
-    let network = app.buttons["onboarding-permission-network"]
-    XCTAssertTrue(cloudflare.waitForExistence(timeout: 5))
-    XCTAssertTrue(network.waitForExistence(timeout: 5))
-    let fullAccessLabel = NSPredicate(format: "label CONTAINS[c] %@", "Read & write")
-    let fullAccessExpectation = XCTNSPredicateExpectation(
-      predicate: fullAccessLabel,
-      object: cloudflare)
-    XCTAssertEqual(
-      XCTWaiter.wait(for: [fullAccessExpectation], timeout: 2),
-      .completed,
-      "Unexpected Cloudflare row label: \(cloudflare.label)")
-    XCTAssertFalse(app.buttons["onboarding-permission-notifications"].exists)
-    // Network auto-probes on appear; non-China / simulator settles to Enabled.
-    let networkEnabled = network.label.contains("Enabled")
-    let networkSettling =
-      network.label.contains("Requesting") || network.label.contains("Tap to enable")
-    if !networkEnabled {
-      XCTAssertTrue(networkSettling)
-      let enabled = NSPredicate(format: "label CONTAINS[c] %@", "Enabled")
-      expectation(for: enabled, evaluatedWith: network)
-      waitForExpectations(timeout: 10)
-    }
-    let back = app.buttons["onboarding-back"]
-    XCTAssertTrue(back.waitForExistence(timeout: 2))
-    back.tap()
     XCTAssertTrue(app.staticTexts["Dash"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Start your engine!"].exists)
-    XCTAssertEqual(
-      legalFrame.minY,
-      app.staticTexts["By continuing, you agree to our"].frame.minY,
-      accuracy: 1
-    )
+    XCTAssertTrue(app.staticTexts["Cloudflare,"].exists)
+    XCTAssertTrue(app.staticTexts["in your hand"].exists)
+    XCTAssertTrue(app.staticTexts["By continuing, you agree to our"].exists)
+
+    let connect = app.buttons["onboarding-connect"]
+    XCTAssertTrue(connect.waitForExistence(timeout: 5))
+    XCTAssertEqual(connect.label, "Connect Cloudflare")
+    XCTAssertTrue(app.buttons["Explore the demo"].exists)
+
+    XCTAssertFalse(app.staticTexts["Connect safely"].exists)
+    XCTAssertFalse(app.buttons["onboarding-back"].exists)
+    XCTAssertFalse(app.descendants(matching: .any)["onboarding-permission-cloudflare"].exists)
+    XCTAssertFalse(app.buttons["onboarding-permission-network"].exists)
   }
 
   func testFormKeyboardCanBeDismissed() {
@@ -305,6 +264,41 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 
+  func testDomainsGroupingActionStaysHittableAcrossReentry() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(Self.waitForHittable(resources))
+    resources.tap()
+
+    let zones = app.buttons["feature-zones"]
+    XCTAssertTrue(Self.waitForHittable(zones))
+    zones.tap()
+    XCTAssertTrue(app.buttons["dash.navigation.back"].waitForExistence(timeout: 5))
+    app.buttons["dash.navigation.back"].tap()
+
+    XCTAssertTrue(Self.waitForHittable(zones))
+    zones.tap()
+    XCTAssertTrue(
+      app.buttons.matching(
+        NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+      ).firstMatch.waitForExistence(timeout: 5)
+    )
+
+    let grouping = app.buttons["domains-group-by-status"]
+    XCTAssertTrue(Self.waitForHittable(grouping))
+    XCTAssertTrue(grouping.isEnabled)
+    let initialLabel = grouping.label
+    let targetLabel =
+      initialLabel == "Group by status" ? "Show ungrouped" : "Group by status"
+    grouping.tap()
+    let changedLabel = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "label == %@", targetLabel),
+      object: grouping)
+    XCTAssertEqual(XCTWaiter.wait(for: [changedLabel], timeout: 2), .completed)
+  }
+
   func testWatchtowerChartsCanBeReorderedByLongPress() {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
@@ -385,6 +379,67 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(backToCatalog.waitForExistence(timeout: 5))
     backToCatalog.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+  }
+
+  func testNavigationDrillDownPagesCardAndBack() {
+    let app = XCUIApplication()
+    launch(app, arguments: ["-ui-preview"])
+
+    let resources = app.buttons["Resources"]
+    XCTAssertTrue(resources.waitForExistence(timeout: 5))
+    resources.tap()
+
+    let pages = app.buttons["feature-pages"]
+    XCTAssertTrue(Self.waitForHittable(pages))
+    pages.tap()
+
+    let project = app.buttons["pages-project-marketing-site"]
+    XCTAssertTrue(Self.waitForHittable(project))
+    project.tap()
+
+    XCTAssertTrue(app.staticTexts["Domains"].waitForExistence(timeout: 5))
+    let back = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+
+    XCTAssertTrue(Self.waitForHittable(app.buttons["pages-project-marketing-site"]))
+  }
+
+  func testPagesResourceCardGrowsAndStaysSemanticAtAccessibilityTextSize() {
+    let app = XCUIApplication()
+    launch(
+      app,
+      arguments: [
+        "-ui-preview",
+        "-UIPreferredContentSizeCategoryName",
+        "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
+      ])
+
+    XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
+    app.buttons["Resources"].tap()
+    let pages = app.buttons["feature-pages"]
+    XCTAssertTrue(Self.waitForHittable(pages))
+    pages.tap()
+
+    let projectID = "pages-project-documentation-with-a-long-project-name"
+    let project = app.buttons[projectID]
+    XCTAssertTrue(project.waitForExistence(timeout: 5))
+    for _ in 0..<4 where !project.isHittable { app.swipeUp() }
+    XCTAssertTrue(Self.waitForHittable(project))
+    XCTAssertEqual(
+      project.label,
+      "documentation-with-a-long-project-name, Pages, documentation-preview.pages.dev, Status, In progress"
+    )
+    XCTAssertEqual(app.buttons.matching(identifier: projectID).count, 1)
+    XCTAssertGreaterThan(project.frame.width, app.windows.firstMatch.frame.width * 0.8)
+    XCTAssertGreaterThan(project.frame.height, 116)
+
+    project.tap()
+    XCTAssertTrue(app.staticTexts["Domains"].waitForExistence(timeout: 5))
+    let back = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
+    XCTAssertTrue(project.waitForExistence(timeout: 5))
   }
 
   /// Expands the collapsed Domains group on Home, scrolling it into reach
@@ -556,7 +611,9 @@ final class DashUITests: XCTestCase {
         || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "card preview"))
           .firstMatch.waitForExistence(timeout: 5)
     )
-    close.tap()
+    XCTAssertTrue(Self.waitForHittable(save))
+    save.tap()
+    XCTAssertTrue(save.waitForNonExistence(timeout: 5))
     XCTAssertTrue(app.buttons["domain-card-customize"].waitForExistence(timeout: 5))
   }
 
@@ -625,36 +682,6 @@ final class DashUITests: XCTestCase {
     tunnelAlert.tap()
     XCTAssertTrue(
       app.buttons["watchtower-inbox-ignore-toggle"].waitForExistence(timeout: 5))
-  }
-
-  func testSettingsExposesICloudSync() {
-    let app = XCUIApplication()
-    launch(app, arguments: ["-ui-preview"])
-
-    let profile = app.buttons["header-profile-button"]
-    XCTAssertTrue(profile.waitForExistence(timeout: 5))
-    profile.tap()
-
-    XCTAssertTrue(app.buttons["settings-profile-row"].waitForExistence(timeout: 5))
-
-    let iCloudSync = app.switches["icloud-settings-sync"]
-    for _ in 0..<4 where !iCloudSync.isHittable {
-      app.swipeUp()
-    }
-    XCTAssertTrue(Self.waitForHittable(iCloudSync))
-    XCTAssertEqual(iCloudSync.value as? String, "On")
-    iCloudSync.tap()
-    let syncOff = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value == %@", "Off"),
-      object: iCloudSync)
-    XCTAssertEqual(XCTWaiter.wait(for: [syncOff], timeout: 5), .completed)
-
-    XCTAssertTrue(Self.waitForHittable(iCloudSync))
-    iCloudSync.tap()
-    let syncOn = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value == %@", "On"),
-      object: iCloudSync)
-    XCTAssertEqual(XCTWaiter.wait(for: [syncOn], timeout: 5), .completed)
   }
 
   func testGlowInspirationReturnsToTheSameCenteredCard() {
@@ -841,14 +868,41 @@ final class DashUITests: XCTestCase {
     emailRouting.tap()
 
     let exampleDomain = app.buttons.matching(
-      NSPredicate(format: "label CONTAINS[c] %@", "example.com")
+      NSPredicate(
+        format: "label == %@",
+        "example.com, Email routing, Status, Ready")
+    ).firstMatch
+    let partialDomain = app.buttons.matching(
+      NSPredicate(
+        format: "label == %@",
+        "docs.example.com, Email routing, Status, Misconfigured")
+    ).firstMatch
+    let offDomain = app.buttons.matching(
+      NSPredicate(
+        format: "label BEGINSWITH[c] %@",
+        "api.example.net, Email routing")
     ).firstMatch
     XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
+    XCTAssertTrue(partialDomain.waitForExistence(timeout: 5))
+    XCTAssertTrue(offDomain.waitForNonExistence(timeout: 2))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
+    exampleDomain.tap()
 
-    let back = app.buttons["dash.navigation.back"].firstMatch
-    XCTAssertTrue(back.waitForExistence(timeout: 5))
-    back.tap()
+    XCTAssertTrue(app.staticTexts["Routes"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["Destination addresses"].waitForExistence(timeout: 5))
+    let actions = app.staticTexts.matching(
+      NSPredicate(format: "label == %@", "Actions"))
+    XCTAssertTrue(actions.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertEqual(actions.count, 1)
+
+    let detailBack = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(detailBack.waitForExistence(timeout: 5))
+    detailBack.tap()
+    XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
+
+    let catalogBack = app.buttons["dash.navigation.back"].firstMatch
+    XCTAssertTrue(catalogBack.waitForExistence(timeout: 5))
+    catalogBack.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
   }
 }

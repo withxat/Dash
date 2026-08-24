@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-Effective August 10, 2026.
+Effective August 24, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. Core account API requests go directly from your device to
@@ -47,15 +47,7 @@ advertising, or tracking.
   directories older than one hour are removed the next time the share
   extension opens.
 - **Preferences** are stored locally in the app's own settings storage on your
-  device. **iCloud Sync** is on by default and also stores only your Home quick
-  actions and shortcuts, Watchtower chart layout, and top-glow choice in your
-  iCloud key-value store so those preferences can follow you to another iPhone.
-  Accounts, credentials, account or resource identifiers, alerts, recently
-  opened resources, pinned zones, and cached Cloudflare data are not synced.
-  Turning iCloud Sync off stops Dash from handing new changes to iCloud or
-  applying incoming preferences. A change already queued by Apple's key-value
-  store may finish syncing afterward. Turning sync off does not delete the
-  existing iCloud copy used by another device.
+  device.
 
 ## The relay worker
 
@@ -111,11 +103,9 @@ Keychain, clears local account data and persisted account caches, removes
 Dash's registered Files domains and their downloaded replicas, and removes
 Dash's R2 temporary files.
 Deleting the app removes locally stored preferences, custom profile photos,
-and extension staging files. A synced preference copy can remain in your
-iCloud account so Dash can restore it after reinstalling. Registration
-snapshots and IP-based rate-limit counters expire automatically within the
-periods described above. Dash holds no persistent server-side copy of your
-Cloudflare account data.
+and extension staging files. Registration snapshots and IP-based rate-limit
+counters expire automatically within the periods described above. Dash holds
+no persistent server-side copy of your Cloudflare account data.
 
 ## Changes
 

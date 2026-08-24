@@ -851,6 +851,13 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   /// interrupts the unsettled entrance keeps the frozen travel and reverses
   /// continuously.
   @State private var entranceRevealOffset: CGFloat?
+  /// Render-server flight for the standard reveal; see `DashTrayRevealDriver`.
+  /// The probe below resolves its cover view during the cover's mount frame,
+  /// well before the entrance barrier lifts.
+  @State private var revealDriver = DashTrayRevealDriver()
+  /// True once the standard entrance was handed to the driver; the exit then
+  /// rides the same layer instead of the SwiftUI fallback spring.
+  @State private var revealDriverEngaged = false
   @State private var isClosing = false
   /// Result-destination flight: liftoff (the submit pill's success check) and
   /// landing (the toast's leading mark), held only while eligible. The mark
@@ -972,9 +979,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .fixedSize(horizontal: false, vertical: true)
           .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
             // Only the anchored morph reads this rect (geometry snapshot, ✕
-            // retrace). The standard reveal rides an offset for its whole
-            // flight, so an unconditional write would invalidate this body
-            // once per animated frame for a value nothing consumes.
+            // retrace). The standard reveal never needs it: the driver flight
+            // moves presentation only (the model rests at its seat), and the
+            // SwiftUI fallback rides an offset whose per-frame writes would
+            // invalidate this body for a value nothing consumes.
             guard sharedAction != nil else { return }
             liveCardFrame = frame
           }
@@ -991,7 +999,14 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           .padding(.horizontal, DashTheme.Sheet.floatingMargin)
           .padding(.bottom, bottomLift)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-          .allowsHitTesting(keyboardAction == nil && !isClosing)
+          // During a driver flight the model already rests at its seat while
+          // the card is visually still below — a touch would land on chrome
+          // that has not arrived. The SwiftUI paths hit-test the moving pose
+          // and keep their historical mid-entrance behavior.
+          .allowsHitTesting(
+            keyboardAction == nil && !isClosing
+              && !(revealDriverEngaged && !presentationSettled)
+          )
           .mask {
             if sharedRevealActive, let sourceFrame {
               DashTraySharedContentMask(
@@ -1029,6 +1044,7 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       .ignoresSafeArea(.keyboard)
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(DashTrayRevealProbe(driver: revealDriver))
     .accessibilityAddTraits(.isModal)
     .environment(\.dashTrayDismiss, { requestProgrammaticClose() })
     .environment(
@@ -1129,6 +1145,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       }
 
       // A live setting change interrupts spatial motion at the identity pose.
+      // Removing the driver's animations lets CA fire their pending
+      // completions, which the settle / exit stages below still rely on.
+      revealDriver.cancel()
       var transaction = Transaction()
       transaction.disablesAnimations = true
       withTransaction(transaction) {
@@ -1150,11 +1169,12 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       // Standard reveal: the same one-rendered-frame barrier the paired path
       // takes above. The cover's first frame pays the hosting-controller
       // mount, the card's first layout, the scrim material's first composite,
-      // and the height-measurement cascade — and a time-based spring started
-      // inside that long frame skips ahead when the next frame finally
-      // renders, which reads as a dropped-frame entrance. Everything rests at
-      // progress 0 (invisible) for that frame; the spring then starts on a
-      // clean clock with `cardHeight` already measured.
+      // and the height-measurement cascade. Everything rests at progress 0
+      // (invisible) for that frame, so the driver launches with `cardHeight`
+      // already measured (the travel is baked into the CA spring's fromValue)
+      // and its commit lands on a clean frame instead of inside the mount
+      // storm — a late commit would start the flight late, and the SwiftUI
+      // fallback spring would outright skip ahead.
       guard !sharedRevealActive, !isClosing else { return }
       try? await Task.sleep(for: .milliseconds(16))
       guard !Task.isCancelled, !presentationStarted, !isClosing else { return }
@@ -1198,22 +1218,45 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimPresent) {
       scrimProgress = 1
     }
-    // `.removed`, not `.logicallyComplete`: endpoint ownership changes only
-    // once the rendered spring is actually at rest.
-    withAnimation(
-      reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present,
-      completionCriteria: .removed
-    ) {
-      progress = 1
-    } completion: {
-      guard !isClosing else { return }
+    // The render server owns the standard flight (`DashTrayRevealDriver`): the
+    // model snaps to its resting pose in a disabled transaction while the
+    // additive spring — committed in the same run-loop turn, so one rendered
+    // frame — carries the visual from `travel` below. A long main-thread frame
+    // can then no longer skip the card mid-entrance. The SwiftUI spring stays
+    // as the byte-identical fallback for an unresolved probe, and the whole
+    // branch steps aside for Reduce Motion and the anchored reveal, whose
+    // progress-driven proxies the driver must not fight.
+    if !reduceMotion, !sharedRevealActive,
+      revealDriver.present(
+        travel: entranceRevealOffset ?? revealOffset,
+        completion: { settleEntrance() })
+    {
+      revealDriverEngaged = true
       var transaction = Transaction()
       transaction.disablesAnimations = true
-      withTransaction(transaction) {
-        presentationSettled = true
-        sharedProxyOwnsAction = false
-        entranceRevealOffset = nil
+      withTransaction(transaction) { progress = 1 }
+    } else {
+      // `.removed`, not `.logicallyComplete`: endpoint ownership changes only
+      // once the rendered spring is actually at rest.
+      withAnimation(
+        reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.present,
+        completionCriteria: .removed
+      ) {
+        progress = 1
+      } completion: {
+        settleEntrance()
       }
+    }
+  }
+
+  private func settleEntrance() {
+    guard !isClosing else { return }
+    var transaction = Transaction()
+    transaction.disablesAnimations = true
+    withTransaction(transaction) {
+      presentationSettled = true
+      sharedProxyOwnsAction = false
+      entranceRevealOffset = nil
     }
   }
 
@@ -1256,10 +1299,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
 
-  /// A bounded travel distance keeps tall trays from shooting through hundreds
-  /// of points. Fade and a tiny bottom-anchored scale carry the rest.
+  /// Full-card travel so the tray starts below the screen edge and rides the
+  /// present spring into its resting seat. `bottomLift` is paid too — resting
+  /// clearance would otherwise leave a sliver visible at liftoff.
   private var revealOffset: CGFloat {
-    min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)
+    (cardHeight > 0 ? cardHeight : 400) + bottomLift
   }
 
   /// Page dim: a softened material under a light black veil. Reduce
@@ -1274,6 +1318,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       }
       Color.black.opacity(DashTheme.Sheet.scrimOpacity)
     }
+    // Overdraw above the screen so the reveal driver's whole-cover ride never
+    // uncovers the top edge (see `scrimHeadroom`). Inside this builder on
+    // purpose: negative padding overflows the layout box without growing it,
+    // so the body's contentShape and accessibility frame keep screen bounds.
+    .padding(.top, -DashTrayRevealMetrics.scrimHeadroom)
   }
 
   /// Bottom gap under the floating card from the screen edge (always ≥ 0).
@@ -1333,11 +1382,26 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.scrimDismiss) {
       scrimProgress = 0
     }
-    withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.dismiss) {
-      progress = 0
-      if reversesUnsettledSharedReveal { drag = 0 }
-    } completion: {
-      finishExitStage()
+    // A driver-presented tray exits on the same render-server layer. The model
+    // keeps its resting pose (progress stays 1); the additive spring re-adds
+    // the drag it leaves from, so the model can shed it in the same disabled
+    // transaction without a visual jump, and an exit interrupting the
+    // unsettled entrance reverses continuously from the sampled presentation.
+    if revealDriverEngaged, !reduceMotion,
+      revealDriver.dismiss(
+        travel: revealOffset, liftedDrag: drag,
+        completion: { finishExitStage() })
+    {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) { drag = 0 }
+    } else {
+      withAnimation(reduceMotion ? DashTheme.Motion.reduced : DashTrayMotion.dismiss) {
+        progress = 0
+        if reversesUnsettledSharedReveal { drag = 0 }
+      } completion: {
+        finishExitStage()
+      }
     }
   }
 
@@ -1651,8 +1715,18 @@ enum DashTrayFlightMath {
   }
 }
 
-/// The established compact Tray reveal: a bounded rise with a card-only fade
-/// and a whisper of bottom-anchored scale, driven by presentation progress.
+/// The established compact Tray reveal pose: a full off-screen rise driven by
+/// presentation progress. Reduce Motion keeps opacity only.
+///
+/// On the standard path this modifier holds the pre-liftoff pose (progress 0,
+/// card parked below the screen) and remains the SwiftUI fallback flight when
+/// `DashTrayRevealDriver` has no cover view to drive. The production flight
+/// itself rides the render server: liftoff snaps `progress` to 1 in a disabled
+/// transaction (this modifier renders identity) while an additive
+/// `CASpringAnimation` carries the visual from the same travel — one commit,
+/// no jump. A custom `Animatable` body is per-frame main-actor work, and a
+/// time-based spring skips ahead across any long frame; the render server
+/// interpolates out-of-process and cannot be skipped by a stalled main thread.
 private struct DashTrayCardReveal: ViewModifier, Animatable {
   var progress: CGFloat
   var drag: CGFloat
@@ -1680,9 +1754,217 @@ private struct DashTrayCardReveal: ViewModifier, Animatable {
     } else {
       content
         .offset(y: (1 - progress) * (max(revealOffset, drag + 48) - drag))
-        .scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)
-        .opacity(min(1, progress * 2))
     }
+  }
+}
+
+/// One pace table, two engines: converts Dash's response / dampingFraction
+/// spring vocabulary into the Core Animation stiffness / damping the reveal
+/// driver commits to the render server. Mass is 1 in both worlds, so
+/// stiffness = (2π/response)² and damping = dampingFraction · 2·√stiffness.
+enum DashTrayRevealSpringMath {
+  static func stiffness(response: Double) -> Double {
+    let angularFrequency = 2 * Double.pi / response
+    return angularFrequency * angularFrequency
+  }
+
+  static func damping(response: Double, dampingFraction: Double) -> Double {
+    dampingFraction * 2 * (2 * Double.pi / response)
+  }
+}
+
+enum DashTrayRevealMetrics {
+  /// The reveal driver translates the WHOLE cover — scrim included. The scrim
+  /// is a uniform veil over a backdrop filter, and a backdrop filter resamples
+  /// whatever sits behind its on-screen position, so the ride is invisible as
+  /// long as the scrim keeps covering the top edge while the cover sits
+  /// `travel` low. Headroom therefore must exceed the tallest possible travel:
+  /// a full-height card plus its bottom lift, bounded by the window height
+  /// (portrait iPhone windows top out near 956pt).
+  static let scrimHeadroom: CGFloat = 1200
+}
+
+/// Render-server flight for the standard (unanchored) tray reveal.
+///
+/// The SwiftUI spring that used to fly the card is a custom `Animatable`
+/// modifier — per-frame main-actor work — and a time-based spring skips ahead
+/// across any long frame, which is exactly what the entrance window contains
+/// (hosting mount, the height-measurement cascade, first composites). An
+/// additive `CASpringAnimation` committed to the cover's own layer is
+/// interpolated by the render server out-of-process: once committed, no amount
+/// of main-thread work can skip the card mid-flight, and a late commit starts
+/// the spring late instead of mid-way.
+///
+/// Additive and presentation-only, deliberately: the model layer never moves,
+/// so every geometry probe, preference, and hit test keeps reading the card's
+/// resting pose, and SwiftUI never learns the flight happened. The whole cover
+/// rides — the scrim too, which stays invisible per
+/// `DashTrayRevealMetrics.scrimHeadroom`. The anchored quick-action morph,
+/// Reduce Motion, and an unresolved probe all keep the SwiftUI paths.
+@MainActor
+final class DashTrayRevealDriver {
+  private weak var coverView: UIView?
+  /// Bumped when a new flight supersedes the previous one, so the superseded
+  /// flight's transaction completion (CA fires it on removal) cannot run
+  /// stale settle / exit logic.
+  private var flightGeneration = 0
+
+  private static let presentKey = "dash.tray.reveal.present"
+  private static let dismissKey = "dash.tray.reveal.dismiss"
+
+  func adopt(coverView view: UIView) {
+    coverView = view
+  }
+
+  /// Slides the cover up from `travel` below its seat. Returns false when the
+  /// probe has not resolved a cover view; the caller keeps the SwiftUI spring.
+  func present(travel: CGFloat, completion: @escaping () -> Void) -> Bool {
+    guard travel > 0, let layer = drivableLayer() else { return false }
+    flightGeneration += 1
+    let generation = flightGeneration
+    let spring = flightSpring(
+      stiffness: DashTheme.Motion.Tray.presentStiffness,
+      damping: DashTheme.Motion.Tray.presentDamping,
+      from: travel, to: 0)
+    commit(
+      spring, forKey: Self.presentKey, on: layer, generation: generation,
+      completion: completion)
+    return true
+  }
+
+  /// Slides the cover down to `travel` past its seat, starting from wherever
+  /// the presentation currently is — an exit interrupting the unsettled
+  /// entrance reverses continuously (position; spring velocity restarts, like
+  /// the blend-based SwiftUI dismiss it replaces). `liftedDrag` re-adds the
+  /// drag the caller zeroes in the same transaction, so the card leaves from
+  /// under the finger without a jump.
+  func dismiss(travel: CGFloat, liftedDrag: CGFloat, completion: @escaping () -> Void) -> Bool {
+    guard let layer = drivableLayer() else { return false }
+    let inFlight =
+      (layer.presentation()?.value(forKeyPath: "transform.translation.y") as? CGFloat) ?? 0
+    flightGeneration += 1
+    let generation = flightGeneration
+    layer.removeAnimation(forKey: Self.presentKey)
+    let spring = flightSpring(
+      stiffness: DashTrayRevealSpringMath.stiffness(
+        response: DashTheme.Motion.dismissResponse),
+      damping: DashTrayRevealSpringMath.damping(
+        response: DashTheme.Motion.dismissResponse,
+        dampingFraction: DashTheme.Motion.dismissDampingFraction),
+      from: inFlight + liftedDrag, to: travel)
+    // Hold the exit pose until the cover unmounts; a removed animation would
+    // flash the resting model card for the frame between CA's completion and
+    // SwiftUI tearing the cover down.
+    spring.fillMode = .forwards
+    spring.isRemovedOnCompletion = false
+    commit(
+      spring, forKey: Self.dismissKey, on: layer, generation: generation,
+      completion: completion)
+    return true
+  }
+
+  /// Reduce Motion arriving mid-flight parks the card at its model pose.
+  /// Animations are removed WITHOUT bumping the generation: CA fires their
+  /// transaction completions on removal, and the pending settle / exit stage
+  /// must still run.
+  func cancel() {
+    coverView?.layer.removeAnimation(forKey: Self.presentKey)
+    coverView?.layer.removeAnimation(forKey: Self.dismissKey)
+  }
+
+  private func drivableLayer() -> CALayer? {
+    guard let coverView, coverView.window != nil else { return nil }
+    return coverView.layer
+  }
+
+  private func flightSpring(
+    stiffness: Double, damping: Double, from: CGFloat, to: CGFloat
+  ) -> CASpringAnimation {
+    let spring = CASpringAnimation(keyPath: "transform.translation.y")
+    spring.mass = 1
+    spring.stiffness = stiffness
+    spring.damping = damping
+    spring.initialVelocity = 0
+    spring.fromValue = from
+    spring.toValue = to
+    spring.isAdditive = true
+    spring.duration = spring.settlingDuration
+    return spring
+  }
+
+  private func commit(
+    _ spring: CASpringAnimation, forKey key: String, on layer: CALayer,
+    generation: Int, completion: @escaping () -> Void
+  ) {
+    CATransaction.begin()
+    CATransaction.setCompletionBlock { [weak self] in
+      MainActor.assumeIsolated {
+        guard let self, self.flightGeneration == generation else { return }
+        completion()
+      }
+    }
+    layer.add(spring, forKey: key)
+    CATransaction.commit()
+  }
+}
+
+/// Hands the cover's own UIKit view to the reveal driver. Same probe idiom as
+/// `DashScreenClipLift`: a hidden view resolves its enclosing view controller
+/// once it lands in a window — from inside the cover that is the presentation
+/// hosting controller, whose root view is the layer the driver translates.
+private struct DashTrayRevealProbe: UIViewRepresentable {
+  let driver: DashTrayRevealDriver
+
+  func makeUIView(context: Context) -> DashTrayRevealProbeView {
+    DashTrayRevealProbeView(driver: driver)
+  }
+
+  func updateUIView(_ uiView: DashTrayRevealProbeView, context: Context) {
+    uiView.driver = driver
+    uiView.resolve()
+  }
+}
+
+final class DashTrayRevealProbeView: UIView {
+  var driver: DashTrayRevealDriver?
+
+  init(driver: DashTrayRevealDriver) {
+    self.driver = driver
+    super.init(frame: .zero)
+    isUserInteractionEnabled = false
+    isHidden = true
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError() }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil { resolve() }
+  }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    // SwiftUI rebuilds can re-enable wrapper clipping; re-resolving on layout
+    // keeps the lift armed, the same schedule `DashScreenClipLift` uses.
+    resolve()
+  }
+
+  func resolve() {
+    guard window != nil,
+      let cover = DashScreenScrollLocator.enclosingContentView(from: self)
+    else { return }
+    driver?.adopt(coverView: cover)
+    // The scrim overdraws `scrimHeadroom` above the cover so the ride cannot
+    // uncover the top edge — that overflow must survive the wrapper clips
+    // between here and the cover view, and the cover's own: a clipped cover
+    // carries its clip with the flight and would bare an undimmed band at the
+    // top mid-ride. Unclipping the topmost presented view is safe where the
+    // page containers are not: nothing is composited above this cover except
+    // the toast window.
+    DashScreenClipScope.lift(from: self)
+    cover.clipsToBounds = false
+    cover.layer.masksToBounds = false
   }
 }
 
@@ -2178,34 +2460,39 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
           reporterID: presentationReporterID,
           entryID: navigationEntryID)
       }
-      .fullScreenCover(
-        item: $coverPresentation,
-        onDismiss: {
-          sharedActionLease.release()
-          isPresented = false
-          let completion = dismissCompletion
-          dismissCompletion = nil
-          completion?()
-        },
-        content: { presentation in
-          DashCustomSheet(
-            title: title, showsMenuButtons: showsMenuButtons, tone: tone,
-            safeBottom: presentation.safeBottom,
-            sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
-            hero: hero,
-            onDismiss: { completion in
-              dismissCompletion = completion
-              // Keep the external presentation state alive until UIKit has
-              // actually removed the cover. Callers use that state to gate
-              // competing presentations such as pending Home deep links.
-              dashPresentWithoutAnimation { coverPresentation = nil }
-            }, content: trayContent,
-            footer: footer, hasFooter: hasFooter)
-        }
-      )
-      // Belt with the binding transaction: keep the cover's own present/dismiss
-      // transition from sliding the whole host (scrim included).
-      .transaction { $0.disablesAnimations = true }
+      // Keep the native cover's own present/dismiss transition from sliding
+      // the whole host (scrim included). The scoped transaction affects only
+      // this modifier; applying it to the outer chain also flattens every
+      // button and surface animation in the presenting content tree.
+      .transaction { transaction in
+        transaction.disablesAnimations = true
+      } body: { presenter in
+        presenter.fullScreenCover(
+          item: $coverPresentation,
+          onDismiss: {
+            sharedActionLease.release()
+            isPresented = false
+            let completion = dismissCompletion
+            dismissCompletion = nil
+            completion?()
+          },
+          content: { presentation in
+            DashCustomSheet(
+              title: title, showsMenuButtons: showsMenuButtons, tone: tone,
+              safeBottom: presentation.safeBottom,
+              sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
+              hero: hero,
+              onDismiss: { completion in
+                dismissCompletion = completion
+                // Keep the external presentation state alive until UIKit has
+                // actually removed the cover. Callers use that state to gate
+                // competing presentations such as pending Home deep links.
+                dashPresentWithoutAnimation { coverPresentation = nil }
+              }, content: trayContent,
+              footer: footer, hasFooter: hasFooter)
+          }
+        )
+      }
   }
 }
 
@@ -2262,30 +2549,35 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
           reporterID: presentationReporterID,
           entryID: navigationEntryID)
       }
-      .fullScreenCover(
-        item: $coverPresentation,
-        onDismiss: {
-          sharedActionLease.release()
-          item = nil
-          let completion = dismissCompletion
-          dismissCompletion = nil
-          completion?()
-        },
-        content: { presentation in
-          DashCustomSheet<Hero, TrayContent, EmptyView>(
-            title: title(presentation.value), showsMenuButtons: showsMenuButtons, tone: tone,
-            safeBottom: presentation.safeBottom,
-            sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
-            hero: hero.map { hero in { hero(presentation.value) } },
-            onDismiss: { completion in
-              dismissCompletion = completion
-              // Match the Bool-backed modifier: the item remains presented
-              // through the native dismissal so another cover cannot race it.
-              dashPresentWithoutAnimation { coverPresentation = nil }
-            }, content: { trayContent(presentation.value) },
-            footer: { EmptyView() }, hasFooter: false)
-        }
-      )
-      .transaction { $0.disablesAnimations = true }
+      // Match the Bool-backed modifier: suppress only the native cover
+      // transition, never descendant control feedback in the presenter.
+      .transaction { transaction in
+        transaction.disablesAnimations = true
+      } body: { presenter in
+        presenter.fullScreenCover(
+          item: $coverPresentation,
+          onDismiss: {
+            sharedActionLease.release()
+            item = nil
+            let completion = dismissCompletion
+            dismissCompletion = nil
+            completion?()
+          },
+          content: { presentation in
+            DashCustomSheet<Hero, TrayContent, EmptyView>(
+              title: title(presentation.value), showsMenuButtons: showsMenuButtons, tone: tone,
+              safeBottom: presentation.safeBottom,
+              sharedAction: presentation.sharedAction, sourceFrame: presentation.sourceFrame,
+              hero: hero.map { hero in { hero(presentation.value) } },
+              onDismiss: { completion in
+                dismissCompletion = completion
+                // Match the Bool-backed modifier: the item remains presented
+                // through the native dismissal so another cover cannot race it.
+                dashPresentWithoutAnimation { coverPresentation = nil }
+              }, content: { trayContent(presentation.value) },
+              footer: { EmptyView() }, hasFooter: false)
+          }
+        )
+      }
   }
 }

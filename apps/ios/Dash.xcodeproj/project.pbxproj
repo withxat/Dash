@@ -161,8 +161,6 @@
 		B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B4 /* WorkerBuildActivityTests.swift */; };
 		B000000000000000000001B5 /* DeferredDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B5 /* DeferredDeletionTests.swift */; };
 		B000000000000000000001FD /* OptimisticOperationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001FD /* OptimisticOperationTests.swift */; };
-		B000000000000000000001B6 /* ICloudPreferencesSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B6 /* ICloudPreferencesSync.swift */; };
-		B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */; };
 		B000000000000000000001B8 /* EmailRoutingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B8 /* EmailRoutingViews.swift */; };
 		B000000000000000000001B9 /* EmailAddressViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B9 /* EmailAddressViews.swift */; };
 		B000000000000000000001BA /* RegistrarViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001BA /* RegistrarViews.swift */; };
@@ -359,8 +357,6 @@
 		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B5 /* DeferredDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001FD /* OptimisticOperationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OptimisticOperationTests.swift; sourceTree = "<group>"; };
-		F000000000000000000001B6 /* ICloudPreferencesSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSync.swift; sourceTree = "<group>"; };
-		F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ICloudPreferencesSyncTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B8 /* EmailRoutingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailRoutingViews.swift; sourceTree = "<group>"; };
 		F000000000000000000001B9 /* EmailAddressViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmailAddressViews.swift; sourceTree = "<group>"; };
 		F000000000000000000001BA /* RegistrarViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrarViews.swift; sourceTree = "<group>"; };
@@ -502,7 +498,6 @@
 				F00000000000000000000002 /* AppConfiguration.swift */,
 				F00000000000000000000003 /* KeychainTokenStore.swift */,
 				F00000000000000000000004 /* AppModel.swift */,
-				F000000000000000000001B6 /* ICloudPreferencesSync.swift */,
 				F0000000000000000000012B /* DemoBackend.swift */,
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000213 /* FeatureCachePersistence.swift */,
@@ -637,7 +632,6 @@
 				D15F0000000000000000010A /* DeferredDeletionPolicyTests.swift */,
 				D15F0000000000000000010B /* DeferredDeletionTestSupport.swift */,
 				F000000000000000000001FD /* OptimisticOperationTests.swift */,
-				F000000000000000000001B7 /* ICloudPreferencesSyncTests.swift */,
 				F000000000000000000001CB /* FileProviderDomainsTests.swift */,
 			);
 			path = DashTests;
@@ -872,11 +866,6 @@
 				TargetAttributes = {
 					A00000000000000000000002 = {
 						CreatedOnToolsVersion = 26.4;
-						SystemCapabilities = {
-							com.apple.iCloud = {
-								enabled = 1;
-							};
-						};
 					};
 					A00000000000000000000003 = {
 						CreatedOnToolsVersion = 26.4;
@@ -1022,7 +1011,6 @@
 				B00000000000000000000002 /* AppConfiguration.swift in Sources */,
 				B00000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				B00000000000000000000004 /* AppModel.swift in Sources */,
-				B000000000000000000001B6 /* ICloudPreferencesSync.swift in Sources */,
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
 				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
@@ -1156,7 +1144,6 @@
 				D15A0000000000000000010A /* DeferredDeletionPolicyTests.swift in Sources */,
 				D15A0000000000000000010B /* DeferredDeletionTestSupport.swift in Sources */,
 				B000000000000000000001FD /* OptimisticOperationTests.swift in Sources */,
-				B000000000000000000001B7 /* ICloudPreferencesSyncTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

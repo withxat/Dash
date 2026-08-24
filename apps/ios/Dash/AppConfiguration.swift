@@ -135,10 +135,9 @@ enum DashExperimentalFeatures {
 }
 
 /// UserDefaults-backed color preference for the one shared light field behind
-/// the Home, Resources, and Watchtower roots. Its whitelisted value can also
-/// sync through iCloud. Persist the preset identity rather than a color value
-/// so every choice can keep following Kumo's adaptive light, dark, and
-/// Increased Contrast stops.
+/// the Home, Resources, and Watchtower roots. Persist the preset identity rather
+/// than a color value so every choice can keep following Kumo's adaptive light,
+/// dark, and Increased Contrast stops.
 struct DashWorkspaceGlowInspiration: Equatable, Sendable {
   let source: String
   let description: String

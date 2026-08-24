@@ -30,8 +30,128 @@ import UIKit
   #expect(
     EmailRoutingStatusMapping.token(
       for: EmailRoutingSettings(
-        id: "email-3", name: "off.example.com", enabled: false, status: "unconfigured"))
+        id: "email-3", name: "off.example.com", enabled: false, status: "ready"))
       == .disabled)
+}
+
+@Test @MainActor func emailRoutingStatusBatchRejectsAStaleAccountWrite() throws {
+  let model = AppModel(
+    configuration: AppConfiguration(clientID: "test", redirectURI: ""),
+    deferredDeletionPersistence: nil)
+  model.activeAccountID = "account-a"
+  let accountA = try #require(model.accountRequestContext)
+  model.activeAccountID = "account-b"
+  let accountB = try #require(model.accountRequestContext)
+  let zoneID = "zone-account-race"
+  let fresh = [
+    zoneID: EmailRoutingSettings(
+      id: "email-race", name: "mail.example", enabled: true, status: "ready")
+  ]
+
+  #expect(
+    !EmailRoutingStatusCacheBatch.commit(
+      fresh,
+      context: accountA,
+      loadedContext: accountA,
+      model: model))
+  #expect(
+    EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: model.featureCache) == nil)
+
+  #expect(
+    EmailRoutingStatusCacheBatch.commit(
+      fresh,
+      context: accountB,
+      loadedContext: accountB,
+      model: model))
+  #expect(
+    EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: model.featureCache)
+      == fresh[zoneID])
+}
+
+@Test func emailRoutingDomainCardsShowOnlySettingsThatAreOn() {
+  func settings(enabled: Bool = true, status: String?) -> EmailRoutingSettings {
+    EmailRoutingSettings(
+      id: "email-\(status ?? "unknown")",
+      name: "example.com",
+      enabled: enabled,
+      status: status)
+  }
+
+  #expect(EmailRoutingStatusMapping.listCardToken(for: settings(status: "ready")) == .ready)
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(status: "misconfigured"))
+      == .misconfigured)
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(status: "misconfigured/locked"))
+      == .misconfigured)
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(status: "unlocked")) == .unlocked)
+
+  // `enabled` wins over a contradictory status, and Cloudflare's explicit
+  // unconfigured state is the other definitive "fully off" signal.
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(enabled: false, status: "ready"))
+      == nil)
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(status: "unconfigured")) == nil)
+
+  // An enabled future status remains visible as Unknown. Hiding it would turn
+  // an API evolution into the false claim that Email Routing was never on.
+  #expect(EmailRoutingStatusMapping.listCardToken(for: settings(status: nil)) == .unknown)
+  #expect(
+    EmailRoutingStatusMapping.listCardToken(for: settings(status: "future-state")) == .unknown)
+}
+
+@Test @MainActor func emailRoutingReturnHeroResolvesConfiguredOffAndMissingCache() {
+  let cache = FeatureDataCache()
+  let zoneID = "zone-email-hero"
+  let stale = DashNavigationHero.emailRoutingCard(
+    accountID: "acc",
+    zoneID: zoneID,
+    name: "mail.example",
+    status: "Misconfigured",
+    seed: "mail.example",
+    fillHex: 0xA8D8D8)
+
+  let missing = stale.returnCacheResolution(from: cache)
+  #expect(missing == .preserveCaptured)
+  #expect(missing.resolvedHero(preserving: stale) == stale)
+
+  EmailRoutingStatusMapping.storeListSettings(
+    EmailRoutingSettings(
+      id: "email-hero", name: "mail.example", enabled: true, status: "ready"),
+    zoneID: zoneID,
+    cache: cache)
+  let configured = stale.returnCacheResolution(from: cache)
+  let refreshed = DashNavigationHero.emailRoutingCard(
+    accountID: "acc",
+    zoneID: zoneID,
+    name: "mail.example",
+    status: "Ready",
+    seed: "mail.example",
+    fillHex: DomainCardColors.defaultHex(for: "mail.example"))
+  #expect(configured == .replace(refreshed))
+  #expect(configured.resolvedHero(preserving: stale) == refreshed)
+
+  EmailRoutingStatusMapping.storeListSettings(
+    EmailRoutingSettings(
+      id: "email-hero", name: "mail.example", enabled: false, status: "ready"),
+    zoneID: zoneID,
+    cache: cache)
+  let off = stale.returnCacheResolution(from: cache)
+  #expect(off == .cardIneligible)
+  #expect(off.resolvedHero(preserving: stale) == nil)
+
+  let domain = DashNavigationHero.domainCard(
+    accountID: "acc",
+    zoneID: zoneID,
+    name: "mail.example",
+    status: "Active",
+    seed: "mail.example",
+    fillHex: 0xA8D8D8,
+    plan: nil)
+  #expect(
+    domain.returnCacheResolution(from: cache).resolvedHero(preserving: domain) == domain)
 }
 
 @Test func emailRoutingHasEditableShapeAllowsWildcardLocalParts() {
@@ -222,6 +342,72 @@ import UIKit
   #expect(PinnedZones.decode(other.pins).first?.accountID == "acc2")
 }
 
+@Test func domainStatusSectionsLeadWithPinnedThenStatusBuckets() throws {
+  func zone(_ id: String, status: String?) throws -> CloudflareZone {
+    let statusJSON = status.map { "\"\($0)\"" } ?? "null"
+    return try JSONDecoder().decode(
+      CloudflareZone.self,
+      from: Data(
+        #"{"id":"\#(id)","name":"\#(id).example","status":\#(statusJSON)}"#.utf8))
+  }
+
+  let painted = try [
+    zone("pin-b", status: "pending"),
+    zone("pin-a", status: "active"),
+    zone("active-a", status: "active"),
+    zone("moved", status: "moved"),
+    zone("active-b", status: "ACTIVE"),
+    zone("weird", status: "deactivated"),
+    zone("nil-status", status: nil),
+  ]
+  // Pin order is deliberate and independent of `painted` order.
+  let sections = DomainStatusSections.make(
+    from: painted,
+    pinnedIDs: ["pin-a", "pin-b"])
+
+  #expect(
+    sections.map(\.id) == ["pinned", "active", "moved", "deactivated", "unknown"])
+  #expect(sections[0].zones.map(\.id) == ["pin-a", "pin-b"])
+  #expect(sections[1].zones.map(\.id) == ["active-a", "active-b"])
+  #expect(sections[2].zones.map(\.id) == ["moved"])
+  #expect(sections[3].zones.map(\.id) == ["weird"])
+  #expect(sections[4].zones.map(\.id) == ["nil-status"])
+}
+
+@Test func domainsGroupingPresentationAnimatesOnlyAfterItsFirstFrame() {
+  #expect(
+    DomainsGroupingPresentationRules.update(displayed: nil, target: false)
+      == DomainsGroupingPresentationUpdate(groupsByStatus: false, animates: false))
+  #expect(
+    DomainsGroupingPresentationRules.update(displayed: nil, target: true)
+      == DomainsGroupingPresentationUpdate(groupsByStatus: true, animates: false))
+  #expect(
+    DomainsGroupingPresentationRules.update(displayed: false, target: true)
+      == DomainsGroupingPresentationUpdate(groupsByStatus: true, animates: true))
+  #expect(
+    DomainsGroupingPresentationRules.update(displayed: true, target: false)
+      == DomainsGroupingPresentationUpdate(groupsByStatus: false, animates: true))
+  #expect(
+    DomainsGroupingPresentationRules.update(
+      displayed: false,
+      target: true,
+      reduceMotion: true
+    ) == DomainsGroupingPresentationUpdate(groupsByStatus: true, animates: false))
+  #expect(
+    DomainsGroupingPresentationRules.update(displayed: true, target: true) == nil)
+}
+
+@Test func zoneActionsNoticeAppearsOnlyForLoadedInactiveDomains() {
+  for status in ["active", "ACTIVE"] {
+    #expect(!ZoneActionsNoticeRules.showsNotice(mode: .live, status: status))
+  }
+  let inactiveStatuses: [String?] = ["pending", "initializing", "moved", nil]
+  for status in inactiveStatuses {
+    #expect(ZoneActionsNoticeRules.showsNotice(mode: .live, status: status))
+    #expect(!ZoneActionsNoticeRules.showsNotice(mode: .placeholder, status: status))
+  }
+}
+
 @Test func domainCardColorsPersistPerAccountAndDomain() {
   let violet = DomainCardColors.parseToken("#7E22CE")!
   let orange = DomainCardColors.parseToken("#B45309")!
@@ -254,6 +440,16 @@ import UIKit
   #expect(
     DomainCardColors.hex(
       in: raw, accountID: "acc1", zoneID: "zone1", seed: "example.com") == ocean)
+  // Morph hero: a later save must win over the push-time fill, per account.
+  #expect(
+    DomainCardColors.hex(
+      in: raw, accountID: "acc1", zoneID: "zone1", fallback: 0xB8DDA8) == ocean)
+  #expect(
+    DomainCardColors.hex(
+      in: raw, accountID: "acc2", zoneID: "zone1", fallback: 0xB8DDA8) == orange)
+  #expect(
+    DomainCardColors.hex(
+      in: "", accountID: "acc1", zoneID: "zone1", fallback: 0xB8DDA8) == 0xB8DDA8)
   #expect(DomainCardColors.decode("bad,acc|zone|unknown").isEmpty)
   #expect(raw.contains("#0369A1"))
 }

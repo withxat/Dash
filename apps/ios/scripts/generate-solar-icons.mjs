@@ -42,6 +42,7 @@ const FILL_ICONS = {
 	SolarDatabaseFill: 'ui/Bold/Database',
 	SolarInfoCircleFill: 'ui/Bold/InfoCircle',
 	SolarInboxFill: 'messages/Bold/Inbox',
+	SolarLetterFill: 'messages/Bold/Letter',
 	SolarMailboxFill: 'messages/Bold/Mailbox',
 	SolarShieldUserFill: 'security/Bold/ShieldUser',
 	SolarUsersGroupRoundedFill: 'users/Bold/UsersGroupRounded',
@@ -127,6 +128,9 @@ const OUTLINE_ICONS = {
 	SolarSliderHorizontalOutline: 'ui/Linear/SliderMinimalisticHorizontal',
 	SolarPinListOutline: 'ui/Linear/PinList',
 	SolarPinOutline: 'ui/Linear/Pin',
+	/// Domains grid — enter / leave group-by-status.
+	SolarListCheckMinimalisticOutline: 'list/Linear/ListCheckMinimalistic',
+	SolarListCrossMinimalisticOutline: 'list/Linear/ListCrossMinimalistic',
 	SolarUsersGroupOutline: 'users/Linear/UsersGroupRounded',
 }
 

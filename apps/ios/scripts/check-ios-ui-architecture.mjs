@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const MAIN_TAB_PATH = join(ROOT, "apps/ios/Dash/MainTabView.swift");
+const DASH_NAVIGATION_PATH = join(ROOT, "apps/ios/Dash/DashNavigation.swift");
 const DASH_WORKSPACE_PATH = join(ROOT, "apps/ios/Dash/DashWorkspace.swift");
 const DASH_TAB_FLOW_PATH = join(ROOT, "apps/ios/Dash/DashTabFlow.swift");
 const DASH_ROUTE_PAGE_CHROME_PATH = join(
@@ -35,8 +36,17 @@ const DASH_SURFACE_SKELETONS_PATH = join(
   "apps/ios/Dash/DashSurfaceSkeletons.swift",
 );
 const DASH_SURFACES_PATH = join(ROOT, "apps/ios/Dash/DashSurfaces.swift");
+const CATALOG_VISUALS_PATH = join(ROOT, "apps/ios/Dash/CatalogVisuals.swift");
 const DASH_FORM_CHROME_PATH = join(ROOT, "apps/ios/Dash/DashFormChrome.swift");
+const DASH_ACTION_CHROME_PATH = join(
+  ROOT,
+  "apps/ios/Dash/DashActionChrome.swift",
+);
 const APP_ROOT_PATH = join(ROOT, "apps/ios/Dash/AppRootView.swift");
+const NETWORK_ACCESS_PROBE_PATH = join(
+  ROOT,
+  "apps/ios/Dash/NetworkAccessProbe.swift",
+);
 const WORKER_VIEWS_PATH = join(ROOT, "apps/ios/Dash/WorkerViews.swift");
 const WORKER_BUILDS_SECTION_PATH = join(
   ROOT,
@@ -49,6 +59,7 @@ const EMAIL_ROUTING_VIEWS_PATH = join(
   ROOT,
   "apps/ios/Dash/EmailRoutingViews.swift",
 );
+const ZONE_VIEWS_PATH = join(ROOT, "apps/ios/Dash/ZoneViews.swift");
 const ZONE_DETAIL_VIEWS_PATH = join(
   ROOT,
   "apps/ios/Dash/ZoneDetailViews.swift",
@@ -73,6 +84,9 @@ const GIT_COMMIT_SCRIPT_PATH = join(
 );
 const DASH_PRODUCTION_PATH = join(ROOT, "apps/ios/Dash");
 const mainTab = stripSwiftComments(readFileSync(MAIN_TAB_PATH, "utf8"));
+const dashNavigation = stripSwiftComments(
+  readFileSync(DASH_NAVIGATION_PATH, "utf8"),
+);
 const dashWorkspace = stripSwiftComments(
   readFileSync(DASH_WORKSPACE_PATH, "utf8"),
 );
@@ -115,10 +129,19 @@ const dashSurfaceSkeletons = stripSwiftComments(
 const dashSurfaces = stripSwiftComments(
   readFileSync(DASH_SURFACES_PATH, "utf8"),
 );
+const catalogVisuals = stripSwiftComments(
+  readFileSync(CATALOG_VISUALS_PATH, "utf8"),
+);
 const dashFormChrome = stripSwiftComments(
   readFileSync(DASH_FORM_CHROME_PATH, "utf8"),
 );
+const dashActionChrome = stripSwiftComments(
+  readFileSync(DASH_ACTION_CHROME_PATH, "utf8"),
+);
 const appRoot = stripSwiftComments(readFileSync(APP_ROOT_PATH, "utf8"));
+const networkAccessProbe = stripSwiftComments(
+  readFileSync(NETWORK_ACCESS_PROBE_PATH, "utf8"),
+);
 const workerViews = stripSwiftComments(readFileSync(WORKER_VIEWS_PATH, "utf8"));
 const workerBuildsSection = stripSwiftComments(
   readFileSync(WORKER_BUILDS_SECTION_PATH, "utf8"),
@@ -133,6 +156,7 @@ const tunnelViews = stripSwiftComments(
 const emailRoutingViews = stripSwiftComments(
   readFileSync(EMAIL_ROUTING_VIEWS_PATH, "utf8"),
 );
+const zoneViews = stripSwiftComments(readFileSync(ZONE_VIEWS_PATH, "utf8"));
 const zoneDetailViews = stripSwiftComments(
   readFileSync(ZONE_DETAIL_VIEWS_PATH, "utf8"),
 );
@@ -172,13 +196,21 @@ const coldOverlayCopyView = declarationBody(
   dashSurfaceSkeletons,
   "private struct DashColdOverlayCopyView: View",
 );
-const coldFailureWash = declarationBody(
+const translucentNoticeWash = declarationBody(
   dashSurfaceSkeletons,
-  "private struct DashColdFailureWash: View",
+  "struct DashTranslucentNoticeWash: View",
 );
 const sectionFailureVeil = declarationBody(
   dashSurfaces,
   "private struct DashSectionFailureVeil: View",
+);
+const sectionNoticeVeil = declarationBody(
+  dashSurfaces,
+  "private struct DashSectionNoticeVeil: View",
+);
+const sectionNoticeModifier = declarationBody(
+  dashSurfaces,
+  "private struct DashSectionNoticeModifier: ViewModifier",
 );
 const itemStaggerModifier = declarationBody(
   dashFormChrome,
@@ -188,9 +220,47 @@ const onboardingStagger = declarationBody(
   appRoot,
   "fileprivate func onboardingStagger(visible: Bool, index: Int) -> some View",
 );
+const onboardingView = declarationBody(
+  appRoot,
+  "private struct OnboardingView: View",
+);
+const onboardingFooter = onboardingView
+  ? declarationBody(onboardingView, "private var onboardingFooter: some View")
+  : null;
+const onboardingConnect = onboardingView
+  ? declarationBody(onboardingView, "private func connectCloudflare()")
+  : null;
+const networkAccessRequest = declarationBody(
+  networkAccessProbe,
+  "func requestAccess() async",
+);
+const networkAccessRetryLoop = networkAccessRequest
+  ? declarationBody(networkAccessRequest, "while ContinuousClock.now < deadline")
+  : null;
+const networkAccessRetryRules = declarationBody(
+  networkAccessProbe,
+  "enum NetworkAccessProbeRetryRules",
+);
+const dashPillButton = declarationBody(
+  dashActionChrome,
+  "struct DashPillButton: View",
+);
+const dashPillButtonTitleSeat = declarationBody(
+  dashActionChrome,
+  "private struct DashPillButtonTitleSeat: View",
+);
+const dashTrayTextButton = declarationBody(
+  dashActionChrome,
+  "struct DashTrayTextButton: View",
+);
 const workerDetailBody = declarationBody(
   workerViews,
   "private func workerDetailBody(mode: DashBodyMode) -> some View",
+);
+const workersCatalog = declarationBody(workerViews, "struct WorkersView: View");
+const workerResourceLanding = declarationBody(
+  workerViews,
+  "private func workerResourceCard(mode: DashBodyMode) -> some View",
 );
 const workerDomainRouteRow = declarationBody(
   workerViews,
@@ -207,6 +277,11 @@ const pagesLogsSection = declarationBody(
 const pagesProjectDetailBody = declarationBody(
   pagesViews,
   "private func pagesProjectDetailBody(mode: DashBodyMode) -> some View",
+);
+const pagesCatalog = declarationBody(pagesViews, "struct PagesProjectsView: View");
+const pagesResourceLanding = declarationBody(
+  pagesViews,
+  "private func pagesProjectResourceCard(mode: DashBodyMode) -> some View",
 );
 const pagesLoadLogs = declarationBody(
   pagesViews,
@@ -290,6 +365,48 @@ const emailRoutingBody = declarationBody(
   emailRoutingViews,
   "private func emailRoutingBody(mode: DashBodyMode) -> some View",
 );
+const emailRoutingDomains = declarationBody(
+  emailRoutingViews,
+  "struct EmailRoutingDomainsView: View",
+);
+const emailRoutingStatusLoad = declarationBody(
+  emailRoutingViews,
+  "private func loadStatuses(",
+);
+const emailRoutingStatusCacheBatch = declarationBody(
+  emailRoutingViews,
+  "enum EmailRoutingStatusCacheBatch",
+);
+const emailRoutingHeroLanding = declarationBody(
+  emailRoutingViews,
+  "private func emailRoutingHeroLandingSeat(",
+);
+const navigationHeroView = declarationBody(
+  dashWorkspace,
+  "private struct DashNavigationHeroView: View",
+);
+const domainCardFace = declarationBody(
+  zoneViews,
+  "struct DomainCardFace: View",
+);
+const featureResourceCardFace = declarationBody(
+  catalogVisuals,
+  "struct FeatureResourceCardFace: View",
+);
+const emailStatusCommitGuardIndex =
+  emailRoutingStatusCacheBatch?.lastIndexOf(
+    "guard model.isCurrentAccount(context), loadedContext == context, !Task.isCancelled",
+  ) ?? -1;
+const emailStatusCacheWriteIndex =
+  emailRoutingStatusCacheBatch?.lastIndexOf(
+    "EmailRoutingStatusMapping.storeListSettings(",
+  ) ?? -1;
+const domainTextureIndex = domainCardFace?.indexOf("if let textureAsset") ?? -1;
+const domainTextureClipIndex =
+  domainCardFace?.indexOf(
+    ".clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))",
+  ) ?? -1;
+const domainEmbossIndex = domainCardFace?.indexOf(".dashEmbossed(") ?? -1;
 const emailRoutesSection = declarationBody(
   emailRoutingViews,
   "private func routesSection(mode: DashBodyMode) -> some View",
@@ -302,13 +419,42 @@ const emailConfiguredContent = declarationBody(
   emailRoutingViews,
   "private func configuredContent(",
 );
+const emailNotSetUpState = declarationBody(
+  emailRoutingViews,
+  "private func notSetUpState(",
+);
+const emailActionsSection = declarationBody(
+  emailRoutingViews,
+  "private func actionsSection(",
+);
 const zoneDetailBody = declarationBody(
   zoneDetailViews,
   "private func zoneDetailBody(mode: DashBodyMode) -> some View",
 );
+const zonesPageTrailingActions = declarationBody(
+  zoneViews,
+  "private var pageTrailingActions: [DashPageActionDescriptor]",
+);
+const zonesBody = declarationBody(zoneViews, "var body: some View");
+const zonesDomainCardGrid = declarationBody(
+  zoneViews,
+  "private func domainCardGrid(mode: DashBodyMode)",
+);
+const zonesGroupingPresentationUpdate = declarationBody(
+  zoneViews,
+  "private func updateDisplayedGroupsByStatus(to target: Bool)",
+);
+const zoneActionsNoticeRules = declarationBody(
+  zoneDetailViews,
+  "enum ZoneActionsNoticeRules",
+);
 const zonePrimaryActions = declarationBody(
   zoneDetailViews,
   "private func primaryActions(mode: DashBodyMode) -> some View",
+);
+const zoneActionsActivationNotice = declarationBody(
+  zoneDetailViews,
+  "private func actionsActivationNotice(mode: DashBodyMode) -> String?",
 );
 const zoneTool = declarationBody(
   zoneDetailViews,
@@ -348,12 +494,6 @@ const tunnelIngressHandoffBranch = tunnelIngressSection
   : null;
 const emailConfiguredBranch = emailRoutingBody
   ? declarationBody(emailRoutingBody, "else")
-  : null;
-const zoneActionsHandoffBranch = zoneDetailBody
-  ? declarationBody(
-      zoneDetailBody,
-      "if mode.isPlaceholder || displayedZoneIsActive",
-    )
   : null;
 const wafRulesHandoffBranch = wafDetailBody
   ? declarationBody(wafDetailBody, "if mode.isPlaceholder || summary != nil")
@@ -421,10 +561,12 @@ const pagesLogHandoffWrite = pagesPresentLogs
 const pagesLogReducedWrite = pagesPresentLogs
   ? declarationBody(pagesPresentLogs, "withTransaction(transaction)")
   : null;
-const coldWashMaterialIndex =
-  coldFailureWash?.indexOf(".fill(.ultraThinMaterial)") ?? -1;
-const coldWashCanvasIndex =
-  coldFailureWash?.indexOf("ramp(stops: stops, tint: DashTheme.canvas)") ?? -1;
+const noticeWashMaterialIndex =
+  translucentNoticeWash?.indexOf(".fill(.ultraThinMaterial)") ?? -1;
+const noticeWashCanvasIndex =
+  translucentNoticeWash?.indexOf(
+    "ramp(stops: stops, tint: DashTheme.canvas)",
+  ) ?? -1;
 
 if (
   !featureListBody?.includes(
@@ -475,7 +617,7 @@ if (
   featureListBody?.includes("value: bodyMode")
 ) {
   issues.push(
-    "DashFeatureList cold-to-live handoff must use a view-owned displayedBodyMode written inside explicit withAnimation, while Reduce Motion disables layout movement; tray transactions suppress modifier-attached bodyMode animations.",
+    "DashFeatureList cold-to-live handoff must use a view-owned displayedBodyMode written inside explicit withAnimation, while Reduce Motion disables layout movement and unrelated parent transactions cannot replace its pace.",
   );
 }
 const modeListHelperNames = [
@@ -490,6 +632,13 @@ if (
   occurrences(dashProductionSwift, "DashSectionListRowPlaceholders(") !== 5 ||
   !modeListRows?.includes("items.map { .live($0) }") ||
   !modeListRows?.includes("ForEach(slots)") ||
+  !dashFeatureLoading.includes("@ViewBuilder placeholder:") ||
+  !/placeholder:\s*@escaping\s*@MainActor\s*\(Int\)\s*->\s*Placeholder\s*=\s*dashDefaultModeListPlaceholder/.test(
+    dashFeatureLoading,
+  ) ||
+  !dashFeatureLoading.includes(
+    "private func dashDefaultModeListPlaceholder(_: Int) -> DashListRowPlaceholder",
+  ) ||
   modeListRows?.includes("ForEach(0..<count") ||
   !dashFeatureLoading.includes("case live(ItemID)") ||
   !dashFeatureLoading.includes("case live(Item)") ||
@@ -500,6 +649,7 @@ if (
   !modeListPlaceholderBranch?.includes(
     "DashBodyTransition.content(reduceMotion)",
   ) ||
+  !modeListPlaceholderBranch?.includes("placeholder(index)") ||
   !modeListPlaceholderBranch?.includes(".transition(transition)") ||
   occurrences(
     modeListPlaceholderBranch ?? "",
@@ -517,6 +667,79 @@ if (
     "Primary cold lists must have one canonical dashModeListRows implementation with stable live item identity, surplus-only placeholder recession, and no helper-owned transition on later live diffs.",
   );
 }
+
+if (
+  !featureResourceCardFace?.includes(
+    "FeatureResourceCardPalette.fill(for: content.kind)",
+  ) ||
+  !featureResourceCardFace?.includes("DashGrainSurface(") ||
+  !featureResourceCardFace?.includes(".dashEmbossed(.pigmented") ||
+  !featureResourceCardFace?.includes("dynamicTypeSize.isAccessibilitySize") ||
+  !featureResourceCardFace?.includes(
+    "FeatureResourceCardPalette.foreground(for: content.kind)",
+  ) ||
+  !featureResourceCardFace?.includes(
+    "FeatureResourceCardPalette.texture(for: content.kind)",
+  ) ||
+  !featureResourceCardFace?.includes(".accessibilityElement(children: .ignore)") ||
+  !featureResourceCardFace?.includes(
+    ".accessibilityLabel(content.accessibilitySummary)",
+  ) ||
+  occurrences(
+    featureResourceCardFace ?? "",
+    ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)",
+  ) !== 2 ||
+  !workersCatalog?.includes("FeatureResourceCardFace(") ||
+  !workersCatalog?.includes("inset: false") ||
+  !workersCatalog?.includes("placeholder: { index in") ||
+  !workersCatalog?.includes("DashNavigationHero.featureResourceCard(") ||
+  !workersCatalog?.includes("WorkersResourceCardCache.latestWorker(") ||
+  !workersCatalog?.includes("hero: hero") ||
+  workersCatalog?.includes("DashListRow(") ||
+  !pagesCatalog?.includes("FeatureResourceCardFace(") ||
+  !pagesCatalog?.includes("inset: false") ||
+  !pagesCatalog?.includes("placeholder: { index in") ||
+  !pagesCatalog?.includes("DashNavigationHero.featureResourceCard(") ||
+  !pagesCatalog?.includes("PagesResourceCardCache.latestProject(") ||
+  !pagesCatalog?.includes("hero: hero") ||
+  pagesCatalog?.includes("DashListRow(") ||
+  !workerDetailBody?.includes("workerResourceCard(mode: mode)") ||
+  !pagesProjectDetailBody?.includes("pagesProjectResourceCard(mode: mode)") ||
+  !workerResourceLanding?.includes("FeatureResourceCardFace(") ||
+  !workerResourceLanding?.includes("FeatureResourceCardLandingRules.content(") ||
+  !workerResourceLanding?.includes("pageTransitionActive") ||
+  !workerResourceLanding?.includes("capturedWorkerCardContent") ||
+  !workerResourceLanding?.includes(
+    "mode.isPlaceholder && latestContent == nil && capturedWorkerCardContent == nil",
+  ) ||
+  !workerResourceLanding?.includes(".dashNavigationLanding(.workerHero(name))") ||
+  !pagesResourceLanding?.includes("FeatureResourceCardFace(") ||
+  !pagesResourceLanding?.includes("FeatureResourceCardLandingRules.content(") ||
+  !pagesResourceLanding?.includes("pageTransitionActive") ||
+  !pagesResourceLanding?.includes("capturedPagesCardContent") ||
+  !pagesResourceLanding?.includes(
+    ".dashNavigationLanding(.pagesProjectHero(projectName))",
+  ) ||
+  !dashNavigation.includes("case featureResourceCard(") ||
+  !dashNavigation.includes("func returnCacheResolution(") ||
+  !dashNavigation.includes("workerName: content.routeKey") ||
+  !dashNavigation.includes("projectName: content.routeKey") ||
+  !dashNavigation.includes("case .worker(let name): .workerHero(name)") ||
+  !dashNavigation.includes(
+    "case .pagesProject(let name): .pagesProjectHero(name)",
+  ) ||
+  !navigationHeroView?.includes("case .featureResourceCard(") ||
+  !navigationHeroView?.includes("FeatureResourceCardFace(") ||
+  !dashWorkspace.includes(".environment(\\.dashNavigationEntryHero, entry.origin?.hero)") ||
+  !dashWorkspace.includes(
+    "capturedHero.returnCacheResolution(from: model.featureCache)",
+  )
+) {
+  issues.push(
+    "Workers and Pages catalogs must share one full-width, shape-matched resource card and placeholder, hand that semantic card to the existing compositor, and publish a real mode-stable detail landing.",
+  );
+}
+
 if (
   !workerDeploymentHelperCall?.includes("mode: mode") ||
   !workerDeploymentHelperCall?.includes("items: deployments") ||
@@ -533,6 +756,116 @@ if (
 ) {
   issues.push(
     "Worker Deployments must use the canonical live-identity handoff, with one mode-stable Domains & Routes header riding the 3-to-N contraction below them.",
+  );
+}
+
+if (
+  !emailRoutingDomains?.includes("DomainCardFace(") ||
+  !emailRoutingDomains?.includes("dynamicTypeSize.isAccessibilitySize ? 1 : 2") ||
+  !emailRoutingDomains?.includes("DomainCardColors.hex(") ||
+  !emailRoutingDomains?.includes("EmailRoutingStatusMapping.listCardToken(") ||
+  !emailRoutingDomains?.includes("DashNavigationHero.emailRoutingCard(") ||
+  !emailRoutingDomains?.includes("hero: hero") ||
+  !emailRoutingStatusLoad?.includes("EmailRoutingStatusCacheBatch.commit(") ||
+  emailRoutingStatusLoad?.includes("EmailRoutingStatusMapping.storeListSettings(") ||
+  occurrences(
+    emailRoutingStatusCacheBatch ?? "",
+    "EmailRoutingStatusMapping.storeListSettings(",
+  ) !== 1 ||
+  emailStatusCommitGuardIndex < 0 ||
+  emailStatusCacheWriteIndex <= emailStatusCommitGuardIndex ||
+  occurrences(
+    emailRoutingDomains ?? "",
+    "textureAsset: SolarAsset.Content.letter",
+  ) !== 2 ||
+  emailRoutingDomains?.includes("DashListRow(") ||
+  !emailConfiguredContent?.includes("emailRoutingHeroLandingSeat(") ||
+  occurrences(
+    emailConfiguredContent ?? "",
+    "actionsSection(mode: mode, settings: settings)",
+  ) !== 1 ||
+  occurrences(
+    emailActionsSection ?? "",
+    'DashListGroupHeader(title: DashL10n.ui("Actions"))',
+  ) !== 1 ||
+  emailNotSetUpState?.includes("actionsSection(") ||
+  emailNotSetUpState?.includes(
+    'DashListGroupHeader(title: DashL10n.ui("Actions"))',
+  ) ||
+  !emailActionsSection?.includes(".dashSectionBoundary()") ||
+  occurrences(emailActionsSection ?? "", ".dashItemBoundary(") !== 2 ||
+  !emailActionsSection?.includes(
+    ".dashSectionBoundary(showsCatchAll || showsSubaddressing)",
+  ) ||
+  occurrences(
+    emailRoutingHeroLanding ?? "",
+    "textureAsset: SolarAsset.Content.letter",
+  ) !== 2 ||
+  !emailRoutingHeroLanding?.includes(
+    ".dashNavigationLanding(.emailRoutingHero(zoneID))",
+  ) ||
+  emailRoutingHeroLanding?.includes(
+    'meta: DashL10n.string("Email routing")',
+  ) ||
+  !emailRoutingHeroLanding?.includes("EmailRoutingStatusMapping.listSettings(") ||
+  occurrences(
+    emailRoutingHeroLanding ?? "",
+    "DomainCardFace.detailAspectRatio(for: dynamicTypeSize)",
+  ) !== 2 ||
+  !emailRoutingHeroLanding?.includes(
+    ".accessibilityLabel(emailRoutingCardAccessibilityLabel(cardSettings))",
+  ) ||
+  !dashNavigation.includes("case emailRoutingCard(") ||
+  !dashNavigation.includes("case cardIneligible") ||
+  !dashNavigation.includes(
+    "case .zoneEmailRouting(let id): .emailRoutingHero(id)",
+  ) ||
+  !navigationHeroView?.includes("case .emailRoutingCard(") ||
+  navigationHeroView?.includes("meta: DashL10n.string(\"Email routing\")") ||
+  !navigationHeroView?.includes("textureAsset: SolarAsset.Content.letter") ||
+  !dashWorkspace.includes(
+    "capturedHero.returnCacheResolution(from: model.featureCache)",
+  ) ||
+  !dashWorkspace.includes(
+    "resolution.resolvedHero(preserving: capturedHero)",
+  ) ||
+  !dashWorkspace.includes("request.mutation?.entry ?? settledEntries.last") ||
+  !dashNavigation.includes("func popUsingFlow(entryID:") ||
+  !dashNavigation.includes("func setCardSourceDismissalUsesFlow(") ||
+  !dashNavigation.includes("flowDismissalEntryIDs.contains(entry.id)") ||
+  !dashNavigation.includes("flowDismissalEntryIDs.formIntersection(entryIDs)") ||
+  dashNavigation.includes("func demoteCardSource(entryID:") ||
+  !dashWorkspace.includes("hostContext.interactionLockedEntryID == entry.id") ||
+  !emailRoutingViews.includes("navigator?.popUsingFlow(entryID: navigationEntryID)") ||
+  !emailRoutingViews.includes("!pageTransitionActive") ||
+  !emailRoutingViews.includes("navigator?.setCardSourceDismissalUsesFlow(") ||
+  !emailRoutingViews.includes(
+    "guard !isNotSetUp(settings) else { return .disabled }",
+  ) ||
+  !domainCardFace?.includes("var textureAsset: String? = nil") ||
+  !domainCardFace?.includes(
+    "static func detailAspectRatio(for dynamicTypeSize: DynamicTypeSize)",
+  ) ||
+  occurrences(
+    zoneDetailViews,
+    "aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)",
+  ) !== 3 ||
+  !domainCardFace?.includes("if let textureAsset") ||
+  !domainCardFace?.includes("size: 96") ||
+  !domainCardFace?.includes(".opacity(0.1)") ||
+  !domainCardFace?.includes(".offset(x: 20, y: -22)") ||
+  !domainCardFace?.includes(
+    ".clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))",
+  ) ||
+  domainTextureIndex < 0 ||
+  domainTextureClipIndex <= domainTextureIndex ||
+  domainEmbossIndex <= domainTextureClipIndex ||
+  domainCardFace?.slice(domainEmbossIndex).includes(".clipShape(") ||
+  !solarIcons.includes('static let letter = "SolarLetterFill"') ||
+  !solarGenerator.includes("SolarLetterFill: 'messages/Bold/Letter'")
+) {
+  issues.push(
+    "Email Routing domains must reuse the accessible Domain card grid and account color, filter from settings, and expand through their own Letter-textured semantic hero into a stable detail-card landing.",
   );
 }
 
@@ -645,7 +978,7 @@ const primaryColdOwnerChecks = [
   ],
   [
     "Zone actions",
-    zoneActionsHandoffBranch?.includes("primaryActions(mode: mode)") === true,
+    zoneDetailBody?.includes("primaryActions(mode: mode)") === true,
   ],
   [
     "WAF top rules",
@@ -758,6 +1091,121 @@ if (
   );
 }
 if (
+  appRoot.includes("OnboardingStep") ||
+  appRoot.includes("OnboardingPermission") ||
+  appRoot.includes('"onboarding-back"') ||
+  !onboardingView?.includes("@State private var networkProbe = NetworkAccessProbe()") ||
+  !onboardingView?.includes("await networkProbe.requestAccess()") ||
+  !onboardingView?.includes("if isPreparingConnection { return .loading }") ||
+  occurrences(onboardingFooter ?? "", "DashPillButton(") !== 1 ||
+  !onboardingFooter?.includes('title: "Connect Cloudflare"') ||
+  !onboardingFooter?.includes('activeTitle: "Start your engine!"') ||
+  !onboardingFooter?.includes("isActiveTitlePresented: connectTitleIsActive") ||
+  !onboardingFooter?.includes("icon: SolarAsset.cloudflare") ||
+  !onboardingFooter?.includes("phase: ownedAuthenticationPhase") ||
+  !onboardingFooter?.includes("isEnabled: model.configuration.isConfigured") ||
+  !onboardingFooter?.includes("isInteractionLocked: model.isEnteringDemo") ||
+  !onboardingFooter?.includes(
+    "isInteractionLocked: ownedAuthenticationPhase.isActive || model.isEnteringDemo",
+  ) ||
+  !onboardingView?.includes("model.signIn(presentationOwner: authenticationActionOwner)")
+) {
+  issues.push(
+    "Onboarding must stay one welcome page whose Cloudflare pill signs in directly and keeps Demo entry as a visual-neutral interaction lock.",
+  );
+}
+if (
+  !networkAccessProbe.includes(
+    "private static let probeURL = CloudflareEndpoints.authorization",
+  ) ||
+  !networkAccessRequest?.includes(
+    "let deadline = ContinuousClock.now.advanced(",
+  ) ||
+  !networkAccessRequest?.includes(
+    "by: NetworkAccessProbeRetryRules.authorizationWindow",
+  ) ||
+  networkAccessRetryLoop === null ||
+  networkAccessRequest?.includes("guard status != .allowed") ||
+  !networkAccessRetryLoop?.includes(
+    "NetworkAccessProbeRetryRules.requestTimeout(",
+  ) ||
+  !networkAccessRetryLoop?.includes("URLRequest(url: Self.probeURL)") ||
+  !networkAccessRetryLoop?.includes("URLSession.shared.data(for: request)") ||
+  !networkAccessRetryLoop?.includes("status = .allowed") ||
+  !networkAccessRetryLoop?.includes(
+    "NetworkAccessProbeRetryRules.retryDelay(",
+  ) ||
+  !networkAccessRetryLoop?.includes("Task.sleep(for: delay)") ||
+  !networkAccessRequest?.includes(
+    "Task.sleep(for: NetworkAccessProbeRetryRules.policySettleDelay)",
+  ) ||
+  !networkAccessRequest?.includes(
+    "status = NetworkAccessProbeRetryRules.terminalStatus(",
+  ) ||
+  !networkAccessRetryRules?.includes(
+    "static let authorizationWindow: Duration = .seconds(25)",
+  ) ||
+  !networkAccessRetryRules?.includes("if probeSucceeded { return .allowed }") ||
+  !networkAccessRetryRules?.includes(
+    "return cellularRestricted ? .restricted : .unavailable",
+  ) ||
+  !onboardingConnect?.includes("await networkProbe.requestAccess()") ||
+  !onboardingConnect?.includes("guard networkProbe.isReadyForConnect else") ||
+  occurrences(
+    onboardingConnect ?? "",
+    "model.signIn(presentationOwner: authenticationActionOwner)",
+  ) !== 1 ||
+  !orderedTokens(onboardingConnect ?? "", [
+    "await networkProbe.requestAccess()",
+    "guard networkProbe.isReadyForConnect else",
+    "model.signIn(presentationOwner: authenticationActionOwner)",
+  ])
+) {
+  issues.push(
+    "Onboarding network access must retry the user-triggered probe and launch OAuth only after a real request succeeds.",
+  );
+}
+if (
+  !dashPillButton?.includes("var activeTitle: String?") ||
+  !dashPillButton?.includes("var isActiveTitlePresented: Bool?") ||
+  !dashPillButton?.includes("var isInteractionLocked = false") ||
+  !dashPillButton?.includes("DashPillButtonPresentationRules.presentsActiveTitle(") ||
+  !dashPillButton?.includes(
+    "DashPillButtonPresentationRules.isInteractionDisabled(",
+  ) ||
+  !dashPillButton?.includes(
+    ".opacity(DashPillButtonPresentationRules.opacity(isEnabled: isEnabled))",
+  ) ||
+  !dashPillButton?.includes(".accessibilityLabel(displayedTitle)") ||
+  !dashPillButton?.includes(".overlay(alignment: .trailing)") ||
+  !dashPillButton?.includes("DashActionStatusIcon(") ||
+  !dashPillButton?.includes("phase: phase") ||
+  !dashPillButtonTitleSeat?.includes(".clipped()") ||
+  !dashPillButtonTitleSeat?.includes(
+    "DashPillButtonPresentationRules.titleOffset(",
+  ) ||
+  !dashPillButtonTitleSeat?.includes("DashTheme.Motion.iconSwap") ||
+  !dashPillButtonTitleSeat?.includes(".accessibilityHidden(true)")
+) {
+  issues.push(
+    "DashPillButton active titles must hand over inside one clipped vertical seat while transient locks remain fully opaque and accessible.",
+  );
+}
+if (
+  !dashTrayTextButton?.includes("var isInteractionLocked = false") ||
+  !dashTrayTextButton?.includes("guard !isInteractionLocked else { return }") ||
+  !dashTrayTextButton?.includes(".allowsHitTesting(!isInteractionLocked)") ||
+  !dashTrayTextButton?.includes(
+    ".accessibilityRespondsToUserInteraction(!isInteractionLocked)",
+  ) ||
+  dashTrayTextButton?.includes(".disabled(") ||
+  dashTrayTextButton?.includes(".opacity(")
+) {
+  issues.push(
+    "DashTrayTextButton transient locks must block duplicate interaction without disabled-state tinting or opacity changes.",
+  );
+}
+if (
   !itemStaggerModifier?.includes("DashItemStaggerMotion.plan(") ||
   !itemStaggerModifier?.includes("visible: visible") ||
   !itemStaggerModifier?.includes("index: index") ||
@@ -797,6 +1245,12 @@ const sectionItemSteps = [0, 1, 2].map(
       `.dashItemStagger(visible: revealed, index: ${index})`,
     ) ?? -1,
 );
+const sectionNoticeItemSteps = [0, 1].map(
+  (index) =>
+    sectionNoticeVeil?.indexOf(
+      `.dashItemStagger(visible: revealed, index: ${index})`,
+    ) ?? -1,
+);
 if (
   coldItemSteps.some((index) => index === -1) ||
   !coldItemSteps.every(
@@ -806,41 +1260,114 @@ if (
   !sectionItemSteps.every(
     (index, position) =>
       position === 0 || index > sectionItemSteps[position - 1],
+  ) ||
+  sectionNoticeItemSteps.some((index) => index === -1) ||
+  !sectionNoticeItemSteps.every(
+    (index, position) =>
+      position === 0 || index > sectionNoticeItemSteps[position - 1],
   )
 ) {
   issues.push(
-    "Cold empty/error prompts must reuse the onboarding item stagger in top-to-bottom visual order.",
+    "Cold empty/error prompts and local notices must reuse the onboarding item stagger in top-to-bottom visual order.",
   );
 }
 if (
-  !coldFailureWash?.includes(
-    "DashColdFailureWashRamp.stops(for: geometry.size.height)",
+  !translucentNoticeWash?.includes(
+    "DashTranslucentNoticeWashRamp.stops(for: geometry.size.height)",
   ) ||
   occurrences(
-    coldFailureWash ?? "",
-    "DashColdFailureWashRamp.stops(for: geometry.size.height)",
+    translucentNoticeWash ?? "",
+    "DashTranslucentNoticeWashRamp.stops(for: geometry.size.height)",
   ) !== 1 ||
-  !coldFailureWash?.includes("accessibilityReduceTransparency") ||
-  !coldFailureWash?.includes(
-    "DashColdFailureWashLayerRules.mountsBackdropMaterial(",
+  !translucentNoticeWash?.includes("accessibilityReduceMotion") ||
+  !translucentNoticeWash?.includes("accessibilityReduceTransparency") ||
+  !/if\s+DashTranslucentNoticeWashLayerRules\.mountsBackdropMaterial\(\s*reduceTransparency:\s*reduceTransparency\s*\)\s*\{/s.test(
+    translucentNoticeWash ?? "",
   ) ||
-  !coldFailureWash?.includes("reduceTransparency: reduceTransparency") ||
-  !coldFailureWash?.includes(".fill(.ultraThinMaterial)") ||
-  occurrences(coldFailureWash ?? "", ".fill(.ultraThinMaterial)") !== 1 ||
-  !coldFailureWash?.includes(".mask") ||
-  !coldFailureWash?.includes("ramp(stops: stops, tint: .white)") ||
-  !coldFailureWash?.includes("ramp(stops: stops, tint: DashTheme.canvas)") ||
-  coldWashMaterialIndex === -1 ||
-  coldWashCanvasIndex === -1 ||
-  coldWashMaterialIndex > coldWashCanvasIndex ||
-  !coldFailureWash?.includes("startPoint: .bottom") ||
-  !coldFailureWash?.includes("endPoint: .top") ||
-  coldFailureWash?.includes(".blur(") ||
-  coldFailureWash?.includes("VariableBlurView(") ||
-  coldFailureWash?.includes("opacity(reduceTransparency")
+  !translucentNoticeWash?.includes("reduceTransparency: reduceTransparency") ||
+  !translucentNoticeWash?.includes(".fill(.ultraThinMaterial)") ||
+  occurrences(translucentNoticeWash ?? "", ".fill(.ultraThinMaterial)") !== 1 ||
+  !translucentNoticeWash?.includes(".mask") ||
+  !translucentNoticeWash?.includes("ramp(stops: stops, tint: .white)") ||
+  !translucentNoticeWash?.includes(
+    "ramp(stops: stops, tint: DashTheme.canvas)",
+  ) ||
+  !translucentNoticeWash?.includes(".opacity(revealed ? 1 : 0)") ||
+  !translucentNoticeWash?.includes(
+    "reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content",
+  ) ||
+  !translucentNoticeWash?.includes(".allowsHitTesting(false)") ||
+  !translucentNoticeWash?.includes(".accessibilityHidden(true)") ||
+  noticeWashMaterialIndex === -1 ||
+  noticeWashCanvasIndex === -1 ||
+  noticeWashMaterialIndex > noticeWashCanvasIndex ||
+  !translucentNoticeWash?.includes("startPoint: .bottom") ||
+  !translucentNoticeWash?.includes("endPoint: .top") ||
+  translucentNoticeWash?.includes(".blur(") ||
+  translucentNoticeWash?.includes("VariableBlurView(") ||
+  translucentNoticeWash?.includes("opacity(reduceTransparency") ||
+  occurrences(coldOverlayCopyView ?? "", "DashTranslucentNoticeWash(") !==
+    1 ||
+  !coldOverlayCopyView?.includes(
+    "DashTranslucentNoticeWash(revealed: revealed)",
+  ) ||
+  occurrences(sectionNoticeVeil ?? "", "DashTranslucentNoticeWash(") !== 1 ||
+  !sectionNoticeVeil?.includes(
+    "DashTranslucentNoticeWash(revealed: true)",
+  ) ||
+  [coldOverlayCopyView, sectionNoticeVeil].some((consumer) =>
+    [
+      "LinearGradient(",
+      ".fill(.ultraThinMaterial)",
+      "DashTranslucentNoticeWashRamp",
+    ].some((token) => consumer?.includes(token)),
+  )
 ) {
   issues.push(
-    "Cold empty/error wash must pair its tested bottom-to-top canvas ramp with a matching Reduced Transparency-aware backdrop material, never a foreground blur.",
+    "Full-screen prompts and local notices must share one tested bottom-to-top material wash, including Reduced Motion and Transparency fallbacks, without copying the gradient.",
+  );
+}
+if (
+  !orderedTokens(sectionNoticeVeil ?? "", [
+    "DashTranslucentNoticeWash(revealed: true)",
+    ".dashItemStagger(visible: revealed, index: 0)",
+    ".dashItemStagger(visible: revealed, index: 1)",
+    ".frame(maxWidth: .infinity, maxHeight: .infinity)",
+  ]) ||
+  !sectionNoticeVeil?.includes(".accessibilityElement(children: .ignore)") ||
+  !sectionNoticeVeil?.includes(".accessibilityLabel(DashL10n.ui(message))") ||
+  !sectionNoticeVeil?.includes(".onAppear") ||
+  !sectionNoticeVeil?.includes(
+    "DispatchQueue.main.async { revealed = true }",
+  ) ||
+  sectionNoticeModifier?.includes("onGeometryChange") ||
+  sectionNoticeModifier?.includes("coveredContentHeight") ||
+  !orderedTokens(sectionNoticeModifier ?? "", [
+    ".environment(\\.dashSkeletonPulseActive, message == nil)",
+    ".allowsHitTesting(message == nil)",
+    ".accessibilityHidden(message != nil)",
+    ".overlay {",
+    "DashSectionNoticeVeil(",
+    ".dashFailureRemovalTransition()",
+    ".clipped()",
+  ]) ||
+  !zoneActionsNoticeRules?.includes("!mode.isPlaceholder") ||
+  !zoneActionsNoticeRules?.includes(
+    '(status ?? "").lowercased() != "active"',
+  ) ||
+  !zoneDetailBody?.includes("if mode.isPlaceholder || displayedZone != nil") ||
+  occurrences(zoneDetailBody ?? "", "primaryActions(mode: mode)") !== 1 ||
+  !zonePrimaryActions?.includes(".dashSectionNotice(") ||
+  !zonePrimaryActions?.includes("actionsActivationNotice(mode: mode)") ||
+  !zonePrimaryActions?.includes("icon: SolarAsset.Content.clock") ||
+  !/guard\s+let zone = displayedZone,\s*ZoneActionsNoticeRules\.showsNotice\(\s*mode:\s*mode,\s*status:\s*zone\.status\s*\)\s*else\s*\{\s*return nil\s*\}\s*return activationBlurb\(zone\)/s.test(
+    zoneActionsActivationNotice ?? "",
+  ) ||
+  zoneDetailViews.includes("frozenActions(") ||
+  zoneDetailViews.includes(".dashSectionFailure(activationBlurb(zone))")
+) {
+  issues.push(
+    "Inactive Domain Actions must keep one live row tree and hand interaction and accessibility to a local clock notice backed by the shared translucent wash; placeholders and active domains must not show it.",
   );
 }
 
@@ -864,20 +1391,30 @@ for (const token of ["floatingMaxWidth", "floatingDetentFraction"]) {
 }
 const trayMotionTokens = declarationBody(dashTheme, "enum Tray");
 if (
-  !/\bpresentResponse: TimeInterval = 0\.21(?:\s|$)/.test(
-    trayMotionTokens ?? "",
-  ) ||
-  !/\bpresentDampingFraction: CGFloat = 0\.8(?:\s|$)/.test(
-    trayMotionTokens ?? "",
-  ) ||
+  !/\bpresentStiffness: Double = 900(?:\s|$)/.test(trayMotionTokens ?? "") ||
+  !/\bpresentDamping: Double = 48(?:\s|$)/.test(trayMotionTokens ?? "") ||
   trayMotionTokens?.includes("dismissResponse") ||
-  trayMotionTokens?.includes("dismissDampingFraction")
+  trayMotionTokens?.includes("dismissDampingFraction") ||
+  trayMotionTokens?.includes("dismissStiffness") ||
+  trayMotionTokens?.includes("dismissDamping")
 ) {
   issues.push(
-    "Compact Tray may specialize only its 0.21 / 0.8 presentation spring; dismissal stays on Dash's established token.",
+    "Compact Tray may specialize only its stiffness 900 / damping 48 presentation spring; dismissal stays on Dash's established token.",
   );
 }
 const motionTokens = declarationBody(dashTheme, "enum Motion");
+if (
+  !motionTokens?.includes(
+    "static let trayPresent = Animation.interpolatingSpring(",
+  ) ||
+  !motionTokens?.includes("stiffness: Tray.presentStiffness,") ||
+  !motionTokens?.includes("damping: Tray.presentDamping,") ||
+  !motionTokens?.includes("initialVelocity: 0")
+) {
+  issues.push(
+    "Tray card presentation must use interpolatingSpring(stiffness: 900, damping: 48, initialVelocity: 0).",
+  );
+}
 if (
   !motionTokens?.includes(
     "static let scrimPresent = Animation.easeOut(duration: 0.22)",
@@ -899,6 +1436,16 @@ const editorControlIDs = [
 
 function occurrences(source, token) {
   return source.split(token).length - 1;
+}
+
+function orderedTokens(source, tokens) {
+  let cursor = 0;
+  for (const token of tokens) {
+    const index = source.indexOf(token, cursor);
+    if (index === -1) return false;
+    cursor = index + token.length;
+  }
+  return true;
 }
 
 function swiftFilesUnder(directory) {
@@ -1885,6 +2432,37 @@ if (!headerBar) {
     );
   }
 
+  // A same-page action replacement happens inside the trailing ForEach unless
+  // the outer seat identity tracks ordered action membership. Without that
+  // remount, the existing ghost hit gate and z-rank never protect Pin -> Save
+  // or Upload/More -> Done handoffs.
+  const trailingIdentity = declarationBody(
+    workspaceHeader,
+    "extension DashWorkspaceHeaderTrailing",
+  );
+  const trailingSlot = declarationBody(headerBar, "private func trailingSlot");
+  if (
+    !trailingIdentity ||
+    !trailingIdentity.includes("func slotID(entryID:") ||
+    !trailingIdentity.includes("descriptors.map(\\.id)")
+  ) {
+    issues.push(
+      "Trailing header identity must include ordered action IDs so same-page action replacements use the seat handoff.",
+    );
+  }
+  if (
+    !trailingSlot ||
+    !trailingSlot.includes(
+      ".id(shown.trailing.slotID(entryID: shown.entryID))",
+    ) ||
+    !trailingSlot.includes(".transition(controlTransition)") ||
+    !trailingSlot.includes(".zIndex(seatGeneration)")
+  ) {
+    issues.push(
+      "trailingSlot must apply action-aware identity, controlTransition, and seatGeneration on the same view.",
+    );
+  }
+
   // Every workspace page publishes its slots instead of painting them.
   for (const token of ["DestinationNavigator(chromeHosting: .workspace)"]) {
     if (occurrences(mainTab, token) !== 3) {
@@ -1899,6 +2477,81 @@ if (!headerBar) {
       "A workspace-hosted page must not paint its own navigation bar; only the shared header may.",
     );
   }
+}
+
+// Grouping is a persistent presentation choice, not a data mutation. It is
+// safe and meaningful while the catalog is cold, so the first descriptor must
+// never look active while being disabled on transient `zones.isEmpty` state.
+if (!zonesPageTrailingActions) {
+  issues.push("Could not locate ZonesView.pageTrailingActions.");
+} else {
+  const groupingActionStart = zonesPageTrailingActions.indexOf(
+    'id: "domains-group-by-status"',
+  );
+  const groupingActionEnd = zonesPageTrailingActions.indexOf(
+    'accessibilityIdentifier: "domains-group-by-status"',
+    groupingActionStart,
+  );
+  const groupingAction = zonesPageTrailingActions.slice(
+    groupingActionStart,
+    groupingActionEnd,
+  );
+  if (
+    groupingActionStart === -1 ||
+    groupingActionEnd === -1 ||
+    groupingAction.includes("isEnabled:")
+  ) {
+    issues.push(
+      "The Domains grouping preference must remain enabled while zone data loads.",
+    );
+  }
+}
+
+// `@AppStorage` is persistence, not a page-local animation write: its layout
+// invalidation can arrive without the transaction that wrapped the setter
+// (especially when the action is painted by the workspace Header). The page
+// must own a displayed mirror and the explicit write-site morph transaction.
+if (!zoneViews.includes("@State private var displayedGroupsByStatus: Bool?")) {
+  issues.push(
+    "Domains grouping must keep a page-local displayed mirror for its reflow animation.",
+  );
+}
+if (
+  !zonesBody ||
+  !zonesBody.includes(".onChange(of: groupsByStatus, initial: true)")
+) {
+  issues.push(
+    "ZonesView must relay the persisted grouping preference into its page-local presentation state.",
+  );
+}
+if (
+  !zonesDomainCardGrid ||
+  !zonesDomainCardGrid.includes("displayedGroupsByStatus ?? groupsByStatus")
+) {
+  issues.push(
+    "The Domains card grid must render the page-local grouping presentation state.",
+  );
+}
+if (
+  !zonesGroupingPresentationUpdate ||
+  !zonesGroupingPresentationUpdate.includes(
+    "DomainsGroupingPresentationRules.update",
+  ) ||
+  !zonesGroupingPresentationUpdate.includes(
+    "withAnimation(DashTheme.Motion.morph)",
+  ) ||
+  !zonesGroupingPresentationUpdate.includes("withTransaction(transaction)") ||
+  !zonesGroupingPresentationUpdate.includes(
+    "transaction.disablesAnimations = true",
+  ) ||
+  occurrences(
+    zonesGroupingPresentationUpdate,
+    "displayedGroupsByStatus = update.groupsByStatus",
+  ) !== 2
+) {
+  issues.push(
+    "Domains grouping presentation updates must own explicit animated and reduced-motion transactions.",
+  );
 }
 
 // DashRoutePageChromeHost reads a preference OUT of its content and feeds this
@@ -2206,6 +2859,31 @@ const customSheet = declarationBody(
   dashChrome,
   "private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View",
 );
+const dashTrayModifier = declarationBody(
+  dashChrome,
+  "private struct DashTrayModifier<",
+);
+const dashTrayItemModifier = declarationBody(
+  dashChrome,
+  "private struct DashTrayItemModifier<",
+);
+for (const [label, modifier] of [
+  ["Bool-backed Tray", dashTrayModifier],
+  ["item-backed Tray", dashTrayItemModifier],
+]) {
+  const scopedCoverTransaction =
+    /\.transaction\s*\{\s*transaction\s+in\s*transaction\.disablesAnimations\s*=\s*true\s*\}\s*body:\s*\{\s*presenter\s+in\s*presenter\.fullScreenCover\s*\(/s;
+  if (
+    !scopedCoverTransaction.test(modifier ?? "") ||
+    occurrences(modifier ?? "", "transaction.disablesAnimations = true") !==
+      1 ||
+    occurrences(modifier ?? "", ".fullScreenCover(") !== 1
+  ) {
+    issues.push(
+      `${label} must scope its animation-disabled transaction to the fullScreenCover modifier; never flatten animations across the presenting content tree.`,
+    );
+  }
+}
 const trayMotion = declarationBody(dashChrome, "private enum DashTrayMotion");
 if (
   !trayMotion?.includes("static let present = DashTheme.Motion.trayPresent") ||
@@ -2229,29 +2907,26 @@ if (!standardTrayReveal) {
   issues.push("Could not locate the standard Tray card reveal.");
 } else {
   if (occurrences(standardTrayReveal, ".offset(") !== 1) {
-    issues.push("Standard Tray reveal must keep its one bounded Y offset.");
+    issues.push("Standard Tray reveal must keep its one Y offset.");
   }
-  for (const token of [".blur(", ".delay("]) {
+  for (const token of [".blur(", ".delay(", ".scaleEffect("]) {
     if (standardTrayReveal.includes(token)) {
       issues.push(`Standard Tray reveal must not use ${token}`);
     }
   }
   if (
-    occurrences(standardTrayReveal, ".opacity(") !== 2 ||
+    occurrences(standardTrayReveal, ".opacity(") !== 1 ||
     !standardTrayReveal.includes(".opacity(progress)") ||
-    !standardTrayReveal.includes(".opacity(min(1, progress * 2))") ||
-    !standardTrayReveal.includes(
-      ".scaleEffect(0.985 + 0.015 * progress, anchor: .bottom)",
-    )
+    standardTrayReveal.includes(".opacity(min(1, progress * 2))")
   ) {
     issues.push(
-      "Standard Tray reveal must keep its original card-only fade and subtle bottom-anchored scale.",
+      "Standard Tray reveal must slide opaque; Reduce Motion alone may use opacity.",
     );
   }
 }
 if (
   !customSheet?.includes(
-    "min(max((cardHeight > 0 ? cardHeight : 400) * 0.28, 80), 160)",
+    "(cardHeight > 0 ? cardHeight : 400) + bottomLift",
   ) ||
   customSheet?.includes("pendingStandardRevealTravel") ||
   customSheet?.includes("openingCardTravel") ||
@@ -2259,7 +2934,7 @@ if (
   customSheet?.includes("DashTrayRevealRules")
 ) {
   issues.push(
-    "Standard Tray must keep Dash's bounded 80...160pt reveal, without the Family full-card travel machinery.",
+    "Standard Tray must travel a full card height from below the screen, without the Family travel machinery.",
   );
 }
 // The standard entrance starts one rendered frame after the cover mounts —

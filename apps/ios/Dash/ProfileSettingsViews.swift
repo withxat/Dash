@@ -623,7 +623,6 @@ struct SettingsView: View {
     DashWorkspaceGlowPreset.defaultPreset.rawValue
   @AppStorage(DashChartStylePreference.storageKey) private var chartStyleRaw =
     DashChartStylePreference.defaultStyle.rawValue
-  @AppStorage(ICloudPreferencesSync.enabledKey) private var iCloudSyncEnabled = true
   @AppStorage(DashExperimentalFeatures.tunnelsKey) private var tunnelsExperimentalEnabled =
     false
   @State private var showsLanguagePicker = false
@@ -744,15 +743,6 @@ struct SettingsView: View {
           }
         }
 
-        SettingsPlainSection(title: "iCloud") {
-          SettingsPlainToggleRow(
-            title: DashL10n.string("Sync settings"),
-            icon: SolarAsset.cloud,
-            isOn: $iCloudSyncEnabled
-          )
-          .accessibilityIdentifier("icloud-settings-sync")
-        }
-
         SettingsPlainSection(title: "Experimental") {
           SettingsPlainToggleRow(
             title: DashL10n.string("Tunnels"),
@@ -836,12 +826,6 @@ struct SettingsView: View {
       title: DashL10n.string("Sign out")
     ) {
       SignOutConfirmationContent()
-    }
-    .onChange(of: iCloudSyncEnabled) { _, enabled in
-      ICloudPreferencesSync.shared.setEnabled(enabled)
-    }
-    .onChange(of: workspaceGlowRaw) { _, _ in
-      ICloudPreferencesSync.shared.publish(.workspaceGlow)
     }
     .onAppear {
       // The remounted Settings page is the real completion signal for a
@@ -1228,8 +1212,8 @@ private struct WorkspaceGlowPickerTray: View {
       guard centeredPresetPositionIsReady else { return }
       let externallySelected = DashWorkspaceGlowPreset.resolved(stored: stored)
       // Local taps move the scroll owner before they persist the preset, so an
-      // equal ID is a no-op. A real external write (including iCloud KVS) is
-      // the only path that recentres the picker from the persisted value.
+      // equal ID is a no-op. A real external defaults write is the only path
+      // that recentres the picker from the persisted value.
       guard centeredPresetID != externallySelected.id else {
         deferredExternalPresetID = nil
         return

@@ -3,15 +3,6 @@ import CoreText
 import SwiftUI
 import UIKit
 
-private enum OnboardingStep: Equatable {
-  case welcome
-  case permissions
-
-  static var initial: Self {
-    return .welcome
-  }
-}
-
 struct AppRootView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -19,7 +10,6 @@ struct AppRootView: View {
   @State private var stage: AuthenticationState? = .loading
   /// A visible auth action owns the old surface through its success icon swap.
   @State private var pendingStage: AuthenticationState?
-  @State private var onboardingStep: OnboardingStep = .initial
 
   var body: some View {
     ZStack {
@@ -29,7 +19,7 @@ struct AppRootView: View {
 
       switch stage {
       case .unauthenticated:
-        OnboardingView(step: $onboardingStep)
+        OnboardingView()
           .zIndex(1)
           .transition(
             .asymmetric(
@@ -108,9 +98,6 @@ struct AppRootView: View {
 
   private func present(_ new: AuthenticationState) {
     pendingStage = nil
-    if new == .unauthenticated {
-      onboardingStep = .initial
-    }
     if reduceMotion {
       stage = new
     } else {
@@ -255,11 +242,8 @@ private struct OnboardingGlyphReveal: TextRenderer, Animatable {
 }
 
 private struct OnboardingView: View {
-  @Binding var step: OnboardingStep
   @Environment(AppModel.self) private var model
   @Environment(\.dashLoginIconCloaked) private var iconCloaked
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var legalDocument: LegalDocument?
   /// Flips when the splash lockup hands off (the cloak lifts), so the hero
   /// lines and footer cascade in only after the morph settles.
@@ -269,32 +253,16 @@ private struct OnboardingView: View {
   /// the lockup's entrance, and the real lockup must sit at rest so its
   /// anchor — and the swap frame — stay exact. Sign-out remounts reveal it.
   @State private var iconJoinsReveal = false
+  @State private var welcomeIsVisible = true
   @State private var networkProbe = NetworkAccessProbe()
-  @State private var welcomeIsVisible = OnboardingStep.initial == .welcome
-  @State private var permissionsAreVisible = OnboardingStep.initial == .permissions
-  @State private var isChangingStep = false
+  @State private var isPreparingConnection = false
+  @State private var connectionTask: Task<Void, Never>?
   @State private var authenticationActionOwner = UUID()
 
   var body: some View {
     ZStack {
       LoginBackground()
       onboardingLayout
-    }
-    .overlay(alignment: .topLeading) {
-      if step == .permissions {
-        OnboardingBackButton(action: returnToWelcome)
-          .padding(.leading, 16)
-          .safeAreaPadding(.top, 8)
-          .opacity(permissionsAreVisible ? 1 : 0)
-          .scaleEffect(permissionsAreVisible || reduceMotion ? 1 : 0.9)
-          .animation(
-            reduceMotion ? DashTheme.Motion.reduced : .easeOut(duration: 0.18),
-            value: permissionsAreVisible
-          )
-          .allowsHitTesting(
-            permissionsAreVisible && !isChangingStep && !ownedAuthenticationPhase.isActive
-          )
-      }
     }
     .sheet(item: $legalDocument) { document in
       LegalDocumentView(document: document)
@@ -328,33 +296,17 @@ private struct OnboardingView: View {
     .onChange(of: iconCloaked) { _, cloaked in
       if !cloaked { revealed = true }
     }
-    // Network has no separate “request” dialog outside China SKUs — the first
-    // probe both triggers the mainland wireless-data sheet (when needed) and
-    // marks non-China devices allowed. Run it as soon as Permissions appears
-    // so Connect is not gated on a manual Network tap.
-    .task(id: step) {
-      guard step == .permissions, networkProbe.status == .unknown else { return }
-      await networkProbe.requestAccess()
+    .onDisappear {
+      connectionTask?.cancel()
+      connectionTask = nil
+      isPreparingConnection = false
     }
   }
 
   private var onboardingLayout: some View {
     VStack(spacing: 0) {
-      if step == .welcome {
-        // Welcome pins its lockup + hero slogan near the screen top; the
-        // step swap happens fully faded out (`replaceStep`), so the jump
-        // between this and the centered permissions layout is never seen.
-        onboardingHeader
-          .padding(.top, 44)
-      } else {
-        Spacer(minLength: 24)
-        onboardingHeader
-          // Offset only the heading visually so the permission cards retain
-          // their existing position in the layout.
-          .offset(y: permissionsHeaderOffset)
-        permissionOptions
-          .padding(.top, 32)
-      }
+      onboardingHeader
+        .padding(.top, 44)
 
       Spacer(minLength: 24)
       onboardingFooter
@@ -367,105 +319,34 @@ private struct OnboardingView: View {
     .frame(maxWidth: .infinity)
   }
 
-  private var permissionsHeaderOffset: CGFloat {
-    dynamicTypeSize.isAccessibilitySize ? -16 : -28
-  }
-
   private var onboardingHeader: some View {
-    Group {
-      switch step {
-      case .welcome:
-        // Left-aligned lockup with the slogan enlarged into the page's
-        // headline: brand row on top, "Cloudflare," and its tagline each on
-        // their own hero line underneath.
-        VStack(alignment: .leading, spacing: 10) {
-          OnboardingBrandLockup(emitsIconAnchor: true)
-            // Laid out while cloaked so the splash lockup can land on the
-            // same frame and hand off in place.
-            .opacity(iconCloaked ? 0 : 1)
-            // Under the splash the lockup skips stagger — the splash overlay
-            // owns its entrance. Sign-out visits stagger with the rest.
-            .dashReveal(0, shown: iconJoinsReveal ? revealed : true)
-            .onboardingStagger(visible: welcomeIsVisible, index: 0)
+    // Left-aligned lockup with the slogan enlarged into the page's headline:
+    // brand row on top, then one line each for the product promise.
+    VStack(alignment: .leading, spacing: 10) {
+      OnboardingBrandLockup(emitsIconAnchor: true)
+        // Laid out while cloaked so the splash lockup can land on the same
+        // frame and hand off in place.
+        .opacity(iconCloaked ? 0 : 1)
+        // Under the splash the lockup skips stagger — the splash overlay owns
+        // its entrance. Sign-out visits stagger with the rest.
+        .dashReveal(0, shown: iconJoinsReveal ? revealed : true)
+        .onboardingStagger(visible: welcomeIsVisible, index: 0)
 
-          VStack(alignment: .leading, spacing: 0) {
-            Text("Cloudflare,")
-              .onboardingSloganFont(60)
-              .dashReveal(1, shown: revealed)
-              .onboardingStagger(visible: welcomeIsVisible, index: 1)
-            Text("in your hand")
-              .onboardingSloganFont()
-              .dashReveal(2, shown: revealed)
-              .onboardingStagger(visible: welcomeIsVisible, index: 2)
-          }
-          .foregroundStyle(DashTheme.strong)
-          .multilineTextAlignment(.leading)
-          .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-
-      case .permissions:
-        VStack(spacing: 6) {
-          Text(DashL10n.string("Connect safely"))
-            .onboardingHeadlineFont()
-            .foregroundStyle(DashTheme.strong)
-            .onboardingStagger(visible: permissionsAreVisible, index: 0)
-          Text(
-            DashL10n.string(
-              "Dash requests all permissions used by its current features in one authorization."
-            )
-          )
-          .dashTextStyle(.supporting)
-          .foregroundStyle(DashTheme.subtle)
-          .multilineTextAlignment(.center)
-          .fixedSize(horizontal: false, vertical: true)
-          .onboardingStagger(visible: permissionsAreVisible, index: 1)
-        }
+      VStack(alignment: .leading, spacing: 0) {
+        Text("Cloudflare,")
+          .onboardingSloganFont(60)
+          .dashReveal(1, shown: revealed)
+          .onboardingStagger(visible: welcomeIsVisible, index: 1)
+        Text("in your hand")
+          .onboardingSloganFont()
+          .dashReveal(2, shown: revealed)
+          .onboardingStagger(visible: welcomeIsVisible, index: 2)
       }
+      .foregroundStyle(DashTheme.strong)
+      .multilineTextAlignment(.leading)
+      .fixedSize(horizontal: false, vertical: true)
     }
-  }
-
-  private var permissionOptions: some View {
-    VStack(spacing: 18) {
-      if let error = model.errorMessage {
-        Text(error)
-          .dashTextStyle(.supportingMedium)
-          .foregroundStyle(DashTheme.danger)
-          .multilineTextAlignment(.center)
-          .onboardingStagger(visible: permissionsAreVisible, index: 2)
-      }
-
-      VStack(spacing: 20) {
-        OnboardingPermissionInfoRow(
-          id: "cloudflare",
-          title: DashL10n.string("Cloudflare access"),
-          status: DashL10n.string("Read & write"),
-          subtitle: DashL10n.string(
-            "Review every requested permission in Cloudflare before you authorize."
-          ),
-          icon: SolarAsset.cloudflare
-        )
-        .onboardingStagger(visible: permissionsAreVisible, index: 2)
-
-        OnboardingPermissionRow(
-          id: "network",
-          title: DashL10n.string("Network"),
-          subtitle: networkSubtitle,
-          icon: SolarAsset.globe,
-          status: networkRowStatus,
-          isBusy: networkProbe.status == .probing
-        ) {
-          if networkProbe.status == .restricted {
-            if let url = URL(string: UIApplication.openSettingsURLString) {
-              UIApplication.shared.open(url)
-            }
-          } else {
-            Task { await networkProbe.requestAccess() }
-          }
-        }
-        .onboardingStagger(visible: permissionsAreVisible, index: 3)
-      }
-    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private var onboardingFooter: some View {
@@ -474,30 +355,50 @@ private struct OnboardingView: View {
         configCard
       }
 
+      if let error = model.errorMessage {
+        Text(error)
+          .dashTextStyle(.supportingMedium)
+          .foregroundStyle(DashTheme.danger)
+          .multilineTextAlignment(.center)
+          .fixedSize(horizontal: false, vertical: true)
+          .dashReveal(3, shown: revealed)
+      }
+
+      if networkProbe.status == .restricted {
+        DashTrayTextButton(title: DashL10n.string("Settings")) {
+          guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+          UIApplication.shared.open(url)
+        }
+        .dashReveal(3, shown: revealed)
+      }
+
       // App Review's path past the OAuth wall (and anyone's no-account tour):
       // a read-only session served from in-app fixtures by DemoBackend.
       // The demo is an alternative to signing in, not a way out of it, so the
       // two stay stacked instead of sharing a confirm row — opened up past the
       // tray-tight default so the text action reads as its own choice.
       DashTrayActionPair(axis: .vertical, verticalGap: 12) {
-        DashTrayTextButton(title: DashL10n.string("Explore the demo")) {
-          model.enterDemo()
-        }
-        .disabled(ownedAuthenticationPhase.isActive || model.isEnteringDemo)
+        DashTrayTextButton(
+          title: DashL10n.string("Explore the demo"),
+          isInteractionLocked: ownedAuthenticationPhase.isActive || model.isEnteringDemo,
+          action: model.enterDemo
+        )
         .dashReveal(3, shown: revealed)
       } primary: {
         DashPillButton(
-          title: primaryButtonTitle,
-          icon: step == .permissions ? SolarAsset.cloudflare : nil,
-          phase: step == .permissions ? ownedAuthenticationPhase : .idle,
-          isEnabled: !model.isEnteringDemo
-            && (step == .welcome
-              || (model.configuration.isConfigured && networkProbe.isReadyForConnect)),
+          title: "Connect Cloudflare",
+          activeTitle: "Start your engine!",
+          isActiveTitlePresented: connectTitleIsActive,
+          icon: SolarAsset.cloudflare,
+          phase: ownedAuthenticationPhase,
+          isEnabled: model.configuration.isConfigured,
+          isInteractionLocked: model.isEnteringDemo,
           onSuccessPresentationCompleted: {
             model.completeAuthenticationActionPresentation(owner: authenticationActionOwner)
           },
-          action: primaryButtonAction
+          action: connectCloudflare
         )
+        .accessibilityIdentifier("onboarding-connect")
         .dashReveal(4, shown: revealed)
       }
 
@@ -506,71 +407,59 @@ private struct OnboardingView: View {
     }
   }
 
-  private var primaryButtonTitle: String {
-    switch step {
-    case .welcome: DashL10n.string("Start your engine!")
-    case .permissions: DashL10n.string("Connect Cloudflare")
-    }
-  }
-
   private var ownedAuthenticationPhase: DashActionPhase {
-    model.authenticationActionOwner == authenticationActionOwner
+    if isPreparingConnection { return .loading }
+    return model.authenticationActionOwner == authenticationActionOwner
       ? model.authenticationActionPhase
       : .idle
   }
 
-  private func primaryButtonAction() {
-    guard !isChangingStep else { return }
-    switch step {
-    case .welcome:
-      showPermissions()
-    case .permissions:
+  private var connectTitleIsActive: Bool {
+    ownedAuthenticationPhase.isActive
+      || (model.authState == .authenticated && !model.isDemoSession)
+  }
+
+  private func connectCloudflare() {
+    guard
+      model.configuration.isConfigured,
+      !model.isEnteringDemo,
+      !ownedAuthenticationPhase.isActive,
+      connectionTask == nil
+    else { return }
+
+    model.errorMessage = nil
+    isPreparingConnection = true
+    connectionTask = Task { @MainActor in
+      await networkProbe.requestAccess()
+      guard !Task.isCancelled else {
+        isPreparingConnection = false
+        connectionTask = nil
+        return
+      }
+
+      guard networkProbe.isReadyForConnect else {
+        switch networkProbe.status {
+        case .restricted:
+          model.errorMessage = DashL10n.string(
+            "Enable Wi‑Fi and cellular data in Settings to load Cloudflare resources."
+          )
+        case .unknown, .probing, .unavailable:
+          model.errorMessage = DashL10n.string(
+            "Dash couldn’t reach Cloudflare. Check your connection and try again."
+          )
+        case .allowed:
+          break
+        }
+        isPreparingConnection = false
+        connectionTask = nil
+        return
+      }
+
+      // `signIn` synchronously claims the same loading phase before the local
+      // preparation flag drops, so the title and trailing ring never flicker.
       model.signIn(presentationOwner: authenticationActionOwner)
-    }
-  }
-
-  private func showPermissions() {
-    isChangingStep = true
-    welcomeIsVisible = false
-
-    Task { @MainActor in
-      let exitDelay: Duration = reduceMotion ? .milliseconds(130) : .milliseconds(330)
-      try? await Task.sleep(for: exitDelay)
-      replaceStep(with: .permissions)
-
-      try? await Task.sleep(for: .milliseconds(16))
-      permissionsAreVisible = true
-
-      let entranceDelay: Duration = reduceMotion ? .milliseconds(130) : .milliseconds(480)
-      try? await Task.sleep(for: entranceDelay)
-      isChangingStep = false
-    }
-  }
-
-  private func returnToWelcome() {
-    guard !isChangingStep else { return }
-    isChangingStep = true
-    permissionsAreVisible = false
-
-    Task { @MainActor in
-      let exitDelay: Duration = reduceMotion ? .milliseconds(130) : .milliseconds(390)
-      try? await Task.sleep(for: exitDelay)
-      replaceStep(with: .welcome)
-
-      try? await Task.sleep(for: .milliseconds(16))
-      welcomeIsVisible = true
-
-      let entranceDelay: Duration = reduceMotion ? .milliseconds(130) : .milliseconds(430)
-      try? await Task.sleep(for: entranceDelay)
-      isChangingStep = false
-    }
-  }
-
-  private func replaceStep(with newStep: OnboardingStep) {
-    var transaction = Transaction(animation: nil)
-    transaction.disablesAnimations = true
-    withTransaction(transaction) {
-      step = newStep
+      isPreparingConnection = false
+      connectionTask = nil
     }
   }
 
@@ -586,35 +475,6 @@ private struct OnboardingView: View {
         .foregroundStyle(DashTheme.subtle)
         .fixedSize(horizontal: false, vertical: true)
       }
-    }
-  }
-
-  private var networkSubtitle: String {
-    switch networkProbe.status {
-    case .allowed:
-      return DashL10n.string(
-        "Use this connection to load your Cloudflare account and resource data."
-      )
-    case .restricted:
-      return DashL10n.string(
-        "Enable Wi‑Fi and cellular data in Settings to load Cloudflare resources."
-      )
-    case .probing:
-      return DashL10n.string(
-        "Checking network access for Cloudflare data…"
-      )
-    case .unknown:
-      return DashL10n.string(
-        "Connect to Cloudflare to view account information and resource status."
-      )
-    }
-  }
-
-  private var networkRowStatus: OnboardingPermissionRow.Status {
-    switch networkProbe.status {
-    case .allowed: .allowed
-    case .restricted: .denied
-    case .probing, .unknown: .idle
     }
   }
 
@@ -651,10 +511,6 @@ extension View {
   /// Brand lockup titles (28pt base) that scale with Dynamic Type. The
   /// splash overlay passes its magnification so the enlarged wordmark keeps
   /// the lockup's exact proportions.
-  fileprivate func onboardingHeadlineFont(_ magnification: CGFloat = 1) -> some View {
-    modifier(OnboardingHeadlineFont(magnification: magnification))
-  }
-
   fileprivate func onboardingWordmarkFont(_ magnification: CGFloat = 1) -> some View {
     modifier(OnboardingWordmarkFont(magnification: magnification))
   }
@@ -684,15 +540,6 @@ private struct OnboardingWordmarkFont: ViewModifier {
   }
 }
 
-private struct OnboardingHeadlineFont: ViewModifier {
-  var magnification: CGFloat = 1
-  @ScaledMetric(relativeTo: .title) private var size: CGFloat = 28
-
-  func body(content: Content) -> some View {
-    content.font(.system(size: size * magnification, weight: .bold))
-  }
-}
-
 private struct OnboardingSloganFont: ViewModifier {
   var base: CGFloat = 56
   @ScaledMetric(relativeTo: .largeTitle) private var size: CGFloat = 56
@@ -702,209 +549,6 @@ private struct OnboardingSloganFont: ViewModifier {
     // the reference so lead + tagline stay in proportion.
     let scaled = size * (base / 56)
     content.font(.system(size: scaled, weight: .bold))
-  }
-}
-
-private struct OnboardingBackButton: View {
-  let action: () -> Void
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-  var body: some View {
-    Group {
-      if #available(iOS 26.0, *) {
-        // Native circular glass button, same as the profile avatar.
-        Button(action: action) { icon.padding(-7) }
-          .buttonStyle(.glass)
-          .buttonBorderShape(.circle)
-      } else if reduceTransparency {
-        styledButton
-          .background(DashTheme.elevated, in: Circle())
-      } else {
-        styledButton
-          .background(.thinMaterial, in: Circle())
-          .overlay(Circle().stroke(Color.white.opacity(0.24), lineWidth: 0.5))
-      }
-    }
-    .accessibilityLabel("Back")
-    .accessibilityIdentifier("onboarding-back")
-  }
-
-  private var styledButton: some View {
-    Button(action: action) { icon }
-      .buttonStyle(DashPressButtonStyle())
-  }
-
-  private var icon: some View {
-    SolarIcon(asset: SolarAsset.chevronLeft, size: 22, color: DashTheme.strong)
-      .offset(x: DashChevronOpticalRules.offsetX(for: SolarAsset.chevronLeft))
-      .frame(width: 44, height: 44)
-      .contentShape(Circle())
-  }
-}
-
-private struct OnboardingPermissionSurface: ViewModifier {
-  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-  @ViewBuilder
-  func body(content: Content) -> some View {
-    let shape = RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-    if reduceTransparency {
-      content.background(DashTheme.elevated, in: shape)
-    } else if #available(iOS 26.0, *) {
-      // Non-interactive: the row is already a Button with its own press style.
-      // `.interactive()` steals hits on the glass plane so only opaque subviews
-      // (the icon) reach the button action.
-      content.glassEffect(.regular, in: shape)
-    } else {
-      content
-        .background(.thinMaterial, in: shape)
-        .overlay(shape.stroke(Color.white.opacity(0.2), lineWidth: 0.5))
-    }
-  }
-}
-
-private struct OnboardingPermissionInfoRow: View {
-  let id: String
-  let title: String
-  let status: String
-  let subtitle: String
-  let icon: String
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      HStack(spacing: 16) {
-        SolarIcon(asset: icon, size: 30, color: DashTheme.text)
-          .frame(width: 38, height: 38)
-
-        VStack(alignment: .leading, spacing: 4) {
-          Text(title)
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-          Text(status)
-            .dashTextStyle(.footnoteSemibold)
-            .foregroundStyle(DashTheme.subtle)
-            .lineLimit(1)
-        }
-
-        Spacer(minLength: 8)
-        SolarIcon(asset: SolarAsset.Content.lock, size: 22, color: DashTheme.brand)
-      }
-      .padding(.horizontal, 18)
-      .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-      .modifier(OnboardingPermissionSurface())
-      .accessibilityElement(children: .combine)
-      .accessibilityIdentifier("onboarding-permission-\(id)")
-      .accessibilityLabel("\(title), \(status). \(subtitle)")
-
-      Text(subtitle)
-        .dashTextStyle(.footnote)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 4)
-    }
-  }
-}
-
-private struct OnboardingPermissionRow: View {
-  enum Status {
-    case idle
-    case allowed
-    case denied
-  }
-
-  /// Stable English token for UI tests / a11y identifiers (not localized).
-  let id: String
-  let title: String
-  let subtitle: String
-  let icon: String
-  let status: Status
-  var isBusy = false
-  let action: () -> Void
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      Button(action: action) {
-        HStack(spacing: 16) {
-          SolarIcon(asset: icon, size: 30, color: DashTheme.text)
-            .frame(width: 38, height: 38)
-
-          VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.text)
-            Text(actionLabel)
-              .dashTextStyle(.footnoteSemibold)
-              .foregroundStyle(DashTheme.subtle)
-              .lineLimit(1)
-              .contentTransition(.opacity)
-          }
-
-          Spacer(minLength: 8)
-          trailing
-        }
-        .padding(.horizontal, 18)
-        .frame(maxWidth: .infinity, minHeight: 82, alignment: .leading)
-        .contentShape(
-          RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-        )
-        .modifier(OnboardingPermissionSurface())
-      }
-      .buttonStyle(OnboardingPermissionButtonStyle())
-      .disabled(isBusy || status == .allowed)
-      .accessibilityIdentifier("onboarding-permission-\(id)")
-      .accessibilityLabel("\(title), \(actionLabel). \(subtitle)")
-
-      Text(subtitle)
-        .dashTextStyle(.footnote)
-        .foregroundStyle(DashTheme.subtle)
-        .multilineTextAlignment(.leading)
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 4)
-    }
-  }
-
-  private var actionLabel: String {
-    if isBusy { return DashL10n.string("Requesting…") }
-    switch status {
-    case .allowed: return DashL10n.string("Enabled")
-    case .denied: return DashL10n.string("Tap to open Settings")
-    case .idle: return DashL10n.string("Tap to enable")
-    }
-  }
-
-  @ViewBuilder
-  private var trailing: some View {
-    if isBusy || status == .allowed {
-      DashActionStatusIcon(
-        phase: isBusy ? .loading : .succeeded,
-        loadingColor: DashTheme.strong,
-        successColor: DashTheme.brand,
-        size: 22
-      )
-    } else if status == .denied {
-      SolarIcon(
-        asset: SolarAsset.chevronRight,
-        size: DashTheme.Chevron.row,
-        color: DashTheme.placeholder
-      )
-    }
-  }
-}
-
-private struct OnboardingPermissionButtonStyle: ButtonStyle {
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .scaleEffect(
-        configuration.isPressed && !reduceMotion ? DashTheme.Motion.pressScale : 1
-      )
-      .opacity(configuration.isPressed ? 0.82 : 1)
-      .animation(
-        reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.press,
-        value: configuration.isPressed
-      )
   }
 }
 

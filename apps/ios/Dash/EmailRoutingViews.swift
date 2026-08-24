@@ -3,67 +3,146 @@ import SwiftUI
 
 // MARK: - Resources index
 
-/// Catalog entry for `FeatureID.emailRouting`: every zone on the account, with
-/// routing status when the settings call answers. Row push opens the existing
-/// per-zone Email Routing screen.
+/// Catalog entry for `FeatureID.emailRouting`: Domain-style cards for zones
+/// whose settings say Email Routing is on or needs attention. Fully off zones
+/// stay out of this browse-only index; a card opens the existing zone screen.
 struct EmailRoutingDomainsView: View {
   /// Caps the settings fan-out so a large zone list does not stampede the API
-  /// (and lose every badge to rate limits) before any row can paint.
+  /// (and lose every card to rate limits) before the catalog can paint.
   private static let statusFetchConcurrency = 6
 
   @Environment(AppModel.self) private var model
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   @State private var zones: [CloudflareZone] = []
-  @State private var statusByZoneID: [String: StatusToken] = [:]
+  @State private var settingsByZoneID: [String: EmailRoutingSettings] = [:]
   @State private var loading = true
   @State private var error: String?
   @State private var loadedContext: AccountRequestContext?
+  /// Distinguishes overlapping loads for the same account. Account context
+  /// alone cannot stop an older settings fan-out from finishing after a pull
+  /// refresh and replacing the fresher result.
+  @State private var loadGeneration = 0
+
+  /// Preserve Cloudflare's zone order, but omit only settings that definitively
+  /// say Email Routing was never configured (or has since been turned off).
+  private var displayedZones: [CloudflareZone] {
+    zones.filter { zone in
+      guard let settings = settingsByZoneID[zone.id] else { return false }
+      return EmailRoutingStatusMapping.listCardToken(for: settings) != nil
+    }
+  }
+
+  private var gridColumns: [GridItem] {
+    let count = dynamicTypeSize.isAccessibilitySize ? 1 : 2
+    return Array(
+      repeating: GridItem(.flexible(), spacing: DashTheme.Spacing.itemGap),
+      count: count)
+  }
+
+  private var emptyState: DashFeatureEmpty {
+    if zones.isEmpty {
+      return DashFeatureEmpty(
+        icon: SolarAsset.Content.mailbox,
+        title: "No domains",
+        message: "Cloudflare returned no domains for this account."
+      )
+    }
+    return DashFeatureEmpty(
+      icon: SolarAsset.Content.mailbox,
+      title: "No Email Routing domains",
+      message: "Only domains with Email Routing turned on appear here."
+    )
+  }
 
   var body: some View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: !zones.isEmpty,
-      empty: DashFeatureEmpty(
-        icon: SolarAsset.Content.mailbox,
-        title: "No domains yet",
-        message: "Add a domain to Cloudflare first, then set up Email Routing here."
-      ),
+      hasContent: !displayedZones.isEmpty,
+      empty: emptyState,
       retry: { Task { await load(force: true) } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: zones, reduceMotion: reduceMotion) { zone in
-          let token = statusByZoneID[zone.id]
-          DashListGroupLink(value: .zoneEmailRouting(zone.id)) {
-            DashListRow(
-              title: zone.name,
-              subtitle: nil,
-              avatarSeed: zone.name
-            ) {
-              // Unconfigured stays quiet — most accounts have many zones with
-              // routing never turned on, and "Disabled" on every row is noise.
-              // Ready / misconfigured / unlocked answer the list's question.
-              if let token, token != .disabled {
-                StatusBadge(token)
-              }
-            }
-            .accessibilityLabel(emailRoutingDomainAccessibilityLabel(zone: zone, token: token))
-          }
-        }
-      }
+      emailRoutingDomainGrid(mode: mode)
     }
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
     // Detail visits write settings/snapshot into the session cache; merge them
-    // when popping back so a badge does not wait for another full fan-out.
-    .onAppear { mergeCachedStatuses() }
+    // when popping back so a card can enter, update, or disappear immediately.
+    .onAppear { mergeCachedSettings() }
+  }
+
+  @ViewBuilder
+  private func emailRoutingDomainGrid(mode: DashBodyMode) -> some View {
+    LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+      if mode.isPlaceholder {
+        ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { index in
+          DomainCardFace(
+            name: "domain.example",
+            status: "Ready",
+            seed: "dash.email-routing.placeholder.\(index)",
+            fillHex: DomainCardColors.defaultPalette[
+              index % DomainCardColors.defaultPalette.count],
+            textureAsset: SolarAsset.Content.letter
+          )
+          .dashBodyPlaceholder(true)
+          .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      } else {
+        ForEach(displayedZones, id: \.id) { zone in
+          emailRoutingDomainCard(zone)
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      }
+    }
+  }
+
+  private func emailRoutingDomainCard(_ zone: CloudflareZone) -> some View {
+    let settings = settingsByZoneID[zone.id]
+    let token = settings.flatMap { EmailRoutingStatusMapping.listCardToken(for: $0) } ?? .unknown
+    // Settings are the payload that earns this card a place in the index. Use
+    // their canonical domain spelling for every visible identity so the source
+    // and its detail landing cannot swap text, avatar seed, or default color.
+    let cardName = settings?.name ?? zone.name
+    let fillHex = cardFillHex(zoneID: zone.id, name: cardName)
+    let hero = DashNavigationHero.emailRoutingCard(
+      accountID: model.activeAccountID ?? "",
+      zoneID: zone.id,
+      name: cardName,
+      status: token.rawValue.capitalized,
+      seed: cardName,
+      fillHex: fillHex)
+    return DashListGroupLink(value: .zoneEmailRouting(zone.id), hero: hero) {
+      DomainCardFace(
+        name: cardName,
+        status: token.rawValue.capitalized,
+        seed: cardName,
+        fillHex: fillHex,
+        textureAsset: SolarAsset.Content.letter
+      )
+      .accessibilityLabel(emailRoutingDomainAccessibilityLabel(name: cardName, token: token))
+    }
+  }
+
+  private func cardFillHex(zoneID: String, name: String) -> UInt32 {
+    guard let accountID = model.activeAccountID else {
+      return DomainCardColors.defaultHex(for: name)
+    }
+    return DomainCardColors.hex(
+      in: domainCardColorData,
+      accountID: accountID,
+      zoneID: zoneID,
+      seed: name)
   }
 
   private func load(force: Bool = false) async {
+    loadGeneration += 1
+    let generation = loadGeneration
     guard let context = model.accountRequestContext else {
       loadedContext = nil
       zones = []
-      statusByZoneID = [:]
+      settingsByZoneID = [:]
       loading = false
       error = nil
       return
@@ -71,123 +150,183 @@ struct EmailRoutingDomainsView: View {
     if loadedContext != context {
       loadedContext = context
       zones = []
-      statusByZoneID = [:]
+      settingsByZoneID = [:]
     }
-    let key = FeatureCacheKey.zones(context.accountID)
-    if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
-      zones = cached
-      loading = false
-      error = nil
-      await loadStatuses(for: cached, force: force)
-      return
-    }
-    // Cold but a stale copy exists on disk: paint it now and refresh in place.
-    if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
-      zones = stale
-      loading = true
-    }
-    if zones.isEmpty { loading = true }
+    loading = true
     error = nil
+    let key = FeatureCacheKey.zones(context.accountID)
     do {
-      // Keep this loop separate from `DashPageLoader.loadAll`: that loader
-      // deduplicates IDs and terminates on a repeated page, while this catalog
-      // preserves the server's rows and retains its existing 40-page ceiling.
-      var collected: [CloudflareZone] = []
-      var pageNumber = 1
-      while true {
-        let page = try await model.client.listZones(
-          accountID: context.accountID,
-          page: pageNumber,
-          perPage: ZonesView.pageSize
-        )
-        collected.append(contentsOf: page.items)
-        let hasMore: Bool
-        if let info = page.resultInfo,
-          let pageNum = info.page,
-          let perPage = info.perPage,
-          let total = info.totalCount
-        {
-          hasMore = pageNum * perPage < total
-        } else {
-          hasMore = page.items.count >= ZonesView.pageSize
-        }
-        guard hasMore else { break }
-        pageNumber += 1
-        if pageNumber > 40 { break }
+      if !force,
+        model.featureCache.zonesCatalogIsComplete(accountID: context.accountID),
+        let cached: [CloudflareZone] = model.featureCache.get(key)
+      {
+        zones = cached
+        mergeCachedSettings()
+        let statusError = try await loadStatuses(
+          for: cached, context: context, generation: generation, force: force)
+        guard isCurrentLoad(context: context, generation: generation) else { return }
+        error = statusError
+        loading = false
+        return
       }
+      // Cold but a stale copy exists on disk: keep known cards warm while the
+      // zone catalog and its Email Routing settings refresh in place.
+      if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
+        zones = stale
+        mergeCachedSettings()
+      }
+
+      let client = model.client
+      let collected = try await DashPageLoader.loadAll(
+        pageSize: ZonesCatalogFetchRules.pageSize,
+        id: \.id
+      ) { page, perPage in
+        try await client.listZones(
+          accountID: context.accountID,
+          page: page,
+          perPage: perPage)
+      }
+      guard isCurrentLoad(context: context, generation: generation)
+      else { throw CancellationError() }
       zones = collected
-      model.featureCache.storeZones(collected, accountID: context.accountID)
+      model.featureCache.storeZones(
+        collected,
+        accountID: context.accountID,
+        catalogIsComplete: true)
+      mergeCachedSettings()
+      let statusError = try await loadStatuses(
+        for: collected, context: context, generation: generation, force: force)
+      guard isCurrentLoad(context: context, generation: generation) else { return }
+      error = statusError
       loading = false
-      await loadStatuses(for: collected, force: force)
     } catch {
-      guard !error.dashIsCancellation else { return }
+      guard
+        !error.dashIsCancellation,
+        isCurrentLoad(context: context, generation: generation)
+      else { return }
       self.error = error.dashActionableMessage
       loading = false
     }
   }
 
-  /// Pull any statuses already known from this session (list settings cache or
-  /// a zone screen's full snapshot) into the row badges without waiting on
-  /// the network.
-  private func mergeCachedStatuses() {
-    guard !zones.isEmpty else { return }
+  /// Pull settings already known from this session (the list cache or a zone
+  /// screen's full snapshot) into the cards without waiting on the network.
+  private func mergeCachedSettings() {
+    guard
+      !zones.isEmpty,
+      let context = model.accountRequestContext,
+      loadedContext == context
+    else { return }
     let cache = model.featureCache
-    var next = statusByZoneID
+    var next = settingsByZoneID
     var changed = false
     for zone in zones {
-      guard let token = EmailRoutingStatusMapping.listToken(zoneID: zone.id, cache: cache)
+      guard let settings = EmailRoutingStatusMapping.listSettings(zoneID: zone.id, cache: cache)
       else { continue }
-      if next[zone.id] != token {
-        next[zone.id] = token
+      if next[zone.id] != settings {
+        next[zone.id] = settings
         changed = true
       }
     }
-    if changed { statusByZoneID = next }
+    if changed { settingsByZoneID = next }
   }
 
-  private func loadStatuses(for zones: [CloudflareZone], force: Bool) async {
+  private enum StatusFetchResult: Sendable {
+    case settings(zoneID: String, EmailRoutingSettings)
+    case failure(String)
+    case cancelled
+  }
+
+  /// Settings are the primary payload for this filtered catalog. Cold paint
+  /// therefore commits them once after the complete fan-out; a refresh keeps
+  /// the previous cards warm and replaces only successful answers.
+  private func loadStatuses(
+    for zones: [CloudflareZone],
+    context: AccountRequestContext,
+    generation: Int,
+    force: Bool
+  ) async throws -> String? {
     let client = model.client
     let cache = model.featureCache
-    var next = statusByZoneID
+    var next = settingsByZoneID
     var pending: [String] = []
     for zone in zones {
-      if !force, let token = EmailRoutingStatusMapping.listToken(zoneID: zone.id, cache: cache) {
-        next[zone.id] = token
+      if !force,
+        let settings = EmailRoutingStatusMapping.listSettings(zoneID: zone.id, cache: cache)
+      {
+        next[zone.id] = settings
       } else {
         pending.append(zone.id)
       }
     }
-    if next != statusByZoneID { statusByZoneID = next }
-    guard !pending.isEmpty else { return }
+    guard !pending.isEmpty else {
+      if next != settingsByZoneID { settingsByZoneID = next }
+      return nil
+    }
+
+    var firstFailure: String?
+    var freshByZoneID: [String: EmailRoutingSettings] = [:]
 
     for chunkStart in stride(from: 0, to: pending.count, by: Self.statusFetchConcurrency) {
-      if Task.isCancelled { return }
+      guard isCurrentLoad(context: context, generation: generation)
+      else { throw CancellationError() }
       let end = min(chunkStart + Self.statusFetchConcurrency, pending.count)
       let chunk = Array(pending[chunkStart..<end])
-      await withTaskGroup(of: (String, EmailRoutingSettings?).self) { group in
+      var chunkWasCancelled = false
+      await withTaskGroup(of: StatusFetchResult.self) { group in
         for zoneID in chunk {
           group.addTask {
             do {
-              return (zoneID, try await client.getEmailRoutingSettings(zoneID: zoneID))
+              return .settings(
+                zoneID: zoneID,
+                try await client.getEmailRoutingSettings(zoneID: zoneID))
             } catch {
-              return (zoneID, nil)
+              return error.dashIsCancellation
+                ? .cancelled
+                : .failure(error.dashActionableMessage)
             }
           }
         }
-        for await (zoneID, settings) in group {
-          guard let settings else { continue }
-          EmailRoutingStatusMapping.storeListSettings(settings, zoneID: zoneID, cache: cache)
-          next[zoneID] = EmailRoutingStatusMapping.token(for: settings)
+        for await result in group {
+          switch result {
+          case .settings(let zoneID, let settings):
+            next[zoneID] = settings
+            freshByZoneID[zoneID] = settings
+          case .failure(let message):
+            if firstFailure == nil { firstFailure = message }
+          case .cancelled:
+            chunkWasCancelled = true
+          }
         }
       }
-      statusByZoneID = next
+      if chunkWasCancelled { throw CancellationError() }
     }
+
+    guard isCurrentLoad(context: context, generation: generation),
+      EmailRoutingStatusCacheBatch.commit(
+        freshByZoneID,
+        context: context,
+        loadedContext: loadedContext,
+        model: model)
+    else { throw CancellationError() }
+    if next != settingsByZoneID { settingsByZoneID = next }
+    return firstFailure
+  }
+
+  private func isCurrentLoad(
+    context: AccountRequestContext,
+    generation: Int
+  ) -> Bool {
+    generation == loadGeneration
+      && model.isCurrentAccount(context)
+      && loadedContext == context
+      && !Task.isCancelled
   }
 
   private func emailRoutingDomainAccessibilityLabel(
-    zone: CloudflareZone, token: StatusToken?
+    name: String, token: StatusToken?
   ) -> String {
-    var parts = [zone.name, DashL10n.string("Email routing")]
+    var parts = [name, DashL10n.string("Email routing")]
     if let token, token != .disabled {
       parts.append(StatusBadge.accessibilityText(for: token))
     }
@@ -208,6 +347,29 @@ struct EmailRoutingSnapshot: Sendable {
   var settings: EmailRoutingSettings
   var rules: [EmailRoutingRule]
   var catchAll: EmailRoutingCatchAllRule?
+}
+
+/// The only network-fan-out write into the settings-only card cache. Keeping
+/// the account guard and cache mutation in one synchronous seam prevents a
+/// cancelled account-A response from landing after account B has activated its
+/// own memory/disk mirror.
+enum EmailRoutingStatusCacheBatch {
+  @MainActor
+  static func commit(
+    _ settingsByZoneID: [String: EmailRoutingSettings],
+    context: AccountRequestContext,
+    loadedContext: AccountRequestContext?,
+    model: AppModel
+  ) -> Bool {
+    guard model.isCurrentAccount(context), loadedContext == context, !Task.isCancelled else {
+      return false
+    }
+    for (zoneID, settings) in settingsByZoneID {
+      EmailRoutingStatusMapping.storeListSettings(
+        settings, zoneID: zoneID, cache: model.featureCache)
+    }
+    return true
+  }
 }
 
 /// The sentinel the delivery pickers use for "drop the mail". Kept as a stable
@@ -242,11 +404,20 @@ struct EmailRoutingView: View {
   static let rulePageSize = 50
 
   @Environment(AppModel.self) private var model
+  @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+  @Environment(\.layoutDirection) private var layoutDirection
+  @Environment(\.dashPageTransitionActive) private var pageTransitionActive
+  @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   let zoneID: String
 
   @State private var settings: EmailRoutingSettings?
+  /// Settings-only cache used by the card landing while the full routes /
+  /// catch-all / addresses payload still owns the cold skeleton below it.
+  @State private var cardPreviewSettings: EmailRoutingSettings?
   @State private var rules: [EmailRoutingRule] = []
   @State private var catchAll: EmailRoutingCatchAllRule?
   /// `nil` means the account's destination addresses are not known — either not
@@ -284,8 +455,17 @@ struct EmailRoutingView: View {
       title: "Email routing",
       tint: FeatureVisualIdentity.heroColor(for: .emailRouting)
     )
+    .dashPageActions(
+      leading: shouldUseFlowReturn ? [flowBackAction] : []
+    )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
+    .task(id: shouldUseFlowReturn) {
+      guard let navigationEntryID else { return }
+      navigator?.setCardSourceDismissalUsesFlow(
+        shouldUseFlowReturn,
+        entryID: navigationEntryID)
+    }
     .dashTray(
       item: $enableTarget,
       title: { $0.title },
@@ -331,13 +511,13 @@ struct EmailRoutingView: View {
   }
 
   /// Fuller first-paint reserve for the configured stack. Not-set-up replaces
-  /// the whole body; catch-all / plus addressing / turn-off exit when live
-  /// content omits them.
+  /// the whole body; the Email card reserves the morph landing while two
+  /// control-shaped slots hand off to catch-all / plus addressing. The
+  /// write-gated danger row intentionally has no fake toggle placeholder.
   @ViewBuilder
   private func emailRoutingBody(mode: DashBodyMode) -> some View {
     if !mode.isPlaceholder, let settings, Self.isNotSetUp(settings) {
       notSetUpState(settings)
-        .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       configuredContent(mode: mode, settings: settings)
     }
@@ -349,15 +529,46 @@ struct EmailRoutingView: View {
   /// "the wizard never ran"; `enabled == false` covers a zone that was turned
   /// off again.
   private static func isNotSetUp(_ settings: EmailRoutingSettings) -> Bool {
-    settings.enabled == false || settings.routingStatus == .unconfigured
+    EmailRoutingStatusMapping.isNotSetUp(settings)
+  }
+
+  private var isConfiguredEmailCardRemoved: Bool {
+    guard let settings else { return false }
+    return Self.isNotSetUp(settings)
+  }
+
+  private var shouldUseFlowReturn: Bool {
+    isConfiguredEmailCardRemoved && !pageTransitionActive && navigationEntryID != nil
+  }
+
+  private var flowBackAction: DashPageActionDescriptor {
+    DashPageActionDescriptor.icon(
+      id: "email-routing-flow-back",
+      asset: DashPageChromeAssetRules.leadingAsset(
+        for: .back,
+        rightToLeft: layoutDirection == .rightToLeft),
+      accessibilityLabel: DashL10n.string("Back"),
+      accessibilityIdentifier: "dash.navigation.back"
+    ) {
+      guard let navigationEntryID else { return }
+      navigator?.popUsingFlow(entryID: navigationEntryID)
+    }
   }
 
   @ViewBuilder
   private func notSetUpState(_ settings: EmailRoutingSettings) -> some View {
+    // A stale configured source can learn that routing was turned off while it
+    // is expanding. Keep the semantic landing seated; Back will downgrade to a
+    // flow once the filtered catalog has definitively removed its source card.
+    emailRoutingHeroLandingSeat(mode: .live, settings: settings)
+      .dashBodySlot(reduceMotion: reduceMotion)
     if !featureAllowsWrites {
       FeatureWriteAccessNotice(
         message: "Read-only — grant Email Routing write access to change routes.",
-        scopes: emailRoutingWriteScopes)
+        scopes: emailRoutingWriteScopes
+      )
+      .dashItemBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
     DashEmptyState(
       icon: SolarAsset.Content.mailbox,
@@ -373,7 +584,8 @@ struct EmailRoutingView: View {
             confirmTitle: "Turn on email routing")
         } : nil
     )
-    .dashSectionBoundary(!featureAllowsWrites)
+    .dashItemBoundary()
+    .dashBodySlot(reduceMotion: reduceMotion)
   }
 
   // MARK: Configured
@@ -383,73 +595,101 @@ struct EmailRoutingView: View {
     mode: DashBodyMode,
     settings: EmailRoutingSettings?
   ) -> some View {
+    emailRoutingHeroLandingSeat(mode: mode, settings: settings)
+      .dashBodySlot(reduceMotion: reduceMotion)
     if !mode.isPlaceholder, !featureAllowsWrites {
       FeatureWriteAccessNotice(
         message: "Read-only — grant Email Routing write access to change routes.",
         scopes: emailRoutingWriteScopes
       )
+      .dashItemBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
-    if mode.isPlaceholder {
-      DashInfoGroup(title: "Email routing", phase: .loading, placeholderRows: 2) {
-        EmptyView()
-      }
-      .dashBodySlot(reduceMotion: reduceMotion)
-    } else if let settings {
-      statusGroup(settings)
-        .dashSectionBoundary(!featureAllowsWrites)
+    if !mode.isPlaceholder, let settings, EmailRoutingStatusMapping.needsDNSRepair(settings) {
+      dnsRepairSection(settings)
+        .dashItemBoundary()
         .dashBodySlot(reduceMotion: reduceMotion)
     }
     routesSection(mode: mode)
     addressesSection(mode: mode)
-    if mode.isPlaceholder {
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
-    } else if let settings {
-      catchAllSection
-      if settings.supportSubaddress != nil {
-        subaddressingSection
-          .dashBodySlot(reduceMotion: reduceMotion)
-      }
-      if featureAllowsWrites {
-        turnOffRow
-          .dashBodySlot(reduceMotion: reduceMotion)
-      }
-    }
+    actionsSection(mode: mode, settings: settings)
   }
 
-  // MARK: §2 Status
+  // MARK: §2 Card + status
 
-  /// One view, not a tuple: `DashSurfaceStack` already supplies the item gap
-  /// between the group and the repair affordance, and the caller applies a
-  /// section boundary to the whole block.
-  private func statusGroup(_ settings: EmailRoutingSettings) -> some View {
-    DashSurfaceStack {
-      DashInfoGroup(title: "Email routing", placeholderRows: 2) {
-        DashInfoRow("Status") {
-          StatusBadge(EmailRoutingStatusMapping.token(for: settings))
-        }
-        DashInfoRow("Domain", value: settings.name)
-      }
-      if EmailRoutingStatusMapping.needsDNSRepair(settings) {
-        DashNotice(
-          kind: .warning,
-          message: "Some DNS records Email routing needs are missing. Mail may not be delivered."
+  @ViewBuilder
+  private func emailRoutingHeroLandingSeat(
+    mode: DashBodyMode,
+    settings: EmailRoutingSettings?
+  ) -> some View {
+    let cardSettings =
+      settings ?? cardPreviewSettings
+      ?? EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: model.featureCache)
+    Group {
+      if let cardSettings {
+        DomainCardFace(
+          name: cardSettings.name,
+          status: EmailRoutingStatusMapping.token(for: cardSettings).rawValue.capitalized,
+          seed: cardSettings.name,
+          fillHex: emailRoutingCardFillHex(cardSettings),
+          textureAsset: SolarAsset.Content.letter,
+          aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
         )
-        if featureAllowsWrites {
-          // Repairing re-runs the same apex MX write as first-time setup, so it
-          // goes through the same preview + confirm tray rather than firing
-          // straight off a pill.
-          DashPillButton(title: "Fix DNS records") {
-            enableTarget = EmailRoutingEnableTarget(
-              zoneName: settings.name,
-              title: "Fix DNS records",
-              confirmTitle: "Fix DNS records")
-          }
+        .accessibilityLabel(emailRoutingCardAccessibilityLabel(cardSettings))
+      } else {
+        DomainCardFace(
+          name: "domain.example",
+          status: "Ready",
+          seed: "dash.placeholder.email-routing",
+          fillHex: DomainCardColors.defaultPalette[0],
+          textureAsset: SolarAsset.Content.letter,
+          aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
+        )
+        .dashBodyPlaceholder(true)
+      }
+    }
+    .dashNavigationLanding(.emailRoutingHero(zoneID))
+    .frame(maxWidth: .infinity)
+  }
+
+  private func emailRoutingCardFillHex(_ settings: EmailRoutingSettings) -> UInt32 {
+    guard let accountID = model.activeAccountID else {
+      return DomainCardColors.defaultHex(for: settings.name)
+    }
+    return DomainCardColors.hex(
+      in: domainCardColorData,
+      accountID: accountID,
+      zoneID: zoneID,
+      seed: settings.name)
+  }
+
+  private func emailRoutingCardAccessibilityLabel(
+    _ settings: EmailRoutingSettings
+  ) -> String {
+    let token = EmailRoutingStatusMapping.token(for: settings)
+    return [
+      DashL10n.string("Email routing"),
+      DashL10n.string("Domain"),
+      settings.name,
+      StatusBadge.accessibilityText(for: token),
+    ].joined(separator: ", ")
+  }
+
+  private func dnsRepairSection(_ settings: EmailRoutingSettings) -> some View {
+    DashSurfaceStack {
+      DashNotice(
+        kind: .warning,
+        message: "Some DNS records Email routing needs are missing. Mail may not be delivered."
+      )
+      if featureAllowsWrites {
+        // Repairing re-runs the same apex MX write as first-time setup, so it
+        // goes through the same preview + confirm tray rather than firing
+        // straight off a pill.
+        DashPillButton(title: "Fix DNS records") {
+          enableTarget = EmailRoutingEnableTarget(
+            zoneName: settings.name,
+            title: "Fix DNS records",
+            confirmTitle: "Fix DNS records")
         }
       }
     }
@@ -626,7 +866,46 @@ struct EmailRoutingView: View {
     return total + " · " + DashL10n.string("\(unverified) unverified")
   }
 
-  // MARK: §5 Catch-all
+  // MARK: §5 Actions
+
+  @ViewBuilder
+  private func actionsSection(
+    mode: DashBodyMode,
+    settings: EmailRoutingSettings?
+  ) -> some View {
+    let showsCatchAll = catchAll != nil || catchAllError != nil
+    let showsSubaddressing = settings?.supportSubaddress != nil
+    let showsTurnOff = settings != nil && featureAllowsWrites
+    if mode.isPlaceholder || showsCatchAll || showsSubaddressing || showsTurnOff {
+      DashListGroupHeader(title: DashL10n.ui("Actions"))
+        .padding(.horizontal, 4)
+        .dashSectionBoundary()
+        .padding(.bottom, 8)
+        .dashBodySlot(reduceMotion: reduceMotion)
+
+      if mode.isPlaceholder {
+        DashToggleRowPlaceholder()
+          .dashBodySlot(reduceMotion: reduceMotion)
+        DashToggleRowPlaceholder()
+          .dashItemBoundary()
+          .dashBodySlot(reduceMotion: reduceMotion)
+      } else if let settings {
+        catchAllSection
+        if settings.supportSubaddress != nil {
+          subaddressingSection
+            .dashItemBoundary(showsCatchAll)
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+        if featureAllowsWrites {
+          turnOffRow
+            .dashSectionBoundary(showsCatchAll || showsSubaddressing)
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      }
+    }
+  }
+
+  // MARK: §5.1 Catch-all
 
   @ViewBuilder
   private var catchAllSection: some View {
@@ -642,7 +921,6 @@ struct EmailRoutingView: View {
           catchAllContent(catchAll)
         }
       }
-      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
@@ -767,7 +1045,7 @@ struct EmailRoutingView: View {
     [emailRoutingDropOption] + (addresses ?? []).filter(\.isVerified).map(\.email)
   }
 
-  // MARK: §6 Plus addressing
+  // MARK: §5.2 Plus addressing
 
   private var subaddressingSection: some View {
     DashSurfaceStack {
@@ -779,7 +1057,6 @@ struct EmailRoutingView: View {
         isEnabled: featureAllowsWrites,
         isLoading: subaddressingUpdating)
     }
-    .dashSectionBoundary()
   }
 
   private var subaddressingBinding: Binding<Bool> {
@@ -791,7 +1068,7 @@ struct EmailRoutingView: View {
       })
   }
 
-  // MARK: §7 Turn off
+  // MARK: §5.3 Turn off
 
   private var turnOffRow: some View {
     Button {
@@ -814,7 +1091,6 @@ struct EmailRoutingView: View {
     }
     .buttonStyle(DashSurfaceButtonStyle())
     .accessibilityLabel(DashL10n.string("Turn off email routing"))
-    .padding(.top, DashTheme.Spacing.section)
   }
 
   private var turnOffAction: DashDangerAction {
@@ -836,6 +1112,7 @@ struct EmailRoutingView: View {
     guard let context = model.accountRequestContext else {
       loadedContext = nil
       settings = nil
+      cardPreviewSettings = nil
       rules = []
       catchAll = nil
       addresses = nil
@@ -846,6 +1123,7 @@ struct EmailRoutingView: View {
     if loadedContext != context {
       loadedContext = context
       settings = nil
+      cardPreviewSettings = nil
       rules = []
       catchAll = nil
       addresses = nil
@@ -862,6 +1140,9 @@ struct EmailRoutingView: View {
       subaddressingUpdating = false
       catchAllUpdating = false
     }
+    cardPreviewSettings = EmailRoutingStatusMapping.listSettings(
+      zoneID: zoneID,
+      cache: model.featureCache)
     // Cold stays on the skeleton; warm pull-to-refresh keeps content in place
     // while the native refresh control owns feedback. Never flip `settings`
     // early — `hasContent` follows it, and a settings-only paint left Routes /
@@ -874,6 +1155,7 @@ struct EmailRoutingView: View {
       let cachedAddresses = await fetchAddresses(force: false, context: context)
       guard model.isCurrentAccount(context), !Task.isCancelled else { return }
       apply(cached)
+      cardPreviewSettings = cached.settings
       if let cachedAddresses { addresses = cachedAddresses }
       loading = false
       error = nil
@@ -893,6 +1175,7 @@ struct EmailRoutingView: View {
       // can badge Ready / Misconfigured without waiting on rules / catch-all.
       EmailRoutingStatusMapping.storeListSettings(
         fetched, zoneID: zone, cache: model.featureCache)
+      cardPreviewSettings = fetched
     } catch {
       guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
         return
@@ -939,11 +1222,17 @@ struct EmailRoutingView: View {
     var fetchedRules: [EmailRoutingRule]?
     switch rulesOutcome {
     case .success(let page):
-      nextRules = page.items
-      fetchedRules = page.items
+      var seenRuleIDs = Set<String>()
+      let uniqueRules = page.items.filter { seenRuleIDs.insert($0.id).inserted }
+      nextRules = uniqueRules
+      fetchedRules = uniqueRules
       pageState.reset()
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: page.items.count,
+        info: page.resultInfo,
+        requestedPage: 1,
+        received: page.items.count,
+        added: uniqueRules.count,
+        loaded: uniqueRules.count,
         pageSize: Self.rulePageSize)
     case .failure(let failure):
       guard !failure.dashIsCancellation else { return }
@@ -1037,10 +1326,15 @@ struct EmailRoutingView: View {
       let page = try await model.client.listEmailRoutingRules(
         zoneID: zoneID, page: pageNumber, perPage: Self.rulePageSize)
       guard model.isCurrentAccount(context), !Task.isCancelled else { return }
-      let existing = Set(rules.map(\.id))
-      rules.append(contentsOf: page.items.filter { !existing.contains($0.id) })
+      var existingIDs = Set(rules.map(\.id))
+      let uniqueRules = page.items.filter { existingIDs.insert($0.id).inserted }
+      rules.append(contentsOf: uniqueRules)
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: rules.count,
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: uniqueRules.count,
+        loaded: rules.count,
         pageSize: Self.rulePageSize)
       cacheSnapshot()
     } catch {
@@ -1172,13 +1466,34 @@ struct EmailRoutingView: View {
 
   private func turnOff() async throws {
     guard let context = model.accountRequestContext else { return }
+    let previous = settings ?? cardPreviewSettings
     try await model.client.disableEmailRouting(zoneID: zoneID)
     guard model.isCurrentAccount(context), !Task.isCancelled else { return }
     model.featureCache.remove(FeatureCacheKey.emailRouting(zoneID))
-    model.featureCache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
     model.featureCache.remove(FeatureCacheKey.emailRoutingDNS(zoneID))
     // The zone's apex MX really did change underneath the DNS screen.
     model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+    if let previous {
+      // The disable request succeeded even if the verification reload below
+      // does not. Publish that definitive off state immediately so the index
+      // drops its card and both page/header choose a flow return.
+      let disabled = EmailRoutingSettings(
+        id: previous.id,
+        name: previous.name,
+        enabled: false,
+        status: EmailRoutingStatus.unconfigured.rawValue,
+        created: previous.created,
+        modified: previous.modified,
+        skipWizard: previous.skipWizard,
+        supportSubaddress: previous.supportSubaddress,
+        tag: previous.tag)
+      EmailRoutingStatusMapping.storeListSettings(
+        disabled, zoneID: zoneID, cache: model.featureCache)
+      settings = disabled
+      cardPreviewSettings = disabled
+    } else {
+      model.featureCache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
+    }
     await load(force: true)
   }
 }
@@ -1207,8 +1522,15 @@ private struct EmailRoutingEnableTarget: Identifiable, Equatable {
 /// An unrecognised status is `.unknown`, never `.ready`: the screen must not
 /// promise a working mail path for a state it has never seen.
 enum EmailRoutingStatusMapping {
+  /// One definition shared by the detail empty state and the filtered catalog:
+  /// either signal is sufficient proof that Email Routing is fully off.
+  static func isNotSetUp(_ settings: EmailRoutingSettings) -> Bool {
+    settings.enabled == false || settings.routingStatus == .unconfigured
+  }
+
   static func token(for settings: EmailRoutingSettings) -> StatusToken {
-    switch settings.routingStatus {
+    guard !isNotSetUp(settings) else { return .disabled }
+    return switch settings.routingStatus {
     case .ready: .ready
     case .misconfigured, .misconfiguredLocked: .misconfigured
     case .unlocked: .unlocked
@@ -1217,19 +1539,33 @@ enum EmailRoutingStatusMapping {
     }
   }
 
+  /// A card exists for every setting that is definitely on. Unknown future
+  /// statuses stay visible as Unknown — `enabled == true` must not be mistaken
+  /// for a domain that never enabled Email Routing.
+  static func listCardToken(for settings: EmailRoutingSettings) -> StatusToken? {
+    guard !isNotSetUp(settings) else { return nil }
+    return token(for: settings)
+  }
+
+  /// Settings for the domains index: prefer the settings-only cache the list
+  /// writes, then a zone screen's full snapshot.
+  @MainActor
+  static func listSettings(
+    zoneID: String, cache: FeatureDataCache
+  ) -> EmailRoutingSettings? {
+    if let settings: EmailRoutingSettings = cache.get(
+      FeatureCacheKey.emailRoutingSettings(zoneID))
+    {
+      return settings
+    }
+    return (cache.get(FeatureCacheKey.emailRouting(zoneID)) as EmailRoutingSnapshot?)?.settings
+  }
+
   /// Token for the domains index: prefer the settings-only cache the list
   /// writes, then a zone screen's full snapshot. Never invent ready.
   @MainActor
   static func listToken(zoneID: String, cache: FeatureDataCache) -> StatusToken? {
-    if let settings: EmailRoutingSettings = cache.get(
-      FeatureCacheKey.emailRoutingSettings(zoneID))
-    {
-      return token(for: settings)
-    }
-    if let snapshot: EmailRoutingSnapshot = cache.get(FeatureCacheKey.emailRouting(zoneID)) {
-      return token(for: snapshot.settings)
-    }
-    return nil
+    listSettings(zoneID: zoneID, cache: cache).map { token(for: $0) }
   }
 
   /// Persist settings for the domains index without touching the full snapshot.

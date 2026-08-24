@@ -116,13 +116,18 @@ struct KVNamespacesView: View {
     let client = model.client
     do {
       pageState.reset()
+      let pageNumber = pageState.nextPage
       let page = try await client.listKVNamespaces(
-        accountID: context.accountID, page: pageState.nextPage, perPage: Self.pageSize)
+        accountID: context.accountID, page: pageNumber, perPage: Self.pageSize)
       guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context)
       else { return }
       namespaces = page.items
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: namespaces.count,
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: page.items.count,
+        loaded: namespaces.count,
         pageSize: Self.pageSize)
       model.featureCache.set(key, namespaces)
       error = nil
@@ -155,9 +160,15 @@ struct KVNamespacesView: View {
         accountID: context.accountID, page: pageNumber, perPage: Self.pageSize)
       guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context)
       else { return }
-      namespaces += page.items
+      var existingIDs = Set(namespaces.map(\.id))
+      let uniqueItems = page.items.filter { existingIDs.insert($0.id).inserted }
+      namespaces += uniqueItems
       pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: namespaces.count,
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: uniqueItems.count,
+        loaded: namespaces.count,
         pageSize: Self.pageSize)
       model.featureCache.set(FeatureCacheKey.kvNamespaces(context.accountID), namespaces)
       error = nil

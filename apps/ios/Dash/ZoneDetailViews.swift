@@ -4,12 +4,19 @@ import SwiftDitherKit
 import SwiftUI
 import UIKit
 
+enum ZoneActionsNoticeRules {
+  static func showsNotice(mode: DashBodyMode, status: String?) -> Bool {
+    !mode.isPlaceholder && (status ?? "").lowercased() != "active"
+  }
+}
+
 struct ZoneDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   @AppStorage(RecentResources.key) private var recentsRaw = ""
@@ -472,10 +479,8 @@ struct ZoneDetailView: View {
       }
     }
 
-    if mode.isPlaceholder || displayedZoneIsActive {
+    if mode.isPlaceholder || displayedZone != nil {
       primaryActions(mode: mode)
-    } else if let zone = displayedZone {
-      frozenActions(zone)
     }
   }
 
@@ -516,7 +521,7 @@ struct ZoneDetailView: View {
       status: "Active",
       seed: "dash.placeholder.zone",
       fillHex: DomainCardColors.defaultPalette[0],
-      aspectRatio: DomainCardFace.detailAspectRatio
+      aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
     )
     .dashBodyPlaceholder(true)
   }
@@ -574,7 +579,7 @@ struct ZoneDetailView: View {
       seed: zone.name,
       fillHex: displayedCardFillHex,
       plan: plan,
-      aspectRatio: DomainCardFace.detailAspectRatio
+      aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
     )
   }
 
@@ -600,44 +605,12 @@ struct ZoneDetailView: View {
           showsIconPlate: false)
       }
     }
-  }
-
-  /// Non-active zones cannot use the management tools, but the rows still
-  /// render so the shape of what activation unlocks stays visible. The
-  /// section-scale veil freezes them non-interactive (hit testing and VoiceOver
-  /// both belong to the veil) and carries the next-step guidance in place of
-  /// the loading failure it normally reports — no Try again, no locked-out
-  /// tool buttons, just the direction the user needs to go.
-  @ViewBuilder
-  private func frozenActions(_ zone: CloudflareZone) -> some View {
-    DashListGroupHeader(title: DashL10n.ui("Actions"))
-      .padding(.horizontal, 4)
-      .dashSectionBoundary()
-      .padding(.bottom, 8)
-      .dashBodySlot(reduceMotion: reduceMotion)
-    dashModeListRows(
-      mode: .live,
-      items: tools,
-      placeholderRows: Self.allTools.count,
-      reduceMotion: reduceMotion
-    ) { tool in
-      let destination = tool.route(zoneID)
-      DashListGroupLink(value: destination) {
-        DashListRow(
-          title: DashL10n.ui(tool.title),
-          subtitle: DashL10n.ui(tool.blurb),
-          icon: tool.icon,
-          showsIconPlate: false)
-      }
-    }
-    .dashSectionFailure(activationBlurb(zone))
-    .dashBodySlot(reduceMotion: reduceMotion)
-  }
-
-  /// Dash tools (DNS, analytics, cache, settings) only run on active zones.
-  private var displayedZoneIsActive: Bool {
-    guard let displayedZone else { return false }
-    return isActive(displayedZone)
+    // Non-active zones keep these exact live rows as the stable ground that
+    // activation will unlock. The neutral local notice owns interaction and
+    // VoiceOver while reusing the cold empty/error wash above the rows.
+    .dashSectionNotice(
+      actionsActivationNotice(mode: mode),
+      icon: SolarAsset.Content.clock)
   }
 
   private func isActive(_ zone: CloudflareZone) -> Bool {
@@ -695,7 +668,7 @@ struct ZoneDetailView: View {
     try Task.checkCancellation()
     guard model.isCurrentAccount(context) else { throw CancellationError() }
     model.featureCache.remove(FeatureCacheKey.zone(zoneID))
-    model.featureCache.remove(FeatureCacheKey.zones(context.accountID))
+    model.featureCache.removeZones(accountID: context.accountID)
     model.featureCache.remove(FeatureCacheKey.zoneRdap(zoneID))
     model.featureCache.remove(FeatureCacheKey.zoneSettings(zoneID))
     if PinnedZones.isPinned(pinnedZoneData, zoneID: zoneID),
@@ -723,6 +696,14 @@ struct ZoneDetailView: View {
   /// The veil's guidance has no user-triggered re-check action — activation
   /// lands on Cloudflare's own hourly sweep, so the copy never offers a check
   /// it cannot perform.
+  private func actionsActivationNotice(mode: DashBodyMode) -> String? {
+    guard
+      let zone = displayedZone,
+      ZoneActionsNoticeRules.showsNotice(mode: mode, status: zone.status)
+    else { return nil }
+    return activationBlurb(zone)
+  }
+
   private func activationBlurb(_ zone: CloudflareZone) -> String {
     if (zone.status ?? "").lowercased() == "moved" {
       return DashL10n.string(
@@ -872,6 +853,7 @@ private struct DomainCardColorCustomizeOverlay: View {
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @State private var scrimProgress: CGFloat = 0
   @State private var pickerRevealed = false
   @State private var isExiting = false
@@ -891,7 +873,7 @@ private struct DomainCardColorCustomizeOverlay: View {
           seed: seed,
           fillHex: fillHex,
           plan: plan,
-          aspectRatio: DomainCardFace.detailAspectRatio
+          aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
         )
         .matchedGeometryEffect(
           id: morphID,

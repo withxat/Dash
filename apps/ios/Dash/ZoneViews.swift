@@ -5,7 +5,8 @@ import SwiftUI
 import UIKit
 
 struct ZonesView: View {
-  static let pageSize = 50
+  static let pageSize = ZonesCatalogFetchRules.pageSize
+  static let eagerPageBudget = ZonesCatalogFetchRules.eagerPageBudget
 
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -14,15 +15,23 @@ struct ZonesView: View {
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   @AppStorage(PinnedZones.key) private var pinnedZoneData = ""
   @AppStorage(PinnedZones.initializedAccountsKey) private var pinnedZonesInitialized = ""
+  @AppStorage(DomainsListPreferences.groupByStatusKey) private var groupsByStatus = false
+  /// The preference is changed by the workspace Header, which is hosted
+  /// outside this page. Keep the visible layout page-local so its matched
+  /// cards receive the morph transaction instead of jumping to the persisted
+  /// value's final arrangement.
+  @State private var displayedGroupsByStatus: Bool?
   @State private var zones: [CloudflareZone] = []
   @State private var error: String?
   @State private var loading = true
   @State private var isLoadingMore = false
+  @State private var loadingMoreGeneration: Int?
   /// Bumped on every fresh `load` so an in-flight `loadMore` cannot append
   /// onto a list that was just reset / replaced.
   @State private var listGeneration = 0
   @State private var showsAddDomain = false
   @State private var pageState = DashPageState()
+  @Namespace private var domainGridNamespace
 
   /// Pin-first paint order. `zones` / cache stay in fetch order so pagination
   /// and a later unpin can still recover the API sequence.
@@ -70,31 +79,51 @@ struct ZonesView: View {
     }
     .refreshable { await load(force: true) }.task { await load() }
     .onAppear { reloadIfInvalidated() }
-    .dashPageActions(
-      trailing: model.isDemoSession
-        ? []
-        : [
-          .icon(
-            id: "domains-add-domain",
-            asset: SolarAsset.plus,
-            accessibilityLabel: DashL10n.string("Add domain"),
-            isEnabled: !model.isAuthenticating,
-            accessibilityIdentifier: "domains-add-domain"
-          ) {
-            beginAddDomain()
-          }
-        ]
-    )
+    .onChange(of: groupsByStatus, initial: true) { _, next in
+      updateDisplayedGroupsByStatus(to: next)
+    }
+    .dashPageActions(trailing: pageTrailingActions)
     .dashTray(
       isPresented: $showsAddDomain, title: "Add domain",
       tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
       AddDomainSheet {
         guard let accountID = model.activeAccountID else { return }
-        model.featureCache.remove(FeatureCacheKey.zones(accountID))
+        model.featureCache.removeZones(accountID: accountID)
         Task { await load(force: true) }
       }
     }
+  }
+
+  private var pageTrailingActions: [DashPageActionDescriptor] {
+    var actions: [DashPageActionDescriptor] = [
+      .icon(
+        id: "domains-group-by-status",
+        asset: groupsByStatus
+          ? SolarAsset.listCrossMinimalistic
+          : SolarAsset.listCheckMinimalistic,
+        accessibilityLabel: groupsByStatus
+          ? DashL10n.string("Show ungrouped")
+          : DashL10n.string("Group by status"),
+        accessibilityIdentifier: "domains-group-by-status"
+      ) {
+        toggleGroupsByStatus()
+      }
+    ]
+    if !model.isDemoSession {
+      actions.append(
+        .icon(
+          id: "domains-add-domain",
+          asset: SolarAsset.plus,
+          accessibilityLabel: DashL10n.string("Add domain"),
+          isEnabled: !model.isAuthenticating,
+          accessibilityIdentifier: "domains-add-domain"
+        ) {
+          beginAddDomain()
+        }
+      )
+    }
+    return actions
   }
 
   private func beginAddDomain() {
@@ -105,33 +134,100 @@ struct ZonesView: View {
     }
   }
 
+  private func toggleGroupsByStatus() {
+    groupsByStatus.toggle()
+    DashDelight.selectionChanged()
+  }
+
+  private func updateDisplayedGroupsByStatus(to target: Bool) {
+    guard
+      let update = DomainsGroupingPresentationRules.update(
+        displayed: displayedGroupsByStatus,
+        target: target,
+        reduceMotion: reduceMotion)
+    else { return }
+
+    if update.animates {
+      withAnimation(DashTheme.Motion.morph) {
+        displayedGroupsByStatus = update.groupsByStatus
+      }
+    } else {
+      var transaction = Transaction()
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+        displayedGroupsByStatus = update.groupsByStatus
+      }
+    }
+  }
+
   /// Same 2-up (or 1-up a11y) grid for cold and live — surplus placeholder
-  /// cards recede when fewer domains land.
+  /// cards recede when fewer domains land. Live cards keep zone IDs so the
+  /// group-by-status toggle can morph them between the flat grid and sections.
   @ViewBuilder
   private func domainCardGrid(mode: DashBodyMode) -> some View {
-    let painted = displayedZones
-    let count =
-      mode.isPlaceholder
-      ? DashBodyPlaceholderDepth.domainCards
-      : painted.count
+    if mode.isPlaceholder {
+      placeholderDomainGrid
+    } else if displayedGroupsByStatus ?? groupsByStatus {
+      groupedDomainGrid(displayedZones)
+    } else {
+      flatDomainGrid(displayedZones)
+    }
+  }
+
+  private var placeholderDomainGrid: some View {
     LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
-      ForEach(0..<count, id: \.self) { index in
-        Group {
-          if mode.isPlaceholder {
-            DomainCardFace(
-              name: "domain.example",
-              status: "Active",
-              seed: "dash.placeholder.\(index)",
-              fillHex: DomainCardColors.defaultPalette[
-                index % DomainCardColors.defaultPalette.count]
-            )
-            .dashBodyPlaceholder(true)
-          } else {
-            domainCardLink(painted[index])
-          }
-        }
+      ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { index in
+        DomainCardFace(
+          name: "domain.example",
+          status: "Active",
+          seed: "dash.placeholder.\(index)",
+          fillHex: DomainCardColors.defaultPalette[
+            index % DomainCardColors.defaultPalette.count]
+        )
+        .dashBodyPlaceholder(true)
         .dashBodySlot(reduceMotion: reduceMotion)
       }
+    }
+  }
+
+  private func flatDomainGrid(_ painted: [CloudflareZone]) -> some View {
+    LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+      ForEach(painted, id: \.id) { zone in
+        domainCardLink(zone)
+          .matchedGeometryEffect(id: zone.id, in: domainGridNamespace)
+          .dashBodySlot(reduceMotion: reduceMotion)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func groupedDomainGrid(_ painted: [CloudflareZone]) -> some View {
+    let pinnedIDs =
+      model.activeAccountID.map {
+        PinnedZones.pinnedZoneIDs(in: pinnedZoneData, accountID: $0)
+      } ?? []
+    let sections = DomainStatusSections.make(from: painted, pinnedIDs: pinnedIDs)
+    ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
+      sectionHeader(section.title, isFirst: index == 0)
+      LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+        ForEach(section.zones, id: \.id) { zone in
+          domainCardLink(zone)
+            .matchedGeometryEffect(id: zone.id, in: domainGridNamespace)
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func sectionHeader(_ title: String, isFirst: Bool) -> some View {
+    let header = DashListGroupHeader(title: title)
+      .padding(.horizontal, 4)
+      .padding(.bottom, 8)
+    if isFirst {
+      header
+    } else {
+      header.dashSectionBoundary()
     }
   }
 
@@ -139,6 +235,7 @@ struct ZonesView: View {
     let fillHex = cardFillHex(for: zone)
     let status = (zone.status ?? "unknown").capitalized
     let hero = DashNavigationHero.domainCard(
+      accountID: model.activeAccountID ?? "",
       zoneID: zone.id,
       name: zone.name,
       status: status,
@@ -184,6 +281,14 @@ struct ZonesView: View {
       pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
       loading = false
       error = nil
+      // A warm cache that still looks truncated (exact page multiples) keeps
+      // filling in the background so group-by-status sees the full catalog.
+      if pageState.canLoadMore {
+        listGeneration += 1
+        isLoadingMore = false
+        loadingMoreGeneration = nil
+        await loadRemainingEagerly(accountID: accountID, generation: listGeneration)
+      }
       return
     }
     // Cold but a stale copy exists on disk: paint it now and refresh in place
@@ -197,30 +302,45 @@ struct ZonesView: View {
     }
     if zones.isEmpty { loading = true }
     error = nil
-    isLoadingMore = false
     listGeneration += 1
     let generation = listGeneration
-    defer { loading = false }
+    isLoadingMore = false
+    loadingMoreGeneration = nil
     do {
       pageState.reset()
-      let page = try await model.client.listZones(
-        accountID: accountID, page: pageState.nextPage, perPage: Self.pageSize)
-      guard generation == listGeneration, model.activeAccountID == accountID else { return }
-      zones = page.items
-      seedPinsIfNeeded(from: page.items, accountID: accountID)
-      pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: zones.count,
-        pageSize: Self.pageSize)
-      model.featureCache.storeZones(zones, accountID: accountID)
-      MetricsWidgetPublisher.syncDomains(
-        zones,
-        accountID: accountID,
-        accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
-        replacesCatalog: !pageState.canLoadMore)
+      try await fetchPage(accountID: accountID, generation: generation, replace: true)
+      loading = false
+      await loadRemainingEagerly(accountID: accountID, generation: generation)
     } catch {
       guard !error.dashIsCancellation else { return }
       guard generation == listGeneration, model.activeAccountID == accountID else { return }
+      loading = false
       self.error = error.dashActionableMessage
+    }
+  }
+
+  /// Walks remaining pages back-to-back until the catalog ends, the eager
+  /// budget is spent, or Cloudflare rate-limits us — then the scroll footer
+  /// owns whatever is left.
+  private func loadRemainingEagerly(accountID: String, generation: Int) async {
+    while ZonesCatalogFetchRules.shouldContinueEagerly(
+      pagesFetched: max(pageState.nextPage - 1, 0),
+      canLoadMore: pageState.canLoadMore
+    ) {
+      guard generation == listGeneration, model.activeAccountID == accountID else { return }
+      guard beginLoadingMore(generation: generation) else { return }
+      do {
+        try await fetchPage(accountID: accountID, generation: generation, replace: false)
+        finishLoadingMore(generation: generation)
+      } catch {
+        finishLoadingMore(generation: generation)
+        guard !error.dashIsCancellation else { return }
+        guard generation == listGeneration, model.activeAccountID == accountID else { return }
+        // Soft stop: keep the rows we have and let the footer retry later.
+        if error.dashIsRateLimited { return }
+        self.error = error.dashActionableMessage
+        return
+      }
     }
   }
 
@@ -228,30 +348,67 @@ struct ZonesView: View {
     guard let accountID = model.activeAccountID, !isLoadingMore, pageState.canLoadMore
     else { return }
     let generation = listGeneration
-    let pageNumber = pageState.nextPage
-    isLoadingMore = true
-    defer { isLoadingMore = false }
+    guard beginLoadingMore(generation: generation) else { return }
+    defer { finishLoadingMore(generation: generation) }
     do {
-      let page = try await model.client.listZones(
-        accountID: accountID, page: pageNumber, perPage: Self.pageSize)
-      guard !Task.isCancelled else { return }
-      guard generation == listGeneration, model.activeAccountID == accountID else { return }
-      zones += page.items
-      pageState.absorb(
-        info: page.resultInfo, received: page.items.count, loaded: zones.count,
-        pageSize: Self.pageSize)
-      model.featureCache.storeZones(zones, accountID: accountID)
-      MetricsWidgetPublisher.syncDomains(
-        zones,
-        accountID: accountID,
-        accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
-        replacesCatalog: !pageState.canLoadMore)
+      try await fetchPage(accountID: accountID, generation: generation, replace: false)
       error = nil
     } catch {
       guard !error.dashIsCancellation else { return }
       guard generation == listGeneration, model.activeAccountID == accountID else { return }
       self.error = error.dashActionableMessage
     }
+  }
+
+  private func fetchPage(accountID: String, generation: Int, replace: Bool) async throws {
+    let pageNumber = pageState.nextPage
+    let page = try await model.client.listZones(
+      accountID: accountID, page: pageNumber, perPage: Self.pageSize)
+    guard !Task.isCancelled else { throw CancellationError() }
+    guard generation == listGeneration, model.activeAccountID == accountID else {
+      throw CancellationError()
+    }
+    var seenIDs = replace ? Set<String>() : Set(zones.map(\.id))
+    let uniqueItems = page.items.filter { seenIDs.insert($0.id).inserted }
+    if replace {
+      zones = uniqueItems
+      seedPinsIfNeeded(from: uniqueItems, accountID: accountID)
+    } else {
+      zones += uniqueItems
+    }
+    pageState.absorb(
+      info: page.resultInfo,
+      requestedPage: pageNumber,
+      received: page.items.count,
+      added: uniqueItems.count,
+      loaded: zones.count,
+      pageSize: Self.pageSize)
+    model.featureCache.storeZones(
+      zones,
+      accountID: accountID,
+      catalogIsComplete: !pageState.canLoadMore)
+    MetricsWidgetPublisher.syncDomains(
+      zones,
+      accountID: accountID,
+      accountName: model.accounts.first { $0.id == accountID }?.name ?? accountID,
+      replacesCatalog: !pageState.canLoadMore)
+  }
+
+  /// A pagination task may finish after a force refresh has started a newer
+  /// generation. Only the generation that mounted the footer spinner may
+  /// clear it; otherwise the old completion re-arms the same next-page request
+  /// while the new request is still in flight.
+  private func beginLoadingMore(generation: Int) -> Bool {
+    guard generation == listGeneration, !isLoadingMore else { return false }
+    loadingMoreGeneration = generation
+    isLoadingMore = true
+    return true
+  }
+
+  private func finishLoadingMore(generation: Int) {
+    guard loadingMoreGeneration == generation else { return }
+    loadingMoreGeneration = nil
+    isLoadingMore = false
   }
 
   /// First non-empty zone load for an account seeds up to four pins so Home
@@ -267,6 +424,107 @@ struct ZonesView: View {
       })
     pinnedZoneData = result.pins
     pinnedZonesInitialized = result.initializedAccounts
+  }
+}
+
+/// List Zones pagination policy shared by the Domains screen and its tests.
+enum ZonesCatalogFetchRules {
+  /// Cloudflare's List Zones `per_page` max — raising past this is rejected.
+  static let pageSize = 50
+  /// Automatic back-to-back pages on open. Same ceiling Email Routing already
+  /// uses for its domains index (~2 000 zones). Beyond it, or after a 429, the
+  /// infinite-scroll footer continues so a huge account cannot burn the token
+  /// rate budget just by opening Domains.
+  static let eagerPageBudget = 40
+
+  static func shouldContinueEagerly(pagesFetched: Int, canLoadMore: Bool) -> Bool {
+    canLoadMore && pagesFetched < eagerPageBudget
+  }
+}
+
+struct DomainsGroupingPresentationUpdate: Equatable {
+  let groupsByStatus: Bool
+  let animates: Bool
+}
+
+/// The persisted preference is intent; this rule decides how the page adopts
+/// it visually. Initial state is seeded without an arrival animation, while a
+/// later user toggle owns one interruptible regrouping morph in the page tree.
+enum DomainsGroupingPresentationRules {
+  static func update(
+    displayed: Bool?,
+    target: Bool,
+    reduceMotion: Bool = false
+  ) -> DomainsGroupingPresentationUpdate? {
+    guard displayed != target else { return nil }
+    return DomainsGroupingPresentationUpdate(
+      groupsByStatus: target,
+      animates: displayed != nil && !reduceMotion)
+  }
+}
+
+/// Groups domains for the categorized grid: Pinned first (pin order), then
+/// status buckets. A pinned domain only appears in Pinned — not again under
+/// its status — so the sections stay disjoint.
+enum DomainStatusSections {
+  static let pinnedKey = "pinned"
+  /// Preferred status order after Pinned — anything else sorts alphabetically.
+  static let preferredKeys = ["active", "pending", "initializing", "moved"]
+
+  struct Section: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let zones: [CloudflareZone]
+  }
+
+  static func make(from zones: [CloudflareZone], pinnedIDs: [String]) -> [Section] {
+    let byID = Dictionary(uniqueKeysWithValues: zones.map { ($0.id, $0) })
+    let pinnedSet = Set(pinnedIDs)
+    var sections: [Section] = []
+
+    let pinnedZones = pinnedIDs.compactMap { byID[$0] }
+    if !pinnedZones.isEmpty {
+      sections.append(
+        Section(id: pinnedKey, title: DashL10n.ui("Pinned"), zones: pinnedZones))
+    }
+
+    var buckets: [(key: String, zones: [CloudflareZone])] = []
+    var indexByKey: [String: Int] = [:]
+    for zone in zones where !pinnedSet.contains(zone.id) {
+      let key = (zone.status ?? "unknown").lowercased()
+      if let index = indexByKey[key] {
+        buckets[index].zones.append(zone)
+      } else {
+        indexByKey[key] = buckets.count
+        buckets.append((key, [zone]))
+      }
+    }
+    buckets.sort { left, right in
+      let leftRank = preferredKeys.firstIndex(of: left.key) ?? Int.max
+      let rightRank = preferredKeys.firstIndex(of: right.key) ?? Int.max
+      if leftRank != rightRank { return leftRank < rightRank }
+      return left.key < right.key
+    }
+    sections.append(
+      contentsOf: buckets.map { bucket in
+        Section(
+          id: bucket.key,
+          title: statusTitle(bucket.key),
+          zones: bucket.zones)
+      })
+    return sections
+  }
+
+  /// Prefer literal catalog keys so status section titles stay extractable
+  /// (`DashL10n.ui(key.capitalized)` alone leaves "Moved" looking stale).
+  private static func statusTitle(_ key: String) -> String {
+    switch key {
+    case "active": DashL10n.ui("Active")
+    case "pending": DashL10n.ui("Pending")
+    case "initializing": DashL10n.ui("Initializing")
+    case "moved": DashL10n.ui("Moved")
+    default: DashL10n.ui(key.capitalized)
+    }
   }
 }
 
@@ -332,12 +590,24 @@ struct DomainCardFace: View {
   /// Zone detail hero and color-customize preview.
   static let detailAspectRatio: CGFloat = 5.0 / 3.0
 
+  /// Accessibility sizes keep the expanded card tall enough for a two-line
+  /// domain, status, and detail metadata. The same resolver feeds every live,
+  /// placeholder, and customize landing seat so a morph never hands off to a
+  /// differently sized card.
+  static func detailAspectRatio(for dynamicTypeSize: DynamicTypeSize) -> CGFloat {
+    dynamicTypeSize.isAccessibilitySize ? gridAspectRatio : detailAspectRatio
+  }
+
   let name: String
   let status: String
   let seed: String
   let fillHex: UInt32
   var plan: String? = nil
   var meta: String? = nil
+  /// Optional low-contrast mark embedded behind the card contents. The mark is
+  /// clipped to the enamel face while the card's exterior emboss stays free to
+  /// paint beyond it.
+  var textureAsset: String? = nil
   /// Presence of the pinned marker, 0…1. The grid states the fact (1 when the
   /// zone is pinned); the flight hero fades it inversely to `detailReveal`
   /// because the marker is grid-pose vocabulary — the detail card leaves pin
@@ -431,6 +701,16 @@ struct DomainCardFace: View {
         // a painted tile rather than a flat fill.
         intensity: 0.055
       )
+      .overlay(alignment: .topTrailing) {
+        if let textureAsset {
+          SolarIcon(asset: textureAsset, size: 96, color: foreground)
+            .opacity(0.1)
+            .offset(x: 20, y: -22)
+            .accessibilityHidden(true)
+            .allowsHitTesting(false)
+        }
+      }
+      .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
     .dashEmbossed(.pigmented, cornerRadius: cornerRadius)
     .accessibilityElement(children: .combine)

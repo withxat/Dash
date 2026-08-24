@@ -471,10 +471,10 @@ private struct DashColdFailureExtentFloor: View {
   }
 }
 
-/// The translucent canvas wash a cold failure / empty tip lands on: dense at
-/// the bottom, then dissolving upward across two list-row seats so only the
-/// first couple of frozen placeholders remain legible.
-enum DashColdFailureWashRamp {
+/// The translucent canvas wash a settled full-screen prompt or local notice
+/// lands on: dense at the bottom, then dissolving upward across two list-row
+/// seats so only the first couple of preserved rows remain legible.
+enum DashTranslucentNoticeWashRamp {
   /// Physical rather than viewport-relative: large phones must not stretch the
   /// ramp until all four default skeleton rows remain visible.
   static let fadeDepth = DashTheme.Layout.subtitledListRow * 2
@@ -506,20 +506,25 @@ enum DashColdFailureWashRamp {
   }
 }
 
-enum DashColdFailureWashLayerRules {
+enum DashTranslucentNoticeWashLayerRules {
   static func mountsBackdropMaterial(reduceTransparency: Bool) -> Bool {
     !reduceTransparency
   }
 }
 
-private struct DashColdFailureWash: View {
+/// Shared bottom-dense material wash for settled full-screen prompts and
+/// local notices over preserved content. The caller owns the copy hierarchy;
+/// this view only paints one decorative, non-interactive backdrop.
+struct DashTranslucentNoticeWash: View {
+  let revealed: Bool
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
   var body: some View {
     GeometryReader { geometry in
-      let stops = DashColdFailureWashRamp.stops(for: geometry.size.height)
+      let stops = DashTranslucentNoticeWashRamp.stops(for: geometry.size.height)
       ZStack {
-        if DashColdFailureWashLayerRules.mountsBackdropMaterial(
+        if DashTranslucentNoticeWashLayerRules.mountsBackdropMaterial(
           reduceTransparency: reduceTransparency
         ) {
           Rectangle()
@@ -532,6 +537,11 @@ private struct DashColdFailureWash: View {
         ramp(stops: stops, tint: DashTheme.canvas)
       }
     }
+    .opacity(revealed ? 1 : 0)
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content,
+      value: revealed
+    )
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
@@ -556,17 +566,12 @@ private struct DashColdOverlayCopyView: View {
   /// Drives the top → bottom stagger; flipped on appear so the reveal always
   /// plays when copy lands on an already-mounted skeleton.
   @State private var revealed = false
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   var body: some View {
     // Fill the veil, centre the tip. Wash is full-bleed behind so the top stays
     // open over the skeleton and the mid/bottom carries the copy.
     ZStack {
-      DashColdFailureWash()
-        .opacity(revealed ? 1 : 0)
-        .animation(
-          reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.content,
-          value: revealed)
+      DashTranslucentNoticeWash(revealed: revealed)
 
       VStack(spacing: DashTheme.Spacing.comfortable) {
         SolarIcon(asset: copy.icon, size: 34, color: DashTheme.strong)

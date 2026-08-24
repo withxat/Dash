@@ -52,6 +52,51 @@ enum DashActionPhase: Equatable, Sendable {
   }
 }
 
+enum DashPillTitleLayer: Sendable {
+  case idle
+  case active
+}
+
+enum DashPillButtonPresentationRules {
+  static let titleTravel: CGFloat = 12
+
+  static func presentsActiveTitle(phase: DashActionPhase, override: Bool?) -> Bool {
+    override ?? phase.isActive
+  }
+
+  static func isInteractionDisabled(
+    phase: DashActionPhase,
+    isEnabled: Bool,
+    isInteractionLocked: Bool
+  ) -> Bool {
+    phase.isActive || !isEnabled || isInteractionLocked
+  }
+
+  static func opacity(isEnabled: Bool) -> Double {
+    isEnabled ? 1 : 0.45
+  }
+
+  static func titleOpacity(layer: DashPillTitleLayer, isActive: Bool) -> Double {
+    switch (layer, isActive) {
+    case (.idle, false), (.active, true): 1
+    case (.idle, true), (.active, false): 0
+    }
+  }
+
+  static func titleOffset(
+    layer: DashPillTitleLayer,
+    isActive: Bool,
+    reduceMotion: Bool
+  ) -> CGFloat {
+    guard !reduceMotion else { return 0 }
+    return switch (layer, isActive) {
+    case (.idle, false), (.active, true): 0
+    case (.idle, true): -titleTravel
+    case (.active, false): titleTravel
+    }
+  }
+}
+
 /// Fixed trailing slot shared by every action pill. The ring and Solar's
 /// `ui/Bold/CheckCircle` stay mounted in the same ZStack while opacity, blur,
 /// and scale swap their visibility.
@@ -157,13 +202,31 @@ struct DashActionStatusIcon: View {
 
 struct DashPillButton: View {
   let title: String
+  /// Optional title that replaces `title` while the action is in flight.
+  var activeTitle: String?
+  /// Defaults to the action phase; a caller may hold the active copy through
+  /// the page's own successful exit so it cannot flash back to the idle title.
+  var isActiveTitlePresented: Bool?
   /// Optional leading asset-catalog icon.
   var icon: String?
   var phase: DashActionPhase = .idle
-  /// Disabled state with the shared 0.45 dim; active phases disable without dimming.
+  /// Persistent disabled state with the shared 0.45 dim.
   var isEnabled = true
+  /// A transient lock that prevents duplicate actions without looking disabled.
+  var isInteractionLocked = false
   var onSuccessPresentationCompleted: (@MainActor () -> Void)?
   let action: () -> Void
+
+  private var presentsActiveTitle: Bool {
+    DashPillButtonPresentationRules.presentsActiveTitle(
+      phase: phase,
+      override: isActiveTitlePresented
+    )
+  }
+
+  private var displayedTitle: String {
+    DashL10n.ui(presentsActiveTitle ? (activeTitle ?? title) : title)
+  }
 
   var body: some View {
     Button(action: action) {
@@ -172,10 +235,19 @@ struct DashPillButton: View {
           SolarIcon(asset: icon, size: 20, color: DashTheme.inverse)
             .transition(.opacity)
         }
-        Text(DashL10n.ui(title))
-          .dashTextStyle(.button)
-          .contentTransition(.opacity)
+        if let activeTitle {
+          DashPillButtonTitleSeat(
+            idleTitle: DashL10n.ui(title),
+            activeTitle: DashL10n.ui(activeTitle),
+            isActive: presentsActiveTitle
+          )
+        } else {
+          Text(DashL10n.ui(title))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+        }
       }
+      .dashTextStyle(.button)
       .foregroundStyle(DashTheme.inverse)
       .frame(maxWidth: .infinity)
       .frame(height: DashTheme.Layout.actionPillHeight)
@@ -189,10 +261,55 @@ struct DashPillButton: View {
       .background(DashTheme.strong, in: DashTheme.pillShape)
     }
     .buttonStyle(DashPressButtonStyle())
-    .disabled(phase.isActive || !isEnabled)
-    .opacity(isEnabled ? 1 : 0.45)
+    .disabled(
+      DashPillButtonPresentationRules.isInteractionDisabled(
+        phase: phase,
+        isEnabled: isEnabled,
+        isInteractionLocked: isInteractionLocked
+      )
+    )
+    .opacity(DashPillButtonPresentationRules.opacity(isEnabled: isEnabled))
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(displayedTitle)
     .accessibilityValue(phase.accessibilityValue)
     .dashTrayDismissDisabled(phase.isActive)
+  }
+}
+
+private struct DashPillButtonTitleSeat: View {
+  let idleTitle: String
+  let activeTitle: String
+  let isActive: Bool
+
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  var body: some View {
+    ZStack {
+      title(idleTitle, layer: .idle)
+      title(activeTitle, layer: .active)
+    }
+    .clipped()
+    .animation(
+      reduceMotion ? DashTheme.Motion.reduced : DashTheme.Motion.iconSwap,
+      value: isActive
+    )
+    .accessibilityHidden(true)
+  }
+
+  private func title(_ value: String, layer: DashPillTitleLayer) -> some View {
+    Text(value)
+      .lineLimit(1)
+      .minimumScaleFactor(0.8)
+      .opacity(
+        DashPillButtonPresentationRules.titleOpacity(layer: layer, isActive: isActive)
+      )
+      .offset(
+        y: DashPillButtonPresentationRules.titleOffset(
+          layer: layer,
+          isActive: isActive,
+          reduceMotion: reduceMotion
+        )
+      )
   }
 }
 
@@ -246,16 +363,24 @@ struct DashTrayCancelButton: View {
 /// (onboarding's "Explore the demo"). A cancel is `DashTrayCancelButton`.
 struct DashTrayTextButton: View {
   let title: String
+  /// Prevents duplicate work without asking the disabled environment to
+  /// restyle this secondary action.
+  var isInteractionLocked = false
   let action: () -> Void
 
   var body: some View {
-    Button(action: action) {
+    Button {
+      guard !isInteractionLocked else { return }
+      action()
+    } label: {
       Text(title)
         .dashTextStyle(.buttonMedium)
         .foregroundStyle(DashTheme.subtle)
         .frame(maxWidth: .infinity, minHeight: 44)
     }
     .buttonStyle(DashPressButtonStyle())
+    .allowsHitTesting(!isInteractionLocked)
+    .accessibilityRespondsToUserInteraction(!isInteractionLocked)
   }
 }
 
@@ -742,6 +867,11 @@ extension Error {
   /// Task / URLSession cancellations from `.task` identity changes — not user-facing failures.
   var dashIsCancellation: Bool {
     self is CancellationError || (self as? URLError)?.code == .cancelled
+  }
+
+  /// Cloudflare returned 429 after the client's own Retry-After attempts.
+  var dashIsRateLimited: Bool {
+    (self as? CloudflareAPIError)?.isRateLimited == true
   }
 
   /// Structural absence for optional Cloudflare surfaces. Keep this exact:

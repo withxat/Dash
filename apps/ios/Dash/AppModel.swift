@@ -413,9 +413,7 @@ final class AppModel {
   func bootstrap() async {
     #if DEBUG
       let arguments = ProcessInfo.processInfo.arguments
-      if arguments.contains("-ui-preview-onboarding")
-        || arguments.contains("-ui-preview-onboarding-permissions")
-      {
+      if arguments.contains("-ui-preview-onboarding") {
         authState = .unauthenticated
         return
       }
@@ -431,11 +429,8 @@ final class AppModel {
             WatchtowerAnalyticsCardLayout.key, WatchtowerAnalyticsCardLayout.orderKey,
             WatchtowerAnalyticsCardLayout.hiddenKey, WatchtowerInboxStore.ignoredKey,
             WatchtowerInboxStore.readKey, DashWorkspaceGlowPreset.storageKey,
-            ICloudPreferencesSync.enabledKey,
+            DomainsListPreferences.groupByStatusKey,
           ]
-          + ICloudPreferencesSync.Group.allCases.flatMap {
-            [$0.modifiedAtKey, $0.pendingModifiedAtKey]
-          }
         for key in previewKeys {
           previewDefaults.removeObject(forKey: key)
         }
@@ -470,12 +465,10 @@ final class AppModel {
           let visible =
             ProcessInfo.processInfo.arguments.contains("-ui-preview-two-zones")
             ? Array(zones.prefix(2)) : zones
-          featureCache.set(FeatureCacheKey.zones("ui-account"), visible)
-          // Zone detail reads a per-zone key, not the list, so seed it too or
-          // the screen is unreachable without a live token.
-          for zone in visible {
-            featureCache.set(FeatureCacheKey.zone(zone.id), zone)
-          }
+          featureCache.storeZones(
+            visible,
+            accountID: "ui-account",
+            catalogIsComplete: true)
           if let traffic = try? JSONDecoder().decode(
             [ZoneAnalyticsPoint].self,
             from: Data(
@@ -551,6 +544,26 @@ final class AppModel {
             """.utf8))
         {
           featureCache.set(FeatureCacheKey.workers("ui-account"), workers)
+        }
+        if let projects = try? JSONDecoder().decode(
+          [PagesProject].self,
+          from: Data(
+            """
+            [
+              {"id":"ui-pages-marketing","name":"marketing-site","subdomain":"marketing-site-7ab.pages.dev","created_on":"2026-01-08T12:00:00Z","latest_deployment":{"id":"ui-pages-deploy-1","url":"https://marketing-site-7ab.pages.dev","environment":"production","created_on":"2026-07-16T01:04:05Z","latest_stage":{"name":"deploy","status":"success"}}},
+              {"id":"ui-pages-docs","name":"documentation-with-a-long-project-name","subdomain":"documentation-preview.pages.dev","created_on":"2026-02-10T08:30:00Z","latest_deployment":{"id":"ui-pages-deploy-2","url":"https://documentation-preview.pages.dev","environment":"preview","created_on":"2026-07-16T02:04:05Z","latest_stage":{"name":"deploy","status":"active"}}}
+            ]
+            """.utf8))
+        {
+          featureCache.set(FeatureCacheKey.pagesProjects("ui-account"), projects)
+          for project in projects {
+            featureCache.set(
+              FeatureCacheKey.pagesProject(accountID: "ui-account", name: project.name),
+              project)
+            featureCache.set(
+              FeatureCacheKey.pagesDeployments(accountID: "ui-account", name: project.name),
+              [PagesDeployment]())
+          }
         }
         let previewWorkerDeployments = [
           WorkerDeploymentSummary(

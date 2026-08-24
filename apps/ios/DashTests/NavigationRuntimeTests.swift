@@ -1,3 +1,6 @@
+import CloudflareAPI
+import Foundation
+import SwiftUI
 import Testing
 import UIKit
 
@@ -243,7 +246,7 @@ import UIKit
 }
 
 @MainActor
-@Test func resourcesDrillsHandOffAndOnlyTheDomainCardMorphs() throws {
+@Test func resourcesDrillsHandOffAndOnlySemanticCardSourcesMorph() throws {
   let navigator = DestinationNavigator()
   navigator.push(.feature(.workers))
   let feature = try #require(navigator.topEntry)
@@ -258,6 +261,27 @@ import UIKit
     DashPageTransitionRules.role(
       presentation: worker.presentation,
       hasHero: worker.origin?.hero != nil) == .flow)
+
+  let workerCardContent = FeatureResourceCardContent(
+    kind: .workers,
+    resourceID: "card-api",
+    routeKey: "card-api",
+    title: "card-api",
+    metadata: .worker(
+      modifiedOn: "2026-08-13T00:00:00Z",
+      createdOn: "2026-01-01T00:00:00Z"))
+  navigator.push(
+    .worker("card-api"),
+    origin: DashNavigationOrigin(
+      semanticID: Destination.worker("card-api").dashNavigationSemanticID,
+      anchorInstanceID: UUID(),
+      sourceFrame: CGRect(x: 16, y: 240, width: 361, height: 92),
+      hero: .featureResourceCard(accountID: "acc", content: workerCardContent)))
+  let workerCard = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: workerCard.presentation,
+      hasHero: workerCard.origin?.hero != nil) == .card)
 
   // The same zone reached without a card (a Home row, a recent) is a drill too.
   navigator.push(.zone("zone-1"))
@@ -274,6 +298,7 @@ import UIKit
       anchorInstanceID: UUID(),
       sourceFrame: CGRect(x: 16, y: 240, width: 176, height: 128),
       hero: .domainCard(
+        accountID: "acc",
         zoneID: "zone-2",
         name: "example.com",
         status: "Active",
@@ -285,10 +310,73 @@ import UIKit
     DashPageTransitionRules.role(
       presentation: cardZone.presentation,
       hasHero: cardZone.origin?.hero != nil) == .card)
+
+  navigator.push(.feature(.emailRouting))
+  let emailFeature = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: emailFeature.presentation,
+      hasHero: emailFeature.origin?.hero != nil) == .flow)
+
+  // A DNS managed-record guard opens the same screen without a card source.
+  navigator.push(.zoneEmailRouting("zone-3"))
+  let plainEmail = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: plainEmail.presentation,
+      hasHero: plainEmail.origin?.hero != nil) == .flow)
+
+  navigator.push(
+    .zoneEmailRouting("zone-4"),
+    origin: DashNavigationOrigin(
+      semanticID: Destination.zoneEmailRouting("zone-4").dashNavigationSemanticID,
+      anchorInstanceID: UUID(),
+      sourceFrame: CGRect(x: 200, y: 240, width: 176, height: 128),
+      hero: .emailRoutingCard(
+        accountID: "acc",
+        zoneID: "zone-4",
+        name: "mail.example",
+        status: "Ready",
+        seed: "mail.example",
+        fillHex: 0xB8DDA8)))
+  let emailCard = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: emailCard.presentation,
+      hasHero: emailCard.origin?.hero != nil) == .card)
+
+  navigator.push(.pagesProject("plain-site"))
+  let plainPages = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: plainPages.presentation,
+      hasHero: plainPages.origin?.hero != nil) == .flow)
+
+  let pagesCardContent = FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: "pages-card",
+    routeKey: "marketing-site",
+    title: "marketing-site",
+    metadata: .pages(
+      subdomain: "marketing-site.pages.dev",
+      deploymentStatus: "success"))
+  navigator.push(
+    .pagesProject("marketing-site"),
+    origin: DashNavigationOrigin(
+      semanticID: Destination.pagesProject("marketing-site").dashNavigationSemanticID,
+      anchorInstanceID: UUID(),
+      sourceFrame: CGRect(x: 16, y: 352, width: 361, height: 92),
+      hero: .featureResourceCard(accountID: "acc", content: pagesCardContent)))
+  let pagesCard = try #require(navigator.topEntry)
+  #expect(
+    DashPageTransitionRules.role(
+      presentation: pagesCard.presentation,
+      hasHero: pagesCard.origin?.hero != nil) == .card)
 }
 
 @Test func navigationOriginCarriesSemanticCardContentWithoutRequiringPixels() {
   let hero = DashNavigationHero.domainCard(
+    accountID: "acc",
     zoneID: "zone-1",
     name: "example.com",
     status: "Active",
@@ -301,6 +389,35 @@ import UIKit
     hero: hero)
 
   #expect(origin.hero == hero)
+
+  let emailHero = DashNavigationHero.emailRoutingCard(
+    accountID: "acc",
+    zoneID: "zone-2",
+    name: "mail.example",
+    status: "Misconfigured",
+    seed: "mail.example",
+    fillHex: 0xA8D8D8)
+  #expect(
+    DashNavigationOrigin(
+      semanticID: Destination.zoneEmailRouting("zone-2").dashNavigationSemanticID,
+      anchorInstanceID: UUID(),
+      hero: emailHero
+    ).hero == emailHero)
+
+  let resourceHero = DashNavigationHero.featureResourceCard(
+    accountID: "acc",
+    content: FeatureResourceCardContent(
+      kind: .pages,
+      resourceID: "site-id",
+      routeKey: "site",
+      title: "site",
+      metadata: .pages(subdomain: "site.pages.dev", deploymentStatus: "active")))
+  #expect(
+    DashNavigationOrigin(
+      semanticID: Destination.pagesProject("site").dashNavigationSemanticID,
+      anchorInstanceID: UUID(),
+      hero: resourceHero
+    ).hero == resourceHero)
 }
 
 @Test func tabFlowDefersOnlyAcrossAnActiveParentAppearanceTransition() {
@@ -414,6 +531,42 @@ import UIKit
       != DashWorkspaceHeaderLeading.dismissal(.closeToWorkspaceRoot).slotKind)
 }
 
+@Test func headerTrailingSeatIdentityTracksOrderedActionMembership() {
+  let entryID = UUID()
+  let pin = DashPageActionDescriptor.text(id: "pin", title: "Pin") {}
+  let updatedPin = DashPageActionDescriptor.text(
+    id: "pin", title: "Pinned", isEnabled: false
+  ) {}
+  let save = DashPageActionDescriptor.text(id: "save", title: "Save") {}
+  let upload = DashPageActionDescriptor.text(id: "upload", title: "Upload") {}
+  let more = DashPageActionDescriptor.text(id: "more", title: "More") {}
+  let done = DashPageActionDescriptor.text(id: "done", title: "Done") {}
+
+  let pinIdentity = DashWorkspaceHeaderTrailing.actions([pin])
+    .slotID(entryID: entryID)
+  // Label/enabled changes for one logical action update the standing control.
+  #expect(
+    pinIdentity
+      == DashWorkspaceHeaderTrailing.actions([updatedPin])
+      .slotID(entryID: entryID))
+  // Replacing membership remounts the whole seat through dashSeatHandoff.
+  #expect(
+    pinIdentity
+      != DashWorkspaceHeaderTrailing.actions([save])
+      .slotID(entryID: entryID))
+  #expect(
+    DashWorkspaceHeaderTrailing.actions([upload, more])
+      .slotID(entryID: entryID)
+      != DashWorkspaceHeaderTrailing.actions([done])
+      .slotID(entryID: entryID))
+  // Order is visual membership too: the trailing-primary glass seat changes.
+  #expect(
+    DashWorkspaceHeaderTrailing.actions([upload, more])
+      .slotID(entryID: entryID)
+      != DashWorkspaceHeaderTrailing.actions([more, upload])
+      .slotID(entryID: entryID))
+}
+
 @Test func headerDirectionFollowsTheMutation() {
   #expect(DashWorkspaceHeaderRules.direction(for: .push) == .forward)
   #expect(DashWorkspaceHeaderRules.direction(for: .back) == .backward)
@@ -473,6 +626,7 @@ import UIKit
       anchorInstanceID: UUID(),
       sourceFrame: CGRect(x: 16, y: 240, width: 176, height: 128),
       hero: .domainCard(
+        accountID: "acc",
         zoneID: "zone-1",
         name: "example.com",
         status: "Active",
@@ -495,6 +649,49 @@ import UIKit
   #expect(drill.travel == .zero)
   #expect(drill.duration == DashTheme.Motion.Page.flowEnterDuration)
   #expect(drill.dampingRatio == DashTheme.Motion.Page.flowDampingRatio)
+}
+
+@MainActor
+@Test func filteredEmailCardDismissalOverrideCanRestoreCardReturn() throws {
+  func makeNavigator() throws -> (DestinationNavigator, DashNavigationEntry.ID) {
+    let navigator = DestinationNavigator(chromeHosting: .workspace)
+    navigator.push(
+      .zoneEmailRouting("zone-mail"),
+      origin: DashNavigationOrigin(
+        semanticID: Destination.zoneEmailRouting("zone-mail").dashNavigationSemanticID,
+        anchorInstanceID: UUID(),
+        sourceFrame: CGRect(x: 16, y: 240, width: 176, height: 128),
+        hero: .emailRoutingCard(
+          accountID: "acc",
+          zoneID: "zone-mail",
+          name: "mail.example",
+          status: "Ready",
+          seed: "mail.example",
+          fillHex: 0xB8DDA8)))
+    return (navigator, try #require(navigator.topEntry?.id))
+  }
+
+  let (offNavigator, offEntryID) = try makeNavigator()
+  offNavigator.setCardSourceDismissalUsesFlow(true, entryID: offEntryID)
+  #expect(offNavigator.topEntry?.origin?.hero != nil)
+  offNavigator.pop()
+
+  #expect(offNavigator.topEntry == nil)
+  #expect(offNavigator.lastMutation?.entry?.origin?.hero == nil)
+  #expect(DashWorkspaceHeaderRules.role(for: offNavigator.lastMutation) == .flow)
+  let step = DashWorkspaceHeaderRules.step(
+    for: offNavigator.lastMutation,
+    reduceMotion: false)
+  #expect(step.duration == DashTheme.Motion.Page.flowExitDuration)
+  #expect(step.dampingRatio == DashTheme.Motion.Page.flowDampingRatio)
+
+  let (reenabledNavigator, reenabledEntryID) = try makeNavigator()
+  reenabledNavigator.setCardSourceDismissalUsesFlow(true, entryID: reenabledEntryID)
+  reenabledNavigator.setCardSourceDismissalUsesFlow(false, entryID: reenabledEntryID)
+  reenabledNavigator.pop()
+
+  #expect(reenabledNavigator.lastMutation?.entry?.origin?.hero != nil)
+  #expect(DashWorkspaceHeaderRules.role(for: reenabledNavigator.lastMutation) == .card)
 }
 
 @MainActor
@@ -911,6 +1108,11 @@ import UIKit
   let hero = CGRect(x: 16, y: 120, width: 360, height: 216)  // 5:3
   #expect(abs(grid.width / grid.height - DomainCardFace.gridAspectRatio) < 0.01)
   #expect(abs(hero.width / hero.height - DomainCardFace.detailAspectRatio) < 0.01)
+  #expect(
+    DomainCardFace.detailAspectRatio(for: .large) == DomainCardFace.detailAspectRatio)
+  #expect(
+    DomainCardFace.detailAspectRatio(for: .accessibility1)
+      == DomainCardFace.gridAspectRatio)
   // Which sources fly is not a frame heuristic — a tap either hands over a
   // `DashNavigationHero` or it is a flow drill (`DashPageTransitionRules`).
 
@@ -923,15 +1125,196 @@ import UIKit
   #expect(abs(mid.height - 172) < 0.01)
 }
 
-@Test func zoneDetailLandingSemanticMatchesDestination() {
+@Test func cardDetailLandingSemanticsMatchTheirDestinations() {
   let destination = Destination.zone("zone-abc")
   #expect(
     destination.dashNavigationLandingSemanticID
       == DashNavigationSemanticID(namespace: "zone-hero", value: "zone-abc"))
+  let emailDestination = Destination.zoneEmailRouting("zone-abc")
+  #expect(
+    emailDestination.dashNavigationLandingSemanticID
+      == DashNavigationSemanticID(namespace: "zone-email-routing-hero", value: "zone-abc"))
+  #expect(
+    emailDestination.dashNavigationLandingSemanticID
+      != destination.dashNavigationLandingSemanticID)
+  #expect(
+    Destination.worker("api").dashNavigationLandingSemanticID
+      == DashNavigationSemanticID(namespace: "worker-hero", value: "api"))
+  #expect(
+    Destination.pagesProject("site").dashNavigationLandingSemanticID
+      == DashNavigationSemanticID(namespace: "pages-project-hero", value: "site"))
+  #expect(
+    Destination.worker("api").dashNavigationLandingSemanticID
+      != Destination.pagesProject("api").dashNavigationLandingSemanticID)
   // Seat overlay eligibility: only routes that name a landing can fly a card.
   #expect(Destination.about.dashNavigationLandingSemanticID == nil)
   #expect(Destination.feature(.zones).dashNavigationLandingSemanticID == nil)
-  #expect(Destination.worker("api").dashNavigationLandingSemanticID == nil)
+}
+
+@Test func fullWidthResourceCardHandoffMovesWithoutGrowing() {
+  let source = CGRect(x: 16, y: 430, width: 361, height: 92)
+  let landing = CGRect(x: 16, y: 118, width: 361, height: 92)
+  let midpoint = DashCardMorphRules.heroFrame(
+    from: source,
+    to: landing,
+    detailProgress: 0.5)
+  #expect(midpoint.width == source.width)
+  #expect(midpoint.height == source.height)
+  #expect(midpoint.minX == source.minX)
+  #expect(midpoint.minY == 274)
+}
+
+@Test func featureResourceLandingPinsCapturedThenAdoptsLatest() {
+  let captured = FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: "project-id",
+    routeKey: "site",
+    title: "site",
+    metadata: .pages(subdomain: "old.pages.dev", deploymentStatus: "active"))
+  let latest = FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: "project-id",
+    routeKey: "site",
+    title: "site",
+    metadata: .pages(subdomain: "new.pages.dev", deploymentStatus: "success"))
+  let fallback = FeatureResourceCardContent(
+    kind: .pages,
+    resourceID: "site",
+    routeKey: "site",
+    title: "site",
+    metadata: .pages(subdomain: nil, deploymentStatus: nil))
+
+  #expect(
+    FeatureResourceCardLandingRules.content(
+      transitionActive: true,
+      captured: captured,
+      latest: latest,
+      fallback: fallback) == captured)
+  #expect(
+    FeatureResourceCardLandingRules.content(
+      transitionActive: false,
+      captured: captured,
+      latest: latest,
+      fallback: fallback) == latest)
+  #expect(
+    FeatureResourceCardLandingRules.content(
+      transitionActive: false,
+      captured: captured,
+      latest: nil,
+      fallback: fallback) == captured)
+}
+
+@Test @MainActor func featureResourceReturnHeroUsesNewestAccountScopedSnapshot() throws {
+  let cache = FeatureDataCache()
+  let listProject = try decodedPagesProject(
+    id: "project-id", name: "site", subdomain: "list.pages.dev", status: "active")
+  let detailProject = try decodedPagesProject(
+    id: "project-id", name: "site", subdomain: "detail.pages.dev", status: "success")
+  let refreshedListProject = try decodedPagesProject(
+    id: "project-id", name: "site", subdomain: "new-list.pages.dev", status: "failure")
+  cache.set(
+    FeatureCacheKey.pagesProjects("account-a"), [listProject],
+    fetchedAt: Date(timeIntervalSince1970: 100), ttl: nil)
+  cache.set(
+    FeatureCacheKey.pagesProject(accountID: "account-a", name: "site"), detailProject,
+    fetchedAt: Date(timeIntervalSince1970: 200), ttl: nil)
+
+  #expect(
+    PagesResourceCardCache.latestProject(
+      accountID: "account-a", projectName: "site", cache: cache) == detailProject)
+  let captured = DashNavigationHero.featureResourceCard(
+    accountID: "account-a",
+    content: pagesResourceCardContent(listProject))
+  let detailHero = DashNavigationHero.featureResourceCard(
+    accountID: "account-a",
+    content: pagesResourceCardContent(detailProject))
+  #expect(captured.returnCacheResolution(from: cache) == .replace(detailHero))
+
+  cache.set(
+    FeatureCacheKey.pagesProjects("account-a"), [refreshedListProject],
+    fetchedAt: Date(timeIntervalSince1970: 300), ttl: nil)
+  #expect(
+    PagesResourceCardCache.latestProject(
+      accountID: "account-a", projectName: "site", cache: cache) == refreshedListProject)
+  let listHero = DashNavigationHero.featureResourceCard(
+    accountID: "account-a",
+    content: pagesResourceCardContent(refreshedListProject))
+  #expect(captured.returnCacheResolution(from: cache) == .replace(listHero))
+
+  let otherAccount = DashNavigationHero.featureResourceCard(
+    accountID: "account-b",
+    content: pagesResourceCardContent(listProject))
+  #expect(otherAccount.returnCacheResolution(from: cache) == .preserveCaptured)
+
+  let oldWorker = try decodedWorkerScript(
+    id: "api", modifiedOn: "2026-08-10T00:00:00Z")
+  let newWorker = try decodedWorkerScript(
+    id: "api", modifiedOn: "2026-08-13T00:00:00Z")
+  let workerHero = DashNavigationHero.featureResourceCard(
+    accountID: "account-a",
+    content: workerResourceCardContent(oldWorker))
+  #expect(workerHero.returnCacheResolution(from: cache) == .preserveCaptured)
+  cache.set(FeatureCacheKey.workers("account-a"), [newWorker], ttl: nil)
+  #expect(
+    workerHero.returnCacheResolution(from: cache)
+      == .replace(
+        .featureResourceCard(
+          accountID: "account-a",
+          content: workerResourceCardContent(newWorker))))
+}
+
+@Test @MainActor func featureResourceCardInkClearsContrastAcrossTraitsAndWatermark() throws {
+  for kind in [FeatureResourceCardKind.workers, .pages] {
+    for style in [UIUserInterfaceStyle.light, .dark] {
+      for contrast in [UIAccessibilityContrast.normal, .high] {
+        let traits = UITraitCollection(traitsFrom: [
+          UITraitCollection(userInterfaceStyle: style),
+          UITraitCollection(accessibilityContrast: contrast),
+        ])
+        let canvas = try #require(testRGBA(UIColor(DashTheme.canvas), traits: traits))
+        let fill = try #require(
+          testRGBA(
+            UIColor(FeatureResourceCardPalette.fill(for: kind)),
+            traits: traits))
+        let foreground = try #require(
+          testRGBA(
+            UIColor(FeatureResourceCardPalette.foreground(for: kind)),
+            traits: traits))
+        let texture = try #require(
+          testRGBA(
+            UIColor(FeatureResourceCardPalette.texture(for: kind)),
+            traits: traits))
+        let base = testComposite(fill, over: canvas)
+        let watermarked = testComposite(texture, opacity: 0.1, over: base)
+        #expect(testContrastRatio(foreground, base) >= 4.5)
+        #expect(testContrastRatio(foreground, watermarked) >= 4.5)
+        if kind == .workers {
+          let white = try #require(testRGBA(UIColor.white, traits: traits))
+          let brightestGrain = testRGBOffset(base, amount: 0.055 / 2)
+          let brightestTopSheen = testComposite(
+            white,
+            opacity: style == .dark ? 0.12 : 0.18,
+            over: brightestGrain
+          )
+          #expect(testContrastRatio(foreground, brightestTopSheen) >= 4.5)
+          #expect(
+            FeatureResourceCardPalette.foregroundHex(
+              for: kind,
+              interfaceStyle: style,
+              accessibilityContrast: contrast
+            ) == 0xFFFFFF
+          )
+          #expect(
+            FeatureResourceCardPalette.textureHex(
+              for: kind,
+              interfaceStyle: style,
+              accessibilityContrast: contrast
+            ) == 0x0A0A0A
+          )
+        }
+      }
+    }
+  }
 }
 
 @MainActor
@@ -972,4 +1355,103 @@ import UIKit
   state.removePresentationReporters(forEntryID: entryID)
   #expect(!state.trayPresented)
   #expect(!state.coverPresented)
+}
+
+private struct TestRGBA {
+  let red: Double
+  let green: Double
+  let blue: Double
+  let alpha: Double
+}
+
+private func testRGBA(_ color: UIColor, traits: UITraitCollection) -> TestRGBA? {
+  var red: CGFloat = 0
+  var green: CGFloat = 0
+  var blue: CGFloat = 0
+  var alpha: CGFloat = 0
+  guard
+    color.resolvedColor(with: traits).getRed(
+      &red, green: &green, blue: &blue, alpha: &alpha)
+  else { return nil }
+  return TestRGBA(
+    red: Double(red),
+    green: Double(green),
+    blue: Double(blue),
+    alpha: Double(alpha))
+}
+
+private func testComposite(
+  _ foreground: TestRGBA,
+  opacity: Double = 1,
+  over background: TestRGBA
+) -> TestRGBA {
+  let alpha = foreground.alpha * opacity
+  let outputAlpha = alpha + background.alpha * (1 - alpha)
+  guard outputAlpha > 0 else {
+    return TestRGBA(red: 0, green: 0, blue: 0, alpha: 0)
+  }
+  func channel(_ foreground: Double, _ background: Double) -> Double {
+    (foreground * alpha + background * background.alpha * (1 - alpha)) / outputAlpha
+  }
+  return TestRGBA(
+    red: channel(foreground.red, background.red),
+    green: channel(foreground.green, background.green),
+    blue: channel(foreground.blue, background.blue),
+    alpha: outputAlpha)
+}
+
+private func testRGBOffset(_ color: TestRGBA, amount: Double) -> TestRGBA {
+  TestRGBA(
+    red: min(1, max(0, color.red + amount)),
+    green: min(1, max(0, color.green + amount)),
+    blue: min(1, max(0, color.blue + amount)),
+    alpha: color.alpha)
+}
+
+private func testContrastRatio(_ first: TestRGBA, _ second: TestRGBA) -> Double {
+  func luminance(_ color: TestRGBA) -> Double {
+    func linearized(_ component: Double) -> Double {
+      component <= 0.04045
+        ? component / 12.92
+        : pow((component + 0.055) / 1.055, 2.4)
+    }
+    return 0.2126 * linearized(color.red)
+      + 0.7152 * linearized(color.green)
+      + 0.0722 * linearized(color.blue)
+  }
+  let firstLuminance = luminance(first)
+  let secondLuminance = luminance(second)
+  return (max(firstLuminance, secondLuminance) + 0.05)
+    / (min(firstLuminance, secondLuminance) + 0.05)
+}
+
+private func decodedPagesProject(
+  id: String,
+  name: String,
+  subdomain: String,
+  status: String
+) throws -> PagesProject {
+  try JSONDecoder().decode(
+    PagesProject.self,
+    from: Data(
+      """
+      {
+        "id":"\(id)",
+        "name":"\(name)",
+        "subdomain":"\(subdomain)",
+        "latest_deployment":{
+          "id":"deployment",
+          "latest_stage":{"name":"deploy","status":"\(status)"}
+        }
+      }
+      """.utf8))
+}
+
+private func decodedWorkerScript(id: String, modifiedOn: String) throws -> WorkerScript {
+  try JSONDecoder().decode(
+    WorkerScript.self,
+    from: Data(
+      """
+      {"id":"\(id)","modified_on":"\(modifiedOn)"}
+      """.utf8))
 }
