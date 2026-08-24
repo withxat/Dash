@@ -3,7 +3,7 @@ import Testing
 
 @testable import Dash
 
-@Test func keychainCredentialSnapshotPreservesEveryStoredField() throws {
+@Test func keychainCredentialSnapshotPreservesEveryStoredField() {
   let snapshot = KeychainStoredCredentialSnapshot(
     accessToken: "old-access",
     refreshToken: "old-refresh",
@@ -14,14 +14,6 @@ import Testing
   #expect(snapshot.refreshToken == "old-refresh")
   #expect(snapshot.rawExpirationTimestamp == "1900000000.125")
   #expect(snapshot.rawGrantedScopes == "account.read dns.read zone.read")
-  #expect(snapshot.grantedScopes == ["account.read", "dns.read", "zone.read"])
-
-  let tokens = try #require(snapshot.tokenSet)
-  #expect(tokens.accessToken == "old-access")
-  #expect(tokens.refreshToken == "old-refresh")
-  #expect(tokens.scope == "account.read dns.read zone.read")
-  // The absolute Keychain timestamp must never be converted into a fresh TTL.
-  #expect(tokens.expiresIn == nil)
 }
 
 @Test func keychainReplacementReceiptRestoresOnlyItsExactInstalledSnapshot() {
@@ -82,13 +74,12 @@ import Testing
   #expect(!replacement.permitsRestoration(over: expiryMutation))
 }
 
-@Test func keychainSnapshotWithoutAccessTokenCannotCreateCleanupClientTokens() {
+@Test func keychainSnapshotWithOrphanedFieldsIsNotEmpty() {
   let orphanedFields = KeychainStoredCredentialSnapshot(
     accessToken: nil,
     refreshToken: "orphaned-refresh",
     rawExpirationTimestamp: "1900000000",
     rawGrantedScopes: "zone.read")
 
-  #expect(orphanedFields.tokenSet == nil)
   #expect(orphanedFields != .empty)
 }

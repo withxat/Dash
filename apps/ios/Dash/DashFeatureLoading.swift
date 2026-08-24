@@ -193,7 +193,6 @@ enum DashBodyTransition {
 enum DashBodyPlaceholderDepth {
   static let listRows = 4
   static let domainCards = 6
-  static let infoRows = 4
 }
 
 /// Settled-empty copy for a `DashFeatureList` — lands on the same placeholder

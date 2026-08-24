@@ -104,9 +104,8 @@ import UIKit
 }
 
 @Test func kvJSONFormattingPrettyPrintsAndRejectsPlainText() {
-  #expect(KVJSONFormatting.isValidJSON(#"{"a":1}"#))
-  #expect(KVJSONFormatting.isValidJSON(#""hello""#))
-  #expect(!KVJSONFormatting.isValidJSON("not-json"))
+  #expect(KVJSONFormatting.prettyPrinted(#"{"a":1}"#) != nil)
+  #expect(KVJSONFormatting.prettyPrinted(#""hello""#) != nil)
   #expect(KVJSONFormatting.prettyPrinted("not-json") == nil)
 
   let pretty = KVJSONFormatting.prettyPrinted(#"{"title":"Dash","n":2}"#)

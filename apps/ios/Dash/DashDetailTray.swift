@@ -135,18 +135,3 @@ extension R2Object {
     ].compactMap { $0 }
   }
 }
-
-extension String {
-  /// snake_case / kebab-case → "Title Case"; matches the app's existing
-  /// `ZoneSetting.displayTitle` convention (Cloudflare keys are snake_case).
-  fileprivate var humanizedFieldLabel: String {
-    replacingOccurrences(of: "_", with: " ")
-      .replacingOccurrences(of: "-", with: " ")
-      .capitalized
-  }
-
-  /// Identifier-like keys read better monospaced.
-  fileprivate var isMonoKey: Bool {
-    ["id", "uuid", "tag", "sitekey", "key", "hash", "token", "etag"].contains(lowercased())
-  }
-}

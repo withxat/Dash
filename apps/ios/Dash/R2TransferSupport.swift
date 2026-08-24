@@ -258,10 +258,11 @@ struct R2TemporaryFile: Hashable, Sendable {
   /// exports, and interrupted operations do not outlive the session.
   static func removeAllFiles(
     in temporaryDirectory: URL = FileManager.default.temporaryDirectory
-  ) async {
+  ) async throws {
     let root = rootURL(in: temporaryDirectory)
-    await Task.detached(priority: .utility) {
-      try? FileManager.default.removeItem(at: root)
+    try await Task.detached(priority: .utility) {
+      guard FileManager.default.fileExists(atPath: root.path) else { return }
+      try FileManager.default.removeItem(at: root)
     }.value
   }
 }

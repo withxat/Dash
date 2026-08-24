@@ -6,7 +6,7 @@ import UIKit
 
 @testable import Dash
 
-@Test @MainActor func emailRoutingListTokenReadsSettingsCacheBeforeSnapshot() {
+@Test @MainActor func emailRoutingListStatusReadsSettingsCacheBeforeSnapshot() {
   let cache = FeatureDataCache()
   let zoneID = "zone-list-status"
   let settings = EmailRoutingSettings(
@@ -14,7 +14,9 @@ import UIKit
   // Settings-only write must not require a full snapshot — that was how the
   // domains index waited on a detail visit before any row could badge.
   EmailRoutingStatusMapping.storeListSettings(settings, zoneID: zoneID, cache: cache)
-  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .ready)
+  #expect(
+    EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: cache)
+      .flatMap { EmailRoutingStatusMapping.listCardToken(for: $0) } == .ready)
   #expect(cache.get(FeatureCacheKey.emailRouting(zoneID)) as EmailRoutingSnapshot? == nil)
 
   let misconfigured = EmailRoutingSettings(
@@ -23,9 +25,13 @@ import UIKit
     FeatureCacheKey.emailRouting(zoneID),
     EmailRoutingSnapshot(settings: misconfigured, rules: [], catchAll: nil))
   // Settings cache still wins while present — list fan-out owns that key.
-  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .ready)
+  #expect(
+    EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: cache)
+      .flatMap { EmailRoutingStatusMapping.listCardToken(for: $0) } == .ready)
   cache.remove(FeatureCacheKey.emailRoutingSettings(zoneID))
-  #expect(EmailRoutingStatusMapping.listToken(zoneID: zoneID, cache: cache) == .misconfigured)
+  #expect(
+    EmailRoutingStatusMapping.listSettings(zoneID: zoneID, cache: cache)
+      .flatMap { EmailRoutingStatusMapping.listCardToken(for: $0) } == .misconfigured)
   #expect(EmailRoutingStatusMapping.token(for: misconfigured) == .misconfigured)
   #expect(
     EmailRoutingStatusMapping.token(
@@ -548,6 +554,19 @@ private actor ZoneSecurityLevelTestLatch {
       "write:high:start",
       "write:high:end",
     ])
+}
+
+@Test @MainActor func underAttackPersistedStateCanBeClearedAtCredentialBoundary() throws {
+  let suite = "dash.tests.under-attack-clear.\(UUID().uuidString)"
+  let defaults = try #require(UserDefaults(suiteName: suite))
+  defer { defaults.removePersistentDomain(forName: suite) }
+  defaults.set("high", forKey: ZoneSecurityLevelOperation.key(for: "zone-a"))
+  defaults.set("keep", forKey: "unrelated")
+
+  ZoneSecurityLevelOperation.clearPersistedState(defaults: defaults)
+
+  #expect(defaults.object(forKey: ZoneSecurityLevelOperation.key(for: "zone-a")) == nil)
+  #expect(defaults.string(forKey: "unrelated") == "keep")
 }
 
 @Test @MainActor func underAttackEnableDefinitiveFailureClearsStagedStashAndReleasesGate()

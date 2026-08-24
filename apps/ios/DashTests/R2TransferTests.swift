@@ -79,7 +79,7 @@ private func r2Object(
   try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
   try Data("payload".utf8).write(to: operation.appending(path: "object.bin"))
 
-  await R2TemporaryFile.removeAllFiles(in: sandbox)
+  try await R2TemporaryFile.removeAllFiles(in: sandbox)
 
   #expect(!FileManager.default.fileExists(atPath: r2Root.path))
   #expect(FileManager.default.fileExists(atPath: sibling.path))

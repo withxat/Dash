@@ -195,16 +195,6 @@ extension View {
     modifier(DashCatalogScreenModifier())
   }
 
-  /// Canvas scroll chrome for pushed feature/detail screens. Tab roots use
-  /// `dashCatalogScreen`; destinations need the same edge-pocket kill so iOS
-  /// 26 doesn't leave a white slab under the (now hidden) dock — and the same
-  /// header frost, so a pushed screen frosts its bar exactly like a root.
-  func dashDetailCanvasChrome() -> some View {
-    modifier(DashScrollEdgeEffectsHidden())
-      .background { DashScrollViewConfigurator(fill: .canvas) }
-      .dashHeaderScrim()
-  }
-
   /// The header frost, as a layer INSIDE the screen: above the scrolling
   /// content, below the page-owned navigation chrome. That z-order keeps the
   /// title and controls crisp on top of the blur.

@@ -118,6 +118,27 @@ import Testing
   #expect(requestedPages == [1, 2])
 }
 
+@Test func boundedPageLoaderReportsAnIncompleteCatalogAtItsBudget() async throws {
+  let zones = try makeZones(count: 120)
+  let recorder = PageRequestRecorder()
+  let result = try await DashPageLoader.load(
+    pageSize: 50,
+    maximumPages: 2,
+    id: \.id
+  ) { page, perPage in
+    await recorder.record(page: page, perPage: perPage)
+    let start = (page - 1) * perPage
+    let end = min(start + perPage, zones.count)
+    return Page(
+      items: Array(zones[start..<end]),
+      resultInfo: ResultInfo(page: page, perPage: perPage, totalCount: zones.count))
+  }
+
+  #expect(result.items.count == 100)
+  #expect(!result.isComplete)
+  #expect(await recorder.pages == [1, 2])
+}
+
 @Test func fullPageLoaderPropagatesCancellation() async throws {
   let task = Task {
     try await DashPageLoader.loadAll(pageSize: 50, id: \.id) {

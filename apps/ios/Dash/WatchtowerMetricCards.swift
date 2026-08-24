@@ -12,8 +12,6 @@ enum WatchtowerMetricChartRenderingMode: Equatable {
   static func resolved(isEditing: Bool) -> Self {
     isEditing ? .placeholder : .live
   }
-
-  var usesDitherChart: Bool { self == .live }
 }
 
 private struct WatchtowerChartVisualSwapProfile: Equatable {
@@ -26,8 +24,6 @@ private struct WatchtowerChartVisualSwapProfile: Equatable {
   let placeholderEffect: Effect
   let exitDuration: Double
   let enterDuration: Double
-
-  var totalDuration: Double { exitDuration + enterDuration }
 
   static func resolved(isExpanded: Bool) -> Self {
     if isExpanded {
@@ -401,8 +397,6 @@ struct WatchtowerMetricChartCard: View {
   let renderingMode: WatchtowerMetricChartRenderingMode
   let onToggleExpanded: () -> Void
   let onRemove: () -> Void
-  /// Called with `true` while the expanded chart's tooltip owns the finger.
-  var onScrubChange: (Bool) -> Void = { _ in }
   @State private var selectedSeriesID: String?
 
   private var total: (text: String, numeric: Double) {
@@ -552,20 +546,12 @@ struct WatchtowerMetricChartCard: View {
       }
     }
     .onChange(of: range) { selectedSeriesID = nil }
-    // Collapse, the editor's placeholder swap, and unmount all take the live
-    // chart away without an end-of-scrub callback — release the pager by hand
-    // so a chart that vanished mid-hold can't strand the tab swipe.
-    .onChange(of: isExpanded) {
-      selectedSeriesID = nil
-      onScrubChange(false)
-    }
+    .onChange(of: isExpanded) { selectedSeriesID = nil }
     .onChange(of: renderingMode) {
       if renderingMode == .placeholder {
         selectedSeriesID = nil
-        onScrubChange(false)
       }
     }
-    .onDisappear { onScrubChange(false) }
   }
 
   private var cardChrome: some View {
@@ -697,9 +683,6 @@ struct WatchtowerMetricChartCard: View {
         .foregroundStyle(DashTheme.placeholder)
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: expandedHeight, alignment: .leading)
-        // A refresh that empties the range takes the chart — and its
-        // end-of-scrub callback — with it.
-        .onAppear { onScrubChange(false) }
     } else {
       DashAreaChart(
         data: chart.expandedData,
@@ -708,8 +691,7 @@ struct WatchtowerMetricChartCard: View {
           showsLegend: false,
           accessibility: chartAccessibility),
         highlighted: selectedSeriesID != nil,
-        selection: $selectedSeriesID,
-        onHoverChange: { index in onScrubChange(index != nil) }
+        selection: $selectedSeriesID
       )
       .frame(height: expandedHeight)
     }

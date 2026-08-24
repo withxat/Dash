@@ -129,7 +129,8 @@ struct WatchtowerWidgetSnapshot: Codable, Hashable, Sendable {
     try JSONEncoder().encode(self).write(to: url, options: .atomic)
   }
 
-  static func clear(at url: URL) {
-    try? FileManager.default.removeItem(at: url)
+  static func clear(at url: URL) throws {
+    guard FileManager.default.fileExists(atPath: url.path) else { return }
+    try FileManager.default.removeItem(at: url)
   }
 }

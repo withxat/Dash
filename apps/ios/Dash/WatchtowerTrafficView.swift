@@ -245,9 +245,6 @@ struct WatchtowerTrafficView: View {
       },
       onRemove: {
         removeMetric(metric)
-      },
-      onScrubChange: { scrubbing in
-        customization.setScrubbing(scrubbing, for: metric)
       }
     )
   }

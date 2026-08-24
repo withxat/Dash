@@ -52,7 +52,7 @@ packages/
 docs/                    App 图标等公开文档资源
 ```
 
-iOS App 链接的本地 Swift 包是 `cloudflare-api`、`gradient-avatars`、`SwiftDitherKit`、`SwiftGlobeKit`、`BlossomColorPicker`。`legal` 是 App 内与 `dash.xat.sh` 法律页的同一份源。
+iOS App 链接的本地 Swift 包是 `cloudflare-api`、`gradient-avatars`、`SwiftDitherKit` 和 `SwiftGlobeKit`。`BlossomColorPicker` 作为单独测试的 vendored 包保留；`legal` 是 App 内与 `dash.xat.sh` 法律页的同一份源。
 
 ## 环境要求
 

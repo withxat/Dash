@@ -152,6 +152,12 @@ enum ZoneSecurityLevelOperation {
     "\(keyPrefix)\(zoneID)"
   }
 
+  static func clearPersistedState(defaults: UserDefaults = .standard) {
+    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix(keyPrefix) {
+      defaults.removeObject(forKey: key)
+    }
+  }
+
   static func setUnderAttack(
     zoneID: String,
     enabled: Bool,

@@ -36,11 +36,6 @@ enum KVJSONFormatting {
     byteCount <= displayByteLimit
   }
 
-  static func isValidJSON(_ text: String) -> Bool {
-    guard let data = text.data(using: .utf8) else { return false }
-    return (try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])) != nil
-  }
-
   /// Returns pretty-printed JSON when `text` parses; otherwise `nil`.
   static func prettyPrinted(_ text: String) -> String? {
     guard let data = text.data(using: .utf8),

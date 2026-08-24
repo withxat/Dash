@@ -108,7 +108,6 @@ import UIKit
   let source = CGRect(x: 20, y: 132, width: 164, height: 131.2)
   let landing = CGRect(x: 16, y: 112, width: 358, height: 214.8)
 
-  #expect(!DashCardMorphRules.movesPages)
   #expect(
     DashCardMorphRules.heroFrame(
       from: source,

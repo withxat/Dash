@@ -137,11 +137,6 @@ final class WatchtowerChartCustomizationState {
   private(set) var hidden: Set<WatchtowerAnalyticsMetric>
   private(set) var draggedMetric: WatchtowerAnalyticsMetric?
   private(set) var dropTargetMetric: WatchtowerAnalyticsMetric?
-  /// Expanded charts whose tooltip currently owns the finger. An engaged scrub
-  /// already switches the pager's own pan off (`DitherHoldInteraction`); this
-  /// keeps it off across a SwiftUI rebuild mid-scrub, which would otherwise
-  /// hand the pan back and page Watchtower away underneath a live tooltip.
-  private(set) var scrubbingMetrics: Set<WatchtowerAnalyticsMetric> = []
 
   @ObservationIgnored private let defaults: UserDefaults
   @ObservationIgnored private var savedDraft: Draft?
@@ -181,23 +176,9 @@ final class WatchtowerChartCustomizationState {
     !collapsed.contains(metric)
   }
 
-  /// True while any expanded chart is being scrubbed — `MainTabView` holds the
-  /// tab pager still for the duration.
-  var isScrubbing: Bool { !scrubbingMetrics.isEmpty }
-
-  func setScrubbing(_ scrubbing: Bool, for metric: WatchtowerAnalyticsMetric) {
-    if scrubbing {
-      scrubbingMetrics.insert(metric)
-    } else {
-      scrubbingMetrics.remove(metric)
-    }
-  }
-
   func beginEditing() {
     guard !isEditing else { return }
     savedDraft = Draft(order: order, collapsed: collapsed, hidden: hidden)
-    // Live charts hand off to placeholders here; nothing is left to scrub.
-    scrubbingMetrics.removeAll()
     isEditing = true
   }
 

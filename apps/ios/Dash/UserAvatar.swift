@@ -121,6 +121,11 @@ actor CustomAvatarFileStore {
     try FileManager.default.removeItem(at: url)
   }
 
+  func clearAll() throws {
+    guard FileManager.default.fileExists(atPath: directoryURL.path) else { return }
+    try FileManager.default.removeItem(at: directoryURL)
+  }
+
   private static var defaultDirectoryURL: URL {
     FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("Dash", isDirectory: true)
@@ -243,10 +248,9 @@ actor CustomAvatarFileStore {
   }
 }
 
-/// Session-scoped in-memory avatar cache shared by every `UserAvatar`.
-/// A locally selected profile photo wins over Gravatar, while the existing
-/// initials remain the final fallback. Disk storage is user-scoped and
-/// persists across sign-out; clearing a session only drops decoded bitmaps.
+/// Session-scoped avatar cache shared by every `UserAvatar`. A locally selected
+/// profile photo wins over Gravatar, while initials remain the final fallback.
+/// Sign-out clears both decoded images and the user-scoped disk directory.
 @MainActor
 @Observable
 final class AvatarStore {
@@ -367,6 +371,11 @@ final class AvatarStore {
     else { throw CancellationError() }
     customEntries[userID] = .missing
     ensureGravatarLoaded(email)
+  }
+
+  func clearAllCustomImages() async throws {
+    defer { clearMemory() }
+    try await customFiles.clearAll()
   }
 
   func clearMemory() {

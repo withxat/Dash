@@ -135,14 +135,14 @@ final class AppModel {
       // newly selected account even when the action list itself is unchanged.
       WidgetCenter.shared.reloadTimelines(ofKind: QuickActionsWidgetKind.id)
       guard oldValue != activeAccountID else { return }
-      clearWatchtowerWidgetSnapshot()
+      try? clearWatchtowerWidgetSnapshot()
       featureCache.setPersistenceAccount(activeAccountID)
     }
   }
   var authState: AuthenticationState = .loading {
     didSet {
       if authState == .unauthenticated {
-        clearWatchtowerWidgetSnapshot()
+        try? clearWatchtowerWidgetSnapshot()
       } else if authState == .authenticated {
         scheduleFileProviderDomainReconciliation()
       }
@@ -385,12 +385,29 @@ final class AppModel {
     return false
   }
 
-  private func clearWatchtowerWidgetSnapshot() {
+  private func clearWatchtowerWidgetSnapshot() throws {
     if let url = WatchtowerWidgetSnapshot.containerFileURL {
-      WatchtowerWidgetSnapshot.clear(at: url)
+      try WatchtowerWidgetSnapshot.clear(at: url)
       WidgetCenter.shared.reloadAllTimelines()
     }
     setSystemBadgeCount(0)
+  }
+
+  /// Removes device-local identifiers and resource history that belong to the
+  /// signed-out account set. Pure display preferences remain device settings.
+  private func clearPersistedAccountData() {
+    let defaults = UserDefaults.standard
+    for key in [
+      PinnedZones.key,
+      PinnedZones.initializedAccountsKey,
+      RecentResources.key,
+      DomainCardColors.key,
+      WatchtowerInboxStore.ignoredKey,
+      WatchtowerInboxStore.readKey,
+    ] {
+      defaults.removeObject(forKey: key)
+    }
+    ZoneSecurityLevelOperation.clearPersistedState(defaults: defaults)
   }
 
   /// The headline for profile surfaces: the active account's label, else the
@@ -797,7 +814,7 @@ final class AppModel {
         guard let self else { return }
         guard await exitDemo() else { return }
         await Task.yield()
-        await R2TemporaryFile.removeAllFiles()
+        try? await R2TemporaryFile.removeAllFiles()
       }
       return
     }
@@ -1221,6 +1238,16 @@ final class AppModel {
         ))
       return false
     }
+    do {
+      try await featureCache.clearAllPersistence()
+      try clearWatchtowerWidgetSnapshot()
+      try await avatars.clearAllCustomImages()
+      try await R2TemporaryFile.removeAllFiles()
+    } catch {
+      appendErrorMessage(error.localizedDescription)
+      return false
+    }
+    clearPersistedAccountData()
     deferredDeletions.discardUnverifiedCredentialStatePreservingRecovery()
     return true
   }
@@ -1524,7 +1551,15 @@ final class AppModel {
         return
       }
       self.resetAccountScopedWork()
-      self.featureCache.clearAllPersistence()
+      do {
+        try await self.featureCache.clearAllPersistence()
+        try await self.avatars.clearAllCustomImages()
+      } catch {
+        self.errorMessage = error.localizedDescription
+        self.toasts.error(error.localizedDescription)
+        return
+      }
+      self.clearPersistedAccountData()
       self.isDemoSession = true
       self.errorMessage = nil
       let demoClient = CloudflareClient(
@@ -1572,6 +1607,13 @@ final class AppModel {
     fileProviderReconcileTask?.cancel()
     await pendingFileProviderReconcile?.value
     _ = await removeAllFileProviderDomains()
+    do {
+      try await avatars.clearAllCustomImages()
+    } catch {
+      errorMessage = error.localizedDescription
+      toasts.error(error.localizedDescription)
+      return false
+    }
     deferredDeletions.discardEphemeralCredentialStatePreservingRecovery()
     resetAccountScopedWork()
     isDemoSession = false
@@ -1579,7 +1621,6 @@ final class AppModel {
       clientID: configuration.clientID, tokenStore: tokenStore, session: authenticatedSession)
     client = authenticatedClient
     deferredDeletionExecutor.replaceClient(authenticatedClient)
-    avatars.clearMemory()
     Task { await r2Thumbnails.clear() }
     accounts = []
     user = nil
@@ -1593,6 +1634,7 @@ final class AppModel {
     pendingRoute = nil
     pendingHomeAction = nil
     toasts.clearAll()
+    clearPersistedAccountData()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
     if setsAuthenticationState {
@@ -1613,7 +1655,14 @@ final class AppModel {
         return
       }
       await Task.yield()
-      await R2TemporaryFile.removeAllFiles()
+      do {
+        try await R2TemporaryFile.removeAllFiles()
+      } catch {
+        signOutActionPhase = .idle
+        errorMessage = error.localizedDescription
+        toasts.error(error.localizedDescription)
+        return
+      }
       if presentsCompletion {
         signOutActionPhase = .succeeded
         armSignOutPresentationFallback()
@@ -1714,9 +1763,17 @@ final class AppModel {
     activeAccountID = nil
     // The active credential is conclusively gone; drop every account's disk
     // cache so a relaunch cannot resurrect a signed-out account's data.
-    featureCache.clearAllPersistence()
+    do {
+      try await featureCache.clearAllPersistence()
+    } catch {
+      cleanupMessages.append(error.localizedDescription)
+    }
     deferredDeletions.discardCredentialState()
-    avatars.clearMemory()
+    do {
+      try await avatars.clearAllCustomImages()
+    } catch {
+      cleanupMessages.append(error.localizedDescription)
+    }
     await r2Thumbnails.clear()
     accounts = []
     user = nil
@@ -1728,19 +1785,32 @@ final class AppModel {
     pendingRoute = nil
     pendingHomeAction = nil
     toasts.clearAll()
-    clearWatchtowerWidgetSnapshot()
+    do {
+      try clearWatchtowerWidgetSnapshot()
+    } catch {
+      cleanupMessages.append(error.localizedDescription)
+    }
+    clearPersistedAccountData()
     UserDefaults.standard.removeObject(forKey: DashAppGroup.activeAccountKey)
     R2ShareDestination.clear()
-    if presentsCompletion {
+    // Account-scoped work is cancelled and its models are gone, so temporary
+    // transfers can no longer resume while their dedicated root is deleted.
+    await Task.yield()
+    do {
+      try await R2TemporaryFile.removeAllFiles()
+    } catch {
+      cleanupMessages.append(error.localizedDescription)
+    }
+
+    let cleanupSucceeded = cleanupMessages.isEmpty
+    if presentsCompletion, cleanupSucceeded {
       signOutActionPhase = .succeeded
       armSignOutPresentationFallback()
+    } else if presentsCompletion {
+      signOutActionPhase = .idle
     }
-    authState = .unauthenticated
     errorMessage = cleanupMessages.isEmpty ? nil : cleanupMessages.joined(separator: "\n")
-    // Let SwiftUI tear down account-scoped views and cancel their transfers
-    // before removing the session's temporary R2 files.
-    await Task.yield()
-    await R2TemporaryFile.removeAllFiles()
+    authState = cleanupSucceeded ? .unauthenticated : .loading
   }
 
   func completeSignOutActionPresentation() {

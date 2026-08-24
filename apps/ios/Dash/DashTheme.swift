@@ -190,20 +190,6 @@ enum DashTheme {
         highDark: 0x46ECD5)
     }
 
-    static func accentBlue(
-      colorScheme: ColorScheme,
-      contrast: ColorSchemeContrast
-    ) -> DitherColor {
-      // Categorical blue — matches the Web Analytics dashboard sparklines.
-      adaptive(
-        colorScheme: colorScheme,
-        contrast: contrast,
-        light: 0x2B7FFF,
-        dark: 0x51A2FF,
-        highLight: 0x1447E6,
-        highDark: 0x8EC5FF)
-    }
-
     private static func adaptive(
       colorScheme: ColorScheme,
       contrast: ColorSchemeContrast,
@@ -428,10 +414,6 @@ enum DashTheme {
     /// are not complementary: at the crossover both sit near 30%, so the swap
     /// briefly breathes toward the canvas instead of double-exposing two pages.
     static let tabStepSlide: CGFloat = 24
-    /// The shared header's title travel. The bar itself never moves — only the
-    /// content of one slot does, so it reads as the page's direction without
-    /// restating the page's distance.
-    static let headerTitleStepSlide: CGFloat = 14
     static let tabStepOutgoingFadeDuration: TimeInterval = 0.12
     static let tabStepOutgoingFadeControlPoint1 = CGPoint(x: 0.2, y: 0.7)
     static let tabStepOutgoingFadeControlPoint2 = CGPoint(x: 0.4, y: 1)
@@ -528,8 +510,6 @@ enum DashTheme {
     static let background = adaptive(light: 0xFEFFFE, dark: 0x0F0F0F)
     /// `text-kumo-placeholder`
     static let closeIcon = adaptive(light: 0xA1A1A1, dark: 0x737373)
-    /// 1pt rule under tray titles — same adaptive edge as `DashTheme.separator`.
-    static var headerBorder: Color { DashTheme.separator }
     /// `color-kumo-tint`
     static let shortcutItem = adaptive(light: 0xF5F5F5, dark: 0x262626)
     /// Black veil over the page. Kept light on purpose — the material below

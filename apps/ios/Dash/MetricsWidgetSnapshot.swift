@@ -708,12 +708,6 @@ struct MetricsWidgetSnapshotRepository {
     }
   }
 
-  static func sessionGeneration(at url: URL) throws -> UInt64 {
-    try withFileLock(at: url, operation: LOCK_SH) {
-      try loadSession(at: url).record.generation
-    }
-  }
-
   /// Replaces metadata while preserving any on-disk snapshot newer than the
   /// candidate. This keeps direct serialization callers from regressing a
   /// range that another process refreshed first.

@@ -6,7 +6,6 @@ import UIKit
 
 struct ZonesView: View {
   static let pageSize = ZonesCatalogFetchRules.pageSize
-  static let eagerPageBudget = ZonesCatalogFetchRules.eagerPageBudget
 
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -278,18 +277,15 @@ struct ZonesView: View {
     if !force, let cached: [CloudflareZone] = model.featureCache.get(key) {
       zones = cached
       seedPinsIfNeeded(from: cached, accountID: accountID)
-      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
+      pageState.reset()
       loading = false
       error = nil
-      // A warm cache that still looks truncated (exact page multiples) keeps
-      // filling in the background so group-by-status sees the full catalog.
-      if pageState.canLoadMore {
-        listGeneration += 1
-        isLoadingMore = false
-        loadingMoreGeneration = nil
-        await loadRemainingEagerly(accountID: accountID, generation: listGeneration)
+      if model.featureCache.zonesCatalogIsComplete(accountID: accountID) {
+        return
       }
-      return
+      // A de-duplicated cached array cannot reconstruct the page cursor. Keep
+      // it mounted, then refresh from page one instead of guessing and silently
+      // skipping a later page.
     }
     // Cold but a stale copy exists on disk: paint it now and refresh in place
     // so an offline relaunch shows last-known data instead of a skeleton. The
@@ -297,7 +293,7 @@ struct ZonesView: View {
     if zones.isEmpty, let stale: [CloudflareZone] = model.featureCache.getStale(key) {
       zones = stale
       seedPinsIfNeeded(from: stale, accountID: accountID)
-      pageState.rehydrate(loaded: stale.count, pageSize: Self.pageSize)
+      pageState.reset()
       loading = true
     }
     if zones.isEmpty { loading = true }
@@ -431,10 +427,9 @@ struct ZonesView: View {
 enum ZonesCatalogFetchRules {
   /// Cloudflare's List Zones `per_page` max — raising past this is rejected.
   static let pageSize = 50
-  /// Automatic back-to-back pages on open. Same ceiling Email Routing already
-  /// uses for its domains index (~2 000 zones). Beyond it, or after a 429, the
-  /// infinite-scroll footer continues so a huge account cannot burn the token
-  /// rate budget just by opening Domains.
+  /// Automatic catalog request budget. Domains hands the remainder to its
+  /// infinite-scroll footer; Email Routing stops its per-zone status fan-out
+  /// at the same boundary so opening either screen cannot scan without limit.
   static let eagerPageBudget = 40
 
   static func shouldContinueEagerly(pagesFetched: Int, canLoadMore: Bool) -> Bool {

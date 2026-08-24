@@ -177,8 +177,9 @@ struct EmailRoutingDomainsView: View {
       }
 
       let client = model.client
-      let collected = try await DashPageLoader.loadAll(
+      let zoneResult = try await DashPageLoader.load(
         pageSize: ZonesCatalogFetchRules.pageSize,
+        maximumPages: ZonesCatalogFetchRules.eagerPageBudget,
         id: \.id
       ) { page, perPage in
         try await client.listZones(
@@ -188,11 +189,12 @@ struct EmailRoutingDomainsView: View {
       }
       guard isCurrentLoad(context: context, generation: generation)
       else { throw CancellationError() }
+      let collected = zoneResult.items
       zones = collected
       model.featureCache.storeZones(
         collected,
         accountID: context.accountID,
-        catalogIsComplete: true)
+        catalogIsComplete: zoneResult.isComplete)
       mergeCachedSettings()
       let statusError = try await loadStatuses(
         for: collected, context: context, generation: generation, force: force)
@@ -233,13 +235,14 @@ struct EmailRoutingDomainsView: View {
 
   private enum StatusFetchResult: Sendable {
     case settings(zoneID: String, EmailRoutingSettings)
-    case failure(String)
+    case failure(String, isRateLimited: Bool)
     case cancelled
   }
 
   /// Settings are the primary payload for this filtered catalog. Cold paint
-  /// therefore commits them once after the complete fan-out; a refresh keeps
-  /// the previous cards warm and replaces only successful answers.
+  /// commits after each bounded chunk so the first known-on domain can hand
+  /// off the skeleton while the remaining statuses continue in the background.
+  /// A refresh keeps previous cards warm and replaces only successful answers.
   private func loadStatuses(
     for zones: [CloudflareZone],
     context: AccountRequestContext,
@@ -265,7 +268,6 @@ struct EmailRoutingDomainsView: View {
     }
 
     var firstFailure: String?
-    var freshByZoneID: [String: EmailRoutingSettings] = [:]
 
     for chunkStart in stride(from: 0, to: pending.count, by: Self.statusFetchConcurrency) {
       guard isCurrentLoad(context: context, generation: generation)
@@ -273,6 +275,8 @@ struct EmailRoutingDomainsView: View {
       let end = min(chunkStart + Self.statusFetchConcurrency, pending.count)
       let chunk = Array(pending[chunkStart..<end])
       var chunkWasCancelled = false
+      var chunkWasRateLimited = false
+      var freshByZoneID: [String: EmailRoutingSettings] = [:]
       await withTaskGroup(of: StatusFetchResult.self) { group in
         for zoneID in chunk {
           group.addTask {
@@ -283,7 +287,9 @@ struct EmailRoutingDomainsView: View {
             } catch {
               return error.dashIsCancellation
                 ? .cancelled
-                : .failure(error.dashActionableMessage)
+                : .failure(
+                  error.dashActionableMessage,
+                  isRateLimited: error.dashIsRateLimited)
             }
           }
         }
@@ -292,24 +298,26 @@ struct EmailRoutingDomainsView: View {
           case .settings(let zoneID, let settings):
             next[zoneID] = settings
             freshByZoneID[zoneID] = settings
-          case .failure(let message):
+          case .failure(let message, let isRateLimited):
             if firstFailure == nil { firstFailure = message }
+            chunkWasRateLimited = chunkWasRateLimited || isRateLimited
           case .cancelled:
             chunkWasCancelled = true
           }
         }
       }
       if chunkWasCancelled { throw CancellationError() }
+      guard isCurrentLoad(context: context, generation: generation),
+        EmailRoutingStatusCacheBatch.commit(
+          freshByZoneID,
+          context: context,
+          loadedContext: loadedContext,
+          model: model)
+      else { throw CancellationError() }
+      if next != settingsByZoneID { settingsByZoneID = next }
+      if chunkWasRateLimited { break }
     }
 
-    guard isCurrentLoad(context: context, generation: generation),
-      EmailRoutingStatusCacheBatch.commit(
-        freshByZoneID,
-        context: context,
-        loadedContext: loadedContext,
-        model: model)
-    else { throw CancellationError() }
-    if next != settingsByZoneID { settingsByZoneID = next }
     return firstFailure
   }
 
@@ -1143,24 +1151,25 @@ struct EmailRoutingView: View {
     cardPreviewSettings = EmailRoutingStatusMapping.listSettings(
       zoneID: zoneID,
       cache: model.featureCache)
+    let key = FeatureCacheKey.emailRouting(zoneID)
+    if !force, let cached: EmailRoutingSnapshot = model.featureCache.get(key) {
+      apply(cached)
+      cardPreviewSettings = cached.settings
+      loading = false
+      error = nil
+      let cachedAddresses = await fetchAddresses(force: false, context: context)
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+      if let cachedAddresses { addresses = cachedAddresses }
+      // A de-duplicated rules array cannot reconstruct its page cursor. Keep
+      // the cached screen live while page one refreshes below.
+    }
+
     // Cold stays on the skeleton; warm pull-to-refresh keeps content in place
     // while the native refresh control owns feedback. Never flip `settings`
     // early — `hasContent` follows it, and a settings-only paint left Routes /
     // Catch-all still loading inside an already-"live" body.
     if settings == nil || force { loading = true }
     if force { isLoadingMore = false }
-
-    let key = FeatureCacheKey.emailRouting(zoneID)
-    if !force, let cached: EmailRoutingSnapshot = model.featureCache.get(key) {
-      let cachedAddresses = await fetchAddresses(force: false, context: context)
-      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
-      apply(cached)
-      cardPreviewSettings = cached.settings
-      if let cachedAddresses { addresses = cachedAddresses }
-      loading = false
-      error = nil
-      return
-    }
 
     let client = model.client
     let zone = zoneID
@@ -1282,7 +1291,6 @@ struct EmailRoutingView: View {
     rulesError = nil
     catchAllError = nil
     pageState.reset()
-    pageState.rehydrate(loaded: snapshot.rules.count, pageSize: Self.rulePageSize)
   }
 
   /// Destination addresses for route badges / delivery pickers. Returns the
@@ -1559,13 +1567,6 @@ enum EmailRoutingStatusMapping {
       return settings
     }
     return (cache.get(FeatureCacheKey.emailRouting(zoneID)) as EmailRoutingSnapshot?)?.settings
-  }
-
-  /// Token for the domains index: prefer the settings-only cache the list
-  /// writes, then a zone screen's full snapshot. Never invent ready.
-  @MainActor
-  static func listToken(zoneID: String, cache: FeatureDataCache) -> StatusToken? {
-    listSettings(zoneID: zoneID, cache: cache).map { token(for: $0) }
   }
 
   /// Persist settings for the domains index without touching the full snapshot.

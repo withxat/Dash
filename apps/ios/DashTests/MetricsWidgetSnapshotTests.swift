@@ -570,7 +570,7 @@ import Testing
     withIntermediateDirectories: true)
   try MetricsWidgetSnapshotStore(accounts: [account]).write(to: fileURL)
 
-  let capturedGeneration = try MetricsWidgetSnapshotRepository.sessionGeneration(at: fileURL)
+  let capturedGeneration = try MetricsWidgetSnapshotRepository.read(at: fileURL).generation
   let currentGeneration = try MetricsWidgetSnapshotRepository.invalidateAndClear(at: fileURL)
   #expect(currentGeneration == capturedGeneration + 1)
   #expect(!FileManager.default.fileExists(atPath: fileURL.path))

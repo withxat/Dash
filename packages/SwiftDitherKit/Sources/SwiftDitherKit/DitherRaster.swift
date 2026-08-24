@@ -40,12 +40,6 @@ struct DitherRaster: Equatable, Sendable {
     return bytes[(y * width + x) * 4 + 3]
   }
 
-  var nonTransparentPixelCount: Int {
-    stride(from: 3, to: bytes.count, by: 4).reduce(into: 0) { count, offset in
-      if bytes[offset] > 0 { count += 1 }
-    }
-  }
-
   var checksum: UInt64 {
     bytes.reduce(1_469_598_103_934_665_603) { hash, byte in
       (hash ^ UInt64(byte)) &* 1_099_511_628_211

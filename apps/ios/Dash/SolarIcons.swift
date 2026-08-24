@@ -58,8 +58,6 @@ enum SolarAsset {
   static let chevronLeft = "SolarAltArrowLeftOutline"
   static let cloud = "SolarCloudOutline"
   static let plus = "SolarPlusOutline"
-  /// Solid add mark for Home quick actions.
-  static let addCircleFill = "SolarAddCircleFill"
   static let circle = "SolarCircleOutline"
   static let checkCircle = "SolarCheckCircleOutline"
   /// Bare Solar check mark used for Done actions.
@@ -71,7 +69,6 @@ enum SolarAsset {
   static let shieldCheck = "SolarShieldCheckOutline"
   static let danger = "SolarDangerTriangleOutline"
   static let bolt = "SolarBoltOutline"
-  static let boltCircle = "SolarBoltCircleOutline"
   /// Plain phone — Language tray → System.
   static let smartphone = "SolarSmartphoneOutline"
   static let smartphoneVibration = "SolarSmartphoneVibrationOutline"
@@ -109,10 +106,7 @@ enum SolarAsset {
   static let user = "SolarUserOutline"
   static let settings = "SolarSettingsMinimalisticOutline"
   static let code = "SolarCodeSquareOutline"
-  /// Bare `</>` brackets (no square) — Home Workers quick action.
-  static let codeOutline = "SolarCodeOutline"
   static let codeCircle = "SolarCodeCircleOutline"
-  static let codeCircleFill = "SolarCodeCircleFill"
   static let routing = "SolarRoutingOutline"
   static let globus = "SolarGlobusOutline"
   static let lock = "SolarLockKeyholeOutline"

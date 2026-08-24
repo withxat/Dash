@@ -261,14 +261,23 @@ import UIKit
   )
   #expect(NetworkAccessProbeRetryRules.requestTimeout(remaining: .seconds(1)) == 1)
   #expect(
-    NetworkAccessProbeRetryRules.retryDelay(remaining: .seconds(10))
+    NetworkAccessProbeRetryRules.retryDelay(afterFailure: 1, remaining: .seconds(10))
       == NetworkAccessProbeRetryRules.retryInterval
   )
   #expect(
-    NetworkAccessProbeRetryRules.retryDelay(remaining: .milliseconds(200))
+    NetworkAccessProbeRetryRules.retryDelay(afterFailure: 3, remaining: .seconds(10))
+      == .milliseconds(2_400)
+  )
+  #expect(
+    NetworkAccessProbeRetryRules.retryDelay(afterFailure: 8, remaining: .seconds(10))
+      == NetworkAccessProbeRetryRules.maximumRetryInterval
+  )
+  #expect(
+    NetworkAccessProbeRetryRules.retryDelay(afterFailure: 4, remaining: .milliseconds(200))
       == .milliseconds(200)
   )
-  #expect(NetworkAccessProbeRetryRules.retryDelay(remaining: .seconds(-1)) == .zero)
+  #expect(
+    NetworkAccessProbeRetryRules.retryDelay(afterFailure: 1, remaining: .seconds(-1)) == .zero)
 
   // A working Wi-Fi request wins even when cellular access is restricted.
   #expect(

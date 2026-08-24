@@ -16,15 +16,38 @@ import SwiftUI
 /// honoring the requested page, so data identity — not metadata — is the loop
 /// guard.
 ///
-/// Cancellation is deliberately not converted into a partial result. Callers
-/// either receive the complete unique collection or an error.
+/// Cancellation is deliberately not converted into a partial result. The
+/// unbounded `loadAll` API either receives the complete collection or throws;
+/// bounded callers get an explicit `isComplete` result.
+struct DashPageLoadResult<Item: Sendable>: Sendable {
+  let items: [Item]
+  let isComplete: Bool
+}
+
 enum DashPageLoader {
   static func loadAll<Item: Sendable, ID: Hashable & Sendable>(
     pageSize: Int,
     id: @escaping @Sendable (Item) -> ID,
     loadPage: @escaping @Sendable (_ page: Int, _ perPage: Int) async throws -> Page<Item>
   ) async throws -> [Item] {
+    try await load(
+      pageSize: pageSize,
+      maximumPages: nil,
+      id: id,
+      loadPage: loadPage
+    ).items
+  }
+
+  /// Loads a unique catalog with an optional request budget. Terminal API
+  /// signals mark the result complete; exhausting the budget does not.
+  static func load<Item: Sendable, ID: Hashable & Sendable>(
+    pageSize: Int,
+    maximumPages: Int?,
+    id: @escaping @Sendable (Item) -> ID,
+    loadPage: @escaping @Sendable (_ page: Int, _ perPage: Int) async throws -> Page<Item>
+  ) async throws -> DashPageLoadResult<Item> {
     precondition(pageSize > 0)
+    precondition(maximumPages.map { $0 > 0 } ?? true)
 
     var requestedPage = 1
     var seenIDs = Set<ID>()
@@ -36,24 +59,29 @@ enum DashPageLoader {
       try Task.checkCancellation()
 
       let received = page.items.count
-      guard received > 0 else { break }
+      guard received > 0 else {
+        return DashPageLoadResult(items: accumulated, isComplete: true)
+      }
 
       let unique = page.items.filter { seenIDs.insert(id($0)).inserted }
-      guard !unique.isEmpty else { break }
+      guard !unique.isEmpty else {
+        return DashPageLoadResult(items: accumulated, isComplete: true)
+      }
       accumulated.append(contentsOf: unique)
 
       if let total = page.resultInfo?.totalCount, accumulated.count >= total {
-        break
+        return DashPageLoadResult(items: accumulated, isComplete: true)
       }
       let effectivePageSize = page.resultInfo?.perPage ?? pageSize
       if page.resultInfo?.totalCount == nil, received < effectivePageSize {
-        break
+        return DashPageLoadResult(items: accumulated, isComplete: true)
+      }
+      if let maximumPages, requestedPage >= maximumPages {
+        return DashPageLoadResult(items: accumulated, isComplete: false)
       }
 
       requestedPage += 1
     }
-
-    return accumulated
   }
 }
 
@@ -171,18 +199,8 @@ struct DashPageState: Equatable {
     } else if let totalCount {
       canLoadMore = loaded < totalCount
     } else {
-      canLoadMore = received > 0 && received == pageSize
+      canLoadMore = received > 0 && received == (info?.perPage ?? pageSize)
     }
-  }
-
-  /// Restores bookkeeping for a cache-served array: whole pages were
-  /// accumulated, so an exact multiple of the page size may have a successor.
-  /// An exact-multiple total costs at most one empty fetch that flips
-  /// `canLoadMore` off.
-  mutating func rehydrate(loaded: Int, pageSize: Int) {
-    nextPage = loaded / pageSize + 1
-    totalCount = nil
-    canLoadMore = loaded > 0 && loaded.isMultiple(of: pageSize)
   }
 }
 

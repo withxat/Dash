@@ -253,6 +253,14 @@ import UIKit
     info: nil, requestedPage: 2, received: 12, added: 12, loaded: 62,
     pageSize: 50)
   #expect(!state.canLoadMore)
+
+  // The server may clamp the requested size. A full effective page still has
+  // a possible successor even when it is shorter than the request.
+  state.reset()
+  state.absorb(
+    info: ResultInfo(page: 1, perPage: 20, totalCount: nil, cursor: nil),
+    requestedPage: 1, received: 20, added: 20, loaded: 20, pageSize: 50)
+  #expect(state.canLoadMore)
 }
 
 @Test func pageStateIgnoresStalePageMetadataAndStopsOnRepeatedIdentities() {
@@ -267,21 +275,6 @@ import UIKit
     info: ResultInfo(page: 1, perPage: 50, totalCount: nil, cursor: nil),
     requestedPage: 5, received: 50, added: 0, loaded: 200, pageSize: 50)
   #expect(state.nextPage == 6)
-  #expect(!state.canLoadMore)
-}
-
-@Test func pageStateRehydratesFromCachedArrays() {
-  var state = DashPageState()
-  state.rehydrate(loaded: 100, pageSize: 50)
-  #expect(state.nextPage == 3)
-  #expect(state.canLoadMore)
-
-  state.rehydrate(loaded: 62, pageSize: 50)
-  #expect(state.nextPage == 2)
-  #expect(!state.canLoadMore)
-
-  state.rehydrate(loaded: 0, pageSize: 50)
-  #expect(state.nextPage == 1)
   #expect(!state.canLoadMore)
 }
 

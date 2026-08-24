@@ -52,7 +52,7 @@ packages/
 docs/                    App icon and other public doc assets
 ```
 
-`cloudflare-api`, `gradient-avatars`, `SwiftDitherKit`, `SwiftGlobeKit`, and `BlossomColorPicker` are the local Swift packages the iOS app links. `legal` is the single source for in-app and `dash.xat.sh` legal pages.
+The iOS app links the local `cloudflare-api`, `gradient-avatars`, `SwiftDitherKit`, and `SwiftGlobeKit` packages. `BlossomColorPicker` remains a separately tested vendored package; `legal` is the single source for in-app and `dash.xat.sh` legal pages.
 
 ## Requirements
 

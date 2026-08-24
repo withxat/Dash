@@ -101,13 +101,15 @@ actor FeatureCachePersistence {
     try? FileManager.default.removeItem(at: fileURL(accountID: accountID))
   }
 
-  func clearAll() {
+  func clearAll() throws {
     stores.removeAll()
     dirtyAccounts.removeAll()
     flushTask?.cancel()
     flushTask = nil
-    try? FileManager.default.removeItem(at: directory)
-    try? FileManager.default.createDirectory(
+    if FileManager.default.fileExists(atPath: directory.path) {
+      try FileManager.default.removeItem(at: directory)
+    }
+    try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true)
   }
 

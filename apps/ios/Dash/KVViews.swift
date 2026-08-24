@@ -97,16 +97,17 @@ struct KVNamespacesView: View {
     if !force, let cached: [KVNamespace] = model.featureCache.get(key) {
       guard model.isCurrentAccount(context) else { return }
       namespaces = cached
-      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
+      pageState.reset()
       loading = false
       error = nil
-      return
+      // The cached array is de-duplicated, so refresh from page one rather than
+      // deriving a cursor from its count.
     }
     // Cold but a stale copy exists on disk: paint it now and refresh in place.
     if namespaces.isEmpty, let stale: [KVNamespace] = model.featureCache.getStale(key) {
       guard model.isCurrentAccount(context) else { return }
       namespaces = stale
-      pageState.rehydrate(loaded: stale.count, pageSize: Self.pageSize)
+      pageState.reset()
       loading = true
     }
     if namespaces.isEmpty { loading = true }

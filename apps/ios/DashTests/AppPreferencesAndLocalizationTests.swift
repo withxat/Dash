@@ -298,6 +298,10 @@ private func relativeLuminance(_ color: UIColor, traits: UITraitCollection) -> D
   let retainedB = await reloadedStore.loadImage(for: "user-b")
   #expect(removedA == .missing)
   #expect(retainedB == .loaded(savedB))
+
+  try await reloadedStore.clearAll()
+  #expect(!FileManager.default.fileExists(atPath: avatarDirectory.path))
+  #expect(await reloadedStore.loadImage(for: "user-b") == .missing)
 }
 
 @Test @MainActor func invalidCustomAvatarDoesNotReplaceTheStoredPhoto() async throws {

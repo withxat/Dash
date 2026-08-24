@@ -383,9 +383,10 @@ struct DNSRecordsView: View {
     let key = FeatureCacheKey.dnsRecords(zoneID)
     if !force, let cached: [DNSRecord] = model.featureCache.get(key) {
       records = cached
-      pageState.rehydrate(loaded: cached.count, pageSize: Self.pageSize)
+      pageState.reset()
       error = nil
-      return true
+      // The cached array is de-duplicated, so its count cannot reconstruct the
+      // next server page. Keep it visible while page one refreshes below.
     }
     let requestScope = model.activeAccountID.map {
       DeferredDeletionScope(accountID: $0, zoneID: zoneID)

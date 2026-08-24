@@ -50,6 +50,7 @@ final class NetworkAccessProbe {
     let deadline = ContinuousClock.now.advanced(
       by: NetworkAccessProbeRetryRules.authorizationWindow
     )
+    var failedAttempts = 0
 
     while ContinuousClock.now < deadline {
       if Task.isCancelled {
@@ -77,9 +78,11 @@ final class NetworkAccessProbe {
           return
         }
         probeSucceeded = false
+        failedAttempts += 1
       }
 
       let delay = NetworkAccessProbeRetryRules.retryDelay(
+        afterFailure: failedAttempts,
         remaining: ContinuousClock.now.duration(to: deadline)
       )
       guard delay > .zero else { break }
@@ -137,14 +140,22 @@ enum NetworkAccessProbeRetryRules {
   static let authorizationWindow: Duration = .seconds(25)
   static let maximumRequestTimeout: TimeInterval = 2
   static let retryInterval: Duration = .milliseconds(600)
+  static let maximumRetryInterval: Duration = .seconds(4)
   static let policySettleDelay: Duration = .milliseconds(350)
 
   static func requestTimeout(remaining: Duration) -> TimeInterval {
     min(maximumRequestTimeout, max(0.1, remaining.timeInterval))
   }
 
-  static func retryDelay(remaining: Duration) -> Duration {
-    min(retryInterval, max(.zero, remaining))
+  static func retryDelay(afterFailure attempt: Int, remaining: Duration) -> Duration {
+    let backoff: Duration =
+      switch max(attempt, 1) {
+      case 1: retryInterval
+      case 2: .milliseconds(1_200)
+      case 3: .milliseconds(2_400)
+      default: maximumRetryInterval
+      }
+    return min(backoff, max(.zero, remaining))
   }
 
   static func terminalStatus(

@@ -3,7 +3,6 @@ import Foundation
 import SwiftUI
 
 enum DitherMotion {
-  static let defaultEntranceDuration: TimeInterval = 0.28
   static let updateDuration: TimeInterval = 0.22
   static let reducedMotionDuration: TimeInterval = 0.14
   static let feedbackDuration: TimeInterval = 0.14

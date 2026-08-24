@@ -524,17 +524,6 @@ extension View {
     )
   }
 
-  /// Self-driving entrance for loaded content: plays once when the view first
-  /// appears with `ready` true (and the splash lifted), then latches — pull
-  /// refreshes and scroll-backs never replay it. Applied to a `@ViewBuilder`
-  /// product it distributes per element, so lazy stacks stay lazy.
-  func dashContentReveal(_ index: Int = 0, ready: Bool = true) -> some View {
-    modifier(
-      DashContentRevealModifier(
-        index: index, ready: ready, stagger: DashRevealCadence.element)
-    )
-  }
-
   /// Marks a semantic screen section for the shared top-to-bottom entrance.
   func dashSectionReveal(_ index: Int = 0) -> some View {
     modifier(DashSectionRevealModifier(index: index))

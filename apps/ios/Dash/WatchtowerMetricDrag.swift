@@ -76,10 +76,6 @@ final class WatchtowerMetricDragVisualState {
     press?.metric
   }
 
-  fileprivate var isSettling: Bool {
-    phase == .settling
-  }
-
   fileprivate var animatesPresentation: Bool {
     phase == .lifting || phase == .settling
   }
@@ -190,14 +186,6 @@ final class WatchtowerMetricDragVisualState {
   fileprivate func finishLift() {
     guard phase == .lifting else { return }
     phase = .tracking
-  }
-
-  fileprivate func moveCenter(to center: CGPoint) {
-    guard var presentation else { return }
-    presentation.centerOffset = CGSize(
-      width: center.x - presentation.fingerLocation.x,
-      height: center.y - presentation.fingerLocation.y)
-    self.presentation = presentation
   }
 
   /// Changes both the phase and the animatable offset in one transaction. If

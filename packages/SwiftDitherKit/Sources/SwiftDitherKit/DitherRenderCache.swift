@@ -53,13 +53,6 @@ struct DitherRenderedRaster: @unchecked Sendable {
 }
 
 actor DitherRenderCache {
-  struct Statistics: Equatable, Sendable {
-    let entryCount: Int
-    let byteCount: Int
-    let hitCount: Int
-    let missCount: Int
-  }
-
   static let shared = DitherRenderCache()
 
   private struct Entry: Sendable {
@@ -70,8 +63,6 @@ actor DitherRenderCache {
   private var entries: [DitherRenderRequest: Entry] = [:]
   private var recency: [DitherRenderRequest] = []
   private var byteCount = 0
-  private var hitCount = 0
-  private var missCount = 0
 
   /// Creates a cache with an approximate pixel-memory limit.
   ///
@@ -85,32 +76,13 @@ actor DitherRenderCache {
     try Task.checkCancellation()
 
     if let entry = entries[request] {
-      hitCount += 1
       touch(request)
       return entry.frame
     }
 
-    missCount += 1
     let frame = request.renderFrame()
     insert(frame, for: request)
     return frame
-  }
-
-  func statistics() -> Statistics {
-    Statistics(
-      entryCount: entries.count,
-      byteCount: byteCount,
-      hitCount: hitCount,
-      missCount: missCount
-    )
-  }
-
-  func removeAll() {
-    entries.removeAll(keepingCapacity: false)
-    recency.removeAll(keepingCapacity: false)
-    byteCount = 0
-    hitCount = 0
-    missCount = 0
   }
 
   private func insert(_ frame: DitherRenderedRaster, for request: DitherRenderRequest) {

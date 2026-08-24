@@ -69,9 +69,7 @@ import UIKit
   let normal = WatchtowerMetricChartRenderingMode.resolved(isEditing: false)
 
   #expect(editing == .placeholder)
-  #expect(!editing.usesDitherChart)
   #expect(normal == .live)
-  #expect(normal.usesDitherChart)
 }
 
 @Test func watchtowerExpandedChartSwapUsesFastOpacityProfile() {
@@ -80,8 +78,10 @@ import UIKit
 
   #expect(expanded.liveEffect == .opacityOnly)
   #expect(expanded.placeholderEffect == .opacityOnly)
-  #expect(expanded.totalDuration <= 0.3)
-  #expect(expanded.totalDuration < collapsed.totalDuration)
+  #expect(expanded.exitDuration + expanded.enterDuration <= 0.3)
+  #expect(
+    expanded.exitDuration + expanded.enterDuration
+      < collapsed.exitDuration + collapsed.enterDuration)
   #expect(collapsed.liveEffect == .rich)
   #expect(collapsed.placeholderEffect == .rich)
 }
@@ -222,16 +222,13 @@ import UIKit
   visualState.trackFinger(to: CGPoint(x: 260, y: 410))
   #expect(visualState.presentation?.center == CGPoint(x: 260, y: 410))
 
-  visualState.moveCenter(to: CGPoint(x: 120, y: 240))
-  #expect(visualState.presentation?.center == CGPoint(x: 120, y: 240))
-
   visualState.settle(to: CGPoint(x: 120, y: 240))
-  #expect(visualState.isSettling)
+  #expect(visualState.phase == .settling)
+  #expect(visualState.presentation?.center == CGPoint(x: 120, y: 240))
 
   visualState.finish()
   #expect(visualState.presentation == nil)
   #expect(visualState.phase == nil)
-  #expect(!visualState.isSettling)
   #expect(visualState.activeReference == nil)
 }
 
@@ -704,7 +701,7 @@ extension LocalizationTests {
   try widget.write(to: url)
   let loaded = try WatchtowerWidgetSnapshot.load(from: url)
   #expect(loaded == widget)
-  WatchtowerWidgetSnapshot.clear(at: url)
+  try WatchtowerWidgetSnapshot.clear(at: url)
 
   var whitespaceAccount = widget
   whitespaceAccount.accountID = "  "

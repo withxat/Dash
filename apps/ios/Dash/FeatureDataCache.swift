@@ -63,9 +63,6 @@ enum FeatureCacheKey {
   static func zoneRequestsHourly(_ zoneID: String) -> String { "zoneRequestsHourly:\(zoneID)" }
   static func zoneWAF(_ zoneID: String) -> String { "zoneWAF:\(zoneID)" }
   static func webAnalyticsSites(_ accountID: String) -> String { "rumSites:\(accountID)" }
-  static func webAnalyticsPageviews(_ siteTag: String, days: Int) -> String {
-    "rumPageviews:\(siteTag):\(days)"
-  }
   static func webAnalyticsMetrics(_ siteTag: String, days: Int) -> String {
     "rumMetrics:\(siteTag):\(days)"
   }
@@ -449,7 +446,7 @@ final class FeatureDataCache {
 
   /// Deletes every persisted account file (sign-out) and disables persistence
   /// until the next account is activated.
-  func clearAllPersistence() {
+  func clearAllPersistence() async throws {
     persistenceAccountID = nil
     storage.removeAll()
     cancelAllLoads()
@@ -459,9 +456,10 @@ final class FeatureDataCache {
     persistenceLoadGeneration &+= 1
     persistenceLoadTouchedKeys.removeAll()
     persistenceLoadRemovedPrefixes.removeAll()
-    enqueuePersistenceOperation { persistence in
-      await persistence.clearAll()
-    }
+    let pendingOperation = persistenceOperationTask
+    await pendingOperation?.value
+    persistenceOperationTask = nil
+    try await persistence?.clearAll()
   }
 
   /// Waits for every persistence operation already issued by this cache, then

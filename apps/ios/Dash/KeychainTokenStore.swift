@@ -14,21 +14,6 @@ struct KeychainStoredCredentialSnapshot: Equatable, Sendable {
   let rawExpirationTimestamp: String?
   let rawGrantedScopes: String?
 
-  var grantedScopes: Set<String>? {
-    rawGrantedScopes.map { Set($0.split(separator: " ").map(String.init)) }
-  }
-
-  /// Suitable for a short-lived client that only needs to finish cleanup with
-  /// a credential already removed from the shared Keychain. Exact restoration
-  /// must use the raw snapshot instead.
-  var tokenSet: TokenSet? {
-    guard let accessToken else { return nil }
-    return TokenSet(
-      accessToken: accessToken,
-      refreshToken: refreshToken,
-      scope: rawGrantedScopes)
-  }
-
   static let empty = KeychainStoredCredentialSnapshot(
     accessToken: nil,
     refreshToken: nil,

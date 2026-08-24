@@ -158,8 +158,6 @@ private struct DashHostedDestination: View {
 /// The card is the only moving spatial identity. Both pages stay fixed while
 /// the source context softens and the destination content resolves behind it.
 enum DashCardMorphRules {
-  static let movesPages = false
-
   /// Distance the invisible timeline driver's position travels for progress
   /// 0 → 1. Any value works — larger buys sampling resolution; the driver is
   /// zero-sized and never seen.
@@ -1581,41 +1579,6 @@ private final class DashPageStackViewController<Root: View>: UIViewController,
       afterScreenUpdates: afterScreenUpdates,
       withCapInsets: .zero)
     snapshot?.frame = view.convert(sourceRect, from: source)
-    return snapshot
-  }
-
-  /// A freshly reattached SwiftUI hierarchy may not have committed every text
-  /// layer to the render server yet. `resizableSnapshotView` can therefore
-  /// return the row background and image while omitting its labels. Drawing the
-  /// already-laid-out target hierarchy into one immutable raster keeps the
-  /// source row atomic during the return handoff.
-  private func rasterSnapshotRegion(
-    from source: UIView,
-    at containerFrame: CGRect,
-    afterScreenUpdates: Bool
-  ) -> UIView? {
-    let sourceRect = source.convert(containerFrame, from: view)
-      .intersection(source.bounds)
-    guard !sourceRect.isNull, sourceRect.width > 2, sourceRect.height > 2 else {
-      return nil
-    }
-
-    let format = UIGraphicsImageRendererFormat()
-    format.scale = view.window?.screen.scale ?? traitCollection.displayScale
-    format.opaque = false
-    let renderer = UIGraphicsImageRenderer(size: sourceRect.size, format: format)
-    let image = renderer.image { context in
-      context.cgContext.translateBy(x: -sourceRect.minX, y: -sourceRect.minY)
-      if !source.drawHierarchy(
-        in: source.bounds,
-        afterScreenUpdates: afterScreenUpdates)
-      {
-        source.layer.render(in: context.cgContext)
-      }
-    }
-    let snapshot = UIImageView(image: image)
-    snapshot.contentMode = .scaleToFill
-    snapshot.frame = view.convert(sourceRect, from: source)
     return snapshot
   }
 

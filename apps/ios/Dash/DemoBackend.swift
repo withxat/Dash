@@ -797,8 +797,10 @@ final class DemoBackend: URLProtocol {
   private static func hoursWindow(in query: String) -> Int? {
     func stamp(after key: String) -> Date? {
       guard let marker = query.range(of: key) else { return nil }
-      let rest = query[marker.upperBound...].drop(while: { $0 == " " || $0 == "\"" })
-      let raw = rest.prefix(while: { $0 != "\"" })
+      let rest = query[marker.upperBound...].drop(while: {
+        $0 == " " || $0 == "\\" || $0 == "\""
+      })
+      let raw = rest.prefix(while: { $0 != "\"" && $0 != "\\" })
       guard raw.count >= 19 else { return nil }
       let formatter = ISO8601DateFormatter()
       formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

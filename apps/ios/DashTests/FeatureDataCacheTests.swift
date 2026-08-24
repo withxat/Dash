@@ -348,8 +348,7 @@ import Testing
 
   // Clear immediately: queued account writes must finish before deletion so a
   // late upsert cannot recreate signed-out data.
-  cache.clearAllPersistence()
-  await cache.flushPersistence()
+  try await cache.clearAllPersistence()
 
   let relaunched = FeatureDataCache(
     persistence: FeatureCachePersistence(directory: dir))
