@@ -1,12 +1,18 @@
 # GradientAvatars
 
-Swift port of [medhychabour/hashvatar](https://github.com/medhychabour/hashvatar), MIT License.
+A hybrid of two MIT-licensed upstreams:
 
-The palette and both renderers follow the upstream TypeScript, down to the
-JavaScript arithmetic that decides a seed, so the same string produces the same
-avatar here and on [hashvatar.com](https://www.hashvatar.com).
+- Seed hashing and HSL harmony palettes follow
+  [`@outpacelabs/avatars`](https://avatars.outpacestudios.com) (Outpace Studios).
+- Gradient and dither renderers, plus SwiftUI caching and motion, follow
+  [medhychabour/hashvatar](https://github.com/medhychabour/hashvatar).
 
-Dash deviations:
+Because the seed and palette are Outpace's, the same string does **not** match
+[hashvatar.com](https://www.hashvatar.com). That is deliberate: Dash keeps the
+vivid multi-hue palettes and uses hashvatar only for how those colours are
+painted.
+
+Other Dash deviations from hashvatar's TypeScript:
 - Gradient layer geometry is drawn from a salted second PRNG stream. Upstream
   re-hashes the decimal text of its first four seeds, which depends on
   JavaScript's number formatting.
@@ -15,7 +21,3 @@ Dash deviations:
 - Rendering, caching, and animation are Swift: stills are rasterized off the
   main actor into an `NSCache`, and motion is a phase parameter the SwiftUI
   view samples 20 times a second.
-
-An earlier version of this package ported
-[`@outpacelabs/avatars`](https://avatars.outpacestudios.com) instead. None of
-its palette or rendering remains.

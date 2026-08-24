@@ -1,9 +1,10 @@
 # GradientAvatars
 
-A dependency-free Swift port of
-[hashvatar](https://github.com/medhychabour/hashvatar). It creates stable
-gradient or ordered-dither avatars from a string or numeric seed, entirely
-on-device with no stored images and no network requests.
+A dependency-free Swift package that paints stable gradient or ordered-dither
+avatars from a string or numeric seed, entirely on-device with no stored images
+and no network requests. Seeds and palettes follow
+[`@outpacelabs/avatars`](https://avatars.outpacestudios.com); the gradient and
+dither renderers follow [hashvatar](https://github.com/medhychabour/hashvatar).
 
 The package lives under `packages/gradient-avatars` and is linked to the Dash
 app as a local Swift package.
@@ -29,10 +30,10 @@ GradientAvatar(seed: user.id, size: 48, pattern: .dither, animated: true)
 
 The default shape is a circle. Pass `cornerRadius: 0` for a square.
 
-A palette keeps one hue and varies only lightness and chroma, so an avatar
-reads as one colour family rather than a spectrum. `.gradient` blurs six
-polygons over a bright base; `.dither` resolves a two-tone sweep through an
-8×8 Bayer matrix.
+A palette picks an HSL colour harmony (analogous, triadic, and friends) so an
+avatar reads as a vivid multi-hue set rather than one muted family.
+`.gradient` blurs six polygons over a bright base; `.dither` resolves a
+two-tone sweep through an 8×8 Bayer matrix.
 
 ## Motion
 
@@ -70,11 +71,11 @@ let palette = AvatarGenerator.palette(for: "jane@example.com")
 print(palette.colors.map(\.hex))
 ```
 
-Seeds and palettes match hashvatar's golden values, including the JavaScript
-float arithmetic in its hash, so the same string yields the same avatar here
-and on [hashvatar.com](https://www.hashvatar.com). Rendering uses native Core
-Graphics and Core Image, so minor rasterization differences from browser Canvas
-are expected. `NOTICE.md` lists every deviation.
+Seeds and palettes match `@outpacelabs/avatars` v0.2.1 golden values. They do
+not match [hashvatar.com](https://www.hashvatar.com) — Dash keeps Outpace's
+brighter harmonies on purpose. Rendering uses native Core Graphics and Core
+Image, so minor rasterization differences from browser Canvas are expected.
+`NOTICE.md` lists every deviation.
 
 ## License
 

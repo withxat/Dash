@@ -1,6 +1,15 @@
 import CoreGraphics
 import Foundation
 
+/// The color-harmony rule used to derive an avatar palette.
+public enum AvatarHarmony: String, CaseIterable, Sendable {
+  case analogous
+  case triadic
+  case splitComplementary
+  case tetradic
+  case complementary
+}
+
 /// An sRGB color represented as eight-bit channels.
 public struct AvatarColor: Hashable, Sendable {
   public let red: UInt8
@@ -13,9 +22,9 @@ public struct AvatarColor: Hashable, Sendable {
     self.blue = blue
   }
 
-  /// The lowercase hexadecimal representation used by the upstream engine.
+  /// The uppercase hexadecimal representation used by the Outpace palette.
   public var hex: String {
-    let digits = Array("0123456789abcdef")
+    let digits = Array("0123456789ABCDEF")
     let values = [red, green, blue]
     return "#"
       + values.flatMap { value in
@@ -41,72 +50,16 @@ public struct AvatarColor: Hashable, Sendable {
   }
 }
 
-/// A color in Oklch, the space the palette is generated in.
-///
-/// Hue stays constant across a palette while lightness and chroma vary, which
-/// is what gives an avatar one colour family instead of a spectrum.
-public struct AvatarOklch: Hashable, Sendable {
-  public let lightness: Double
-  public let chroma: Double
-  public let hue: Double
-
-  public init(lightness: Double, chroma: Double, hue: Double) {
-    self.lightness = lightness
-    self.chroma = chroma
-    self.hue = hue
-  }
-
-  /// Converts to gamut-clipped sRGB.
-  public var color: AvatarColor {
-    let radians = hue * .pi / 180
-    let a = chroma * cos(radians)
-    let b = chroma * sin(radians)
-
-    let long = lightness + 0.396_337_777_4 * a + 0.215_803_757_3 * b
-    let medium = lightness - 0.105_561_345_8 * a - 0.063_854_172_8 * b
-    let short = lightness - 0.089_484_177_5 * a - 1.291_485_548_0 * b
-
-    let longCubed = long * long * long
-    let mediumCubed = medium * medium * medium
-    let shortCubed = short * short * short
-
-    let linearRed =
-      4.076_741_662_1 * longCubed - 3.307_711_591_3 * mediumCubed
-      + 0.230_969_929_2 * shortCubed
-    let linearGreen =
-      -1.268_438_004_6 * longCubed + 2.609_757_401_1 * mediumCubed
-      - 0.341_319_396_5 * shortCubed
-    let linearBlue =
-      -0.004_196_086_3 * longCubed - 0.703_418_614_7 * mediumCubed
-      + 1.707_614_701_0 * shortCubed
-
-    func channel(_ value: Double) -> UInt8 {
-      let clamped = min(max(value, 0), 1)
-      let encoded =
-        clamped <= 0.003_130_8
-        ? clamped * 12.92
-        : 1.055 * pow(clamped, 1 / 2.4) - 0.055
-      return UInt8(clamping: Int((encoded * 255).rounded()))
-    }
-
-    return AvatarColor(
-      red: channel(linearRed),
-      green: channel(linearGreen),
-      blue: channel(linearBlue)
-    )
-  }
-}
-
-/// The deterministic colors generated for an avatar seed.
+/// The deterministic colors and harmony generated for an avatar seed.
 public struct AvatarPalette: Hashable, Sendable {
   public let seed: UInt32
-  public let oklch: [AvatarOklch]
   public let colors: [AvatarColor]
+  public let harmony: AvatarHarmony
 
-  public init(seed: UInt32, oklch: [AvatarOklch]) {
+  public init(seed: UInt32, colors: [AvatarColor], harmony: AvatarHarmony) {
     self.seed = seed
-    self.oklch = oklch
-    self.colors = oklch.map(\.color)
+    self.colors = colors
+    self.harmony = harmony
   }
 }
 
@@ -141,46 +94,30 @@ extension AvatarSeed: ExpressibleByIntegerLiteral {
 
 /// Pure deterministic helpers shared by the renderers.
 public enum AvatarGenerator {
+  private static let goldenAngle = 137.5
+
   /// Separates the layer geometry stream from the palette stream.
   ///
-  /// Upstream re-hashes the decimal text of its first four seeds, which cannot
-  /// be reproduced without JavaScript's number formatting. Salting one stream
-  /// gives the same independence with a rule Swift can state.
+  /// Kept so the gradient renderer can draw shapes independently of the
+  /// colours that fill them.
   static let geometrySalt: UInt32 = 0x9E37_79B9
 
-  /// Hashes a string exactly like `hashvatar`: FNV-1a over the trimmed,
-  /// lowercased input.
+  /// Hashes a string exactly like `@outpacelabs/avatars`.
   ///
-  /// Two JavaScript details are reproduced on purpose, because an avatar is an
-  /// identity and the two implementations have to agree on it. The upstream
-  /// hashes UTF-16 code units, so this iterates `utf16` rather than Swift
-  /// `Character` values or UTF-8 bytes. It also multiplies with `*` instead of
-  /// `Math.imul`, and the FNV product reaches 2⁵⁶ where a `Double` can no
-  /// longer hold every integer, so the low bits are rounded away before the
-  /// result is folded back to 32 bits. Doing the multiply exactly would be the
-  /// textbook FNV-1a and would disagree with the reference on most inputs.
+  /// JavaScript hashes UTF-16 code units, so this intentionally does the same
+  /// instead of iterating Swift `Character` values or UTF-8 bytes.
   public static func seed(from input: String) -> UInt32 {
-    let normalized = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-    var hash = Double(2_166_136_261)
-    for codeUnit in normalized.utf16 {
-      hash = Double(int32(hash) ^ Int32(codeUnit))
-      hash = Double(uint32(hash * 16_777_619))
+    var hash: UInt32 = 2_166_136_261
+    for codeUnit in input.utf16 {
+      hash ^= UInt32(codeUnit)
+      hash = hash &* 16_777_619
     }
-    return uint32(hash)
-  }
-
-  /// JavaScript's `ToInt32`: truncate, wrap into 32 bits, read as signed.
-  private static func int32(_ value: Double) -> Int32 {
-    Int32(bitPattern: uint32(value))
-  }
-
-  /// JavaScript's `ToUint32`.
-  private static func uint32(_ value: Double) -> UInt32 {
-    guard value.isFinite else { return 0 }
-    var wrapped = value.rounded(.towardZero)
-      .truncatingRemainder(dividingBy: 4_294_967_296)
-    if wrapped < 0 { wrapped += 4_294_967_296 }
-    return UInt32(wrapped)
+    hash ^= hash >> 16
+    hash = hash &* 0x7FEB_352D
+    hash ^= hash >> 15
+    hash = hash &* 0x846C_A68B
+    hash ^= hash >> 16
+    return hash
   }
 
   /// Draws `count` deterministic values in `[0, 1)` from a seed.
@@ -195,83 +132,107 @@ public enum AvatarGenerator {
   }
 
   /// Derives the stable palette for a string seed.
-  public static func palette(for seed: String, count: Int = 2) -> AvatarPalette {
+  public static func palette(for seed: String, count: Int? = nil) -> AvatarPalette {
     palette(for: AvatarSeed(seed), count: count)
   }
 
   /// Derives the stable palette for a numeric seed.
-  public static func palette(for seed: UInt32, count: Int = 2) -> AvatarPalette {
+  public static func palette(for seed: UInt32, count: Int? = nil) -> AvatarPalette {
     palette(for: AvatarSeed(seed), count: count)
   }
 
   /// Derives the stable palette for a normalized seed.
   ///
-  /// Passing `tones` restricts the result to those hue families; the default
-  /// keeps one hue drawn from the seed and varies only lightness and chroma.
-  public static func palette(
-    for seed: AvatarSeed,
-    count: Int = 2,
-    tones: [AvatarOklch]? = nil
-  ) -> AvatarPalette {
-    let count = max(1, count)
-    let seeds = seeds(for: seed, count: count * 3)
-    let tones = (tones?.isEmpty ?? true) ? nil : tones
+  /// Colours come from the Outpace HSL harmony rules. Pass `count` to take a
+  /// prefix (or cycle) of that natural palette — dither asks for two, gradient
+  /// for four — without reshuffling the shared prefix when the length changes.
+  public static func palette(for seed: AvatarSeed, count: Int? = nil) -> AvatarPalette {
+    let numericSeed = seed.rawValue
+    var random = SeededRandom(seed: numericSeed)
     let baseHue =
-      tones == nil
-      ? (seeds[0] * 360).truncatingRemainder(dividingBy: 360)
-      : nil
-    let oklch = (0..<count).map { index in
-      color(
-        seed: seeds[index * 3],
-        lightnessSeed: seeds[index * 3 + 1],
-        chromaSeed: seeds[index * 3 + 2],
-        tones: tones,
-        isSecondary: index > 0,
-        baseHue: baseHue
-      )
+      (Double(numericSeed) * goldenAngle)
+      .truncatingRemainder(dividingBy: 360)
+    let harmonies = AvatarHarmony.allCases
+    let harmonyIndex = Int(floor(random.next() * Double(harmonies.count)))
+    let harmony = harmonies[harmonyIndex]
+    let natural = hues(baseHue: baseHue, harmony: harmony).map { hue in
+      let saturation = 75 + random.next() * 25
+      let lightness = 50 + random.next() * 20
+      return hslToColor(hue: hue, saturation: saturation, lightness: lightness)
     }
-    return AvatarPalette(seed: seed.rawValue, oklch: oklch)
+    let colors: [AvatarColor]
+    if let count {
+      let count = max(1, count)
+      colors = (0..<count).map { natural[$0 % natural.count] }
+    } else {
+      colors = natural
+    }
+    return AvatarPalette(seed: numericSeed, colors: colors, harmony: harmony)
   }
 
-  private static func color(
-    seed: Double,
-    lightnessSeed: Double,
-    chromaSeed: Double,
-    tones: [AvatarOklch]?,
-    isSecondary: Bool,
-    baseHue: Double?
-  ) -> AvatarOklch {
-    let hue: Double
-    let lightness: Double
-    let chroma: Double
+  private static func hues(baseHue: Double, harmony: AvatarHarmony) -> [Double] {
+    switch harmony {
+    case .analogous:
+      [baseHue, baseHue + 30, baseHue + 60, baseHue - 30]
+    case .triadic:
+      [baseHue, baseHue + 120, baseHue + 240]
+    case .splitComplementary:
+      [baseHue, baseHue + 150, baseHue + 210]
+    case .tetradic:
+      [baseHue, baseHue + 90, baseHue + 180, baseHue + 270]
+    case .complementary:
+      [baseHue, baseHue + 180, baseHue + 20, baseHue + 200]
+    }
+  }
 
-    if let tones, !tones.isEmpty {
-      let index = Int(floor(seed * Double(tones.count))) % tones.count
-      let tone = tones[index]
-      hue = (tone.hue + (seed * 2 - 1) * 30 + 360).truncatingRemainder(dividingBy: 360)
-      lightness = isSecondary ? 0.22 + lightnessSeed * 0.18 : 0.52 + lightnessSeed * 0.22
-      chroma =
-        isSecondary
-        ? max(tone.chroma * 0.5, 0.06) + chromaSeed * 0.08
-        : max(tone.chroma * 0.8, 0.14) + chromaSeed * 0.10
-    } else {
-      hue = ((baseHue ?? seed * 360) + 360).truncatingRemainder(dividingBy: 360)
-      if isSecondary {
-        // The secondary reads the two seeds in the opposite order. Upstream
-        // does the same, and swapping them back reshuffles every avatar.
-        lightness = 0.18 + chromaSeed * 0.20
-        chroma = 0.08 + lightnessSeed * 0.12
-      } else {
-        lightness = 0.55 + lightnessSeed * 0.22
-        chroma = 0.18 + chromaSeed * 0.18
-      }
+  private static func hslToColor(
+    hue: Double,
+    saturation: Double,
+    lightness: Double
+  ) -> AvatarColor {
+    let normalizedHue =
+      (hue.truncatingRemainder(dividingBy: 360) + 360)
+      .truncatingRemainder(dividingBy: 360)
+    let normalizedSaturation = min(100, max(0, saturation)) / 100
+    let normalizedLightness = min(100, max(0, lightness)) / 100
+
+    let chroma =
+      (1 - abs(2 * normalizedLightness - 1))
+      * normalizedSaturation
+    let secondary =
+      chroma
+      * (1 - abs((normalizedHue / 60).truncatingRemainder(dividingBy: 2) - 1))
+    let match = normalizedLightness - chroma / 2
+
+    let channels: (Double, Double, Double)
+    switch normalizedHue {
+    case ..<60:
+      channels = (chroma, secondary, 0)
+    case ..<120:
+      channels = (secondary, chroma, 0)
+    case ..<180:
+      channels = (0, chroma, secondary)
+    case ..<240:
+      channels = (0, secondary, chroma)
+    case ..<300:
+      channels = (secondary, 0, chroma)
+    default:
+      channels = (chroma, 0, secondary)
     }
 
-    return AvatarOklch(lightness: lightness, chroma: min(chroma, 0.37), hue: hue)
+    func byte(_ value: Double) -> UInt8 {
+      UInt8(clamping: Int(((value + match) * 255).rounded()))
+    }
+
+    return AvatarColor(
+      red: byte(channels.0),
+      green: byte(channels.1),
+      blue: byte(channels.2)
+    )
   }
 }
 
-/// Mulberry32, the PRNG the upstream generator seeds from its hash.
+/// Mulberry32 — used for palette saturation/lightness and geometry streams.
 struct SeededRandom {
   private var state: UInt32
 

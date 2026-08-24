@@ -43,7 +43,7 @@ apps/
   web/                   Landing + Hono edge app (`dash-relay` at dash.xat.sh)
 packages/
   cloudflare-api/        OAuth + Cloudflare REST/GraphQL client (no third-party deps)
-  gradient-avatars/      Deterministic on-device avatars, a Swift port of hashvatar
+  gradient-avatars/      Deterministic on-device avatars (Outpace palettes, hashvatar paint)
   SwiftDitherKit/        Dithered SwiftUI charts and hold-to-scrub interaction
   SwiftGlobeKit/         SwiftUI + Metal dotted globe for analytics
   BlossomColorPicker/    Vendored SwiftUI color picker

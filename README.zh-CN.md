@@ -43,7 +43,7 @@ apps/
   web/                   落地页 + Hono 边缘应用（`dash-relay`，dash.xat.sh）
 packages/
   cloudflare-api/        OAuth + Cloudflare REST/GraphQL 客户端（无第三方依赖）
-  gradient-avatars/      端上确定性头像，hashvatar 的 Swift 移植
+  gradient-avatars/      端上确定性头像（Outpace 调色 + hashvatar 绘制）
   SwiftDitherKit/        抖动风格 SwiftUI 图表与按住扫读交互
   SwiftGlobeKit/         SwiftUI + Metal 点阵地球（分析用）
   BlossomColorPicker/    引入的 SwiftUI 取色器
