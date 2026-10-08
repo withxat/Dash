@@ -305,11 +305,11 @@ struct WatchtowerWidget: Widget {
         .containerBackground(.background, for: .widget)
         .widgetURL(entry.snapshot?.deepLinkURL)
     }
-    .configurationDisplayName("Watchtower")
+    .configurationDisplayName("Insights")
     .description(
       Text(
         "Unread Cloudflare alerts for your account.",
-        comment: "Description of the Watchtower widget.")
+        comment: "Description of the Insights widget.")
     )
     .supportedFamilies([.systemSmall, .systemMedium])
   }
@@ -356,10 +356,10 @@ struct WatchtowerWidgetView: View {
             snapshot.alertsUnavailable
               ? String(
                 localized: "Open Dash to reconnect notification access.",
-                comment: "Watchtower widget message when notification access has expired.")
+                comment: "Insights widget message when notification access has expired.")
               : String(
                 localized: "Cloudflare hasn't sent anything new.",
-                comment: "Watchtower widget message when its alert history is empty.")
+                comment: "Insights widget message when its alert history is empty.")
           )
           .font(.caption)
           .foregroundStyle(.secondary)
@@ -386,7 +386,7 @@ struct WatchtowerWidgetView: View {
 
   private func staleView(_ snapshot: WatchtowerWidgetSnapshot) -> some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("Watchtower").font(.headline)
+      Text("Insights").font(.headline)
       Text("Stale — open Dash to refresh.")
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -396,7 +396,7 @@ struct WatchtowerWidgetView: View {
 
   private var emptyView: some View {
     VStack(alignment: .leading, spacing: 6) {
-      Text("Watchtower").font(.headline)
+      Text("Insights").font(.headline)
       Text("Open Dash to sync your Cloudflare alerts.")
         .font(.caption)
         .foregroundStyle(.secondary)

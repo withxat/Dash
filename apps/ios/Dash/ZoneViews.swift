@@ -109,19 +109,17 @@ struct ZonesView: View {
         toggleGroupsByStatus()
       }
     ]
-    if !model.isDemoSession {
-      actions.append(
-        .icon(
-          id: "domains-add-domain",
-          asset: SolarAsset.plus,
-          accessibilityLabel: DashL10n.string("Add domain"),
-          isEnabled: !model.isAuthenticating,
-          accessibilityIdentifier: "domains-add-domain"
-        ) {
-          beginAddDomain()
-        }
-      )
-    }
+    actions.append(
+      .icon(
+        id: "domains-add-domain",
+        asset: SolarAsset.plus,
+        accessibilityLabel: DashL10n.string("Add domain"),
+        isEnabled: !model.isAuthenticating,
+        accessibilityIdentifier: "domains-add-domain"
+      ) {
+        beginAddDomain()
+      }
+    )
     return actions
   }
 

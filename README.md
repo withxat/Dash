@@ -25,7 +25,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 | **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Watchtower traffic charts and Cloudflare notification history, an app-icon unread badge, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Insights traffic charts and Cloudflare notification history, an app-icon unread badge, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation.
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 
@@ -70,7 +70,7 @@ cp apps/ios/Config/Secrets.xcconfig.example apps/ios/Config/Secrets.xcconfig
 
 Set `DASH_CLIENT_ID` to the public Cloudflare OAuth client ID and `DASH_REDIRECT_URI` to the deployed relay's HTTPS `/oauth/callback` URL. The HTTPS redirect must be registered on the Cloudflare OAuth client. Do not register the custom scheme with Cloudflare; the relay converts the final callback to `dash://oauth/callback`.
 
-Real-account sign-in requests the audited union of read and write permissions used by Dash's current features in one authorization. The Demo remains read-only. Any later OAuth reauthorization also requests that full set.
+Real-account sign-in requests the audited union of read and write permissions used by Dash's current features in one authorization. The interactive Demo simulates edits, uploads, deletes, and deployments entirely on-device. Use Home → Reset demo to restore its sample data; leaving Demo also discards changes. Any later OAuth reauthorization also requests that full set.
 
 Changing scopes requires enabling the same exact scope IDs on the OAuth client and authorizing the updated request again.
 

@@ -373,7 +373,7 @@ private struct OnboardingView: View {
       }
 
       // App Review's path past the OAuth wall (and anyone's no-account tour):
-      // a read-only session served from in-app fixtures by DemoBackend.
+      // an interactive session served entirely on-device by DemoBackend.
       // The demo is an alternative to signing in, not a way out of it, so the
       // two stay stacked instead of sharing a confirm row — opened up past the
       // tray-tight default so the text action reads as its own choice.

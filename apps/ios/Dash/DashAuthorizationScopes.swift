@@ -25,8 +25,8 @@ enum DashAuthorizationScopes {
   ]
 
   /// Read scopes used by nested screens that are not represented by a
-  /// standalone FeatureID. These keep the Demo's read-only profile able to load
-  /// every core catalog surface without mutation permission.
+  /// standalone FeatureID. These keep nested core screens covered by the
+  /// real-account grant and the interactive Demo profile.
   ///
   /// Email Routing rules and destination addresses call their matching read
   /// scopes. `registrar-domains.read` is here because the zone screen's
@@ -87,7 +87,7 @@ enum DashAuthorizationScopes {
     "registrar-domains.admin",
   ]
 
-  /// Read-only profile retained for Demo and capability-gating tests.
+  /// Legacy read-only profile retained for capability-gating tests.
   /// Real-account authorization uses `core`.
   static let initialReadOnly: Set<String> = {
     let reads = coreFeatures.reduce(into: Set<String>()) {

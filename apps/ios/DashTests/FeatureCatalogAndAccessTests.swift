@@ -23,7 +23,7 @@ import UIKit
   }
 }
 
-/// Core features stay browsable on the Demo / read-only profile. Experimental
+/// Core features stay browsable on the legacy read-only profile. Experimental
 /// features stay out of `coreFeatures` and out of sign-in; Demo still carries
 /// their read scopes so an opted-in Resources row can open without a fake
 /// connection wall.
@@ -51,7 +51,7 @@ import UIKit
   for feature in DashAuthorizationScopes.coreFeatures {
     let access = feature.capability.accessLevel(
       grantedScopes: DashAuthorizationScopes.initialReadOnly)
-    // Demo / initial-read grants omit write scopes, so every unlocked core
+    // Legacy read-only grants omit write scopes, so every unlocked core
     // feature with mutations is Read-only. (None of coreFeatures is
     // permanently write-free — that pattern is currently Tunnels.)
     #expect(!feature.capability.write.isEmpty)
@@ -104,20 +104,20 @@ import UIKit
   #expect(CloudflareScopes.required.allSatisfy(model.selectedScopes.contains))
 }
 
-@Test @MainActor func demoUsesReadOnlyGrantPlusExperimentalReads() {
+@Test @MainActor func demoGrantsSimulatedCoreWritesPlusExperimentalReads() {
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: AppModel.demoGrantedScopes))
   #expect(AppModel.demoGrantedScopes.contains("registrar-domains.read"))
-  #expect(!AppModel.demoGrantedScopes.contains("registrar-domains.admin"))
+  #expect(AppModel.demoGrantedScopes.contains("registrar-domains.admin"))
   #expect(AppModel.demoGrantedScopes.contains("argotunnel.read"))
   #expect(AppModel.demoGrantedScopes.contains("access.read"))
   #expect(!AppModel.demoAccessRequiresConnection(["dns.read"]))
-  #expect(AppModel.demoAccessRequiresConnection(["dns.write"]))
+  #expect(!AppModel.demoAccessRequiresConnection(["dns.write"]))
+  #expect(AppModel.demoAccessRequiresConnection(["unsupported.write"]))
   for feature in FeatureID.allCases {
     let access = feature.capability.accessLevel(
       grantedScopes: AppModel.demoGrantedScopes)
-    // Demo never grants write scopes; permanently write-free features
-    // (Tunnels) are Read-only too once unlocked.
-    #expect(access == .readOnly)
+    // Tunnels remains a read-only feature; every shipped editor is unlocked.
+    #expect(access == (feature == .tunnels ? .readOnly : .full))
   }
 }
 

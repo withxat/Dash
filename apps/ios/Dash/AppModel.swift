@@ -90,16 +90,15 @@ struct PendingHomeAction: Equatable, Sendable {
 @MainActor
 @Observable
 final class AppModel {
-  /// Demo keeps every core surface browsable, plus experimental feature reads
-  /// so opting into one can explore its DemoBackend data without a fake
-  /// "Connect your account" wall.
+  /// Demo grants every simulated core editor plus experimental feature reads.
+  /// These grants live in memory only; the real token store is never updated.
   static let demoGrantedScopes: Set<String> = {
     let experimentalReads = DashAuthorizationScopes.experimentalFeatures.reduce(
       into: Set<String>()
     ) {
       $0.formUnion(DashAuthorizationScopes.authorizationScopes(for: $1))
     }
-    return DashAuthorizationScopes.initialReadOnly.union(experimentalReads)
+    return DashAuthorizationScopes.core.union(experimentalReads)
   }()
 
   let configuration: AppConfiguration
@@ -107,9 +106,11 @@ final class AppModel {
   /// Swapped for a `DemoBackend`-served client while the demo session runs;
   /// every consumer reads it per-call, so the swap takes effect everywhere.
   private(set) var client: CloudflareClient
-  /// True while the read-only demo session is active (App Review's path past
+  /// True while the interactive demo session is active (App Review's path past
   /// the OAuth wall). Sign-out becomes a lightweight demo exit.
   private(set) var isDemoSession = false
+  @ObservationIgnored private var demoSession: URLSession?
+  @ObservationIgnored private var isResettingDemo = false
   private(set) var isEnteringDemo = false
   let featureCache: FeatureDataCache
   let avatars = AvatarStore()
@@ -136,7 +137,7 @@ final class AppModel {
       WidgetCenter.shared.reloadTimelines(ofKind: QuickActionsWidgetKind.id)
       guard oldValue != activeAccountID else { return }
       try? clearWatchtowerWidgetSnapshot()
-      featureCache.setPersistenceAccount(activeAccountID)
+      featureCache.setPersistenceAccount(isDemoSession ? nil : activeAccountID)
     }
   }
   var authState: AuthenticationState = .loading {
@@ -807,8 +808,8 @@ final class AppModel {
   ) {
     guard !scopes.isEmpty else { return }
     if isDemoSession {
-      // The demo is intentionally read-only. A write CTA means "connect my
-      // account", never "replace the demo client's token in place".
+      // Simulated capabilities are already granted. A capability outside that
+      // world requires a real connection; never replace its token in place.
       guard Self.demoAccessRequiresConnection(scopes) else { return }
       Task { @MainActor [weak self] in
         guard let self else { return }
@@ -1505,7 +1506,7 @@ final class AppModel {
     }
   }
 
-  /// Enters the read-only demo session: swaps the client for one served
+  /// Enters the interactive demo session: swaps the client for one served
   /// entirely by `DemoBackend`, then runs the normal identity path so the
   /// demo exercises the same code as a real sign-in.
   func enterDemo() {
@@ -1562,8 +1563,10 @@ final class AppModel {
       self.clearPersistedAccountData()
       self.isDemoSession = true
       self.errorMessage = nil
+      let session = DemoBackend.session
+      self.demoSession = session
       let demoClient = CloudflareClient(
-        clientID: "demo", tokenStore: DemoTokenStore(), session: DemoBackend.session)
+        clientID: "demo", tokenStore: DemoTokenStore(), session: session)
       self.client = demoClient
       self.deferredDeletionExecutor.replaceClient(demoClient)
       self.grantedScopes = Self.demoGrantedScopes
@@ -1589,6 +1592,18 @@ final class AppModel {
         self.toasts.error(message)
       }
     }
+  }
+
+  /// Reset follows the same teardown as leaving Demo, including pending
+  /// deletions and account work. A fresh URLSession restores every fixture.
+  func resetDemo() async {
+    guard isDemoSession, !isEnteringDemo, !isResettingDemo else { return }
+    isResettingDemo = true
+    defer { isResettingDemo = false }
+    guard await exitDemo() else { return }
+    await Task.yield()
+    try? await R2TemporaryFile.removeAllFiles()
+    enterDemo()
   }
 
   /// Tears down the demo session: restores the real client and returns to
@@ -1617,6 +1632,8 @@ final class AppModel {
     deferredDeletions.discardEphemeralCredentialStatePreservingRecovery()
     resetAccountScopedWork()
     isDemoSession = false
+    demoSession?.invalidateAndCancel()
+    demoSession = nil
     let authenticatedClient = CloudflareClient(
       clientID: configuration.clientID, tokenStore: tokenStore, session: authenticatedSession)
     client = authenticatedClient

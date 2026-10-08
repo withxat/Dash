@@ -30,7 +30,7 @@ const zoneShot: ScreenshotSpec = {
 }
 
 const watchtowerShot: ScreenshotSpec = {
-	alt: 'Watchtower charts for web traffic, CPU time, and Worker invocations',
+	alt: 'Insights charts for web traffic, CPU time, and Worker invocations',
 	src: `/screens/watchtower.webp${SHOT_VERSION}`,
 }
 
@@ -148,7 +148,7 @@ function DeviceCluster() {
 
 	return (
 		<div
-			aria-label="Dash on iPhone: zone, Watchtower, and Pages screens"
+			aria-label="Dash on iPhone: zone, Insights, and Pages screens"
 			className="device-cluster"
 			role="img"
 		>

@@ -88,9 +88,9 @@ The published captures are 1206x2622 WebP in `public/screens/`, referenced with 
 
 The device bezel is a separate transparent SVG (CC BY-SA 4.0; see `THIRD_PARTY_NOTICES.md`). Do not flatten the frame into every WebP.
 
-Landing ships three captures in the cluster: zone detail, Watchtower, and Pages. R2 remains available as a spare capture for swaps.
+Landing ships three captures in the cluster: zone detail, Insights, and Pages. R2 remains available as a spare capture for swaps.
 
-**Demo mode note for new captures:** prefer drill-down screens without the root `Read-only` chrome. Avoid bulk filler names and joke corporations.
+**Demo mode note for new captures:** prefer drill-down screens without the root Demo guide. Avoid bulk filler names and joke corporations.
 
 ## 10. Shared-link preview
 

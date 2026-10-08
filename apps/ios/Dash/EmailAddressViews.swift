@@ -45,8 +45,9 @@ struct EmailDestinationAddressesView: View {
         if !unverified.isEmpty {
           DashNotice(
             kind: .warning,
-            message:
-              "Mail forwarded to an unverified address is dropped. Open the confirmation email Cloudflare sent to it."
+            message: model.isDemoSession
+              ? "This sample address is unverified. Add a destination address to try simulated verification without sending email."
+              : "Mail forwarded to an unverified address is dropped. Open the confirmation email Cloudflare sent to it."
           )
           .dashSectionBoundary(!featureAllowsWrites)
         }
@@ -247,7 +248,7 @@ struct EmailAddressAddForm: View {
 
   var body: some View {
     DashFormSheet(
-      saveTitle: "Send verification email",
+      saveTitle: model.isDemoSession ? "Add demo address" : "Send verification email",
       actionPhase: actionPhase,
       onSuccessPresentationCompleted: completeSavePresentation,
       canSave: canSave,
@@ -264,9 +265,11 @@ struct EmailAddressAddForm: View {
       }
     )
     .dashTrayDescription(
-      DashL10n.string(
-        "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened."
-      )
+      model.isDemoSession
+        ? DashL10n.string("Verification completes in the demo without sending an email.")
+        : DashL10n.string(
+          "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened."
+        )
     )
   }
 
@@ -283,7 +286,10 @@ struct EmailAddressAddForm: View {
         return
       }
       model.featureCache.remove(FeatureCacheKey.emailAddresses(context.accountID))
-      model.toasts.success(DashL10n.string("Cloudflare sent a verification email to \(address)"))
+      model.toasts.success(
+        model.isDemoSession
+          ? DashL10n.string("Address verified in the demo. No email was sent.")
+          : DashL10n.string("Cloudflare sent a verification email to \(address)"))
       await onAdded()
       guard model.isCurrentAccount(context), !Task.isCancelled else {
         actionPhase = .idle

@@ -101,7 +101,8 @@ struct HomeView: View {
 
         if model.isDemoSession {
           HomeDemoExperienceSection(
-            connect: presentDemoConnectFromSource
+            connect: presentDemoConnectFromSource,
+            reset: { Task { await model.resetDemo() } }
           )
           .dashSectionReveal(1)
         }
@@ -288,14 +289,6 @@ struct HomeView: View {
   }
 
   private func perform(_ action: HomeActionID) {
-    guard !model.isDemoSession else {
-      // A quick action is only a launcher; it must not animate from the banner
-      // action the user did not tap.
-      demoConnectSharedAction = nil
-      showsDemoConnect = true
-      return
-    }
-
     switch action {
     case .addDomain:
       let scopes = FeatureID.zones.capability.all
@@ -529,6 +522,7 @@ private enum HomeDemoConnect {
 
 private struct HomeDemoExperienceSection: View {
   let connect: () -> Void
+  let reset: () -> Void
 
   var body: some View {
     DashCard {
@@ -543,12 +537,11 @@ private struct HomeDemoExperienceSection: View {
               .foregroundStyle(DashTheme.subtle)
           }
           Spacer(minLength: 8)
-          StatusBadge(.readOnly)
         }
 
         Text(
           DashL10n.string(
-            "Follow one issue from the signal to the affected resource. Changes stay locked until you connect Cloudflare."
+            "Edit, upload, and delete sample resources. Changes stay in this demo session; no real Cloudflare resources are affected."
           )
         )
         .dashTextStyle(.supporting)
@@ -574,10 +567,12 @@ private struct HomeDemoExperienceSection: View {
 
           DashListGroupDivider()
 
-          stepLabel(
+          stepButton(
             number: "03",
             title: DashL10n.string("Take action"),
-            subtitle: DashL10n.string("Connect your account when you are ready to make changes")
+            subtitle: DashL10n.string(
+              "Try editing a DNS record, then reopen it to see your changes"),
+            destination: .dns("zone-example")
           )
         }
 
@@ -588,6 +583,9 @@ private struct HomeDemoExperienceSection: View {
         )
         .accessibilityIdentifier(HomeDemoConnect.sourceID)
         .dashTraySharedSource(HomeDemoConnect.sharedAction)
+
+        DashSecondaryPillButton(title: "Reset demo", action: reset)
+          .accessibilityIdentifier("home-demo-reset")
       }
     }
     .accessibilityElement(children: .contain)
@@ -650,7 +648,7 @@ private struct HomeDemoConnectContent: View {
       .accessibilityHidden(true)
       .dashTrayDescription(
         DashL10n.string(
-          "The demo stays read-only so sample actions cannot change real infrastructure. Return to onboarding to connect Cloudflare and make changes."
+          "Demo changes are simulated on this device and reset when you leave. Deployments and email verification are simulated too. Connect Cloudflare to manage real resources."
         )
       )
   }

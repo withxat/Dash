@@ -14,7 +14,7 @@ enum WatchtowerFreshness: Equatable, Sendable {
 
   static func checkedText(fetchedAt: Date?, now: Date = .now) -> String {
     guard let fetchedAt else {
-      return String(localized: "Open Watchtower to check this account")
+      return String(localized: "Open Insights to check this account")
     }
     let age = max(0, now.timeIntervalSince(fetchedAt))
     let relative: String

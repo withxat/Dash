@@ -837,7 +837,7 @@ extension AppTab {
     switch self {
     case .home: DashL10n.string("Home")
     case .features: DashL10n.string("Resources")
-    case .watchtower: DashL10n.string("Watchtower")
+    case .watchtower: DashL10n.string("Insights")
     }
   }
 

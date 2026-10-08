@@ -1007,9 +1007,12 @@ struct AddDomainSheet: View {
     // Step two answers the question itself, in the success content.
     .dashTrayDescription(
       created == nil
-        ? DashL10n.string(
-          "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
-        )
+        ? (model.isDemoSession
+          ? DashL10n.string(
+            "Adds a sample domain that is ready to edit. No registrar or DNS changes are needed.")
+          : DashL10n.string(
+            "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
+          ))
         : nil)
   }
 
@@ -1028,33 +1031,39 @@ struct AddDomainSheet: View {
 
   private func successContent(_ zone: CloudflareZone) -> some View {
     VStack(alignment: .leading, spacing: 14) {
-      // Localize WITH the argument, not after it: DashNotice runs `message`
-      // through DashL10n.ui, and by then the zone name is already spliced in, so
-      // the catalog's "%@ is on Cloudflare." could never match.
-      DashNotice(kind: .success, message: DashL10n.string("\(zone.name) is on Cloudflare."))
-      if let servers = zone.nameServers, !servers.isEmpty {
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Point the domain's name servers at")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-          ForEach(servers, id: \.self) { server in
-            Text(server)
-              .dashTextStyle(.code)
-              .foregroundStyle(DashTheme.text)
-              .textSelection(.enabled)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(.horizontal, 12)
-              .padding(.vertical, 10)
-              .background(
-                DashTheme.recessed,
-                in: RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+      if model.isDemoSession {
+        DashNotice(
+          kind: .success,
+          message: "Domain added to the demo. DNS records and settings are ready to try.")
+      } else {
+        // Localize WITH the argument, not after it: DashNotice runs `message`
+        // through DashL10n.ui, and by then the zone name is already spliced in, so
+        // the catalog's "%@ is on Cloudflare." could never match.
+        DashNotice(kind: .success, message: DashL10n.string("\(zone.name) is on Cloudflare."))
+        if let servers = zone.nameServers, !servers.isEmpty {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Point the domain's name servers at")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+            ForEach(servers, id: \.self) { server in
+              Text(server)
+                .dashTextStyle(.code)
+                .foregroundStyle(DashTheme.text)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                  DashTheme.recessed,
+                  in: RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+            }
           }
         }
+        Text("It shows as Pending until the name servers update — usually within a few hours.")
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      Text("It shows as Pending until the name servers update — usually within a few hours.")
-        .dashTextStyle(.footnote)
-        .foregroundStyle(DashTheme.subtle)
-        .fixedSize(horizontal: false, vertical: true)
     }
   }
 

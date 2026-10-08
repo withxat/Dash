@@ -351,7 +351,7 @@ struct RegistrarDomainDetailView: View {
   }
 
   private var allowsWrites: Bool {
-    model.hasScopes(RegistrarAccess.write) && !model.isDemoSession
+    model.hasScopes(RegistrarAccess.write)
   }
 
   /// Everything known about the domain right now, from whichever of the three

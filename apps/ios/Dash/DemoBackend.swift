@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Demo session plumbing
 
-/// Token store for the read-only demo session: a static token the demo
+/// Token store for the interactive demo session: a static token the demo
 /// backend never checks, so the client skips the real keychain and the
 /// refresh path never runs.
 struct DemoTokenStore: TokenStore {
@@ -13,14 +13,14 @@ struct DemoTokenStore: TokenStore {
   func setTokens(_ tokens: TokenSet) async throws {}
 }
 
-/// An in-process Cloudflare for the read-only demo session — App Review's
+/// An in-process Cloudflare for the interactive demo session — App Review's
 /// path past the OAuth wall (Guideline 2.1) and anyone's way to try Dash
 /// without an account. The demo `CloudflareClient` gets a URLSession whose
 /// only protocol handler is this class, so every request the app makes is
 /// answered from the fixtures below: the real client, cache, and view code
 /// run unchanged, pull-to-refresh included, with zero network and zero
-/// credentials. Reads serve one small coherent world; writes return a
-/// friendly read-only error.
+/// credentials. Reads and writes share one session-local world. A new session restores
+/// the fixtures; no mutation is sent to Cloudflare.
 final class DemoBackend: URLProtocol {
   /// The account a fresh demo session lands on. The demo user is a member of
   /// three of them (`DemoWorld.accounts`) — one person with a main workspace,
@@ -32,17 +32,13 @@ final class DemoBackend: URLProtocol {
 
   /// The session handed to the demo `CloudflareClient`. Nothing escapes to
   /// the network: this class claims every request in the session.
-  static let session: URLSession = {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.protocolClasses = [DemoBackend.self]
-    return URLSession(configuration: configuration)
-  }()
+  static var session: URLSession { DemoSession.makeSession() }
 
   override class func canInit(with _: URLRequest) -> Bool { true }
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
-    let reply = Self.respond(to: request, body: Self.drainBody(of: request))
+    let reply = DemoSession.respond(to: request, body: Self.drainBody(of: request))
     let response = HTTPURLResponse(
       url: request.url ?? URL(string: "https://api.cloudflare.com")!,
       statusCode: reply.status,
@@ -75,7 +71,7 @@ final class DemoBackend: URLProtocol {
 
   // MARK: - Router
 
-  private struct Reply {
+  struct Reply {
     var status: Int
     var contentType: String
     var body: Data
@@ -98,15 +94,7 @@ final class DemoBackend: URLProtocol {
     return Reply(json: #"{"success":true,"errors":[],"messages":[],"result":\#(result)\#(tail)}"#)
   }
 
-  private static var readOnly: Reply {
-    Reply(
-      status: 400,
-      json: #"""
-        {"success":false,"errors":[{"code":10061,"message":"This demo is read-only. Return to Home and choose Connect your account to make changes."}],"messages":[],"result":null}
-        """#)
-  }
-
-  private static func respond(to request: URLRequest, body: Data?) -> Reply {
+  static func fixtureReply(to request: URLRequest, body: Data? = nil) -> Reply {
     guard let url = request.url else { return ok("[]") }
     var path = url.path
     if path.hasPrefix("/client/v4") { path.removeFirst("/client/v4".count) }
@@ -119,7 +107,7 @@ final class DemoBackend: URLProtocol {
     if path == "/graphql" {
       return graphQL(body: body)
     }
-    guard method == "GET" else { return readOnly }
+    guard method == "GET" else { return DemoSession.unsupported }
 
     switch path {
     case "/user":
@@ -543,6 +531,16 @@ final class DemoBackend: URLProtocol {
       )
     default:
       return ok("[]")
+    }
+  }
+
+  static var initialZones: [[String: Any]] {
+    DemoWorld.allZones.compactMap { zone in
+      guard
+        var row = try? JSONSerialization.jsonObject(with: Data(zone.json.utf8)) as? [String: Any]
+      else { return nil }
+      row["account"] = ["id": zone.accountID]
+      return row
     }
   }
 

@@ -5,8 +5,9 @@ The official scope catalog is the authorization source of truth:
 - `OAuthScopeCatalog.json` must contain every scope returned by `GET /oauth/scopes`.
 - `FeatureCatalog.descriptors` must contain every `FeatureID`, and every declared scope must exist
   in the official scope catalog.
-- `DashAuthorizationScopes.initialReadOnly` is the reviewed Demo profile. It must keep every
-  catalog feature browsable without containing a mutation scope.
+- `AppModel.demoGrantedScopes` contains core capabilities plus experimental reads. Demo writes
+  must stay inside `DemoSession`; synthetic grants must never be persisted to real credentials.
+  `DashAuthorizationScopes.initialReadOnly` remains the legacy read-only profile for access tests.
 - `DashAuthorizationScopes.core` is the audited union of every currently shipped read and write
   capability, and the default real-account OAuth request.
 - `CloudflareScopes.unsupportedByOAuthClient` must match `pnpm ios:oauth-audit`. The current

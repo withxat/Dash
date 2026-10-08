@@ -61,7 +61,7 @@ struct FeatureReadOnlyBanner: View {
 /// Shared read-only affordance for a screen whose primary payload can still be
 /// inspected without its mutation scope.
 ///
-/// Demo sessions render nothing: the world is already read-only, Home owns
+/// Demo sessions render nothing: simulated writes are already granted, Home owns
 /// "Connect your account", and a Grant-access strip on every write-gated
 /// surface is noise.
 struct FeatureWriteAccessNotice: View {

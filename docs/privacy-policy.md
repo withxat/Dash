@@ -27,7 +27,7 @@ advertising, or tracking.
   locally in account-scoped files so a relaunch or offline screen can show its
   last-known data. Signing out deletes those persisted account caches.
 - **Cloudflare notifications and audit logs** are fetched directly from
-  Cloudflare's API using your OAuth credential. Watchtower displays
+  Cloudflare's API using your OAuth credential. Insights displays
   notification-history records that Cloudflare already published and keeps its
   read and ignored state locally on this iPhone. Dash does not create, edit,
   test, or delete notification policies or webhook destinations.
@@ -66,7 +66,7 @@ using Cloudflare's Cache API. For abuse protection, it uses the connecting IP
 address only as the key for an hourly request counter, also cached for at most
 one hour. These values are not used for analytics, advertising, or tracking.
 
-The relay has no role in Watchtower or build monitoring. Dash does not send it
+The relay has no role in Insights or build monitoring. Dash does not send it
 APNs device tokens or notification content, does not create Cloudflare webhook
 destinations for it, and exposes no push-delivery route through it.
 

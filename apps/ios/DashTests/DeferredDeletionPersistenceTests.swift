@@ -326,12 +326,26 @@ extension DeferredDeletionCoordinatorCoverageTests {
     #expect(model.authState == .authenticated)
 
     let operationID = model.deferredDeletions.schedule(
-      deletionCommand(recordID: "demo-write", accountID: DemoBackend.accountID))
+      .dnsRecord(
+        accountID: DemoBackend.accountID, zoneID: "zone-example", recordID: "dns-a-www",
+        recordType: "A", displayName: "www.example.com"))
     let id = try #require(operationID)
     model.deferredDeletions.commitPendingOperations()
     await model.deferredDeletions.waitForActiveWork()
 
-    #expect(model.deferredDeletions.operations[id]?.state == .failed)
+    #expect(model.deferredDeletions.operations[id]?.state == .succeeded)
+    let afterDeletion = try await model.client.listDNSRecords(zoneID: "zone-example")
+    #expect(!afterDeletion.items.contains { $0.id == "dns-a-www" })
+    #expect(realRequests.methods.isEmpty)
+
+    await model.resetDemo()
+    for _ in 0..<100 where model.isEnteringDemo {
+      try? await Task.sleep(for: .milliseconds(10))
+    }
+    #expect(model.isDemoSession)
+    #expect(model.authState == .authenticated)
+    let restored = try await model.client.listDNSRecords(zoneID: "zone-example")
+    #expect(restored.items.contains { $0.id == "dns-a-www" })
     #expect(realRequests.methods.isEmpty)
   }
 
@@ -416,10 +430,12 @@ extension DeferredDeletionCoordinatorCoverageTests {
 
     let demoOperationID = try #require(
       model.deferredDeletions.schedule(
-        deletionCommand(recordID: "demo-write", accountID: DemoBackend.accountID)))
+        .dnsRecord(
+          accountID: DemoBackend.accountID, zoneID: "zone-example", recordID: "dns-a-www",
+          recordType: "A", displayName: "www.example.com")))
     model.deferredDeletions.commitPendingOperations()
     await model.deferredDeletions.waitForActiveWork()
-    #expect(model.deferredDeletions.operations[demoOperationID]?.state == .failed)
+    #expect(model.deferredDeletions.operations[demoOperationID]?.state == .succeeded)
     #expect(defaults.data(forKey: persistenceKey) == journal)
     #expect(realRequests.methods.isEmpty)
 

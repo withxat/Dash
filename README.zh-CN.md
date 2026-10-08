@@ -25,7 +25,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | **KV** | Namespace、key 列表、读取与创建·编辑·删除 |
 | **Tunnels** | 实验功能；在 Settings → Experimental 中开启 |
 
-壳层能力：Home 启动器、Resources 目录、Watchtower 流量图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth，以及仅 iPhone 的单栈导航。Watchtower 只读取 Cloudflare 已发布的通知历史；Dash 不提供 webhook 投递、告警策略管理或推送桥接。
+壳层能力：Home 启动器、Resources 目录、Insights（洞察）流量图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth，以及仅 iPhone 的单栈导航。洞察只读取 Cloudflare 已发布的通知历史；Dash 不提供 webhook 投递、告警策略管理或推送桥接。
 
 暂不覆盖：D1、Queues、Vectorize、Secrets Store、Images、Stream、Access，以及 iPad / 分栏布局。
 
@@ -68,7 +68,7 @@ cp apps/ios/Config/Secrets.xcconfig.example apps/ios/Config/Secrets.xcconfig
 
 在本地配置中填写 Cloudflare OAuth Client ID 和 relay 的 HTTPS `/oauth/callback` 地址。Cloudflare 控制台只注册 HTTPS 地址；relay 会把最终回调转换成 `dash://oauth/callback`。
 
-真实账户登录会在一次授权中请求 Dash 当前功能使用的全部读写权限；Demo 仍保持只读。之后再次走 OAuth 也会请求同一套完整权限。
+真实账户登录会在一次授权中请求 Dash 当前功能使用的全部读写权限；Demo 可在设备内模拟编辑、上传、删除与部署。通过首页的「重置演示」恢复示例数据，退出 Demo 也会丢弃更改。之后再次走 OAuth 也会请求同一套完整权限。
 
 调整 scope 时，Cloudflare OAuth 客户端必须启用完全相同的 scope ID，并重新确认更新后的授权请求。
 

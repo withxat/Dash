@@ -2058,8 +2058,9 @@ struct EmailRoutingRuleEditor: View {
           if verifiedOptions.isEmpty {
             DashNotice(
               kind: .info,
-              message:
-                "A route can only forward to a verified destination address. Add one, then open the confirmation email Cloudflare sends."
+              message: model.isDemoSession
+                ? "Add a destination address to try forwarding. Verification is simulated; no email is sent."
+                : "A route can only forward to a verified destination address. Add one, then open the confirmation email Cloudflare sends."
             )
             DashNavigationSource(
               destination: .emailAddresses,

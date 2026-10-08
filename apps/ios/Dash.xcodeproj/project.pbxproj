@@ -13,6 +13,7 @@
 		B00000000000000000000003 /* KeychainTokenStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* KeychainTokenStore.swift */; };
 		B00000000000000000000004 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000004 /* AppModel.swift */; };
 		B0000000000000000000012B /* DemoBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0000000000000000000012B /* DemoBackend.swift */; };
+		B00000000000000000000301 /* DemoSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000301 /* DemoSession.swift */; };
 		B00000000000000000000005 /* DashTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* DashTheme.swift */; };
 		B00000000000000000000006 /* Catalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000006 /* Catalog.swift */; };
 		B00000000000000000000007 /* AppRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000007 /* AppRootView.swift */; };
@@ -35,6 +36,7 @@
 		B00000000000000000000235 /* HomeAndRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000235 /* HomeAndRoutingTests.swift */; };
 		B00000000000000000000236 /* ZoneOperationsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000236 /* ZoneOperationsTests.swift */; };
 		B00000000000000000000237 /* StorageAndIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000237 /* StorageAndIntentTests.swift */; };
+		B00000000000000000000302 /* DemoSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000302 /* DemoSessionTests.swift */; };
 		B00000000000000000000238 /* LegalDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000238 /* LegalDocumentTests.swift */; };
 		B00000000000000000000013 /* DashUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000013 /* DashUITests.swift */; };
 		B00000000000000000000014 /* CloudflareAPI in Frameworks */ = {isa = PBXBuildFile; productRef = P00000000000000000000001 /* CloudflareAPI */; };
@@ -251,6 +253,7 @@
 		F00000000000000000000003 /* KeychainTokenStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainTokenStore.swift; sourceTree = "<group>"; };
 		F00000000000000000000004 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		F0000000000000000000012B /* DemoBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoBackend.swift; sourceTree = "<group>"; };
+		F00000000000000000000301 /* DemoSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSession.swift; sourceTree = "<group>"; };
 		F00000000000000000000005 /* DashTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTheme.swift; sourceTree = "<group>"; };
 		F00000000000000000000006 /* Catalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Catalog.swift; sourceTree = "<group>"; };
 		F00000000000000000000007 /* AppRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppRootView.swift; sourceTree = "<group>"; };
@@ -274,6 +277,7 @@
 		F00000000000000000000235 /* HomeAndRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeAndRoutingTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000236 /* ZoneOperationsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneOperationsTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000237 /* StorageAndIntentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageAndIntentTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000302 /* DemoSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSessionTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000238 /* LegalDocumentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocumentTests.swift; sourceTree = "<group>"; };
 		F00000000000000000000013 /* DashUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashUITests.swift; sourceTree = "<group>"; };
 		F00000000000000000000020 /* Dash.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Dash.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -497,6 +501,7 @@
 				F00000000000000000000003 /* KeychainTokenStore.swift */,
 				F00000000000000000000004 /* AppModel.swift */,
 				F0000000000000000000012B /* DemoBackend.swift */,
+				F00000000000000000000301 /* DemoSession.swift */,
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000213 /* FeatureCachePersistence.swift */,
 				F00000000000000000000150 /* PerformanceDiagnostics.swift */,
@@ -610,6 +615,7 @@
 				F00000000000000000000238 /* LegalDocumentTests.swift */,
 				F00000000000000000000232 /* LoadingAndPaginationTests.swift */,
 				F00000000000000000000237 /* StorageAndIntentTests.swift */,
+				F00000000000000000000302 /* DemoSessionTests.swift */,
 				F00000000000000000000234 /* TrayAndChromeTests.swift */,
 				F00000000000000000000233 /* WatchtowerTests.swift */,
 				F00000000000000000000236 /* ZoneOperationsTests.swift */,
@@ -1010,6 +1016,7 @@
 				B00000000000000000000003 /* KeychainTokenStore.swift in Sources */,
 				B00000000000000000000004 /* AppModel.swift in Sources */,
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
+				B00000000000000000000301 /* DemoSession.swift in Sources */,
 				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
 				B0000000000000000000015D /* DashSurfaces.swift in Sources */,
@@ -1120,6 +1127,7 @@
 				B00000000000000000000238 /* LegalDocumentTests.swift in Sources */,
 				B00000000000000000000232 /* LoadingAndPaginationTests.swift in Sources */,
 				B00000000000000000000237 /* StorageAndIntentTests.swift in Sources */,
+				B00000000000000000000302 /* DemoSessionTests.swift in Sources */,
 				B00000000000000000000234 /* TrayAndChromeTests.swift in Sources */,
 				B00000000000000000000233 /* WatchtowerTests.swift in Sources */,
 				B00000000000000000000236 /* ZoneOperationsTests.swift in Sources */,
@@ -1238,6 +1246,7 @@
 		E00000000000000000000011 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_TESTABILITY = YES;
@@ -1251,6 +1260,7 @@
 		E00000000000000000000012 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";

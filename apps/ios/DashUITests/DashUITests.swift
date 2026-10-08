@@ -244,7 +244,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.buttons["Home"].waitForExistence(timeout: 5))
     let resourcesTab = app.buttons["Resources"]
     XCTAssertTrue(resourcesTab.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.buttons["Watchtower"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.buttons["Insights"].waitForExistence(timeout: 5))
     XCTAssertFalse(app.buttons["Search"].exists)
 
     resourcesTab.tap()
@@ -303,7 +303,7 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    let watchtower = app.buttons["Watchtower"]
+    let watchtower = app.buttons["Insights"]
     XCTAssertTrue(Self.waitForHittable(watchtower))
     watchtower.tap()
 
@@ -653,7 +653,7 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    let watchtower = app.buttons["Watchtower"]
+    let watchtower = app.buttons["Insights"]
     XCTAssertTrue(watchtower.waitForExistence(timeout: 5))
     watchtower.tap()
 

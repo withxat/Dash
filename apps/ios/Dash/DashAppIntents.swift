@@ -633,8 +633,8 @@ struct UploadToR2Intent: AppIntent {
 }
 
 struct OpenWatchtowerIntent: AppIntent {
-  static let title: LocalizedStringResource = "Open Watchtower"
-  static let description = IntentDescription("Open the Watchtower tab in Dash.")
+  static let title: LocalizedStringResource = "Open Insights"
+  static let description = IntentDescription("Open the Insights tab in Dash.")
   static let openAppWhenRun = true
 
   @Dependency private var model: AppModel
@@ -664,8 +664,8 @@ struct DashShortcuts: AppShortcutsProvider {
       systemImageName: "hammer")
     AppShortcut(
       intent: OpenWatchtowerIntent(),
-      phrases: ["Open Watchtower in \(.applicationName)"],
-      shortTitle: "Open Watchtower",
+      phrases: ["Open Insights in \(.applicationName)"],
+      shortTitle: "Open Insights",
       systemImageName: "binoculars")
     AppShortcut(
       intent: UploadToR2Intent(),

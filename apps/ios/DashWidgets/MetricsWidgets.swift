@@ -297,7 +297,7 @@ struct MetricsWidgetDomainEntityQuery: EntityStringQuery {
 struct AccountMetricsWidgetIntent: WidgetConfigurationIntent {
   static let title: LocalizedStringResource = "Account Metric"
   static let description = IntentDescription(
-    "Show one dithered Watchtower metric for a Cloudflare account.")
+    "Show one dithered Insights metric for a Cloudflare account.")
 
   @Parameter(title: "Account")
   var account: MetricsWidgetAccountEntity?
@@ -786,7 +786,7 @@ struct AccountMetricsWidget: Widget {
         .widgetURL(entry.presentation.deepLinkURL)
     }
     .configurationDisplayName("Account Metrics")
-    .description("A Watchtower trend for your account.")
+    .description("An Insights trend for your account.")
     .supportedFamilies([.systemSmall, .systemMedium])
     .contentMarginsDisabled()
   }

@@ -2828,10 +2828,11 @@ if (
     homeView,
     "demoConnectSharedAction = HomeDemoConnect.sharedAction",
   ) !== 1 ||
-  !performHomeAction?.includes("demoConnectSharedAction = nil")
+  !performHomeAction ||
+  performHomeAction.includes("showsDemoConnect")
 ) {
   issues.push(
-    "Demo Connect must carry its shared-action identity only from the real source tap into presentation.",
+    "Demo Connect must carry its shared-action identity only from the source tap; quick actions must open their normal editors in Demo.",
   );
 }
 
