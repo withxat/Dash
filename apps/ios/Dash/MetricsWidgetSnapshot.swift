@@ -135,6 +135,15 @@ struct MetricsWidgetMetricSnapshot: Codable, Hashable, Sendable {
     points = try container.decode([MetricsWidgetPoint].self, forKey: .points)
   }
 
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(metricID, forKey: .metricID)
+    try container.encode(total, forKey: .total)
+    // The current schema distinguishes an explicit null from a missing key.
+    try container.encode(previousTotal, forKey: .previousTotal)
+    try container.encode(points, forKey: .points)
+  }
+
   init(
     metric: AccountMetricsWidgetMetric,
     total: Double,

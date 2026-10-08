@@ -2,6 +2,10 @@ linkWorkspacePackages: true
 nodeLinker: hoisted
 shellEmulator: true
 trustPolicy: no-downgrade
+overrides:
+  # Miniflare pins a vulnerable Undici release. Remove this bridge when the
+  # Cloudflare toolchain moves past this Miniflare version.
+  'miniflare@4.20260710.0>undici': 7.29.1
 packages:
   - packages/*
   - apps/*

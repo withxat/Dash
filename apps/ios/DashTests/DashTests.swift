@@ -63,7 +63,7 @@ import UIKit
 @Test func hostedAppEmbedsItsBuildCommitIdentity() throws {
   let commit = try #require(DashBuildMetadata.shortCommit(in: .main))
   #expect(commit.count == 7)
-  #expect(commit.allSatisfy(\.isHexDigit))
+  #expect(commit.allSatisfy { $0.isHexDigit })
 }
 
 @Test func relayBaseURLStripsPathFromRedirectURI() {

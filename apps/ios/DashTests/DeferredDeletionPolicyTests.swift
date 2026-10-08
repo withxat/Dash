@@ -189,7 +189,7 @@ extension DeferredDeletionCoordinatorCoverageTests {
     if let earlierID {
       toasts.dismiss(id: earlierID)
     }
-    #expect(toasts.current?.message == "Deletion undone.")
+    #expect(toasts.current?.message == "Deletion undone")
   }
 
   @Test @MainActor

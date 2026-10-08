@@ -14,7 +14,7 @@ enum WatchtowerMetricChartRenderingMode: Equatable {
   }
 }
 
-private struct WatchtowerChartVisualSwapProfile: Equatable {
+struct WatchtowerChartVisualSwapProfile: Equatable {
   enum Effect: Equatable {
     case rich
     case opacityOnly
@@ -44,7 +44,7 @@ private struct WatchtowerChartVisualSwapProfile: Equatable {
   }
 }
 
-private struct WatchtowerChartVisualSwapSequence: Equatable {
+struct WatchtowerChartVisualSwapSequence: Equatable {
   enum Phase: Equatable {
     case settled(WatchtowerMetricChartRenderingMode)
     case exiting(WatchtowerMetricChartRenderingMode)

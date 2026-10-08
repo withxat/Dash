@@ -194,11 +194,11 @@ import UIKit
     DashFailurePresentation.from(
       error: CloudflareAPIError.request(status: 404, errors: [])
     ).message
-      == "Cloudflare couldn’t find this resource. It may have been removed or belong to another account."
+      == "Cloudflare couldn’t find this resource. It may have been removed or belong to another account"
   )
   #expect(
     DashFailurePresentation.from(error: CloudflareAPIError.transport("timed out")).message
-      == "Dash couldn’t reach Cloudflare. Check your connection and try again."
+      == "Dash couldn’t reach Cloudflare. Check your connection and try again"
   )
   #expect(
     DashFailurePresentation.from(
@@ -212,7 +212,7 @@ import UIKit
     DashFailurePresentation.from(
       error: CloudflareAPIError.request(status: 422, errors: [])
     ).message
-      == "Cloudflare couldn’t process this request. Check the resource and try again."
+      == "Cloudflare couldn’t process this request. Check the resource and try again"
   )
   #expect(
     CloudflareAPIError.request(

@@ -5,7 +5,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-private struct WatchtowerMetricDragPresentation: Equatable {
+struct WatchtowerMetricDragPresentation: Equatable {
   let metric: WatchtowerAnalyticsMetric
   let size: CGSize
   let isExpanded: Bool
@@ -23,7 +23,7 @@ private struct WatchtowerMetricDragPresentation: Equatable {
 @MainActor
 @Observable
 final class WatchtowerMetricDragVisualState {
-  fileprivate enum Phase: Equatable {
+  enum Phase: Equatable {
     case pressing
     case lifting
     case tracking
@@ -36,13 +36,13 @@ final class WatchtowerMetricDragVisualState {
   }
 
   private var press: Press?
-  fileprivate private(set) var presentation: WatchtowerMetricDragPresentation?
-  fileprivate private(set) var phase: Phase?
-  @ObservationIgnored fileprivate weak var coordinateView: UIView?
+  private(set) var presentation: WatchtowerMetricDragPresentation?
+  private(set) var phase: Phase?
+  @ObservationIgnored weak var coordinateView: UIView?
   /// The space the live `presentation` coordinates are expressed in. Held for
   /// the length of one session so move / settle keep measuring against the same
   /// view the lift resolved.
-  @ObservationIgnored fileprivate private(set) weak var activeReference: UIView?
+  @ObservationIgnored private(set) weak var activeReference: UIView?
   @ObservationIgnored fileprivate private(set) var activeContainerWidth: CGFloat = 0
   @ObservationIgnored private var retainedDelegate: AnyObject?
   @ObservationIgnored private var sourceViews: [WatchtowerAnalyticsMetric: WeakView] = [:]
@@ -68,7 +68,7 @@ final class WatchtowerMetricDragVisualState {
   /// last-resort fallback: a lift must never be cancelled just because that
   /// registration is missing — a mispositioned ghost is recoverable, a drag
   /// that silently refuses to start is not.
-  fileprivate func reference(for sourceView: UIView) -> UIView? {
+  func reference(for sourceView: UIView) -> UIView? {
     coordinateView ?? sourceView.window
   }
 
@@ -80,7 +80,7 @@ final class WatchtowerMetricDragVisualState {
     phase == .lifting || phase == .settling
   }
 
-  fileprivate func beginPress(
+  func beginPress(
     _ metric: WatchtowerAnalyticsMetric,
     identifier: UUID,
     size: CGSize,
@@ -110,7 +110,7 @@ final class WatchtowerMetricDragVisualState {
       scale: reduceMotion ? 1 : 0.97)
   }
 
-  fileprivate func endPress(identifier: UUID) {
+  func endPress(identifier: UUID) {
     guard press?.identifier == identifier else { return }
     press = nil
     guard phase == .pressing else { return }
@@ -122,7 +122,7 @@ final class WatchtowerMetricDragVisualState {
     layoutToReferenceOffset = .zero
   }
 
-  fileprivate func beginLift(
+  func beginLift(
     metric: WatchtowerAnalyticsMetric,
     size: CGSize,
     fingerLocation: CGPoint,
@@ -170,20 +170,20 @@ final class WatchtowerMetricDragVisualState {
 
   /// Finger position is direct-manipulation state. The one-shot lift spring
   /// belongs to `centerOffset` and `scale`, so the panel never trails the touch.
-  fileprivate func trackFinger(to location: CGPoint) {
+  func trackFinger(to location: CGPoint) {
     guard var presentation else { return }
     presentation.fingerLocation = location
     self.presentation = presentation
   }
 
-  fileprivate func liftToFinger() {
+  func liftToFinger() {
     guard phase == .lifting, var presentation else { return }
     presentation.centerOffset = .zero
     presentation.scale = 1
     self.presentation = presentation
   }
 
-  fileprivate func finishLift() {
+  func finishLift() {
     guard phase == .lifting else { return }
     phase = .tracking
   }
@@ -191,7 +191,7 @@ final class WatchtowerMetricDragVisualState {
   /// Changes both the phase and the animatable offset in one transaction. If
   /// these land in separate renders SwiftUI may see no animation and execute a
   /// completion immediately, which makes the ghost appear to snap home.
-  fileprivate func settle(to center: CGPoint) {
+  func settle(to center: CGPoint) {
     guard var presentation else { return }
     phase = .settling
     presentation.centerOffset = CGSize(
@@ -208,7 +208,7 @@ final class WatchtowerMetricDragVisualState {
     sessionFrames.merge(adjustedLayoutFrames(), uniquingKeysWith: { _, new in new })
   }
 
-  fileprivate func registerSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
+  func registerSourceView(_ view: UIView, for metric: WatchtowerAnalyticsMetric) {
     if let current = sourceViews[metric]?.value,
       current !== view,
       current.window != nil,
@@ -228,7 +228,7 @@ final class WatchtowerMetricDragVisualState {
 
   /// Card frames in the active drag's coordinate space. Stable SwiftUI layout
   /// measurements win; live UIKit source views only fill an initial gap.
-  fileprivate func frames(for metrics: [WatchtowerAnalyticsMetric])
+  func frames(for metrics: [WatchtowerAnalyticsMetric])
     -> [WatchtowerAnalyticsMetric: CGRect]
   {
     var result = sessionFrames.filter { metrics.contains($0.key) }
@@ -244,7 +244,7 @@ final class WatchtowerMetricDragVisualState {
     return result
   }
 
-  fileprivate func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
+  func sourceCenter(for metric: WatchtowerAnalyticsMetric) -> CGPoint? {
     if let frame = sessionFrames[metric] {
       return CGPoint(x: frame.midX, y: frame.midY)
     }
@@ -385,7 +385,7 @@ struct WatchtowerMetricCardFlowLayout: Layout {
 /// pointer sits inside it, and only travelling past the next centre moves it
 /// again. Entering a card's region was also the only thing that could reorder,
 /// so gaps between cards and the run-off below the last one addressed nothing.
-private enum WatchtowerMetricDropTargeting {
+enum WatchtowerMetricDropTargeting {
   /// True when the point has passed this card in the flow's reading order:
   /// below its band outright, or level with it and past its horizontal centre.
   /// Full-width cards have no left/right neighbour, so they compare on the

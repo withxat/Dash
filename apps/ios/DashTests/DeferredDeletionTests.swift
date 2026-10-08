@@ -205,12 +205,12 @@ struct DeferredDeletionCoordinatorCoverageTests {
     #expect(toasts.current?.message.contains("A record api.example.com") == true)
     #expect(
       toasts.current?.accessibilityAnnouncement?.contains(
-        "A record api.example.com will be deleted in 5 seconds. Undo available.") == true)
+        "A record api.example.com will be deleted in 5 seconds Undo available") == true)
 
     clock.value = clock.value.addingTimeInterval(4.2)
     coordinator.refreshLocalizedPresentation()
 
-    #expect(toasts.current?.message.contains("1 second.") == true)
+    #expect(toasts.current?.message.contains("1 second") == true)
     #expect(toasts.current?.action == .undoDeferredDeletionBatch)
   }
 
@@ -545,7 +545,7 @@ struct DeferredDeletionCoordinatorCoverageTests {
 
     #expect(coordinator.operations[successfulID]?.state == .succeeded)
     #expect(toasts.current?.kind == .success)
-    #expect(toasts.current?.message == "Deletion undone.")
+    #expect(toasts.current?.message == "Deletion undone")
     if let undoneID = toasts.current?.id {
       toasts.dismiss(id: undoneID)
     }

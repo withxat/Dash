@@ -167,6 +167,17 @@ final class PagesBuildActivityControllerBox {
   private let fetchDeployment:
     @Sendable (CloudflareClient, PagesBuildMonitorKey) async throws -> PagesDeployment
 
+  #if DEBUG
+    /// Lets single-flight tests wait for both callers before releasing the fetch.
+    func debugRefreshWaiterCount(for key: PagesBuildMonitorKey) -> Int {
+      refreshTasks[key]?.waiterCount ?? 0
+    }
+
+    func debugConsecutiveFailureCount(for key: PagesBuildMonitorKey) -> Int {
+      monitor?.key == key ? monitor?.consecutiveFailures ?? 0 : 0
+    }
+  #endif
+
   init(
     fetchDeployment:
       @escaping @Sendable (

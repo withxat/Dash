@@ -1389,8 +1389,9 @@ private func testComposite(
   guard outputAlpha > 0 else {
     return TestRGBA(red: 0, green: 0, blue: 0, alpha: 0)
   }
-  func channel(_ foreground: Double, _ background: Double) -> Double {
-    (foreground * alpha + background * background.alpha * (1 - alpha)) / outputAlpha
+  func channel(_ foregroundChannel: Double, _ backgroundChannel: Double) -> Double {
+    (foregroundChannel * alpha + backgroundChannel * background.alpha * (1 - alpha))
+      / outputAlpha
   }
   return TestRGBA(
     red: channel(foreground.red, background.red),

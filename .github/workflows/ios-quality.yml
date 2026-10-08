@@ -61,8 +61,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify toolchain
-        run: xcodebuild -version
+      - name: Test simulator preparation
+        run: node --test apps/ios/scripts/prepare-ci-simulator.test.mjs
+
+      - name: Prepare iPhone simulator
+        id: simulator
+        run: node apps/ios/scripts/prepare-ci-simulator.mjs
 
       - name: Lint
         run: pnpm lint
@@ -76,15 +80,21 @@ jobs:
           pnpm globe:test
 
       - name: Test Dash unit target
+        env:
+          SIMULATOR_DESTINATION: ${{ steps.simulator.outputs.destination }}
         run: |
           xcodebuild \
             -project apps/ios/Dash.xcodeproj \
             -scheme Dash \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+            -destination "$SIMULATOR_DESTINATION" \
             -allowProvisioningUpdates \
             -parallel-testing-enabled NO \
             -only-testing:DashTests \
             test
+
+      - name: Simulator diagnostics
+        if: failure()
+        run: xcrun simctl list
 
   nightly:
     if: github.event_name == 'schedule'
@@ -103,5 +113,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test simulator preparation
+        run: node --test apps/ios/scripts/prepare-ci-simulator.test.mjs
+
+      - name: Prepare iPhone simulator
+        id: simulator
+        run: node apps/ios/scripts/prepare-ci-simulator.mjs
+
       - name: Run full iOS suite
-        run: pnpm ios:test
+        env:
+          SIMULATOR_DESTINATION: ${{ steps.simulator.outputs.destination }}
+        run: |
+          xcodebuild \
+            -project apps/ios/Dash.xcodeproj \
+            -scheme Dash \
+            -destination "$SIMULATOR_DESTINATION" \
+            -allowProvisioningUpdates \
+            -parallel-testing-enabled NO \
+            test
+          pnpm lint:l10n
+
+      - name: Simulator diagnostics
+        if: failure()
+        run: xcrun simctl list

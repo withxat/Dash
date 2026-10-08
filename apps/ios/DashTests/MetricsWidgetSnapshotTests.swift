@@ -24,6 +24,13 @@ import Testing
   #expect(decoded.previousTotal == nil)
   #expect(decoded.points.isEmpty)
 
+  let encodedNull = try JSONEncoder().encode(decoded)
+  let encodedFields = try #require(
+    JSONSerialization.jsonObject(with: encodedNull) as? [String: Any])
+  #expect(encodedFields["previousTotal"] is NSNull)
+  #expect(
+    try JSONDecoder().decode(MetricsWidgetMetricSnapshot.self, from: encodedNull) == decoded)
+
   let withPrevious = MetricsWidgetMetricSnapshot(
     metric: .webTraffic,
     total: 50,
