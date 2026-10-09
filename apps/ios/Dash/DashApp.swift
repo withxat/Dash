@@ -24,7 +24,8 @@ struct DashApp: App {
           configuration: AppConfiguration(
             clientID: "dash-ui-test", redirectURI: "https://dash.invalid/oauth/callback"),
           tokenStore: DemoTokenStore(), session: DemoBackend.session,
-          deferredDeletionPersistence: nil)
+          deferredDeletionPersistence: nil,
+          deferredDeletionSleeper: DashUITestScenario.deletionSleeper)
     #else
       let model = AppModel(featureCachePersistence: FeatureCachePersistence())
     #endif
@@ -438,6 +439,22 @@ private struct SplashOverlay: View {
     static var current: Self? {
       guard ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return nil }
       return ProcessInfo.processInfo.arguments.compactMap(Self.init(rawValue:)).first
+    }
+
+    static var deletionSleeper: @Sendable (Duration) async throws -> Void {
+      let holdsUndo = current == .deletion
+      return { duration in
+        guard holdsUndo else {
+          try await Task.sleep(for: duration)
+          return
+        }
+        // UI tests exercise Undo and batching, while coordinator unit tests
+        // advance the deadline. AX round trips on CI must not consume the
+        // five-second grace period before the test can interact with it.
+        var cancellation = AsyncStream<Void> { _ in }.makeAsyncIterator()
+        _ = await cancellation.next()
+        try Task.checkCancellation()
+      }
     }
 
     static var dynamicTypeSize: DynamicTypeSize? {

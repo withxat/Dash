@@ -220,6 +220,9 @@ final class AppModel {
     tokenStore: any TokenStore = KeychainTokenStore(),
     session: URLSession = DashAPISession.shared,
     deferredDeletionPersistence: UserDefaults? = .standard,
+    deferredDeletionSleeper: @escaping @Sendable (Duration) async throws -> Void = { duration in
+      try await Task.sleep(for: duration)
+    },
     featureCachePersistence: FeatureCachePersistence? = nil
   ) {
     self.configuration = configuration
@@ -243,7 +246,8 @@ final class AppModel {
         }
       },
       persistence: deferredDeletionPersistence,
-      requiresCredentialActivation: true)
+      requiresCredentialActivation: true,
+      sleeper: deferredDeletionSleeper)
     activeAccountID = UserDefaults.standard.string(forKey: DashAppGroup.activeAccountKey)
     // Property observers don't fire during init — mirror explicitly so the
     // share extension works without waiting for an account switch.

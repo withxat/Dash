@@ -333,7 +333,10 @@ final class DashUITests: XCTestCase {
       withNormalizedOffset: CGVector(dx: 0.35, dy: 0.65))
     let destination = clientErrors.coordinate(
       withNormalizedOffset: CGVector(dx: 0.35, dy: 0.65))
-    source.press(forDuration: 0.8, thenDragTo: destination)
+    // Give the native lift and drop separate dwell time on slower simulators.
+    source.press(
+      forDuration: 1.5, thenDragTo: destination,
+      withVelocity: .slow, thenHoldForDuration: 1)
 
     let moved = XCTNSPredicateExpectation(
       predicate: NSPredicate { _, _ in
