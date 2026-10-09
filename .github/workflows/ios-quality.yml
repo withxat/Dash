@@ -29,8 +29,6 @@ on:
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
-  schedule:
-    - cron: '23 18 * * *'
   workflow_dispatch:
     inputs:
       suite:
@@ -46,14 +44,14 @@ permissions:
 
 concurrency:
   group: ios-quality-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'schedule' }}
+  cancel-in-progress: true
 
 env:
   DEVELOPER_DIR: /Applications/Xcode_26.4.1.app/Contents/Developer
 
 jobs:
   checks:
-    if: github.event_name != 'schedule' && inputs.suite != 'full'
+    if: inputs.suite != 'full'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -114,8 +112,8 @@ jobs:
         if: failure()
         run: xcrun simctl list
 
-  nightly:
-    if: github.event_name == 'schedule' || inputs.suite == 'full'
+  full:
+    if: github.event_name == 'workflow_dispatch' && inputs.suite == 'full'
     runs-on: macos-26
     timeout-minutes: 75
     steps:
