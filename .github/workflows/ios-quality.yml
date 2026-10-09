@@ -32,6 +32,14 @@ on:
   schedule:
     - cron: '23 18 * * *'
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Test suite to run
+        type: choice
+        default: unit
+        options:
+          - unit
+          - full
 
 permissions:
   contents: read
@@ -45,7 +53,7 @@ env:
 
 jobs:
   checks:
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && inputs.suite != 'full'
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -89,15 +97,25 @@ jobs:
             -destination "$SIMULATOR_DESTINATION" \
             -allowProvisioningUpdates \
             -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/DashTests.xcresult" \
             -only-testing:DashTests \
             test
+
+      - name: Upload failed test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dash-unit-test-results
+          path: ${{ runner.temp }}/DashTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Simulator diagnostics
         if: failure()
         run: xcrun simctl list
 
   nightly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || inputs.suite == 'full'
     runs-on: macos-26
     timeout-minutes: 75
     steps:
@@ -130,8 +148,18 @@ jobs:
             -destination "$SIMULATOR_DESTINATION" \
             -allowProvisioningUpdates \
             -parallel-testing-enabled NO \
+            -resultBundlePath "$RUNNER_TEMP/DashTests.xcresult" \
             test
           pnpm lint:l10n
+
+      - name: Upload failed test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dash-full-test-results
+          path: ${{ runner.temp }}/DashTests.xcresult
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Simulator diagnostics
         if: failure()

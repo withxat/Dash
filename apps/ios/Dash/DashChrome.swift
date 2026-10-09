@@ -2,6 +2,25 @@ import Combine
 import SwiftUI
 import UIKit
 
+#if DEBUG
+  private struct DashTrayReduceMotionOverrideKey: EnvironmentKey {
+    static let defaultValue: Bool? = nil
+  }
+
+  extension EnvironmentValues {
+    fileprivate var dashTrayReduceMotionOverride: Bool? {
+      get { self[DashTrayReduceMotionOverrideKey.self] }
+      set { self[DashTrayReduceMotionOverrideKey.self] = newValue }
+    }
+  }
+
+  extension View {
+    func dashTrayTestReduceMotionOverride(_ value: Bool?) -> some View {
+      environment(\.dashTrayReduceMotionOverride, value)
+    }
+  }
+#endif
+
 // MARK: - Paired tray action presentation
 
 /// The one source transition Dash supports: the same primary action persists
@@ -804,6 +823,9 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  #if DEBUG
+    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
+  #endif
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   /// Card / paired-shell reveal. Springs with the bottom train — not the dim.
   @State private var progress: CGFloat = 0
@@ -883,7 +905,11 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     }
   }
   private var reduceMotion: Bool {
-    accessibilityReduceMotion
+    #if DEBUG
+      reduceMotionOverride ?? accessibilityReduceMotion
+    #else
+      accessibilityReduceMotion
+    #endif
   }
 
   /// Initial Reduce Motion never resolves a shared action. A mid-presentation
@@ -970,10 +996,10 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
               .gesture(dragGesture, including: trayInteractionDisabled ? .none : .all)
           } content: {
             content()
-              .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
+              .allowsHitTesting(presentationSettled && !isClosing)
           } footer: {
             footer()
-              .allowsHitTesting(presentationSettled && keyboardAction == nil && !isClosing)
+              .allowsHitTesting(presentationSettled && !isClosing)
           }
           .frame(maxWidth: .infinity)
           .fixedSize(horizontal: false, vertical: true)
@@ -1004,9 +1030,31 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
           // that has not arrived. The SwiftUI paths hit-test the moving pose
           // and keep their historical mid-entrance behavior.
           .allowsHitTesting(
-            keyboardAction == nil && !isClosing
+            !isClosing
               && !(revealDriverEngaged && !presentationSettled)
           )
+          // Removing the focused form from hit testing while UIKit hides
+          // its keyboard can bring that keyboard back with no responder.
+          // Keep the responder subtree intact and absorb new taps above it.
+          .overlay {
+            if keyboardAction != nil {
+              Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {}
+                .accessibilityHidden(true)
+            }
+          }
+          #if DEBUG
+            .overlay(alignment: .topLeading) {
+              if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+                Color.clear
+                .frame(width: 1, height: 1)
+                .accessibilityElement()
+                .accessibilityIdentifier("dash.tray.card")
+                .accessibilityValue(sharedRevealActive ? "paired" : "standard")
+              }
+            }
+          #endif
           .mask {
             if sharedRevealActive, let sourceFrame {
               DashTraySharedContentMask(
@@ -2419,6 +2467,9 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @ViewBuilder var footer: () -> Footer
   let hasFooter: Bool
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  #if DEBUG
+    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
+  #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Bool>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
@@ -2427,7 +2478,11 @@ private struct DashTrayModifier<Hero: View, TrayContent: View, Footer: View>: Vi
   @Environment(\.dashNavigationEntryID) private var navigationEntryID
 
   private var reduceMotion: Bool {
-    accessibilityReduceMotion
+    #if DEBUG
+      reduceMotionOverride ?? accessibilityReduceMotion
+    #else
+      accessibilityReduceMotion
+    #endif
   }
 
   @ViewBuilder
@@ -2507,6 +2562,9 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
   var hero: ((Item) -> Hero)?
   @ViewBuilder var trayContent: (Item) -> TrayContent
   @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
+  #if DEBUG
+    @Environment(\.dashTrayReduceMotionOverride) private var reduceMotionOverride
+  #endif
   @State private var coverPresentation: DashTrayCoverPresentation<Item>?
   @State private var sharedActionLease = DashTraySharedActionLease()
   @State private var dismissCompletion: (() -> Void)?
@@ -2516,7 +2574,11 @@ private struct DashTrayItemModifier<Item: Identifiable & Equatable, Hero: View, 
 
   private var isPresented: Bool { item != nil }
   private var reduceMotion: Bool {
-    accessibilityReduceMotion
+    #if DEBUG
+      reduceMotionOverride ?? accessibilityReduceMotion
+    #else
+      accessibilityReduceMotion
+    #endif
   }
 
   @ViewBuilder

@@ -16,7 +16,18 @@ struct DashApp: App {
     // one toggle still silences every buzz in the app.
     DitherHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
     GlobeHoldInteraction.onEngage = { DashDelight.gestureEngaged() }
-    let model = AppModel(featureCachePersistence: FeatureCachePersistence())
+    #if DEBUG
+      let model =
+        !ProcessInfo.processInfo.arguments.contains("-ui-testing")
+        ? AppModel(featureCachePersistence: FeatureCachePersistence())
+        : AppModel(
+          configuration: AppConfiguration(
+            clientID: "dash-ui-test", redirectURI: "https://dash.invalid/oauth/callback"),
+          tokenStore: DemoTokenStore(), session: DemoBackend.session,
+          deferredDeletionPersistence: nil)
+    #else
+      let model = AppModel(featureCachePersistence: FeatureCachePersistence())
+    #endif
     _model = State(initialValue: model)
     // In-app App Intents run in this process; hand them the app's own model
     // so they share its client and single-flight token refresh.
@@ -66,8 +77,18 @@ struct DashApp: App {
 
   var body: some Scene {
     WindowGroup {
-      RootWithSplash(model: model)
-        .tint(DashTheme.brand)
+      Group {
+        #if DEBUG
+          if let scenario = DashUITestScenario.current {
+            DashUITestHost(scenario: scenario, model: model)
+          } else {
+            RootWithSplash(model: model)
+          }
+        #else
+          RootWithSplash(model: model)
+        #endif
+      }
+      .tint(DashTheme.brand)
     }
   }
 }
@@ -143,6 +164,9 @@ private struct RootWithSplash: View {
   }
 
   private var effectiveDynamicTypeSize: DynamicTypeSize {
+    #if DEBUG
+      if let size = DashUITestScenario.dynamicTypeSize { return size }
+    #endif
     return dynamicTypeSize
   }
 
@@ -401,3 +425,149 @@ private struct SplashOverlay: View {
     }
   }
 }
+
+#if DEBUG
+  /// Launch-only fixtures render production forms and navigation against the
+  /// same isolated in-memory backend as Demo. They never load saved credentials.
+  private enum DashUITestScenario: String {
+    case keyboard = "-uiTestKeyboardForm"
+    case tray = "-uiTestTrayMotion"
+    case r2 = "-uiTestR2TrayFlight"
+    case deletion = "-uiTestDeferredDeletion"
+
+    static var current: Self? {
+      guard ProcessInfo.processInfo.arguments.contains("-ui-testing") else { return nil }
+      return ProcessInfo.processInfo.arguments.compactMap(Self.init(rawValue:)).first
+    }
+
+    static var dynamicTypeSize: DynamicTypeSize? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard arguments.contains("-ui-testing") else { return nil }
+      if arguments.contains("UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge") {
+        return .accessibility5
+      }
+      return arguments.contains("-ui-preview-accessibility-text") ? .accessibility3 : nil
+    }
+  }
+
+  private struct DashUITestHost: View {
+    let scenario: DashUITestScenario
+    let model: AppModel
+    @State private var ready = false
+    @State private var presentsTray = false
+    @State private var text = ""
+    @State private var created = false
+    @State private var flightRan = false
+    @State private var reduceMotion = false
+    @State private var failure: String?
+    @State private var navigator = DestinationNavigator()
+    @State private var toastLayer = DashToastLayerState()
+
+    private var sourceID: String {
+      scenario == .r2 ? "ui-test-r2-create-source" : "ui-test-tray-source"
+    }
+
+    private var trayAction: DashTraySharedAction {
+      DashTraySharedAction(id: sourceID, title: scenario == .r2 ? "Create bucket" : "Actions")
+    }
+
+    var body: some View {
+      Group {
+        if let failure {
+          Text(verbatim: failure)
+        } else if !ready {
+          ProgressView()
+        } else if scenario == .deletion {
+          DestinationStackHost(navigator: navigator, isTabActive: true) { Color.clear }
+        } else {
+          trayHost
+        }
+      }
+      .environment(model)
+      .environment(\.locale, Locale(identifier: "en_US"))
+      .environment(\.dynamicTypeSize, DashUITestScenario.dynamicTypeSize ?? .large)
+      .dashTrayTestReduceMotionOverride(reduceMotion)
+      .environment(\.dashToastLayerState, toastLayer)
+      .dashToastLayer(
+        toastLayer, model: model, locale: Locale(identifier: "en_US"),
+        dynamicTypeSize: DashUITestScenario.dynamicTypeSize ?? .large
+      )
+      .onChange(of: toastLayer.successFlightInProgress) { _, active in
+        if active { flightRan = true }
+      }
+      .task { await prepare() }
+    }
+
+    private var trayHost: some View {
+      VStack(spacing: 12) {
+        Button {
+          presentsTray = true
+        } label: {
+          Text(verbatim: scenario == .r2 ? "Open R2 create" : "Open anchored tray")
+            .frame(width: 160, height: 72)
+        }
+        .accessibilityIdentifier(sourceID)
+        .dashTraySharedSource(trayAction)
+        if created { Text(verbatim: "Bucket created") }
+        if flightRan { Text(verbatim: "Success flight ran") }
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .dashTray(
+        isPresented: $presentsTray,
+        title: scenario == .r2 ? "Create bucket" : "Actions",
+        sharedAction: trayAction
+      ) {
+        switch scenario {
+        case .r2:
+          R2CreateBucketSheet { created = true }
+        case .keyboard:
+          DashFormSheet(onSave: {}) {
+            VStack(spacing: 24) {
+              DashFormField(label: "Name", text: $text)
+              Text(verbatim: "Form background")
+                .frame(maxWidth: .infinity, minHeight: 80)
+            }
+          }
+        case .tray:
+          VStack(spacing: 16) {
+            Text(verbatim: "Tray content")
+            Button {
+              reduceMotion = true
+            } label: {
+              Text(verbatim: "Enable Reduce Motion")
+            }
+            .accessibilityIdentifier("ui-test-enable-reduce-motion")
+          }
+          .frame(maxWidth: .infinity, minHeight: 120)
+        case .deletion:
+          EmptyView()
+        }
+      }
+    }
+
+    private func prepare() async {
+      guard !ready else { return }
+      model.activeAccountID = DemoBackend.accountID
+      model.grantedScopes = DashAuthorizationScopes.core
+      model.selectedScopes = DashAuthorizationScopes.core
+      if scenario == .deletion {
+        do {
+          let records = try await model.client.listDNSRecords(zoneID: "zone-docs")
+          model.featureCache.set(FeatureCacheKey.dnsRecords("zone-docs"), records.items, ttl: nil)
+          model.deferredDeletions.activateCredential(
+            profileID: "ui-deferred-profile", availableAccountIDs: [DemoBackend.accountID])
+          navigator.setAccountScope(DemoBackend.accountID)
+          navigator.reset(to: .dns("zone-docs"))
+        } catch {
+          failure = error.localizedDescription
+          return
+        }
+      }
+      ready = true
+      if scenario == .keyboard {
+        await Task.yield()
+        presentsTray = true
+      }
+    }
+  }
+#endif

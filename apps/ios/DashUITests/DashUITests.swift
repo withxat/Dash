@@ -2,6 +2,11 @@ import XCTest
 
 @MainActor
 final class DashUITests: XCTestCase {
+  override func setUp() {
+    super.setUp()
+    continueAfterFailure = false
+  }
+
   /// Pin English so zh-Hans String Catalog never breaks label assertions.
   private static let englishLaunchArguments = [
     "-AppleLanguages", "(en)", "-AppleLocale", "en_US", "-ui-testing",
@@ -183,7 +188,7 @@ final class DashUITests: XCTestCase {
     create.tap()
 
     XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
-    XCTAssertTrue(app.staticTexts["Created successfully."].waitForExistence(timeout: 3))
+    XCTAssertTrue(app.staticTexts["Created successfully"].waitForExistence(timeout: 3))
     XCTAssertTrue(app.staticTexts["Success flight ran"].waitForExistence(timeout: 3))
     XCTAssertTrue(app.staticTexts["Bucket created"].waitForExistence(timeout: 3))
     let restoredSource = app.buttons["Open R2 create"]
@@ -202,8 +207,8 @@ final class DashUITests: XCTestCase {
         "UICTContentSizeCategoryAccessibilityExtraExtraExtraLarge",
       ])
 
-    let record = app.buttons["dns-record-record-1"]
-    openDNSRecordAndDelete("record-1", in: app)
+    let record = app.buttons["dns-record-dns-zone-docs-a"]
+    openDNSRecordAndDelete("dns-zone-docs-a", in: app)
 
     XCTAssertTrue(record.waitForNonExistence(timeout: 2))
     let undo = app.buttons["dash-toast-action"]
@@ -220,11 +225,11 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-uiTestDeferredDeletion"])
 
-    openDNSRecordAndDelete("record-1", in: app)
-    openDNSRecordAndDelete("record-2", in: app)
+    openDNSRecordAndDelete("dns-zone-docs-a", in: app)
+    openDNSRecordAndDelete("dns-zone-docs-www", in: app)
 
-    XCTAssertTrue(app.buttons["dns-record-record-1"].waitForNonExistence(timeout: 2))
-    XCTAssertTrue(app.buttons["dns-record-record-2"].waitForNonExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-dns-zone-docs-a"].waitForNonExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-dns-zone-docs-www"].waitForNonExistence(timeout: 2))
     XCTAssertTrue(app.staticTexts["No DNS records"].waitForExistence(timeout: 2))
     XCTAssertFalse(app.staticTexts["Record types"].exists)
     let undoAll = app.buttons["dash-toast-action"]
@@ -233,8 +238,8 @@ final class DashUITests: XCTestCase {
 
     undoAll.tap()
 
-    XCTAssertTrue(app.buttons["dns-record-record-1"].waitForExistence(timeout: 2))
-    XCTAssertTrue(app.buttons["dns-record-record-2"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-dns-zone-docs-a"].waitForExistence(timeout: 2))
+    XCTAssertTrue(app.buttons["dns-record-dns-zone-docs-www"].waitForExistence(timeout: 2))
   }
 
   func testPrimaryTabsSurviveFeaturePop() {
@@ -857,7 +862,11 @@ final class DashUITests: XCTestCase {
 
   func testResourcesEmailRoutingCatalogOpens() {
     let app = XCUIApplication()
-    launch(app, arguments: ["-ui-preview"])
+    launch(app, arguments: ["-ui-preview-onboarding"])
+    let exploreDemo = app.buttons["Explore the demo"]
+    XCTAssertTrue(exploreDemo.waitForExistence(timeout: 5))
+    _ = Self.waitForHittable(exploreDemo)
+    exploreDemo.tap()
 
     let resources = app.buttons["Resources"]
     XCTAssertTrue(resources.waitForExistence(timeout: 5))

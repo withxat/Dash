@@ -259,6 +259,9 @@ struct DashPillButton: View {
         .padding(.trailing, 18)
       }
       .background(DashTheme.strong, in: DashTheme.pillShape)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(displayedTitle)
+      .accessibilityValue(phase.accessibilityValue)
     }
     .buttonStyle(DashPressButtonStyle())
     .disabled(
@@ -269,9 +272,6 @@ struct DashPillButton: View {
       )
     )
     .opacity(DashPillButtonPresentationRules.opacity(isEnabled: isEnabled))
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel(displayedTitle)
-    .accessibilityValue(phase.accessibilityValue)
     .dashTrayDismissDisabled(phase.isActive)
   }
 }
