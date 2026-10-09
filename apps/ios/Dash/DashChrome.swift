@@ -1119,6 +1119,15 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
     .onPreferenceChange(DashTrayDismissDisabledPreferenceKey.self) { dismissDisabled = $0 }
     .task(id: sharedGeometrySnapshot) {
       guard let snapshot = sharedGeometrySnapshot, !presentationStarted, !isClosing else { return }
+      #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing"),
+          ProcessInfo.processInfo.arguments.contains("-uiTestDelayedTrayGeometry")
+        {
+          // Deterministically exercise a ready endpoint whose stabilization
+          // task resumes after the missing-endpoint fallback deadline.
+          try? await Task.sleep(for: .milliseconds(250))
+        }
+      #endif
       // One rendered-frame stability barrier: if either endpoint changes, the
       // task is cancelled and restarted with the new snapshot.
       try? await Task.sleep(for: .milliseconds(16))
@@ -1228,13 +1237,17 @@ private struct DashCustomSheet<Hero: View, Content: View, Footer: View>: View {
       guard !Task.isCancelled, !presentationStarted, !isClosing else { return }
       startPresentation()
     }
-    .task {
+    .task(id: sharedGeometrySnapshot == nil) {
       // A malformed/conditional destination must not leave a transparent cover
-      // parked at progress zero. Give normal layout a short bounded window,
-      // then release the reservation and use the standard reveal.
+      // parked at progress zero. The deadline belongs only to missing geometry:
+      // cancel it once both endpoints exist, even if their stabilization task
+      // has not resumed yet on a busy main actor.
       guard sharedRevealActive, !isClosing else { return }
+      guard sharedGeometrySnapshot == nil else { return }
       try? await Task.sleep(for: .milliseconds(180))
-      guard !Task.isCancelled, !presentationStarted, !isClosing else { return }
+      guard !Task.isCancelled, !presentationStarted, !isClosing,
+        sharedGeometrySnapshot == nil
+      else { return }
       fallbackToStandardPresentation()
     }
   }

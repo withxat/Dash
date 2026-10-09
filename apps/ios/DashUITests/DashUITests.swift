@@ -137,8 +137,16 @@ final class DashUITests: XCTestCase {
   }
 
   func testDemoConnectUsesPairedRevealAndRestoresSource() {
+    verifyDemoConnectPairedReveal()
+  }
+
+  func testDemoConnectKeepsPairedRevealWhenGeometryTaskIsDelayed() {
+    verifyDemoConnectPairedReveal(arguments: ["-uiTestDelayedTrayGeometry"])
+  }
+
+  private func verifyDemoConnectPairedReveal(arguments: [String] = []) {
     let app = XCUIApplication()
-    launch(app, arguments: ["-ui-preview-onboarding"])
+    launch(app, arguments: ["-ui-preview-onboarding"] + arguments)
 
     let exploreDemo = app.buttons["Explore the demo"]
     XCTAssertTrue(exploreDemo.waitForExistence(timeout: 5))
