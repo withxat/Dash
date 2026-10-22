@@ -31,7 +31,7 @@ catalogs:
     '@cloudflare/workers-types': ^5.20260716.1
     '@vitejs/plugin-react': ^6.0.3
     hono: ^4.12.30
-    vite: ^8.1.5
+    vite: ^8.1.6
     wrangler: ^4.111.0
 allowBuilds:
   esbuild: true
