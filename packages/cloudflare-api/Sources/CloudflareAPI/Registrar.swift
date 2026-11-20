@@ -48,164 +48,31 @@ public struct RegistrarRegistration: Codable, Hashable, Identifiable, Sendable {
   }
 }
 
-/// A domain from the page-numbered `/registrar/domains` endpoint.
+/// What a Registrar write answers with: the state of the workflow it started.
 ///
-/// Deliberately **not** `Identifiable`: the documented example `id` is opaque
-/// hex and the object carries no name anywhere else, so making it a list
-/// identity invites a screen that renders `ea95132c…` as a row title.
-public struct RegistrarDomain: Codable, Hashable, Sendable {
-  public let identifier: String?
-  public let available: Bool?
-  public let canRegister: Bool?
-  public let createdAt: String?
-  public let currentRegistrar: String?
-  public let expiresAt: String?
-  public let locked: Bool?
-  public let updatedAt: String?
-  /// Comma-joined EPP codes as Cloudflare sends them. Read through
-  /// `registryStatusList`.
-  public let registryStatuses: String?
-  public let supportedTLD: Bool?
-  public let registrantContact: RegistrarContact?
-  public let transferIn: RegistrarTransferIn?
+/// Decoded leniently and kept internal — Dash reads only whether it failed and
+/// why. `state` stays a raw string so a value Cloudflare adds later falls
+/// through as "still running" instead of failing the decode.
+struct RegistrarWorkflowStatus: Decodable, Sendable {
+  let state: String?
+  let error: Failure?
 
-  /// The EPP codes as a list. Cloudflare joins them with commas and pads them
-  /// inconsistently, so split, trim and drop the empties.
-  public var registryStatusList: [String] {
-    (registryStatuses ?? "")
-      .split(separator: ",")
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
+  struct Failure: Decodable, Sendable {
+    let message: String?
+
+    enum CodingKeys: String, CodingKey { case message }
+
+    init(from decoder: any Decoder) throws {
+      message = try decoder.container(keyedBy: CodingKeys.self).lenient(String.self, .message)
+    }
   }
 
-  enum CodingKeys: String, CodingKey {
-    case available, locked
-    case identifier = "id"
-    case canRegister = "can_register"
-    case createdAt = "created_at"
-    case currentRegistrar = "current_registrar"
-    case expiresAt = "expires_at"
-    case updatedAt = "updated_at"
-    case registryStatuses = "registry_statuses"
-    case supportedTLD = "supported_tld"
-    case registrantContact = "registrant_contact"
-    case transferIn = "transfer_in"
-  }
+  enum CodingKeys: String, CodingKey { case state, error }
 
-  public init(from decoder: any Decoder) throws {
+  init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    identifier = container.lenient(String.self, .identifier)
-    available = container.lenient(Bool.self, .available)
-    canRegister = container.lenient(Bool.self, .canRegister)
-    createdAt = container.lenient(String.self, .createdAt)
-    currentRegistrar = container.lenient(String.self, .currentRegistrar)
-    expiresAt = container.lenient(String.self, .expiresAt)
-    locked = container.lenient(Bool.self, .locked)
-    updatedAt = container.lenient(String.self, .updatedAt)
-    registryStatuses = container.lenient(String.self, .registryStatuses)
-    supportedTLD = container.lenient(Bool.self, .supportedTLD)
-    registrantContact = container.lenient(RegistrarContact.self, .registrantContact)
-    transferIn = container.lenient(RegistrarTransferIn.self, .transferIn)
-  }
-}
-
-/// Registrant contact. Nine of these are documented required and every one of
-/// them is optional here on purpose: WHOIS redaction and contacts Cloudflare
-/// does not manage both come back partial, and one missing key must not fail
-/// the detail screen's decode.
-public struct RegistrarContact: Codable, Hashable, Sendable {
-  public let id: String?
-  public let firstName: String?
-  public let lastName: String?
-  public let organization: String?
-  public let address: String?
-  public let address2: String?
-  public let city: String?
-  public let state: String?
-  public let zip: String?
-  public let country: String?
-  public let phone: String?
-  public let email: String?
-  public let fax: String?
-
-  enum CodingKeys: String, CodingKey {
-    case id, organization, address, address2, city, state, zip, country, phone, email, fax
-    case firstName = "first_name"
-    case lastName = "last_name"
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    id = container.lenient(String.self, .id)
-    firstName = container.lenient(String.self, .firstName)
-    lastName = container.lenient(String.self, .lastName)
-    organization = container.lenient(String.self, .organization)
-    address = container.lenient(String.self, .address)
-    address2 = container.lenient(String.self, .address2)
-    city = container.lenient(String.self, .city)
     state = container.lenient(String.self, .state)
-    zip = container.lenient(String.self, .zip)
-    country = container.lenient(String.self, .country)
-    phone = container.lenient(String.self, .phone)
-    email = container.lenient(String.self, .email)
-    fax = container.lenient(String.self, .fax)
-  }
-}
-
-/// Transfer-in progress. Cloudflare documents a small vocabulary for each of
-/// these (`needed`, `ok`, `pending`, …) and publishes no enum, so they stay raw
-/// strings: an unmodelled value has to reach the render step intact.
-public struct RegistrarTransferIn: Codable, Hashable, Sendable {
-  public let acceptFoa: String?
-  public let approveTransfer: String?
-  public let canCancelTransfer: Bool?
-  public let disablePrivacy: String?
-  public let enterAuthCode: String?
-  public let unlockDomain: String?
-
-  enum CodingKeys: String, CodingKey {
-    case acceptFoa = "accept_foa"
-    case approveTransfer = "approve_transfer"
-    case canCancelTransfer = "can_cancel_transfer"
-    case disablePrivacy = "disable_privacy"
-    case enterAuthCode = "enter_auth_code"
-    case unlockDomain = "unlock_domain"
-  }
-
-  public init(from decoder: any Decoder) throws {
-    let container = try decoder.container(keyedBy: CodingKeys.self)
-    acceptFoa = container.lenient(String.self, .acceptFoa)
-    approveTransfer = container.lenient(String.self, .approveTransfer)
-    canCancelTransfer = container.lenient(Bool.self, .canCancelTransfer)
-    disablePrivacy = container.lenient(String.self, .disablePrivacy)
-    enterAuthCode = container.lenient(String.self, .enterAuthCode)
-    unlockDomain = container.lenient(String.self, .unlockDomain)
-  }
-}
-
-/// The write side of `/registrar/domains/{domain}`, expressed as a delta.
-///
-/// Not `Codable`: it is encoded field by field so only the flags the user
-/// actually changed reach the wire. Re-asserting two settings read off a
-/// possibly-stale screen is how a transfer lock gets silently flipped back.
-public struct RegistrarDomainSettings: Hashable, Sendable {
-  public var autoRenew: Bool?
-  public var locked: Bool?
-  public var privacy: Bool?
-
-  public init(autoRenew: Bool? = nil, locked: Bool? = nil, privacy: Bool? = nil) {
-    self.autoRenew = autoRenew
-    self.locked = locked
-    self.privacy = privacy
-  }
-
-  /// The PUT body, carrying only the flags that changed. Empty when nothing did.
-  var wireBody: [String: Bool] {
-    var body: [String: Bool] = [:]
-    if let autoRenew { body["auto_renew"] = autoRenew }
-    if let locked { body["locked"] = locked }
-    if let privacy { body["privacy"] = privacy }
-    return body
+    error = container.lenient(Failure.self, .error)
   }
 }
 
@@ -256,69 +123,45 @@ extension CloudflareClient {
     try await request("/accounts/\(accountID)/registrar/registrations/\(domain)")
   }
 
-  /// One domain from the page-numbered endpoint — the source for registry
-  /// statuses, the registrant contact and the current registrar.
-  public func getRegistrarDomain(accountID: String, domain: String) async throws -> RegistrarDomain
-  {
-    try await request("/accounts/\(accountID)/registrar/domains/\(domain)")
-  }
-
-  /// Writes **only** the flags present in `settings`.
+  /// Turns auto-renew on or off — the only field the Registrar API lets a
+  /// client change. The transfer lock, privacy and contacts are read-only here;
+  /// the legacy `PUT /registrar/domains/{domain}` that wrote the lock reached
+  /// end of life on 2026-09-27 with no replacement.
   ///
-  /// The endpoint documents `result: unknown` and returns null in practice, so
-  /// the response is decoded as `JSONValue` — which resolves null to `.null`
-  /// instead of throwing. A settings delta with nothing in it sends no request:
-  /// an empty body would re-assert nothing and Cloudflare has no reason to
-  /// accept it.
-  public func updateRegistrarDomain(
-    accountID: String, domain: String, settings: RegistrarDomainSettings
+  /// The response is a workflow, not the registration. `200` is a finished
+  /// workflow and `202` one still running; either way HTTP success says only
+  /// that Cloudflare accepted the request, so a `failed` workflow is read out
+  /// of the body and thrown — otherwise a renewal that never happened would
+  /// report success. `action_required` throws too: it waits on the user and
+  /// will not finish by itself. Any other state, or a null result, is still on
+  /// its way.
+  public func updateRegistrarAutoRenew(
+    accountID: String, domain: String, autoRenew: Bool
   ) async throws {
-    let body = settings.wireBody
-    guard !body.isEmpty else { return }
-    let _: JSONValue = try await request(
-      "/accounts/\(accountID)/registrar/domains/\(domain)", method: "PUT", body: body)
-  }
-
-  /// The page-numbered `/registrar/domains` list.
-  ///
-  /// Rows whose `id` carries no dot are dropped: the identifier is the only
-  /// name on the object, and an opaque hex id renders as an unlabelled row.
-  /// Filtering happens after the pagination bookkeeping so a page full of
-  /// hex ids cannot be mistaken for a short final page.
-  public func listRegistrarDomainsPageNumbered(accountID: String, perPage: Int = 50) async throws
-    -> [RegistrarDomain]
-  {
-    let path = "/accounts/\(accountID)/registrar/domains"
-    var domains: [RegistrarDomain] = []
-    var seenIdentifiers: Set<String> = []
-    var pageNumber = 1
-
-    while pageNumber <= Self.registrarPageNumberedPageLimit {
-      let page: Page<RegistrarDomain> = try await list(
-        path, query: ["page": String(pageNumber), "per_page": String(perPage)])
-      domains.append(
-        contentsOf: page.items.filter { domain in
-          guard let identifier = domain.identifier else { return true }
-          return seenIdentifiers.insert(identifier).inserted
-        })
-
-      if let totalCount = page.resultInfo?.totalCount, domains.count >= totalCount { break }
-      if let totalPages = page.resultInfo?.totalPages, pageNumber >= totalPages { break }
-      guard !page.items.isEmpty else { break }
-      if page.resultInfo?.totalCount == nil, page.resultInfo?.totalPages == nil {
-        let reportedPageSize = page.resultInfo?.perPage ?? perPage
-        guard page.items.count >= reportedPageSize else { break }
-      }
-      pageNumber += 1
+    let workflow: RegistrarWorkflowStatus? = try await request(
+      "/accounts/\(accountID)/registrar/registrations/\(domain)", method: "PATCH",
+      body: ["auto_renew": autoRenew])
+    switch workflow?.state {
+    case "failed":
+      throw CloudflareAPIError.request(
+        status: 200,
+        errors: [
+          APIErrorItem(
+            code: 0,
+            message: workflow?.error?.message
+              ?? "Cloudflare could not update this registration.")
+        ])
+    case "action_required":
+      throw CloudflareAPIError.request(
+        status: 200,
+        errors: [
+          APIErrorItem(
+            code: 0, message: "Finish this change on the Cloudflare dashboard.")
+        ])
+    default:
+      return
     }
-
-    return domains.filter { ($0.identifier ?? "").contains(".") }
   }
-
-  /// Hard bound on the page-numbered loop. The endpoint reports `total_pages`, so this
-  /// only ever fires for a server that stops reporting it and keeps answering
-  /// full pages.
-  static let registrarPageNumberedPageLimit = 40
 }
 
 // MARK: - Lenient decoding

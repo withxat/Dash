@@ -37,8 +37,8 @@ import UIKit
       with: DashAuthorizationScopes.experimentalFeatures))
   // The registration screen has no Resources row to unlock it, so both its
   // scopes ship with sign-in — the read one because the zone card's lookup runs
-  // unprompted, the admin one because auto-renew and the transfer lock are what
-  // the screen is for. The read-only profile still withholds the write.
+  // unprompted, the admin one because auto-renew is what the screen is for. The
+  // read-only profile still withholds the write.
   #expect(DashAuthorizationScopes.core.contains("registrar-domains.read"))
   #expect(DashAuthorizationScopes.core.contains("registrar-domains.admin"))
   #expect(DashAuthorizationScopes.initialReadOnly.contains("registrar-domains.read"))

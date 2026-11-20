@@ -6,7 +6,7 @@ import Testing
 // Cloudflare Registrar. Every test here lives in `NetworkTests` so it inherits
 // the suite's `.serialized` trait — `MockURLProtocol` keeps `nonisolated(unsafe)
 // static` state and a parallel suite would race it. Every function is prefixed
-// `registrar` so `--filter registrar` selects exactly this file's 12 tests;
+// `registrar` so `--filter registrar` selects exactly this file's 10 tests;
 // `--filter` matches function names, not files, and a zero-match filter is a
 // vacuous pass.
 extension NetworkTests {
@@ -159,69 +159,22 @@ extension NetworkTests {
     #expect(registrations.last?.autoRenew == false)
   }
 
-  // MARK: Page-numbered domains
+  // MARK: Update
 
-  @Test func registrarPageNumberedDomainsPaginateAndDropUnnamedRows() async throws {
+  @Test func registrarPatchesOnlyAutoRenewOnTheRegistration() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()
     let session = mockSession { request in
-      #expect(request.url?.path == "/accounts/acct/registrar/domains")
-      let query = registrarQuery(request)
-      #expect(query["per_page"] == "2")
-      let page = query["page"] ?? "1"
-      recorder.record(page)
-      let info = #""result_info":{"page":\#(page),"per_page":2,"total_pages":2,"total_count":3}"#
-      switch page {
-      case "1":
-        let body = """
-          {"success":true,"result":[\
-          {"id":"example.com"},\
-          {"id":"ea95132c15732412d22c1476fa83f27a"}\
-          ],\(info)}
-          """
-        return (200, Data(body.utf8))
-      case "2":
-        let body = """
-          {"success":true,"result":[{"id":"second.com"}],\(info)}
-          """
-        return (200, Data(body.utf8))
-      default:
-        Issue.record("unexpected page \(page)")
-        return (500, Data())
-      }
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-
-    let domains = try await client.listRegistrarDomainsPageNumbered(
-      accountID: "acct", perPage: 2)
-
-    #expect(recorder.paths == ["1", "2"])
-    // The opaque-hex row is dropped: the identifier is the only name on the
-    // object, and a row titled `ea95132c…` is worse than no row.
-    #expect(domains.compactMap(\.identifier) == ["example.com", "second.com"])
-  }
-
-  @Test func registrarSplitsRegistryStatusesAndKeepsUnmodelledTransferValues() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      #expect(request.url?.path == "/accounts/acct/registrar/domains/example.com")
+      #expect(request.httpMethod == "PATCH")
+      #expect(request.url?.path == "/accounts/acct/registrar/registrations/example.com")
+      let data = requestBodyData(request) ?? Data()
+      let decoded = (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
+      // `auto_renew` is the only field the endpoint accepts.
+      #expect(decoded == ["auto_renew": false])
+      recorder.record("patch")
       let body = #"""
-        {"success":true,"result":{
-          "id":"example.com",
-          "available":false,
-          "can_register":false,
-          "supported_tld":true,
-          "locked":true,
-          "created_at":"2025-01-15T10:00:00Z",
-          "updated_at":"2026-01-15T10:00:00Z",
-          "expires_at":"2027-01-15T10:00:00Z",
-          "current_registrar":"Cloudflare",
-          "registry_statuses":"clientTransferProhibited, serverTransferProhibited , ,ok",
-          "registrant_contact":{"first_name":"Ada","country":"US"},
-          "transfer_in":{"approve_transfer":"some_future_state","can_cancel_transfer":true}
-        }}
+        {"success":true,"result":{"completed":true,"state":"succeeded",
+         "context":{"domain_name":"example.com"}}}
         """#
       return (200, Data(body.utf8))
     }
@@ -229,81 +182,52 @@ extension NetworkTests {
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let domain = try await client.getRegistrarDomain(accountID: "acct", domain: "example.com")
+    try await client.updateRegistrarAutoRenew(
+      accountID: "acct", domain: "example.com", autoRenew: false)
 
-    #expect(
-      domain.registryStatusList == ["clientTransferProhibited", "serverTransferProhibited", "ok"])
-    #expect(domain.currentRegistrar == "Cloudflare")
-    #expect(domain.supportedTLD == true)
-    #expect(domain.canRegister == false)
-    // A vocabulary Cloudflare has not published still has to reach the render step.
-    #expect(domain.transferIn?.approveTransfer == "some_future_state")
-    #expect(domain.transferIn?.canCancelTransfer == true)
-    #expect(domain.transferIn?.unlockDomain == nil)
-    // A partially redacted contact decodes; it does not throw.
-    #expect(domain.registrantContact?.firstName == "Ada")
-    #expect(domain.registrantContact?.country == "US")
-    #expect(domain.registrantContact?.email == nil)
+    #expect(recorder.paths == ["patch"])
   }
 
-  @Test func registrarDecodesADomainWithNoRegistrantContact() async throws {
+  /// `202` is an accepted workflow that has not finished yet: not a failure.
+  @Test func registrarAcceptsAnUpdateWorkflowThatIsStillRunning() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
-      (200, Data(#"{"success":true,"result":{"id":"example.com","locked":false}}"#.utf8))
+      let body = #"""
+        {"success":true,"result":{"completed":false,"state":"in_progress"}}
+        """#
+      return (202, Data(body.utf8))
     }
     let client = CloudflareClient(
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    let domain = try await client.getRegistrarDomain(accountID: "acct", domain: "example.com")
-
-    // Redacted WHOIS is a settled answer, not a decode failure.
-    #expect(domain.registrantContact == nil)
-    #expect(domain.transferIn == nil)
-    #expect(domain.registryStatusList.isEmpty)
-    #expect(domain.locked == false)
+    try await client.updateRegistrarAutoRenew(
+      accountID: "acct", domain: "example.com", autoRenew: true)
   }
 
-  // MARK: Update
-
-  @Test func registrarSendsOnlyTheChangedFlagInTheUpdateBody() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let recorder = RequestRecorder()
-    let session = mockSession { request in
-      #expect(request.httpMethod == "PUT")
-      #expect(request.url?.path == "/accounts/acct/registrar/domains/example.com")
-      let data = requestBodyData(request) ?? Data()
-      let decoded = (try? JSONDecoder().decode([String: Bool].self, from: data)) ?? [:]
-      // Re-asserting auto_renew from a possibly-stale screen is how a lock
-      // gets silently flipped back. Exactly one key.
-      #expect(decoded == ["locked": false])
-      recorder.record("put")
-      return (200, Data(#"{"success":true,"result":null}"#.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-
-    try await client.updateRegistrarDomain(
-      accountID: "acct", domain: "example.com",
-      settings: RegistrarDomainSettings(locked: false))
-
-    #expect(recorder.paths == ["put"])
-  }
-
-  @Test func registrarUpdateAcceptsANullResult() async throws {
+  /// A failed workflow arrives inside a successful envelope. Reading only the
+  /// HTTP status would report a renewal setting that never changed as saved.
+  @Test func registrarThrowsTheMessageOfAFailedUpdateWorkflow() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
-      // The endpoint documents `result: unknown` and answers null in practice.
-      (200, Data(#"{"success":true,"result":null}"#.utf8))
+      let body = #"""
+        {"success":true,"result":{"completed":true,"state":"failed",
+         "error":{"code":"registry_rejected","message":"The registry rejected the update."}}}
+        """#
+      return (200, Data(body.utf8))
     }
     let client = CloudflareClient(
       clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
       session: session)
 
-    try await client.updateRegistrarDomain(
-      accountID: "acct", domain: "example.com",
-      settings: RegistrarDomainSettings(autoRenew: true))
+    do {
+      try await client.updateRegistrarAutoRenew(
+        accountID: "acct", domain: "example.com", autoRenew: true)
+      Issue.record("expected a throw")
+    } catch let error as CloudflareAPIError {
+      #expect(error.errorDescription == "The registry rejected the update.")
+      #expect(!error.isPermissionDenied)
+    }
   }
 
   // MARK: Failure paths
@@ -322,9 +246,8 @@ extension NetworkTests {
       session: session)
 
     do {
-      try await client.updateRegistrarDomain(
-        accountID: "acct", domain: "example.com",
-        settings: RegistrarDomainSettings(locked: true))
+      try await client.updateRegistrarAutoRenew(
+        accountID: "acct", domain: "example.com", autoRenew: true)
       Issue.record("expected a throw")
     } catch let error as CloudflareAPIError {
       guard case .request(let status, let errors) = error else {

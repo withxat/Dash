@@ -440,14 +440,6 @@ final class DemoBackend: URLProtocol {
         {"domain_name":"acme-labs.dev","status":"registration_pending","created_at":"2026-07-27T14:30:00Z","expires_at":"2027-07-27T14:30:00Z","auto_renew":false,"privacy_mode":"redaction","locked":true}
         """#,
       ]
-      let pageNumberedDomains = [
-        #"""
-        {"id":"example.com","available":false,"can_register":false,"created_at":"2024-04-18T10:00:00Z","current_registrar":"Cloudflare, Inc.","expires_at":"2027-04-18T10:00:00Z","locked":true,"updated_at":"2026-07-20T08:00:00Z","registry_statuses":"clientTransferProhibited,clientUpdateProhibited","supported_tld":true,"registrant_contact":{"id":"contact-example","first_name":"Demo","last_name":"Explorer","organization":"Example Labs","address":"123 Demo Street","city":"Singapore","state":"Singapore","zip":"018956","country":"SG","phone":"+65.60000000","email":"owner@example.com"},"transfer_in":null}
-        """#,
-        #"""
-        {"id":"acme-labs.dev","available":false,"can_register":false,"created_at":"2026-07-27T14:30:00Z","current_registrar":"Cloudflare, Inc.","expires_at":"2027-07-27T14:30:00Z","locked":true,"updated_at":"2026-07-27T14:30:00Z","registry_statuses":"pendingCreate","supported_tld":true,"registrant_contact":{"id":"contact-acme","first_name":"Avery","last_name":"Chen","organization":"Acme Labs","city":"Singapore","country":"SG","email":"domains@acme-labs.dev"},"transfer_in":null}
-        """#,
-      ]
 
       switch registrarRest.first {
       case "registrations"?:
@@ -473,31 +465,6 @@ final class DemoBackend: URLProtocol {
           status: 404,
           json:
             #"{"success":false,"errors":[{"code":1001,"message":"Registration not found."}],"messages":[],"result":null}"#
-        )
-
-      case "domains"?:
-        if registrarRest.count == 1 {
-          let rows = account.id == DemoBackend.accountID ? pageNumberedDomains : []
-          return ok(
-            "[\(rows.joined(separator: ","))]",
-            info:
-              #"{"page":1,"per_page":50,"count":\#(rows.count),"total_count":\#(rows.count),"total_pages":1}"#
-          )
-        }
-        guard account.id == DemoBackend.accountID else {
-          return Reply(
-            status: 404,
-            json:
-              #"{"success":false,"errors":[{"code":1001,"message":"Registrar domain not found."}],"messages":[],"result":null}"#
-          )
-        }
-        let domain = registrarRest[1].lowercased()
-        if domain == "example.com" { return ok(pageNumberedDomains[0]) }
-        if domain == "acme-labs.dev" { return ok(pageNumberedDomains[1]) }
-        return Reply(
-          status: 404,
-          json:
-            #"{"success":false,"errors":[{"code":1001,"message":"Registrar domain not found."}],"messages":[],"result":null}"#
         )
 
       default:

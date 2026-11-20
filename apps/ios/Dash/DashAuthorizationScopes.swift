@@ -74,9 +74,9 @@ enum DashAuthorizationScopes {
   /// Email Routing writes live on that feature's capability (Resources
   /// Read-only badge); its browse-only index suppresses the catalog banner via
   /// `FeatureID.showsCatalogReadOnlyBanner`. `registrar-domains.admin` is here
-  /// with the read scope for the same reason: auto-renew and the transfer lock
-  /// are the two things the registration screen exists to change, and it is
-  /// reached by tapping one icon on a domain the user already opened — sending
+  /// with the read scope for the same reason: auto-renew is the setting the
+  /// registration screen exists to change, and it is reached by tapping one
+  /// icon on a domain the user already opened — sending
   /// them back through consent to flip a switch they came for is a wall, not a
   /// safeguard. The screen keeps its `FeatureWriteAccessNotice` for grants that
   /// predate this (or were narrowed by hand).

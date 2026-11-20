@@ -1614,28 +1614,6 @@
         }
       }
     },
-    "Another registrar can start a transfer." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他注册商可以发起转移。"
-          }
-        }
-      }
-    },
-    "Another registrar can’t start a transfer." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "其他注册商无法发起转移。"
-          }
-        }
-      }
-    },
     "Any R2 locations mounted in Files and their downloaded copies will be removed from this iPhone." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3477,17 +3455,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接器、主机名和专用路由"
-          }
-        }
-      }
-    },
-    "Contact" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "联系人"
           }
         }
       }
@@ -5588,17 +5555,6 @@
         }
       }
     },
-    "Email" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "邮箱"
-          }
-        }
-      }
-    },
     "Email i@xat.sh" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7530,17 +7486,6 @@
         }
       }
     },
-    "Location" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "所在地"
-          }
-        }
-      }
-    },
     "Long press for account menu" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8979,17 +8924,6 @@
         }
       }
     },
-    "Organization" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "组织"
-          }
-        }
-      }
-    },
     "Origin errors" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10279,17 +10213,6 @@
         }
       }
     },
-    "Registrant" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "注册人"
-          }
-        }
-      }
-    },
     "Registrar" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10316,17 +10239,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "注册信息"
-          }
-        }
-      }
-    },
-    "Registry status" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "注册局状态"
           }
         }
       }
@@ -10485,13 +10397,13 @@
         }
       }
     },
-    "Renewals, transfers, and contact changes happen on the Cloudflare dashboard." : {
+    "Renewals, transfers, the transfer lock, and contacts are managed on the Cloudflare dashboard." : {
       "extractionState" : "manual",
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "续费、转移和联系人修改需要在 Cloudflare 控制台完成。"
+            "value" : "续费、转移、转移锁定和联系人需要在 Cloudflare 控制台管理。"
           }
         }
       }

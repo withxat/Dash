@@ -526,14 +526,12 @@ final class AppModel {
           createdAt: "2024-07-16T00:00:00Z",
           autoRenew: true,
           locked: true,
-          privacyMode: "redacted",
-          currentRegistrar: "Cloudflare")
+          privacyMode: "redacted")
         featureCache.set(
           FeatureCacheKey.registrarDomains("ui-account"),
           RegistrarAccountIndex(
             domains: [previewRegistrarDomain],
-            registrations: .value([previewRegistrarDomain]),
-            pageNumbered: .value([previewRegistrarDomain])))
+            registrations: .value([previewRegistrarDomain])))
         // A realistic slice of the ~60 settings Cloudflare returns: the five the
         // curated panel keeps, plus ones it must drop (a plan-locked toggle, a
         // set-once choice, and the array-valued key that used to render as

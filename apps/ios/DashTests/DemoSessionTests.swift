@@ -203,13 +203,13 @@ private func demoClient() -> CloudflareClient {
 
 @Test func demoRegistrarAndAccountChangesReadBack() async throws {
   let client = demoClient()
-  try await client.updateRegistrarDomain(
-    accountID: "demo-account", domain: "example.com",
-    settings: .init(autoRenew: false, locked: false))
+  try await client.updateRegistrarAutoRenew(
+    accountID: "demo-account", domain: "example.com", autoRenew: false)
   let registration = try await client.getRegistrarRegistration(
     accountID: "demo-account", domain: "example.com")
   #expect(registration.autoRenew == false)
-  #expect(registration.locked == false)
+  // The lock is read-only now; the write must not have touched it.
+  #expect(registration.locked == true)
   _ = try await client.updateAccount(
     accountID: "demo-account", input: .init(name: "Review workspace"))
   #expect(

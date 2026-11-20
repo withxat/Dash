@@ -21,9 +21,9 @@ enum RegistrarAccess {
   /// unknown ids silently — the guess produces a successful consent flow that
   /// grants nothing, and a read-only screen with no error to explain it.
   ///
-  /// In `DashAuthorizationScopes.coreWriteOperations`: auto-renew and the
-  /// transfer lock are what the detail screen is for. The screen still carries
-  /// a `FeatureWriteAccessNotice` for grants that predate that.
+  /// In `DashAuthorizationScopes.coreWriteOperations`: auto-renew is what the
+  /// detail screen is for. The screen still carries a
+  /// `FeatureWriteAccessNotice` for grants that predate that.
   static let write: Set<String> = ["registrar-domains.admin"]
 }
 
@@ -66,14 +66,6 @@ enum RegistrarFetch<Value: Sendable>: Sendable {
     return false
   }
 
-  /// True only for an answer Cloudflare actually gave.
-  var isSettledAnswer: Bool {
-    switch self {
-    case .value, .absent: true
-    case .denied, .failed, .cancelled: false
-    }
-  }
-
   static func perform(_ operation: () async throws -> Value) async -> RegistrarFetch<Value> {
     do {
       return .value(try await operation())
@@ -90,14 +82,9 @@ enum RegistrarFetch<Value: Sendable>: Sendable {
 
 // MARK: - Account index
 
-/// One domain in the account's Cloudflare Registrar index, merged from
-/// whichever of the two list endpoints answered for it.
-///
-/// The two endpoints carry different halves of the same domain: the beta
-/// `/registrar/registrations` list is the only source of `status`, `auto_renew`
-/// and `privacy_mode`, and the page-numbered `/registrar/domains` list is the
-/// only source of `current_registrar`, the registry statuses and the registrant
-/// contact. Anything Cloudflare did not say stays `nil` and costs one row.
+/// One domain in the account's Cloudflare Registrar index, from the
+/// `/registrar/registrations` list. Anything Cloudflare did not say stays `nil`
+/// and costs one row.
 struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
   var id: String { name }
   let name: String
@@ -107,7 +94,6 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
   let autoRenew: Bool?
   let locked: Bool?
   let privacyMode: String?
-  let currentRegistrar: String?
 
   init(
     name: String,
@@ -116,8 +102,7 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
     createdAt: String? = nil,
     autoRenew: Bool? = nil,
     locked: Bool? = nil,
-    privacyMode: String? = nil,
-    currentRegistrar: String? = nil
+    privacyMode: String? = nil
   ) {
     self.name = name
     self.status = status
@@ -126,7 +111,6 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
     self.autoRenew = autoRenew
     self.locked = locked
     self.privacyMode = privacyMode
-    self.currentRegistrar = currentRegistrar
   }
 
   init(registration: RegistrarRegistration) {
@@ -138,22 +122,6 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
       autoRenew: registration.autoRenew,
       locked: registration.locked,
       privacyMode: registration.privacyMode)
-  }
-
-  /// `RegistrarDomain` is deliberately not `Identifiable`: its `id` is the only
-  /// name on the object and the documented example is opaque hex. Rows without
-  /// a dot in that field are already dropped by the package; this drops the
-  /// rest of the nameless ones rather than titling a row with a hex string.
-  init?(pageNumbered: RegistrarDomain) {
-    let name = (pageNumbered.identifier ?? "").trimmingCharacters(
-      in: .whitespacesAndNewlines)
-    guard !name.isEmpty else { return nil }
-    self.init(
-      name: name,
-      expiresAt: pageNumbered.expiresAt,
-      createdAt: pageNumbered.createdAt,
-      locked: pageNumbered.locked,
-      currentRegistrar: pageNumbered.currentRegistrar)
   }
 
   /// Field-by-field union, `primary` winning every field it has an answer for.
@@ -168,8 +136,7 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
       createdAt: primary.createdAt ?? secondary.createdAt,
       autoRenew: primary.autoRenew ?? secondary.autoRenew,
       locked: primary.locked ?? secondary.locked,
-      privacyMode: primary.privacyMode ?? secondary.privacyMode,
-      currentRegistrar: primary.currentRegistrar ?? secondary.currentRegistrar)
+      privacyMode: primary.privacyMode ?? secondary.privacyMode)
   }
 
   var statusToken: StatusToken? {
@@ -180,20 +147,15 @@ struct RegistrarDomainSummary: Identifiable, Hashable, Sendable {
   }
 }
 
-/// The account's registrar index, plus what each of the two list endpoints
-/// actually said.
+/// The account's registrar index, plus what the list endpoint actually said.
 ///
-/// **Decision D1 is unresolved**: nobody has confirmed whether the beta
-/// `/registrar/registrations` list returns domains bought through the
-/// Cloudflare dashboard or only ones created through the beta API itself. So
-/// the page-numbered list is a first-class source here, not a rescue —
-/// both are called on every load and merged. A zone whose name is missing from
-/// the merged list simply falls through to RDAP, so neither endpoint's silence
-/// is ever reported as an answer.
+/// `/registrar/registrations` is the only list left: the page-numbered
+/// `/registrar/domains` it used to be merged with reached end of life on
+/// 2026-09-27. A zone whose name is missing from it simply falls through to
+/// RDAP, so the endpoint's silence is never reported as an answer.
 struct RegistrarAccountIndex: Sendable {
   let domains: [RegistrarDomainSummary]
   let registrations: RegistrarFetch<[RegistrarDomainSummary]>
-  let pageNumbered: RegistrarFetch<[RegistrarDomainSummary]>
 
   func domain(named name: String) -> RegistrarDomainSummary? {
     let needle = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -207,45 +169,25 @@ struct RegistrarAccountIndex: Sendable {
   /// A half-torn-down load is not a result. Caching one would freeze a partial
   /// answer for the cache's whole lifetime.
   var isCacheable: Bool {
-    !registrations.isCancelled && !pageNumbered.isCancelled
+    !registrations.isCancelled
   }
 }
 
 enum RegistrarIndexLoader {
-  /// Both list endpoints, concurrently, merged by domain name.
-  ///
-  /// Never throws: each source's outcome is carried in the index so the caller
-  /// can tell "denied" from "not there" from "said nothing" — the distinction
-  /// the whole D1 handling rests on.
+  /// Never throws: the endpoint's outcome is carried in the index so the
+  /// caller can tell "denied" from "not there" from "said nothing".
   static func load(client: CloudflareClient, accountID: String) async
     -> RegistrarAccountIndex
   {
-    async let registrationsFetch = RegistrarFetch<[RegistrarDomainSummary]>.perform {
+    let registrations = await RegistrarFetch<[RegistrarDomainSummary]>.perform {
       try await client.listRegistrarRegistrations(accountID: accountID)
         .map(RegistrarDomainSummary.init(registration:))
     }
-    async let pageNumberedFetch = RegistrarFetch<[RegistrarDomainSummary]>.perform {
-      try await client.listRegistrarDomainsPageNumbered(accountID: accountID)
-        .compactMap(RegistrarDomainSummary.init(pageNumbered:))
-    }
-    let (registrations, pageNumbered) = await (registrationsFetch, pageNumberedFetch)
-
-    var merged: [String: RegistrarDomainSummary] = [:]
-    for summary in (registrations.payload ?? []) + (pageNumbered.payload ?? []) {
-      let key = summary.name.lowercased()
-      if let existing = merged[key] {
-        merged[key] = RegistrarDomainSummary.merged(existing, summary)
-      } else {
-        merged[key] = summary
-      }
-    }
-
     return RegistrarAccountIndex(
       // By name, not by expiry: a list the user scans by hostname must not
       // reorder itself the day a renewal lands.
-      domains: merged.values.sorted { $0.name < $1.name },
-      registrations: registrations,
-      pageNumbered: pageNumbered)
+      domains: (registrations.payload ?? []).sorted { $0.name < $1.name },
+      registrations: registrations)
   }
 }
 
@@ -253,7 +195,7 @@ enum RegistrarIndexLoader {
 ///
 /// The account index is cached under one key and seeds
 /// `RegistrarDomainDetailView`, so opening a zone and then its registration
-/// never fetches the same two endpoints twice in a session.
+/// never fetches the list twice in a session.
 @MainActor
 enum RegistrarZoneRegistration {
   /// The first-party registration for a zone, or `nil` when the zone's domain
@@ -276,8 +218,8 @@ enum RegistrarZoneRegistration {
       client: model.client, accountID: context.accountID)
     guard !Task.isCancelled, model.isCurrentAccount(context) else { return nil }
     // A denied or failed index is cached too, negative marker and all: without
-    // it every zone visit in the session re-asks two endpoints that already
-    // said no.
+    // it every zone visit in the session re-asks an endpoint that already said
+    // no.
     if index.isCacheable {
       model.featureCache.set(key, index)
     }
@@ -304,15 +246,14 @@ struct RegistrarRegistrationRows: View {
     if let created = summary.createdAt {
       DashInfoRow("Registered", value: DashDateFormatting.dateOnly(fromISO8601: created))
     }
-    // Omitted when Cloudflare did not say. Substituting a Dash-authored
-    // "Cloudflare" here would state something no endpoint returned.
-    if let registrar = summary.currentRegistrar, !registrar.isEmpty {
-      DashInfoRow("Registrar", value: registrar)
+    // Read-only: the Registrar API returns the lock but cannot change it. The
+    // legacy endpoint that could reached end of life on 2026-09-27.
+    if let locked = summary.locked {
+      DashInfoRow(
+        "Transfer lock", value: locked ? DashL10n.string("On") : DashL10n.string("Off"))
     }
-    // Read-only by decision D2: nobody has confirmed what `privacy_mode`
-    // returns when WHOIS privacy is off, and a switch whose value silently
-    // reverts on reload is worse than no switch. Surface the status and point
-    // privacy changes at the Cloudflare dashboard.
+    // Read-only too: the API has no privacy write. Surface the status and
+    // point privacy changes at the Cloudflare dashboard.
     if let privacy = summary.privacyLabel {
       DashInfoRow("WHOIS privacy", value: privacy)
       DashInfoRow("Privacy settings", value: DashL10n.string("Cloudflare dashboard"))
@@ -322,103 +263,57 @@ struct RegistrarRegistrationRows: View {
 
 // MARK: - Domain detail
 
-/// One Cloudflare Registrar domain: what the registry says about it, and the
-/// two settings Cloudflare's API actually lets Dash change.
+/// One Cloudflare Registrar domain: what Cloudflare says about it, and the one
+/// setting its API lets Dash change.
 ///
-/// There is no Renew, no Transfer and no Delete. The API exposes none of them,
-/// and a disabled button that explains itself is still furniture.
+/// There is no Renew, no Transfer and no Delete, and the transfer lock is a
+/// read-only fact: the Registrar API exposes none of those writes, and a
+/// disabled button that explains itself is still furniture.
 struct RegistrarDomainDetailView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let domain: String
 
-  /// Seeded from the account index the list screen (or a zone visit) already
-  /// filled, so the facts and the switches paint on the first frame and only
-  /// the registry-side sections wait on a request.
+  /// Seeded from the account index a zone visit already filled, so the facts
+  /// and the switch paint on the first frame.
   @State private var seed: RegistrarDomainSummary?
   @State private var registration: RegistrarFetch<RegistrarRegistration>?
-  @State private var pageNumbered: RegistrarFetch<RegistrarDomain>?
-  /// Optimistic overrides. Cleared back to `nil` on failure, which restores
+  /// Optimistic override. Cleared back to `nil` on failure, which restores
   /// whatever Cloudflare last said rather than a second guess.
   @State private var autoRenewOverride: Bool?
-  @State private var lockedOverride: Bool?
-  @State private var inFlight: RegistrarSetting?
+  @State private var isSavingAutoRenew = false
   @State private var loadedContext: AccountRequestContext?
-
-  private enum RegistrarSetting: Hashable {
-    case autoRenew
-    case transferLock
-  }
 
   private var allowsWrites: Bool {
     model.hasScopes(RegistrarAccess.write)
   }
 
-  /// Everything known about the domain right now, from whichever of the three
-  /// sources have landed.
+  /// Everything known about the domain right now: the registration once it has
+  /// landed, the seed for anything it did not say.
   private var summary: RegistrarDomainSummary? {
-    var resolved: RegistrarDomainSummary?
-    if let registration = registration?.payload {
-      resolved = RegistrarDomainSummary(registration: registration)
-    }
-    if let pageNumberedDomain = pageNumbered?.payload,
-      let fromPageNumbered = RegistrarDomainSummary(pageNumbered: pageNumberedDomain)
-    {
-      resolved =
-        resolved.map { RegistrarDomainSummary.merged($0, fromPageNumbered) }
-        ?? fromPageNumbered
-    }
-    if let seed {
-      resolved = resolved.map { RegistrarDomainSummary.merged($0, seed) } ?? seed
-    }
-    return resolved
+    let fetched = registration?.payload.map(RegistrarDomainSummary.init(registration:))
+    guard let seed else { return fetched }
+    return fetched.map { RegistrarDomainSummary.merged($0, seed) } ?? seed
   }
 
   private var autoRenewValue: Bool? { autoRenewOverride ?? summary?.autoRenew }
-  private var lockedValue: Bool? { lockedOverride ?? summary?.locked }
 
   private var isCold: Bool {
-    seed == nil && registration == nil && pageNumbered == nil
+    seed == nil && registration == nil
   }
 
-  /// Both lookups settled and neither knows this domain: it is not a Cloudflare
-  /// registration, or it belongs to another account.
+  /// The lookup settled and Cloudflare does not know this domain: it is not a
+  /// Cloudflare registration, or it belongs to another account.
   private var screenError: String? {
-    guard summary == nil, !isCold else { return nil }
-    guard registration?.isCancelled != true, pageNumbered?.isCancelled != true else { return nil }
-    if let message = registration?.failureMessage ?? pageNumbered?.failureMessage { return message }
-    guard registration?.isSettledAnswer == true, pageNumbered?.isSettledAnswer == true else {
-      return nil
-    }
+    guard summary == nil, let registration, !registration.isCancelled else { return nil }
+    if let message = registration.failureMessage { return message }
     return DashL10n.string("Cloudflare has no registration for this domain.")
   }
 
   private var factsPhase: DashSectionPhase {
     if summary != nil { return .content }
-    if let message = registration?.failureMessage ?? pageNumbered?.failureMessage {
-      return .failed(message)
-    }
+    if let message = registration?.failureMessage { return .failed(message) }
     return .loading
-  }
-
-  /// Registry statuses and the registrant contact both come from the
-  /// page-numbered GET, so they share one phase and one retry.
-  private var registryPhase: DashSectionPhase {
-    switch pageNumbered {
-    case nil, .some(.cancelled): .loading
-    case .some(.value), .some(.absent): .content
-    case .some(.denied(let message)), .some(.failed(let message)): .failed(message)
-    }
-  }
-
-  private var registryStatuses: [String] {
-    // Bounded by the EPP vocabulary, but bounded here too: an info group owns
-    // an eager stack and must never take an unbounded `ForEach`.
-    Array((pageNumbered?.payload?.registryStatusList ?? []).prefix(12))
-  }
-
-  private var registrant: RegistrarContact? {
-    pageNumbered?.payload?.registrantContact
   }
 
   var body: some View {
@@ -442,10 +337,7 @@ struct RegistrarDomainDetailView: View {
     .task(id: model.accountRequestContext) { await load() }
   }
 
-  /// Fuller first-paint reserve: registration, registry status, settings, and
-  /// registrant. Live mode drops empty status / settings / registrant; those
-  /// slots exit upward. Registry/registrant stay section-cold after the facts
-  /// land (`factsPhase` / `registryPhase`).
+  /// First-paint reserve: the registration facts and the auto-renew switch.
   @ViewBuilder
   private func registrarDomainDetailBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
@@ -453,31 +345,18 @@ struct RegistrarDomainDetailView: View {
         EmptyView()
       }
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashInfoGroup(title: "Registry status", phase: .loading, placeholderRows: 2) {
-        EmptyView()
-      }
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
       DashListGroupHeader(title: DashL10n.string("Settings"))
         .padding(.horizontal, 4)
         .padding(.bottom, 8)
         .dashSectionBoundary()
       DashSurfaceStack {
         DashToggleRowPlaceholder()
-        DashToggleRowPlaceholder()
       }
-      .dashBodySlot(reduceMotion: reduceMotion)
-      DashInfoGroup(title: "Registrant", phase: .loading, placeholderRows: 3) {
-        EmptyView()
-      }
-      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       registrationGroup
         .dashBodySlot(reduceMotion: reduceMotion)
-      registryStatusGroup
       settingsGroup
-      registrantGroup
     }
   }
 
@@ -486,8 +365,8 @@ struct RegistrarDomainDetailView: View {
     DashInfoGroup(
       title: "Registration",
       phase: factsPhase,
-      // Status, Expires, Registered, Registrar — so the arriving values land on
-      // the placeholders instead of growing the section.
+      // Status, Expires, Registered, Transfer lock — so the arriving values
+      // land on the placeholders instead of growing the section.
       placeholderRows: 4,
       retry: { Task { await load(force: true) } },
       content: {
@@ -499,33 +378,10 @@ struct RegistrarDomainDetailView: View {
   }
 
   @ViewBuilder
-  private var registryStatusGroup: some View {
-    // An empty status list is a settled answer and drops the section; a thrown
-    // lookup keeps it and says so. Those are different answers.
-    if registryPhase != .content || !registryStatuses.isEmpty {
-      DashInfoGroup(
-        title: "Registry status",
-        phase: registryPhase,
-        placeholderRows: 2,
-        retry: { Task { await load(force: true) } },
-        content: {
-          ForEach(registryStatuses, id: \.self) { status in
-            DashInfoRow(value: rdapStatusLabel(status))
-          }
-        }
-      )
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
-    }
-  }
-
-  @ViewBuilder
   private var settingsGroup: some View {
-    // Only the switches whose current value Cloudflare actually returned. The
-    // beta registrations endpoint is the sole source of `auto_renew`, so a
-    // domain it does not know keeps its transfer lock and simply has no
-    // auto-renew row — rather than a switch that starts on a guess.
-    if autoRenewValue != nil || lockedValue != nil {
+    // Only when Cloudflare actually returned the current value, rather than a
+    // switch that starts on a guess.
+    if let autoRenew = autoRenewValue {
       Group {
         DashListGroupHeader(title: DashL10n.string("Settings"))
           .padding(.horizontal, 4)
@@ -539,30 +395,19 @@ struct RegistrarDomainDetailView: View {
           .padding(.bottom, DashTheme.Spacing.itemGap)
         }
         DashSurfaceStack {
-          if let autoRenew = autoRenewValue {
-            DashToggleRow(
-              title: "Auto-renew",
-              subtitle: autoRenew
-                ? "Cloudflare renews this domain before it expires."
-                : "Renew it yourself or you lose the domain.",
-              isOn: Binding(get: { autoRenew }, set: { update(.autoRenew, to: $0) }),
-              isEnabled: allowsWrites && inFlight == nil,
-              isLoading: inFlight == .autoRenew)
-          }
-          if let locked = lockedValue {
-            DashToggleRow(
-              title: "Transfer lock",
-              subtitle: locked
-                ? "Another registrar can’t start a transfer."
-                : "Another registrar can start a transfer.",
-              isOn: Binding(get: { locked }, set: { update(.transferLock, to: $0) }),
-              isEnabled: allowsWrites && inFlight == nil,
-              isLoading: inFlight == .transferLock)
-          }
+          DashToggleRow(
+            title: "Auto-renew",
+            subtitle: autoRenew
+              ? "Cloudflare renews this domain before it expires."
+              : "Renew it yourself or you lose the domain.",
+            isOn: Binding(get: { autoRenew }, set: { updateAutoRenew(to: $0) }),
+            isEnabled: allowsWrites && !isSavingAutoRenew,
+            isLoading: isSavingAutoRenew)
         }
         Text(
           DashL10n.string(
-            "Renewals, transfers, and contact changes happen on the Cloudflare dashboard.")
+            "Renewals, transfers, the transfer lock, and contacts are managed on the Cloudflare dashboard."
+          )
         )
         .dashTextStyle(.caption)
         .foregroundStyle(DashTheme.subtle)
@@ -571,39 +416,6 @@ struct RegistrarDomainDetailView: View {
         .padding(.horizontal, 16)
         .dashItemBoundary()
       }
-      .dashBodySlot(reduceMotion: reduceMotion)
-    }
-  }
-
-  @ViewBuilder
-  private var registrantGroup: some View {
-    // A settled-absent contact is dropped. Loading and failure keep the frame
-    // so the section cannot silently disappear when the shared page-numbered request
-    // throws.
-    if registryPhase != .content || registrant != nil {
-      DashInfoGroup(
-        title: "Registrant",
-        phase: registryPhase,
-        placeholderRows: 3,
-        retry: { Task { await load(force: true) } },
-        content: {
-          if let registrant {
-            if let organization = registrant.organization, !organization.isEmpty {
-              DashInfoRow("Organization", value: organization)
-            }
-            if let contact = registrant.displayName {
-              DashInfoRow("Contact", value: contact)
-            }
-            if let email = registrant.email, !email.isEmpty {
-              DashInfoRow("Email", value: email)
-            }
-            if let location = registrant.displayLocation {
-              DashInfoRow("Location", value: location)
-            }
-          }
-        }
-      )
-      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
@@ -625,96 +437,74 @@ struct RegistrarDomainDetailView: View {
       seed = index.domain(named: domain)
     }
     let key = FeatureCacheKey.registrarDomain(accountID: accountID, domain: domain)
-    if !force, let cached: RegistrarDomainDetail = model.featureCache.get(key) {
+    if !force, let cached: RegistrarFetch<RegistrarRegistration> = model.featureCache.get(key) {
       apply(cached)
       return
     }
     if force {
       registration = nil
-      pageNumbered = nil
     }
-    // Hoisted before the child tasks so neither closure captures `self`.
+    // Hoisted so the child task does not capture `self`.
     let client = model.client
     let domain = domain
-    async let registrationFetch = RegistrarFetch<RegistrarRegistration>.perform {
+    async let fetch = RegistrarFetch<RegistrarRegistration>.perform {
       try await client.getRegistrarRegistration(accountID: accountID, domain: domain)
     }
-    async let pageNumberedFetch = RegistrarFetch<RegistrarDomain>.perform {
-      try await client.getRegistrarDomain(accountID: accountID, domain: domain)
+    let fetched = await fetch
+    // A torn-down load is not an answer: caching one would freeze it.
+    guard !Task.isCancelled, model.isCurrentAccount(context), !fetched.isCancelled else {
+      return
     }
-    let detail = RegistrarDomainDetail(
-      registration: await registrationFetch, pageNumbered: await pageNumberedFetch)
-    guard
-      !Task.isCancelled,
-      model.isCurrentAccount(context),
-      detail.isCacheable
-    else { return }
-    model.featureCache.set(key, detail)
-    apply(detail)
+    model.featureCache.set(key, fetched)
+    apply(fetched)
   }
 
   private func reset(for context: AccountRequestContext?) {
     loadedContext = context
     seed = nil
     registration = nil
-    pageNumbered = nil
     autoRenewOverride = nil
-    lockedOverride = nil
-    inFlight = nil
+    isSavingAutoRenew = false
   }
 
-  private func apply(_ detail: RegistrarDomainDetail) {
+  private func apply(_ fetched: RegistrarFetch<RegistrarRegistration>) {
     withAnimation(DashTheme.Motion.content) {
-      registration = detail.registration
-      pageNumbered = detail.pageNumbered
+      registration = fetched
       autoRenewOverride = nil
-      lockedOverride = nil
     }
   }
 
-  /// Flips the control immediately, sends only the flag that changed, and puts
-  /// the old value back if Cloudflare refuses.
-  private func update(_ setting: RegistrarSetting, to value: Bool) {
+  /// Flips the switch immediately and puts the old value back if Cloudflare
+  /// refuses.
+  private func updateAutoRenew(to value: Bool) {
     guard allowsWrites else {
       model.requestAccess(to: RegistrarAccess.write)
       return
     }
-    guard inFlight == nil, let context = model.accountRequestContext else { return }
-    let previousAutoRenew = autoRenewOverride
-    let previousLocked = lockedOverride
-    switch setting {
-    case .autoRenew: autoRenewOverride = value
-    case .transferLock: lockedOverride = value
-    }
-    inFlight = setting
-    // Only the changed flag reaches the wire: re-asserting the other one from a
-    // possibly-stale screen is how a transfer lock gets silently flipped back.
-    let settings =
-      switch setting {
-      case .autoRenew: RegistrarDomainSettings(autoRenew: value)
-      case .transferLock: RegistrarDomainSettings(locked: value)
-      }
+    guard !isSavingAutoRenew, let context = model.accountRequestContext else { return }
+    let previous = autoRenewOverride
+    autoRenewOverride = value
+    isSavingAutoRenew = true
     let op = model.optimistic.begin(.toggle(value)) {
-      autoRenewOverride = previousAutoRenew
-      lockedOverride = previousLocked
-      inFlight = nil
+      autoRenewOverride = previous
+      isSavingAutoRenew = false
     }
     Task {
       defer {
         if !Task.isCancelled, model.isCurrentAccount(context) {
-          inFlight = nil
+          isSavingAutoRenew = false
         }
       }
       do {
         try await model.optimistic.waitForCommit(op)
-        try await model.client.updateRegistrarDomain(
-          accountID: context.accountID, domain: domain, settings: settings)
+        try await model.client.updateRegistrarAutoRenew(
+          accountID: context.accountID, domain: domain, autoRenew: value)
         guard !Task.isCancelled, model.isCurrentAccount(context) else {
           model.optimistic.finishFailure(op)
           return
         }
-        // List, detail and the zone card all read these two keys; leaving
-        // either behind would show the old answer one screen away.
+        // This screen and the zone card read these two keys; leaving either
+        // behind would show the old answer one screen away.
         model.featureCache.remove(FeatureCacheKey.registrarDomains(context.accountID))
         model.featureCache.remove(
           FeatureCacheKey.registrarDomain(accountID: context.accountID, domain: domain))
@@ -730,24 +520,11 @@ struct RegistrarDomainDetailView: View {
           model.optimistic.finishFailure(op)
           return
         }
-        autoRenewOverride = previousAutoRenew
-        lockedOverride = previousLocked
+        autoRenewOverride = previous
         model.optimistic.finishFailure(op)
         model.toasts.error(error.dashActionableMessage)
       }
     }
-  }
-
-}
-
-/// Both halves of one registrar domain, cached together so a revisit paints
-/// without re-asking either endpoint.
-struct RegistrarDomainDetail: Sendable {
-  let registration: RegistrarFetch<RegistrarRegistration>
-  let pageNumbered: RegistrarFetch<RegistrarDomain>
-
-  var isCacheable: Bool {
-    !registration.isCancelled && !pageNumbered.isCancelled
   }
 }
 
@@ -762,22 +539,6 @@ extension RegistrarDomainSummary {
     let label: String = DashL10n.ui(
       raw.replacingOccurrences(of: "_", with: " ").capitalized)
     return label
-  }
-}
-
-extension RegistrarContact {
-  fileprivate var displayName: String? {
-    let parts = [firstName, lastName]
-      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-    return parts.isEmpty ? nil : parts.joined(separator: " ")
-  }
-
-  fileprivate var displayLocation: String? {
-    let parts = [city, state, country]
-      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-    return parts.isEmpty ? nil : parts.joined(separator: ", ")
   }
 }
 

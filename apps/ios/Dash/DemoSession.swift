@@ -725,33 +725,25 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
   private func registrar(
     base: String, tail: [String], method: String, input: [String: Any], query: [String: String]
   ) -> DemoBackend.Reply {
-    guard tail.count >= 2, ["domains", "registrations"].contains(tail[1]) else {
-      return Self.unsupported
-    }
+    guard tail.count >= 2, tail[1] == "registrations" else { return Self.unsupported }
     let registrations = base + "/registrar/registrations"
-    let domains = base + "/registrar/domains"
-    if tail.count == 3, tail[1] == "domains", method == "PUT" {
+    if tail.count == 3, method == "PATCH" {
       guard
         var registration = rows(registrations).first(where: {
           $0["domain_name"] as? String == tail[2]
-        }),
-        var domain = rows(domains).first(where: { $0["id"] as? String == tail[2] })
+        })
       else { return Self.failure("Registration not found.") }
-      // The write endpoint and the two read APIs use different field names.
-      if let renew = input["auto_renew"] { registration["auto_renew"] = renew }
-      if let locked = input["locked"] as? Bool {
-        registration["locked"] = locked
-        domain["locked"] = locked
-        domain["registry_statuses"] =
-          locked ? "clientTransferProhibited,clientUpdateProhibited" : "ok"
-      }
+      // `auto_renew` is the only field Cloudflare's endpoint accepts.
+      if let renew = input["auto_renew"] as? Bool { registration["auto_renew"] = renew }
       replace(registration, in: registrations, id: "domain_name")
-      replace(domain, in: domains, id: "id")
-      return ok(domain)
+      return ok([
+        "completed": true, "state": "succeeded",
+        "context": ["domain_name": tail[2], "registration": registration],
+      ])
     }
     guard method == "GET" else { return Self.unsupported }
     return records(
-      tail[1] == "domains" ? domains : registrations, tail: Array(tail.dropFirst(2)),
-      method: method, input: input, query: query, id: tail[1] == "domains" ? "id" : "domain_name")
+      registrations, tail: Array(tail.dropFirst(2)), method: method, input: input, query: query,
+      id: "domain_name")
   }
 }
