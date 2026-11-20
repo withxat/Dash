@@ -16,8 +16,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 
 | Feature | What you can do |
 | --- | --- |
-| **Domains** | Zones, DNS, cache settings, domain settings, traffic / WAF / Web Analytics |
-| **Registrations** | Registrar domains you own, status and expiry |
+| **Domains** | Zones, DNS, cache settings, domain settings, registration details and auto-renew, traffic / WAF / Web Analytics |
 | **Email Routing** | Per-domain routes, settings, destination addresses |
 | **Workers** | Scripts, deployment history and cut-over, custom domains, `workers.dev`, analytics, Workers Builds |
 | **Pages** | Projects, deployments and logs, retry/rollback, custom domains, build Live Activities |
@@ -25,7 +24,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 | **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Insights traffic charts and Cloudflare notification history, an app-icon unread badge, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation.
+Shell around those features: Home launcher, Resources catalog, Insights charts and Cloudflare notification history, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation. Insights only reads the notification history Cloudflare already published; Dash sends no notifications of its own.
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 

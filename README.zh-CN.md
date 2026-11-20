@@ -16,8 +16,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 
 | 功能 | 能做什么 |
 | --- | --- |
-| **Domains** | 域名、DNS、缓存清理、域名设置、流量 / WAF / Web Analytics |
-| **Registrations** | 账户下的注册域名、状态与到期信息 |
+| **Domains** | 域名、DNS、缓存设置、域名设置、注册信息与自动续费、流量 / WAF / Web Analytics |
 | **Email Routing** | 按域名管理路由、设置与 Destination Addresses |
 | **Workers** | 查看脚本、部署历史与切流、自定义域、`workers.dev`、分析、Workers Builds |
 | **Pages** | 查看项目、部署与日志、重试/回滚、自定义域、构建 Live Activity |
@@ -25,7 +24,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | **KV** | Namespace、key 列表、读取与创建·编辑·删除 |
 | **Tunnels** | 实验功能；在 Settings → Experimental 中开启 |
 
-壳层能力：Home 启动器、Resources 目录、Insights（洞察）流量图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth，以及仅 iPhone 的单栈导航。洞察只读取 Cloudflare 已发布的通知历史；Dash 不提供 webhook 投递、告警策略管理或推送桥接。
+壳层能力：Home 启动器、Resources 目录、Insights（洞察）图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth，以及仅 iPhone 的单栈导航。洞察只读取 Cloudflare 已发布的通知历史；Dash 自己不发送任何通知，也不提供 webhook 投递、告警策略管理或推送桥接。
 
 暂不覆盖：D1、Queues、Vectorize、Secrets Store、Images、Stream、Access，以及 iPad / 分栏布局。
 
