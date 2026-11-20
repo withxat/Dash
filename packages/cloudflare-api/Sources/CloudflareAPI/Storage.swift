@@ -93,25 +93,6 @@ public struct KVKey: Codable, Hashable, Identifiable, Sendable {
   public let metadata: JSONValue?
 }
 
-public struct D1QueryResult: Codable, Hashable, Sendable {
-  public let results: [[String: JSONValue]]?
-  public let success: Bool?
-  public let meta: [String: JSONValue]?
-}
-
-public struct StreamVideo: Codable, Hashable, Identifiable, Sendable {
-  public let uid: String
-  public let created: String?
-  public let meta: StreamVideoMeta?
-
-  public var id: String { uid }
-  public var name: String { meta?.name ?? uid }
-}
-
-public struct StreamVideoMeta: Codable, Hashable, Sendable {
-  public let name: String?
-}
-
 private struct R2BucketResult: Decodable, Sendable {
   let buckets: [LossyElement<R2Bucket>]?
 }
@@ -298,26 +279,5 @@ extension CloudflareClient {
   public func deleteKVValue(accountID: String, namespaceID: String, key: String) async throws {
     let _: Data = try await raw(
       "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/values/\(key)", method: "DELETE")
-  }
-  public func queryD1(accountID: String, databaseID: String, sql: String) async throws
-    -> [D1QueryResult]
-  {
-    try await request(
-      "/accounts/\(accountID)/d1/database/\(databaseID)/query", method: "POST", body: ["sql": sql])
-  }
-
-  /// Imports a video into Stream from a public URL.
-  @discardableResult
-  public func streamCopy(accountID: String, url: String, name: String?) async throws -> StreamVideo
-  {
-    var body: [String: JSONValue] = ["url": .string(url)]
-    if let name, !name.isEmpty {
-      body["meta"] = .object(["name": .string(name)])
-    }
-    return try await request("/accounts/\(accountID)/stream/copy", method: "POST", body: body)
-  }
-
-  public func listStreamVideos(accountID: String) async throws -> [StreamVideo] {
-    try await list("/accounts/\(accountID)/stream").items
   }
 }

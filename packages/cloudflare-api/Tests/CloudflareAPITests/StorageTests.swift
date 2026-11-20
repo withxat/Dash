@@ -375,18 +375,4 @@ extension NetworkTests {
     try await client.deleteR2CustomDomain(
       accountID: "account", bucket: "assets", domain: "img.example.com")
   }
-
-  @Test func streamCopySendsURLAndOptionalName() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      #expect(request.url?.path.hasSuffix("/stream/copy") == true)
-      return (200, Data(#"{"success":true,"result":{"uid":"vid2"}}"#.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let video = try await client.streamCopy(
-      accountID: "account", url: "https://example.com/a.mp4", name: "A")
-    #expect(video.uid == "vid2")
-  }
 }

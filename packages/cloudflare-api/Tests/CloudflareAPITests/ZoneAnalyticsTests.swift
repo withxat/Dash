@@ -210,30 +210,6 @@ extension NetworkTests {
     #expect(recorder.paths.last?.contains("page=101") == true)
   }
 
-  @Test func webAnalyticsPageviewsDecodeDailyCounts() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let recorder = RequestRecorder()
-    let session = mockSession { request in
-      recorder.record(request.url?.absoluteString ?? "")
-      let body = #"""
-        {"data":{"viewer":{"accounts":[{"rumPageloadEventsAdaptiveGroups":[
-        {"count":46,"dimensions":{"date":"2026-07-22"}},
-        {"count":51,"dimensions":{"date":"2026-07-23"}}
-        ]}]}},"errors":null}
-        """#
-      return (200, Data(body.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-
-    let days = try await client.webAnalyticsPageviews(siteTag: "site-1", days: 7)
-
-    #expect(days.map(\.pageviews) == [46, 51])
-    #expect(days.first?.date == "2026-07-22")
-    #expect(recorder.paths.first?.contains("/graphql") == true)
-  }
-
   @Test func webAnalyticsMetricsDecodePageloadDaysAscending() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

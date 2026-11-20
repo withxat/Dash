@@ -693,11 +693,6 @@ extension CloudflareClient {
       "/accounts/\(accountID)/workers/scripts/\(name)/subdomain",
       method: "POST", body: ["enabled": enabled])
   }
-  /// The immutable script tag (`external_script_id`) the Builds APIs key on,
-  /// resolved from the documented scripts list.
-  public func workerTag(accountID: String, name: String) async throws -> String? {
-    try await listWorkers(accountID: accountID).first { $0.id == name }?.tag
-  }
   /// Pages returns 8000024 ("Invalid list options… Review the `page` or
   /// `per_page` parameter") for oversized pages. `50` fails on real accounts;
   /// `10` matches wrangler and the OpenAPI example.

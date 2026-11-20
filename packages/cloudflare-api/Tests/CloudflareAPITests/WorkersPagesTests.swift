@@ -146,25 +146,6 @@ extension NetworkTests {
       accountID: "account", name: "api", source: source, content: "export default {}")
   }
 
-  @Test func workerTagMatchesExactScriptName() async throws {
-    let store = MemoryTokenStore(access: "token", refresh: nil)
-    let session = mockSession { request in
-      #expect(request.url?.path == "/accounts/account/workers/scripts")
-      let body = #"""
-        {"success":true,"result":[
-        {"id":"api-staging","tag":"e8f70fdbc8b1fb0b8ddb1af166186758"},
-        {"id":"api","tag":"57eb1c68b8504f0baa4b5cc56cbc7d0f"}
-        ]}
-        """#
-      return (200, Data(body.utf8))
-    }
-    let client = CloudflareClient(
-      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
-      session: session)
-    let tag = try await client.workerTag(accountID: "account", name: "api")
-    #expect(tag == "57eb1c68b8504f0baa4b5cc56cbc7d0f")
-  }
-
   @Test func listWorkerDeploymentsDecodesOperationalFields() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in

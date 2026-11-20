@@ -163,16 +163,6 @@ public struct RUMRuleset: Codable, Hashable, Sendable {
 
 /// One bucket of RUM page loads. `count` is beacon-reported page loads — a
 /// different measurement from the edge's HTML-response `pageViews`.
-public struct RUMPageviewsDay: Codable, Hashable, Sendable {
-  public let date: String
-  public let pageviews: Int
-
-  public init(date: String, pageviews: Int) {
-    self.date = date
-    self.pageviews = pageviews
-  }
-}
-
 /// One day of Web Analytics (RUM) beacon metrics for a site. `pageviews` and
 /// `visits` both come from the pageload dataset — the only one this endpoint
 /// queries. Page-load time and Core Web Vitals are deliberately absent: the
@@ -280,18 +270,6 @@ private struct ZoneAnalyticsData: Decodable, Sendable {
       let cachedBytes: Int64?
     }
     struct Uniq: Decodable, Sendable { let uniques: Int }
-  }
-}
-private struct RUMPageviewsData: Decodable, Sendable {
-  let viewer: Viewer
-
-  struct Viewer: Decodable, Sendable { let accounts: [Account] }
-  struct Account: Decodable, Sendable { let rumPageloadEventsAdaptiveGroups: [Group] }
-  struct Group: Decodable, Sendable {
-    let count: Int
-    let dimensions: Dimensions
-
-    struct Dimensions: Decodable, Sendable { let date: String }
   }
 }
 private struct RUMMetricsData: Decodable, Sendable {
@@ -502,37 +480,6 @@ extension CloudflareClient {
   public func webAnalyticsSites(accountID: String) async throws -> [RUMSite] {
     try await listAllPages(
       "/accounts/\(accountID)/rum/site_info/list", perPage: 50)
-  }
-
-  /// Daily beacon-reported page loads for one RUM site, ascending. This is the
-  /// Web Analytics number, not the edge's HTML-response count.
-  public func webAnalyticsPageviews(siteTag: String, days: Int = 7) async throws
-    -> [RUMPageviewsDay]
-  {
-    let formatter = ISO8601DateFormatter()
-    formatter.formatOptions = [.withInternetDateTime]
-    formatter.timeZone = TimeZone(identifier: "UTC")
-    let until = Date()
-    let since = until.addingTimeInterval(-TimeInterval(max(days - 1, 0)) * 86400)
-    let query = """
-      { viewer { accounts { \
-      rumPageloadEventsAdaptiveGroups(limit: \(max(days, 1)), \
-      filter: {siteTag: "\(siteTag)", \
-      datetime_geq: "\(formatter.string(from: since))", \
-      datetime_leq: "\(formatter.string(from: until))"}, orderBy: [date_ASC]) { \
-      count dimensions { date } } } } }
-      """
-    let response = try await graphQLRaw(try JSONEncoder().encode(["query": query]))
-    let envelope = try JSONDecoder().decode(
-      GraphQLEnvelope<RUMPageviewsData>.self, from: response)
-    if let error = envelope.errors?.first {
-      throw CloudflareAPIError.request(
-        status: error.semanticStatusCode,
-        errors: [APIErrorItem(code: 0, message: error.message)])
-    }
-    return (envelope.data?.viewer.accounts.first?.rumPageloadEventsAdaptiveGroups ?? []).map {
-      RUMPageviewsDay(date: $0.dimensions.date, pageviews: $0.count)
-    }
   }
 
   /// Web Analytics metrics for one RUM site — page views and visits from
