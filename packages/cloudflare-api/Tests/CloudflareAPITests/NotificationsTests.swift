@@ -73,6 +73,23 @@ extension NetworkTests {
     #expect(recorder.paths == ["/accounts/acct/logs/audit", "/accounts/acct/audit_logs"])
   }
 
+  /// Cloudflare's SDKs encode nested filters with dots (`action_type.not`).
+  @Test func auditLogsV2LeaveOutViewActions() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let items =
+        request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
+        .queryItems ?? []
+      #expect(items.contains(URLQueryItem(name: "action_type.not", value: "view")))
+      return (200, Data(#"{"success":true,"result":[]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    _ = try await client.listAuditLogsV2(accountID: "acct")
+  }
+
   @Test func auditLogsFallBackToV1WhenV2IsNotFound() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let recorder = RequestRecorder()

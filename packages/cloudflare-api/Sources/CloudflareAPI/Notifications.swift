@@ -195,6 +195,9 @@ extension CloudflareClient {
     }
   }
 
+  /// Excludes `view` entries. Since 2026-10-13 v2 returns every read as one,
+  /// Dash's own requests included, so an unfiltered first page is mostly the
+  /// app watching itself instead of the changes the list is for.
   public func listAuditLogsV2(accountID: String, limit: Int = 10) async throws -> [AuditLogEntry] {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withFullDate]
@@ -205,6 +208,7 @@ extension CloudflareClient {
       query: [
         "direction": "desc",
         "limit": String(limit),
+        "action_type.not": "view",
         "since": since,
         "before": before,
       ]
