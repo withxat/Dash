@@ -58,7 +58,7 @@ The iOS app links the local `cloudflare-api`, `gradient-avatars`, `SwiftDitherKi
 
 - Xcode 26 or newer with an iOS Simulator
 - Swift 6
-- Node.js current LTS and pnpm 11 for the relay Worker and web package
+- Node.js current LTS and pnpm 12 for the relay Worker and web package
 
 ## Configure OAuth
 

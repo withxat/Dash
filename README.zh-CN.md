@@ -58,7 +58,7 @@ iOS App 链接的本地 Swift 包是 `cloudflare-api`、`gradient-avatars`、`Sw
 
 - Xcode 26 或更新，并配备 iOS Simulator
 - Swift 6
-- 当前 LTS 的 Node.js 与 pnpm 11（边缘 Worker 与 web 包）
+- 当前 LTS 的 Node.js 与 pnpm 12（边缘 Worker 与 web 包）
 
 ## 配置 OAuth
 
