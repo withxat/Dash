@@ -31,9 +31,7 @@ extension NetworkTests {
             {"success":true,"result":[
               {"id":"t1","name":"office","status":"healthy","tun_type":"cfd_tunnel",
                "config_src":"cloudflare","remote_config":true,
-               "created_at":"2026-01-02T03:04:05Z","conns_active_at":"2026-07-01T00:00:00Z",
-               "connections":[{"id":"c1","colo_name":"IAD","origin_ip":"203.0.113.10",
-                               "client_version":"2026.6.1","is_pending_reconnect":false}]},
+               "created_at":"2026-01-02T03:04:05Z","conns_active_at":"2026-07-01T00:00:00Z"},
               {"id":"t2","name":"lab","status":"degraded","tun_type":"cfd_tunnel"}
             ],"result_info":{"page":1,"per_page":2,"total_count":3}}
             """#.utf8)
@@ -62,8 +60,6 @@ extension NetworkTests {
     #expect(tunnels.map(\.tunTypeRaw) == ["cfd_tunnel", "cfd_tunnel", "magic"])
     #expect(tunnels[0].health == .healthy)
     #expect(tunnels[0].configSource == .cloudflare)
-    #expect(tunnels[0].connections?.first?.coloName == "IAD")
-    #expect(tunnels[0].connections?.first?.originIP == "203.0.113.10")
     #expect(tunnels[0].connsActiveAt == "2026-07-01T00:00:00Z")
     #expect(tunnels[1].health == .degraded)
     #expect(!tunnels[0].isDeleted)

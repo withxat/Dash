@@ -1016,15 +1016,6 @@ func tunnelDisplayName(_ tunnel: CloudflareTunnel) -> String {
   return name.isEmpty ? String(tunnel.id.prefix(8)) : name
 }
 
-/// Distinct `cloudflared` processes behind a tunnel. One process opens four
-/// connections, so counting `connections` would report "8 connectors" for two
-/// machines — `client_id` is the process.
-func tunnelConnectorCount(_ tunnel: CloudflareTunnel) -> Int {
-  let connections = tunnel.connections ?? []
-  let clientIDs = connections.compactMap { $0.clientID }.filter { !$0.isEmpty }
-  return clientIDs.isEmpty ? connections.count : Set(clientIDs).count
-}
-
 func tunnelColoSummary(_ connections: [TunnelConnection]) -> String? {
   var seen: Set<String> = []
   var ordered: [String] = []
@@ -1038,22 +1029,16 @@ func tunnelColoSummary(_ connections: [TunnelConnection]) -> String? {
 
 func tunnelListSubtitle(_ tunnel: CloudflareTunnel) -> String? {
   switch tunnel.health {
-  case .healthy, .degraded:
-    let count = tunnelConnectorCount(tunnel)
-    guard count > 0 else { return nil }
-    let connectors =
-      count == 1
-      ? DashL10n.string("1 connector")
-      : DashL10n.string("\(count) connectors")
-    guard let colos = tunnelColoSummary(tunnel.connections ?? []) else { return connectors }
-    return "\(connectors) · \(colos)"
+  // Cloudflare dropped `connections` from the tunnel list on 2026-10-05, and
+  // counting connectors now costs one `/connections` request per row. The
+  // detail screen already shows them; a connected row needs only its badge.
+  case .healthy, .degraded, .unknown:
+    return nil
   case .down, .inactive:
     guard let last = tunnel.connsInactiveAt.flatMap(DashDateFormatting.date(fromISO8601:)) else {
       return nil
     }
     return DashL10n.string("Last connected \(DashDateFormatting.fullRelativeTime(last))")
-  case .unknown:
-    return nil
   }
 }
 

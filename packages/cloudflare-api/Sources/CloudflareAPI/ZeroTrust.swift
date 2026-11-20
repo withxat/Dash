@@ -121,7 +121,6 @@ public struct CloudflareTunnel: Codable, Hashable, Identifiable, Sendable {
   /// `config_src` on the wire. Read it through `configSource`.
   public let configSrcRaw: String?
   public let remoteConfig: Bool?
-  public let connections: [TunnelConnection]?
 
   public var health: TunnelHealth { TunnelHealth(status: statusRaw) }
 
@@ -134,7 +133,7 @@ public struct CloudflareTunnel: Codable, Hashable, Identifiable, Sendable {
   public var isDeleted: Bool { deletedAt != nil }
 
   enum CodingKeys: String, CodingKey {
-    case id, name, connections
+    case id, name
     case accountTag = "account_tag"
     case createdAt = "created_at"
     case deletedAt = "deleted_at"

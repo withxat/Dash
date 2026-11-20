@@ -291,11 +291,11 @@ final class DemoBackend: URLProtocol {
       let tunnelRest = Array(rest.dropFirst())
       let remoteTunnel =
         #"""
-        {"id":"tunnel-demo-remote","account_tag":"demo-account","name":"production-edge","created_at":"2026-01-10T08:00:00Z","deleted_at":null,"conns_active_at":"2026-07-29T06:30:00Z","conns_inactive_at":null,"status":"healthy","tun_type":"cfd_tunnel","config_src":"cloudflare","remote_config":true,"connections":[{"id":"connection-sin","client_id":"connector-singapore","client_version":"2026.7.1","colo_name":"SIN","opened_at":"2026-07-29T06:30:00Z","origin_ip":"203.0.113.10","uuid":"connection-sin","is_pending_reconnect":false},{"id":"connection-nrt","client_id":"connector-tokyo","client_version":"2026.7.1","colo_name":"NRT","opened_at":"2026-07-29T06:31:00Z","origin_ip":"203.0.113.11","uuid":"connection-nrt","is_pending_reconnect":false}]}
+        {"id":"tunnel-demo-remote","account_tag":"demo-account","name":"production-edge","created_at":"2026-01-10T08:00:00Z","deleted_at":null,"conns_active_at":"2026-07-29T06:30:00Z","conns_inactive_at":null,"status":"healthy","tun_type":"cfd_tunnel","config_src":"cloudflare","remote_config":true}
         """#
       let localTunnel =
         #"""
-        {"id":"tunnel-demo-local","account_tag":"demo-account","name":"lab-origin","created_at":"2025-11-03T12:00:00Z","deleted_at":null,"conns_active_at":null,"conns_inactive_at":"2026-07-27T19:20:00Z","status":"inactive","tun_type":"cfd_tunnel","config_src":"local","remote_config":false,"connections":[]}
+        {"id":"tunnel-demo-local","account_tag":"demo-account","name":"lab-origin","created_at":"2025-11-03T12:00:00Z","deleted_at":null,"conns_active_at":null,"conns_inactive_at":"2026-07-27T19:20:00Z","status":"inactive","tun_type":"cfd_tunnel","config_src":"local","remote_config":false}
         """#
 
       switch tunnelRest.first {

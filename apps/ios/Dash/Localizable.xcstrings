@@ -340,17 +340,6 @@
         }
       }
     },
-    "%lld connectors" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%lld 个连接器"
-          }
-        }
-      }
-    },
     "%lld days ago" : {
       "localizations" : {
         "zh-Hans" : {
@@ -511,17 +500,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "1 条提醒"
-          }
-        }
-      }
-    },
-    "1 connector" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "1 个连接器"
           }
         }
       }
