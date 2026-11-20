@@ -3,9 +3,13 @@ nodeLinker: hoisted
 shellEmulator: true
 trustPolicy: no-downgrade
 overrides:
-  # Miniflare pins a vulnerable Undici release. Remove this bridge when the
-  # Cloudflare toolchain moves past this Miniflare version.
-  'miniflare@4.20260710.0>undici': 7.29.1
+  # Miniflare pins vulnerable Undici and sharp releases. Remove these bridges
+  # when the Cloudflare toolchain moves past this Miniflare version.
+  'miniflare@4.20260710.0>undici': 7.30.2
+  'miniflare@4.20260710.0>sharp': 0.35.5
+  # oxfmt 0.35 (through eslint-plugin-format) pins a tinypool with a prototype
+  # pollution advisory. Remove when eslint-plugin-format moves past oxfmt 0.35.
+  'oxfmt@0.35.0>tinypool': 2.2.0
 packages:
   - packages/*
   - apps/*
@@ -30,8 +34,8 @@ catalogs:
     '@cloudflare/vite-plugin': ^1.45.0
     '@cloudflare/workers-types': ^5.20260716.1
     '@vitejs/plugin-react': ^6.0.3
-    hono: ^4.12.30
-    vite: ^8.1.5
+    hono: ^4.13.19
+    vite: ^8.3.8
     wrangler: ^4.111.0
 allowBuilds:
   esbuild: true

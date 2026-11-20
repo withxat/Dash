@@ -34,13 +34,13 @@
 	"devDependencies": {
 		"@hugeicons/core-free-icons": "^4.2.2",
 		"@solar-icons/react-native": "^1.1.1",
-		"mingcute_icon": "2.9.72",
 		"@withxat/eslint-config": "catalog:devtool",
 		"@withxat/tsconfig": "catalog:devtool",
 		"eslint": "catalog:devtool",
 		"jiti": "catalog:devtool",
 		"lefthook": "catalog:devtool",
-		"sharp": "^0.35.3",
+		"mingcute_icon": "2.9.72",
+		"sharp": "^0.35.5",
 		"turbo": "catalog:devtool",
 		"typescript": "catalog:devtool"
 	}
