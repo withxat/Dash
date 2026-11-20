@@ -726,9 +726,25 @@ struct DNSRecordEditor: View {
           }
 
           Group {
+            // Cloudflare stopped accepting a type change on update (end of life
+            // 2026-06-30), so an existing record keeps its type: the PUT would
+            // only fail. Changing it means deleting and creating a new record.
             DashFormMenuField(
               label: "Type", selection: $type,
-              options: ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"])
+              options: record.map { [$0.type] }
+                ?? ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"]
+            )
+            .disabled(record != nil)
+            if record != nil {
+              Text(
+                DashL10n.string(
+                  "To change the type, delete this record and create a new one.")
+              )
+              .dashTextStyle(.caption)
+              .foregroundStyle(DashTheme.subtle)
+              .fixedSize(horizontal: false, vertical: true)
+              .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             DashFormField(label: "Name", text: $name)
 

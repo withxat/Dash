@@ -12294,6 +12294,17 @@
         }
       }
     },
+    "To change the type, delete this record and create a new one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "如需更改类型，请删除此记录后新建一条。"
+          }
+        }
+      }
+    },
     "Too large to preview on device. Use the ⋯ menu to copy its public URL." : {
       "localizations" : {
         "en" : {
