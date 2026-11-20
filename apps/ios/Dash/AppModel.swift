@@ -3,7 +3,6 @@ import CloudflareAPI
 import Foundation
 import Observation
 import UIKit
-import UserNotifications
 import WidgetKit
 
 enum AuthenticationState: Sendable, Equatable {
@@ -206,8 +205,6 @@ final class AppModel {
   private var authenticationCallbackWaiters: [CheckedContinuation<Void, Never>] = []
   private var fileProviderReconcileTask: Task<Void, Never>?
   private var fileProviderReconcileGeneration: UInt64 = 0
-  private var systemBadgeTask: Task<Void, Never>?
-  private var systemBadgeGeneration: UInt64 = 0
   private var isRetryingIdentity = false
   private var isSigningOut = false
   private var accountGeneration: UInt64 = 0
@@ -395,7 +392,6 @@ final class AppModel {
       try WatchtowerWidgetSnapshot.clear(at: url)
       WidgetCenter.shared.reloadAllTimelines()
     }
-    setSystemBadgeCount(0)
   }
 
   /// Removes device-local identifiers and resource history that belong to the
@@ -1925,7 +1921,6 @@ final class AppModel {
   func refreshWatchtowerInboxBadge() {
     guard let accountID = activeAccountID else {
       watchtowerUnreadAlertCount = nil
-      setSystemBadgeCount(0)
       return
     }
     let cached: WatchtowerSnapshot? = featureCache.get(FeatureCacheKey.watchtower(accountID))
@@ -1960,23 +1955,6 @@ final class AppModel {
       alerts: snapshot.alertsStatus == .ok ? snapshot.alerts : []
     )
     watchtowerUnreadAlertCount = unreadCount
-    setSystemBadgeCount(unreadCount)
-  }
-
-  /// SpringBoard has one badge, so the app-owned Watchtower count is its only
-  /// writer. Writes are chained, and obsolete queued values are skipped. This
-  /// prevents an older asynchronous `setBadgeCount` completion from landing
-  /// after a newer read/ignore/refresh transition.
-  private func setSystemBadgeCount(_ count: Int) {
-    systemBadgeGeneration &+= 1
-    let generation = systemBadgeGeneration
-    let normalizedCount = max(0, count)
-    let previous = systemBadgeTask
-    systemBadgeTask = Task { @MainActor [weak self] in
-      _ = await previous?.result
-      guard let self, self.systemBadgeGeneration == generation else { return }
-      try? await UNUserNotificationCenter.current().setBadgeCount(normalizedCount)
-    }
   }
 
   /// Writes the slim snapshot into the App Group container and refreshes the
