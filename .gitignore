@@ -162,6 +162,9 @@ DerivedData/
 xcuserdata/
 apps/ios/Config/Secrets.xcconfig
 
+# Amp orb portals
+.amp/portals/*
+
 # Wrangler local secrets (never commit)
 .dev.vars
 .dev.vars.*

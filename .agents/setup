@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+# Prepares an Amp orb for this repository: the pinned pnpm, the workspace's Node
+# dependencies, and swift-format. Building and testing Swift runs on the Mac
+# satellite instead, since the Swift packages need Apple SDKs (CryptoKit, SwiftUI)
+# that Linux does not have.
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+	local label=$1 start=$SECONDS
+	shift
+	echo "==> $label"
+	"$@"
+	echo "<== $label ($((SECONDS - start))s)"
+}
+
+package_manager="$(node -p 'require("./package.json").packageManager')"
+pnpm_version="${package_manager#pnpm@}"
+pnpm_version="${pnpm_version%%+*}"
+
+# The orb image's pnpm 12 fails to fetch the pinned engine when it starts inside
+# this workspace ("the installed pnpm wrapper is missing"), yet succeeds from a
+# directory without the workspace's settings. Fetch it there; runs inside the
+# repository then reuse pnpm's cached engine.
+install_pinned_pnpm() {
+	local dir="${XDG_CACHE_HOME:-$HOME/.cache}/dash-orb/pnpm-engine" active
+	mkdir -p "$dir"
+	printf '{"private":true,"packageManager":"%s"}\n' "$package_manager" >"$dir/package.json"
+	(cd "$dir" && pnpm --version >/dev/null)
+	active="$(pnpm --version)"
+	if [[ "$active" != "$pnpm_version" ]]; then
+		echo "expected pnpm $pnpm_version in the repository, got $active" >&2
+		return 1
+	fi
+}
+
+# swift-format has to match the one CI lints with: Xcode 26.4.1 (DEVELOPER_DIR in
+# .github/workflows/ios-quality.yml) ships Swift 6.3. Only the driver, swift-format,
+# and the runtime libraries they link are kept, about 180 MB of the 3.3 GB toolchain.
+swift_version=6.3
+# Swift 6.x release signing key, as published at https://www.swift.org/install/linux/tarball
+swift_signing_key=52BB7E3DE28A71BE22EC05FFEF80A866B47A981F
+
+install_swift_format() {
+	local root="$HOME/.local/share/swift-$swift_version" name="swift-$swift_version-RELEASE-debian12" tmp
+	if [[ ! -x "$root/usr/bin/swift-format" ]]; then
+		local url="https://download.swift.org/swift-$swift_version-release/debian12/swift-$swift_version-RELEASE/$name.tar.gz"
+		tmp="$(mktemp -d)"
+		curl -fsSL --retry 3 -o "$tmp/toolchain.tar.gz" "$url"
+		curl -fsSL --retry 3 -o "$tmp/toolchain.tar.gz.sig" "$url.sig"
+		curl -fsSL --retry 3 https://www.swift.org/keys/all-keys.asc | GNUPGHOME="$tmp" gpg --batch --quiet --import
+		GNUPGHOME="$tmp" gpg --batch --status-fd 1 --verify "$tmp/toolchain.tar.gz.sig" "$tmp/toolchain.tar.gz" 2>/dev/null |
+			grep "^\[GNUPG:\] VALIDSIG .* $swift_signing_key\$" >/dev/null
+		rm -rf "$root.partial"
+		mkdir -p "$root.partial"
+		tar xzf "$tmp/toolchain.tar.gz" -C "$root.partial" --strip-components=1 \
+			--wildcards --no-wildcards-match-slash \
+			"$name/usr/bin/swift" "$name/usr/bin/swift-driver" "$name/usr/bin/swift-format" \
+			"$name/usr/lib/swift/linux/*.so"
+		rm -rf "$root"
+		mv "$root.partial" "$root"
+		rm -rf "$tmp"
+	fi
+	# The driver picks its mode from the name it was called by, so the link is named swift.
+	ln -sfn "$root/usr/bin/swift" /usr/local/bin/swift
+	swift format --version
+}
+
+# The block is replaced on every run so a stale snapshot picks up edited notes.
+write_agent_notes() {
+	local notes="$HOME/.config/amp/AGENTS.md" kept
+	local begin='<!-- dash orb notes: begin -->' end='<!-- dash orb notes: end -->'
+	mkdir -p "$(dirname "$notes")"
+	touch "$notes"
+	kept="$(awk -v b="$begin" -v e="$end" '$0 == b { skip = 1 } !skip { print } $0 == e { skip = 0 }' "$notes")"
+	cat >"$notes" <<EOF
+$kept
+
+$begin
+# Dash in an orb
+
+- This orb is Linux with no Xcode, \`xcrun\`, \`xcodebuild\`, or \`xcstringstool\`. Its \`swift\` is only swift-format $swift_version, the version CI's Xcode ships: \`swift build\` and \`swift test\` do not work. Run \`pnpm lint:l10n\`, the Swift package tests (\`pnpm api:test\` and siblings), \`pnpm ios:*\`, and \`pnpm typecheck\` on the Mac satellite.
+- Runs here: \`pnpm lint:fix\`, \`pnpm lint:swift\`, \`pnpm exec turbo lint\`, \`pnpm lint:ios-architecture\`, and the web checks \`pnpm --filter @dash/web lint|test|build\` plus \`pnpm --filter @dash/web exec tsc -b --noEmit\`. \`pnpm lint\` stops at \`lint:l10n\`.
+- The lefthook pre-commit hook's \`lint & format\` job passes here, but its \`typecheck\` job needs Xcode, so a commit that stages Swift, TS, JS, pbxproj, or xcconfig files fails here. Ask the user before skipping that job with \`LEFTHOOK_EXCLUDE=typecheck\`.
+- If \`pnpm\` reports "the installed pnpm wrapper is missing" after the \`packageManager\` pin changes, rerun \`.agents/setup\`; it fetches the pinned pnpm from outside the workspace.
+$end
+EOF
+}
+
+step "pnpm $pnpm_version" install_pinned_pnpm
+step "pnpm install" pnpm install --frozen-lockfile --config.confirm-modules-purge=false
+step "swift-format $swift_version" install_swift_format
+step "orb agent notes" write_agent_notes
