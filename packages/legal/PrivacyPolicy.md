@@ -35,7 +35,7 @@ advertising, or tracking.
   screens and Live Activities poll while they are active; they do not use an
   APNs device token, push-to-start token, webhook, or relay delivery.
 - **R2 temporary files** are used for previews, thumbnails, uploads, downloads,
-  exports, renames, and moves without loading an entire object into memory.
+  and exports without loading an entire object into memory.
   Operation files are removed when the operation completes, fails, or is
   cancelled. An exported file can remain for about 10 minutes so the receiving
   app has time to copy it. If Dash is force-quit or crashes, R2 temporary files
