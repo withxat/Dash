@@ -83,7 +83,7 @@ Before finishing a task, run `pnpm lint:fix` and `pnpm lint`. Do NOT run simulat
 
 ### Auth flow
 
-- `AppModel.signIn()` builds a PKCE authorize URL and opens `ASWebAuthenticationSession`; Cloudflare redirects to the relay's HTTPS callback, which 302s to `dash://oauth/callback`; the app exchanges the code and stores tokens through `KeychainTokenStore` (an actor implementing the package's `TokenStore` protocol).
+- `AppModel.signIn()` builds a PKCE authorize URL and opens an ephemeral `ASWebAuthenticationSession` (no Safari cookies, so every sign-in and grant asks for credentials; Safari's dashboard session is the suspected cause of a `request_forbidden` "No CSRF value" sign-in failure); Cloudflare redirects to the relay's HTTPS callback, which 302s to `dash://oauth/callback`; the app exchanges the code and stores tokens through `KeychainTokenStore` (an actor implementing the package's `TokenStore` protocol).
 - Fresh real-account sign-in requests `DashAuthorizationScopes.core`, the audited union of every permission used by current features, in one consent flow. Any later OAuth reauthorization also requests `core`. `initialReadOnly` remains the Demo profile; App Intents and the share extension fail closed without write scopes and ask the user to connect a real account. Lower-layer write checks still enforce mutations.
 - Configuration plumbing: `Config/Base.xcconfig` `#include?`s the ignored `Signing.xcconfig` and `Secrets.xcconfig`; `DASH_CLIENT_ID`/`DASH_REDIRECT_URI` flow into Info.plist keys read by `AppConfiguration.current`. Unexpanded `$(...)` values mean unconfigured, which disables sign-in with a hint instead of crashing.
 

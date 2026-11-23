@@ -1104,7 +1104,13 @@ final class AppModel {
       }
     }
     session.presentationContextProvider = WebAuthenticationContext.shared
-    session.prefersEphemeralWebBrowserSession = false
+    // Every authorization starts from an empty cookie jar instead of Safari's.
+    // Cloudflare's dashboard session in Safari is the suspected cause of a
+    // TestFlight sign-in that came back request_forbidden, "No CSRF value
+    // available in the session cookie". A clean jar also never signs in as
+    // whoever Safari last used and skips the "wants to use cloudflare.com"
+    // alert. The cost: credentials or a passkey on every sign-in and grant.
+    session.prefersEphemeralWebBrowserSession = true
     authSession = session
     Task { @MainActor [weak self] in
       // start() presents the system browser sheet — heavyweight main-thread
