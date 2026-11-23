@@ -252,3 +252,232 @@ struct LegalDocumentView: View {
     .padding(.top, block.kind.spacing(after: previous))
   }
 }
+
+/// Settings → Help & about → Data & Privacy, also opened from the sign-in
+/// footer: what leaves this iPhone, where it goes, and what stays behind.
+///
+/// It may only state what the code does. Every host listed is one the app
+/// actually contacts on its own, and the footnote admits the one thing the
+/// relay does see — the single-use authorization code — rather than claiming
+/// it sees nothing. Change a network path and change this page with it; the
+/// Privacy Policy stays the binding wording.
+struct DataPrivacyView: View {
+  static let sourceCode = URL(string: "https://github.com/withxat/Dash")!
+
+  var body: some View {
+    ScrollView {
+      LazyVStack(spacing: DashTheme.Spacing.section) {
+        DataPrivacyHero()
+
+        DashTwoToneListGroup(title: "Sign-in") {
+          DataPrivacyFact(
+            title: DashL10n.string("Signed in on Cloudflare"),
+            detail: DashL10n.string(
+              "OAuth with PKCE on Cloudflare’s own page. Dash never sees your password."),
+            icon: SolarAsset.Content.user,
+            color: DashTheme.info
+          )
+          DataPrivacyFact(
+            title: DashL10n.string("Stays in your Keychain"),
+            detail: DashL10n.string(
+              "On this iPhone only, never synced to iCloud, and only ever sent to Cloudflare."
+            ),
+            icon: SolarAsset.Content.lock,
+            color: DashTheme.success
+          )
+          DataPrivacyFact(
+            title: DashL10n.string("Cleared when you sign out"),
+            detail: DashL10n.string(
+              "Dash deletes the token and your cached data, and asks Cloudflare to revoke it."),
+            icon: SolarAsset.Content.key,
+            color: DashTheme.warning
+          )
+        }
+
+        VStack(alignment: .leading, spacing: 10) {
+          // Host names are addresses, not copy: they render verbatim.
+          DashInfoGroup(title: "Where requests go") {
+            DashInfoRow("Account data", value: "api.cloudflare.com", mono: true)
+            DashInfoRow("Sign-in & tokens", value: "dash.cloudflare.com", mono: true)
+            DashInfoRow("Sign-in redirect", value: "dash.xat.sh", mono: true)
+            DashInfoRow("Registration lookup", value: "dash.xat.sh", mono: true)
+            DashInfoRow("Avatar", value: "gravatar.com", mono: true)
+            DashInfoRow("Cloudflare status", value: "cloudflarestatus.com", mono: true)
+          }
+
+          Text(
+            DashL10n.string(
+              "The relay at dash.xat.sh stores nothing and never sees your token: it forwards a one-time sign-in code that’s useless without a secret kept on this iPhone, and receives only domain names for public registration lookups. Gravatar gets a hash of your email, and only when you haven’t chosen a photo."
+            )
+          )
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .fixedSize(horizontal: false, vertical: true)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 16)
+        }
+
+        DashTwoToneListGroup(title: "Nothing hidden") {
+          DataPrivacyFact(
+            title: DashL10n.string("No analytics or tracking"),
+            detail: DashL10n.string(
+              "No analytics, advertising, crash-reporting, or tracking SDKs."),
+            icon: SolarAsset.Content.graph,
+            color: DashTheme.violet
+          )
+          DataPrivacySourceRow()
+        }
+      }
+      .padding(.horizontal, DashTheme.Spacing.screen)
+      .padding(.vertical, DashTheme.Spacing.section)
+    }
+    .background(DashTheme.canvas)
+    .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "Data & Privacy")
+  }
+}
+
+/// The page's thesis drawn before it is written: this iPhone and Cloudflare,
+/// one locked line between them, then the headline. The diagram is decoration
+/// for sighted readers; VoiceOver gets the headline and the facts below it.
+private struct DataPrivacyHero: View {
+  @ScaledMetric(relativeTo: .title2) private var nodeSize: CGFloat = 60
+
+  private var badgeSize: CGFloat { nodeSize * 0.46 }
+
+  var body: some View {
+    VStack(spacing: 22) {
+      HStack(alignment: .top, spacing: 0) {
+        endpoint(
+          label: DashL10n.string("This iPhone"),
+          glyph: SolarIcon(
+            asset: SolarAsset.smartphone, size: nodeSize * 0.44, color: DashTheme.text))
+        link
+          .frame(height: nodeSize)
+        endpoint(
+          label: "Cloudflare",
+          glyph: SolarIcon(
+            asset: SolarAsset.cloudflare, size: nodeSize * 0.52, color: DashTheme.accent))
+      }
+      .frame(maxWidth: 300)
+      .accessibilityHidden(true)
+
+      VStack(spacing: 8) {
+        Text(DashL10n.string("Between this iPhone and Cloudflare"))
+          .dashTextStyle(.emptyTitle)
+          .foregroundStyle(DashTheme.strong)
+          .accessibilityAddTraits(.isHeader)
+        Text(
+          DashL10n.string(
+            "Dash has no account system and no server keeping your data. Here’s every place the app connects to."
+          )
+        )
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.subtle)
+      }
+      .multilineTextAlignment(.center)
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(.horizontal, 12)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.top, 12)
+    .padding(.bottom, 4)
+  }
+
+  private func endpoint(label: String, glyph: SolarIcon) -> some View {
+    VStack(spacing: 10) {
+      glyph
+        .frame(width: nodeSize, height: nodeSize)
+        .background(DashTheme.homeCardSurface, in: Circle())
+        .dashEmbossChrome(shape: Circle())
+      Text(label)
+        .dashTextStyle(.footnoteSemibold)
+        .foregroundStyle(DashTheme.subtle)
+        .lineLimit(1)
+        .fixedSize()
+    }
+    .frame(width: nodeSize + 36)
+  }
+
+  /// The connection: a line warming from the phone's neutral to Cloudflare's
+  /// orange, locked at the middle.
+  private var link: some View {
+    ZStack {
+      Capsule()
+        .fill(
+          LinearGradient(
+            colors: [DashTheme.iconMuted.opacity(0.35), DashTheme.accent.opacity(0.7)],
+            startPoint: .leading, endPoint: .trailing)
+        )
+        .frame(height: 2)
+      SolarIcon(asset: SolarAsset.Content.lock, size: badgeSize * 0.5, color: DashTheme.success)
+        .frame(width: badgeSize, height: badgeSize)
+        .background(DashTheme.successTint, in: Circle())
+        .dashShadow(.border, in: Circle())
+    }
+    .frame(maxWidth: .infinity)
+  }
+}
+
+/// One promise on a two-tone card: a tinted plate, a short claim, and the
+/// sentence that makes it checkable. Not a `DashListRow`: that row caps its
+/// subtitle at two lines, and a privacy claim must never end in an ellipsis.
+private struct DataPrivacyFact: View {
+  let title: String
+  let detail: String
+  let icon: String
+  let color: Color
+  var opensExternally = false
+  @ScaledMetric(relativeTo: .body) private var iconScale: CGFloat = 1
+
+  private var plate: CGFloat { 36 * min(max(iconScale, 1), 1.3) }
+
+  var body: some View {
+    HStack(spacing: 12) {
+      SolarIcon(asset: icon, size: plate * 2 / 3, color: color)
+        .frame(width: plate, height: plate)
+        .background(color.opacity(0.1), in: Circle())
+
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .dashTextStyle(.bodySemibold)
+          .foregroundStyle(DashTheme.text)
+        Text(detail)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.rowSubtitle)
+      }
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      if opensExternally {
+        SolarIcon(
+          asset: SolarAsset.arrowRightUp, size: DashTheme.Chevron.row,
+          color: DashTheme.placeholder)
+      }
+    }
+    .padding(.vertical, 10)
+    .frame(minHeight: DashTheme.Layout.twoToneListRow)
+    .contentShape(Rectangle())
+    .accessibilityElement(children: .combine)
+  }
+}
+
+private struct DataPrivacySourceRow: View {
+  @Environment(\.openURL) private var openURL
+
+  var body: some View {
+    Button {
+      openURL(DataPrivacyView.sourceCode)
+    } label: {
+      DataPrivacyFact(
+        title: DashL10n.string("Open source"),
+        detail: DashL10n.string("MIT licensed. Read every line on GitHub."),
+        icon: SolarAsset.Content.code,
+        color: DashTheme.text,
+        opensExternally: true
+      )
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityHint(DashL10n.string("Opens the project repository in your browser"))
+    .accessibilityIdentifier("data-privacy-source")
+  }
+}

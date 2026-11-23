@@ -771,7 +771,8 @@ struct SettingsView: View {
 
         // Help and About were separate sections at the foot of the page; the
         // titles carry these rows on their own, so the subtitles and the extra
-        // headers are gone. Legal links stay on sign-in, not here.
+        // headers are gone. Legal links stay on sign-in, not here; Data &
+        // Privacy is the plain-language summary, so it is reachable from both.
         SettingsPlainSection(title: "Help & about") {
           externalRow(
             title: DashL10n.string("Send feedback"),
@@ -787,6 +788,15 @@ struct SettingsView: View {
               showsChevron: true
             )
           }
+
+          DashListGroupLink(value: .dataPrivacy) {
+            SettingsPlainRow(
+              title: DashL10n.string("Data & Privacy"),
+              icon: SolarAsset.shieldCheck,
+              showsChevron: true
+            )
+          }
+          .accessibilityIdentifier("settings-data-privacy")
 
           DashListGroupLink(value: .openSource) {
             SettingsPlainRow(

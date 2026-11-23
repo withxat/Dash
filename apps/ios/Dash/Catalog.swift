@@ -71,6 +71,8 @@ enum Destination: Hashable {
   case about
   /// Settings → Open source: third-party libraries and icon sets Dash ships.
   case openSource
+  /// Settings → Data & Privacy: what leaves this iPhone and where it goes.
+  case dataPrivacy
   case feature(FeatureID)
   case zone(String)
   case dns(String)

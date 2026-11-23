@@ -241,6 +241,7 @@ extension Destination {
     case .settingsAccounts: .init(namespace: "settings", value: "accounts")
     case .about: .init(namespace: "settings", value: "about")
     case .openSource: .init(namespace: "settings", value: "open-source")
+    case .dataPrivacy: .init(namespace: "settings", value: "data-privacy")
     case .feature(let feature): .init(namespace: "feature", value: feature.rawValue)
     case .zone(let id): .init(namespace: "zone", value: id)
     case .dns(let id): .init(namespace: "zone-dns", value: id)

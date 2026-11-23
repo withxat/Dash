@@ -244,7 +244,7 @@ private struct OnboardingGlyphReveal: TextRenderer, Animatable {
 private struct OnboardingView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashLoginIconCloaked) private var iconCloaked
-  @State private var legalDocument: LegalDocument?
+  @State private var presentedDocument: OnboardingDocument?
   /// Flips when the splash lockup hands off (the cloak lifts), so the hero
   /// lines and footer cascade in only after the morph settles.
   @State private var revealed = false
@@ -264,27 +264,32 @@ private struct OnboardingView: View {
       LoginBackground()
       onboardingLayout
     }
-    .sheet(item: $legalDocument) { document in
-      LegalDocumentView(document: document)
-        .safeAreaInset(edge: .top, spacing: 0) {
-          ZStack {
-            Text(document.title)
-              .dashTextStyle(.sectionTitle)
-              .foregroundStyle(DashTheme.strong)
-              .lineLimit(1)
-              .padding(.horizontal, 64)
-              .accessibilityAddTraits(.isHeader)
-            HStack {
-              Spacer(minLength: 0)
-              Button("Done") { legalDocument = nil }
-                .fontWeight(.semibold)
-                .frame(minWidth: 44, minHeight: 44)
-            }
-          }
-          .padding(.horizontal, DashTheme.Spacing.screen)
-          .frame(height: DashPageChromeMetrics.reservedHeight)
-          .background(.regularMaterial)
+    .sheet(item: $presentedDocument) { document in
+      Group {
+        switch document {
+        case .legal(let legal): LegalDocumentView(document: legal)
+        case .dataPrivacy: DataPrivacyView()
         }
+      }
+      .safeAreaInset(edge: .top, spacing: 0) {
+        ZStack {
+          Text(document.title)
+            .dashTextStyle(.sectionTitle)
+            .foregroundStyle(DashTheme.strong)
+            .lineLimit(1)
+            .padding(.horizontal, 64)
+            .accessibilityAddTraits(.isHeader)
+          HStack {
+            Spacer(minLength: 0)
+            Button("Done") { presentedDocument = nil }
+              .fontWeight(.semibold)
+              .frame(minWidth: 44, minHeight: 44)
+          }
+        }
+        .padding(.horizontal, DashTheme.Spacing.screen)
+        .frame(height: DashPageChromeMetrics.reservedHeight)
+        .background(.regularMaterial)
+      }
     }
     .onAppear {
       // Keyed off the cloak, not dashSplashLifted: a slow bootstrap can mount
@@ -482,15 +487,22 @@ private struct OnboardingView: View {
     VStack(spacing: 6) {
       Text("By continuing, you agree to our")
       HStack(spacing: 4) {
-        Button("Terms of Use") { legalDocument = .termsOfUse }
+        Button("Terms of Use") { presentedDocument = .legal(.termsOfUse) }
           .fontWeight(.medium)
           .foregroundStyle(DashTheme.text)
         Text("and")
-        Button("Privacy Policy") { legalDocument = .privacyPolicy }
+        Button("Privacy Policy") { presentedDocument = .legal(.privacyPolicy) }
           .fontWeight(.medium)
           .foregroundStyle(DashTheme.text)
         Text(".")
       }
+      // The trust story a sign-in page owes before it asks for an account:
+      // the same Data & Privacy page Settings opens, not a third document.
+      Button("How Dash handles your data") { presentedDocument = .dataPrivacy }
+        .fontWeight(.medium)
+        .foregroundStyle(DashTheme.text)
+        .padding(.top, 4)
+        .accessibilityIdentifier("onboarding-data-privacy")
     }
     .dashTextStyle(.caption)
     .lineSpacing(5)
@@ -501,6 +513,23 @@ private struct OnboardingView: View {
     .padding(.top, 24)
   }
 
+}
+
+/// What the sign-in footer's links open in its sheet. Data & Privacy is native,
+/// localized copy rather than a bundled Markdown file, so it rides beside the
+/// legal documents instead of becoming a `LegalDocument` with no resource.
+private enum OnboardingDocument: Hashable, Identifiable {
+  case legal(LegalDocument)
+  case dataPrivacy
+
+  var id: Self { self }
+
+  var title: String {
+    switch self {
+    case .legal(let document): document.title
+    case .dataPrivacy: DashL10n.string("Data & Privacy")
+    }
+  }
 }
 
 extension View {

@@ -104,7 +104,7 @@ struct FeatureWriteAccessNotice: View {
 /// Maps a push destination to the catalog feature that owns its write scopes.
 func featureID(for destination: Destination) -> FeatureID? {
   switch destination {
-  case .profile, .settings, .settingsAccounts, .about, .openSource, .auditLogs,
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .dataPrivacy, .auditLogs,
     .watchtowerInbox, .cloudflareStatus:
     nil
   case .chartDetail(let detail): detail.featureID
@@ -140,8 +140,8 @@ func featureID(for destination: Destination) -> FeatureID? {
 /// nothing at all rather than `registrar-domains.read`.
 func readScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .profile, .settings, .settingsAccounts, .about, .openSource, .watchtowerInbox,
-    .cloudflareStatus:
+  case .profile, .settings, .settingsAccounts, .about, .openSource, .dataPrivacy,
+    .watchtowerInbox, .cloudflareStatus:
     []
   case .auditLogs:
     ["account-settings.read"]
@@ -180,7 +180,7 @@ func readScopes(for destination: Destination) -> Set<String> {
 /// destination without enabling write controls owned by a sibling screen.
 func writeScopes(for destination: Destination) -> Set<String> {
   switch destination {
-  case .settings, .settingsAccounts, .about, .openSource, .auditLogs,
+  case .settings, .settingsAccounts, .about, .openSource, .dataPrivacy, .auditLogs,
     .watchtowerInbox, .cloudflareStatus, .zoneAnalytics, .zoneWebAnalytics, .chartDetail:
     []
   case .profile:

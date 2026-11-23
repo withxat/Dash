@@ -22,6 +22,7 @@ struct DestinationRoutedContent: View {
       case .settingsAccounts: SettingsAccountsView()
       case .about: AboutView()
       case .openSource: OpenSourceView()
+      case .dataPrivacy: DataPrivacyView()
       case .feature(let feature):
         FeatureRouterContent(feature: feature)
       case .zone(let id): ZoneDetailView(zoneID: id)
