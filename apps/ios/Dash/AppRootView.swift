@@ -491,10 +491,13 @@ private struct OnboardingView: View {
           .fontWeight(.medium)
           .foregroundStyle(DashTheme.text)
         Text("and")
-        Button("Privacy Policy") { presentedDocument = .legal(.privacyPolicy) }
-          .fontWeight(.medium)
-          .foregroundStyle(DashTheme.text)
-        Text(".")
+        // The period hugs the link; the 4pt word gap would read as a space.
+        HStack(spacing: 0) {
+          Button("Privacy Policy") { presentedDocument = .legal(.privacyPolicy) }
+            .fontWeight(.medium)
+            .foregroundStyle(DashTheme.text)
+          Text(".")
+        }
       }
       // The trust story a sign-in page owes before it asks for an account:
       // the same Data & Privacy page Settings opens, not a third document.
