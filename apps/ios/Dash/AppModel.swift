@@ -957,15 +957,12 @@ final class AppModel {
           finishAuthenticationAttempt(authenticationAttempt)
           return
         }
-        guard error == nil, let url,
-          let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        else {
+        guard error == nil, let url else {
           finishAuthenticationAttempt(authenticationAttempt)
           errorMessage = error?.localizedDescription ?? "OAuth callback was invalid."
           return
         }
-        let values = Dictionary(
-          uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        let values = OAuth.callbackParameters(url)
         guard values["state"] == state, let code = values["code"] else {
           finishAuthenticationAttempt(authenticationAttempt)
           errorMessage = values["error_description"] ?? values["error"] ?? "OAuth state mismatch."

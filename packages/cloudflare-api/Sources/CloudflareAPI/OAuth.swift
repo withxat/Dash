@@ -73,6 +73,25 @@ public enum OAuth {
     return components.url!
   }
 
+  /// Reads an authorization redirect's query as RFC 6749 Appendix B encodes
+  /// it, application/x-www-form-urlencoded: a `+` is a space. Cloudflare's
+  /// authorization server writes `error_description` that way, and
+  /// `URLComponents.queryItems` keeps the plus signs. A repeated name keeps
+  /// its first value instead of trapping.
+  public static func callbackParameters(_ url: URL) -> [String: String] {
+    let items =
+      URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedQueryItems ?? []
+    return items.reduce(into: [:]) { values, item in
+      let name = formDecoded(item.name)
+      if values[name] == nil { values[name] = formDecoded(item.value ?? "") }
+    }
+  }
+
+  private static func formDecoded(_ value: String) -> String {
+    let spaced = value.replacingOccurrences(of: "+", with: "%20")
+    return spaced.removingPercentEncoding ?? spaced
+  }
+
   public static func exchangeCode(
     clientID: String, code: String, verifier: String, redirectURI: String,
     session: URLSession = .shared, tokenURL: URL = CloudflareEndpoints.token

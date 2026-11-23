@@ -31,6 +31,22 @@ import Testing
   #expect(values["scope"] == "zone.read")
 }
 
+@Test func callbackParametersDecodeFormEncodedErrorDescription() throws {
+  // The exact redirect Cloudflare sent a TestFlight sign-in on 2026-11-23,
+  // plus a percent-encoded plus and a repeated name.
+  let url = try #require(
+    URL(
+      string: "dash://oauth/callback?error=request_forbidden"
+        + "&error_description=The+request+is+not+allowed.+No+CSRF+value+available+in+the+session+cookie."
+        + "&state=a%2Bb&state=second"))
+  let values = OAuth.callbackParameters(url)
+  #expect(values["error"] == "request_forbidden")
+  #expect(
+    values["error_description"]
+      == "The request is not allowed. No CSRF value available in the session cookie.")
+  #expect(values["state"] == "a+b")
+}
+
 @Test func authorizationURLDropsMisspelledAndOAuthUnsupportedScopes() throws {
   let misspelled = "ai-search.meatadata_read"
   let url = OAuth.authorizationURL(
