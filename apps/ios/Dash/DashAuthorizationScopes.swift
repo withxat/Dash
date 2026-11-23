@@ -79,12 +79,16 @@ enum DashAuthorizationScopes {
   /// icon on a domain the user already opened — sending
   /// them back through consent to flip a switch they came for is a wall, not a
   /// safeguard. The screen keeps its `FeatureWriteAccessNotice` for grants that
-  /// predate this (or were narrowed by hand).
+  /// predate this (or were narrowed by hand). `cache.purge` is the same shape:
+  /// the Cache screen, the Home quick action, and the Purge Cache intent are
+  /// emergency tools, so it ships with sign-in and is gated on its own
+  /// (`CachePurgeAccess`) rather than through the Cache screen's settings scope.
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
     "dns.write",
     "registrar-domains.admin",
+    "cache.purge",
   ]
 
   /// Legacy read-only profile retained for capability-gating tests.

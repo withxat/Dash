@@ -117,6 +117,7 @@ extension HomeActionID {
     case .createR2Bucket: String(localized: "New bucket")
     case .addPagesDomain: String(localized: "Pages domain")
     case .addWorkerDomain: String(localized: "Worker domain")
+    case .purgeCache: String(localized: "Purge cache")
     case .enableDevelopmentMode: String(localized: "Dev mode")
     case .enableUnderAttackMode: String(localized: "Under Attack")
     }
@@ -132,6 +133,7 @@ extension HomeActionID {
     case .createR2Bucket: "shippingbox.fill"
     case .addPagesDomain: "chevron.left.forwardslash.chevron.right"
     case .addWorkerDomain: "curlybraces"
+    case .purgeCache: "bolt.fill"
     case .enableDevelopmentMode: "slider.horizontal.3"
     case .enableUnderAttackMode: "shield.fill"
     }

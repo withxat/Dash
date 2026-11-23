@@ -80,6 +80,7 @@ enum HomeActionID: String, CaseIterable, Hashable, Identifiable, Sendable {
   case createR2Bucket
   case addPagesDomain
   case addWorkerDomain
+  case purgeCache
   case enableDevelopmentMode
   case enableUnderAttackMode
 

@@ -78,6 +78,35 @@ extension NetworkTests {
     try await client.triggerZoneActivationCheck(zoneID: "z1")
   }
 
+  /// The two purge shapes are mutually exclusive on Cloudflare's side: a body
+  /// carrying `files` must not also say `purge_everything`, and the
+  /// everything purge must not carry an empty `files` list.
+  @Test func purgeCacheSendsEverythingOrOnlyTheListedFiles() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let bodies = RequestRecorder()
+    let session = mockSession { request in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path == "/zones/z1/purge_cache")
+      let body = try JSONSerialization.data(
+        withJSONObject: requestBodyObject(request) ?? [:],
+        options: [.sortedKeys, .withoutEscapingSlashes])
+      bodies.record(String(decoding: body, as: UTF8.self))
+      return (200, Data(#"{"success":true,"result":{"id":"z1"}}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.purgeCache(zoneID: "z1")
+    try await client.purgeCache(zoneID: "z1", files: ["https://example.com/app.css"])
+
+    #expect(
+      bodies.paths == [
+        #"{"purge_everything":true}"#,
+        #"{"files":["https://example.com/app.css"]}"#,
+      ])
+  }
+
   @Test func deleteZoneDeletesZonePath() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { request in

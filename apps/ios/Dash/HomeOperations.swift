@@ -335,15 +335,18 @@ struct HomeWorkerDomainAction: View {
   }
 }
 
+/// Home's one-tap zone operations: pick a domain, read what will happen, run it.
 struct HomeZoneModeAction: View {
   enum Mode {
     case development
     case underAttack
+    case purgeEverything
 
     var actionTitle: String {
       switch self {
       case .development: DashL10n.string("Enable dev mode")
       case .underAttack: DashL10n.string("Enable Under Attack")
+      case .purgeEverything: DashL10n.string("Purge everything")
       }
     }
 
@@ -357,6 +360,18 @@ struct HomeZoneModeAction: View {
         DashL10n.string(
           "Cloudflare will challenge every visitor. You can restore the previous security level from the domain's WAF screen."
         )
+      case .purgeEverything:
+        DashL10n.string(
+          "This removes every cached asset in this domain. Requests may temporarily reach your origin."
+        )
+      }
+    }
+
+    /// Purging is an action, not a switch being turned on.
+    var optimisticVerb: DashOptimisticVerb {
+      switch self {
+      case .development, .underAttack: .enabling
+      case .purgeEverything: .operating
       }
     }
   }
@@ -436,7 +451,7 @@ struct HomeZoneModeAction: View {
     let client = model.client
     actionPhase = .loading
     error = nil
-    let op = model.optimistic.begin(.enabling)
+    let op = model.optimistic.begin(mode.optimisticVerb)
     do {
       try await model.optimistic.waitForCommit(op)
       let successMessage: String
@@ -462,6 +477,14 @@ struct HomeZoneModeAction: View {
           return
         }
         successMessage = DashL10n.string("Under Attack mode is on for \(zone.name).")
+      case .purgeEverything:
+        try await client.purgeCache(zoneID: zone.id)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          actionPhase = .idle
+          model.optimistic.finishFailure(op)
+          return
+        }
+        successMessage = DashL10n.string("Purged everything from \(zone.name).")
       }
       model.featureCache.remove(FeatureCacheKey.zoneSettings(zone.id))
       pendingResult = successMessage

@@ -55,7 +55,7 @@ import UIKit
     HomeActions.decode("enableUnderAttackMode,uploadR2,enableUnderAttackMode,unknown")
       == [.enableUnderAttackMode, .uploadR2])
   // Retired quick actions drop out of a previously stored selection.
-  #expect(HomeActions.decode("purgeCache,uploadR2") == [.uploadR2])
+  #expect(HomeActions.decode("retiredAction,purgeCache,uploadR2") == [.purgeCache, .uploadR2])
 
   // Changing the fresh-install default never rewrites a previously stored choice.
   let previousSelection = HomeActions.encode([.addDomain, .uploadR2, .addDNSRecord])
@@ -250,7 +250,9 @@ import UIKit
   #expect(
     parse("dash://action/uploadR2?account=account-1")
       == .action(.uploadR2).scoped(to: "account-1"))
-  #expect(parse("dash://action/purgeCache") == nil)  // retired HomeActionID
+  #expect(
+    parse("dash://action/purgeCache?account=account-1")
+      == .action(.purgeCache).scoped(to: "account-1"))
   #expect(parse("dash://zone/abc?account=account-1") == .zone("abc").scoped(to: "account-1"))
   #expect(
     parse("dash://zone/abc/dns?account=account-1") == .zoneDNS("abc").scoped(to: "account-1"))

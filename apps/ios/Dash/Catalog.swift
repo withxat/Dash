@@ -74,7 +74,7 @@ enum Destination: Hashable {
   case feature(FeatureID)
   case zone(String)
   case dns(String)
-  /// Cache settings: Development Mode, Always Online, Cache Level.
+  /// Cache tools: purge, Development Mode, Always Online, Cache Level.
   case cache(String)
   case zoneAnalytics(String)
   /// Beacon-reported Web Analytics (RUM) — a different measurement from

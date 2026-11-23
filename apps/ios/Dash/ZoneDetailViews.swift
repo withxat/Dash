@@ -124,7 +124,7 @@ struct ZoneDetailView: View {
       blurb: "Blocks, countries, Under Attack"),
     ZoneTool(
       id: .cache, title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
-      blurb: "Development Mode, Always Online, Cache Level"),
+      blurb: "Purge, Development Mode, Cache Level"),
     ZoneTool(
       id: .settings, title: "Settings", icon: SolarAsset.settings,
       route: Destination.zoneSettings,

@@ -187,6 +187,12 @@ extension CloudflareClient {
     let _: JSONValue = try await request(
       "/zones/\(zoneID)/dns_records/\(recordID)", method: "DELETE")
   }
+  /// `files == nil` purges everything; otherwise only the listed URLs.
+  public func purgeCache(zoneID: String, files: [String]? = nil) async throws {
+    let body: [String: JSONValue] =
+      files.map { ["files": .array($0.map(JSONValue.string))] } ?? ["purge_everything": .bool(true)]
+    let _: JSONValue = try await request("/zones/\(zoneID)/purge_cache", method: "POST", body: body)
+  }
   public func listZoneSettings(zoneID: String) async throws -> [ZoneSetting] {
     try await list("/zones/\(zoneID)/settings").items
   }

@@ -79,7 +79,7 @@ import UIKit
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
   #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
-  #expect(DashAuthorizationScopes.core.count == 30)
+  #expect(DashAuthorizationScopes.core.count == 31)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -96,6 +96,8 @@ import UIKit
       with: DashAuthorizationScopes.initialReadOnly))
   #expect(DashAuthorizationScopes.core.contains("zone-settings.write"))
   #expect(DashAuthorizationScopes.core.contains("account-settings.write"))
+  #expect(CachePurgeAccess.write.isSubset(of: DashAuthorizationScopes.core))
+  #expect(CachePurgeAccess.write.isDisjoint(with: DashAuthorizationScopes.initialReadOnly))
   #expect(!DashAuthorizationScopes.initialReadOnly.contains("account-settings.write"))
   #expect(!model.hasScopes(["dns.write"]))
   model.grantedScopes = DashAuthorizationScopes.initialReadOnly
@@ -149,7 +151,7 @@ import UIKit
 }
 
 @Test func processExternalMutationsFailClosedWithoutWriteScopes() {
-  let intentWrites: Set<String> = ["zone-settings.write"]
+  let intentWrites = CachePurgeAccess.write.union(["zone-settings.write"])
   let r2Writes = R2ShareDestination.requiredWriteScopes
   #expect(
     !DashIntentAuthorization.hasRequiredScopes(
@@ -186,8 +188,11 @@ import UIKit
     "account-analytics.read",  // Worker metrics card (account-scoped GraphQL)
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
+    "cache.purge",  // Cache screen, Home quick action, PurgeCacheIntent
   ]
-  let readOnlyOperational = operational.filter { !$0.hasSuffix(".write") }
+  let readOnlyOperational = operational.filter {
+    !$0.hasSuffix(".write") && !CachePurgeAccess.write.contains($0)
+  }
   #expect(readOnlyOperational.isSubset(of: DashAuthorizationScopes.initialReadOnly))
   #expect(operational.isSubset(of: DashAuthorizationScopes.core))
 }
@@ -299,6 +304,8 @@ import UIKit
   #expect(
     readScopes(for: .zoneWAF("z1"))
       == ["zone.read", "analytics.read", "zone-settings.read"])
+  // Purge is gated by `CachePurgeAccess` alone: a grant without `cache.purge`
+  // must not turn the Cache screen's switches read-only.
   #expect(writeScopes(for: .cache("z1")) == ["zone-settings.write"])
   #expect(writeScopes(for: .zoneAnalytics("z1")).isEmpty)
   #expect(writeScopes(for: .zoneWAF("z1")) == ["zone-settings.write"])

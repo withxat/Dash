@@ -45,6 +45,11 @@ private func demoClient() -> CloudflareClient {
   #expect(
     try await client.listZoneSettings(zoneID: zone.id).first(where: { $0.id == "ssl" })?.value
       == .string("strict"))
+  try await client.purgeCache(zoneID: zone.id)
+  try await client.purgeCache(zoneID: zone.id, files: ["https://review.example/app.css"])
+  await #expect(throws: (any Error).self) {
+    try await client.purgeCache(zoneID: zone.id, files: [])
+  }
   #expect(
     try await client.listZones(accountID: "demo-account", name: "review.example").items.isEmpty)
   #expect(

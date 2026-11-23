@@ -2207,6 +2207,22 @@
         }
       }
     },
+    "Cache purged." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cache purged."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "缓存已清除。"
+          }
+        }
+      }
+    },
     "Cache Rate" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3389,6 +3405,167 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接你的账户"
+          }
+        }
+      }
+    },
+    "Every cached asset on this domain" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Every cached asset on this domain"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名下的所有缓存资源"
+          }
+        }
+      }
+    },
+    "Purge by URL" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge by URL"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 URL 清除"
+          }
+        }
+      }
+    },
+    "Purge cache" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除缓存"
+          }
+        }
+      }
+    },
+    "Purge Cache" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge Cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除缓存"
+          }
+        }
+      }
+    },
+    "Purge everything from %@'s cache?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge everything from %@'s cache?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要清除 %@ 的全部缓存吗？"
+          }
+        }
+      }
+    },
+    "Purge everything from a Cloudflare domain's cache." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge everything from a Cloudflare domain's cache."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除某个 Cloudflare 域名的全部缓存。"
+          }
+        }
+      }
+    },
+    "Purge, Development Mode, Cache Level" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purge, Development Mode, Cache Level"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除缓存、开发模式、缓存级别"
+          }
+        }
+      }
+    },
+    "Purged everything from %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Purged everything from %@."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已清除 %@ 的全部缓存。"
+          }
+        }
+      }
+    },
+    "Remove one cached asset" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove one cached asset"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "清除单个缓存资源"
+          }
+        }
+      }
+    },
+    "Remove one cached asset without disturbing the rest of the domain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove one cached asset without disturbing the rest of the domain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只清除这一个缓存资源，不影响此域名下的其他缓存。"
           }
         }
       }
@@ -4960,23 +5137,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已为 %1$@ 开启开发模式。Cloudflare 会在三小时后自动关闭。"
-          }
-        }
-      }
-    },
-    "Development Mode, Always Online, Cache Level" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Development Mode, Always Online, Cache Level"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "开发模式、Always Online、缓存级别"
           }
         }
       }

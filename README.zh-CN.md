@@ -16,7 +16,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 
 | 功能 | 能做什么 |
 | --- | --- |
-| **Domains** | 域名、DNS、缓存设置、域名设置、注册信息与自动续费、流量 / WAF / Web Analytics |
+| **Domains** | 域名、DNS、清除缓存与缓存设置、域名设置、注册信息与自动续费、流量 / WAF / Web Analytics |
 | **Email Routing** | 按域名管理路由、设置与 Destination Addresses |
 | **Workers** | 查看脚本、部署历史与切流、自定义域、`workers.dev`、分析、Workers Builds |
 | **Pages** | 查看项目、部署与日志、重试/回滚、自定义域、构建 Live Activity |

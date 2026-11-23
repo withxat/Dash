@@ -191,6 +191,14 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
         replace(updated, in: "/zones", id: "id")
         return ok(["id": parts[1]])
       }
+      // The demo serves no cached assets, so a purge only has to be well formed.
+      if parts.count == 3, parts[2] == "purge_cache", method == "POST" {
+        let files = input["files"] as? [String]
+        guard (input["purge_everything"] as? Bool == true) != (files?.isEmpty == false) else {
+          return Self.failure("Purge everything or name the URLs to purge.", status: 400)
+        }
+        return ok(["id": parts[1]])
+      }
       if parts.count >= 3, parts[2] == "dns_records" {
         return records(
           base + "/dns_records", tail: Array(parts.dropFirst(3)), method: method,

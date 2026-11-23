@@ -3,8 +3,15 @@ import SwiftDitherKit
 import SwiftGlobeKit
 import SwiftUI
 
-/// Cache settings for one zone: Development Mode, Always Online, and Cache
-/// Level.
+/// Cache purge is its own permission. The Cache screen's settings answer to
+/// `zone-settings.write` (`writeScopes(for: .cache)`), so a grant missing
+/// `cache.purge` must only lock the purge rows, never the switches beside them.
+enum CachePurgeAccess {
+  static let write: Set<String> = ["cache.purge"]
+}
+
+/// Cache tools for one zone: Development Mode, Always Online, Cache Level, and
+/// purging by URL or everything.
 struct ZoneCacheView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
@@ -15,6 +22,8 @@ struct ZoneCacheView: View {
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
   @State private var hasPresentedContent = false
+  @State private var showsPurgeURL = false
+  @State private var showsPurgeEverything = false
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .cache(zoneID))
@@ -22,6 +31,10 @@ struct ZoneCacheView: View {
 
   private var allowsWrites: Bool {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
+  }
+
+  private var allowsPurge: Bool {
+    model.hasScopes(CachePurgeAccess.write)
   }
 
   private var curated: [ZoneSetting] {
@@ -72,11 +85,84 @@ struct ZoneCacheView: View {
             .dashSectionBoundary()
             .dashBodySlot(reduceMotion: reduceMotion)
         }
+        purgeSection
+          .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
     .detailHeader(icon: .solar(SolarAsset.Content.bolt), title: "Cache")
     .refreshable { await load(force: true) }
     .task { await load() }
+    .dashTray(
+      isPresented: $showsPurgeURL, title: "Purge by URL",
+      tone: FeatureVisualIdentity.tone(for: .zones)
+    ) {
+      CachePurgeURLForm(zoneID: zoneID)
+    }
+    .dashMoreMenu(
+      isPresented: $showsPurgeEverything,
+      title: "Purge cache",
+      actions: [purgeEverythingAction]
+    )
+  }
+
+  /// Purging needs nothing the settings fetch returns, but it lives in the
+  /// live body with the rest of the screen so a cold load never offers a
+  /// control that sits under the placeholder veil.
+  private var purgeSection: some View {
+    DashListGroup(title: "Purge cache") {
+      if allowsPurge {
+        Button {
+          showsPurgeURL = true
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Purge by URL"),
+            subtitle: DashL10n.string("Remove one cached asset"),
+            icon: SolarAsset.file,
+            showsChevron: false,
+            showsIconPlate: false)
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("cache-purge-url")
+        Button {
+          showsPurgeEverything = true
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Purge everything"),
+            subtitle: DashL10n.string("Every cached asset on this domain"),
+            icon: SolarAsset.trash,
+            iconColor: DashTheme.danger,
+            showsChevron: false,
+            showsIconPlate: false)
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("cache-purge-everything")
+      } else {
+        FeatureWriteAccessNotice(
+          message: "Read-only — grant cache purge access before removing cached assets.",
+          scopes: CachePurgeAccess.write)
+      }
+    }
+    .dashSectionBoundary()
+  }
+
+  private var purgeEverythingAction: DashDangerAction {
+    DashDangerAction(
+      title: DashL10n.string("Purge everything"),
+      message: DashL10n.string(
+        "This removes every cached asset in this domain. Requests may temporarily reach your origin."
+      ),
+      confirmTitle: DashL10n.string("Purge everything"),
+      onSuccessPresentationCompleted: completePurgeEverythingPresentation
+    ) {
+      guard let context = model.accountRequestContext else { throw CancellationError() }
+      try await model.client.purgeCache(zoneID: zoneID)
+      try Task.checkCancellation()
+      guard model.isCurrentAccount(context) else { throw CancellationError() }
+    }
+  }
+
+  private func completePurgeEverythingPresentation() {
+    model.toasts.success(DashL10n.string("Cache purged."))
   }
 
   @ViewBuilder
@@ -199,6 +285,74 @@ struct ZoneCacheView: View {
     default:
       .updating
     }
+  }
+}
+
+/// Purges one URL. Cloudflare purges by the URL a visitor requests, so the
+/// field only submits a full http(s) URL with a host, never a bare path.
+private struct CachePurgeURLForm: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  let zoneID: String
+  @State private var url = ""
+  @State private var actionPhase: DashActionPhase = .idle
+  @State private var error: String?
+
+  private var purgeURL: String? {
+    let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let parsed = URL(string: trimmed),
+      let scheme = parsed.scheme?.lowercased(), scheme == "https" || scheme == "http",
+      parsed.host?.isEmpty == false
+    else { return nil }
+    return trimmed
+  }
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: "Purge URL",
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completeSuccessPresentation,
+      canSave: purgeURL != nil,
+      onSave: { Task { await purge() } },
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          DashFormField(
+            label: "Asset URL",
+            text: $url,
+            keyboard: .URL,
+            contentType: .URL)
+          if let error {
+            DashNotice(kind: .error, message: error)
+          }
+        }
+      }
+    )
+    .dashTrayDescription(
+      DashL10n.string("Remove one cached asset without disturbing the rest of the domain."))
+  }
+
+  private func purge() async {
+    guard let purgeURL, let context = model.accountRequestContext else { return }
+    actionPhase = .loading
+    error = nil
+    do {
+      try await model.client.purgeCache(zoneID: zoneID, files: [purgeURL])
+      guard !Task.isCancelled, model.isCurrentAccount(context) else {
+        actionPhase = .idle
+        return
+      }
+      model.toasts.success(DashL10n.string("Cache purged."))
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func completeSuccessPresentation() {
+    guard actionPhase == .succeeded else { return }
+    dismiss()
   }
 }
 

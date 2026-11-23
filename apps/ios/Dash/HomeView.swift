@@ -43,6 +43,7 @@ struct HomeView: View {
   @State private var showsCreateR2Bucket = false
   @State private var showsAddPagesDomain = false
   @State private var showsAddWorkerDomain = false
+  @State private var showsPurgeCache = false
   @State private var showsEnableDevelopmentMode = false
   @State private var showsEnableUnderAttackMode = false
   @State private var showsEditActions = false
@@ -217,6 +218,12 @@ struct HomeView: View {
       HomeWorkerDomainAction()
     }
     .dashTray(
+      isPresented: $showsPurgeCache, title: DashL10n.string("Purge cache"),
+      tone: FeatureVisualIdentity.tone(for: .zones)
+    ) {
+      HomeZoneModeAction(zones: displayedZones, mode: .purgeEverything)
+    }
+    .dashTray(
       isPresented: $showsEnableDevelopmentMode, title: DashL10n.string("Development mode"),
       tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
@@ -335,6 +342,10 @@ struct HomeView: View {
         return
       }
       showsAddWorkerDomain = true
+    case .purgeCache:
+      beginZoneMode(scopes: CachePurgeAccess.write.union(["zone.read"])) {
+        showsPurgeCache = true
+      }
     case .enableDevelopmentMode:
       beginZoneMode(scopes: ["zone.read", "zone-settings.write"]) {
         showsEnableDevelopmentMode = true
@@ -461,6 +472,7 @@ struct HomeView: View {
     showsCreateR2Bucket = false
     showsAddPagesDomain = false
     showsAddWorkerDomain = false
+    showsPurgeCache = false
     showsEnableDevelopmentMode = false
     showsEnableUnderAttackMode = false
     showsDemoConnect = false
@@ -753,7 +765,7 @@ extension HomeActionID {
   /// can list domains (same guard `perform` uses for DNS / mode trays).
   fileprivate var needsLoadedZones: Bool {
     switch self {
-    case .addDNSRecord, .enableDevelopmentMode, .enableUnderAttackMode:
+    case .addDNSRecord, .purgeCache, .enableDevelopmentMode, .enableUnderAttackMode:
       true
     case .addDomain, .uploadR2, .createKVKey, .createR2Bucket, .addPagesDomain, .addWorkerDomain:
       false
@@ -769,6 +781,7 @@ extension HomeActionID {
     case .createR2Bucket: DashL10n.string("New bucket")
     case .addPagesDomain: DashL10n.string("Pages domain")
     case .addWorkerDomain: DashL10n.string("Worker domain")
+    case .purgeCache: DashL10n.string("Purge cache")
     case .enableDevelopmentMode: DashL10n.string("Dev mode")
     case .enableUnderAttackMode: DashL10n.string("Under Attack")
     }
@@ -783,6 +796,7 @@ extension HomeActionID {
     case .createR2Bucket: DashL10n.string("Create object storage")
     case .addPagesDomain: DashL10n.string("Attach a hostname to Pages")
     case .addWorkerDomain: DashL10n.string("Attach a hostname to a Worker")
+    case .purgeCache: DashL10n.string("Clear cached assets for a domain")
     case .enableDevelopmentMode: DashL10n.string("Bypass cache for three hours")
     case .enableUnderAttackMode: DashL10n.string("Challenge every visitor")
     }
@@ -797,6 +811,7 @@ extension HomeActionID {
     case .createR2Bucket: SolarAsset.Content.box
     case .addPagesDomain: SolarAsset.Content.codeCircle
     case .addWorkerDomain: SolarAsset.Content.code
+    case .purgeCache: SolarAsset.Content.bolt
     case .enableDevelopmentMode: SolarAsset.Content.slider
     case .enableUnderAttackMode: SolarAsset.Content.shieldCheck
     }
@@ -811,6 +826,7 @@ extension HomeActionID {
     case .createR2Bucket: "home-quick-create-r2-bucket"
     case .addPagesDomain: "home-quick-add-pages-domain"
     case .addWorkerDomain: "home-quick-add-worker-domain"
+    case .purgeCache: "home-quick-purge-cache"
     case .enableDevelopmentMode: "home-quick-enable-development-mode"
     case .enableUnderAttackMode: "home-quick-enable-under-attack-mode"
     }
