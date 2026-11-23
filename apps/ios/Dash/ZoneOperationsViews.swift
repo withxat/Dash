@@ -116,7 +116,6 @@ struct ZoneCacheView: View {
         } label: {
           DashListRow(
             title: DashL10n.string("Purge by URL"),
-            subtitle: DashL10n.string("Remove one cached asset"),
             icon: SolarAsset.file,
             showsChevron: false,
             showsIconPlate: false)
@@ -128,7 +127,6 @@ struct ZoneCacheView: View {
         } label: {
           DashListRow(
             title: DashL10n.string("Purge everything"),
-            subtitle: DashL10n.string("Every cached asset on this domain"),
             icon: SolarAsset.trash,
             iconColor: DashTheme.danger,
             showsChevron: false,
@@ -327,8 +325,6 @@ private struct CachePurgeURLForm: View {
         }
       }
     )
-    .dashTrayDescription(
-      DashL10n.string("Remove one cached asset without disturbing the rest of the domain."))
   }
 
   private func purge() async {

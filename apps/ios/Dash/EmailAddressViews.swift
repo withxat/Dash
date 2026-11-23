@@ -266,10 +266,9 @@ struct EmailAddressAddForm: View {
     )
     .dashTrayDescription(
       model.isDemoSession
-        ? DashL10n.string("Verification completes in the demo without sending an email.")
+        ? DashL10n.string("No email is sent in the demo.")
         : DashL10n.string(
-          "Cloudflare emails a confirmation link to this address. Mail routed to it is dropped until the link is opened."
-        )
+          "Cloudflare will email a confirmation link. Mail isn’t forwarded until it’s opened.")
     )
   }
 

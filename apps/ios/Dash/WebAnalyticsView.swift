@@ -358,7 +358,7 @@ struct WebAnalyticsView: View {
       icon: SolarAsset.Content.graph,
       title: "Web Analytics is off",
       message:
-        "Cloudflare collects page views once the Web Analytics beacon runs on this domain. Proxied domains can turn it on without editing any HTML.",
+        "Turn it on for this domain in the Cloudflare dashboard.",
       actionTitle: "Open in Cloudflare",
       action: {
         guard let accountID = model.activeAccountID,

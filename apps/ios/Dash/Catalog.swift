@@ -7,9 +7,6 @@ enum FeatureID: String, CaseIterable, Codable, Hashable, Identifiable, Sendable 
   var title: String {
     DashL10n.ui(FeatureCatalog.descriptor(for: self).title)
   }
-  var subtitle: String {
-    DashL10n.ui(FeatureCatalog.descriptor(for: self).subtitle)
-  }
   var symbol: String { FeatureCatalog.descriptor(for: self).symbol }
   var solarFillAssetName: String { FeatureCatalog.descriptor(for: self).solarFillAssetName }
   var solarOutlineAssetName: String { FeatureCatalog.descriptor(for: self).solarOutlineAssetName }
@@ -56,7 +53,6 @@ enum FeatureAccessLevel: Hashable, Sendable {
 struct FeatureDescriptor: Hashable, Sendable {
   let id: FeatureID
   let title: String
-  let subtitle: String
   let symbol: String
   let solarFillAssetName: String
   let solarOutlineAssetName: String
@@ -139,7 +135,7 @@ enum FeatureCatalog {
   static let descriptors: [FeatureDescriptor] = [
     // Domains & DNS
     feature(
-      .zones, "Domains", "Domains, DNS, cache, and domain settings", "globe",
+      .zones, "Domains", "globe",
       "SolarGlobalFill", "SolarGlobalOutline", "Domains & DNS",
       read: ["zone.read"], write: ["zone.write"]),
     // Registrar is deliberately NOT a catalog feature. A registration is not a
@@ -157,28 +153,27 @@ enum FeatureCatalog {
       // screen already use: "Email Routing" was a second key differing only in
       // case, and the one nobody translated — so Resources showed English on a
       // Chinese screen while the row one tap away read 邮件路由.
-      .emailRouting, "Email routing", "Forward domain mail to inboxes you already use",
-      "tray", "SolarMailboxFill", "SolarMailboxOutline", "Domains & DNS",
+      .emailRouting, "Email routing", "tray", "SolarMailboxFill", "SolarMailboxOutline",
+      "Domains & DNS",
       read: ["zone.read", "email-routing-rule.read"],
       write: ["email-routing-rule.write", "email-routing-address.write"]),
     // Compute
     feature(
-      .workers, "Workers", "Deployments, domains, and analytics",
-      "bolt.horizontal.circle", "SolarCodeSquareFill", "SolarCodeSquareOutline", "Compute",
+      .workers, "Workers", "bolt.horizontal.circle", "SolarCodeSquareFill",
+      "SolarCodeSquareOutline", "Compute",
       read: ["workers-scripts.read"],
       write: ["workers-scripts.write"]),
     feature(
-      .pages, "Pages", "Deployments, rollback, and custom domains",
-      "doc.text", "SolarCodeCircleFill", "SolarCodeOutline", "Compute",
+      .pages, "Pages", "doc.text", "SolarCodeCircleFill", "SolarCodeOutline", "Compute",
       read: ["page.read"], write: ["page.write"]),
     // Storage & Data
     feature(
-      .r2, "R2", "R2 object storage buckets", "externaldrive",
+      .r2, "R2", "externaldrive",
       "SolarCloudStorageFill", "SolarCloudStorageOutline", "Storage & Data",
       read: ["workers-r2.read", "workers-r2-bucket-item.read"],
       write: ["workers-r2.write", "workers-r2-bucket-item.write"]),
     feature(
-      .kv, "KV", "Namespaces, keys, and values", "list.bullet.rectangle",
+      .kv, "KV", "list.bullet.rectangle",
       "SolarKeyMinimalisticFill", "SolarKeyMinimalisticOutline", "Storage & Data",
       read: ["workers-kv-storage.read"], write: ["workers-kv-storage.write"]),
     // Networks — experimental. Hidden from Resources until Settings →
@@ -186,8 +181,8 @@ enum FeatureCatalog {
     // when the locked row's Grant access runs. `write` stays empty on purpose:
     // Dash never mutates tunnels, so an unlocked row is always Read-only.
     feature(
-      .tunnels, "Tunnels", "Connectors, hostnames, and private routes",
-      "point.3.connected.trianglepath.dotted", "SolarRoutingFill", "SolarRoutingOutline",
+      .tunnels, "Tunnels", "point.3.connected.trianglepath.dotted", "SolarRoutingFill",
+      "SolarRoutingOutline",
       "Networks", read: ["argotunnel.read"], write: []),
   ]
 
@@ -230,7 +225,6 @@ enum FeatureCatalog {
   private static func feature(
     _ id: FeatureID,
     _ title: String,
-    _ subtitle: String,
     _ symbol: String,
     _ solarFillAssetName: String,
     _ solarOutlineAssetName: String,
@@ -241,7 +235,6 @@ enum FeatureCatalog {
     FeatureDescriptor(
       id: id,
       title: title,
-      subtitle: subtitle,
       symbol: symbol,
       solarFillAssetName: solarFillAssetName,
       solarOutlineAssetName: solarOutlineAssetName,

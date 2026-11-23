@@ -1648,16 +1648,9 @@ private struct WorkspaceGlowPickerTray: View {
               .foregroundStyle(DashTheme.subtle)
           }
 
-          VStack(alignment: .leading, spacing: DashTheme.Spacing.listRow) {
-            Text(inspiration.source)
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.text)
-
-            Text(inspiration.description)
-              .dashTextStyle(.supporting)
-              .foregroundStyle(DashTheme.subtle)
-              .fixedSize(horizontal: false, vertical: true)
-          }
+          Text(inspiration)
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
         }
         .opacity(inspirationContentIsVisible ? 1 : 0)
         .transition(.opacity)
@@ -1816,11 +1809,6 @@ private struct ChartStylePickerTray: View {
           HStack(alignment: .top, spacing: DashTheme.Spacing.itemGap) { panels }
         }
       }
-      .dashTrayDescription(
-        DashL10n.string(
-          "Dither is Dash’s dotted look. Swift Charts uses the system chart style."
-        )
-      )
     } action: {
       DashActionButton(title: DashL10n.string("Done")) {
         commit()
@@ -1937,10 +1925,6 @@ private struct LanguagePickerTray: View {
           }
         }
       }
-      .dashTrayDescription(
-        DashL10n.string(
-          "System follows the iPhone language, including Settings → Dash → Language.")
-      )
     } action: {
       DashActionButton(title: DashL10n.string("Done")) {
         commit()
@@ -2278,16 +2262,6 @@ struct OpenSourceView: View {
   var body: some View {
     ScrollView {
       LazyVStack(spacing: DashTheme.Spacing.section) {
-        Text(
-          DashL10n.string(
-            "Dash is built with these open-source projects. Thank you to their authors and maintainers."
-          )
-        )
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-
         DashListGroup(title: "Libraries") {
           dashListCard {
             ForEach(OpenSourceCredit.libraries) { credit in
@@ -2446,7 +2420,6 @@ struct ProfileView: View {
             DashListGroupLink(value: .auditLogs) {
               DashListRow(
                 title: DashL10n.string("Audit log"),
-                subtitle: DashL10n.string("Recent account activity"),
                 icon: SolarAsset.Content.shieldCheck
               )
             }

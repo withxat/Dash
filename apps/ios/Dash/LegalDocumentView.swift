@@ -273,14 +273,14 @@ struct DataPrivacyView: View {
           DataPrivacyFact(
             title: DashL10n.string("Signed in on Cloudflare"),
             detail: DashL10n.string(
-              "OAuth with PKCE on Cloudflare’s own page. Dash never sees your password."),
+              "OAuth with PKCE. Dash never sees your password."),
             icon: SolarAsset.Content.user,
             color: DashTheme.info
           )
           DataPrivacyFact(
             title: DashL10n.string("Stays in your Keychain"),
             detail: DashL10n.string(
-              "On this iPhone only, never synced to iCloud, and only ever sent to Cloudflare."
+              "Never synced to iCloud, and sent only to Cloudflare."
             ),
             icon: SolarAsset.Content.lock,
             color: DashTheme.success
@@ -307,7 +307,7 @@ struct DataPrivacyView: View {
 
           Text(
             DashL10n.string(
-              "The relay at dash.xat.sh stores nothing and never sees your token: it forwards a one-time sign-in code that’s useless without a secret kept on this iPhone, and receives only domain names for public registration lookups. Gravatar gets a hash of your email, and only when you haven’t chosen a photo."
+              "dash.xat.sh stores nothing and never sees your token, only a single-use sign-in code. Gravatar gets only a hash of your email."
             )
           )
           .dashTextStyle(.footnote)
@@ -317,11 +317,11 @@ struct DataPrivacyView: View {
           .padding(.horizontal, 16)
         }
 
-        DashTwoToneListGroup(title: "Nothing hidden") {
+        DashTwoToneListGroup(title: "Code") {
           DataPrivacyFact(
             title: DashL10n.string("No analytics or tracking"),
             detail: DashL10n.string(
-              "No analytics, advertising, crash-reporting, or tracking SDKs."),
+              "No ad, analytics, or crash-reporting SDKs."),
             icon: SolarAsset.Content.graph,
             color: DashTheme.violet
           )
@@ -368,7 +368,7 @@ private struct DataPrivacyHero: View {
           .accessibilityAddTraits(.isHeader)
         Text(
           DashL10n.string(
-            "Dash has no account system and no server keeping your data. Here’s every place the app connects to."
+            "Dash has no account system and no server keeping your data."
           )
         )
         .dashTextStyle(.supporting)
@@ -470,7 +470,7 @@ private struct DataPrivacySourceRow: View {
     } label: {
       DataPrivacyFact(
         title: DashL10n.string("Open source"),
-        detail: DashL10n.string("MIT licensed. Read every line on GitHub."),
+        detail: DashL10n.string("MIT license, on GitHub."),
         icon: SolarAsset.Content.code,
         color: DashTheme.text,
         opensExternally: true

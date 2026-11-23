@@ -687,12 +687,10 @@ struct R2BucketSettingsView: View {
       DashCard {
         switch customPhase {
         case .content:
-          Text(
-            "Connect a domain from one of this account's zones to serve the bucket without r2.dev limits."
-          )
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .frame(maxWidth: .infinity, alignment: .leading)
+          Text("No custom domains")
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .frame(maxWidth: .infinity, alignment: .leading)
         case .loading, .failed:
           // A section failure keeps its own backing shape; it is not a second
           // primary handoff path.
@@ -966,11 +964,6 @@ private struct R2AddDomainForm: View {
           }
         }
       }
-    )
-    .dashTrayDescription(
-      DashL10n.string(
-        "Cloudflare creates the DNS record and edge certificate automatically. The bucket serves on the domain once both are active."
-      )
     )
     .task(id: model.accountRequestContext) { await loadZones() }
   }

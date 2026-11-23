@@ -653,16 +653,12 @@ struct R2BucketView: View {
         } label: {
           DashListRow(
             title: DashL10n.string("Create folder"),
-            subtitle: DashL10n.string("Groups objects under a key prefix"),
             icon: SolarAsset.Content.folder,
             showsChevron: false,
             showsIconPlate: false
           )
         }
         .buttonStyle(DashSurfaceButtonStyle())
-        .accessibilityLabel(
-          DashL10n.string("Create folder, Groups objects under a key prefix")
-        )
         .dashListCardInset()
 
         DashListGroupDivider()
@@ -699,13 +695,11 @@ struct R2BucketView: View {
       R2BucketTrayDestinationButton(destination: .r2BucketSettings(bucket)) {
         DashListRow(
           title: DashL10n.string("Bucket settings"),
-          subtitle: DashL10n.string("Public access and custom domains"),
           icon: SolarAsset.settings,
           showsIconPlate: false
         )
       }
       .buttonStyle(DashSurfaceButtonStyle())
-      .accessibilityLabel(DashL10n.string("Bucket settings, Public access and custom domains"))
       .dashListCardInset()
 
       if canDeleteFolder {
@@ -1558,7 +1552,7 @@ struct R2CreateFolderSheet: View {
           DashFormField(label: DashL10n.string("Folder name"), text: $name)
           Text(
             DashL10n.string(
-              "R2 stores key prefixes, not folders — use / to nest. Dash writes a zero-byte placeholder so the folder stays visible while it is empty."
+              "Use / to nest folders."
             )
           )
           .dashTextStyle(.footnote)

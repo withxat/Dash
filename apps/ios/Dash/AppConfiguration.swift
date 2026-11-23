@@ -138,11 +138,6 @@ enum DashExperimentalFeatures {
 /// the Home, Resources, and Watchtower roots. Persist the preset identity rather
 /// than a color value so every choice can keep following Kumo's adaptive light,
 /// dark, and Increased Contrast stops.
-struct DashWorkspaceGlowInspiration: Equatable, Sendable {
-  let source: String
-  let description: String
-}
-
 enum DashWorkspaceGlowPreset: String, CaseIterable, Identifiable, Sendable {
   case none
   case orange
@@ -176,33 +171,13 @@ enum DashWorkspaceGlowPreset: String, CaseIterable, Identifiable, Sendable {
   /// Only presets with a close visual relationship to an external brand earn
   /// an inspiration affordance. Brand names stay out of the picker so they do
   /// not read like integrations or promises of an exact palette match.
-  var inspiration: DashWorkspaceGlowInspiration? {
+  var inspiration: String? {
     switch self {
-    case .orange:
-      DashWorkspaceGlowInspiration(
-        source: "Cloudflare",
-        description: DashL10n.string(
-          "Cloudflare’s signature orange inspired this warm, energetic glow."))
-    case .red:
-      DashWorkspaceGlowInspiration(
-        source: "NetEase Cloud Music 网易云音乐",
-        description: DashL10n.string(
-          "NetEase Cloud Music’s vivid red inspired this bold, rhythmic glow."))
-    case .green:
-      DashWorkspaceGlowInspiration(
-        source: "Coolapk 酷安",
-        description: DashL10n.string(
-          "Coolapk’s vivid green inspired this fresh, energetic glow."))
-    case .pink:
-      DashWorkspaceGlowInspiration(
-        source: "bilibili 哔哩哔哩",
-        description: DashL10n.string(
-          "bilibili’s signature pink inspired this bright, playful glow."))
-    case .teal:
-      DashWorkspaceGlowInspiration(
-        source: "Netlify",
-        description: DashL10n.string(
-          "Netlify’s teal identity inspired this crisp, lively glow."))
+    case .orange: "Cloudflare"
+    case .red: "NetEase Cloud Music 网易云音乐"
+    case .green: "Coolapk 酷安"
+    case .pink: "bilibili 哔哩哔哩"
+    case .teal: "Netlify"
     case .none, .slate, .blue, .purple:
       nil
     }

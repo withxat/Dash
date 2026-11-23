@@ -297,7 +297,7 @@ struct MetricsWidgetDomainEntityQuery: EntityStringQuery {
 struct AccountMetricsWidgetIntent: WidgetConfigurationIntent {
   static let title: LocalizedStringResource = "Account Metric"
   static let description = IntentDescription(
-    "Show one dithered Insights metric for a Cloudflare account.")
+    "Show an Insights metric for an account.")
 
   @Parameter(title: "Account")
   var account: MetricsWidgetAccountEntity?
@@ -312,7 +312,7 @@ struct AccountMetricsWidgetIntent: WidgetConfigurationIntent {
 struct DomainMetricsWidgetIntent: WidgetConfigurationIntent {
   static let title: LocalizedStringResource = "Domain Metric"
   static let description = IntentDescription(
-    "Show one dithered analytics metric for a Cloudflare domain.")
+    "Show an analytics metric for a domain.")
 
   @Parameter(title: "Domain")
   var domain: MetricsWidgetDomainEntity?

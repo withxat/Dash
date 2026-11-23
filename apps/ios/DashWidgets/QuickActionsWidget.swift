@@ -41,7 +41,7 @@ struct QuickActionsWidget: Widget {
         .containerBackground(.background, for: .widget)
     }
     .configurationDisplayName("Quick Actions")
-    .description("The three Home quick actions, ready from the Home Screen.")
+    .description("Your three Home quick actions.")
     .supportedFamilies([.systemMedium])
     .contentMarginsDisabled()
   }

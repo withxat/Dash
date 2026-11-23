@@ -145,22 +145,17 @@ import UIKit
   #expect(DashWorkspaceGlowPreset.slate.inspiration == nil)
   #expect(DashWorkspaceGlowPreset.blue.inspiration == nil)
   #expect(DashWorkspaceGlowPreset.purple.inspiration == nil)
-  #expect(DashWorkspaceGlowPreset.orange.inspiration?.source == "Cloudflare")
+  #expect(DashWorkspaceGlowPreset.orange.inspiration == "Cloudflare")
   #expect(
-    DashWorkspaceGlowPreset.red.inspiration?.source == "NetEase Cloud Music 网易云音乐")
-  #expect(DashWorkspaceGlowPreset.green.inspiration?.source == "Coolapk 酷安")
-  #expect(DashWorkspaceGlowPreset.pink.inspiration?.source == "bilibili 哔哩哔哩")
-  #expect(DashWorkspaceGlowPreset.teal.inspiration?.source == "Netlify")
+    DashWorkspaceGlowPreset.red.inspiration == "NetEase Cloud Music 网易云音乐")
+  #expect(DashWorkspaceGlowPreset.green.inspiration == "Coolapk 酷安")
+  #expect(DashWorkspaceGlowPreset.pink.inspiration == "bilibili 哔哩哔哩")
+  #expect(DashWorkspaceGlowPreset.teal.inspiration == "Netlify")
   #expect(DashTheme.workspaceCloudflareBrandHex == 0xFF5E20)
   #expect(DashTheme.workspaceNetEaseMusicBrandHex == 0xFC3C4F)
   #expect(DashTheme.workspaceNetlifyBrandHex == 0x32E6E2)
   #expect(DashTheme.workspaceCoolapkBrandHex == 0x12BF72)
   #expect(DashTheme.workspaceBilibiliBrandHex == 0xF46F95)
-  #expect(
-    DashWorkspaceGlowPreset.allCases.compactMap(\.inspiration).allSatisfy {
-      !$0.description.isEmpty
-    })
-
   #expect(
     DashWorkspaceGlowPreset.allCases.map(\.rawValue)
       == ["none", "orange", "red", "slate", "blue", "green", "pink", "purple", "teal"])

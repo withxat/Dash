@@ -48,7 +48,7 @@ struct TunnelsView: View {
         icon: SolarAsset.Content.routing,
         title: DashL10n.string("No tunnels yet"),
         message: DashL10n.string(
-          "A Cloudflare Tunnel connects a machine on your own network to Cloudflare without opening a port. Create one with cloudflared or the Zero Trust dashboard — Dash shows its health, hostnames, and routes here."
+          "Create one with cloudflared or in the Zero Trust dashboard."
         ),
         actionTitle: DashL10n.string("Open Tunnel docs"),
         action: { openURL(TunnelExternalURL.guide) }

@@ -500,7 +500,7 @@ final class DashUITests: XCTestCase {
     let app = XCUIApplication()
     launch(app, arguments: ["-ui-preview"])
 
-    XCTAssertTrue(app.staticTexts["What are we doing today?"].waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts["home-greeting"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["home-quick-enable-under-attack-mode"].exists)
     XCTAssertTrue(app.buttons["home-quick-upload-r2"].exists)
     XCTAssertTrue(app.buttons["home-quick-add-domain"].exists)
@@ -536,13 +536,9 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(underAttack.waitForExistence(timeout: 5))
     underAttack.tap()
 
-    XCTAssertTrue(
-      app.staticTexts["Choose the domain to update."]
-        .waitForExistence(timeout: 5))
-    XCTAssertFalse(underAttack.isHittable)
-
     let card = app.descendants(matching: .any)["dash.tray.card"].firstMatch
-    XCTAssertTrue(card.waitForExistence(timeout: 2))
+    XCTAssertTrue(card.waitForExistence(timeout: 5))
+    XCTAssertFalse(underAttack.isHittable)
     let standard = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "value == %@", "standard"), object: card)
     XCTAssertEqual(XCTWaiter.wait(for: [standard], timeout: 2), .completed)

@@ -19,7 +19,7 @@ struct WorkersView: View {
         icon: SolarAsset.Content.code,
         title: DashL10n.string("No Workers yet"),
         message: DashL10n.string(
-          "Deploy with Wrangler or the dashboard — manage cut-over, domains, and analytics here."
+          "Deploy one with Wrangler or the dashboard."
         ),
         actionTitle: "Open Workers docs",
         action: { openURL(FeatureExternalURL.workersGuide) }
@@ -361,7 +361,7 @@ struct WorkerDetailView: View {
       }
     case .empty:
       DashCard {
-        Text("Route a hostname from one of this account's zones to this Worker.")
+        Text("No custom domains")
           .dashTextStyle(.footnote)
           .foregroundStyle(DashTheme.subtle)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -1403,11 +1403,6 @@ struct WorkerAddDomainForm: View {
           }
         }
       }
-    )
-    .dashTrayDescription(
-      DashL10n.string(
-        "Cloudflare provisions the edge certificate. DNS for the hostname must already point at this account."
-      )
     )
     .task(id: model.accountRequestContext) { await loadZones() }
   }

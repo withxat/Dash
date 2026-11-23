@@ -582,7 +582,7 @@ struct EmailRoutingView: View {
       icon: SolarAsset.Content.mailbox,
       title: "Email routing is off",
       message:
-        "Forward mail sent to addresses at this domain to an inbox you already use. Cloudflare adds the MX and SPF records for you.",
+        "Turning it on adds Cloudflare’s MX and SPF records.",
       actionTitle: featureAllowsWrites ? "Set up email routing" : nil,
       action: featureAllowsWrites
         ? {

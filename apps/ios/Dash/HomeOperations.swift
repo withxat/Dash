@@ -42,7 +42,6 @@ struct HomeDNSRecordAction: View {
             }
           }
         }
-        .dashTrayDescription(DashL10n.string("Choose the domain for the new DNS record."))
       }
     }
   }
@@ -100,7 +99,6 @@ struct HomeCreateKVKeyAction: View {
             }
           }
         }
-        .dashTrayDescription(DashL10n.string("Choose the namespace for the new key."))
       }
     }
     .task(id: model.accountRequestContext) {
@@ -200,7 +198,6 @@ struct HomePagesDomainAction: View {
           if index < projects.count - 1 { DashListGroupDivider() }
         }
       }
-      .dashTrayDescription(DashL10n.string("Choose the Pages project for the custom domain."))
     }
   }
 
@@ -290,7 +287,6 @@ struct HomeWorkerDomainAction: View {
           if index < workers.count - 1 { DashListGroupDivider() }
         }
       }
-      .dashTrayDescription(DashL10n.string("Choose the Worker for the custom domain."))
     }
   }
 
@@ -441,7 +437,6 @@ struct HomeZoneModeAction: View {
             if index < zones.count - 1 { DashListGroupDivider() }
           }
         }
-        .dashTrayDescription(DashL10n.string("Choose the domain to update."))
       }
     }
   }
@@ -1027,16 +1022,6 @@ struct AddDomainSheet: View {
     .dashTrayTitle(
       created == nil ? DashL10n.string("Add domain") : DashL10n.string("Domain added")
     )
-    // Step two answers the question itself, in the success content.
-    .dashTrayDescription(
-      created == nil
-        ? (model.isDemoSession
-          ? DashL10n.string(
-            "Adds a sample domain that is ready to edit. No registrar or DNS changes are needed.")
-          : DashL10n.string(
-            "Cloudflare assigns name servers next; the domain activates once your registrar points at them."
-          ))
-        : nil)
   }
 
   private var formContent: some View {

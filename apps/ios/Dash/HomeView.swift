@@ -508,7 +508,7 @@ struct HomeView: View {
 /// Home's greeting: a plain heading that sits in the top light wash.
 struct HomeGreetingHeader: View {
   var body: some View {
-    Text("What are we doing today?")
+    Text(greeting)
       .dashTextStyle(.trayTitle)
       .foregroundStyle(DashTheme.strong)
       .multilineTextAlignment(.center)
@@ -516,6 +516,15 @@ struct HomeGreetingHeader: View {
       .frame(maxWidth: .infinity)
       .padding(.top, DashTheme.Spacing.homeGreetingTop)
       .padding(.bottom, DashTheme.Spacing.homeGreetingBottom)
+      .accessibilityIdentifier("home-greeting")
+  }
+
+  private var greeting: String {
+    switch Calendar.current.component(.hour, from: .now) {
+    case 5..<12: DashL10n.string("Good morning")
+    case 12..<18: DashL10n.string("Good afternoon")
+    default: DashL10n.string("Good evening")
+    }
   }
 }
 
@@ -539,32 +548,20 @@ private struct HomeDemoExperienceSection: View {
   var body: some View {
     DashCard {
       VStack(alignment: .leading, spacing: 16) {
-        HStack(spacing: 12) {
-          VStack(alignment: .leading, spacing: 2) {
-            Text(DashL10n.string("Demo workspace"))
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.strong)
-            Text(DashL10n.string("A safe sample account"))
-              .dashTextStyle(.footnote)
-              .foregroundStyle(DashTheme.subtle)
-          }
-          Spacer(minLength: 8)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(DashL10n.string("Demo workspace"))
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.strong)
+          Text(DashL10n.string("Changes stay in the demo and reset when you leave."))
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+            .fixedSize(horizontal: false, vertical: true)
         }
-
-        Text(
-          DashL10n.string(
-            "Edit, upload, and delete sample resources. Changes stay in this demo session; no real Cloudflare resources are affected."
-          )
-        )
-        .dashTextStyle(.supporting)
-        .foregroundStyle(DashTheme.subtle)
-        .fixedSize(horizontal: false, vertical: true)
 
         VStack(alignment: .leading, spacing: 0) {
           stepButton(
             number: "01",
-            title: DashL10n.string("Review the issue"),
-            subtitle: DashL10n.string("Start with the pending domain signal"),
+            title: DashL10n.string("Check alerts"),
             destination: .watchtowerInbox
           )
 
@@ -572,8 +569,7 @@ private struct HomeDemoExperienceSection: View {
 
           stepButton(
             number: "02",
-            title: DashL10n.string("Inspect the resource"),
-            subtitle: DashL10n.string("Open api.example.net and review its state"),
+            title: DashL10n.string("Open api.example.net"),
             destination: .zone("zone-api")
           )
 
@@ -581,9 +577,7 @@ private struct HomeDemoExperienceSection: View {
 
           stepButton(
             number: "03",
-            title: DashL10n.string("Take action"),
-            subtitle: DashL10n.string(
-              "Try editing a DNS record, then reopen it to see your changes"),
+            title: DashL10n.string("Edit a DNS record"),
             destination: .dns("zone-example")
           )
         }
@@ -607,11 +601,10 @@ private struct HomeDemoExperienceSection: View {
   private func stepButton(
     number: String,
     title: String,
-    subtitle: String,
     destination: Destination
   ) -> some View {
     DestinationLink(destination: destination) {
-      stepLabel(number: number, title: title, subtitle: subtitle, showsChevron: true)
+      stepLabel(number: number, title: title, showsChevron: true)
         .contentShape(Rectangle())
     }
   }
@@ -619,7 +612,6 @@ private struct HomeDemoExperienceSection: View {
   private func stepLabel(
     number: String,
     title: String,
-    subtitle: String,
     showsChevron: Bool = false
   ) -> some View {
     HStack(spacing: 12) {
@@ -629,16 +621,10 @@ private struct HomeDemoExperienceSection: View {
         .frame(width: 30, height: 30)
         .background(DashTheme.infoTint, in: Circle())
 
-      VStack(alignment: .leading, spacing: 2) {
-        Text(title)
-          .dashTextStyle(.bodyMedium)
-          .foregroundStyle(DashTheme.text)
-        Text(subtitle)
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.rowSubtitle)
-          .fixedSize(horizontal: false, vertical: true)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      Text(title)
+        .dashTextStyle(.bodyMedium)
+        .foregroundStyle(DashTheme.text)
+        .frame(maxWidth: .infinity, alignment: .leading)
 
       if showsChevron {
         SolarIcon(
@@ -659,9 +645,7 @@ private struct HomeDemoConnectContent: View {
       .frame(height: 1)
       .accessibilityHidden(true)
       .dashTrayDescription(
-        DashL10n.string(
-          "Demo changes are simulated on this device and reset when you leave. Deployments and email verification are simulated too. Connect Cloudflare to manage real resources."
-        )
+        DashL10n.string("Your demo changes will be discarded.")
       )
   }
 }
@@ -787,21 +771,6 @@ extension HomeActionID {
     }
   }
 
-  fileprivate var subtitle: String {
-    switch self {
-    case .addDomain: DashL10n.string("Start a new Cloudflare zone")
-    case .uploadR2: DashL10n.string("Choose a file and R2 bucket")
-    case .addDNSRecord: DashL10n.string("Add a record to a domain")
-    case .createKVKey: DashL10n.string("Write a value to a namespace")
-    case .createR2Bucket: DashL10n.string("Create object storage")
-    case .addPagesDomain: DashL10n.string("Attach a hostname to Pages")
-    case .addWorkerDomain: DashL10n.string("Attach a hostname to a Worker")
-    case .purgeCache: DashL10n.string("Clear cached assets for a domain")
-    case .enableDevelopmentMode: DashL10n.string("Bypass cache for three hours")
-    case .enableUnderAttackMode: DashL10n.string("Challenge every visitor")
-    }
-  }
-
   fileprivate var icon: String {
     switch self {
     case .addDomain: SolarAsset.Content.addCircle
@@ -872,7 +841,6 @@ private struct EditHomeActionsView: View {
         let canToggle = isSelected || selected.count < HomeActions.limit
         HomeEditSelectionRow(
           title: action.title,
-          subtitle: action.subtitle,
           isSelected: isSelected,
           isDimmed: !canToggle
         ) {
@@ -951,7 +919,6 @@ private struct HomeEditSelectionList<Item: Identifiable, Row: View>: View {
 
 private struct HomeEditSelectionRow<Icon: View>: View {
   let title: String
-  var subtitle: String? = nil
   let isSelected: Bool
   /// Softened look for at-limit quick-action rows. Kept tappable so the caller
   /// can toast the three-slot ceiling instead of swallowing the tap.
@@ -965,18 +932,10 @@ private struct HomeEditSelectionRow<Icon: View>: View {
       Button(action: action) {
         HStack(spacing: 12) {
           icon()
-          VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-              .dashTextStyle(.bodySemibold)
-              .foregroundStyle(DashTheme.text)
-            if let subtitle {
-              Text(subtitle)
-                .dashTextStyle(.supporting)
-                .foregroundStyle(DashTheme.rowSubtitle)
-                .lineLimit(1)
-            }
-          }
-          .frame(maxWidth: .infinity, alignment: .leading)
+          Text(title)
+            .dashTextStyle(.bodySemibold)
+            .foregroundStyle(DashTheme.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 10)
         .frame(
@@ -1050,9 +1009,8 @@ private struct HomeShortcutsSection: View {
       } else {
         ForEach(features) { feature in
           DashListGroupLink(value: .feature(feature)) {
-            // Title only — the feature blurb stays on Resources. Height comes
-            // from the two-tone card's 44pt list seat.
-            FeatureRow(feature: feature, showsSubtitle: false)
+            // Height comes from the two-tone card's 44pt list seat.
+            FeatureRow(feature: feature)
           }
         }
       }
@@ -1588,9 +1546,6 @@ struct FeatureRow: View {
   let feature: FeatureID
   var iconStyle: CatalogFeatureIcon.Style = .fill
   var presentation: Presentation = .catalog
-  /// Resources keeps the feature blurb; Home Shortcuts drops it. Row height
-  /// follows `dashTwoToneListRows` (60 inside eyebrow cards, 72 elsewhere).
-  var showsSubtitle: Bool = true
 
   private var accessLevel: FeatureAccessLevel {
     feature.capability.accessLevel(grantedScopes: model.grantedScopes)
@@ -1630,22 +1585,11 @@ struct FeatureRow: View {
   }
 
   private var catalogBody: some View {
-    Group {
-      if isAccessibilitySize && showsSubtitle {
-        VStack(alignment: .leading, spacing: 10) {
-          HStack(spacing: 12) {
-            featureChrome
-            Spacer(minLength: 0)
-            accessBadge
-          }
-          catalogSubtitle
-        }
-      } else {
-        HStack(spacing: 12) {
-          featureChrome
-          accessBadge
-        }
-      }
+    // Row height follows `dashTwoToneListRows` (60 inside eyebrow cards, 72
+    // elsewhere).
+    HStack(spacing: 12) {
+      featureChrome
+      accessBadge
     }
     .padding(.vertical, DashTheme.Spacing.listRow)
     .frame(
@@ -1658,46 +1602,20 @@ struct FeatureRow: View {
     HStack(spacing: 12) {
       CatalogFeatureIcon(feature: feature, style: iconStyle, size: .list)
         .opacity(accessLevel == .locked ? 0.55 : 1)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(feature.title)
-          .dashTextStyle(.bodySemibold)
-          .foregroundStyle(DashTheme.text)
-          .lineLimit(isAccessibilitySize ? nil : 1)
-        if showsSubtitle, !isAccessibilitySize {
-          catalogSubtitle
-        }
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      Text(feature.title)
+        .dashTextStyle(.bodySemibold)
+        .foregroundStyle(DashTheme.text)
+        .lineLimit(isAccessibilitySize ? nil : 1)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
   }
 
   private var vividLabels: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(feature.title)
-        .dashTextStyle(.bodySemibold)
-        .foregroundStyle(onCard)
-        .lineLimit(isAccessibilitySize ? nil : 1)
-      if showsSubtitle {
-        Text(feature.subtitle)
-          .dashTextStyle(.supporting)
-          .foregroundStyle(onCard.opacity(0.75))
-          .lineLimit(isAccessibilitySize ? nil : 2)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-  }
-
-  private var catalogSubtitle: some View {
-    Group {
-      if isAccessibilitySize {
-        Text(feature.subtitle)
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.rowSubtitle)
-      } else {
-        DashGreedyWrapText(text: feature.subtitle)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    Text(feature.title)
+      .dashTextStyle(.bodySemibold)
+      .foregroundStyle(onCard)
+      .lineLimit(isAccessibilitySize ? nil : 1)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   @ViewBuilder
@@ -1713,11 +1631,7 @@ struct FeatureRow: View {
   }
 
   private var accessibilityLabel: String {
-    if showsSubtitle {
-      "\(feature.title), \(feature.subtitle), \(accessAccessibilityValue)"
-    } else {
-      "\(feature.title), \(accessAccessibilityValue)"
-    }
+    "\(feature.title), \(accessAccessibilityValue)"
   }
 
   private var accessAccessibilityValue: String {

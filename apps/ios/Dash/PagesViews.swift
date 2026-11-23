@@ -20,7 +20,7 @@ struct PagesProjectsView: View {
         icon: SolarAsset.Content.codeCircle,
         title: DashL10n.string("No Pages projects"),
         message: DashL10n.string(
-          "Create projects in the dashboard or with Wrangler — manage deployments and domains here."
+          "Create one in the dashboard or with Wrangler."
         ),
         actionTitle: "Open Pages docs",
         action: { openURL(PagesExternalURL.getStarted) }
@@ -1059,8 +1059,6 @@ struct PagesAddDomainForm: View {
         }
       }
     )
-    .dashTrayDescription(
-      DashL10n.string("Cloudflare validates DNS and issues a certificate for the hostname."))
   }
 
   private func save() async {

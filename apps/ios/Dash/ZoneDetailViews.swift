@@ -108,27 +108,21 @@ struct ZoneDetailView: View {
   /// rule never rides on a localizable string.
   private static let allTools: [ZoneTool] = [
     ZoneTool(
-      id: .dns, title: "DNS", icon: SolarAsset.globus, route: Destination.dns,
-      blurb: "Records and proxy status"),
+      id: .dns, title: "DNS", icon: SolarAsset.globus, route: Destination.dns),
     ZoneTool(
       id: .httpTraffic, title: "HTTP traffic", icon: SolarAsset.chart,
-      route: Destination.zoneAnalytics,
-      blurb: "Requests, visitors, and bandwidth"),
+      route: Destination.zoneAnalytics),
     ZoneTool(
       id: .webAnalytics, title: "Web analytics", icon: SolarAsset.graph,
       route: Destination.zoneWebAnalytics,
-      blurb: "Browser-reported page views and visits",
       needsWebAnalyticsSite: true),
     ZoneTool(
-      id: .waf, title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF,
-      blurb: "Blocks, countries, Under Attack"),
+      id: .waf, title: "WAF", icon: SolarAsset.shieldCheck, route: Destination.zoneWAF),
     ZoneTool(
-      id: .cache, title: "Cache", icon: SolarAsset.bolt, route: Destination.cache,
-      blurb: "Purge, Development Mode, Cache Level"),
+      id: .cache, title: "Cache", icon: SolarAsset.bolt, route: Destination.cache),
     ZoneTool(
       id: .settings, title: "Settings", icon: SolarAsset.settings,
-      route: Destination.zoneSettings,
-      blurb: "Security level, SSL, and HTTPS"),
+      route: Destination.zoneSettings),
   ]
 
   /// The rows this zone actually gets. Web analytics joins them only once the
@@ -600,7 +594,6 @@ struct ZoneDetailView: View {
       DashListGroupLink(value: destination) {
         DashListRow(
           title: DashL10n.ui(tool.title),
-          subtitle: DashL10n.ui(tool.blurb),
           icon: tool.icon,
           showsIconPlate: false)
       }
@@ -711,7 +704,7 @@ struct ZoneDetailView: View {
       )
     }
     return DashL10n.string(
-      "Waiting for the registrar to point at the name servers above. Cloudflare re-checks hourly, so the change usually lands within a few minutes."
+      "Waiting for your registrar to switch to the name servers above. Cloudflare re-checks hourly."
     )
   }
 
@@ -1051,7 +1044,6 @@ private struct ZoneTool: Identifiable {
   let title: String
   let icon: String
   let route: (String) -> Destination
-  var blurb: String? = nil
   /// True for a tool the zone only has when Cloudflare says so — today just
   /// Web analytics, which needs a site added for the domain before its screen
   /// has anything at all.
