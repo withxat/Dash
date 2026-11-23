@@ -42,6 +42,8 @@
 	<string>$(DASH_REDIRECT_URI)</string>
 	<key>DashKeychainAccessGroup</key>
 	<string>$(DASH_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Dash uses Face ID to unlock the app when Require Face ID is on.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UILaunchScreen</key>

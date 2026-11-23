@@ -184,6 +184,8 @@
 		B00000000000000000000247 /* DashTrayFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000247 /* DashTrayFlow.swift */; };
 		B00000000000000000000248 /* DashTraySizing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000248 /* DashTraySizing.swift */; };
 		B00000000000000000000301 /* DemoSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000301 /* DemoSession.swift */; };
+		B00000000000000000000303 /* DashAppLock.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000303 /* DashAppLock.swift */; };
+		B00000000000000000000304 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000304 /* InfoPlist.xcstrings */; };
 		B00000000000000000000302 /* DemoSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000302 /* DemoSessionTests.swift */; };
 		D15A00000000000000000101 /* HomeOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000101 /* HomeOperations.swift */; };
 		D15A00000000000000000102 /* KVViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000102 /* KVViews.swift */; };
@@ -409,6 +411,8 @@
 		F00000000000000000000247 /* DashTrayFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTrayFlow.swift; sourceTree = "<group>"; };
 		F00000000000000000000248 /* DashTraySizing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashTraySizing.swift; sourceTree = "<group>"; };
 		F00000000000000000000301 /* DemoSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSession.swift; sourceTree = "<group>"; };
+		F00000000000000000000303 /* DashAppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppLock.swift; sourceTree = "<group>"; };
+		F00000000000000000000304 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		F00000000000000000000302 /* DemoSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSessionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -500,6 +504,8 @@
 				F00000000000000000000004 /* AppModel.swift */,
 				F0000000000000000000012B /* DemoBackend.swift */,
 				F00000000000000000000301 /* DemoSession.swift */,
+				F00000000000000000000303 /* DashAppLock.swift */,
+				F00000000000000000000304 /* InfoPlist.xcstrings */,
 				F00000000000000000000036 /* FeatureDataCache.swift */,
 				F00000000000000000000213 /* FeatureCachePersistence.swift */,
 				F00000000000000000000150 /* PerformanceDiagnostics.swift */,
@@ -948,6 +954,7 @@
 				5BD28D9C30006EA10012912F /* AppIcon.icon in Resources */,
 				B0000000000000000000000F /* PrivacyInfo.xcprivacy in Resources */,
 				B00000000000000000000126 /* Localizable.xcstrings in Resources */,
+				B00000000000000000000304 /* InfoPlist.xcstrings in Resources */,
 				B0000000000000000000010E /* TermsOfUse.md in Resources */,
 				B0000000000000000000010F /* PrivacyPolicy.md in Resources */,
 			);
@@ -1015,6 +1022,7 @@
 				B00000000000000000000004 /* AppModel.swift in Sources */,
 				B0000000000000000000012B /* DemoBackend.swift in Sources */,
 				B00000000000000000000301 /* DemoSession.swift in Sources */,
+				B00000000000000000000303 /* DashAppLock.swift in Sources */,
 				B00000000000000000000150 /* PerformanceDiagnostics.swift in Sources */,
 				B00000000000000000000005 /* DashTheme.swift in Sources */,
 				B0000000000000000000015D /* DashSurfaces.swift in Sources */,

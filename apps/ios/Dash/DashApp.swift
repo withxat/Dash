@@ -25,7 +25,8 @@ struct DashApp: App {
             clientID: "dash-ui-test", redirectURI: "https://dash.invalid/oauth/callback"),
           tokenStore: DemoTokenStore(), session: DemoBackend.session,
           deferredDeletionPersistence: nil,
-          deferredDeletionSleeper: DashUITestScenario.deletionSleeper)
+          deferredDeletionSleeper: DashUITestScenario.deletionSleeper,
+          appLock: .disabledForUITesting())
     #else
       let model = AppModel(featureCachePersistence: FeatureCachePersistence())
     #endif
@@ -209,6 +210,13 @@ private struct RootWithSplash: View {
       .dashToastLayer(
         toastLayerState,
         model: model,
+        locale: appLanguage.locale,
+        dynamicTypeSize: effectiveDynamicTypeSize
+      )
+      // Outside `.id` for the toast layer's reason: a language change must not
+      // tear down the cover window while the app is locked.
+      .dashAppLock(
+        model.appLock,
         locale: appLanguage.locale,
         dynamicTypeSize: effectiveDynamicTypeSize
       )

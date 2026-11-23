@@ -618,3 +618,127 @@ struct LocalizationTests {
   #expect(StatusToken(tunnelStatus: "inactive") == .inactive)
   #expect(StatusToken(tunnelStatus: "teleporting") == .unknown)
 }
+
+// MARK: - App lock
+
+/// Answers prompts from a script; an empty script reads as a cancel.
+private final class ScriptedDeviceOwner: DashDeviceOwnerAuthenticating, @unchecked Sendable {
+  var method: DashAppLockMethod? = .faceID
+  var answers: [Bool] = []
+  private(set) var prompts = 0
+
+  func availableMethod() -> DashAppLockMethod? { method }
+
+  func authenticate(reason: String) async -> Bool {
+    prompts += 1
+    return answers.isEmpty ? false : answers.removeFirst()
+  }
+}
+
+@MainActor
+private func appLockDefaults(enabled: Bool) -> UserDefaults {
+  let suite = "dash.tests.app-lock.\(UUID().uuidString)"
+  let defaults = UserDefaults(suiteName: suite)!
+  defaults.removePersistentDomain(forName: suite)
+  if enabled { defaults.set(true, forKey: DashAppLock.enabledKey) }
+  return defaults
+}
+
+@Test @MainActor func appLockStaysOutOfTheWayUntilTurnedOn() async {
+  let owner = ScriptedDeviceOwner()
+  let lock = DashAppLock(defaults: appLockDefaults(enabled: false), authenticator: owner)
+  #expect(!lock.isLocked)
+  lock.didEnterBackground()
+  await lock.didBecomeActive()
+  #expect(!lock.isLocked)
+  #expect(owner.prompts == 0)
+}
+
+/// The prompt's own sheet takes the scene through inactive → active. A cancel
+/// must leave the Unlock button, not ask again on that bounce — or the user is
+/// trapped in a prompt loop.
+@Test @MainActor func appLockPromptsOncePerCoverAndLeavesACancelLocked() async {
+  let owner = ScriptedDeviceOwner()
+  let lock = DashAppLock(defaults: appLockDefaults(enabled: true), authenticator: owner)
+  #expect(lock.isLocked)
+
+  await lock.didBecomeActive()
+  #expect(owner.prompts == 1)
+  #expect(lock.isLocked)
+
+  await lock.didBecomeActive()
+  #expect(owner.prompts == 1)
+
+  owner.answers = [true]
+  await lock.unlock()
+  #expect(owner.prompts == 2)
+  #expect(!lock.isLocked)
+
+  // Coming back from the background arms exactly one more automatic prompt.
+  lock.didEnterBackground()
+  #expect(lock.isLocked)
+  owner.answers = [true]
+  await lock.didBecomeActive()
+  #expect(owner.prompts == 3)
+  #expect(!lock.isLocked)
+}
+
+/// The switcher snapshot is taken right after the app enters the background,
+/// so the cover has to be told inside that same call, not on a later update.
+@Test @MainActor func appLockReportsTheCoverSynchronously() async {
+  let owner = ScriptedDeviceOwner()
+  owner.answers = [true]
+  let lock = DashAppLock(defaults: appLockDefaults(enabled: false), authenticator: owner)
+  #expect(await lock.setEnabled(true))
+  var reported: [Bool] = []
+  lock.onLockChange = { reported.append($0) }
+
+  lock.didEnterBackground()
+  #expect(reported == [true])
+  lock.didEnterBackground()
+  #expect(reported == [true])
+
+  owner.answers = [true]
+  await lock.didBecomeActive()
+  #expect(reported == [true, false])
+}
+
+@Test @MainActor func appLockTurnsOnOnlyAfterTheOwnerConfirms() async {
+  let owner = ScriptedDeviceOwner()
+  let defaults = appLockDefaults(enabled: false)
+  let lock = DashAppLock(defaults: defaults, authenticator: owner)
+
+  #expect(await lock.setEnabled(true) == false)
+  #expect(!lock.isEnabled)
+  #expect(!defaults.bool(forKey: DashAppLock.enabledKey))
+
+  owner.answers = [true]
+  #expect(await lock.setEnabled(true))
+  #expect(lock.isEnabled)
+  #expect(defaults.bool(forKey: DashAppLock.enabledKey))
+  // Turning it on does not lock the app the user is looking at.
+  #expect(!lock.isLocked)
+
+  // Turning it off needs no prompt: the app is already open in front of them.
+  #expect(await lock.setEnabled(false))
+  #expect(owner.prompts == 2)
+  #expect(!defaults.bool(forKey: DashAppLock.enabledKey))
+
+  owner.method = nil
+  #expect(await lock.setEnabled(true) == false)
+  #expect(owner.prompts == 2)
+}
+
+/// Removing the device passcode leaves nothing that could ever satisfy the
+/// lock; it must let the owner in rather than shut them out for good.
+@Test @MainActor func appLockReleasesWhenTheDeviceCanNoLongerAnswer() async {
+  let owner = ScriptedDeviceOwner()
+  let defaults = appLockDefaults(enabled: true)
+  let lock = DashAppLock(defaults: defaults, authenticator: owner)
+  owner.method = nil
+  await lock.unlock()
+  #expect(!lock.isLocked)
+  #expect(!lock.isEnabled)
+  #expect(!defaults.bool(forKey: DashAppLock.enabledKey))
+  #expect(owner.prompts == 0)
+}

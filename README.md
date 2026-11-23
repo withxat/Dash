@@ -24,7 +24,7 @@ Resource surfaces in the catalog, plus the shell that makes them usable:
 | **KV** | Namespaces, key list, read / create·edit·delete keys |
 | **Tunnels** | Experimental; opt in under Settings → Experimental |
 
-Shell around those features: Home launcher, Resources catalog, Insights charts and Cloudflare notification history, Account / Domain Metrics widgets, multi-account OAuth, and iPhone-only single-stack navigation. Insights only reads the notification history Cloudflare already published; Dash sends no notifications of its own.
+Shell around those features: Home launcher, Resources catalog, Insights charts and Cloudflare notification history, Account / Domain Metrics widgets, multi-account OAuth, an optional Face ID lock, and iPhone-only single-stack navigation. Insights only reads the notification history Cloudflare already published; Dash sends no notifications of its own.
 
 Out of scope for now: D1, Queues, Vectorize, Secrets Store, Images, Stream, Access, and iPad / split layouts.
 

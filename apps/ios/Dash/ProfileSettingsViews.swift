@@ -629,6 +629,8 @@ struct SettingsView: View {
   @State private var showsWorkspaceGlowPicker = false
   @State private var showsChartStylePicker = false
   @State private var showsSignOutConfirmation = false
+  /// The switch's position while the device is asking; nil when settled.
+  @State private var pendingAppLock: Bool?
 
   private var selectedLanguage: DashAppLanguage {
     DashAppLanguage.resolved(stored: languageRaw)
@@ -741,7 +743,22 @@ struct SettingsView: View {
           .onChange(of: hapticsEnabled) { _, enabled in
             if enabled { DashDelight.lightImpact() }
           }
+
+          // A device without a passcode has nothing to lock with, so it gets
+          // no row rather than a switch that can only bounce back.
+          if let method = model.appLock.method {
+            SettingsPlainToggleRow(
+              title: method.settingTitle,
+              icon: SolarAsset.lock,
+              isOn: Binding(
+                get: { pendingAppLock ?? model.appLock.isEnabled },
+                set: { setAppLock($0) }),
+              isLoading: pendingAppLock != nil
+            )
+            .accessibilityIdentifier("settings-app-lock")
+          }
         }
+        .onAppear { model.appLock.refreshMethod() }
 
         SettingsPlainSection(title: "Experimental") {
           SettingsPlainToggleRow(
@@ -835,6 +852,18 @@ struct SettingsView: View {
       withAnimation(DashTheme.Motion.iconSwap) {
         model.isReloadingLanguage = false
       }
+    }
+  }
+
+  /// Optimistic like every Dash switch: it moves at once and holds while the
+  /// device asks. A cancelled prompt is the user changing their mind, not an
+  /// error, so the switch only slides back.
+  private func setAppLock(_ enabled: Bool) {
+    guard pendingAppLock == nil, enabled != model.appLock.isEnabled else { return }
+    pendingAppLock = enabled
+    Task {
+      _ = await model.appLock.setEnabled(enabled)
+      pendingAppLock = nil
     }
   }
 

@@ -119,6 +119,10 @@ final class AppModel {
   let toasts = DashToastCenter()
   let optimistic: DashOptimisticOperationCenter
   let deferredDeletions: DeferredDeletionCoordinator
+  /// Settings → Require Face ID. Owned here, not injected as its own
+  /// environment value, because every page is its own hosting controller and
+  /// re-applies only what `DashHostedDestination` forwards — the model.
+  let appLock: DashAppLock
   var accounts: [CloudflareAccount] = [] {
     didSet {
       MetricsWidgetPublisher.syncAccounts(accounts, activeAccountID: activeAccountID)
@@ -220,9 +224,11 @@ final class AppModel {
     deferredDeletionSleeper: @escaping @Sendable (Duration) async throws -> Void = { duration in
       try await Task.sleep(for: duration)
     },
-    featureCachePersistence: FeatureCachePersistence? = nil
+    featureCachePersistence: FeatureCachePersistence? = nil,
+    appLock: DashAppLock = DashAppLock()
   ) {
     self.configuration = configuration
+    self.appLock = appLock
     featureCache = FeatureDataCache(persistence: featureCachePersistence)
     selectedScopes = DashAuthorizationScopes.core
     self.tokenStore = tokenStore

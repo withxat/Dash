@@ -3342,6 +3342,22 @@
         }
       }
     },
+    "Confirm it's you" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm it's you"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请确认是你本人"
+          }
+        }
+      }
+    },
     "Confirming deletion" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3405,6 +3421,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "连接你的账户"
+          }
+        }
+      }
+    },
+    "Dash is locked" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash is locked"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 已锁定"
           }
         }
       }
@@ -3566,6 +3598,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "只清除这一个缓存资源，不影响此域名下的其他缓存。"
+          }
+        }
+      }
+    },
+    "Require Face ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Require Face ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要面容 ID"
+          }
+        }
+      }
+    },
+    "Require passcode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Require passcode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要密码"
+          }
+        }
+      }
+    },
+    "Require Touch ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Require Touch ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要触控 ID"
           }
         }
       }
@@ -10675,6 +10755,70 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加演示地址"
+          }
+        }
+      }
+    },
+    "Unlock Dash" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock Dash"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "解锁 Dash"
+          }
+        }
+      }
+    },
+    "Unlock with Face ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock with Face ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用面容 ID 解锁"
+          }
+        }
+      }
+    },
+    "Unlock with passcode" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock with passcode"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用密码解锁"
+          }
+        }
+      }
+    },
+    "Unlock with Touch ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock with Touch ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用触控 ID 解锁"
           }
         }
       }

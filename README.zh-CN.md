@@ -24,7 +24,7 @@ Dash 是使用 SwiftUI 构建的原生 iPhone Cloudflare 客户端。它通过 O
 | **KV** | Namespace、key 列表、读取与创建·编辑·删除 |
 | **Tunnels** | 实验功能；在 Settings → Experimental 中开启 |
 
-壳层能力：Home 启动器、Resources 目录、Insights（洞察）图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth，以及仅 iPhone 的单栈导航。洞察只读取 Cloudflare 已发布的通知历史；Dash 自己不发送任何通知，也不提供 webhook 投递、告警策略管理或推送桥接。
+壳层能力：Home 启动器、Resources 目录、Insights（洞察）图表与 Cloudflare 通知历史、Account / Domain Metrics 小组件、多账户 OAuth、可选的面容 ID 锁，以及仅 iPhone 的单栈导航。洞察只读取 Cloudflare 已发布的通知历史；Dash 自己不发送任何通知，也不提供 webhook 投递、告警策略管理或推送桥接。
 
 暂不覆盖：D1、Queues、Vectorize、Secrets Store、Images、Stream、Access，以及 iPad / 分栏布局。
 
