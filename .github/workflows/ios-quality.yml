@@ -75,6 +75,12 @@ jobs:
         run: node apps/ios/scripts/prepare-ci-simulator.mjs
 
       - name: Lint
+        # better-tailwindcss resolves classes in a synckit worker that gives up
+        # after 30s. A macOS runner still settling the simulator booted just
+        # above has missed that window, failing Lint with
+        # "Atomics.wait() failed: timed-out" on unchanged web code.
+        env:
+          SYNCKIT_TIMEOUT: '120000'
         run: pnpm lint
 
       - name: Test Swift packages
