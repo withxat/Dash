@@ -237,6 +237,31 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
           base: base, zone: zone, tail: Array(parts.dropFirst(4)), method: method, input: input,
           query: query)
       }
+      if parts.count >= 5, parts[2] == "firewall", parts[3] == "access_rules", parts[4] == "rules" {
+        var ruleInput = input
+        if method == "POST" {
+          ruleInput["scope"] = ["id": parts[1], "type": "zone"]
+          ruleInput["created_on"] = now
+          ruleInput["modified_on"] = now
+        }
+        return records(
+          base + "/firewall/access_rules/rules",
+          tail: Array(parts.dropFirst(5)),
+          method: method,
+          input: ruleInput,
+          query: query)
+      }
+      if parts.count >= 4, parts[2] == "workers", parts[3] == "routes" {
+        return records(
+          base + "/workers/routes",
+          tail: Array(parts.dropFirst(4)),
+          method: method,
+          input: input,
+          query: query)
+      }
+      if parts.count >= 4, parts[2] == "ssl", parts[3] == "certificate_packs", method == "GET" {
+        return seedReply(path)
+      }
     }
     if path == "/accounts", method == "GET" { return listing(rows(path), query: query) }
     if parts.first == "accounts", parts.count >= 2 {

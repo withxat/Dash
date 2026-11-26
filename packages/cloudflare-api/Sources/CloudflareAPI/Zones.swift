@@ -149,6 +149,217 @@ public struct ZoneSetting: Codable, Hashable, Identifiable, Sendable {
   }
 }
 
+/// Enforcement action for a Zone IP Access Rule.
+public enum IPAccessRuleMode: String, Codable, Hashable, CaseIterable, Sendable {
+  case block
+  case managedChallenge = "managed_challenge"
+  case challenge
+  case jsChallenge = "js_challenge"
+  case whitelist
+}
+
+/// Match target for a Zone IP Access Rule.
+public enum IPAccessRuleTarget: String, Codable, Hashable, CaseIterable, Sendable {
+  case ip
+  case ip6
+  case ipRange = "ip_range"
+  case asn
+  case country
+}
+
+public struct IPAccessRuleConfiguration: Codable, Hashable, Sendable {
+  public let target: String
+  public let value: String
+
+  public init(target: String, value: String) {
+    self.target = target
+    self.value = value
+  }
+}
+
+public struct IPAccessRuleScope: Codable, Hashable, Sendable {
+  public let id: String?
+  public let type: String?
+  public let email: String?
+
+  public init(id: String? = nil, type: String? = nil, email: String? = nil) {
+    self.id = id
+    self.type = type
+    self.email = email
+  }
+}
+
+/// One IP Access Rule returned by `/zones/{zone_id}/firewall/access_rules/rules`.
+public struct IPAccessRule: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let mode: String
+  public let notes: String?
+  public let configuration: IPAccessRuleConfiguration
+  public let scope: IPAccessRuleScope?
+  public let createdOn: String?
+  public let modifiedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, mode, notes, configuration, scope
+    case createdOn = "created_on"
+    case modifiedOn = "modified_on"
+  }
+
+  public init(
+    id: String,
+    mode: String,
+    notes: String? = nil,
+    configuration: IPAccessRuleConfiguration,
+    scope: IPAccessRuleScope? = nil,
+    createdOn: String? = nil,
+    modifiedOn: String? = nil
+  ) {
+    self.id = id
+    self.mode = mode
+    self.notes = notes
+    self.configuration = configuration
+    self.scope = scope
+    self.createdOn = createdOn
+    self.modifiedOn = modifiedOn
+  }
+}
+
+public struct IPAccessRuleInput: Encodable, Hashable, Sendable {
+  public let mode: IPAccessRuleMode
+  public let target: IPAccessRuleTarget
+  public let value: String
+  public let notes: String?
+
+  public init(
+    mode: IPAccessRuleMode,
+    target: IPAccessRuleTarget,
+    value: String,
+    notes: String? = nil
+  ) {
+    self.mode = mode
+    self.target = target
+    self.value = value
+    self.notes = notes
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case mode, configuration, notes
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(mode.rawValue, forKey: .mode)
+    try container.encode(
+      IPAccessRuleConfiguration(target: target.rawValue, value: value), forKey: .configuration)
+    if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+      try container.encode(notes, forKey: .notes)
+    }
+  }
+}
+
+/// One X.509 certificate inside a Cloudflare SSL/TLS Edge Certificate Pack.
+public struct SSLCertificate: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let hosts: [String]
+  public let status: String?
+  public let issuer: String?
+  public let signature: String?
+  public let expiresOn: String?
+  public let uploadedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case id, hosts, status, issuer, signature
+    case expiresOn = "expires_on"
+    case uploadedOn = "uploaded_on"
+  }
+
+  public init(
+    id: String,
+    hosts: [String] = [],
+    status: String? = nil,
+    issuer: String? = nil,
+    signature: String? = nil,
+    expiresOn: String? = nil,
+    uploadedOn: String? = nil
+  ) {
+    self.id = id
+    self.hosts = hosts
+    self.status = status
+    self.issuer = issuer
+    self.signature = signature
+    self.expiresOn = expiresOn
+    self.uploadedOn = uploadedOn
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    hosts = try container.decodeIfPresent([String].self, forKey: .hosts) ?? []
+    status = try container.decodeIfPresent(String.self, forKey: .status)
+    issuer = try container.decodeIfPresent(String.self, forKey: .issuer)
+    signature = try container.decodeIfPresent(String.self, forKey: .signature)
+    expiresOn = try container.decodeIfPresent(String.self, forKey: .expiresOn)
+    uploadedOn = try container.decodeIfPresent(String.self, forKey: .uploadedOn)
+  }
+}
+
+/// An Edge Certificate Pack returned by `GET /zones/{zone_id}/ssl/certificate_packs`.
+public struct SSLCertificatePack: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let type: String
+  public let status: String
+  public let hosts: [String]
+  public let certificateAuthority: String?
+  public let validationMethod: String?
+  public let validityDays: Int?
+  public let certificates: [SSLCertificate]
+
+  enum CodingKeys: String, CodingKey {
+    case id, type, status, hosts, certificates
+    case certificateAuthority = "certificate_authority"
+    case validationMethod = "validation_method"
+    case validityDays = "validity_days"
+  }
+
+  public init(
+    id: String,
+    type: String,
+    status: String,
+    hosts: [String] = [],
+    certificateAuthority: String? = nil,
+    validationMethod: String? = nil,
+    validityDays: Int? = nil,
+    certificates: [SSLCertificate] = []
+  ) {
+    self.id = id
+    self.type = type
+    self.status = status
+    self.hosts = hosts
+    self.certificateAuthority = certificateAuthority
+    self.validationMethod = validationMethod
+    self.validityDays = validityDays
+    self.certificates = certificates
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    type = try container.decodeIfPresent(String.self, forKey: .type) ?? "universal"
+    status = try container.decodeIfPresent(String.self, forKey: .status) ?? "unknown"
+    hosts = try container.decodeIfPresent([String].self, forKey: .hosts) ?? []
+    certificateAuthority = try container.decodeIfPresent(
+      String.self, forKey: .certificateAuthority)
+    validationMethod = try container.decodeIfPresent(String.self, forKey: .validationMethod)
+    validityDays = try container.decodeIfPresent(Int.self, forKey: .validityDays)
+    certificates = try container.decodeIfPresent([SSLCertificate].self, forKey: .certificates) ?? []
+  }
+
+  /// Earliest expiration timestamp reported across certificates in this pack.
+  public var earliestExpiration: String? {
+    certificates.compactMap(\.expiresOn).filter { !$0.isEmpty }.min()
+  }
+}
+
 extension CloudflareClient {
   public func listZones(accountID: String, page: Int = 1, perPage: Int = 50, name: String? = nil)
     async throws -> Page<CloudflareZone>
@@ -225,5 +436,39 @@ extension CloudflareClient {
   {
     try await request(
       "/zones/\(zoneID)/settings/\(settingID)", method: "PATCH", body: ["value": value])
+  }
+
+  /// Lists Zone IP Access Rules (`firewall-services.read`).
+  public func listIPAccessRules(zoneID: String, page: Int = 1, perPage: Int = 50) async throws
+    -> Page<IPAccessRule>
+  {
+    try await list(
+      "/zones/\(zoneID)/firewall/access_rules/rules",
+      query: ["page": String(page), "per_page": String(perPage)])
+  }
+
+  /// Creates a Zone IP Access Rule (`firewall-services.write`).
+  public func createIPAccessRule(zoneID: String, input: IPAccessRuleInput) async throws
+    -> IPAccessRule
+  {
+    try await request(
+      "/zones/\(zoneID)/firewall/access_rules/rules", method: "POST", body: input)
+  }
+
+  /// Deletes a Zone IP Access Rule (`firewall-services.write`).
+  public func deleteIPAccessRule(zoneID: String, ruleID: String) async throws {
+    let _: JSONValue = try await request(
+      "/zones/\(zoneID)/firewall/access_rules/rules/\(ruleID)", method: "DELETE")
+  }
+
+  /// Lists Edge Certificate Packs for a zone (`ssl-and-certificates.read`).
+  /// Defaults to `status=all` so pending/validating packs are visible too.
+  public func listCertificatePacks(zoneID: String, status: String? = "all") async throws
+    -> [SSLCertificatePack]
+  {
+    try await list(
+      "/zones/\(zoneID)/ssl/certificate_packs",
+      query: ["status": status, "per_page": "50"]
+    ).items
   }
 }

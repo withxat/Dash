@@ -62,6 +62,8 @@ enum FeatureCacheKey {
     "pagesDomains:\(accountID):\(name)"
   }
   static func zoneSettings(_ zoneID: String) -> String { "zoneSettings:\(zoneID)" }
+  static func zoneCertificatePacks(_ zoneID: String) -> String { "zoneCertPacks:\(zoneID)" }
+  static func zoneIPAccessRules(_ zoneID: String) -> String { "zoneIPAccessRules:\(zoneID)" }
   static func zoneAnalytics(_ zoneID: String, days: Int) -> String {
     "zoneAnalytics:\(zoneID):\(days)"
   }

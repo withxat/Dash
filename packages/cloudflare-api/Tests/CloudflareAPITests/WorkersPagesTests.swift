@@ -735,4 +735,60 @@ extension NetworkTests {
         "DELETE /accounts/acct/pages/projects/web/deployments/dep-old?force=true",
       ])
   }
+
+  @Test func workerRouteCreateUpdateAndDeleteRoundTrip() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      recorder.record("\(method) \(path)")
+      if method == "POST", path == "/zones/zone-1/workers/routes" {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["pattern"] as? String == "example.com/api/*")
+        #expect(payload["script"] as? String == "api-worker")
+        return (
+          200,
+          Data(
+            #"{"success":true,"result":{"id":"route-1","pattern":"example.com/api/*","script":"api-worker"}}"#
+              .utf8)
+        )
+      }
+      if method == "PUT", path == "/zones/zone-1/workers/routes/route-1" {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["pattern"] as? String == "example.com/v2/*")
+        #expect(payload["script"] as? String == "api-worker")
+        return (
+          200,
+          Data(
+            #"{"success":true,"result":{"id":"route-1","pattern":"example.com/v2/*","script":"api-worker"}}"#
+              .utf8)
+        )
+      }
+      if method == "DELETE", path == "/zones/zone-1/workers/routes/route-1" {
+        return (200, Data(#"{"success":true,"result":{"id":"route-1"}}"#.utf8))
+      }
+      return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let created = try await client.createWorkerRoute(
+      zoneID: "zone-1", pattern: "example.com/api/*", script: "api-worker")
+    #expect(created.id == "route-1")
+    let updated = try await client.updateWorkerRoute(
+      zoneID: "zone-1", routeID: "route-1", pattern: "example.com/v2/*", script: "api-worker")
+    #expect(updated.pattern == "example.com/v2/*")
+    try await client.deleteWorkerRoute(zoneID: "zone-1", routeID: "route-1")
+
+    #expect(
+      recorder.paths == [
+        "POST /zones/zone-1/workers/routes",
+        "PUT /zones/zone-1/workers/routes/route-1",
+        "DELETE /zones/zone-1/workers/routes/route-1",
+      ])
+  }
 }

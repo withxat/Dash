@@ -383,3 +383,50 @@ private func demoClient() -> CloudflareClient {
       accountID: "demo-account", bucket: "review-folders", delimiter: "/"
     ).commonPrefixes == ["photos/"])
 }
+
+@Test func demoIPAccessRulesCertificatePacksAndWorkerRoutesWorkLocally() async throws {
+  let client = demoClient()
+
+  // IP Access Rules list / create / delete.
+  let initialRules = try await client.listIPAccessRules(zoneID: "zone-example").items
+  #expect(initialRules.count == 2)
+  let createdRule = try await client.createIPAccessRule(
+    zoneID: "zone-example",
+    input: IPAccessRuleInput(
+      mode: .block, target: .ip, value: "192.0.2.99", notes: "Demo block"))
+  #expect(createdRule.configuration.value == "192.0.2.99")
+  #expect(createdRule.scope?.type == "zone")
+  #expect(
+    try await client.listIPAccessRules(zoneID: "zone-example").items.contains {
+      $0.id == createdRule.id
+    })
+  try await client.deleteIPAccessRule(zoneID: "zone-example", ruleID: createdRule.id)
+  #expect(
+    try await client.listIPAccessRules(zoneID: "zone-example").items.allSatisfy {
+      $0.id != createdRule.id
+    })
+
+  // Edge Certificate Packs list returns active + pending packs.
+  let packs = try await client.listCertificatePacks(zoneID: "zone-example")
+  #expect(packs.count == 2)
+  #expect(packs.contains { $0.status == "active" && $0.earliestExpiration != nil })
+  #expect(packs.contains { $0.status == "pending_validation" })
+
+  // Worker Routes create / update / delete.
+  let createdRoute = try await client.createWorkerRoute(
+    zoneID: "zone-example", pattern: "example.com/hook/*", script: "api-worker")
+  #expect(createdRoute.pattern == "example.com/hook/*")
+  let updatedRoute = try await client.updateWorkerRoute(
+    zoneID: "zone-example", routeID: createdRoute.id, pattern: "example.com/webhooks/*",
+    script: "api-worker")
+  #expect(updatedRoute.pattern == "example.com/webhooks/*")
+  #expect(
+    try await client.listWorkerRoutes(zoneID: "zone-example").contains {
+      $0.id == createdRoute.id && $0.pattern == "example.com/webhooks/*"
+    })
+  try await client.deleteWorkerRoute(zoneID: "zone-example", routeID: createdRoute.id)
+  #expect(
+    try await client.listWorkerRoutes(zoneID: "zone-example").allSatisfy {
+      $0.id != createdRoute.id
+    })
+}

@@ -838,6 +838,71 @@
         }
       }
     },
+    "Add domain or route" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add domain or route"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加域名或路由"
+          }
+        }
+      }
+    },
+    "Add IP Access Rule" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add IP Access Rule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加 IP 访问规则"
+          }
+        }
+      }
+    },
+    "Add route" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add route"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加路由"
+          }
+        }
+      }
+    },
+    "Add rule" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add rule"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加规则"
+          }
+        }
+      }
+    },
     "Add secret" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -933,6 +998,56 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已添加变量 %@"
+          }
+        }
+      }
+    },
+    "Advanced" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Advanced"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "高级"
+          }
+        }
+      }
+    },
+    "Allow" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "放行"
+          }
+        }
+      }
+    },
+    "Allow IP" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow IP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加入白名单"
           }
         }
       }
@@ -2050,6 +2165,23 @@
         }
       }
     },
+    "Backup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backup"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备用"
+          }
+        }
+      }
+    },
     "Bandwidth" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2126,6 +2258,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "绑定与触发器"
+          }
+        }
+      }
+    },
+    "Block" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Block"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封禁"
+          }
+        }
+      }
+    },
+    "Block IP" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Block IP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "封禁此 IP"
           }
         }
       }
@@ -2622,6 +2787,39 @@
         }
       }
     },
+    "Certificate authority" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Certificate authority"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "证书颁发机构"
+          }
+        }
+      }
+    },
+    "Challenge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Challenge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "质询"
+          }
+        }
+      }
+    },
     "Challenges every visitor. Restores the previous security level when turned off." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2854,6 +3052,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "选择你最常用的 Cloudflare 功能。"
+          }
+        }
+      }
+    },
+    "CIDR" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CIDR"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CIDR"
+          }
+        }
+      }
+    },
+    "CIDR range" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CIDR range"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "CIDR 网段"
           }
         }
       }
@@ -4378,6 +4610,23 @@
         }
       }
     },
+    "Edge certificates" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Edge certificates"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边缘证书"
+          }
+        }
+      }
+    },
     "Edit a DNS record" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4524,6 +4773,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "每 5 分钟"
+          }
+        }
+      }
+    },
+    "Example: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Example: %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "示例：%@"
+          }
+        }
+      }
+    },
+    "Example: example.com/api/*" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Example: example.com/api/*"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "示例：example.com/api/*"
           }
         }
       }
@@ -4693,6 +4974,57 @@
         }
       }
     },
+    "Grant Firewall Services access to view and manage IP Access Rules." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Firewall Services access to view and manage IP Access Rules."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予防火墙服务权限后可查看和管理 IP 访问规则。"
+          }
+        }
+      }
+    },
+    "Grant SSL and Certificates access to inspect edge certificates." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant SSL and Certificates access to inspect edge certificates."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予 SSL 与证书权限后可查看边缘证书状态。"
+          }
+        }
+      }
+    },
+    "Grant Workers Routes write access to edit or delete routes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Grant Workers Routes write access to edit or delete routes."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "授予 Workers Routes 写入权限后可编辑或删除路由。"
+          }
+        }
+      }
+    },
     "Hide" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4706,6 +5038,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "隐藏"
+          }
+        }
+      }
+    },
+    "Hosts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hosts"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "覆盖主机名"
           }
         }
       }
@@ -4760,6 +5109,88 @@
         }
       }
     },
+    "Interactive Challenge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interactive Challenge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "交互式质询"
+          }
+        }
+      }
+    },
+    "IP" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP"
+          }
+        }
+      }
+    },
+    "IP Access Rule added" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP Access Rule added"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加 IP 访问规则"
+          }
+        }
+      }
+    },
+    "IP Access Rule removed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP Access Rule removed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移除 IP 访问规则"
+          }
+        }
+      }
+    },
+    "IP Access Rules" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP Access Rules"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP 访问规则"
+          }
+        }
+      }
+    },
     "IP address copied" : {
       "localizations" : {
         "en" : {
@@ -4772,6 +5203,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已复制 IP 地址"
+          }
+        }
+      }
+    },
+    "IPv4" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv4"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv4"
+          }
+        }
+      }
+    },
+    "IPv6" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv6"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv6"
           }
         }
       }
@@ -4789,6 +5254,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "IPv6 兼容性"
+          }
+        }
+      }
+    },
+    "JS Challenge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JS Challenge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JS 质询"
           }
         }
       }
@@ -4873,6 +5355,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Logpush"
+          }
+        }
+      }
+    },
+    "Managed Challenge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Managed Challenge"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "托管质询"
           }
         }
       }
@@ -5075,6 +5574,22 @@
         }
       }
     },
+    "No edge certificates found for this domain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No edge certificates found for this domain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名暂无边缘证书。"
+          }
+        }
+      }
+    },
     "No email is sent in the demo." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5108,6 +5623,38 @@
         }
       }
     },
+    "No hostnames" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hostnames"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无主机名"
+          }
+        }
+      }
+    },
+    "No IP Access Rules on this domain." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No IP Access Rules on this domain."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此域名暂无 IP 访问规则。"
+          }
+        }
+      }
+    },
     "No recent security events in this window." : {
       "localizations" : {
         "en" : {
@@ -5136,6 +5683,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "尚未配置密钥。"
+          }
+        }
+      }
+    },
+    "No zone in this account matches that pattern." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No zone in this account matches that pattern."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前账号下没有匹配该规则的域名。"
+          }
+        }
+      }
+    },
+    "Notes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Notes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备注"
           }
         }
       }
@@ -5530,6 +6111,23 @@
         }
       }
     },
+    "Read-only — grant Firewall Services write access to add or remove rules." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only — grant Firewall Services write access to add or remove rules."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前为只读权限 — 授予防火墙服务写入权限后可添加或删除规则。"
+          }
+        }
+      }
+    },
     "Read-only — grant Pages write access to edit environment variables." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5641,6 +6239,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要从 %2$@ 中移除 Cron 触发器 %1$@ 吗？"
+          }
+        }
+      }
+    },
+    "Remove route %@ from %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove route %1$@ from %2$@?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要从 %2$@ 移除路由 %1$@ 吗？"
+          }
+        }
+      }
+    },
+    "Remove the %@ rule for %@?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove the %1$@ rule for %2$@?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除针对 %2$@ 的 %1$@ 规则吗？"
           }
         }
       }
@@ -5771,6 +6401,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新发送验证邮件"
+          }
+        }
+      }
+    },
+    "Route added" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route added"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加路由"
+          }
+        }
+      }
+    },
+    "Route removed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route removed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移除路由"
+          }
+        }
+      }
+    },
+    "Route updated" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Route updated"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已更新路由"
           }
         }
       }
@@ -13123,6 +13801,23 @@
         }
       }
     },
+    "Total TLS" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total TLS"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total TLS"
+          }
+        }
+      }
+    },
     "TTL (seconds, min 60)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -13186,6 +13881,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "输入关键词，快速跳转 %lld 个已缓存资源。"
+          }
+        }
+      }
+    },
+    "Universal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Universal"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "通用"
           }
         }
       }
@@ -15961,6 +16673,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "User-Agent"
+          }
+        }
+      }
+    },
+    "Validation" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Validation"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证方式"
           }
         }
       }

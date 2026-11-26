@@ -11,6 +11,22 @@ enum CachePurgeAccess {
   static let write: Set<String> = ["cache.purge"]
 }
 
+/// Zone IP Access Rules answer to `firewall-services.*`. Gated independently
+/// from `WAFEventsView`'s analytics and Under Attack controls so legacy grants
+/// still open the WAF screen without locking it.
+enum ZoneIPAccessRulesAccess {
+  static let read: Set<String> = ["firewall-services.read"]
+  static let write: Set<String> = ["firewall-services.write"]
+  static let all: Set<String> = read.union(write)
+}
+
+/// Edge certificate pack listings answer to `ssl-and-certificates.read`. Kept
+/// apart from `ZoneSettingsView`'s settings scope so grants predating this
+/// section still show SSL/TLS and Network toggles.
+enum ZoneSSLCertificatesAccess {
+  static let read: Set<String> = ["ssl-and-certificates.read"]
+}
+
 /// Cache tools for one zone: Development Mode, Always Online, Cache Level, and
 /// purging by URL or everything.
 struct ZoneCacheView: View {
@@ -562,6 +578,10 @@ struct ZoneSettingsView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var updatingSettingIDs: Set<String> = []
+  @State private var certificatePacks: [SSLCertificatePack] = []
+  @State private var certificatesLoaded = false
+  @State private var certificatesError: String?
+  @State private var selectedCertificatePack: SSLCertificatePack?
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .zoneSettings(zoneID))
@@ -569,6 +589,10 @@ struct ZoneSettingsView: View {
 
   private var allowsWrites: Bool {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
+  }
+
+  private var canReadCertificates: Bool {
+    model.hasScopes(ZoneSSLCertificatesAccess.read)
   }
 
   var body: some View {
@@ -587,7 +611,15 @@ struct ZoneSettingsView: View {
     }
     .detailHeader(icon: .solar(SolarAsset.Content.settings), title: "Settings")
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .task(id: model.grantedScopes) { await load() }
+    .dashTray(
+      item: $selectedCertificatePack,
+      title: { DashL10n.ui($0.typeDisplayTitle) },
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      content: { pack in
+        DashDetailTray(fields: pack.detailFields)
+      }
+    )
   }
 
   /// First-paint reserve: the same three groups the live body draws, one
@@ -623,8 +655,62 @@ struct ZoneSettingsView: View {
         // The first group opens the screen unless the notice sits above it.
         .dashSectionBoundary(index > 0 || !allowsWrites)
         .dashBodySlot(reduceMotion: reduceMotion)
+
+        if entry.group.title == "SSL/TLS" {
+          edgeCertificatesSection
+            .dashSectionBoundary()
+            .dashBodySlot(reduceMotion: reduceMotion)
+        }
       }
     }
+  }
+
+  @ViewBuilder
+  private var edgeCertificatesSection: some View {
+    if !canReadCertificates {
+      FeatureWriteAccessNotice(
+        message: "Grant SSL and Certificates access to inspect edge certificates.",
+        scopes: ZoneSSLCertificatesAccess.read
+      )
+    } else if let certificatesError, certificatePacks.isEmpty {
+      DashNotice(kind: .error, message: certificatesError)
+    } else if certificatesLoaded {
+      DashTwoToneListGroup(title: "Edge certificates") {
+        if certificatePacks.isEmpty {
+          Text("No edge certificates found for this domain.")
+            .dashTwoToneNote()
+        } else {
+          ForEach(certificatePacks) { pack in
+            Button {
+              selectedCertificatePack = pack
+            } label: {
+              DashListRow(
+                title: DashL10n.ui(pack.typeDisplayTitle),
+                subtitle: Self.certificateRowSubtitle(pack),
+                icon: SolarAsset.Content.shieldCheck,
+                iconColor: FeatureVisualIdentity.catalogColor(for: .zones),
+                showsChevron: false
+              ) {
+                StatusBadge(StatusToken(certificatePackStatus: pack.status))
+              }
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("ssl-cert-pack-\(pack.id)")
+          }
+        }
+      }
+    }
+  }
+
+  private static func certificateRowSubtitle(_ pack: SSLCertificatePack) -> String {
+    var parts = [pack.hostsSummary]
+    if let expires = pack.earliestExpiration,
+      DashDateFormatting.date(fromISO8601: expires) != nil
+    {
+      parts.append(
+        DashL10n.string("Expires \(DashDateFormatting.dateOnly(fromISO8601: expires))"))
+    }
+    return parts.joined(separator: " · ")
   }
 
   /// Each group with the settings Cloudflare actually returned for it, in
@@ -691,14 +777,19 @@ struct ZoneSettingsView: View {
   }
 
   private func load(force: Bool = false) async {
+    async let settingsTask: Void = loadSettings(force: force)
+    async let certsTask: Void = loadCertificates(force: force)
+    _ = await (settingsTask, certsTask)
+    loading = false
+  }
+
+  private func loadSettings(force: Bool) async {
     let key = FeatureCacheKey.zoneSettings(zoneID)
     if !force, let cached: [ZoneSetting] = model.featureCache.get(key) {
       settings = cached
       error = nil
-      loading = false
       return
     }
-    defer { loading = false }
     do {
       settings = try await model.client.listZoneSettings(zoneID: zoneID)
       model.featureCache.set(key, settings)
@@ -706,6 +797,32 @@ struct ZoneSettingsView: View {
     } catch {
       guard !error.dashIsCancellation else { return }
       self.error = error.dashActionableMessage
+    }
+  }
+
+  private func loadCertificates(force: Bool) async {
+    guard canReadCertificates else {
+      certificatePacks = []
+      certificatesLoaded = false
+      certificatesError = nil
+      return
+    }
+    let key = FeatureCacheKey.zoneCertificatePacks(zoneID)
+    if !force, let cached: [SSLCertificatePack] = model.featureCache.get(key) {
+      certificatePacks = cached
+      certificatesLoaded = true
+      certificatesError = nil
+      return
+    }
+    do {
+      let fetched = try await model.client.listCertificatePacks(zoneID: zoneID)
+      certificatePacks = fetched
+      certificatesLoaded = true
+      certificatesError = nil
+      model.featureCache.set(key, fetched)
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      certificatesError = error.dashActionableMessage
     }
   }
 
@@ -1530,6 +1647,13 @@ struct WAFEventsView: View {
   @State private var securityAvailable = true
   @State private var securityUpdating = false
   @State private var selectedEvent: FirewallSecurityEvent?
+  @State private var ipRules: [IPAccessRule] = []
+  @State private var ipRulesLoaded = false
+  @State private var ipRulesError: String?
+  @State private var selectedRule: IPAccessRule?
+  @State private var ruleDraft: IPAccessRuleDraft?
+  @State private var deleteRulePhase: DashActionPhase = .idle
+  @State private var deleteRuleError: String?
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .zoneWAF(zoneID))
@@ -1537,6 +1661,14 @@ struct WAFEventsView: View {
 
   private var canToggleSecurity: Bool {
     featureAllowsWrites && model.hasScopes(requiredWriteScopes)
+  }
+
+  private var canReadIPRules: Bool {
+    model.hasScopes(ZoneIPAccessRulesAccess.read)
+  }
+
+  private var canWriteIPRules: Bool {
+    model.hasScopes(ZoneIPAccessRulesAccess.write)
   }
 
   private var underAttackBinding: Binding<Bool> {
@@ -1553,7 +1685,7 @@ struct WAFEventsView: View {
     DashFeatureList(
       isLoading: loading,
       error: error,
-      hasContent: summary != nil || securityLoaded,
+      hasContent: summary != nil || securityLoaded || ipRulesLoaded,
       retry: { Task { await load(force: true) } }
     ) { mode in
       wafDetailBody(mode: mode)
@@ -1561,12 +1693,44 @@ struct WAFEventsView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
     .refreshable { await load(force: true) }
     .task(id: model.grantedScopes) { await load() }
+    .onChange(of: selectedRule?.id) { _, _ in
+      deleteRulePhase = .idle
+      deleteRuleError = nil
+    }
     .dashTray(
       item: $selectedEvent,
       title: { $0.displayTitle },
       tone: FeatureVisualIdentity.tone(for: .zones),
       content: { event in
-        FirewallEventDetailTray(event: event)
+        FirewallEventDetailTray(
+          event: event,
+          canQuickRule: canWriteIPRules
+        ) { ip, mode in
+          let note =
+            event.rayName.map { "WAF event \($0)" } ?? "WAF event \(event.id)"
+          ruleDraft = IPAccessRuleDraft(
+            target: .ip, value: ip, mode: mode, notes: note)
+        }
+      }
+    )
+    .dashTray(
+      item: $selectedRule,
+      title: { $0.configuration.value },
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      content: { rule in
+        ipRuleDetailTray(rule)
+      }
+    )
+    .dashTray(
+      item: $ruleDraft,
+      title: { _ in DashL10n.string("Add IP Access Rule") },
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      content: { draft in
+        IPAccessRuleAddForm(zoneID: zoneID, initial: draft) { created in
+          ipRules.insert(created, at: 0)
+          ipRulesLoaded = true
+          model.featureCache.set(FeatureCacheKey.zoneIPAccessRules(zoneID), ipRules)
+        }
       }
     )
   }
@@ -1636,6 +1800,7 @@ struct WAFEventsView: View {
             .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
+      ipAccessRulesGroup
     }
     if mode.isPlaceholder || summary != nil {
       wafBucketGroup(
@@ -1818,9 +1983,151 @@ struct WAFEventsView: View {
   private func load(force: Bool = false) async {
     if summary == nil { loading = true }
     error = nil
-    await loadSummary(force: force)
-    await loadSecurityLevel(force: force)
+    async let summaryTask: Void = loadSummary(force: force)
+    async let securityTask: Void = loadSecurityLevel(force: force)
+    async let rulesTask: Void = loadIPAccessRules(force: force)
+    _ = await (summaryTask, securityTask, rulesTask)
     loading = false
+  }
+
+  @ViewBuilder
+  private var ipAccessRulesGroup: some View {
+    DashListGroupHeader(
+      title: DashL10n.ui("IP Access Rules"),
+      actionTitle: canReadIPRules && canWriteIPRules ? DashL10n.ui("Add") : nil,
+      actionIcon: canReadIPRules && canWriteIPRules ? SolarAsset.plus : nil,
+      action: canReadIPRules && canWriteIPRules ? { ruleDraft = IPAccessRuleDraft() } : nil
+    )
+    .dashTwoToneHeaderBand()
+    .dashSectionBoundary()
+    .dashBodySlot(reduceMotion: reduceMotion)
+
+    if !canReadIPRules {
+      FeatureWriteAccessNotice(
+        message: "Grant Firewall Services access to view and manage IP Access Rules.",
+        scopes: ZoneIPAccessRulesAccess.all
+      )
+      .dashTwoToneRowSlice()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let ipRulesError, ipRules.isEmpty {
+      DashNotice(kind: .error, message: ipRulesError)
+        .dashTwoToneRowSlice()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else if ipRules.isEmpty {
+      Text("No IP Access Rules on this domain.")
+        .dashTwoToneNote()
+        .dashTwoToneRowSlice()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    } else {
+      dashModeListRows(
+        mode: .live,
+        items: ipRules,
+        reduceMotion: reduceMotion,
+        frame: .twoTone
+      ) { rule in
+        Button {
+          selectedRule = rule
+        } label: {
+          DashListRow(
+            title: rule.configuration.value,
+            subtitle: Self.ipRuleRowSubtitle(rule),
+            icon: SolarAsset.Content.shieldCheck,
+            iconColor: rule.mode.lowercased() == "block"
+              ? DashTheme.danger
+              : rule.mode.lowercased() == "whitelist"
+                ? DashTheme.success : DashTheme.warning,
+            showsChevron: false
+          ) {
+            StatusBadge(StatusToken(ipAccessRuleMode: rule.mode))
+          }
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("waf-ip-rule-\(rule.id)")
+      }
+      if !canWriteIPRules {
+        FeatureWriteAccessNotice(
+          message: "Read-only — grant Firewall Services write access to add or remove rules.",
+          scopes: ZoneIPAccessRulesAccess.write
+        )
+        .dashItemBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func ipRuleDetailTray(_ rule: IPAccessRule) -> some View {
+    let canDelete =
+      canWriteIPRules && (rule.scope?.type == nil || rule.scope?.type?.lowercased() == "zone")
+    DashDetailTray(
+      fields: rule.detailFields,
+      deleteMessage: canDelete
+        ? DashL10n.string(
+          "Remove the \(DashL10n.ui(rule.modeDisplayTitle)) rule for \(rule.configuration.value)?"
+        ) : nil,
+      deletePhase: deleteRulePhase,
+      onDeleteSuccessPresentationCompleted: {
+        deleteRulePhase = .idle
+        selectedRule = nil
+      },
+      deleteError: deleteRuleError,
+      onDelete: canDelete ? { Task { await deleteIPAccessRule(rule) } } : nil
+    )
+  }
+
+  private static func ipRuleRowSubtitle(_ rule: IPAccessRule) -> String {
+    var parts = [DashL10n.ui(rule.targetDisplayTitle)]
+    if let notes = rule.notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+      parts.append(notes)
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  private func loadIPAccessRules(force: Bool) async {
+    guard canReadIPRules else {
+      ipRules = []
+      ipRulesLoaded = false
+      ipRulesError = nil
+      return
+    }
+    let key = FeatureCacheKey.zoneIPAccessRules(zoneID)
+    if !force, let cached: [IPAccessRule] = model.featureCache.get(key) {
+      ipRules = cached
+      ipRulesLoaded = true
+      ipRulesError = nil
+      return
+    }
+    do {
+      let fetched = try await model.client.listIPAccessRules(zoneID: zoneID).items
+      ipRules = fetched
+      ipRulesLoaded = true
+      ipRulesError = nil
+      model.featureCache.set(key, fetched)
+    } catch {
+      guard !error.dashIsCancellation else { return }
+      ipRulesError = error.dashActionableMessage
+    }
+  }
+
+  private func deleteIPAccessRule(_ rule: IPAccessRule) async {
+    guard !deleteRulePhase.isActive else { return }
+    guard model.hasScopes(ZoneIPAccessRulesAccess.write) else {
+      model.requestAccess(to: ZoneIPAccessRulesAccess.write)
+      return
+    }
+    deleteRulePhase = .loading
+    deleteRuleError = nil
+    do {
+      try await model.client.deleteIPAccessRule(zoneID: zoneID, ruleID: rule.id)
+      ipRules.removeAll { $0.id == rule.id }
+      model.featureCache.set(FeatureCacheKey.zoneIPAccessRules(zoneID), ipRules)
+      model.toasts.success(DashL10n.string("IP Access Rule removed"))
+      deleteRulePhase = .succeeded
+    } catch {
+      deleteRulePhase = .idle
+      guard !error.dashIsCancellation else { return }
+      deleteRuleError = error.dashActionableMessage
+    }
   }
 
   private func loadSummary(force: Bool) async {
@@ -1909,11 +2216,24 @@ struct WAFEventsView: View {
 
 private struct FirewallEventDetailTray: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let event: FirewallSecurityEvent
+  let canQuickRule: Bool
+  let onQuickRule: (String, IPAccessRuleFormMode) -> Void
 
   var body: some View {
     DashDetailTray(fields: event.detailFields) {
       VStack(spacing: 10) {
+        if let ip = event.clientIP, canQuickRule {
+          HStack(spacing: 10) {
+            DashActionButton(title: "Block IP", role: .destructive) {
+              dismissAfter { onQuickRule(ip, .block) }
+            }
+            DashTrayPillButton(title: "Allow IP") {
+              dismissAfter { onQuickRule(ip, .whitelist) }
+            }
+          }
+        }
         if let ip = event.clientIP {
           DashTrayPillButton(title: "Copy IP") {
             UIPasteboard.general.string = ip
@@ -1934,6 +2254,214 @@ private struct FirewallEventDetailTray: View {
           model.toasts.success(DashL10n.string("Security event copied"))
         }
       }
+    }
+  }
+}
+
+enum IPAccessRuleFormTarget: String, CaseIterable, Hashable, Sendable {
+  case ip
+  case ipRange
+  case asn
+  case country
+
+  var title: String {
+    switch self {
+    case .ip: "IP"
+    case .ipRange: "CIDR"
+    case .asn: "ASN"
+    case .country: "Country"
+    }
+  }
+
+  var placeholder: String {
+    switch self {
+    case .ip: "203.0.113.42"
+    case .ipRange: "198.51.100.0/24"
+    case .asn: "AS14061"
+    case .country: "US"
+    }
+  }
+}
+
+enum IPAccessRuleFormMode: String, CaseIterable, Hashable, Sendable {
+  case block
+  case managedChallenge
+  case whitelist
+
+  var title: String {
+    switch self {
+    case .block: "Block"
+    case .managedChallenge: "Challenge"
+    case .whitelist: "Allow"
+    }
+  }
+
+  var apiMode: IPAccessRuleMode {
+    switch self {
+    case .block: .block
+    case .managedChallenge: .managedChallenge
+    case .whitelist: .whitelist
+    }
+  }
+}
+
+struct IPAccessRuleDraft: Identifiable, Hashable, Sendable {
+  let id = UUID()
+  var target: IPAccessRuleFormTarget = .ip
+  var value: String = ""
+  var mode: IPAccessRuleFormMode = .block
+  var notes: String = ""
+}
+
+/// Pure validation & normalization for IP Access Rule inputs before sending to Cloudflare.
+enum IPAccessRuleRules {
+  static func normalizedInput(
+    target: IPAccessRuleFormTarget,
+    rawValue: String,
+    mode: IPAccessRuleFormMode,
+    notes: String
+  ) -> IPAccessRuleInput? {
+    let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty, !trimmed.contains(" ") else { return nil }
+    let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+    let optionalNotes = trimmedNotes.isEmpty ? nil : trimmedNotes
+
+    switch target {
+    case .ip:
+      guard !trimmed.contains("/") else { return nil }
+      if trimmed.contains(":") {
+        return IPAccessRuleInput(
+          mode: mode.apiMode, target: .ip6, value: trimmed, notes: optionalNotes)
+      }
+      let octets = trimmed.split(separator: ".", omittingEmptySubsequences: false)
+      guard octets.count == 4,
+        octets.allSatisfy({ part in
+          guard let num = Int(part), num >= 0, num <= 255 else { return false }
+          return String(num) == part
+        })
+      else { return nil }
+      return IPAccessRuleInput(
+        mode: mode.apiMode, target: .ip, value: trimmed, notes: optionalNotes)
+    case .ipRange:
+      let parts = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+      guard parts.count == 2, let prefix = Int(parts[1]), prefix >= 8, prefix <= 128,
+        !parts[0].isEmpty
+      else { return nil }
+      return IPAccessRuleInput(
+        mode: mode.apiMode, target: .ipRange, value: trimmed, notes: optionalNotes)
+    case .asn:
+      let upper = trimmed.uppercased()
+      let digits = upper.hasPrefix("AS") ? String(upper.dropFirst(2)) : upper
+      guard !digits.isEmpty, digits.allSatisfy(\.isNumber), (Int(digits) ?? 0) > 0 else {
+        return nil
+      }
+      return IPAccessRuleInput(
+        mode: mode.apiMode, target: .asn, value: "AS\(digits)", notes: optionalNotes)
+    case .country:
+      let upper = trimmed.uppercased()
+      guard upper.count == 2, upper.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+      return IPAccessRuleInput(
+        mode: mode.apiMode, target: .country, value: upper, notes: optionalNotes)
+    }
+  }
+}
+
+private struct IPAccessRuleAddForm: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  let zoneID: String
+  let onCreated: (IPAccessRule) -> Void
+
+  @State private var target: IPAccessRuleFormTarget
+  @State private var value: String
+  @State private var mode: IPAccessRuleFormMode
+  @State private var notes: String
+  @State private var actionPhase: DashActionPhase = .idle
+  @State private var errorMessage: String?
+
+  init(
+    zoneID: String,
+    initial: IPAccessRuleDraft,
+    onCreated: @escaping (IPAccessRule) -> Void
+  ) {
+    self.zoneID = zoneID
+    self.onCreated = onCreated
+    _target = State(initialValue: initial.target)
+    _value = State(initialValue: initial.value)
+    _mode = State(initialValue: initial.mode)
+    _notes = State(initialValue: initial.notes)
+  }
+
+  private var normalizedInput: IPAccessRuleInput? {
+    IPAccessRuleRules.normalizedInput(
+      target: target, rawValue: value, mode: mode, notes: notes)
+  }
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: "Add rule",
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: {
+        actionPhase = .idle
+        dismiss()
+      },
+      canSave: normalizedInput != nil && !actionPhase.isActive,
+      onSave: { Task { await save() } },
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          Picker(DashL10n.string("Target"), selection: $target) {
+            ForEach(IPAccessRuleFormTarget.allCases, id: \.self) { option in
+              Text(DashL10n.ui(option.title)).tag(option)
+            }
+          }
+          .pickerStyle(.segmented)
+
+          DashFormField(
+            label: "Value",
+            text: $value,
+            keyboard: .asciiCapable
+          )
+          Text(DashL10n.string("Example: \(target.placeholder)"))
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+
+          Picker(DashL10n.string("Action"), selection: $mode) {
+            ForEach(IPAccessRuleFormMode.allCases, id: \.self) { option in
+              Text(DashL10n.ui(option.title)).tag(option)
+            }
+          }
+          .pickerStyle(.segmented)
+
+          DashFormField(
+            label: "Notes",
+            text: $notes
+          )
+
+          if let errorMessage {
+            DashNotice(kind: .error, message: errorMessage)
+          }
+        }
+      }
+    )
+  }
+
+  private func save() async {
+    guard let input = normalizedInput, !actionPhase.isActive else { return }
+    guard model.hasScopes(ZoneIPAccessRulesAccess.write) else {
+      model.requestAccess(to: ZoneIPAccessRulesAccess.write)
+      return
+    }
+    actionPhase = .loading
+    errorMessage = nil
+    do {
+      let created = try await model.client.createIPAccessRule(zoneID: zoneID, input: input)
+      onCreated(created)
+      model.toasts.success(DashL10n.string("IP Access Rule added"))
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation else { return }
+      errorMessage = error.dashActionableMessage
     }
   }
 }

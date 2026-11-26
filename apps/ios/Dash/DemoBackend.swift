@@ -166,6 +166,13 @@ final class DemoBackend: URLProtocol {
           info: #"{"page":1,"per_page":100,"total_count":\#(records.count)}"#)
       case "settings"?:
         return ok(DemoWorld.zoneSettings)
+      case "firewall"? where rest.count >= 3 && rest[1] == "access_rules" && rest[2] == "rules":
+        let rules = DemoWorld.ipAccessRules(zoneID: zone.id)
+        return ok(
+          "[\(rules.joined(separator: ","))]",
+          info: #"{"page":1,"per_page":50,"total_count":\#(rules.count)}"#)
+      case "ssl"? where rest.count >= 2 && rest[1] == "certificate_packs":
+        return ok("[\(DemoWorld.certificatePacks(zone: zone).joined(separator: ","))]")
       case "workers"? where rest.count >= 2 && rest[1] == "routes":
         return ok("[\(DemoWorld.workerRoutes(zoneID: zone.id).joined(separator: ","))]")
       case "email"? where rest.count >= 2 && rest[1] == "routing":
@@ -1851,6 +1858,35 @@ private enum DemoWorld {
       {"id":"browser_cache_ttl","value":14400,"editable":true}
     ]
     """#
+
+  static func ipAccessRules(zoneID: String) -> [String] {
+    guard zoneID == "zone-example" else { return [] }
+    return [
+      #"""
+      {"id":"iprule-scraper","mode":"block","notes":"Automated login scraper","configuration":{"target":"ip","value":"203.0.113.42"},"scope":{"id":"zone-example","type":"zone"},"created_on":"\#(DemoClock.iso(hoursAgo: 36))"}
+      """#,
+      #"""
+      {"id":"iprule-office","mode":"whitelist","notes":"HQ office egress","configuration":{"target":"ip_range","value":"198.51.100.0/24"},"scope":{"id":"zone-example","type":"zone"},"created_on":"\#(DemoClock.iso(hoursAgo: 240))"}
+      """#,
+    ]
+  }
+
+  static func certificatePacks(zone: Zone) -> [String] {
+    let expiry = ISO8601DateFormatter().string(
+      from: Date().addingTimeInterval(86_400 * 75))
+    var packs = [
+      #"""
+      {"id":"certpack-\#(zone.id)-universal","type":"universal","status":"active","hosts":["\#(zone.name)","*.\#(zone.name)"],"certificate_authority":"google","validation_method":"txt","validity_days":90,"certificates":[{"id":"cert-\#(zone.id)-1","hosts":["\#(zone.name)","*.\#(zone.name)"],"status":"active","expires_on":"\#(expiry)"}]}
+      """#
+    ]
+    if zone.id == "zone-example" {
+      packs.append(
+        #"""
+        {"id":"certpack-\#(zone.id)-advanced","type":"advanced","status":"pending_validation","hosts":["api.\#(zone.name)","staging.\#(zone.name)"],"certificate_authority":"lets_encrypt","validation_method":"txt","validity_days":90,"certificates":[]}
+        """#)
+    }
+    return packs
+  }
 
   // MARK: GraphQL payloads
 

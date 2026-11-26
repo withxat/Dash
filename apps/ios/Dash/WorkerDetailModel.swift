@@ -26,7 +26,22 @@ struct WorkerZoneRoute: Identifiable, Hashable, Sendable {
   let id: String
   let pattern: String
   let script: String?
+  let zoneID: String
   let zoneName: String
+
+  init(
+    id: String,
+    pattern: String,
+    script: String?,
+    zoneID: String = "",
+    zoneName: String
+  ) {
+    self.id = id
+    self.pattern = pattern
+    self.script = script
+    self.zoneID = zoneID
+    self.zoneName = zoneName
+  }
 }
 
 enum WorkerDetailSection<Value: Sendable>: Sendable {
@@ -252,7 +267,8 @@ enum WorkerDetailLoader {
               index,
               routes.map {
                 WorkerZoneRoute(
-                  id: $0.id, pattern: $0.pattern, script: $0.script, zoneName: zone.name)
+                  id: $0.id, pattern: $0.pattern, script: $0.script,
+                  zoneID: zone.id, zoneName: zone.name)
               })
           } catch is CancellationError {
             throw CancellationError()

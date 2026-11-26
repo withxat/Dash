@@ -1468,6 +1468,29 @@ extension CloudflareClient {
   public func listWorkerRoutes(zoneID: String) async throws -> [WorkerRoute] {
     try await list("/zones/\(zoneID)/workers/routes").items
   }
+  /// Creates a Worker Route on a zone (`workers-routes.write`).
+  public func createWorkerRoute(zoneID: String, pattern: String, script: String) async throws
+    -> WorkerRoute
+  {
+    try await request(
+      "/zones/\(zoneID)/workers/routes",
+      method: "POST",
+      body: ["pattern": pattern, "script": script])
+  }
+  /// Updates an existing Worker Route pattern or script (`workers-routes.write`).
+  public func updateWorkerRoute(
+    zoneID: String, routeID: String, pattern: String, script: String
+  ) async throws -> WorkerRoute {
+    try await request(
+      "/zones/\(zoneID)/workers/routes/\(routeID)",
+      method: "PUT",
+      body: ["pattern": pattern, "script": script])
+  }
+  /// Deletes a Worker Route from a zone (`workers-routes.write`).
+  public func deleteWorkerRoute(zoneID: String, routeID: String) async throws {
+    let _: JSONValue = try await request(
+      "/zones/\(zoneID)/workers/routes/\(routeID)", method: "DELETE")
+  }
   /// Downloads script content. Classic scripts come back as raw JS; module
   /// workers come back as multipart/form-data with one part per module, the
   /// boundary living in the response Content-Type header.

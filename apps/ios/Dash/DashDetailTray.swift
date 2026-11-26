@@ -390,3 +390,108 @@ extension WorkerCronTrigger {
     return fields
   }
 }
+
+extension IPAccessRule {
+  var targetDisplayTitle: String {
+    switch configuration.target.lowercased() {
+    case "ip": "IPv4"
+    case "ip6": "IPv6"
+    case "ip_range": "CIDR range"
+    case "asn": "ASN"
+    case "country": "Country"
+    default: configuration.target.uppercased()
+    }
+  }
+
+  var modeDisplayTitle: String {
+    switch mode.lowercased() {
+    case "block": "Block"
+    case "managed_challenge": "Managed Challenge"
+    case "challenge": "Interactive Challenge"
+    case "js_challenge": "JS Challenge"
+    case "whitelist": "Allow"
+    default: mode.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Target", value: DashL10n.ui(targetDisplayTitle)),
+      DashDetailField(label: "Value", value: configuration.value, mono: true),
+      DashDetailField(label: "Action", value: DashL10n.ui(modeDisplayTitle)),
+    ]
+    if let scopeType = scope?.type, !scopeType.isEmpty {
+      fields.append(DashDetailField(label: "Scope", value: scopeType.capitalized))
+    }
+    if let notes = notes?.trimmingCharacters(in: .whitespacesAndNewlines), !notes.isEmpty {
+      fields.append(DashDetailField(label: "Notes", value: notes))
+    }
+    if let createdOn, DashDateFormatting.date(fromISO8601: createdOn) != nil {
+      fields.append(
+        DashDetailField(
+          label: "Created",
+          value: DashDateFormatting.dateAndTime(fromISO8601: createdOn)))
+    }
+    return fields
+  }
+}
+
+extension SSLCertificatePack {
+  var typeDisplayTitle: String {
+    switch type.lowercased() {
+    case "universal": "Universal"
+    case "advanced": "Advanced"
+    case "custom": "Custom"
+    case "backup": "Backup"
+    case "total_tls": "Total TLS"
+    default: type.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+  }
+
+  var hostsSummary: String {
+    let list = hosts.isEmpty ? certificates.flatMap(\.hosts) : hosts
+    var seen: Set<String> = []
+    let unique = list.filter { seen.insert($0).inserted }
+    guard !unique.isEmpty else { return DashL10n.string("No hostnames") }
+    if unique.count <= 2 {
+      return unique.joined(separator: ", ")
+    }
+    return "\(unique.prefix(2).joined(separator: ", ")) +\(unique.count - 2)"
+  }
+
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Type", value: DashL10n.ui(typeDisplayTitle)),
+      DashDetailField(
+        label: "Status",
+        value: StatusToken(certificatePackStatus: status).label),
+    ]
+    let allHosts = hosts.isEmpty ? certificates.flatMap(\.hosts) : hosts
+    if !allHosts.isEmpty {
+      var seen: Set<String> = []
+      let unique = allHosts.filter { seen.insert($0).inserted }
+      fields.append(
+        DashDetailField(label: "Hosts", value: unique.joined(separator: "\n"), mono: true))
+    }
+    if let ca = certificateAuthority, !ca.isEmpty {
+      let formattedCA: String =
+        switch ca.lowercased() {
+        case "lets_encrypt": "Let's Encrypt"
+        case "digicert": "DigiCert"
+        case "ssl_com": "SSL.com"
+        default: ca.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+      fields.append(DashDetailField(label: "Certificate authority", value: formattedCA))
+    }
+    if let validation = validationMethod, !validation.isEmpty {
+      fields.append(DashDetailField(label: "Validation", value: validation.uppercased()))
+    }
+    if let expires = earliestExpiration, DashDateFormatting.date(fromISO8601: expires) != nil {
+      fields.append(
+        DashDetailField(
+          label: "Expires",
+          value: DashDateFormatting.dateOnly(fromISO8601: expires)))
+    }
+    return fields
+  }
+}

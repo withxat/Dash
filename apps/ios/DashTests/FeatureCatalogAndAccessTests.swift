@@ -78,8 +78,8 @@ import UIKit
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 19)
-  #expect(DashAuthorizationScopes.core.count == 33)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 21)
+  #expect(DashAuthorizationScopes.core.count == 37)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -190,6 +190,9 @@ import UIKit
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
     "cache.purge",  // Cache screen, Home quick action, PurgeCacheIntent
     "workers-ci.read", "workers-ci.write",  // Worker Builds section, build screen, Cancel build
+    "firewall-services.read", "firewall-services.write",  // WAF IP Access Rules
+    "ssl-and-certificates.read",  // Zone Settings Edge Certificates
+    "workers-routes.write",  // Worker Detail Zone Routes create/edit/delete
   ]
   let readOnlyOperational = operational.filter {
     !$0.hasSuffix(".write") && !CachePurgeAccess.write.contains($0)
@@ -444,4 +447,19 @@ import UIKit
   #expect(writeScopes(for: destination) == ["page.write"])
   #expect(readScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
   #expect(writeScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
+}
+
+@Test func ipAccessRulesSSLCertsAndWorkerRoutesScopesStayRequestableAndNonLocking() {
+  let newScopes = ZoneIPAccessRulesAccess.all
+    .union(ZoneSSLCertificatesAccess.read)
+    .union(WorkerRoutesAccess.write)
+  #expect(newScopes.isSubset(of: DashAuthorizationScopes.core))
+  #expect(newScopes.isSubset(of: CloudflareScopes.requestable))
+  #expect(CloudflareScopes.invalid(in: Array(newScopes)).isEmpty)
+  #expect(CloudflareScopes.unsupported(in: Array(newScopes)).isEmpty)
+
+  // Legacy grants must still open WAF, Zone Settings, and Worker Detail.
+  #expect(readScopes(for: .zoneWAF("z-1")).isDisjoint(with: ZoneIPAccessRulesAccess.all))
+  #expect(readScopes(for: .zoneSettings("z-1")).isDisjoint(with: ZoneSSLCertificatesAccess.read))
+  #expect(writeScopes(for: .worker("api")).isDisjoint(with: WorkerRoutesAccess.write))
 }

@@ -1581,6 +1581,10 @@ enum StatusToken: String, CaseIterable, Sendable {
   case identified
   case monitoring
   case resolved
+  // Zone WAF IP Access Rules.
+  case blocked
+  case challenged
+  case allowed
 
   enum Presentation: Equatable {
     /// Quiet trailing label or check — never a colored capsule.
@@ -1599,13 +1603,13 @@ enum StatusToken: String, CaseIterable, Sendable {
   var presentation: Presentation {
     switch self {
     case .current, .success, .verified, .ready, .registered, .healthy, .protected,
-      .operational, .resolved:
+      .operational, .resolved, .allowed:
       .quiet
     case .route, .readOnly, .locked, .unread, .failed, .inProgress, .canceled, .skipped,
       .unknown, .unverified, .misconfigured, .unlocked, .managed, .disabled,
       .registrationPending, .expired, .suspended, .redemptionPeriod, .pendingDelete, .degraded,
       .down, .inactive, .minorOutage, .majorOutage, .criticalOutage, .partialOutage,
-      .underMaintenance, .investigating, .identified, .monitoring:
+      .underMaintenance, .investigating, .identified, .monitoring, .blocked, .challenged:
       .capsule
     }
   }
@@ -1613,13 +1617,13 @@ enum StatusToken: String, CaseIterable, Sendable {
   var tone: Tone {
     switch self {
     case .current, .success, .verified, .ready, .registered, .healthy, .protected,
-      .operational, .resolved:
+      .operational, .resolved, .allowed:
       .success
     case .readOnly, .locked, .unverified, .unlocked, .degraded, .minorOutage, .partialOutage,
-      .investigating, .identified:
+      .investigating, .identified, .challenged:
       .warning
     case .failed, .canceled, .misconfigured, .expired, .suspended, .redemptionPeriod,
-      .pendingDelete, .down, .majorOutage, .criticalOutage:
+      .pendingDelete, .down, .majorOutage, .criticalOutage, .blocked:
       .danger
     case .route, .unread, .inProgress, .skipped, .unknown, .managed, .disabled,
       .registrationPending, .inactive, .underMaintenance, .monitoring:
@@ -1671,6 +1675,9 @@ enum StatusToken: String, CaseIterable, Sendable {
     case .identified: DashL10n.string("Identified")
     case .monitoring: DashL10n.string("Monitoring")
     case .resolved: DashL10n.string("Resolved")
+    case .blocked: DashL10n.string("Block")
+    case .challenged: DashL10n.string("Challenge")
+    case .allowed: DashL10n.string("Allow")
     }
   }
 
@@ -1736,6 +1743,41 @@ enum StatusToken: String, CaseIterable, Sendable {
     case "down":
       self = .down
     case "inactive":
+      self = .inactive
+    default:
+      self = .unknown
+    }
+  }
+
+  /// Maps a Zone IP Access Rule enforcement mode onto a badge token.
+  init(ipAccessRuleMode: String) {
+    switch ipAccessRuleMode.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "block":
+      self = .blocked
+    case "managed_challenge", "challenge", "js_challenge":
+      self = .challenged
+    case "whitelist":
+      self = .allowed
+    default:
+      self = .unknown
+    }
+  }
+
+  /// Maps a Cloudflare SSL/TLS Edge Certificate Pack status onto a badge token.
+  init(certificatePackStatus: String?) {
+    switch certificatePackStatus?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "active":
+      self = .ready
+    case "pending_validation", "pending_issuance", "pending_deployment", "pending_cleanup":
+      self = .registrationPending
+    case "initializing":
+      self = .inProgress
+    case "expired":
+      self = .expired
+    case "validation_timed_out", "issuance_timed_out", "deployment_timed_out",
+      "initializing_timed_out", "deletion_timed_out":
+      self = .failed
+    case "deleted", "deactivating", "inactive":
       self = .inactive
     default:
       self = .unknown

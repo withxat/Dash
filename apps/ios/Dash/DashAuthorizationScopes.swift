@@ -64,6 +64,8 @@ enum DashAuthorizationScopes {
     "email-routing-address.read",
     "registrar-domains.read",
     "workers-ci.read",
+    "firewall-services.read",
+    "ssl-and-certificates.read",
   ]
 
   /// Scopes requested when unlocking an experimental (or otherwise locked)
@@ -101,6 +103,8 @@ enum DashAuthorizationScopes {
     "registrar-domains.admin",
     "cache.purge",
     "workers-ci.write",
+    "firewall-services.write",
+    "workers-routes.write",
   ]
 
   /// Legacy read-only profile retained for capability-gating tests.

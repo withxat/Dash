@@ -267,4 +267,79 @@ extension NetworkTests {
     #expect(payload["target"] as? String == ".")
     #expect(payload["value"] as? String == #"alpn="h3,h2""#)
   }
+
+  @Test func ipAccessRulesAndCertificatePacksRoundTrip() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      let query = request.url?.query.flatMap { $0.isEmpty ? nil : "?\($0)" } ?? ""
+      recorder.record("\(method) \(path)\(query)")
+      if method == "GET", path == "/zones/zone-1/firewall/access_rules/rules" {
+        return (
+          200,
+          Data(
+            """
+            {"success":true,"result":[{"id":"rule-1","mode":"block","notes":"Scraper","configuration":{"target":"ip","value":"203.0.113.42"},"scope":{"id":"zone-1","type":"zone"},"created_on":"2026-11-26T00:00:00Z"}],"result_info":{"page":1,"per_page":50,"total_count":1}}
+            """.utf8)
+        )
+      }
+      if method == "POST", path == "/zones/zone-1/firewall/access_rules/rules" {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["mode"] as? String == "whitelist")
+        #expect(payload["notes"] as? String == "Office")
+        let config = try #require(payload["configuration"] as? [String: Any])
+        #expect(config["target"] as? String == "ip_range")
+        #expect(config["value"] as? String == "198.51.100.0/24")
+        return (
+          200,
+          Data(
+            """
+            {"success":true,"result":{"id":"rule-2","mode":"whitelist","notes":"Office","configuration":{"target":"ip_range","value":"198.51.100.0/24"},"scope":{"id":"zone-1","type":"zone"}}}
+            """.utf8)
+        )
+      }
+      if method == "DELETE", path == "/zones/zone-1/firewall/access_rules/rules/rule-2" {
+        return (200, Data(#"{"success":true,"result":{"id":"rule-2"}}"#.utf8))
+      }
+      if method == "GET", path == "/zones/zone-1/ssl/certificate_packs" {
+        return (
+          200,
+          Data(
+            """
+            {"success":true,"result":[{"id":"pack-1","type":"universal","status":"active","hosts":["example.com","*.example.com"],"certificate_authority":"google","validation_method":"txt","validity_days":90,"certificates":[{"id":"cert-1","hosts":["example.com","*.example.com"],"status":"active","expires_on":"2027-02-15T12:00:00Z"}]}]}
+            """.utf8)
+        )
+      }
+      return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let rules = try await client.listIPAccessRules(zoneID: "zone-1")
+    #expect(rules.items.count == 1)
+    #expect(rules.items.first?.configuration.value == "203.0.113.42")
+
+    let created = try await client.createIPAccessRule(
+      zoneID: "zone-1",
+      input: IPAccessRuleInput(
+        mode: .whitelist, target: .ipRange, value: "198.51.100.0/24", notes: "Office"))
+    #expect(created.id == "rule-2")
+
+    try await client.deleteIPAccessRule(zoneID: "zone-1", ruleID: "rule-2")
+
+    let packs = try await client.listCertificatePacks(zoneID: "zone-1")
+    #expect(packs.count == 1)
+    #expect(packs.first?.status == "active")
+    #expect(packs.first?.earliestExpiration == "2027-02-15T12:00:00Z")
+
+    #expect(recorder.paths.count == 4)
+    #expect(recorder.paths[0].hasPrefix("GET /zones/zone-1/firewall/access_rules/rules?"))
+    #expect(recorder.paths[1] == "POST /zones/zone-1/firewall/access_rules/rules")
+    #expect(recorder.paths[2] == "DELETE /zones/zone-1/firewall/access_rules/rules/rule-2")
+    #expect(recorder.paths[3].hasPrefix("GET /zones/zone-1/ssl/certificate_packs?"))
+  }
 }

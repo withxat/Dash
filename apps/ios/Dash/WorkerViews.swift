@@ -3,6 +3,56 @@ import SwiftDitherKit
 import SwiftUI
 import UIKit
 
+/// Zone Worker Routes writes answer to `workers-routes.write`, separate from
+/// `workers-scripts.write` so grants predating route editing keep working on
+/// deployments, domains, secrets, and Cron Triggers.
+enum WorkerRoutesAccess {
+  static let read: Set<String> = ["workers-routes.read"]
+  static let write: Set<String> = ["workers-routes.write"]
+}
+
+/// Pure pattern normalization and zone matching for Zone Worker Routes.
+enum WorkerRouteRules {
+  static func normalizedPattern(_ raw: String) -> String {
+    raw.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  static func isValidPattern(_ raw: String) -> Bool {
+    let pattern = normalizedPattern(raw)
+    guard !pattern.isEmpty, !pattern.contains(where: \.isWhitespace) else { return false }
+    let host = extractedHostname(from: pattern)
+    return !host.isEmpty && host.contains(".")
+  }
+
+  static func extractedHostname(from rawPattern: String) -> String {
+    var remainder = normalizedPattern(rawPattern).lowercased()
+    if let schemeRange = remainder.range(of: "://") {
+      remainder = String(remainder[schemeRange.upperBound...])
+    }
+    if let slash = remainder.firstIndex(of: "/") {
+      remainder = String(remainder[..<slash])
+    }
+    if remainder.hasPrefix("*.") {
+      remainder = String(remainder.dropFirst(2))
+    } else if remainder.hasPrefix("*") {
+      remainder = String(remainder.dropFirst())
+      if remainder.hasPrefix(".") {
+        remainder = String(remainder.dropFirst())
+      }
+    }
+    return remainder
+  }
+
+  static func matchedZone(for pattern: String, in zones: [CloudflareZone]) -> CloudflareZone? {
+    let host = extractedHostname(from: pattern)
+    guard !host.isEmpty else { return nil }
+    return
+      zones
+      .filter { host == $0.name.lowercased() || host.hasSuffix("." + $0.name.lowercased()) }
+      .max { $0.name.count < $1.name.count }
+  }
+}
+
 struct WorkersView: View {
   @Environment(AppModel.self) private var model
   @Environment(\.openURL) private var openURL
@@ -302,25 +352,46 @@ struct WorkerDetailView: View {
       }
     )
     .dashTray(
-      isPresented: $addsDomain, title: "Add custom domain",
+      isPresented: $addsDomain, title: addDomainOrRouteTitle,
       tone: FeatureVisualIdentity.tone(for: .workers)
     ) {
-      WorkerAddDomainForm(service: name) {
-        await loadDomains(force: true)
-      }
+      WorkerAddDomainOrRouteTray(
+        service: name,
+        allowsDomainWrites: featureAllowsWrites,
+        allowsRouteWrites: canWriteRoutes,
+        onDomainAdded: { await loadDomains(force: true) },
+        onRouteChanged: { await reloadRoutesAfterMutation() }
+      )
     }
     .dashTray(
       item: $selectedRoute,
       title: { $0.pattern },
       tone: FeatureVisualIdentity.tone(for: .workers),
       content: { route in
-        DashDetailTray(
-          fields: [
-            DashDetailField(label: "Pattern", value: route.pattern, mono: true),
-            DashDetailField(label: "Zone", value: route.zoneName),
-            DashDetailField(label: "Managed by", value: "wrangler or the zone's Workers Routes"),
-          ]
-        )
+        if canWriteRoutes, !route.zoneID.isEmpty {
+          WorkerRouteForm(
+            service: name,
+            existingRoute: route,
+            onSaved: { await reloadRoutesAfterMutation() },
+            onDeleted: { await reloadRoutesAfterMutation() }
+          )
+        } else {
+          DashDetailTray(
+            fields: [
+              DashDetailField(label: "Pattern", value: route.pattern, mono: true),
+              DashDetailField(label: "Zone", value: route.zoneName),
+              DashDetailField(label: "Managed by", value: "wrangler or the zone's Workers Routes"),
+            ],
+            accessory: {
+              if !canWriteRoutes {
+                FeatureWriteAccessNotice(
+                  message: "Grant Workers Routes write access to edit or delete routes.",
+                  scopes: WorkerRoutesAccess.write
+                )
+              }
+            }
+          )
+        }
       }
     )
     .dashTray(
@@ -346,6 +417,24 @@ struct WorkerDetailView: View {
         )
       }
     )
+  }
+
+  private var canWriteRoutes: Bool {
+    model.hasScopes(WorkerRoutesAccess.write)
+  }
+
+  private var canAddDomainOrRoute: Bool {
+    featureAllowsWrites || canWriteRoutes
+  }
+
+  private var addDomainOrRouteTitle: String {
+    if featureAllowsWrites && canWriteRoutes {
+      return DashL10n.string("Add domain or route")
+    }
+    if canWriteRoutes {
+      return DashL10n.string("Add route")
+    }
+    return DashL10n.string("Add custom domain")
   }
 
   private var subdomainBinding: Binding<Bool> {
@@ -622,9 +711,9 @@ struct WorkerDetailView: View {
     // downstream witness that rides upward when surplus deployment slots leave.
     DashListGroupHeader(
       title: DashL10n.ui("Domains & Routes"),
-      actionTitle: !mode.isPlaceholder && featureAllowsWrites ? DashL10n.ui("Add") : nil,
-      actionIcon: !mode.isPlaceholder && featureAllowsWrites ? SolarAsset.plus : nil,
-      action: !mode.isPlaceholder && featureAllowsWrites ? { addsDomain = true } : nil
+      actionTitle: !mode.isPlaceholder && canAddDomainOrRoute ? DashL10n.ui("Add") : nil,
+      actionIcon: !mode.isPlaceholder && canAddDomainOrRoute ? SolarAsset.plus : nil,
+      action: !mode.isPlaceholder && canAddDomainOrRoute ? { addsDomain = true } : nil
     )
     .dashTwoToneHeaderBand()
     .dashSectionBoundary()
@@ -1175,6 +1264,40 @@ struct WorkerDetailView: View {
     }
   }
 
+  private func reloadRoutesAfterMutation() async {
+    guard let context = model.accountRequestContext else { return }
+    let accountID = context.accountID
+    model.featureCache.remove(FeatureCacheKey.workerRoutes(accountID))
+    invalidateWorkerDetailCache(context)
+    let loadID = UUID()
+    routesLoadID = loadID
+    routesLoading = true
+    defer {
+      if routesLoadID == loadID {
+        routesLoading = false
+      }
+    }
+    let client = model.client
+    let routesKey = FeatureCacheKey.workerRoutes(accountID)
+    do {
+      let result = try await model.featureCache.coalescedLoad(routesKey) {
+        try await WorkerDetailLoader.loadRoutes(client: client, accountID: accountID)
+      }
+      try Task.checkCancellation()
+      guard model.isCurrentAccount(context), routesLoadID == loadID else { return }
+      routes = result.presentedRoutes(for: name, preserving: routes)
+      routesError = result.failureMessage
+      if result.isComplete {
+        model.featureCache.set(routesKey, result.routes)
+      }
+    } catch {
+      if error.dashIsCancellation || !model.isCurrentAccount(context) || routesLoadID != loadID {
+        return
+      }
+      routesError = error.dashActionableMessage
+    }
+  }
+
   private func invalidateWorkerDetailCache(_ context: AccountRequestContext) {
     WorkerDetailCache.invalidate(
       model.featureCache,
@@ -1624,6 +1747,282 @@ private func workerDeploymentTrafficText(_ deployment: WorkerDeploymentSummary) 
 private enum FeatureExternalURL {
   static let workersGuide = URL(
     string: "https://developers.cloudflare.com/workers/get-started/guide/")!
+}
+
+private enum WorkerAddTriggerKind: String, CaseIterable, Hashable {
+  case domain
+  case route
+
+  var title: String {
+    switch self {
+    case .domain: "Custom domain"
+    case .route: "Route"
+    }
+  }
+}
+
+private struct WorkerAddDomainOrRouteTray: View {
+  let service: String
+  let allowsDomainWrites: Bool
+  let allowsRouteWrites: Bool
+  let onDomainAdded: () async -> Void
+  let onRouteChanged: () async -> Void
+  @State private var kind: WorkerAddTriggerKind
+
+  init(
+    service: String,
+    allowsDomainWrites: Bool,
+    allowsRouteWrites: Bool,
+    onDomainAdded: @escaping () async -> Void,
+    onRouteChanged: @escaping () async -> Void
+  ) {
+    self.service = service
+    self.allowsDomainWrites = allowsDomainWrites
+    self.allowsRouteWrites = allowsRouteWrites
+    self.onDomainAdded = onDomainAdded
+    self.onRouteChanged = onRouteChanged
+    _kind = State(initialValue: allowsDomainWrites ? .domain : .route)
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if allowsDomainWrites && allowsRouteWrites {
+        Picker(DashL10n.string("Type"), selection: $kind) {
+          ForEach(WorkerAddTriggerKind.allCases, id: \.self) { option in
+            Text(DashL10n.ui(option.title)).tag(option)
+          }
+        }
+        .pickerStyle(.segmented)
+      }
+
+      if kind == .domain && allowsDomainWrites {
+        WorkerAddDomainForm(service: service, onAdded: onDomainAdded)
+      } else {
+        WorkerRouteForm(
+          service: service,
+          existingRoute: nil,
+          onSaved: onRouteChanged,
+          onDeleted: nil
+        )
+      }
+    }
+  }
+}
+
+struct WorkerRouteForm: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismiss) private var dismiss
+  let service: String
+  let existingRoute: WorkerZoneRoute?
+  let onSaved: () async -> Void
+  let onDeleted: (() async -> Void)?
+
+  @State private var pattern: String
+  @State private var zones: [CloudflareZone] = []
+  @State private var zonesLoaded = false
+  @State private var zonesError: String?
+  @State private var zonesContext: AccountRequestContext?
+  @State private var actionPhase: DashActionPhase = .idle
+  @State private var error: String?
+  @State private var deleteError: String?
+
+  init(
+    service: String,
+    existingRoute: WorkerZoneRoute?,
+    onSaved: @escaping () async -> Void,
+    onDeleted: (() async -> Void)?
+  ) {
+    self.service = service
+    self.existingRoute = existingRoute
+    self.onSaved = onSaved
+    self.onDeleted = onDeleted
+    _pattern = State(initialValue: existingRoute?.pattern ?? "")
+  }
+
+  private var normalizedPattern: String {
+    WorkerRouteRules.normalizedPattern(pattern)
+  }
+
+  private var matchedZone: CloudflareZone? {
+    guard existingRoute == nil else { return nil }
+    return WorkerRouteRules.matchedZone(for: normalizedPattern, in: zones)
+  }
+
+  private var canSave: Bool {
+    guard WorkerRouteRules.isValidPattern(normalizedPattern), !actionPhase.isActive else {
+      return false
+    }
+    if existingRoute != nil {
+      return true
+    }
+    return matchedZone != nil
+  }
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: existingRoute == nil ? "Add route" : "Save",
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: {
+        actionPhase = .idle
+        dismiss()
+      },
+      canSave: canSave,
+      deleteMessage: existingRoute.map {
+        DashL10n.string("Remove route \($0.pattern) from \(service)?")
+      },
+      deleteError: deleteError,
+      onDelete: existingRoute != nil ? { Task { await delete() } } : nil,
+      onSave: { Task { await save() } },
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          DashFormField(
+            label: "Pattern",
+            text: $pattern,
+            keyboard: .URL,
+            contentType: .URL
+          )
+          Text(DashL10n.string("Example: example.com/api/*"))
+            .dashTextStyle(.footnote)
+            .foregroundStyle(DashTheme.subtle)
+
+          if let existingRoute {
+            DashDetailFieldList(fields: [
+              DashDetailField(label: "Zone", value: existingRoute.zoneName)
+            ])
+          } else if let zone = matchedZone {
+            Text("Will route through the \(zone.name) zone.")
+              .dashTextStyle(.footnote)
+              .foregroundStyle(DashTheme.subtle)
+          } else if !normalizedPattern.isEmpty, zonesLoaded {
+            DashNotice(
+              kind: .warning,
+              message: "No zone in this account matches that pattern.")
+          }
+
+          if let zonesError {
+            DashNotice(kind: .error, message: zonesError)
+            Button(DashL10n.string("Try again")) {
+              withAnimation(DashTheme.Motion.content) { self.zonesError = nil }
+              Task { await loadZones() }
+            }
+            .dashTextStyle(.buttonMedium)
+            .foregroundStyle(DashTheme.brand)
+          }
+
+          if let error {
+            DashNotice(kind: .error, message: error)
+          }
+        }
+      }
+    )
+    .task(id: model.accountRequestContext) {
+      guard existingRoute == nil else { return }
+      await loadZones()
+    }
+  }
+
+  private func loadZones() async {
+    let context = model.accountRequestContext
+    zonesContext = context
+    zones = []
+    zonesLoaded = false
+    zonesError = nil
+    guard let context else { return }
+    let result = await DashZonePickerLoader.load(model: model, context: context)
+    guard zonesContext == context else { return }
+    switch result {
+    case .loaded(let loaded):
+      zones = loaded
+      zonesLoaded = true
+    case .failed(let message):
+      zonesError = message
+    case .cancelled:
+      break
+    }
+  }
+
+  private func save() async {
+    guard canSave, let context = model.accountRequestContext else { return }
+    if existingRoute == nil, zonesContext != context { return }
+    guard model.hasScopes(WorkerRoutesAccess.write) else {
+      model.requestAccess(to: WorkerRoutesAccess.write)
+      return
+    }
+    actionPhase = .loading
+    error = nil
+    deleteError = nil
+    let patternToSave = normalizedPattern
+    do {
+      if let existingRoute {
+        _ = try await model.client.updateWorkerRoute(
+          zoneID: existingRoute.zoneID,
+          routeID: existingRoute.id,
+          pattern: patternToSave,
+          script: service)
+        guard model.isCurrentAccount(context), !Task.isCancelled else {
+          actionPhase = .idle
+          return
+        }
+        model.toasts.success(DashL10n.string("Route updated"))
+      } else if let zone = matchedZone {
+        _ = try await model.client.createWorkerRoute(
+          zoneID: zone.id, pattern: patternToSave, script: service)
+        guard model.isCurrentAccount(context), !Task.isCancelled else {
+          actionPhase = .idle
+          return
+        }
+        model.toasts.success(DashL10n.string("Route added"))
+      }
+      await onSaved()
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        actionPhase = .idle
+        return
+      }
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+        return
+      }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func delete() async {
+    guard let existingRoute, !actionPhase.isActive,
+      let context = model.accountRequestContext
+    else { return }
+    guard model.hasScopes(WorkerRoutesAccess.write) else {
+      model.requestAccess(to: WorkerRoutesAccess.write)
+      return
+    }
+    actionPhase = .loading
+    deleteError = nil
+    error = nil
+    do {
+      try await model.client.deleteWorkerRoute(
+        zoneID: existingRoute.zoneID, routeID: existingRoute.id)
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        actionPhase = .idle
+        return
+      }
+      model.toasts.success(DashL10n.string("Route removed"))
+      if let onDeleted {
+        await onDeleted()
+      }
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        actionPhase = .idle
+        return
+      }
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+        return
+      }
+      deleteError = error.dashActionableMessage
+    }
+  }
 }
 
 /// Read-only view of a Worker's deployed JavaScript source (`getWorkerSource`).

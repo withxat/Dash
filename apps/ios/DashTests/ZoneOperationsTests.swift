@@ -1237,3 +1237,90 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(zonesOnly.items.map(\.kind) == [.zone])
   #expect(zonesOnly.recents.map(\.kind) == [.zone])
 }
+
+@Test func ipAccessRuleValidationCertificateStatusAndWorkerRouteMatching() throws {
+  // IPv4, IPv6, CIDR, ASN, Country normalization and rejection.
+  let v4 = try #require(
+    IPAccessRuleRules.normalizedInput(
+      target: .ip, rawValue: " 203.0.113.42 ", mode: .block, notes: "Bot"))
+  #expect(v4.target == .ip)
+  #expect(v4.value == "203.0.113.42")
+  #expect(v4.mode == .block)
+  #expect(v4.notes == "Bot")
+
+  let v6 = try #require(
+    IPAccessRuleRules.normalizedInput(
+      target: .ip, rawValue: "2001:db8::1", mode: .whitelist, notes: ""))
+  #expect(v6.target == .ip6)
+  #expect(v6.notes == nil)
+
+  #expect(
+    IPAccessRuleRules.normalizedInput(
+      target: .ip, rawValue: "999.0.0.1", mode: .block, notes: "") == nil)
+  #expect(
+    IPAccessRuleRules.normalizedInput(
+      target: .ip, rawValue: "198.51.100.0/24", mode: .block, notes: "") == nil)
+
+  let cidr = try #require(
+    IPAccessRuleRules.normalizedInput(
+      target: .ipRange, rawValue: "198.51.100.0/24", mode: .managedChallenge, notes: ""))
+  #expect(cidr.target == .ipRange)
+  #expect(cidr.mode == .managedChallenge)
+
+  let asn = try #require(
+    IPAccessRuleRules.normalizedInput(
+      target: .asn, rawValue: "14061", mode: .block, notes: ""))
+  #expect(asn.value == "AS14061")
+  #expect(
+    IPAccessRuleRules.normalizedInput(
+      target: .asn, rawValue: "AS0", mode: .block, notes: "") == nil)
+
+  let country = try #require(
+    IPAccessRuleRules.normalizedInput(
+      target: .country, rawValue: "us", mode: .managedChallenge, notes: ""))
+  #expect(country.value == "US")
+  #expect(
+    IPAccessRuleRules.normalizedInput(
+      target: .country, rawValue: "USA", mode: .block, notes: "") == nil)
+
+  // Status tokens for IP rules & SSL certificate packs.
+  #expect(StatusToken(ipAccessRuleMode: "block") == .blocked)
+  #expect(StatusToken(ipAccessRuleMode: "managed_challenge") == .challenged)
+  #expect(StatusToken(ipAccessRuleMode: "whitelist") == .allowed)
+  #expect(StatusToken(certificatePackStatus: "active") == .ready)
+  #expect(StatusToken(certificatePackStatus: "pending_validation") == .registrationPending)
+  #expect(StatusToken(certificatePackStatus: "validation_timed_out") == .failed)
+  #expect(StatusToken(certificatePackStatus: "expired") == .expired)
+
+  let pack = SSLCertificatePack(
+    id: "pack-1",
+    type: "advanced",
+    status: "active",
+    hosts: ["example.com", "*.example.com", "api.example.com"],
+    certificateAuthority: "google",
+    validationMethod: "txt",
+    certificates: [
+      SSLCertificate(id: "c-1", expiresOn: "2027-03-01T00:00:00Z"),
+      SSLCertificate(id: "c-2", expiresOn: "2027-02-01T00:00:00Z"),
+    ])
+  #expect(pack.earliestExpiration == "2027-02-01T00:00:00Z")
+  #expect(pack.hostsSummary == "example.com, *.example.com +1")
+  let packFields = Dictionary(uniqueKeysWithValues: pack.detailFields.map { ($0.label, $0.value) })
+  #expect(packFields["Certificate authority"] == "Google")
+  #expect(packFields["Validation"] == "TXT")
+
+  // Worker Route zone matching handles wildcards, schemes, and longest zone suffix.
+  let rootZone = try JSONDecoder().decode(
+    CloudflareZone.self, from: Data(#"{"id":"z-root","name":"example.com"}"#.utf8))
+  let subZone = try JSONDecoder().decode(
+    CloudflareZone.self, from: Data(#"{"id":"z-sub","name":"docs.example.com"}"#.utf8))
+  #expect(
+    WorkerRouteRules.matchedZone(for: "https://api.example.com/v1/*", in: [rootZone, subZone])?.id
+      == "z-root")
+  #expect(
+    WorkerRouteRules.matchedZone(for: "*.docs.example.com/*", in: [rootZone, subZone])?.id
+      == "z-sub")
+  #expect(WorkerRouteRules.isValidPattern("example.com/api/*"))
+  #expect(!WorkerRouteRules.isValidPattern("invalid pattern with spaces"))
+  #expect(!WorkerRouteRules.isValidPattern("localhost"))
+}
