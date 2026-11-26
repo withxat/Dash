@@ -304,12 +304,26 @@ private func demoClient() -> CloudflareClient {
 
 @Test func demoEmailRulesSettingsAndVerificationAreLocal() async throws {
   let client = demoClient()
+  // Resending verification for the seeded pending address verifies it in place without duplicating.
+  let resent = try await client.createEmailDestinationAddress(
+    accountID: "demo-account", email: "pending@example.net")
+  #expect(resent.id == "email-address-pending")
+  #expect(resent.isVerified)
+  let afterResend = try await client.listEmailDestinationAddresses(accountID: "demo-account")
+  #expect(afterResend.filter { $0.email == "pending@example.net" }.count == 1)
+
   let address = try await client.createEmailDestinationAddress(
     accountID: "demo-account", email: "review@example.net")
   #expect(address.verified != nil)
   #expect(
     try await client.listEmailDestinationAddresses(accountID: "demo-account").contains {
       $0.id == address.id
+    })
+  try await client.deleteEmailDestinationAddress(
+    accountID: "demo-account", addressID: address.id)
+  #expect(
+    try await client.listEmailDestinationAddresses(accountID: "demo-account").allSatisfy {
+      $0.id != address.id
     })
   var input = EmailRoutingRuleInput(
     matchers: [.init(type: "literal", field: "to", value: "review@example.com")],

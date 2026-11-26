@@ -477,4 +477,10 @@ extension CloudflareClient {
     try await request(
       "/accounts/\(accountID)/email/routing/addresses", method: "POST", body: ["email": email])
   }
+
+  /// Deletes a destination address (`email-routing-address.write`).
+  public func deleteEmailDestinationAddress(accountID: String, addressID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/email/routing/addresses/\(addressID)", method: "DELETE")
+  }
 }

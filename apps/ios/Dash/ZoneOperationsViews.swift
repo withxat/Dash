@@ -501,8 +501,23 @@ private struct ZoneSettingGroup: Identifiable {
 private let zoneSettingGroups: [ZoneSettingGroup] = [
   ZoneSettingGroup(title: "Security", settingIDs: ["security_level"]),
   ZoneSettingGroup(
-    title: "SSL/TLS", settingIDs: ["ssl", "always_use_https", "min_tls_version"]),
-  ZoneSettingGroup(title: "Network", settingIDs: ["http3"]),
+    title: "SSL/TLS",
+    settingIDs: [
+      "ssl",
+      "always_use_https",
+      "automatic_https_rewrites",
+      "min_tls_version",
+      "tls_1_3",
+    ]),
+  ZoneSettingGroup(
+    title: "Network",
+    settingIDs: [
+      "http3",
+      "early_hints",
+      "brotli",
+      "websockets",
+      "ipv6",
+    ]),
 ]
 
 private let curatedZoneSettings: [String] = zoneSettingGroups.flatMap(\.settingIDs)
@@ -762,11 +777,17 @@ func zoneSettingDisplayTitle(_ id: String) -> String {
   switch id {
   case "ssl": "SSL"
   case "always_use_https": "Always Use HTTPS"
+  case "automatic_https_rewrites": "Automatic HTTPS Rewrites"
   case "always_online": "Always Online"
   case "development_mode": "Development Mode"
   case "cache_level": "Cache Level"
   case "min_tls_version": "Minimum TLS version"
+  case "tls_1_3": "TLS 1.3"
   case "http3": "HTTP/3"
+  case "early_hints": "Early Hints"
+  case "brotli": "Brotli"
+  case "websockets": "WebSockets"
+  case "ipv6": "IPv6 Compatibility"
   default: id.replacingOccurrences(of: "_", with: " ").capitalized
   }
 }

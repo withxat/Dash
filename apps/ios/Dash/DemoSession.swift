@@ -283,6 +283,16 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
         // Verification is simulated locally; no email is sent.
         var value = input
         if method == "POST" {
+          if let email = (input["email"] as? String)?.lowercased(),
+            var existing = rows(addressesPath).first(where: {
+              ($0["email"] as? String)?.lowercased() == email
+            })
+          {
+            existing["verified"] = now
+            existing["modified"] = now
+            replace(existing, in: addressesPath, id: "id")
+            return ok(existing)
+          }
           value.merge(
             ["verified": now, "created": now, "modified": now], uniquingKeysWith: { _, new in new })
         }

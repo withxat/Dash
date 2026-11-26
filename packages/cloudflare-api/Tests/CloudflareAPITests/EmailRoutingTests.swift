@@ -443,6 +443,27 @@ extension NetworkTests {
     #expect(!created.isVerified)
   }
 
+  @Test func emailRoutingAddressDeleteHitsDestinationAddressEndpoint() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let recorder = RequestRecorder()
+    let session = mockSession { request in
+      recorder.record("\(request.httpMethod ?? "?") \(request.url?.path ?? "")")
+      return (
+        200,
+        Data(
+          """
+          {"success":true,"result":{"id":"addr-b","email":"b@example.net","verified":null}}
+          """.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    try await client.deleteEmailDestinationAddress(accountID: "acct", addressID: "addr-b")
+    #expect(recorder.paths == ["DELETE /accounts/acct/email/routing/addresses/addr-b"])
+  }
+
   // MARK: - Enable / disable
 
   @Test func emailRoutingEnableAndDisableUseTheDNSEndpointNotTheDeprecatedTriplet() async throws {

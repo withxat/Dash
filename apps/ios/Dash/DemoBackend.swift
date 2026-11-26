@@ -1838,10 +1838,16 @@ private enum DemoWorld {
       {"id":"ssl","value":"full","editable":true},
       {"id":"always_online","value":"on","editable":true},
       {"id":"always_use_https","value":"on","editable":true},
+      {"id":"automatic_https_rewrites","value":"on","editable":true},
       {"id":"cache_level","value":"aggressive","editable":true},
       {"id":"advanced_ddos","value":"on","editable":false},
       {"id":"min_tls_version","value":"1.2","editable":true},
+      {"id":"tls_1_3","value":"on","editable":true},
       {"id":"http3","value":"on","editable":true},
+      {"id":"early_hints","value":"on","editable":true},
+      {"id":"brotli","value":"on","editable":true},
+      {"id":"websockets","value":"on","editable":true},
+      {"id":"ipv6","value":"on","editable":true},
       {"id":"browser_cache_ttl","value":14400,"editable":true}
     ]
     """#

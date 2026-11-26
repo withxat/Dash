@@ -215,9 +215,15 @@ import UIKit
 @Test func zoneSettingTitlesPreserveTechnicalAcronyms() {
   #expect(zoneSettingDisplayTitle("ssl") == "SSL")
   #expect(zoneSettingDisplayTitle("always_use_https") == "Always Use HTTPS")
+  #expect(zoneSettingDisplayTitle("automatic_https_rewrites") == "Automatic HTTPS Rewrites")
   #expect(zoneSettingDisplayTitle("always_online") == "Always Online")
   #expect(zoneSettingDisplayTitle("min_tls_version") == "Minimum TLS version")
+  #expect(zoneSettingDisplayTitle("tls_1_3") == "TLS 1.3")
   #expect(zoneSettingDisplayTitle("http3") == "HTTP/3")
+  #expect(zoneSettingDisplayTitle("early_hints") == "Early Hints")
+  #expect(zoneSettingDisplayTitle("brotli") == "Brotli")
+  #expect(zoneSettingDisplayTitle("websockets") == "WebSockets")
+  #expect(zoneSettingDisplayTitle("ipv6") == "IPv6 Compatibility")
   #expect(zoneSettingDisplayTitle("development_mode") == "Development Mode")
   #expect(zoneSettingDisplayTitle("cache_level") == "Cache Level")
 }
@@ -244,6 +250,15 @@ import UIKit
     hasContent: ZoneSettingsPresentation.hasContent(settings))
   #expect(contentPhase == .content(banner: nil, refreshing: false))
   #expect(contentPhase.bodyMode == .live)
+
+  for settingID in [
+    "automatic_https_rewrites", "tls_1_3", "early_hints", "brotli", "websockets", "ipv6",
+  ] {
+    #expect(
+      ZoneSettingsPresentation.hasContent([
+        ZoneSetting(id: settingID, value: .string("on"), editable: true)
+      ]))
+  }
 }
 
 /// The settings menu commits with a plain `updateZoneSetting`, which stashes

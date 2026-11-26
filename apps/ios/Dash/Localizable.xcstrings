@@ -1987,6 +1987,23 @@
         }
       }
     },
+    "Automatic HTTPS Rewrites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic HTTPS Rewrites"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自动 HTTPS 重写"
+          }
+        }
+      }
+    },
     "Available" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2182,6 +2199,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "绽放"
+          }
+        }
+      }
+    },
+    "Brotli" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brotli"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Brotli"
           }
         }
       }
@@ -4278,6 +4312,22 @@
         }
       }
     },
+    "Destination address removed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Destination address removed"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已移除目标地址"
+          }
+        }
+      }
+    },
     "Disable proxy" : {
       "localizations" : {
         "en" : {
@@ -4307,6 +4357,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Durable Object"
+          }
+        }
+      }
+    },
+    "Early Hints" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Early Hints"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Early Hints"
           }
         }
       }
@@ -4705,6 +4772,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已复制 IP 地址"
+          }
+        }
+      }
+    },
+    "IPv6 Compatibility" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv6 Compatibility"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IPv6 兼容性"
           }
         }
       }
@@ -5529,6 +5613,22 @@
         }
       }
     },
+    "Remove %@? Rules forwarding to this address will stop working." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %@? Rules forwarding to this address will stop working."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要移除 %@ 吗？转发到此地址的规则将停止生效。"
+          }
+        }
+      }
+    },
     "Remove Cron Trigger %@ from %@?" : {
       "localizations" : {
         "en" : {
@@ -5654,6 +5754,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要触控 ID"
+          }
+        }
+      }
+    },
+    "Resend verification email" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Resend verification email"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新发送验证邮件"
           }
         }
       }
@@ -12807,17 +12924,6 @@
         }
       }
     },
-    "Removing a destination address isn't available in Dash. Use the Cloudflare dashboard." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dash 暂不支持删除收件地址，请前往 Cloudflare 控制台操作。"
-          }
-        }
-      }
-    },
     "Rename account" : {
       "localizations" : {
         "zh-Hans" : {
@@ -12996,6 +13102,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "名称"
+          }
+        }
+      }
+    },
+    "TLS 1.3" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TLS 1.3"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TLS 1.3"
           }
         }
       }
@@ -15917,6 +16040,23 @@
         }
       }
     },
+    "Verify demo address" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify demo address"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "验证演示地址"
+          }
+        }
+      }
+    },
     "Version" : {
       "comment" : "A label for the app's version.",
       "extractionState" : "manual",
@@ -16124,6 +16264,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "网站流量"
+          }
+        }
+      }
+    },
+    "WebSockets" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebSockets"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebSockets"
           }
         }
       }

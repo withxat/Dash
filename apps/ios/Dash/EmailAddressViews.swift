@@ -23,6 +23,10 @@ struct EmailDestinationAddressesView: View {
   @State private var error: String?
   @State private var selected: EmailDestinationAddress?
   @State private var addsAddress = false
+  @State private var deletePhase: DashActionPhase = .idle
+  @State private var deleteError: String?
+  @State private var resendPhase: DashActionPhase = .idle
+  @State private var resendError: String?
   @State private var loadedContext: AccountRequestContext?
 
   private var unverified: [EmailDestinationAddress] {
@@ -53,9 +57,6 @@ struct EmailDestinationAddressesView: View {
         }
       }
       addressesSection(mode: mode)
-      if !mode.isPlaceholder {
-        removalNote
-      }
     }
     .detailHeader(
       icon: .solar(SolarAsset.Content.user),
@@ -64,11 +65,17 @@ struct EmailDestinationAddressesView: View {
     )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
+    .onChange(of: selected?.id) { _, _ in
+      deletePhase = .idle
+      deleteError = nil
+      resendPhase = .idle
+      resendError = nil
+    }
     .dashTray(
       item: $selected,
       title: { $0.email },
       content: { address in
-        DashDetailTray(fields: Self.detailFields(for: address))
+        addressDetailTray(address)
       }
     )
     .dashTray(isPresented: $addsAddress, title: "Add a destination address") {
@@ -127,21 +134,114 @@ struct EmailDestinationAddressesView: View {
     }
   }
 
-  /// Deliberate omission, stated rather than hidden — the same shape zone
-  /// settings uses for domain removal.
-  private var removalNote: some View {
-    DashCard {
-      Text(
-        DashL10n.string(
-          "Removing a destination address isn't available in Dash. Use the Cloudflare dashboard."
-        )
-      )
-      .dashTextStyle(.footnote)
-      .foregroundStyle(DashTheme.subtle)
-      .fixedSize(horizontal: false, vertical: true)
-      .frame(maxWidth: .infinity, alignment: .leading)
+  @ViewBuilder
+  private func addressDetailTray(_ address: EmailDestinationAddress) -> some View {
+    DashDetailTray(
+      fields: Self.detailFields(for: address),
+      deleteMessage: featureAllowsWrites
+        ? DashL10n.string(
+          "Remove \(address.email)? Rules forwarding to this address will stop working.")
+        : nil,
+      deletePhase: deletePhase,
+      onDeleteSuccessPresentationCompleted: {
+        deletePhase = .idle
+        selected = nil
+      },
+      deleteError: deleteError,
+      onDelete: featureAllowsWrites ? { Task { await deleteAddress(address) } } : nil,
+      accessory: {
+        if !address.isVerified, featureAllowsWrites {
+          VStack(spacing: 10) {
+            if let resendError {
+              DashNotice(kind: .error, message: resendError)
+            }
+            DashActionButton(
+              title: model.isDemoSession
+                ? "Verify demo address" : "Resend verification email",
+              phase: resendPhase,
+              onSuccessPresentationCompleted: {
+                resendPhase = .idle
+                if model.isDemoSession {
+                  selected = nil
+                }
+              }
+            ) {
+              Task { await resendVerification(for: address) }
+            }
+            .disabled(deletePhase.isActive)
+          }
+        }
+      }
+    )
+  }
+
+  private func resendVerification(for address: EmailDestinationAddress) async {
+    guard !resendPhase.isActive, !deletePhase.isActive,
+      let context = model.accountRequestContext
+    else { return }
+    guard model.hasScopes(emailAddressWriteScopes) else {
+      model.requestAccess(to: emailAddressWriteScopes)
+      return
     }
-    .dashSectionBoundary()
+    resendPhase = .loading
+    resendError = nil
+    deleteError = nil
+    do {
+      _ = try await model.client.createEmailDestinationAddress(
+        accountID: context.accountID, email: address.email)
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        resendPhase = .idle
+        return
+      }
+      model.featureCache.remove(FeatureCacheKey.emailAddresses(context.accountID))
+      model.toasts.success(
+        model.isDemoSession
+          ? DashL10n.string("Address verified in the demo. No email was sent.")
+          : DashL10n.string("Cloudflare sent a verification email to \(address.email)"))
+      await load(force: true)
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        resendPhase = .idle
+        return
+      }
+      resendPhase = .succeeded
+    } catch {
+      resendPhase = .idle
+      guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+        return
+      }
+      resendError = error.dashActionableMessage
+    }
+  }
+
+  private func deleteAddress(_ address: EmailDestinationAddress) async {
+    guard !deletePhase.isActive, !resendPhase.isActive,
+      let context = model.accountRequestContext
+    else { return }
+    guard model.hasScopes(emailAddressWriteScopes) else {
+      model.requestAccess(to: emailAddressWriteScopes)
+      return
+    }
+    deletePhase = .loading
+    deleteError = nil
+    resendError = nil
+    do {
+      try await model.client.deleteEmailDestinationAddress(
+        accountID: context.accountID, addressID: address.id)
+      guard model.isCurrentAccount(context), !Task.isCancelled else {
+        deletePhase = .idle
+        return
+      }
+      addresses.removeAll { $0.id == address.id }
+      model.featureCache.set(FeatureCacheKey.emailAddresses(context.accountID), addresses)
+      model.toasts.success(DashL10n.string("Destination address removed"))
+      deletePhase = .succeeded
+    } catch {
+      deletePhase = .idle
+      guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+        return
+      }
+      deleteError = error.dashActionableMessage
+    }
   }
 
   // MARK: Fields
