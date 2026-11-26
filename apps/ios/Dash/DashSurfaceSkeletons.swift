@@ -157,6 +157,83 @@ private func dashSkeletonPulseFactor(at date: Date) -> Double {
     + (1 - DashSkeletonStyle.pulseFloor) * wave
 }
 
+/// Neutral domain-card stand-in for Domains and Email Routing grids and detail
+/// hero seats. Matches `DomainCardFace` geometry without flashing random
+/// pigmented colors that clash with the arriving domain cards.
+struct DomainCardPlaceholder: View {
+  var aspectRatio: CGFloat = DomainCardFace.gridAspectRatio
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Circle()
+        .dashSkeletonFill(DashSkeletonStyle.strong)
+        .frame(width: 28, height: 28)
+      Spacer(minLength: 12)
+      VStack(alignment: .leading, spacing: 6) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.strong)
+          .frame(height: 14)
+          .frame(maxWidth: 112)
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.soft)
+          .frame(height: 11)
+          .frame(maxWidth: 56)
+      }
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(DashTheme.Spacing.card)
+    .background(
+      DashTheme.homeCardSurface,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+        .stroke(DashTheme.separator, lineWidth: 0.5)
+    }
+    .aspectRatio(aspectRatio, contentMode: .fit)
+    .accessibilityHidden(true)
+  }
+}
+
+/// Neutral full-width resource-card stand-in for Workers and Pages catalogs
+/// and detail landing seats.
+struct FeatureResourceCardPlaceholder: View {
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(alignment: .top, spacing: DashTheme.Spacing.compact) {
+        Circle()
+          .dashSkeletonFill(DashSkeletonStyle.strong)
+          .frame(width: 22, height: 22)
+        Spacer(minLength: 0)
+        Capsule(style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.soft)
+          .frame(width: 56, height: 14)
+      }
+      VStack(alignment: .leading, spacing: 6) {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.strong)
+          .frame(height: 14)
+          .frame(maxWidth: 164)
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+          .dashSkeletonFill(DashSkeletonStyle.soft)
+          .frame(height: 11)
+          .frame(maxWidth: 210)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .topLeading)
+    .padding(DashTheme.Spacing.card)
+    .background(
+      DashTheme.homeCardSurface,
+      in: RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+    )
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.button, style: .continuous)
+        .stroke(DashTheme.separator, lineWidth: 0.5)
+    }
+    .accessibilityHidden(true)
+  }
+}
+
 /// One catalog row stand-in for the mode-aware handoff — same 36pt tone plate +
 /// title/subtitle column as `DashListRow` / `CatalogFeatureIcon.list` /
 /// Resources and detail Actions rows.

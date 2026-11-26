@@ -251,8 +251,8 @@ private struct DashPageActionsModifier: ViewModifier {
         }
       )
       // Keep the same page-owned descriptor usable in isolated previews and
-      // system-presented leaf contexts. Production routes consume the
-      // preference above in Dash's custom chrome.
+      // system-presented leaf contexts as well as native NavigationStack routes.
+      .navigationBarBackButtonHidden(!leading.isEmpty)
       .toolbar {
         if !leading.isEmpty {
           ToolbarItem(placement: .topBarLeading) {
@@ -333,6 +333,8 @@ private struct DetailHeaderModifier: ViewModifier {
               .foregroundStyle(DashTheme.strong)
               .lineLimit(1)
               .truncationMode(.tail)
+              .accessibilityAddTraits(.isHeader)
+              .accessibilityIdentifier("dash.navigation.title")
           }
           .frame(maxWidth: Self.maximumPrincipalWidth)
         }

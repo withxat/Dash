@@ -100,28 +100,24 @@ struct MainTabView: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(DashWorkspaceGlowPreset.storageKey) private var workspaceGlowRaw =
     DashWorkspaceGlowPreset.defaultPreset.rawValue
-  @Namespace private var workspaceHeaderGlass
   @State private var selection: AppTab = .home
   @State private var outgoingSelection: AppTab?
   @State private var tabTransitionDirection = DashTabTransitionDirection.stationary
   @State private var tabTransitionProgress: CGFloat = 0
   @State private var tabTransitionGeneration: UInt64 = 0
-  // Pages in the workspace publish their header slots instead of painting
-  // them; `sharedHeaderOverlay` is the ONE bar that draws them.
-  @State private var homeNavigator = DestinationNavigator(chromeHosting: .workspace)
-  @State private var featuresNavigator = DestinationNavigator(chromeHosting: .workspace)
-  @State private var watchtowerNavigator = DestinationNavigator(chromeHosting: .workspace)
+  @State private var homeNavigator = DestinationNavigator()
+  @State private var featuresNavigator = DestinationNavigator()
+  @State private var watchtowerNavigator = DestinationNavigator()
   @State private var navigationCoordinator = DashNavigationCoordinator()
-  @State private var navigationAnchorRegistry = DashNavigationAnchorRegistry()
   @State private var workspacePresentationState = DashWorkspacePresentationState()
   @State private var watchtowerCustomization = WatchtowerChartCustomizationState()
-  /// The shared header owns Watchtower's editor buttons, while the screen still
+  /// The root toolbar owns Watchtower's editor buttons, while the screen still
   /// owns the staged editor-exit choreography. Bumping these tokens asks the
   /// mounted Watchtower root to run those existing paths.
   @State private var watchtowerCancelRequest = 0
   @State private var watchtowerCommitRequest = 0
   /// Add stays disabled until Watchtower has mounted the drag bridge after the
-  /// editor morph; moving the menu into shared chrome must retain that gate.
+  /// editor morph.
   @State private var watchtowerEditorInteractionsReady = false
   /// Each cached root retains its own scroll snapshot. MainTabView passes only
   /// the references; the ONE wash view reads and blends old/target distances so
@@ -138,16 +134,9 @@ struct MainTabView: View {
   /// In-flight lookup turning a `dash.cloudflare.com/<account>/<domain>` link
   /// into a zone id. Cancelled on a newer route or when the view disappears.
   @State private var zoneRouteResolutionTask: Task<Void, Never>?
-  @State private var pagePresentationStates: [AppTab: DashPagePresentationState] = [:]
-  /// Dock / header displacement mirrors — written only inside an explicit
-  /// `withAnimation`. The live `hidesDock` / `headerIsDisplaced` values arrive
-  /// through preference relays and UIKit presentation reports that carry no
-  /// usable transaction, so the mirror owns the transition's exact pace. The
-  /// Tray's animation-disabled transaction is scoped to `fullScreenCover` and
-  /// must never spread across this tree. Same write-site rule as
-  /// `DashWorkspaceHeaderBar.displayed` and the toast dismiss write.
+  /// Dock displacement mirror — written only inside an explicit `withAnimation`
+  /// so preference relays and unrelated transactions cannot replace its pace.
   @State private var displayedHidesDock: Bool?
-  @State private var displayedHeaderIsDisplaced: Bool?
 
   init() {}
 
@@ -170,7 +159,7 @@ struct MainTabView: View {
       awaitingAccountConfirmation: accountRouteConfirmation != nil,
       awaitingAccountSwitch: routeAfterAccountSwitch != nil,
       tabTransitionActive: outgoingSelection != nil,
-      pageTransitionActive: activePagePresentationState.isTransitioning)
+      pageTransitionActive: false)
   }
 
   private var workspaceGlowPreset: DashWorkspaceGlowPreset {
@@ -188,50 +177,13 @@ struct MainTabView: View {
   private var hidesDock: Bool {
     shouldHideTabBar(
       overlays: overlayTrays,
-      navigationDepth: activeNavigationDepth,
-      pageTransitionActive: activePagePresentationState.isTransitioning
+      navigationDepth: activeNavigator.depth
     ) || outgoingPageOccupiesWorkspace || watchtowerCustomization.isEditing
   }
 
-  private var headerIsDisplaced: Bool {
-    shouldDisplaceWorkspaceHeader(overlays: overlayTrays)
-  }
-
-  /// The floated Watchtower inbox is a root occupant of the shared trailing
-  /// slot; a pushed page takes that slot over on its own.
-  private var showsWatchtowerInboxButton: Bool {
-    selection == .watchtower && model.activeAccountID != nil
-  }
-
-  /// Watchtower editing stays on the root canvas, and its actions are just
-  /// another pair of occupants for the same two slots.
-  private var showsWatchtowerEditorHeader: Bool {
-    selection == .watchtower && watchtowerCustomization.isEditing
-  }
-
-  private var activeNavigationDepth: Int {
-    activePagePresentationState.resolvedDepth(
-      navigatorDepth: activeNavigator.depth)
-  }
-
-  private var activePagePresentationState: DashPagePresentationState {
-    pagePresentationState(for: selection)
-  }
-
-  /// External routes can replace a tab while its pushed page is still leaving.
-  /// Keep root chrome displaced until that outgoing compositor has yielded the
-  /// physical workspace; a normal root-to-root tab flight leaves it visible.
   private var outgoingPageOccupiesWorkspace: Bool {
     guard let outgoingSelection else { return false }
-    return pagePresentationState(for: outgoingSelection).occupiesWorkspace(
-      navigatorDepth: navigator(for: outgoingSelection).depth)
-  }
-
-  private func pagePresentationState(for tab: AppTab) -> DashPagePresentationState {
-    pagePresentationStates[tab]
-      ?? DashPagePresentationState(
-        settledDepth: navigator(for: tab).depth,
-        isTransitioning: false)
+    return navigator(for: outgoingSelection).depth > 0
   }
 
   private var activeNavigator: DestinationNavigator {
@@ -405,7 +357,6 @@ struct MainTabView: View {
   var body: some View {
     tabContainer
       .environment(\.dashNavigationCoordinator, navigationCoordinator)
-      .environment(\.dashNavigationAnchorRegistry, navigationAnchorRegistry)
       .environment(\.dashWorkspacePresentationState, workspacePresentationState)
       .onPreferenceChange(TrayPresentedPreferenceKey.self) { nestedTray = $0 }
       .onChange(of: scenePhase) { _, phase in
@@ -526,8 +477,6 @@ struct MainTabView: View {
     ZStack(alignment: .bottom) {
       tabFlow
 
-      sharedHeaderOverlay
-
       // Trays and pushed routes displace the bar; tab roots keep it mounted.
       // Mount off the mirrored flag so the transition rides the write-site
       // `withAnimation` below — not a modifier-attached `.animation`.
@@ -586,16 +535,6 @@ struct MainTabView: View {
         displayedHidesDock = next
       }
     }
-    .onChange(of: headerIsDisplaced, initial: true) { _, next in
-      guard let shown = displayedHeaderIsDisplaced else {
-        displayedHeaderIsDisplaced = next
-        return
-      }
-      guard shown != next else { return }
-      withAnimation(tabBarVisibilityAnimation) {
-        displayedHeaderIsDisplaced = next
-      }
-    }
     // No toast host here either: the canvas copy and the tray cover's copy
     // were the two that doubled. `dashToastLayer` owns the only one.
   }
@@ -613,15 +552,6 @@ struct MainTabView: View {
       homeWorkspaceWashScroll: homeWashScroll,
       featuresWorkspaceWashScroll: featuresWashScroll,
       watchtowerWorkspaceWashScroll: watchtowerWashScroll,
-      onHomePresentationStateChange: { state in
-        pagePresentationStates[.home] = state
-      },
-      onFeaturesPresentationStateChange: { state in
-        pagePresentationStates[.features] = state
-      },
-      onWatchtowerPresentationStateChange: { state in
-        pagePresentationStates[.watchtower] = state
-      },
       onTransitionCompleted: { source, target, generation in
         guard
           tabTransitionGeneration == generation,
@@ -632,9 +562,17 @@ struct MainTabView: View {
       },
       home: {
         HomeView()
+          .dashRootNavigationToolbar(
+            onPrepareNavigation: synchronizeNavigatorAccountScopes,
+            onProfileLongPress: openProfileAccountSwitcher
+          )
       },
       features: {
         FeatureCatalogView()
+          .dashRootNavigationToolbar(
+            onPrepareNavigation: synchronizeNavigatorAccountScopes,
+            onProfileLongPress: openProfileAccountSwitcher
+          )
       },
       watchtower: {
         WatchtowerView(
@@ -643,79 +581,30 @@ struct MainTabView: View {
           commitRequest: $watchtowerCommitRequest,
           editorInteractionsReady: $watchtowerEditorInteractionsReady
         )
+        .dashRootNavigationToolbar(
+          isWatchtowerTab: true,
+          watchtowerCustomization: watchtowerCustomization,
+          editorInteractionsReady: $watchtowerEditorInteractionsReady,
+          onPrepareNavigation: synchronizeNavigatorAccountScopes,
+          onProfileLongPress: openProfileAccountSwitcher,
+          onInboxLongPress: { showsIgnoreAllAlerts = true },
+          onCancelEditing: { watchtowerCancelRequest &+= 1 },
+          onCommitEditing: { watchtowerCommitRequest &+= 1 }
+        )
       }
     )
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .ignoresSafeArea()
-    // Navigation depth belongs to the UIKit page stack. Keep those mutations
-    // out of the SwiftUI tab-flow transaction.
-    .animation(nil, value: homeNavigator.depth)
-    .animation(nil, value: featuresNavigator.depth)
-    .animation(nil, value: watchtowerNavigator.depth)
   }
 
-  /// ONE header layer above the tab flow — leading control, title, trailing
-  /// controls, for every page in the workspace. Roots seat the avatar and the
-  /// Watchtower inbox in the same slots a pushed page fills with Back, its
-  /// title and its actions; chart editing hands those slots to Cancel +
-  /// Add/Done. The bar itself never moves, and `MainTabView` deliberately does
-  /// not read page chrome here — `DashWorkspaceHeaderBar` is the store's only
-  /// reader, so a page's action change cannot refresh a cached page host.
-  private var sharedHeaderOverlay: some View {
-    // Removed, not faded to zero: Liquid Glass is composited outside a normal
-    // opacity group on iOS 26, so an opacity-zero control can still paint over
-    // the presentation that displaced it. The mount rides the mirrored
-    // `displayedHeaderIsDisplaced` write so the displacement keeps the Tray's
-    // exact pace instead of inheriting an unrelated ambient animation.
-    ZStack {
-      if !(displayedHeaderIsDisplaced ?? headerIsDisplaced) {
-        headerBar
-      }
-    }
-    // The bar stays LIVE through page transitions on purpose: tapping Close
-    // or Back mid-push must reverse the in-flight animator. Ghost occupants
-    // cannot steal those taps — `dashSeatHandoff` mutes a control on its way
-    // out, and the arriving occupant stacks above it. Tab hand-offs still
-    // gate (slots re-seat to another navigator). Displacement also gates:
-    // the whole bar's removal transition is plain opacity, and Liquid Glass
-    // can keep an interactive plate alive after the SwiftUI branch is gone.
-    .allowsHitTesting(
-      outgoingSelection == nil
-        && !(displayedHeaderIsDisplaced ?? headerIsDisplaced)
-    )
-    // Accessibility follows the live flag immediately; the visual mount rides
-    // `displayedHeaderIsDisplaced` so VoiceOver never lands on a fading ghost.
-    .accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)
+  private func openProfileAccountSwitcher() {
+    profileTrayPath = []
+    showsProfile = true
   }
 
-  private var headerBar: some View {
-    DashWorkspaceHeaderBar(
-      navigator: activeNavigator,
-      glassNamespace: workspaceHeaderGlass,
-      showsProfileControl: true,
-      showsWatchtowerInbox: showsWatchtowerInboxButton,
-      watchtowerUnreadCount: model.watchtowerUnreadAlertCount ?? 0,
-      watchtowerCustomization: watchtowerCustomization,
-      isEditingWatchtower: showsWatchtowerEditorHeader,
-      editorInteractionsReady: watchtowerEditorInteractionsReady,
-      onPrepareNavigation: synchronizeNavigatorAccountScopes,
-      onProfileLongPress: {
-        // The path used to live inside the freshly mounted tray body. Reset
-        // before presentation so an exit never swaps its content back to
-        // Accounts while the card is still animating away.
-        profileTrayPath = []
-        showsProfile = true
-      },
-      onInboxLongPress: { showsIgnoreAllAlerts = true },
-      onCancelEditing: { watchtowerCancelRequest &+= 1 },
-      onCommitEditing: { watchtowerCommitRequest &+= 1 }
-    )
-    .transition(.opacity)
-  }
-
-  /// Pace for dock / header displacement. Applied at the mirror write site so
-  /// preference relays and unrelated parent transactions cannot replace its
-  /// timing. First paint seeds the mirrors without this spring.
+  /// Pace for dock displacement. Applied at the mirror write site so preference
+  /// relays and unrelated parent transactions cannot replace its timing. First
+  /// paint seeds the mirror without this spring.
   private var tabBarVisibilityAnimation: Animation {
     reduceMotion
       ? .easeOut(duration: DashTheme.Motion.Page.reducedDuration)

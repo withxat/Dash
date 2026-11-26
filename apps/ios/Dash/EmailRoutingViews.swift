@@ -102,25 +102,21 @@ struct EmailRoutingDomainsView: View {
 
   @ViewBuilder
   private func emailRoutingDomainGrid(mode: DashBodyMode) -> some View {
-    LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+    ZStack(alignment: .top) {
       if mode.isPlaceholder {
-        ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { index in
-          DomainCardFace(
-            name: "domain.example",
-            status: "Ready",
-            seed: "dash.email-routing.placeholder.\(index)",
-            fillHex: DomainCardColors.defaultPalette[
-              index % DomainCardColors.defaultPalette.count],
-            textureAsset: SolarAsset.Content.letter
-          )
-          .dashBodyPlaceholder(true)
-          .dashBodySlot(reduceMotion: reduceMotion)
+        LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+          ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { _ in
+            DomainCardPlaceholder()
+          }
         }
+        .transition(.opacity)
       } else {
-        ForEach(filteredDisplayedZones, id: \.id) { zone in
-          emailRoutingDomainCard(zone)
-            .dashBodySlot(reduceMotion: reduceMotion)
+        LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
+          ForEach(filteredDisplayedZones, id: \.id) { zone in
+            emailRoutingDomainCard(zone)
+          }
         }
+        .transition(.opacity)
       }
     }
   }
@@ -439,13 +435,9 @@ struct EmailRoutingView: View {
   static let rulePageSize = 50
 
   @Environment(AppModel.self) private var model
-  @Environment(\.destinationNavigator) private var navigator
-  @Environment(\.dashNavigationEntryID) private var navigationEntryID
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.layoutDirection) private var layoutDirection
-  @Environment(\.dashPageTransitionActive) private var pageTransitionActive
   @AppStorage(DomainCardColors.key) private var domainCardColorData = ""
   let zoneID: String
 
@@ -490,17 +482,8 @@ struct EmailRoutingView: View {
       title: "Email routing",
       tint: FeatureVisualIdentity.heroColor(for: .emailRouting)
     )
-    .dashPageActions(
-      leading: shouldUseFlowReturn ? [flowBackAction] : []
-    )
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
-    .task(id: shouldUseFlowReturn) {
-      guard let navigationEntryID else { return }
-      navigator?.setCardSourceDismissalUsesFlow(
-        shouldUseFlowReturn,
-        entryID: navigationEntryID)
-    }
     .dashTray(
       item: $enableTarget,
       title: { $0.title },
@@ -565,29 +548,6 @@ struct EmailRoutingView: View {
   /// off again.
   private static func isNotSetUp(_ settings: EmailRoutingSettings) -> Bool {
     EmailRoutingStatusMapping.isNotSetUp(settings)
-  }
-
-  private var isConfiguredEmailCardRemoved: Bool {
-    guard let settings else { return false }
-    return Self.isNotSetUp(settings)
-  }
-
-  private var shouldUseFlowReturn: Bool {
-    isConfiguredEmailCardRemoved && !pageTransitionActive && navigationEntryID != nil
-  }
-
-  private var flowBackAction: DashPageActionDescriptor {
-    DashPageActionDescriptor.icon(
-      id: "email-routing-flow-back",
-      asset: DashPageChromeAssetRules.leadingAsset(
-        for: .back,
-        rightToLeft: layoutDirection == .rightToLeft),
-      accessibilityLabel: DashL10n.string("Back"),
-      accessibilityIdentifier: "dash.navigation.back"
-    ) {
-      guard let navigationEntryID else { return }
-      navigator?.popUsingFlow(entryID: navigationEntryID)
-    }
   }
 
   @ViewBuilder
@@ -672,15 +632,9 @@ struct EmailRoutingView: View {
         )
         .accessibilityLabel(emailRoutingCardAccessibilityLabel(cardSettings))
       } else {
-        DomainCardFace(
-          name: "domain.example",
-          status: "Ready",
-          seed: "dash.placeholder.email-routing",
-          fillHex: DomainCardColors.defaultPalette[0],
-          textureAsset: SolarAsset.Content.letter,
+        DomainCardPlaceholder(
           aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
         )
-        .dashBodyPlaceholder(true)
       }
     }
     .dashNavigationLanding(.emailRoutingHero(zoneID))

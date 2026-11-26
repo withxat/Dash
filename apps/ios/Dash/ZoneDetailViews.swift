@@ -510,14 +510,9 @@ struct ZoneDetailView: View {
   }
 
   private var zoneHeroPlaceholder: some View {
-    DomainCardFace(
-      name: "domain.example",
-      status: "Active",
-      seed: "dash.placeholder.zone",
-      fillHex: DomainCardColors.defaultPalette[0],
+    DomainCardPlaceholder(
       aspectRatio: DomainCardFace.detailAspectRatio(for: dynamicTypeSize)
     )
-    .dashBodyPlaceholder(true)
   }
 
   /// Zone and account IDs for GraphQL / API probes. Tap a row to copy — same

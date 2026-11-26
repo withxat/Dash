@@ -376,6 +376,21 @@ final class DestinationNavigator {
     replaceEntries(Array(entries.dropLast()), reason: .back)
   }
 
+  /// Synchronizes entries when SwiftUI's native `NavigationStack` pops (via
+  /// the Back button or interactive edge swipe) or updates its path binding.
+  func syncFromNavigationStack(_ nextEntries: [DashNavigationEntry]) {
+    guard nextEntries != entries else { return }
+    let reason: DashNavigationMutationReason =
+      if nextEntries.isEmpty {
+        .popToRoot
+      } else if nextEntries.count < entries.count {
+        .back
+      } else {
+        .push
+      }
+    replaceEntries(nextEntries, reason: reason)
+  }
+
   /// Pop one card-led page as a plain flow dismissal. The leaving entry keeps
   /// its route/account ownership but drops the hero before the mutation is
   /// recorded, so the shared header and UIKit compositor derive the same role
@@ -887,172 +902,27 @@ extension EnvironmentValues {
 }
 
 extension View {
-  /// Registers the frame for this exact source occurrence. A semantic resource
-  /// ID alone is insufficient when the same resource is visible in two places.
-  /// `semanticID` states what the occurrence currently SHOWS — a positional
-  /// list slot keeps its instance UUID across a re-sort while its resource
-  /// changes, and a return morph must be able to notice that the meaning moved.
+  /// Kept as a lightweight pass-through now that page transitions run on
+  /// SwiftUI's native `NavigationStack`.
   func dashNavigationAnchor(
-    instanceID: UUID,
-    semanticID: DashNavigationSemanticID? = nil,
-    landing: DashNavigationSemanticID? = nil
+    instanceID _: UUID,
+    semanticID _: DashNavigationSemanticID? = nil,
+    landing _: DashNavigationSemanticID? = nil
   ) -> some View {
-    modifier(
-      DashNavigationAnchorModifier(
-        instanceID: instanceID, semanticID: semanticID, landing: landing))
+    self
   }
 
-  /// Publishes this view as a destination-page landing seat: the spot a card
-  /// morph grows its source onto. The claim mechanism hides the live view
-  /// while the flight proxy owns its identity, exactly like a navigation
-  /// source. Domains, Email Routing, Workers, and Pages detail cards each
-  /// publish one for their card-led catalog source.
-  func dashNavigationLanding(_ semanticID: DashNavigationSemanticID) -> some View {
-    modifier(DashNavigationLandingModifier(semanticID: semanticID))
+  /// Kept as a lightweight pass-through now that page transitions run on
+  /// SwiftUI's native `NavigationStack`.
+  func dashNavigationLanding(_: DashNavigationSemanticID) -> some View {
+    self
   }
 }
 
-private struct DashNavigationLandingModifier: ViewModifier {
-  let semanticID: DashNavigationSemanticID
-  @State private var instanceID = UUID()
-
-  func body(content: Content) -> some View {
-    content.dashNavigationAnchor(instanceID: instanceID, landing: semanticID)
-  }
-}
-
-/// One anchor's "the compositor owns me right now" flag. Per occurrence on
-/// purpose: an anchor's body observes ONLY its own box, so claiming one source
-/// cannot invalidate every other anchor on screen.
+/// Kept for unit tests verifying claim isolation; native `NavigationStack`
+/// does not mount per-row anchor probes.
 @MainActor
 @Observable
 final class DashNavigationAnchorClaim {
   var isClaimed = false
-}
-
-private struct DashNavigationAnchorModifier: ViewModifier {
-  let instanceID: UUID
-  var semanticID: DashNavigationSemanticID?
-  var landing: DashNavigationSemanticID?
-  @Environment(\.dashNavigationAnchorRegistry) private var registry
-  @State private var claim = DashNavigationAnchorClaim()
-
-  func body(content: Content) -> some View {
-    let isClaimed = claim.isClaimed
-    content
-      // The compositor owns this exact occurrence while its proxy is active.
-      // Keep the layout/probe alive, but never render or activate a duplicate.
-      .opacity(isClaimed ? 0 : 1)
-      .allowsHitTesting(!isClaimed)
-      .accessibilityHidden(isClaimed)
-      .animation(nil, value: isClaimed)
-      .background {
-        GeometryReader { proxy in
-          let frame = proxy.frame(in: .global)
-          Color.clear
-            .onAppear {
-              registry?.setHostedFrame(frame, for: instanceID)
-              registry?.registerClaim(claim, for: instanceID)
-            }
-            .onChange(of: frame) { _, nextFrame in
-              registry?.setHostedFrame(nextFrame, for: instanceID)
-            }
-            .onDisappear {
-              registry?.removeHostedFrame(for: instanceID)
-              registry?.unregisterClaim(claim, for: instanceID)
-            }
-            .overlay {
-              DashNavigationAnchorProbe(
-                instanceID: instanceID,
-                semanticID: semanticID,
-                landing: landing,
-                registry: registry)
-            }
-        }
-      }
-  }
-}
-
-private struct DashNavigationAnchorProbe: UIViewRepresentable {
-  let instanceID: UUID
-  var semanticID: DashNavigationSemanticID?
-  var landing: DashNavigationSemanticID?
-  let registry: DashNavigationAnchorRegistry?
-
-  func makeUIView(context: Context) -> DashNavigationAnchorProbeView {
-    let view = DashNavigationAnchorProbeView()
-    view.configure(
-      instanceID: instanceID, semanticID: semanticID, landing: landing,
-      registry: registry)
-    return view
-  }
-
-  func updateUIView(_ uiView: DashNavigationAnchorProbeView, context: Context) {
-    uiView.configure(
-      instanceID: instanceID, semanticID: semanticID, landing: landing,
-      registry: registry)
-  }
-
-  static func dismantleUIView(_ uiView: DashNavigationAnchorProbeView, coordinator: ()) {
-    uiView.tearDown()
-  }
-}
-
-private final class DashNavigationAnchorProbeView: UIView {
-  private var instanceID: UUID?
-  private var semanticID: DashNavigationSemanticID?
-  private var landing: DashNavigationSemanticID?
-  private weak var registry: DashNavigationAnchorRegistry?
-
-  override init(frame: CGRect) {
-    super.init(frame: frame)
-    backgroundColor = .clear
-    isOpaque = false
-    isUserInteractionEnabled = false
-    accessibilityElementsHidden = true
-  }
-
-  @available(*, unavailable)
-  required init?(coder: NSCoder) {
-    fatalError("init(coder:) has not been implemented")
-  }
-
-  func configure(
-    instanceID: UUID,
-    semanticID: DashNavigationSemanticID?,
-    landing: DashNavigationSemanticID?,
-    registry: DashNavigationAnchorRegistry?
-  ) {
-    if self.instanceID != instanceID || self.semanticID != semanticID
-      || self.landing != landing || self.registry !== registry
-    {
-      tearDown()
-      self.instanceID = instanceID
-      self.semanticID = semanticID
-      self.landing = landing
-      self.registry = registry
-    }
-    // Probe registration runs inside UIKit layout, so a landing seat is
-    // resolvable synchronously after the arriving page's first layoutIfNeeded —
-    // before its transition builds a proxy. The same pass re-registers a slot
-    // whose resource changed under it, which is what keeps the semantic map
-    // truthful across a covered list's re-sort.
-    registry?.registerSourceView(self, semanticID: semanticID, for: instanceID)
-    if let landing {
-      registry?.registerLanding(instanceID: instanceID, for: landing)
-    }
-  }
-
-  func tearDown() {
-    if let instanceID {
-      registry?.unregisterSourceView(self, for: instanceID)
-      if let landing {
-        registry?.unregisterLanding(instanceID: instanceID, for: landing)
-      }
-    }
-    instanceID = nil
-    semanticID = nil
-    landing = nil
-    registry = nil
-  }
 }

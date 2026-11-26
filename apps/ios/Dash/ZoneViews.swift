@@ -194,32 +194,31 @@ struct ZonesView: View {
     }
   }
 
-  /// Same 2-up (or 1-up a11y) grid for cold and live — surplus placeholder
-  /// cards recede when fewer domains land. Live cards keep zone IDs so the
-  /// group-by-status toggle can morph them between the flat grid and sections.
+  /// Same 2-up (or 1-up a11y) grid for cold and live — placeholder and live
+  /// share one top-aligned ZStack so the neutral skeleton fades out cleanly in
+  /// place without pushing the real grid vertically.
   @ViewBuilder
   private func domainCardGrid(mode: DashBodyMode) -> some View {
-    if mode.isPlaceholder {
-      placeholderDomainGrid
-    } else if displayedGroupsByStatus ?? groupsByStatus {
-      groupedDomainGrid(filteredZones)
-    } else {
-      flatDomainGrid(filteredZones)
+    ZStack(alignment: .top) {
+      if mode.isPlaceholder {
+        placeholderDomainGrid
+          .transition(.opacity)
+      } else if displayedGroupsByStatus ?? groupsByStatus {
+        VStack(alignment: .leading, spacing: 0) {
+          groupedDomainGrid(filteredZones)
+        }
+        .transition(.opacity)
+      } else {
+        flatDomainGrid(filteredZones)
+          .transition(.opacity)
+      }
     }
   }
 
   private var placeholderDomainGrid: some View {
     LazyVGrid(columns: gridColumns, spacing: DashTheme.Spacing.itemGap) {
-      ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { index in
-        DomainCardFace(
-          name: "domain.example",
-          status: "Active",
-          seed: "dash.placeholder.\(index)",
-          fillHex: DomainCardColors.defaultPalette[
-            index % DomainCardColors.defaultPalette.count]
-        )
-        .dashBodyPlaceholder(true)
-        .dashBodySlot(reduceMotion: reduceMotion)
+      ForEach(0..<DashBodyPlaceholderDepth.domainCards, id: \.self) { _ in
+        DomainCardPlaceholder()
       }
     }
   }
@@ -229,7 +228,6 @@ struct ZonesView: View {
       ForEach(painted, id: \.id) { zone in
         domainCardLink(zone)
           .matchedGeometryEffect(id: zone.id, in: domainGridNamespace)
-          .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
   }
@@ -247,7 +245,6 @@ struct ZonesView: View {
         ForEach(section.zones, id: \.id) { zone in
           domainCardLink(zone)
             .matchedGeometryEffect(id: zone.id, in: domainGridNamespace)
-            .dashBodySlot(reduceMotion: reduceMotion)
         }
       }
     }

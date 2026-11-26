@@ -147,45 +147,20 @@ enum DashBodyListSlotRules {
   }
 }
 
-/// Soft blur stand-in for body-slot removal (same device as tray `.dashMorph`).
-private struct DashBodyBlurModifier: ViewModifier, Animatable {
-  var radius: CGFloat
-
-  nonisolated var animatableData: CGFloat {
-    get { radius }
-    set { radius = newValue }
-  }
-
-  func body(content: Content) -> some View {
-    content.blur(radius: radius)
-  }
-}
-
 /// Slot insert/remove transitions for placeholder ↔ live count deltas.
 enum DashBodyTransition {
-  /// Surplus placeholders recede in place (scale to 0.97 + blur + fade); new
-  /// live slots fade in. No slide — that fought the navigation push and read
-  /// as an upward exit. Isolation-free so `dashModeListRows` can apply it from
-  /// a `@ViewBuilder` free function.
+  /// Plain opacity crossfade for placeholder ↔ live swaps. No blur or scale
+  /// shrink that fights surrounding layout.
   nonisolated static func content(_ reduceMotion: Bool) -> AnyTransition {
-    if reduceMotion { return .opacity }
-    let dissolve = AnyTransition.opacity.combined(
-      with: .modifier(
-        active: DashBodyBlurModifier(radius: 3),
-        identity: DashBodyBlurModifier(radius: 0)))
-    return .asymmetric(
-      insertion: .opacity,
-      removal: dissolve.combined(with: .scale(scale: 0.97))
-    )
+    .opacity
   }
 
-  /// Animation applied when `DashBodyMode` flips cold → live once. Slower than
-  /// `Motion.morph` so the scale/blur/fade on surplus slots can read.
+  /// Crisp ease-out applied once when `DashBodyMode` flips cold → live.
   @MainActor
   static var handoff: Animation {
     UIAccessibility.isReduceMotionEnabled
       ? DashTheme.Motion.reduced
-      : DashTheme.Motion.softLanding(duration: 0.48)
+      : .easeOut(duration: 0.22)
   }
 }
 

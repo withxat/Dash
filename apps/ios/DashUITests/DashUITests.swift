@@ -24,6 +24,14 @@ final class DashUITests: XCTestCase {
     return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
   }
 
+  /// Resolves the native NavigationStack Back button (or custom page-host Back
+  /// when running inside an isolated test harness).
+  static func backButton(in app: XCUIApplication) -> XCUIElement {
+    let custom = app.buttons["dash.navigation.back"].firstMatch
+    if custom.exists { return custom }
+    return app.navigationBars.buttons["Back"].firstMatch
+  }
+
   private func openDNSRecordAndDelete(_ recordID: String, in app: XCUIApplication) {
     let record = app.buttons["dns-record-\(recordID)"]
     XCTAssertTrue(record.waitForExistence(timeout: 5))
@@ -267,7 +275,7 @@ final class DashUITests: XCTestCase {
     zonesFeature.tap()
 
     // Feature detail is owned by Dash's page stack and exposes one stable Back.
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     // Feature detail immerses — the floating tab bar leaves the hierarchy.
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
@@ -288,8 +296,9 @@ final class DashUITests: XCTestCase {
     let zones = app.buttons["feature-zones"]
     XCTAssertTrue(Self.waitForHittable(zones))
     zones.tap()
-    XCTAssertTrue(app.buttons["dash.navigation.back"].waitForExistence(timeout: 5))
-    app.buttons["dash.navigation.back"].tap()
+    let back = Self.backButton(in: app)
+    XCTAssertTrue(back.waitForExistence(timeout: 5))
+    back.tap()
 
     XCTAssertTrue(Self.waitForHittable(zones))
     zones.tap()
@@ -382,7 +391,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(deployments.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let backFromWorker = app.buttons["dash.navigation.back"].firstMatch
+    let backFromWorker = Self.backButton(in: app)
     XCTAssertTrue(backFromWorker.waitForExistence(timeout: 5))
     backFromWorker.tap()
 
@@ -391,7 +400,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(deployments.waitForNonExistence(timeout: 2))
 
     // Back once more from the Workers collection to the Resources root.
-    let backToCatalog = app.buttons["dash.navigation.back"].firstMatch
+    let backToCatalog = Self.backButton(in: app)
     XCTAssertTrue(backToCatalog.waitForExistence(timeout: 5))
     backToCatalog.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
@@ -414,7 +423,7 @@ final class DashUITests: XCTestCase {
     project.tap()
 
     XCTAssertTrue(app.staticTexts["Domains"].waitForExistence(timeout: 5))
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
 
@@ -452,7 +461,7 @@ final class DashUITests: XCTestCase {
 
     project.tap()
     XCTAssertTrue(app.staticTexts["Domains"].waitForExistence(timeout: 5))
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(project.waitForExistence(timeout: 5))
@@ -481,7 +490,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(domainRow.waitForExistence(timeout: 5))
     domainRow.tap()
 
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     let customize = app.buttons["domain-card-customize"]
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     XCTAssertTrue(customize.waitForExistence(timeout: 5))
@@ -753,8 +762,8 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(headerProfile.waitForExistence(timeout: 5))
     headerProfile.tap()
 
-    let close = app.buttons["dash.navigation.close"].firstMatch
-    XCTAssertTrue(close.waitForExistence(timeout: 5))
+    let settingsBack = Self.backButton(in: app)
+    XCTAssertTrue(settingsBack.waitForExistence(timeout: 5))
     let settingsTitle = app.staticTexts["dash.navigation.title"]
     XCTAssertTrue(settingsTitle.waitForExistence(timeout: 5))
     XCTAssertEqual(settingsTitle.label, "Settings")
@@ -763,7 +772,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(profileRow.waitForExistence(timeout: 5))
     profileRow.tap()
 
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     // Info rows combine label and value into one element ("User ID, …").
     func infoRow(_ label: String) -> XCUIElement {
@@ -773,9 +782,6 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(infoRow("User ID").waitForExistence(timeout: 5))
     XCTAssertTrue(infoRow("Registered").waitForExistence(timeout: 5))
 
-    // The custom container retains this exact Profile host while its child is
-    // visible. Returning must restore Profile's live scroll state, not rebuild
-    // a fresh screen at the top.
     let auditLog = app.buttons["profile-audit-log-row"]
     for _ in 0..<6 where !auditLog.isHittable {
       app.swipeUp()
@@ -789,8 +795,8 @@ final class DashUITests: XCTestCase {
     back.tap()
     XCTAssertTrue(Self.waitForHittable(auditLog))
     back.tap()
-    XCTAssertTrue(close.waitForExistence(timeout: 5))
-    close.tap()
+    XCTAssertTrue(settingsBack.waitForExistence(timeout: 5))
+    settingsBack.tap()
     XCTAssertTrue(headerProfile.waitForExistence(timeout: 5))
   }
 
@@ -812,7 +818,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(assetsBucket.waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))
@@ -866,7 +872,7 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(app.staticTexts["Auto-renew"].waitForExistence(timeout: 5))
     XCTAssertTrue(app.buttons["Home"].waitForNonExistence(timeout: 2))
 
-    let back = app.buttons["dash.navigation.back"].firstMatch
+    let back = Self.backButton(in: app)
     XCTAssertTrue(back.waitForExistence(timeout: 5))
     back.tap()
     XCTAssertTrue(app.buttons["domain-card-customize"].waitForExistence(timeout: 5))
@@ -916,12 +922,12 @@ final class DashUITests: XCTestCase {
     XCTAssertTrue(actions.firstMatch.waitForExistence(timeout: 5))
     XCTAssertEqual(actions.count, 1)
 
-    let detailBack = app.buttons["dash.navigation.back"].firstMatch
+    let detailBack = Self.backButton(in: app)
     XCTAssertTrue(detailBack.waitForExistence(timeout: 5))
     detailBack.tap()
     XCTAssertTrue(exampleDomain.waitForExistence(timeout: 5))
 
-    let catalogBack = app.buttons["dash.navigation.back"].firstMatch
+    let catalogBack = Self.backButton(in: app)
     XCTAssertTrue(catalogBack.waitForExistence(timeout: 5))
     catalogBack.tap()
     XCTAssertTrue(app.buttons["Resources"].waitForExistence(timeout: 5))

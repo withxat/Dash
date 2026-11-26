@@ -1392,8 +1392,11 @@ struct DashScrollViewConfigurator: UIViewRepresentable {
       node = current.superview
     }
 
-    // Scope fill to this content VC only (root or pushed destination).
-    let screen = DashScreenScrollLocator.enclosingContentView(from: view) ?? view.superview ?? view
+    // Scope fill to this content VC only (root or pushed destination), and keep
+    // native back buttons minimal (Solar chevron only, no cramped title text).
+    let contentVC = DashScreenScrollLocator.enclosingViewController(from: view)
+    contentVC?.navigationItem.backButtonDisplayMode = .minimal
+    let screen = contentVC?.viewIfLoaded ?? view.superview ?? view
     // UIKit's slide animates the VC's view — paint it so the plate is opaque
     // (canvas) or wash-through (clear) for the whole transition, not only
     // after SwiftUI commits its `.background`.

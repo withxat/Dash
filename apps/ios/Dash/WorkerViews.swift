@@ -108,8 +108,7 @@ struct WorkersView: View {
           reduceMotion: reduceMotion,
           inset: false,
           placeholder: { index in
-            FeatureResourceCardFace(content: workerResourceCardPlaceholder(index: index))
-              .dashBodyPlaceholder(true)
+            FeatureResourceCardPlaceholder()
               .dashItemBoundary(index > 0)
           }
         ) { worker in
@@ -775,6 +774,7 @@ struct WorkerDetailView: View {
     .dashBodySlot(reduceMotion: reduceMotion)
   }
 
+  @ViewBuilder
   private func workerResourceCard(mode: DashBodyMode) -> some View {
     let preview = cardPreviewWorker ?? model.activeAccountID.flatMap(cachedWorker(accountID:))
     let latestContent = model.activeAccountID.flatMap {
@@ -797,12 +797,15 @@ struct WorkerDetailView: View {
       captured: capturedWorkerCardContent,
       latest: latestContent,
       fallback: fallback)
-    return FeatureResourceCardFace(content: content)
-      .dashBodyPlaceholder(
-        mode.isPlaceholder && latestContent == nil && capturedWorkerCardContent == nil
-      )
-      .dashNavigationLanding(.workerHero(name))
-      .frame(maxWidth: .infinity)
+    Group {
+      if mode.isPlaceholder && latestContent == nil && capturedWorkerCardContent == nil {
+        FeatureResourceCardPlaceholder()
+      } else {
+        FeatureResourceCardFace(content: content)
+      }
+    }
+    .dashNavigationLanding(.workerHero(name))
+    .frame(maxWidth: .infinity)
   }
 
   private var capturedWorkerCardContent: FeatureResourceCardContent? {
@@ -1709,15 +1712,6 @@ enum WorkersResourceCardCache {
       cache: cache
     ).map(workerResourceCardContent)
   }
-}
-
-private func workerResourceCardPlaceholder(index: Int) -> FeatureResourceCardContent {
-  FeatureResourceCardContent(
-    kind: .workers,
-    resourceID: "dash.placeholder.worker.\(index)",
-    routeKey: "dash.placeholder.worker.\(index)",
-    title: "worker-script",
-    metadata: .worker(modifiedOn: "2026-01-01T00:00:00Z", createdOn: nil))
 }
 
 @MainActor

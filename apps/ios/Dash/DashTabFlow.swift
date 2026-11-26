@@ -8,8 +8,6 @@ private struct DashTabPageUpdate {
   let workspaceWashScroll: DashWorkspaceWashScroll
   let locale: Locale
   let dynamicTypeSize: DynamicTypeSize
-  let onPresentationStateChange: (DashPagePresentationState) -> Void
-  let request: DashPageStackRequest
 }
 
 @MainActor
@@ -508,9 +506,10 @@ final class DashTabFlowViewController: UIViewController {
   }
 }
 
-/// One representable for the entire workspace flow. Individual page stacks are
-/// cached as detached UIKit controllers instead of separate SwiftUI siblings,
-/// which preserves their state without exposing invisible AX containers.
+/// One representable for the entire workspace flow. Individual tab navigation
+/// stacks are cached as detached UIKit controllers instead of separate SwiftUI
+/// siblings, which preserves their state without exposing invisible AX
+/// containers.
 struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>:
   UIViewControllerRepresentable
 {
@@ -525,9 +524,6 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
   let homeWorkspaceWashScroll: DashWorkspaceWashScroll
   let featuresWorkspaceWashScroll: DashWorkspaceWashScroll
   let watchtowerWorkspaceWashScroll: DashWorkspaceWashScroll
-  let onHomePresentationStateChange: (DashPagePresentationState) -> Void
-  let onFeaturesPresentationStateChange: (DashPagePresentationState) -> Void
-  let onWatchtowerPresentationStateChange: (DashPagePresentationState) -> Void
   let onTransitionCompleted: (AppTab, AppTab, UInt64) -> Void
   @ViewBuilder var home: () -> HomeRoot
   @ViewBuilder var features: () -> FeaturesRoot
@@ -535,7 +531,6 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
 
   @Environment(AppModel.self) private var model
   @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
-  @Environment(\.dashNavigationAnchorRegistry) private var anchorRegistry
   @Environment(\.dashWorkspacePresentationState) private var presentationState
   @Environment(\.locale) private var locale
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -553,22 +548,19 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
         navigator: homeNavigator,
         isTabActive: selection == .home,
         canPresentPendingHomeAction: canPresentPendingHomeAction,
-        workspaceWashScroll: homeWorkspaceWashScroll,
-        onPresentationStateChange: onHomePresentationStateChange),
+        workspaceWashScroll: homeWorkspaceWashScroll),
       AppTab.features: makePage(
         root: features(),
         navigator: featuresNavigator,
         isTabActive: selection == .features,
         canPresentPendingHomeAction: true,
-        workspaceWashScroll: featuresWorkspaceWashScroll,
-        onPresentationStateChange: onFeaturesPresentationStateChange),
+        workspaceWashScroll: featuresWorkspaceWashScroll),
       AppTab.watchtower: makePage(
         root: watchtower(),
         navigator: watchtowerNavigator,
         isTabActive: selection == .watchtower,
         canPresentPendingHomeAction: true,
-        workspaceWashScroll: watchtowerWorkspaceWashScroll,
-        onPresentationStateChange: onWatchtowerPresentationStateChange),
+        workspaceWashScroll: watchtowerWorkspaceWashScroll),
     ]
     return DashTabFlowViewController(pages: pages, selection: selection)
   }
@@ -584,27 +576,21 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
     uiViewController.updatePage(
       .home,
       with: pageUpdate(
-        navigator: homeNavigator,
         isTabActive: participatingTabs.contains(.home),
         canPresentPendingHomeAction: canPresentPendingHomeAction,
-        workspaceWashScroll: homeWorkspaceWashScroll,
-        onPresentationStateChange: onHomePresentationStateChange))
+        workspaceWashScroll: homeWorkspaceWashScroll))
     uiViewController.updatePage(
       .features,
       with: pageUpdate(
-        navigator: featuresNavigator,
         isTabActive: participatingTabs.contains(.features),
         canPresentPendingHomeAction: true,
-        workspaceWashScroll: featuresWorkspaceWashScroll,
-        onPresentationStateChange: onFeaturesPresentationStateChange))
+        workspaceWashScroll: featuresWorkspaceWashScroll))
     uiViewController.updatePage(
       .watchtower,
       with: pageUpdate(
-        navigator: watchtowerNavigator,
         isTabActive: participatingTabs.contains(.watchtower),
         canPresentPendingHomeAction: true,
-        workspaceWashScroll: watchtowerWorkspaceWashScroll,
-        onPresentationStateChange: onWatchtowerPresentationStateChange))
+        workspaceWashScroll: watchtowerWorkspaceWashScroll))
     uiViewController.reconcile(
       DashTabFlowRequest(
         selection: selection,
@@ -621,24 +607,20 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
     navigator: DestinationNavigator,
     isTabActive: Bool,
     canPresentPendingHomeAction: Bool,
-    workspaceWashScroll: DashWorkspaceWashScroll,
-    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void
+    workspaceWashScroll: DashWorkspaceWashScroll
   ) -> DashTabPageSlot {
     let controller = dashMakePageStackViewController(
       root: root,
       model: model,
       navigator: navigator,
       navigationCoordinator: navigationCoordinator,
-      anchorRegistry: anchorRegistry,
       presentationState: presentationState,
       isTabActive: isTabActive,
       canPresentPendingHomeAction: canPresentPendingHomeAction,
       splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
-      dynamicTypeSize: dynamicTypeSize,
-      accountID: navigator.accountID,
-      onPresentationStateChange: onPresentationStateChange)
+      dynamicTypeSize: dynamicTypeSize)
     return DashTabPageSlot(controller: controller) { [weak controller] update in
       guard let controller else { return }
       dashUpdatePageStackViewController(
@@ -649,18 +631,14 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
         splashLifted: update.splashLifted,
         workspaceWashScroll: update.workspaceWashScroll,
         locale: update.locale,
-        dynamicTypeSize: update.dynamicTypeSize,
-        onPresentationStateChange: update.onPresentationStateChange,
-        request: update.request)
+        dynamicTypeSize: update.dynamicTypeSize)
     }
   }
 
   private func pageUpdate(
-    navigator: DestinationNavigator,
     isTabActive: Bool,
     canPresentPendingHomeAction: Bool,
-    workspaceWashScroll: DashWorkspaceWashScroll,
-    onPresentationStateChange: @escaping (DashPagePresentationState) -> Void
+    workspaceWashScroll: DashWorkspaceWashScroll
   ) -> DashTabPageUpdate {
     DashTabPageUpdate(
       isTabActive: isTabActive,
@@ -668,101 +646,29 @@ struct DashTabFlowHost<HomeRoot: View, FeaturesRoot: View, WatchtowerRoot: View>
       splashLifted: splashLifted,
       workspaceWashScroll: workspaceWashScroll,
       locale: locale,
-      dynamicTypeSize: dynamicTypeSize,
-      onPresentationStateChange: onPresentationStateChange,
-      request: DashPageStackRequest(
-        entries: navigator.entries,
-        revision: navigator.revision,
-        mutation: navigator.lastMutation,
-        accountID: navigator.accountID,
-        reduceMotion: reduceMotion,
-        isTabActive: isTabActive))
-  }
-}
-
-private struct DashPageStackHost<Root: View>: UIViewControllerRepresentable {
-  @Bindable var navigator: DestinationNavigator
-  var isTabActive: Bool
-  var canPresentPendingHomeAction: Bool
-  var onPresentationStateChange: (DashPagePresentationState) -> Void
-  @ViewBuilder var root: () -> Root
-
-  @Environment(AppModel.self) private var model
-  @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
-  @Environment(\.dashNavigationAnchorRegistry) private var anchorRegistry
-  @Environment(\.dashWorkspacePresentationState) private var presentationState
-  @Environment(\.dashWorkspaceWashScroll) private var workspaceWashScroll
-  @Environment(\.locale) private var locale
-  @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-  @Environment(\.dashSplashLifted) private var splashLifted
-
-  func makeUIViewController(context: Context) -> UIViewController {
-    dashMakePageStackViewController(
-      root: root(),
-      model: model,
-      navigator: navigator,
-      navigationCoordinator: navigationCoordinator,
-      anchorRegistry: anchorRegistry,
-      presentationState: presentationState,
-      isTabActive: isTabActive,
-      canPresentPendingHomeAction: canPresentPendingHomeAction,
-      splashLifted: splashLifted,
-      workspaceWashScroll: workspaceWashScroll,
-      locale: locale,
-      dynamicTypeSize: dynamicTypeSize,
-      accountID: navigator.accountID,
-      onPresentationStateChange: onPresentationStateChange)
-  }
-
-  func updateUIViewController(
-    _ uiViewController: UIViewController,
-    context: Context
-  ) {
-    dashUpdatePageStackViewController(
-      uiViewController,
-      rootType: Root.self,
-      isTabActive: isTabActive,
-      canPresentPendingHomeAction: canPresentPendingHomeAction,
-      splashLifted: splashLifted,
-      workspaceWashScroll: workspaceWashScroll,
-      locale: locale,
-      dynamicTypeSize: dynamicTypeSize,
-      onPresentationStateChange: onPresentationStateChange,
-      request: DashPageStackRequest(
-        entries: navigator.entries,
-        revision: navigator.revision,
-        mutation: navigator.lastMutation,
-        accountID: navigator.accountID,
-        reduceMotion: reduceMotion,
-        isTabActive: isTabActive))
+      dynamicTypeSize: dynamicTypeSize)
   }
 }
 
 // MARK: - Tab stack
 
-/// Per-tab host for Dash's own page stack. Every route is a cached SwiftUI page
-/// controller inside a plain UIKit container — no `UINavigationController`,
-/// system stack, or edge-pop recognizer participates.
+/// Per-tab host backed by SwiftUI's native `NavigationStack`.
 struct DestinationStackHost<Root: View>: View {
   @Bindable var navigator: DestinationNavigator
-  @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
+  @Environment(\.dashWorkspaceWashScroll) private var workspaceWashScroll
+  @Environment(\.dashSplashLifted) private var splashLifted
   var isTabActive: Bool
   var canPresentPendingHomeAction = true
-  var onPresentationStateChange: (DashPagePresentationState) -> Void = { _ in }
   @ViewBuilder var root: () -> Root
 
   var body: some View {
-    DashPageStackHost(
+    DashNativeNavigationStack(
       navigator: navigator,
       isTabActive: isTabActive,
       canPresentPendingHomeAction: canPresentPendingHomeAction,
-      onPresentationStateChange: onPresentationStateChange,
-      root: root
+      splashLifted: splashLifted,
+      workspaceWashScroll: workspaceWashScroll,
+      root: root()
     )
-    .onAppear {
-      navigationCoordinator?.register(navigator)
-    }
   }
-
 }

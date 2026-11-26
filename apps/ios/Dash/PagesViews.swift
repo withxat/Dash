@@ -58,8 +58,7 @@ struct PagesProjectsView: View {
           reduceMotion: reduceMotion,
           inset: false,
           placeholder: { index in
-            FeatureResourceCardFace(content: pagesResourceCardPlaceholder(index: index))
-              .dashBodyPlaceholder(true)
+            FeatureResourceCardPlaceholder()
               .dashItemBoundary(index > 0)
           }
         ) { project in
@@ -310,6 +309,7 @@ struct PagesProjectDetailView: View {
     }
   }
 
+  @ViewBuilder
   private func pagesProjectResourceCard(mode: DashBodyMode) -> some View {
     let latestContent = model.activeAccountID.flatMap {
       PagesResourceCardCache.latestContent(
@@ -318,9 +318,6 @@ struct PagesProjectDetailView: View {
         fallback: project,
         cache: model.featureCache)
     }
-    // The immutable push hero owns the arriving frame. Once the handoff has
-    // settled, the detail and underlying catalog converge on the same newest
-    // list/detail cache snapshot; Back resolves its proxy through that rule too.
     let fallback = FeatureResourceCardContent(
       kind: .pages,
       resourceID: projectName,
@@ -332,13 +329,16 @@ struct PagesProjectDetailView: View {
       captured: capturedPagesCardContent,
       latest: latestContent,
       fallback: fallback)
-    return FeatureResourceCardFace(content: content)
-      .dashBodyPlaceholder(
-        mode.isPlaceholder && latestContent == nil && capturedPagesCardContent == nil
-      )
-      .dashNavigationLanding(.pagesProjectHero(projectName))
-      .frame(maxWidth: .infinity)
-      .dashBodySlot(reduceMotion: reduceMotion)
+    Group {
+      if mode.isPlaceholder && latestContent == nil && capturedPagesCardContent == nil {
+        FeatureResourceCardPlaceholder()
+      } else {
+        FeatureResourceCardFace(content: content)
+      }
+    }
+    .dashNavigationLanding(.pagesProjectHero(projectName))
+    .frame(maxWidth: .infinity)
+    .dashBodySlot(reduceMotion: reduceMotion)
   }
 
   private var capturedPagesCardContent: FeatureResourceCardContent? {
@@ -1586,15 +1586,6 @@ enum PagesResourceCardCache {
       cache: cache
     ).map(pagesResourceCardContent)
   }
-}
-
-private func pagesResourceCardPlaceholder(index: Int) -> FeatureResourceCardContent {
-  FeatureResourceCardContent(
-    kind: .pages,
-    resourceID: "dash.placeholder.pages.\(index)",
-    routeKey: "dash.placeholder.pages.\(index)",
-    title: "pages-project",
-    metadata: .pages(subdomain: "project.pages.dev", deploymentStatus: "success"))
 }
 
 /// Takes the row's already-computed strings: recomputing the subtitle here ran

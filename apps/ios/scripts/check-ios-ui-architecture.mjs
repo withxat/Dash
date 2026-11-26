@@ -381,10 +381,6 @@ const emailRoutingHeroLanding = declarationBody(
   emailRoutingViews,
   "private func emailRoutingHeroLandingSeat(",
 );
-const navigationHeroView = declarationBody(
-  dashWorkspace,
-  "private struct DashNavigationHeroView: View",
-);
 const domainCardFace = declarationBody(
   zoneViews,
   "struct DomainCardFace: View",
@@ -690,6 +686,7 @@ if (
     ".lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)",
   ) !== 2 ||
   !workersCatalog?.includes("FeatureResourceCardFace(") ||
+  !workersCatalog?.includes("FeatureResourceCardPlaceholder()") ||
   !workersCatalog?.includes("inset: false") ||
   !workersCatalog?.includes("placeholder: { index in") ||
   !workersCatalog?.includes("DashNavigationHero.featureResourceCard(") ||
@@ -697,6 +694,7 @@ if (
   !workersCatalog?.includes("hero: hero") ||
   workersCatalog?.includes("DashListRow(") ||
   !pagesCatalog?.includes("FeatureResourceCardFace(") ||
+  !pagesCatalog?.includes("FeatureResourceCardPlaceholder()") ||
   !pagesCatalog?.includes("inset: false") ||
   !pagesCatalog?.includes("placeholder: { index in") ||
   !pagesCatalog?.includes("DashNavigationHero.featureResourceCard(") ||
@@ -706,16 +704,16 @@ if (
   !workerDetailBody?.includes("workerResourceCard(mode: mode)") ||
   !pagesProjectDetailBody?.includes("pagesProjectResourceCard(mode: mode)") ||
   !workerResourceLanding?.includes("FeatureResourceCardFace(") ||
+  !workerResourceLanding?.includes("FeatureResourceCardPlaceholder()") ||
   !workerResourceLanding?.includes("FeatureResourceCardLandingRules.content(") ||
-  !workerResourceLanding?.includes("pageTransitionActive") ||
   !workerResourceLanding?.includes("capturedWorkerCardContent") ||
   !workerResourceLanding?.includes(
     "mode.isPlaceholder && latestContent == nil && capturedWorkerCardContent == nil",
   ) ||
   !workerResourceLanding?.includes(".dashNavigationLanding(.workerHero(name))") ||
   !pagesResourceLanding?.includes("FeatureResourceCardFace(") ||
+  !pagesResourceLanding?.includes("FeatureResourceCardPlaceholder()") ||
   !pagesResourceLanding?.includes("FeatureResourceCardLandingRules.content(") ||
-  !pagesResourceLanding?.includes("pageTransitionActive") ||
   !pagesResourceLanding?.includes("capturedPagesCardContent") ||
   !pagesResourceLanding?.includes(
     ".dashNavigationLanding(.pagesProjectHero(projectName))",
@@ -728,15 +726,10 @@ if (
   !dashNavigation.includes(
     "case .pagesProject(let name): .pagesProjectHero(name)",
   ) ||
-  !navigationHeroView?.includes("case .featureResourceCard(") ||
-  !navigationHeroView?.includes("FeatureResourceCardFace(") ||
-  !dashWorkspace.includes(".environment(\\.dashNavigationEntryHero, entry.origin?.hero)") ||
-  !dashWorkspace.includes(
-    "capturedHero.returnCacheResolution(from: model.featureCache)",
-  )
+  !dashWorkspace.includes(".environment(\\.dashNavigationEntryHero, entry.origin?.hero)")
 ) {
   issues.push(
-    "Workers and Pages catalogs must share one full-width, shape-matched resource card and placeholder, hand that semantic card to the existing compositor, and publish a real mode-stable detail landing.",
+    "Workers and Pages catalogs must share one full-width, shape-matched resource card and neutral placeholder, and publish a mode-stable detail landing.",
   );
 }
 
@@ -777,7 +770,8 @@ if (
   occurrences(
     emailRoutingDomains ?? "",
     "textureAsset: SolarAsset.Content.letter",
-  ) !== 2 ||
+  ) !== 1 ||
+  !emailRoutingDomains?.includes("DomainCardPlaceholder()") ||
   emailRoutingDomains?.includes("DashListRow(") ||
   !emailConfiguredContent?.includes("emailRoutingHeroLandingSeat(") ||
   occurrences(
@@ -803,7 +797,8 @@ if (
   occurrences(
     emailRoutingHeroLanding ?? "",
     "textureAsset: SolarAsset.Content.letter",
-  ) !== 2 ||
+  ) !== 1 ||
+  !emailRoutingHeroLanding?.includes("DomainCardPlaceholder(") ||
   !emailRoutingHeroLanding?.includes(
     ".dashNavigationLanding(.emailRoutingHero(zoneID))",
   ) ||
@@ -823,25 +818,6 @@ if (
   !dashNavigation.includes(
     "case .zoneEmailRouting(let id): .emailRoutingHero(id)",
   ) ||
-  !navigationHeroView?.includes("case .emailRoutingCard(") ||
-  navigationHeroView?.includes("meta: DashL10n.string(\"Email routing\")") ||
-  !navigationHeroView?.includes("textureAsset: SolarAsset.Content.letter") ||
-  !dashWorkspace.includes(
-    "capturedHero.returnCacheResolution(from: model.featureCache)",
-  ) ||
-  !dashWorkspace.includes(
-    "resolution.resolvedHero(preserving: capturedHero)",
-  ) ||
-  !dashWorkspace.includes("request.mutation?.entry ?? settledEntries.last") ||
-  !dashNavigation.includes("func popUsingFlow(entryID:") ||
-  !dashNavigation.includes("func setCardSourceDismissalUsesFlow(") ||
-  !dashNavigation.includes("flowDismissalEntryIDs.contains(entry.id)") ||
-  !dashNavigation.includes("flowDismissalEntryIDs.formIntersection(entryIDs)") ||
-  dashNavigation.includes("func demoteCardSource(entryID:") ||
-  !dashWorkspace.includes("hostContext.interactionLockedEntryID == entry.id") ||
-  !emailRoutingViews.includes("navigator?.popUsingFlow(entryID: navigationEntryID)") ||
-  !emailRoutingViews.includes("!pageTransitionActive") ||
-  !emailRoutingViews.includes("navigator?.setCardSourceDismissalUsesFlow(") ||
   !emailRoutingViews.includes(
     "guard !isNotSetUp(settings) else { return .disabled }",
   ) ||
@@ -2157,25 +2133,15 @@ if (!tabContainer) {
 } else {
   const rootStack = declarationBody(tabContainer, "ZStack(alignment: .bottom)");
   const flowIndex = rootStack ? topLevelTokenIndex(rootStack, "tabFlow") : -1;
-  const headerIndex = rootStack
-    ? topLevelTokenIndex(rootStack, "sharedHeaderOverlay")
-    : -1;
-  if (
-    !rootStack ||
-    flowIndex === -1 ||
-    headerIndex === -1 ||
-    headerIndex < flowIndex
-  ) {
+  if (!rootStack || flowIndex === -1) {
     issues.push(
-      "MainTabView.tabContainer must render sharedHeaderOverlay as a top-level sibling after the tab flow.",
+      "MainTabView.tabContainer must render tabFlow inside the root ZStack.",
     );
-  } else {
-    const headerTail = rootStack.slice(headerIndex, headerIndex + 160);
-    if (/\.zIndex\s*\(\s*-/.test(headerTail)) {
-      issues.push(
-        "sharedHeaderOverlay must not be placed behind the pager with a negative zIndex.",
-      );
-    }
+  }
+  if (occurrences(mainTab, ".dashRootNavigationToolbar(") !== 3) {
+    issues.push(
+      "All three tab roots must declare their native navigation toolbar via dashRootNavigationToolbar.",
+    );
   }
 }
 
@@ -2202,9 +2168,8 @@ if (
   !mainTab.includes("featuresWashScroll") ||
   !mainTab.includes("watchtowerWashScroll") ||
   !mainTab.includes("outgoingScroll: outgoingSelection.map") ||
-  !/\\\.dashWorkspaceWashScroll,\s*hostContext\.workspaceWashScroll/.test(
-    dashWorkspace,
-  ) ||
+  !/\\\.dashWorkspaceWashScroll,\s*workspaceWashScroll/.test(dashWorkspace) ||
+  !dashWorkspace.includes(".environment(\\.dashWorkspaceWashScroll, nil)") ||
   dashWorkspace.includes(
     "hostContext.isTabActive ? hostContext.workspaceWashScroll : nil",
   )
@@ -2216,9 +2181,6 @@ if (
 
 if (
   occurrences(mainTab, ".accessibilityHidden(outgoingSelection != nil)") < 1 ||
-  !mainTab.includes(
-    ".accessibilityHidden(headerIsDisplaced || outgoingSelection != nil)",
-  ) ||
   !dashTabFlow.includes("source.view.isUserInteractionEnabled = false") ||
   !dashTabFlow.includes("target.view.isUserInteractionEnabled = false") ||
   !dashTabFlow.includes("source.view.accessibilityElementsHidden = true") ||
@@ -2269,41 +2231,32 @@ if (
   );
 }
 
+const nativeStack = declarationBody(
+  dashWorkspace,
+  "struct DashNativeNavigationStack<Root: View>: View",
+);
+const nativeDestination = declarationBody(
+  dashWorkspace,
+  "private struct DashNativeDestinationView: View",
+);
 if (
-  !dashWorkspace.includes(
-    "controller.view.backgroundColor = UIColor(DashTheme.canvas)",
-  ) ||
-  !dashWorkspace.includes("controller.view.isOpaque = true") ||
-  !dashWorkspace.includes("destinationCanvasPlate.frame = view.bounds") ||
-  !dashWorkspace.includes("prepareDestinationCanvasTransition") ||
-  !dashWorkspace.includes(
-    "destinationCanvasPlate.alpha = targetOwnsDestinationCanvas ? 1 : 0",
-  ) ||
-  !dashWorkspace.includes(
-    "setDestinationCanvasVisible(!settledEntries.isEmpty)",
-  )
+  !nativeStack ||
+  !nativeStack.includes("NavigationStack(") ||
+  !nativeStack.includes("navigator.syncFromNavigationStack(") ||
+  !nativeStack.includes(".environment(\\.dashUsesCustomPageStack, false)")
 ) {
   issues.push(
-    "Pushed pages must own an opaque full-window canvas plate that joins the route animator.",
+    "DashNativeNavigationStack must host a native SwiftUI NavigationStack synced with DestinationNavigator.",
   );
 }
 
-// Route hosts are already attached and laid out before the compositor builds
-// its proxy. Asking UIKit for an after-screen-updates snapshot from inside
-// updateUIViewController synchronously re-enters SwiftUI's AttributeGraph.
-const pageStackController = declarationBody(
-  dashWorkspace,
-  "private final class DashPageStackViewController<Root: View>: UIViewController",
-);
-if (!pageStackController) {
-  issues.push("Could not locate DashPageStackViewController.");
-} else if (
-  pageStackController.includes("afterScreenUpdates: true") ||
-  !pageStackController.includes("view.layoutIfNeeded()") ||
-  occurrences(pageStackController, "afterScreenUpdates: false") < 3
+if (
+  !nativeDestination ||
+  !nativeDestination.includes("DashScrollViewConfigurator(fill: .canvas)") ||
+  !nativeDestination.includes(".background(DashTheme.canvas.ignoresSafeArea())")
 ) {
   issues.push(
-    "Page transitions must lay out their hosts once, then snapshot without after-screen updates; a synchronous refresh re-enters AttributeGraph from updateUIViewController.",
+    "Pushed native NavigationStack destinations must own an opaque canvas plate so the root wash stays hidden underneath.",
   );
 }
 
@@ -2317,168 +2270,34 @@ if (
   );
 }
 
-const sharedHeader = declarationBody(
-  mainTab,
-  "private var sharedHeaderOverlay: some View",
-);
-const headerBarSlot = declarationBody(
-  mainTab,
-  "private var headerBar: some View",
-);
-if (!sharedHeader || !headerBarSlot) {
-  issues.push("Could not locate MainTabView.sharedHeaderOverlay.");
-} else {
-  if (!sharedHeader.includes("headerBar")) {
-    issues.push("sharedHeaderOverlay must render the ONE shared header bar.");
-  }
-  if (!headerBarSlot.includes("DashWorkspaceHeaderBar(")) {
-    issues.push("headerBar must be the ONE DashWorkspaceHeaderBar.");
-  }
-  // Liquid Glass composites outside a normal opacity group, so a displaced
-  // header has to leave the tree rather than fade to zero.
-  if (/\.opacity\(\s*headerIsDisplaced/.test(sharedHeader)) {
-    issues.push(
-      "A displaced shared header must be removed, not faded to zero opacity.",
-    );
-  }
-  // While the bar is fading out of a tray, its removal transition is plain
-  // opacity — mute hits off the mirrored displacement flag or a glass plate
-  // can keep eating taps meant for the tray's own ✕.
-  if (
-    !sharedHeader.includes("displayedHeaderIsDisplaced") ||
-    !sharedHeader.includes("allowsHitTesting(")
-  ) {
-    issues.push(
-      "sharedHeaderOverlay must hit-mute off displayedHeaderIsDisplaced while the bar is displaced.",
-    );
-  }
-}
-
-const headerBar = declarationBody(
+const rootToolbar = declarationBody(
   workspaceHeader,
-  "struct DashWorkspaceHeaderBar: View",
+  "struct DashRootNavigationToolbarModifier: ViewModifier",
 );
-if (!headerBar) {
-  issues.push("Could not locate DashWorkspaceHeaderBar.");
+if (!rootToolbar) {
+  issues.push("Could not locate DashRootNavigationToolbarModifier.");
 } else {
-  if (!headerBar.includes("GlassEffectContainer")) {
-    issues.push(
-      "DashWorkspaceHeaderBar must own the Liquid Glass morph container.",
-    );
-  }
-  // The header is the store's ONE reader: a page action change must never
-  // refresh MainTabView's body while a page transition is settling.
-  if (!headerBar.includes("navigator.pageChrome.chrome(")) {
-    issues.push(
-      "DashWorkspaceHeaderBar must resolve its slots from the page chrome store.",
-    );
-  }
   if (mainTab.includes("pageChrome")) {
     issues.push(
-      "MainTabView must not read page chrome; the shared header is its only reader.",
+      "MainTabView must not read page chrome directly.",
     );
   }
-
   for (const identifier of [editorControlIDs[0], editorControlIDs[2]]) {
-    if (!headerBar.includes(identifier)) {
+    if (!rootToolbar.includes(identifier)) {
       issues.push(
-        `${identifier} must be declared inside DashWorkspaceHeaderBar.`,
+        `${identifier} must be declared inside DashRootNavigationToolbarModifier.`,
       );
     }
   }
-  if (!headerBar.includes(editorControlIDs[1])) {
+  if (!rootToolbar.includes(editorControlIDs[1])) {
     issues.push(
-      "watchtower-add-chart must be declared inside DashWorkspaceHeaderBar.",
+      "watchtower-add-chart must be declared inside DashRootNavigationToolbarModifier.",
     );
   }
-
-  const addIndex = headerBar.indexOf("addChartMenu");
-  const doneIndex = headerBar.indexOf(editorControlIDs[2]);
+  const addIndex = rootToolbar.indexOf("addChartMenu");
+  const doneIndex = rootToolbar.indexOf(editorControlIDs[2]);
   if (addIndex === -1 || doneIndex === -1 || addIndex > doneIndex) {
-    issues.push("The shared trailing editor group must place Add before Done.");
-  }
-
-  // Back, Close, the avatar and a page's own leading action are ONE seat, so
-  // the leading glass identity is applied once — to the slot, not per control.
-  const glassIDCounts = new Map([
-    [".workspaceHeaderGlassID(.leading", 1],
-    [".workspaceHeaderGlassID(.trailingPrimary", 3],
-    [".workspaceHeaderGlassID(.trailingSecondary", 1],
-  ]);
-  for (const [token, expected] of glassIDCounts) {
-    const actual = occurrences(headerBar, token);
-    if (actual !== expected) {
-      issues.push(`${token} occurs ${actual} time(s); expected ${expected}.`);
-    }
-  }
-
-  // Seat handoff hit-mute must ride the same view as `.id(slotKind)`. An inner
-  // transition leaves the remount on the default opacity path, and a clear
-  // slot reservation that still hit-tests swallows the dead taps.
-  const leadingSlot = declarationBody(headerBar, "private func leadingSlot");
-  if (!leadingSlot) {
-    issues.push("Could not locate DashWorkspaceHeaderBar.leadingSlot.");
-  } else if (!leadingSlot.includes(".transition(leadingTransition)")) {
-    issues.push(
-      "leadingSlot must apply leadingTransition on the same view as .id(slotKind).",
-    );
-  }
-  const slotReservation = declarationBody(
-    headerBar,
-    "private var slotReservation: some View",
-  );
-  if (!slotReservation) {
-    issues.push("Could not locate DashWorkspaceHeaderBar.slotReservation.");
-  } else if (!slotReservation.includes(".allowsHitTesting(false)")) {
-    issues.push(
-      "slotReservation must set allowsHitTesting(false) so a muted occupant cannot fall through to a dead clear plate.",
-    );
-  }
-
-  // A same-page action replacement happens inside the trailing ForEach unless
-  // the outer seat identity tracks ordered action membership. Without that
-  // remount, the existing ghost hit gate and z-rank never protect Pin -> Save
-  // or Upload/More -> Done handoffs.
-  const trailingIdentity = declarationBody(
-    workspaceHeader,
-    "extension DashWorkspaceHeaderTrailing",
-  );
-  const trailingSlot = declarationBody(headerBar, "private func trailingSlot");
-  if (
-    !trailingIdentity ||
-    !trailingIdentity.includes("func slotID(entryID:") ||
-    !trailingIdentity.includes("descriptors.map(\\.id)")
-  ) {
-    issues.push(
-      "Trailing header identity must include ordered action IDs so same-page action replacements use the seat handoff.",
-    );
-  }
-  if (
-    !trailingSlot ||
-    !trailingSlot.includes(
-      ".id(shown.trailing.slotID(entryID: shown.entryID))",
-    ) ||
-    !trailingSlot.includes(".transition(controlTransition)") ||
-    !trailingSlot.includes(".zIndex(seatGeneration)")
-  ) {
-    issues.push(
-      "trailingSlot must apply action-aware identity, controlTransition, and seatGeneration on the same view.",
-    );
-  }
-
-  // Every workspace page publishes its slots instead of painting them.
-  for (const token of ["DestinationNavigator(chromeHosting: .workspace)"]) {
-    if (occurrences(mainTab, token) !== 3) {
-      issues.push(
-        "All three tab navigators must hand their page chrome to the shared header.",
-      );
-      break;
-    }
-  }
-  if (!dashRoutePageChrome.includes("if let entry, chromeHosting == .page {")) {
-    issues.push(
-      "A workspace-hosted page must not paint its own navigation bar; only the shared header may.",
-    );
+    issues.push("The Watchtower editor toolbar group must place Add before Done.");
   }
 }
 

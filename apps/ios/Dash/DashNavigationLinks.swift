@@ -5,52 +5,39 @@ import UIKit
 
 // MARK: - Link helpers
 
-/// Supplies a navigation action whose concrete source occurrence is registered
-/// with the custom page compositor. Use this for controls that need their own
+/// Supplies a navigation action that pushes a destination onto the enclosing
+/// tab's native `NavigationStack`. Use this for controls that need their own
 /// button style; `DestinationLink` is the standard row-shaped convenience.
 struct DashNavigationSource<Content: View>: View {
   let destination: Destination
   var presentation: DashNavigationPresentation?
   var hero: DashNavigationHero? = nil
   var onNavigate: (() -> Void)?
-  /// Optional lifecycle boundary (for example a Tray's `dismissAfter`). The
-  /// source geometry is captured on the tap, before the presenting surface
-  /// unmounts; only the route mutation waits for the boundary to finish.
+  /// Optional lifecycle boundary (for example a Tray's `dismissAfter`).
   var schedule: ((@escaping () -> Void) -> Void)?
-  /// When true, the source anchor is published through the environment so an
-  /// inner view (the header avatar circle) can register it. The outer wrapper
-  /// stays unanchored — otherwise the morph would capture glass chrome.
+  /// Kept for call-site compatibility; native `NavigationStack` requires no
+  /// embedded anchor probe.
   var embedsAnchor: Bool = false
   @ViewBuilder var content: (@escaping () -> Void) -> Content
 
   @Environment(\.destinationNavigator) private var navigator
-  @Environment(\.dashNavigationAnchorRegistry) private var anchorRegistry
   @Environment(\.dashNavigationEntryID) private var sourceEntryID
-  @State private var anchorInstanceID = UUID()
 
   var body: some View {
-    if embedsAnchor {
-      content(navigate)
-        .environment(\.dashNavigationEmbeddedAnchorID, anchorInstanceID)
-    } else {
-      content(navigate)
-        .dashNavigationAnchor(
-          instanceID: anchorInstanceID,
-          semanticID: destination.dashNavigationSemanticID)
-    }
+    content(navigate)
   }
 
   private func navigate() {
-    let origin = anchorRegistry?.captureOrigin(
-      semanticID: destination.dashNavigationSemanticID,
-      anchorInstanceID: anchorInstanceID,
-      hero: hero)
+    let origin = hero.map {
+      DashNavigationOrigin(
+        semanticID: destination.dashNavigationSemanticID,
+        anchorInstanceID: UUID(),
+        sourceFrame: nil,
+        hero: $0)
+    }
     let expectedNavigator = navigator
     let expectedSourceEntryID = sourceEntryID
     onNavigate?()
-    // `onNavigate` may legitimately synchronize this navigator's account
-    // scope. The delayed-intent baseline starts after that preparation, while
-    // the source visual was still captured synchronously at the tap.
     let expectedRevision = expectedNavigator?.revision
     let expectedAccountID = expectedNavigator?.accountID
     let commit: () -> Void = {
@@ -60,16 +47,12 @@ struct DashNavigationSource<Content: View>: View {
         expectedSourceEntryID == nil
           || expectedNavigator.topEntry?.id == expectedSourceEntryID
       else {
-        anchorRegistry?.discardCapturedVisual(for: origin)
         return
       }
-      let entryID = expectedNavigator.push(
+      _ = expectedNavigator.push(
         destination,
         presentation: presentation,
         origin: origin)
-      if entryID == nil {
-        anchorRegistry?.discardCapturedVisual(for: origin)
-      }
     }
     if let schedule {
       schedule(commit)
