@@ -836,6 +836,46 @@ private actor ZoneSecurityLevelTestLatch {
     defaults.string(forKey: ZoneSecurityLevelOperation.key(for: zoneID)) == "high")
 }
 
+@Test func cachePurgeURLParserSplitsDeduplicatesAndEnforcesBoundaries() {
+  let empty = CachePurgeURLParser.parse("  \n\t\n ")
+  #expect(empty.validURLs.isEmpty)
+  #expect(empty.invalidLines.isEmpty)
+  #expect(!empty.exceedsLimit)
+  #expect(!empty.canSubmit)
+
+  let mixed = CachePurgeURLParser.parse(
+    """
+      https://example.com/a.css
+      http://example.com/b.js
+      https://example.com/a.css
+      /bare-path.css
+      ftp://example.com/file
+      example.com/no-scheme
+    """)
+  #expect(mixed.validURLs == ["https://example.com/a.css", "http://example.com/b.js"])
+  #expect(
+    mixed.invalidLines == ["/bare-path.css", "ftp://example.com/file", "example.com/no-scheme"])
+  #expect(!mixed.exceedsLimit)
+  #expect(!mixed.canSubmit)
+
+  // Duplicates must not push 30 unique URLs over Cloudflare's 30-URL cap.
+  let thirtyWithDuplicate =
+    ((1...CachePurgeURLParser.maxURLs).map { "https://example.com/\($0)" }
+    + ["https://example.com/1"]).joined(separator: "\n")
+  let atCap = CachePurgeURLParser.parse(thirtyWithDuplicate)
+  #expect(atCap.validURLs.count == CachePurgeURLParser.maxURLs)
+  #expect(!atCap.exceedsLimit)
+  #expect(atCap.canSubmit)
+
+  let overCapInput = (1...(CachePurgeURLParser.maxURLs + 1))
+    .map { "https://example.com/\($0)" }
+    .joined(separator: "\n")
+  let overCap = CachePurgeURLParser.parse(overCapInput)
+  #expect(overCap.validURLs.count == CachePurgeURLParser.maxURLs + 1)
+  #expect(overCap.exceedsLimit)
+  #expect(!overCap.canSubmit)
+}
+
 @Test func dashSearchMatcherRequiresEveryTokenAcrossFields() {
   #expect(!DashSearchMatcher.isActive("   \n\t "))
   #expect(DashSearchMatcher.matches("   ", in: [nil, ""]))
@@ -850,4 +890,64 @@ private actor ZoneSecurityLevelTestLatch {
       "cname missing",
       in: ["Café.example.com", "CNAME", "origin.example.net"]))
   #expect(!DashSearchMatcher.matches("example", in: [nil, ""]))
+}
+
+@Test func auditLogDetailFieldsAndResultTokenCoverPopulatedAndSparseEntries() {
+  #expect(StatusToken(auditResult: "success") == .success)
+  #expect(StatusToken(auditResult: "TRUE") == .success)
+  #expect(StatusToken(auditResult: "failure") == .failed)
+  #expect(StatusToken(auditResult: "failed") == .failed)
+  #expect(StatusToken(auditResult: "false") == .failed)
+  #expect(StatusToken(auditResult: "pending") == nil)
+  #expect(StatusToken(auditResult: nil) == nil)
+
+  let entry = AuditLogEntry(
+    logID: "evt-123",
+    action: AuditLogAction(
+      type: "purge",
+      description: "Purged zone cache",
+      result: "success",
+      time: "2026-11-25T10:00:00Z"),
+    actor: AuditLogActor(
+      email: "ops@example.com",
+      type: "user",
+      ipAddress: "203.0.113.42",
+      context: "api_key",
+      tokenName: "deploy-bot"),
+    resource: AuditLogResource(
+      type: "zone",
+      product: "caching",
+      id: "zone-abc",
+      scope: "zones"),
+    occurredAt: "2026-11-25T10:00:00Z",
+    zoneName: "example.com",
+    interfaceName: "API",
+    method: "POST",
+    uri: "/client/v4/zones/zone-abc/purge_cache",
+    statusCode: 200,
+    rayID: "9a1b2c3d4e5f-SJC",
+    oldValue: "off",
+    newValue: "on")
+
+  let byLabel = Dictionary(uniqueKeysWithValues: entry.detailFields.map { ($0.label, $0.value) })
+  #expect(byLabel["Action"] == "purge")
+  #expect(byLabel["Actor"] == "ops@example.com")
+  #expect(byLabel["API token"] == "deploy-bot")
+  #expect(byLabel["IP address"] == "203.0.113.42")
+  #expect(byLabel["Resource ID"] == "zone-abc")
+  #expect(byLabel["Domain"] == "example.com")
+  #expect(byLabel["Request"] == "POST /client/v4/zones/zone-abc/purge_cache")
+  #expect(byLabel["HTTP status"] == "200")
+  #expect(byLabel["Ray ID"] == "9a1b2c3d4e5f-SJC")
+  #expect(byLabel["Previous value"] == "off")
+  #expect(byLabel["New value"] == "on")
+  #expect(byLabel["Event ID"] == "evt-123")
+
+  let summary = entry.copyableSummary
+  #expect(summary.hasPrefix("Purged zone cache\n"))
+  #expect(summary.contains("zone-abc"))
+  #expect(summary.contains("9a1b2c3d4e5f-SJC"))
+
+  let sparse = AuditLogEntry(logID: nil, action: nil, actor: nil, resource: nil)
+  #expect(sparse.detailFields.isEmpty)
 }

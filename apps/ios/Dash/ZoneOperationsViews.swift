@@ -2,6 +2,7 @@ import CloudflareAPI
 import SwiftDitherKit
 import SwiftGlobeKit
 import SwiftUI
+import UIKit
 
 /// Cache purge is its own permission. The Cache screen's settings answer to
 /// `zone-settings.write` (`writeScopes(for: .cache)`), so a grant missing
@@ -85,7 +86,7 @@ struct ZoneCacheView: View {
       isPresented: $showsPurgeURL, title: "Purge by URL",
       tone: FeatureVisualIdentity.tone(for: .zones)
     ) {
-      CachePurgeURLForm(zoneID: zoneID)
+      CachePurgeURLForm(zoneID: zoneID, zoneName: cachedZoneName)
     }
     .dashMoreMenu(
       isPresented: $showsPurgeEverything,
@@ -94,11 +95,24 @@ struct ZoneCacheView: View {
     )
   }
 
+  private var cachedZoneName: String? {
+    if let zone: CloudflareZone = model.featureCache.get(FeatureCacheKey.zone(zoneID)) {
+      return zone.name
+    }
+    if let accountID = model.activeAccountID,
+      let zones: [CloudflareZone] = model.featureCache.get(FeatureCacheKey.zones(accountID)),
+      let match = zones.first(where: { $0.id == zoneID })
+    {
+      return match.name
+    }
+    return nil
+  }
+
   /// Purging needs nothing the settings fetch returns, but it lives in the
   /// live body with the rest of the screen so a cold load never offers a
   /// control that sits under the placeholder veil.
   private var purgeSection: some View {
-    DashListGroup(title: "Purge cache") {
+    DashTwoToneListGroup(title: "Purge cache") {
       if allowsPurge {
         Button {
           showsPurgeURL = true
@@ -277,39 +291,143 @@ struct ZoneCacheView: View {
   }
 }
 
-/// Purges one URL. Cloudflare purges by the URL a visitor requests, so the
-/// field only submits a full http(s) URL with a host, never a bare path.
+/// Parses one or more newline-separated URLs for `POST /zones/{id}/purge_cache`.
+/// Cloudflare purges by the exact URL a visitor requests and accepts up to 30
+/// URLs per request on every plan, so bare paths and invalid lines are rejected
+/// before submitting.
+struct CachePurgeURLParseResult: Equatable, Sendable {
+  let validURLs: [String]
+  let invalidLines: [String]
+  let exceedsLimit: Bool
+
+  var canSubmit: Bool {
+    !validURLs.isEmpty && invalidLines.isEmpty && !exceedsLimit
+  }
+}
+
+enum CachePurgeURLParser {
+  static let maxURLs = 30
+
+  static func parse(_ raw: String) -> CachePurgeURLParseResult {
+    var valid: [String] = []
+    var seen = Set<String>()
+    var invalid: [String] = []
+
+    for line in raw.components(separatedBy: .newlines) {
+      let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmed.isEmpty else { continue }
+      guard let parsed = URL(string: trimmed),
+        let scheme = parsed.scheme?.lowercased(), scheme == "https" || scheme == "http",
+        parsed.host?.isEmpty == false
+      else {
+        invalid.append(trimmed)
+        continue
+      }
+      if seen.insert(trimmed).inserted {
+        valid.append(trimmed)
+      }
+    }
+
+    return CachePurgeURLParseResult(
+      validURLs: valid,
+      invalidLines: invalid,
+      exceedsLimit: valid.count > maxURLs)
+  }
+}
+
+/// Purges one or more URLs (up to Cloudflare's 30-URL per-request cap).
 private struct CachePurgeURLForm: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
   let zoneID: String
-  @State private var url = ""
+  var zoneName: String? = nil
+  @State private var rawURLs = ""
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
+  @FocusState private var isFocused: Bool
 
-  private var purgeURL: String? {
-    let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let parsed = URL(string: trimmed),
-      let scheme = parsed.scheme?.lowercased(), scheme == "https" || scheme == "http",
-      parsed.host?.isEmpty == false
-    else { return nil }
-    return trimmed
+  private var parsed: CachePurgeURLParseResult {
+    CachePurgeURLParser.parse(rawURLs)
+  }
+
+  private var urlPrompt: String {
+    if let zoneName, !zoneName.isEmpty {
+      return "https://\(zoneName)/app.css"
+    }
+    return "https://example.com/app.css"
+  }
+
+  private var saveTitle: String {
+    let count = parsed.validURLs.count
+    if count > 1 {
+      return DashL10n.string("Purge \(count) URLs")
+    }
+    return DashL10n.string("Purge URL")
   }
 
   var body: some View {
     DashFormSheet(
-      saveTitle: "Purge URL",
+      saveTitle: saveTitle,
       actionPhase: actionPhase,
       onSuccessPresentationCompleted: completeSuccessPresentation,
-      canSave: purgeURL != nil,
+      canSave: parsed.canSubmit,
       onSave: { Task { await purge() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
-          DashFormField(
-            label: "Asset URL",
-            text: $url,
-            keyboard: .URL,
-            contentType: .URL)
+          VStack(alignment: .leading, spacing: 8) {
+            HStack {
+              Text(DashL10n.string("Asset URLs"))
+                .dashTextStyle(.footnoteSemibold)
+                .foregroundStyle(DashTheme.subtle)
+              Spacer(minLength: 0)
+              if !parsed.validURLs.isEmpty {
+                Text(verbatim: "\(parsed.validURLs.count) / \(CachePurgeURLParser.maxURLs)")
+                  .dashTextStyle(.caption)
+                  .foregroundStyle(
+                    parsed.exceedsLimit ? DashTheme.danger : DashTheme.subtle)
+              }
+            }
+            TextField(
+              DashL10n.string("Asset URLs"),
+              text: $rawURLs,
+              prompt: Text(urlPrompt)
+                .foregroundStyle(DashTheme.placeholder),
+              axis: .vertical
+            )
+            .dashTextStyle(.code)
+            .foregroundStyle(DashTheme.text)
+            .lineLimit(4...8)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .keyboardType(.URL)
+            .focused($isFocused)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(DashTheme.recessed)
+            .clipShape(
+              RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+            )
+            .accessibilityIdentifier("cache-purge-urls-field")
+
+            Text(DashL10n.string("Enter one full http(s) URL per line, up to 30 at a time."))
+              .dashTextStyle(.caption)
+              .foregroundStyle(DashTheme.subtle)
+          }
+
+          if !parsed.invalidLines.isEmpty {
+            let invalidCount = parsed.invalidLines.count
+            DashNotice(
+              kind: .warning,
+              message: invalidCount == 1
+                ? DashL10n.string("1 line is not a valid http(s) URL.")
+                : DashL10n.string("\(invalidCount) lines are not valid http(s) URLs."))
+          }
+          if parsed.exceedsLimit {
+            DashNotice(
+              kind: .warning,
+              message: DashL10n.string(
+                "Cloudflare accepts up to \(CachePurgeURLParser.maxURLs) URLs per purge request."))
+          }
           if let error {
             DashNotice(kind: .error, message: error)
           }
@@ -319,16 +437,22 @@ private struct CachePurgeURLForm: View {
   }
 
   private func purge() async {
-    guard let purgeURL, let context = model.accountRequestContext else { return }
+    let urls = parsed.validURLs
+    guard parsed.canSubmit, let context = model.accountRequestContext else { return }
+    isFocused = false
     actionPhase = .loading
     error = nil
     do {
-      try await model.client.purgeCache(zoneID: zoneID, files: [purgeURL])
+      try await model.client.purgeCache(zoneID: zoneID, files: urls)
       guard !Task.isCancelled, model.isCurrentAccount(context) else {
         actionPhase = .idle
         return
       }
-      model.toasts.success(DashL10n.string("Cache purged."))
+      let message =
+        urls.count == 1
+        ? DashL10n.string("Cache purged.")
+        : DashL10n.string("Purged \(urls.count) URLs.")
+      model.toasts.success(message)
       actionPhase = .succeeded
     } catch {
       actionPhase = .idle
@@ -722,20 +846,72 @@ struct AuditLogView: View {
       ),
       retry: { Task { await load(force: true) } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: entries, reduceMotion: reduceMotion) { entry in
-          DashListRow(
-            title: DashL10n.ui(entry.title),
-            subtitle: auditSubtitle(entry),
-            icon: SolarAsset.Content.shieldCheck,
-            showsChevron: false
-          )
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search audit log"),
+          accessibilityIdentifier: "audit-log-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, displayed.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(mode: mode, items: displayed, reduceMotion: reduceMotion) { entry in
+            Button {
+              selectedEntry = entry
+            } label: {
+              DashListRow(
+                title: DashL10n.ui(entry.title),
+                subtitle: auditSubtitle(entry),
+                icon: SolarAsset.Content.shieldCheck,
+                showsChevron: false
+              ) {
+                if let token = StatusToken(auditResult: entry.action?.result) {
+                  StatusBadge(token)
+                }
+              }
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("audit-log-\(entry.id)")
+          }
+        }
+      }
+      if !mode.isPlaceholder, nextPage != nil || isLoadingMore {
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: entries.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: entries.count,
+            isLoading: isLoadingMore
+          ) {
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
     .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "Audit log")
     .refreshable { await load(force: true) }
-    .task { await load() }
+    .task(id: model.accountRequestContext) {
+      prepareForCurrentAccount()
+      await load()
+    }
+    .dashTray(
+      item: $selectedEntry,
+      title: { DashL10n.ui($0.title) },
+      content: { entry in
+        AuditLogDetailTray(entry: entry)
+      }
+    )
   }
 
   /// Mirrors `AuditLogEntry.subtitle`, but renders the ISO 8601 "when" stamp
@@ -750,24 +926,120 @@ struct AuditLogView: View {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
+  private func prepareForCurrentAccount() {
+    let context = model.accountRequestContext
+    guard loadedContext != context else { return }
+    loadedContext = context
+    entries = []
+    nextPage = nil
+    error = nil
+    searchQuery = ""
+    selectedEntry = nil
+    isLoadingMore = false
+    loading = context != nil
+  }
+
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else { return }
-    let key = FeatureCacheKey.auditLogs(accountID)
+    guard let context = model.accountRequestContext else { return }
+    let key = FeatureCacheKey.auditLogs(context.accountID)
     if !force, let cached: [AuditLogEntry] = model.featureCache.get(key) {
       entries = cached
       loading = false
       error = nil
-      return
+      // Keep the cached entries visible while page one refreshes below so
+      // pagination cursors stay authoritative.
     }
     if entries.isEmpty { loading = true }
     error = nil
-    defer { loading = false }
+    listGeneration += 1
+    let generation = listGeneration
+    isLoadingMore = false
+    defer {
+      if generation == listGeneration, model.isCurrentAccount(context) {
+        loading = false
+      }
+    }
     do {
-      entries = try await model.client.listAuditLogs(accountID: accountID, perPage: 50)
+      let page = try await model.client.listAuditLogsPage(
+        accountID: context.accountID,
+        perPage: Self.pageSize
+      )
+      guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context) else {
+        return
+      }
+      entries = page.entries
+      nextPage = page.nextPage
       model.featureCache.set(key, entries)
     } catch {
-      guard !error.dashIsCancellation else { return }
+      guard !error.dashIsCancellation, generation == listGeneration,
+        model.isCurrentAccount(context)
+      else { return }
       self.error = error.dashActionableMessage
+    }
+  }
+
+  private func loadMore() async {
+    guard
+      let context = model.accountRequestContext,
+      let token = nextPage,
+      !isLoadingMore
+    else { return }
+    let generation = listGeneration
+    isLoadingMore = true
+    defer {
+      if generation == listGeneration, model.isCurrentAccount(context) {
+        isLoadingMore = false
+      }
+    }
+    do {
+      let page = try await model.client.listAuditLogsPage(
+        accountID: context.accountID,
+        perPage: Self.pageSize,
+        page: token
+      )
+      guard !Task.isCancelled, generation == listGeneration, model.isCurrentAccount(context) else {
+        return
+      }
+      var seenIDs = Set(entries.map(\.id))
+      let unique = page.entries.filter { seenIDs.insert($0.id).inserted }
+      entries += unique
+      nextPage = unique.isEmpty ? nil : page.nextPage
+      model.featureCache.set(FeatureCacheKey.auditLogs(context.accountID), entries)
+      error = nil
+    } catch {
+      guard !error.dashIsCancellation, generation == listGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+}
+
+private struct AuditLogDetailTray: View {
+  @Environment(AppModel.self) private var model
+  let entry: AuditLogEntry
+
+  private var copyableResourceID: String? {
+    guard let id = entry.resource?.id, !id.isEmpty else { return nil }
+    return id
+  }
+
+  var body: some View {
+    DashDetailTray(fields: entry.detailFields) {
+      VStack(spacing: 10) {
+        if let resourceID = copyableResourceID {
+          DashTrayPillButton(title: "Copy resource ID") {
+            UIPasteboard.general.string = resourceID
+            DashDelight.lightImpact()
+            model.toasts.success(DashL10n.string("Resource ID copied"))
+          }
+        }
+        DashActionButton(title: "Copy details") {
+          UIPasteboard.general.string = entry.copyableSummary
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Audit event copied"))
+        }
+      }
     }
   }
 }

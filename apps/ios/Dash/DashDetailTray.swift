@@ -145,3 +145,79 @@ extension R2Object {
     ].compactMap { $0 }
   }
 }
+
+extension AuditLogEntry {
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = []
+    if let actionType = action?.type, !actionType.isEmpty {
+      fields.append(DashDetailField(label: "Action", value: actionType, mono: true))
+    }
+    if let result = action?.result, !result.isEmpty {
+      let display = StatusToken(auditResult: result)?.label ?? result
+      fields.append(DashDetailField(label: "Result", value: display))
+    }
+    if let occurredAt, !occurredAt.isEmpty {
+      fields.append(
+        DashDetailField(
+          label: "Time",
+          value: DashDateFormatting.dateAndTime(fromISO8601: occurredAt)))
+    }
+    if let actorName = actor?.email ?? actor?.type, !actorName.isEmpty {
+      fields.append(DashDetailField(label: "Actor", value: actorName))
+    }
+    if let tokenName = actor?.tokenName, !tokenName.isEmpty {
+      fields.append(DashDetailField(label: "API token", value: tokenName))
+    }
+    if let context = actor?.context, !context.isEmpty {
+      fields.append(DashDetailField(label: "Context", value: context, mono: true))
+    }
+    if let ipAddress = actor?.ipAddress, !ipAddress.isEmpty {
+      fields.append(DashDetailField(label: "IP address", value: ipAddress, mono: true))
+    }
+    if let product = resource?.product, !product.isEmpty {
+      fields.append(DashDetailField(label: "Product", value: product))
+    }
+    if let resourceType = resource?.type, !resourceType.isEmpty {
+      fields.append(DashDetailField(label: "Resource type", value: resourceType, mono: true))
+    }
+    if let resourceID = resource?.id, !resourceID.isEmpty {
+      fields.append(DashDetailField(label: "Resource ID", value: resourceID, mono: true))
+    }
+    if let zoneName, !zoneName.isEmpty {
+      fields.append(DashDetailField(label: "Domain", value: zoneName))
+    }
+    if let scope = resource?.scope, !scope.isEmpty {
+      fields.append(DashDetailField(label: "Scope", value: scope, mono: true))
+    }
+    if let interfaceName, !interfaceName.isEmpty {
+      fields.append(DashDetailField(label: "Interface", value: interfaceName))
+    }
+    if let method, !method.isEmpty, let uri, !uri.isEmpty {
+      fields.append(DashDetailField(label: "Request", value: "\(method) \(uri)", mono: true))
+    } else if let uri, !uri.isEmpty {
+      fields.append(DashDetailField(label: "Request", value: uri, mono: true))
+    }
+    if let statusCode {
+      fields.append(DashDetailField(label: "HTTP status", value: String(statusCode), mono: true))
+    }
+    if let rayID, !rayID.isEmpty {
+      fields.append(DashDetailField(label: "Ray ID", value: rayID, mono: true))
+    }
+    if let oldValue, !oldValue.isEmpty {
+      fields.append(DashDetailField(label: "Previous value", value: oldValue, mono: true))
+    }
+    if let newValue, !newValue.isEmpty {
+      fields.append(DashDetailField(label: "New value", value: newValue, mono: true))
+    }
+    if let logID, !logID.isEmpty {
+      fields.append(DashDetailField(label: "Event ID", value: logID, mono: true))
+    }
+    return fields
+  }
+
+  /// Plain-text key/value dump for Copy details.
+  var copyableSummary: String {
+    ([title] + detailFields.map { "\(DashL10n.ui($0.label)): \($0.value)" })
+      .joined(separator: "\n")
+  }
+}

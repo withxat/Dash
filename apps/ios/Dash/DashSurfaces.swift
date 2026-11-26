@@ -1742,6 +1742,19 @@ enum StatusToken: String, CaseIterable, Sendable {
     }
   }
 
+  /// Maps Cloudflare Audit Log action result (`success` / `failure`) onto a
+  /// status badge token. Absent or unrecognized results omit the badge.
+  init?(auditResult: String?) {
+    switch auditResult?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "success", "true":
+      self = .success
+    case "failure", "failed", "false":
+      self = .failed
+    default:
+      return nil
+    }
+  }
+
   /// Status-page mappings switch over the package's typed enums with no
   /// `default:`, so a vocabulary addition in `CloudflareStatus` cannot compile
   /// without choosing a badge here.
