@@ -756,7 +756,15 @@ struct EmailRoutingView: View {
   }
 
   private func routeTitle(_ rule: EmailRoutingRule) -> String {
-    rule.matchedAddress ?? rule.name ?? rule.id
+    for candidate in [rule.matchedAddress, rule.name] {
+      if let text = candidate?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+        return text
+      }
+    }
+    if rule.matchers.contains(where: { $0.type == "all" }) {
+      return DashL10n.string("Catch-all")
+    }
+    return rule.id
   }
 
   private func routeSubtitle(_ rule: EmailRoutingRule) -> String? {
@@ -1918,14 +1926,41 @@ struct EmailRoutingRuleEditor: View {
   let deliveryOptions: [String]
   var onSaved: () async -> Void
 
-  @State private var localPart = ""
-  @State private var delivery = emailRoutingDropOption
-  @State private var name = ""
-  @State private var enabled = true
+  @State private var localPart: String
+  @State private var delivery: String
+  @State private var name: String
+  @State private var enabled: Bool
   @State private var actionPhase: DashActionPhase = .idle
   @State private var errorMessage: String?
   @State private var deleteError: String?
-  @State private var loaded = false
+
+  init(
+    zoneID: String,
+    zoneName: String,
+    rule: EmailRoutingRule?,
+    deliveryOptions: [String],
+    onSaved: @escaping () async -> Void
+  ) {
+    self.zoneID = zoneID
+    self.zoneName = zoneName
+    self.rule = rule
+    self.deliveryOptions = deliveryOptions
+    self.onSaved = onSaved
+    let initialLocalPart =
+      rule?.matchedAddress.map { String($0.split(separator: "@").first ?? "") } ?? ""
+    let initialDelivery: String =
+      if let action = rule?.actions.first, action.type == "forward",
+        let target = action.forwardTarget
+      {
+        target
+      } else {
+        emailRoutingDropOption
+      }
+    _localPart = State(initialValue: initialLocalPart)
+    _delivery = State(initialValue: initialDelivery)
+    _name = State(initialValue: rule?.name ?? "")
+    _enabled = State(initialValue: rule?.enabled ?? true)
+  }
 
   private var isReadOnly: Bool {
     guard let rule else { return false }
@@ -1955,7 +1990,9 @@ struct EmailRoutingRuleEditor: View {
         editorBody
       }
     }
-    .onAppear { loadIfNeeded() }
+    .onChange(of: rule?.id) { _, _ in
+      syncFromRule()
+    }
   }
 
   // MARK: Read-only
@@ -2065,13 +2102,15 @@ struct EmailRoutingRuleEditor: View {
 
   // MARK: State
 
-  private func loadIfNeeded() {
-    guard !loaded else { return }
-    loaded = true
-    guard let rule else { return }
-    if let address = rule.matchedAddress {
-      localPart = String(address.split(separator: "@").first ?? "")
+  private func syncFromRule() {
+    guard let rule else {
+      localPart = ""
+      delivery = emailRoutingDropOption
+      name = ""
+      enabled = true
+      return
     }
+    localPart = rule.matchedAddress.map { String($0.split(separator: "@").first ?? "") } ?? ""
     if let action = rule.actions.first, action.type == "forward",
       let target = action.forwardTarget
     {
