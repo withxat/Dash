@@ -166,3 +166,29 @@ private func link(_ string: String) -> CloudflareDashboardLink? {
   let fullwidth = String(repeating: "０", count: 32)
   #expect(link("https://dash.cloudflare.com/\(fullwidth)/pages/view/portal") == nil)
 }
+
+@Test func dashboardLinkReadsTunnelsAndTunnelDetails() {
+  let tunnelID = "7a8b132e-a702-38d4-9f0e-6a1b2c3d4e5f"
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels")?.resource
+      == .tunnels)
+  #expect(
+    link(
+      "https://dash.cloudflare.com/\(account)/zero-trust/networks/connectors/cloudflare-tunnels"
+    )?.resource == .tunnels)
+  #expect(
+    link(
+      "https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels/cfd_tunnel/\(tunnelID)/edit"
+    )?.resource == .tunnel(id: tunnelID))
+  #expect(
+    link(
+      "https://dash.cloudflare.com/\(account)/zero-trust/networks/connectors/cloudflare-tunnels/cfd_tunnel/\(tunnelID)"
+    )?.resource == .tunnel(id: tunnelID))
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels/\(tunnelID)")?.resource
+      == .tunnel(id: tunnelID))
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels/create") == nil)
+  #expect(
+    link("https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels/cfd_tunnel") == nil)
+}

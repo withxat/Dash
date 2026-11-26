@@ -62,6 +62,7 @@ enum DashRoute: Hashable, Sendable {
   case r2(String)
   case r2Settings(String)
   case kv(String)
+  case tunnel(String)
   case auditLogs
   /// One Cloudflare Registrar domain, keyed on the FQDN.
   case registrarDomain(String)
@@ -123,6 +124,8 @@ enum DashRoute: Hashable, Sendable {
       case .r2Bucket(let name): .r2(name)
       case .r2BucketSettings(let name): .r2Settings(name)
       case .kvNamespace(let id): .kv(id)
+      case .tunnels: .feature(.tunnels)
+      case .tunnel(let id): .tunnel(id)
       case .auditLogs: .auditLogs
       case .zone(let name, let section): .zoneByName(name: name, section: section)
       }
@@ -183,6 +186,9 @@ enum DashRoute: Hashable, Sendable {
     case "kv":
       guard let id = segments.first else { return nil }
       return .kv(id)
+    case "tunnel":
+      guard let id = segments.first else { return nil }
+      return .tunnel(id)
     case "audit-logs":
       return segments.isEmpty ? .auditLogs : nil
     case "registrar":
@@ -270,6 +276,7 @@ enum DashRoute: Hashable, Sendable {
     case .r2(let name): .r2Bucket(name, prefix: "")
     case .r2Settings(let name): .r2BucketSettings(name)
     case .kv(let id): .kvNamespace(id)
+    case .tunnel(let id): .tunnel(id)
     case .auditLogs: .auditLogs
     case .registrarDomain(let domain): .registrarDomain(domain)
     case .scoped(_, let route), .activeAccount(let route): route.destination

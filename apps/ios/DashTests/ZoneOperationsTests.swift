@@ -1102,3 +1102,42 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(pretty?.contains("\"env\"") == true)
   #expect(pretty?.contains("\"prod\"") == true)
 }
+
+@Test func r2ObjectDetailFieldsAndTunnelDashRouteParsing() {
+  let obj = R2Object(
+    key: "assets/styles.css",
+    size: 2048,
+    etag: "abc123",
+    uploaded: "2026-06-01T12:00:00Z",
+    httpMetadata: R2Object.HTTPMetadata(
+      contentType: "text/css",
+      cacheControl: "public, max-age=3600",
+      contentDisposition: "inline",
+      contentEncoding: "gzip",
+      contentLanguage: "en"
+    ),
+    customMetadata: ["b": "2", "a": "1"]
+  )
+  let byLabel = Dictionary(uniqueKeysWithValues: obj.detailFields.map { ($0.label, $0.value) })
+  #expect(byLabel["Key"] == "assets/styles.css")
+  #expect(byLabel["Size"]?.contains("2,048") == true)
+  #expect(byLabel["Content-Type"] == "text/css")
+  #expect(byLabel["ETag"] == "abc123")
+  #expect(byLabel["Last modified"] != nil)
+  #expect(byLabel["Cache-Control"] == "public, max-age=3600")
+  #expect(byLabel["Content-Disposition"] == "inline")
+  #expect(byLabel["Content-Encoding"] == "gzip")
+  #expect(byLabel["Content-Language"] == "en")
+  #expect(byLabel["Custom metadata"] == "a: 1\nb: 2")
+
+  let account = "0123456789abcdef0123456789abcdef"
+  let tunnelID = "7a8b132e-a702-38d4-9f0e-6a1b2c3d4e5f"
+  let listURL = URL(string: "https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels")!
+  let detailURL = URL(
+    string:
+      "https://dash.cloudflare.com/\(account)/zero-trust/networks/tunnels/cfd_tunnel/\(tunnelID)")!
+  let schemeURL = URL(string: "dash://tunnel/\(tunnelID)?account=\(account)")!
+  #expect(DashRoute.parse(listURL)?.destination == .feature(.tunnels))
+  #expect(DashRoute.parse(detailURL)?.destination == .tunnel(tunnelID))
+  #expect(DashRoute.parse(schemeURL)?.destination == .tunnel(tunnelID))
+}

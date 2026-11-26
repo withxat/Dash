@@ -123,5 +123,5 @@ func decodeR2ObjectUploadResponse(
     size: result.size,
     etag: result.etag,
     uploaded: result.uploaded,
-    httpMetadata: contentType.map(R2Object.HTTPMetadata.init(contentType:)))
+    httpMetadata: contentType.map { R2Object.HTTPMetadata(contentType: $0) })
 }

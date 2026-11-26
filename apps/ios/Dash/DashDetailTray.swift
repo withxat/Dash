@@ -129,20 +129,50 @@ extension DashDetailTray where Accessory == EmptyView {
 
 extension R2Object {
   var detailFields: [DashDetailField] {
-    [
-      DashDetailField(label: "Key", value: key, mono: true),
-      size.map {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Key", value: key, mono: true)
+    ]
+    if let size {
+      let formatted = ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file)
+      let display =
+        size >= 1_024
+        ? DashL10n.string("\(formatted) (\(size.formatted()) bytes)")
+        : DashL10n.string("\(size.formatted()) bytes")
+      fields.append(DashDetailField(label: "Size", value: display))
+    }
+    if let contentType = httpMetadata?.contentType, !contentType.isEmpty {
+      fields.append(DashDetailField(label: "Content-Type", value: contentType, mono: true))
+    }
+    if let etag, !etag.isEmpty {
+      fields.append(DashDetailField(label: "ETag", value: etag, mono: true))
+    }
+    if let uploaded, !uploaded.isEmpty {
+      fields.append(
         DashDetailField(
-          label: "Size",
-          value: ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file))
-      },
-      uploaded.map {
-        DashDetailField(
-          label: "Uploaded",
-          value: DashDateFormatting.dateAndTime(fromISO8601: $0))
-      },
-      etag.map { DashDetailField(label: "ETag", value: $0, mono: true) },
-    ].compactMap { $0 }
+          label: "Last modified",
+          value: DashDateFormatting.dateAndTime(fromISO8601: uploaded)))
+    }
+    if let cacheControl = httpMetadata?.cacheControl, !cacheControl.isEmpty {
+      fields.append(DashDetailField(label: "Cache-Control", value: cacheControl, mono: true))
+    }
+    if let disposition = httpMetadata?.contentDisposition, !disposition.isEmpty {
+      fields.append(DashDetailField(label: "Content-Disposition", value: disposition, mono: true))
+    }
+    if let encoding = httpMetadata?.contentEncoding, !encoding.isEmpty {
+      fields.append(DashDetailField(label: "Content-Encoding", value: encoding, mono: true))
+    }
+    if let language = httpMetadata?.contentLanguage, !language.isEmpty {
+      fields.append(DashDetailField(label: "Content-Language", value: language, mono: true))
+    }
+    if let customMetadata, !customMetadata.isEmpty {
+      let summary =
+        customMetadata
+        .sorted { $0.key.localizedCaseInsensitiveCompare($1.key) == .orderedAscending }
+        .map { "\($0.key): \($0.value)" }
+        .joined(separator: "\n")
+      fields.append(DashDetailField(label: "Custom metadata", value: summary, mono: true))
+    }
+    return fields
   }
 }
 

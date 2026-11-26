@@ -125,6 +125,34 @@ function dashboardResource(href) {
 		return `r2/${bucket}`
 	}
 
+	// zero-trust/networks/tunnels[/cfd_tunnel/<tunnel-id>[/...] | /<tunnel-id>[/...]]
+	// zero-trust/networks/connectors/cloudflare-tunnels[/cfd_tunnel/<tunnel-id>[/...] | /<tunnel-id>[/...]]
+	const tunnelTail
+		= segments.length >= 3
+			&& segments[0] === 'zero-trust'
+			&& segments[1] === 'networks'
+			&& segments[2] === 'tunnels'
+			? segments.slice(3)
+			: segments.length >= 4
+				&& segments[0] === 'zero-trust'
+				&& segments[1] === 'networks'
+				&& segments[2] === 'connectors'
+				&& segments[3] === 'cloudflare-tunnels'
+				? segments.slice(4)
+				: null
+	if (tunnelTail !== null) {
+		if (tunnelTail.length === 0)
+			return 'tunnels'
+		if (tunnelTail[0] === 'cfd_tunnel') {
+			return tunnelTail.length >= 2 && isIdentifier(tunnelTail[1])
+				? `tunnels/${tunnelTail[1]}`
+				: null
+		}
+		if (isIdentifier(tunnelTail[0]))
+			return `tunnels/${tunnelTail[0]}`
+		return null
+	}
+
 	// audit-log
 	if (segments.length === 1 && segments[0] === 'audit-log')
 		return 'audit-log'

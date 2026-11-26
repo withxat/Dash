@@ -220,6 +220,30 @@
 		"opens": false
 	},
 	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/tunnels",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/tunnels/cfd_tunnel/7a8b132e-a702-38d4-9f0e-6a1b2c3d4e5f/edit",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/connectors/cloudflare-tunnels",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/connectors/cloudflare-tunnels/cfd_tunnel/7a8b132e-a702-38d4-9f0e-6a1b2c3d4e5f",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/tunnels/7a8b132e-a702-38d4-9f0e-6a1b2c3d4e5f",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/zero-trust/networks/tunnels/create",
+		"opens": false
+	},
+	{
 		"url": "https://dash.cloudflare.com/?to=/:account/pages/view/a&to=/:account/pages/view/b",
 		"opens": false
 	}

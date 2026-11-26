@@ -10,6 +10,18 @@ struct WorkersView: View {
   @State private var workers: [WorkerScript] = []
   @State private var error: String?
   @State private var loading = true
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredWorkers: [WorkerScript] {
+    guard isSearching else { return workers }
+    return workers.filter { worker in
+      DashSearchMatcher.matches(searchQuery, in: [worker.id])
+    }
+  }
 
   var body: some View {
     DashFeatureList(
@@ -27,34 +39,48 @@ struct WorkersView: View {
       ),
       retry: { Task { await load() } }
     ) { mode in
-      dashModeListRows(
-        mode: mode,
-        items: workers,
-        reduceMotion: reduceMotion,
-        inset: false,
-        placeholder: { index in
-          FeatureResourceCardFace(content: workerResourceCardPlaceholder(index: index))
-            .dashBodyPlaceholder(true)
-            .dashItemBoundary(index > 0)
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search Workers"),
+          accessibilityIdentifier: "workers-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredWorkers.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
         }
-      ) { worker in
-        let displayedWorker =
-          model.activeAccountID.flatMap {
-            WorkersResourceCardCache.latestWorker(
-              accountID: $0,
-              workerName: worker.id,
-              fallback: worker,
-              cache: model.featureCache)
-          } ?? worker
-        let content = workerResourceCardContent(displayedWorker)
-        let hero = DashNavigationHero.featureResourceCard(
-          accountID: model.activeAccountID ?? "",
-          content: content)
-        DashListGroupLink(value: .worker(worker.id), hero: hero) {
-          FeatureResourceCardFace(content: content)
+      } else {
+        dashModeListRows(
+          mode: mode,
+          items: filteredWorkers,
+          reduceMotion: reduceMotion,
+          inset: false,
+          placeholder: { index in
+            FeatureResourceCardFace(content: workerResourceCardPlaceholder(index: index))
+              .dashBodyPlaceholder(true)
+              .dashItemBoundary(index > 0)
+          }
+        ) { worker in
+          let displayedWorker =
+            model.activeAccountID.flatMap {
+              WorkersResourceCardCache.latestWorker(
+                accountID: $0,
+                workerName: worker.id,
+                fallback: worker,
+                cache: model.featureCache)
+            } ?? worker
+          let content = workerResourceCardContent(displayedWorker)
+          let hero = DashNavigationHero.featureResourceCard(
+            accountID: model.activeAccountID ?? "",
+            content: content)
+          DashListGroupLink(value: .worker(worker.id), hero: hero) {
+            FeatureResourceCardFace(content: content)
+          }
+          .accessibilityIdentifier("worker-\(worker.id)")
+          .dashItemBoundary(worker.id != filteredWorkers.first?.id)
         }
-        .accessibilityIdentifier("worker-\(worker.id)")
-        .dashItemBoundary(worker.id != workers.first?.id)
       }
     }
     .refreshable { await load(force: true) }.task {

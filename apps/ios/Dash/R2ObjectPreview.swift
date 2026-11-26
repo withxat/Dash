@@ -379,6 +379,49 @@ private struct PreviewChromeButton: View {
 /// The object's actions, reached from the preview's "⋯" button: Copy public
 /// URL, Download / share, and a header-trash delete. Also lists the object's
 /// metadata fields.
+/// Standalone details tray opened from an R2 object row's context menu.
+/// Renders the cached row fields immediately, then fetches fresh metadata via
+/// `getR2ObjectMetadata` to fill in HTTP and custom metadata.
+struct R2ObjectDetailsTray: View {
+  @Environment(AppModel.self) private var model
+  let bucket: String
+  let object: R2Object
+  let publicURL: URL?
+  @State private var refreshedObject: R2Object?
+
+  private var displayedObject: R2Object {
+    refreshedObject ?? object
+  }
+
+  var body: some View {
+    DashDetailTray(fields: displayedObject.detailFields) {
+      VStack(spacing: 10) {
+        if let publicURL {
+          DashSecondaryPillButton(title: "Copy public URL") {
+            UIPasteboard.general.url = publicURL
+            DashDelight.lightImpact()
+            model.toasts.success(DashL10n.string("Public URL copied"))
+          }
+        }
+        DashActionButton(title: "Copy key") {
+          UIPasteboard.general.string = displayedObject.key
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Key copied"))
+        }
+      }
+    }
+    .task(id: object.key) {
+      guard let context = model.accountRequestContext else { return }
+      if let metadata = try? await model.client.getR2ObjectMetadata(
+        accountID: context.accountID, bucket: bucket, key: object.key),
+        !Task.isCancelled, model.isCurrentAccount(context)
+      {
+        refreshedObject = metadata
+      }
+    }
+  }
+}
+
 private struct R2ObjectActionsSheet: View {
   @Environment(AppModel.self) private var model
   @Environment(\.dashTrayDismiss) private var dismiss
@@ -387,8 +430,13 @@ private struct R2ObjectActionsSheet: View {
   let publicURL: URL?
   let allowsWrites: Bool
   var onDeleted: () async -> Void
+  @State private var refreshedObject: R2Object?
   @State private var deleteActionPhase: DashActionPhase = .idle
   @State private var deleteError: String?
+
+  private var displayedObject: R2Object {
+    refreshedObject ?? object
+  }
 
   private var filename: String {
     object.key.split(separator: "/").last.map(String.init) ?? object.key
@@ -396,11 +444,20 @@ private struct R2ObjectActionsSheet: View {
 
   var body: some View {
     detail
+      .task(id: object.key) {
+        guard let context = model.accountRequestContext else { return }
+        if let metadata = try? await model.client.getR2ObjectMetadata(
+          accountID: context.accountID, bucket: bucket, key: object.key),
+          !Task.isCancelled, model.isCurrentAccount(context)
+        {
+          refreshedObject = metadata
+        }
+      }
   }
 
   private var detail: some View {
     DashDetailTray(
-      fields: object.detailFields,
+      fields: displayedObject.detailFields,
       deleteMessage: allowsWrites
         ? DashL10n.string("Permanently deletes \(filename) from \(bucket). This can't be undone.")
         : nil,
@@ -412,6 +469,12 @@ private struct R2ObjectActionsSheet: View {
       // Secondary/reversible pills first; the primary action pill stays
       // bottom-most so its position reads as the main verb.
       VStack(spacing: 10) {
+        DashSecondaryPillButton(title: "Copy key") {
+          UIPasteboard.general.string = displayedObject.key
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Key copied"))
+        }
+
         // Download is file-backed and shares the preview transfer ceiling.
         if publicURL != nil,
           let accountID = model.activeAccountID,

@@ -1,8 +1,19 @@
 import CloudflareAPI
 import Observation
+import PhotosUI
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
+
+struct R2UploadProgress: Equatable, Sendable {
+  let currentFileName: String
+  let completedCount: Int
+  let totalCount: Int
+
+  var currentIndex: Int {
+    min(completedCount + 1, max(totalCount, 1))
+  }
+}
 
 struct R2BucketsView: View {
   @Environment(AppModel.self) private var model
@@ -13,6 +24,18 @@ struct R2BucketsView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var showsCreateBucket = false
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredBuckets: [R2Bucket] {
+    guard isSearching else { return buckets }
+    return buckets.filter { bucket in
+      DashSearchMatcher.matches(searchQuery, in: [bucket.name])
+    }
+  }
 
   var body: some View {
     DashFeatureList(
@@ -34,15 +57,30 @@ struct R2BucketsView: View {
       ),
       retry: { Task { await load() } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: buckets, reduceMotion: reduceMotion) { bucket in
-          DashListGroupLink(value: .r2Bucket(bucket.name, prefix: "")) {
-            DashListRow(
-              title: bucket.name,
-              subtitle: r2BucketCreationText(bucket.creationDate),
-              icon: SolarAsset.Content.box
-            )
-            .accessibilityLabel(r2BucketAccessibilityLabel(bucket))
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search buckets"),
+          accessibilityIdentifier: "r2-buckets-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredBuckets.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(mode: mode, items: filteredBuckets, reduceMotion: reduceMotion) {
+            bucket in
+            DashListGroupLink(value: .r2Bucket(bucket.name, prefix: "")) {
+              DashListRow(
+                title: bucket.name,
+                subtitle: r2BucketCreationText(bucket.creationDate),
+                icon: SolarAsset.Content.box
+              )
+              .accessibilityLabel(r2BucketAccessibilityLabel(bucket))
+            }
           }
         }
       }
@@ -173,12 +211,15 @@ struct R2BucketView: View {
   @State private var isLoadingMore = false
   @State private var importsFile = false
   @State private var fileImporterReporterID = UUID()
+  @State private var showsPhotoPicker = false
+  @State private var selectedPhotoItems: [PhotosPickerItem] = []
   @State private var selectedObject: R2Object?
+  @State private var detailsObject: R2Object?
   @State private var previewPresentationReporterID = UUID()
   /// Survives folder/settings pushes (view merely disappears). Cancels in
   /// `deinit` when this screen leaves the navigation stack for good.
   @State private var work = R2BucketWork()
-  @State private var uploadingFileName: String?
+  @State private var uploadProgress: R2UploadProgress?
   @State private var selecting = false
   @State private var selectedKeys: Set<String> = []
   @State private var confirmsBatchDelete = false
@@ -307,7 +348,7 @@ struct R2BucketView: View {
       error: error,
       // An in-flight upload keeps the content phase so its progress card is not
       // buried under the empty wash.
-      hasContent: !objects.isEmpty || !folders.isEmpty || uploadingFileName != nil,
+      hasContent: !objects.isEmpty || !folders.isEmpty || uploadProgress != nil,
       empty: DashFeatureEmpty(
         icon: folderPrefix.isEmpty ? SolarAsset.Content.box : SolarAsset.Content.folder,
         title: folderPrefix.isEmpty ? "Empty bucket" : "Empty folder",
@@ -326,9 +367,9 @@ struct R2BucketView: View {
         Task { await load(for: request) }
       }
     ) { mode in
-      if !mode.isPlaceholder, let uploadingFileName {
+      if !mode.isPlaceholder, let uploadProgress {
         DashSurfaceStack {
-          uploadProgressCard(uploadingFileName)
+          uploadProgressCard(uploadProgress)
         }
         .padding(.bottom, DashTheme.Spacing.itemGap)
       }
@@ -373,6 +414,7 @@ struct R2BucketView: View {
                 selected: selectedKeys.contains(object.key),
                 publicURL: domains?.publicURL(forKey: object.key),
                 allowsWrites: featureAllowsWrites,
+                onShowDetails: { detailsObject = object },
                 onRequestDelete: featureAllowsWrites
                   ? {
                     objectPendingDelete = object
@@ -454,16 +496,27 @@ struct R2BucketView: View {
     .fileImporter(
       isPresented: $importsFile,
       allowedContentTypes: [.data],
-      allowsMultipleSelection: false,
+      allowsMultipleSelection: true,
       onCompletion: { result in
         // The binding falls before this callback. Start route-owned work first,
         // then release the presentation lease so a queued external route can
         // deterministically cancel it by removing this entry.
-        if case .success(let urls) = result, let url = urls.first { beginUpload(url) }
+        if case .success(let urls) = result, !urls.isEmpty { beginUpload(urls) }
         finishFileImporterPresentation()
       },
       onCancellation: { finishFileImporterPresentation() }
     )
+    .photosPicker(
+      isPresented: $showsPhotoPicker,
+      selection: $selectedPhotoItems,
+      maxSelectionCount: 20,
+      matching: .any(of: [.images, .videos])
+    )
+    .onChange(of: selectedPhotoItems) { _, items in
+      guard !items.isEmpty else { return }
+      selectedPhotoItems = []
+      beginPhotoUpload(items)
+    }
     .refreshable {
       let request = requestIdentity
       await load(force: true, for: request)
@@ -524,6 +577,17 @@ struct R2BucketView: View {
       objectPendingDelete = nil
     }
     .dashTray(
+      item: $detailsObject,
+      title: { objectName($0.key) },
+      tone: FeatureVisualIdentity.tone(for: .r2)
+    ) { object in
+      R2ObjectDetailsTray(
+        bucket: bucket,
+        object: object,
+        publicURL: domains?.publicURL(forKey: object.key)
+      )
+    }
+    .dashTray(
       isPresented: $showsBucketActions, title: "Actions",
       tone: FeatureVisualIdentity.tone(for: .r2)
     ) {
@@ -572,7 +636,7 @@ struct R2BucketView: View {
 
   private func cancelOutstandingWork() {
     work.cancelAndRelease()
-    uploadingFileName = nil
+    uploadProgress = nil
   }
 
   private func presentFileImporter() {
@@ -602,7 +666,10 @@ struct R2BucketView: View {
     loading = request.context != nil
     isLoadingMore = false
     importsFile = false
+    showsPhotoPicker = false
+    selectedPhotoItems = []
     selectedObject = nil
+    detailsObject = nil
     selecting = false
     selectedKeys = []
     confirmsBatchDelete = false
@@ -692,6 +759,23 @@ struct R2BucketView: View {
   @ViewBuilder private var r2BucketActionsMenu: some View {
     dashListCard {
       if featureAllowsWrites {
+        R2BucketTrayExitButton {
+          showsPhotoPicker = true
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Upload photos"),
+            icon: SolarAsset.gallery,
+            showsChevron: false,
+            showsIconPlate: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .disabled(work.upload != nil)
+        .opacity(work.upload != nil ? 0.45 : 1)
+        .dashListCardInset()
+
+        DashListGroupDivider()
+
         Button {
           bucketActionsPath.append(.createFolder)
         } label: {
@@ -1015,18 +1099,28 @@ struct R2BucketView: View {
     domains = cached
   }
 
-  private func uploadProgressCard(_ fileName: String) -> some View {
+  private func uploadProgressCard(_ progress: R2UploadProgress) -> some View {
     DashCard {
       HStack(spacing: 12) {
         DashLoadingRing(color: DashTheme.brand)
         VStack(alignment: .leading, spacing: 2) {
-          Text("Uploading \(fileName)")
+          Text("Uploading \(progress.currentFileName)")
             .dashTextStyle(.bodySemibold)
             .foregroundStyle(DashTheme.text)
             .lineLimit(1)
-          Text("Keep Dash open until the upload finishes.")
+          if progress.totalCount > 1 {
+            Text(
+              DashL10n.string(
+                "File \(progress.currentIndex) of \(progress.totalCount) · Keep Dash open until the upload finishes."
+              )
+            )
             .dashTextStyle(.caption)
             .foregroundStyle(DashTheme.subtle)
+          } else {
+            Text("Keep Dash open until the upload finishes.")
+              .dashTextStyle(.caption)
+              .foregroundStyle(DashTheme.subtle)
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         Button("Cancel") {
@@ -1131,61 +1225,215 @@ struct R2BucketView: View {
       self.error = error.dashActionableMessage
     }
   }
-  private func beginUpload(_ url: URL) {
+  private func beginUpload(_ urls: [URL]) {
     let request = requestIdentity
-    guard work.upload == nil, request.context != nil, canCommit(request) else { return }
-    uploadingFileName = url.lastPathComponent
-    work.upload = Task { await upload(url, request: request) }
+    guard !urls.isEmpty, work.upload == nil, request.context != nil, canCommit(request) else {
+      return
+    }
+    uploadProgress = R2UploadProgress(
+      currentFileName: urls[0].lastPathComponent,
+      completedCount: 0,
+      totalCount: urls.count)
+    work.upload = Task { await uploadFiles(urls, request: request) }
   }
 
-  private func upload(_ url: URL, request: R2BucketRequestIdentity) async {
+  private func beginPhotoUpload(_ items: [PhotosPickerItem]) {
+    let request = requestIdentity
+    guard !items.isEmpty, work.upload == nil, request.context != nil, canCommit(request) else {
+      return
+    }
+    uploadProgress = R2UploadProgress(
+      currentFileName: DashL10n.string("Photo 1"),
+      completedCount: 0,
+      totalCount: items.count)
+    work.upload = Task { await uploadPhotos(items, request: request) }
+  }
+
+  private func uploadFiles(_ urls: [URL], request: R2BucketRequestIdentity) async {
     guard let context = request.context, canCommit(request) else { return }
     let id = context.accountID
     defer {
       if matchesCurrentRequest(request) {
         work.upload = nil
-        uploadingFileName = nil
+        uploadProgress = nil
       }
     }
-    do {
+    var succeeded: [String] = []
+    var failures: [(name: String, message: String)] = []
+    var wasCancelled = false
+
+    for (index, url) in urls.enumerated() {
+      guard canCommit(request) else {
+        wasCancelled = true
+        break
+      }
+      let fileName = url.lastPathComponent
+      uploadProgress = R2UploadProgress(
+        currentFileName: fileName,
+        completedCount: index,
+        totalCount: urls.count)
       let access = url.startAccessingSecurityScopedResource()
       defer { if access { url.stopAccessingSecurityScopedResource() } }
       guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
-        guard canCommit(request) else { return }
-        // Operation feedback, not a listing failure: the screen's `error`
-        // channel belongs to load()/loadMore(), like the oversize branch below.
-        model.toasts.error(DashL10n.string("Can't read that file's size"))
-        return
+        failures.append((fileName, DashL10n.string("Can't read that file's size")))
+        continue
       }
       guard size <= R2Media.transferSizeLimit else {
-        guard canCommit(request) else { return }
-        model.toasts.error(
-          R2UploadTooLargeCopy.message(
-            fileName: url.lastPathComponent,
-            size: size,
-            guidance: .wranglerOrDashboard))
-        return
+        failures.append(
+          (
+            fileName,
+            R2UploadTooLargeCopy.message(
+              fileName: fileName,
+              size: size,
+              guidance: .wranglerOrDashboard)
+          ))
+        continue
       }
-      try await model.client.putR2Object(
-        accountID: id, bucket: bucket, key: folderPrefix + url.lastPathComponent, fileURL: url,
-        contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
-      guard canCommit(request) else { return }
+      do {
+        try await model.client.putR2Object(
+          accountID: id, bucket: bucket, key: folderPrefix + fileName, fileURL: url,
+          contentType: UTType(filenameExtension: url.pathExtension)?.preferredMIMEType)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        succeeded.append(fileName)
+      } catch {
+        if error.dashIsCancellation || Task.isCancelled {
+          wasCancelled = true
+          break
+        }
+        failures.append((fileName, error.dashActionableMessage))
+      }
+    }
+    await finishUploadBatch(
+      accountID: id,
+      request: request,
+      totalCount: urls.count,
+      succeeded: succeeded,
+      failures: failures,
+      wasCancelled: wasCancelled)
+  }
+
+  private func uploadPhotos(_ items: [PhotosPickerItem], request: R2BucketRequestIdentity) async {
+    guard let context = request.context, canCommit(request) else { return }
+    let id = context.accountID
+    defer {
+      if matchesCurrentRequest(request) {
+        work.upload = nil
+        uploadProgress = nil
+      }
+    }
+    var succeeded: [String] = []
+    var failures: [(name: String, message: String)] = []
+    var wasCancelled = false
+    let stamp = Int(Date().timeIntervalSince1970)
+
+    for (index, item) in items.enumerated() {
+      guard canCommit(request) else {
+        wasCancelled = true
+        break
+      }
+      let contentType = item.supportedContentTypes.first(where: {
+        $0.preferredFilenameExtension != nil
+      })
+      let ext = contentType?.preferredFilenameExtension ?? "jpg"
+      let mimeType = contentType?.preferredMIMEType ?? "image/jpeg"
+      let fileName = "upload-\(stamp)-\(index + 1).\(ext)"
+      uploadProgress = R2UploadProgress(
+        currentFileName: fileName,
+        completedCount: index,
+        totalCount: items.count)
+      do {
+        guard let data = try await item.loadTransferable(type: Data.self) else {
+          failures.append((fileName, DashL10n.string("Couldn't read the selected media.")))
+          continue
+        }
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        guard data.count <= R2Media.transferSizeLimit else {
+          failures.append(
+            (
+              fileName,
+              R2UploadTooLargeCopy.message(
+                fileName: fileName,
+                size: data.count,
+                guidance: .wranglerOrDashboard)
+            ))
+          continue
+        }
+        try await model.client.putR2Object(
+          accountID: id, bucket: bucket, key: folderPrefix + fileName, data: data,
+          contentType: mimeType)
+        guard canCommit(request) else {
+          wasCancelled = true
+          break
+        }
+        succeeded.append(fileName)
+      } catch {
+        if error.dashIsCancellation || Task.isCancelled {
+          wasCancelled = true
+          break
+        }
+        failures.append((fileName, error.dashActionableMessage))
+      }
+    }
+    await finishUploadBatch(
+      accountID: id,
+      request: request,
+      totalCount: items.count,
+      succeeded: succeeded,
+      failures: failures,
+      wasCancelled: wasCancelled)
+  }
+
+  private func finishUploadBatch(
+    accountID: String,
+    request: R2BucketRequestIdentity,
+    totalCount: Int,
+    succeeded: [String],
+    failures: [(name: String, message: String)],
+    wasCancelled: Bool
+  ) async {
+    guard matchesCurrentRequest(request) else { return }
+    if !succeeded.isEmpty {
       model.featureCache.remove(
-        prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: id, bucket: bucket))
+        prefix: FeatureCacheKey.r2ObjectsPrefix(accountID: accountID, bucket: bucket))
       await load(force: true, for: request)
-      guard canCommit(request) else { return }
+      guard matchesCurrentRequest(request) else { return }
       R2ShareDestination.record(
         R2ShareDestination(
-          accountID: id, bucket: bucket, prefix: folderPrefix,
+          accountID: accountID, bucket: bucket, prefix: folderPrefix,
           publicHost: domains?.publicHost ?? ""))
-      model.toasts.success(DashL10n.string("Uploaded \(url.lastPathComponent)"))
-    } catch {
-      guard matchesCurrentRequest(request) else { return }
-      if error.dashIsCancellation || Task.isCancelled {
+    }
+    if wasCancelled {
+      if succeeded.isEmpty {
         model.toasts.warning(DashL10n.string("Upload cancelled"))
-        return
+      } else {
+        model.toasts.warning(
+          DashL10n.string("Uploaded \(succeeded.count) of \(totalCount) before cancelling."))
       }
-      model.toasts.error(error.dashActionableMessage)
+      return
+    }
+    if failures.isEmpty {
+      if succeeded.count == 1, let first = succeeded.first {
+        model.toasts.success(DashL10n.string("Uploaded \(first)"))
+      } else {
+        model.toasts.success(DashL10n.string("Uploaded \(succeeded.count) files"))
+      }
+      return
+    }
+    if totalCount == 1, let firstFailure = failures.first {
+      model.toasts.error(firstFailure.message)
+    } else if succeeded.isEmpty {
+      model.toasts.error(
+        DashL10n.string("Failed to upload \(failures.count) of \(totalCount) files."))
+    } else {
+      model.toasts.warning(
+        DashL10n.string(
+          "Uploaded \(succeeded.count) of \(totalCount) files. \(failures.count) failed."))
     }
   }
   private func folderName(_ prefix: String) -> String {

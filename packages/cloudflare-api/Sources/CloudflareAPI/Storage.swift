@@ -18,17 +18,53 @@ public struct R2Object: Codable, Hashable, Identifiable, Sendable {
   public let etag: String?
   public let uploaded: String?
   public let httpMetadata: HTTPMetadata?
+  public let customMetadata: [String: String]?
 
   public var contentType: String? { httpMetadata?.contentType }
 
   public struct HTTPMetadata: Codable, Hashable, Sendable {
     public let contentType: String?
+    public let cacheControl: String?
+    public let contentDisposition: String?
+    public let contentEncoding: String?
+    public let contentLanguage: String?
+
+    public init(
+      contentType: String? = nil,
+      cacheControl: String? = nil,
+      contentDisposition: String? = nil,
+      contentEncoding: String? = nil,
+      contentLanguage: String? = nil
+    ) {
+      self.contentType = contentType
+      self.cacheControl = cacheControl
+      self.contentDisposition = contentDisposition
+      self.contentEncoding = contentEncoding
+      self.contentLanguage = contentLanguage
+    }
+  }
+
+  public init(
+    key: String,
+    size: Int? = nil,
+    etag: String? = nil,
+    uploaded: String? = nil,
+    httpMetadata: HTTPMetadata? = nil,
+    customMetadata: [String: String]? = nil
+  ) {
+    self.key = key
+    self.size = size
+    self.etag = etag
+    self.uploaded = uploaded
+    self.httpMetadata = httpMetadata
+    self.customMetadata = customMetadata
   }
 
   enum CodingKeys: String, CodingKey {
     case key, size, etag
     case uploaded = "last_modified"
     case httpMetadata = "http_metadata"
+    case customMetadata = "custom_metadata"
   }
 }
 

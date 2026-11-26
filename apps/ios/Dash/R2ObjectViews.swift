@@ -241,6 +241,8 @@ struct R2ObjectRow: View {
   /// no serving host yet — Download still works via the authenticated export.
   var publicURL: URL? = nil
   var allowsWrites = false
+  /// Opens the object metadata tray for this row.
+  var onShowDetails: (() -> Void)? = nil
   /// Opens the confirm tray for this row. Nil hides Delete from the menu.
   var onRequestDelete: (() -> Void)? = nil
   /// Enters multi-select with this object already chosen.
@@ -292,6 +294,7 @@ struct R2ObjectRow: View {
         allowsWrites: allowsWrites,
         export: downloadExport,
         onPreview: action,
+        onShowDetails: onShowDetails,
         onCopyPublicURL: publicURL == nil
           ? nil
           : {
@@ -374,6 +377,7 @@ private struct R2ObjectRowContextMenu: ViewModifier {
   let allowsWrites: Bool
   let export: R2ObjectExport?
   let onPreview: () -> Void
+  let onShowDetails: (() -> Void)?
   let onCopyPublicURL: (() -> Void)?
   let onBeginSelect: (() -> Void)?
   let onRequestDelete: (() -> Void)?
@@ -388,6 +392,16 @@ private struct R2ObjectRowContextMenu: ViewModifier {
             Text("Preview")
           } icon: {
             Image(systemName: "eye")
+          }
+        }
+
+        if let onShowDetails {
+          Button(action: onShowDetails) {
+            Label {
+              Text("Object details")
+            } icon: {
+              Image(systemName: "info.circle")
+            }
           }
         }
 

@@ -45,6 +45,8 @@ public struct CloudflareDashboardLink: Hashable, Sendable {
     case r2Bucket(name: String)
     case r2BucketSettings(name: String)
     case kvNamespace(id: String)
+    case tunnels
+    case tunnel(id: String)
     case auditLogs
     /// A zone addressed by its domain name — dashboard URLs carry the FQDN
     /// rather than the zone tag, so the app resolves it against the account.
@@ -137,6 +139,12 @@ public struct CloudflareDashboardLink: Hashable, Sendable {
       return .r2Bucket(name: bucket)
     }
 
+    // zero-trust/networks/tunnels[/cfd_tunnel/<tunnel-id>[/...] | /<tunnel-id>[/...]]
+    // zero-trust/networks/connectors/cloudflare-tunnels[/cfd_tunnel/<tunnel-id>[/...] | /<tunnel-id>[/...]]
+    if let tunnelResource = tunnelResource(segments) {
+      return tunnelResource
+    }
+
     // audit-log
     if segments.count == 1, segments[0] == "audit-log" {
       return .auditLogs
@@ -152,6 +160,31 @@ public struct CloudflareDashboardLink: Hashable, Sendable {
       return .zone(name: domain, section: section)
     }
 
+    return nil
+  }
+
+  private static func tunnelResource(_ segments: [String]) -> Resource? {
+    let tail: ArraySlice<String>
+    if segments.count >= 3, segments[0] == "zero-trust", segments[1] == "networks",
+      segments[2] == "tunnels"
+    {
+      tail = segments.dropFirst(3)
+    } else if segments.count >= 4, segments[0] == "zero-trust", segments[1] == "networks",
+      segments[2] == "connectors", segments[3] == "cloudflare-tunnels"
+    {
+      tail = segments.dropFirst(4)
+    } else {
+      return nil
+    }
+    guard let first = tail.first else { return .tunnels }
+    if first == "cfd_tunnel" {
+      let rest = tail.dropFirst()
+      guard let id = rest.first, isIdentifier(id) else { return nil }
+      return .tunnel(id: id)
+    }
+    if isIdentifier(first) {
+      return .tunnel(id: first)
+    }
     return nil
   }
 

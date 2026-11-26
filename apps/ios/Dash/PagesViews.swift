@@ -10,6 +10,18 @@ struct PagesProjectsView: View {
   @State private var projects: [PagesProject] = []
   @State private var loading = true
   @State private var error: String?
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredProjects: [PagesProject] {
+    guard isSearching else { return projects }
+    return projects.filter { project in
+      DashSearchMatcher.matches(searchQuery, in: [project.name, project.subdomain ?? ""])
+    }
+  }
 
   var body: some View {
     DashFeatureList(
@@ -27,34 +39,48 @@ struct PagesProjectsView: View {
       ),
       retry: { Task { await load(force: true) } }
     ) { mode in
-      dashModeListRows(
-        mode: mode,
-        items: projects,
-        reduceMotion: reduceMotion,
-        inset: false,
-        placeholder: { index in
-          FeatureResourceCardFace(content: pagesResourceCardPlaceholder(index: index))
-            .dashBodyPlaceholder(true)
-            .dashItemBoundary(index > 0)
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search Pages projects"),
+          accessibilityIdentifier: "pages-projects-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredProjects.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
         }
-      ) { project in
-        let displayedProject =
-          model.activeAccountID.flatMap {
-            PagesResourceCardCache.latestProject(
-              accountID: $0,
-              projectName: project.name,
-              fallback: project,
-              cache: model.featureCache)
-          } ?? project
-        let content = pagesResourceCardContent(displayedProject)
-        let hero = DashNavigationHero.featureResourceCard(
-          accountID: model.activeAccountID ?? "",
-          content: content)
-        DashListGroupLink(value: .pagesProject(project.name), hero: hero) {
-          FeatureResourceCardFace(content: content)
+      } else {
+        dashModeListRows(
+          mode: mode,
+          items: filteredProjects,
+          reduceMotion: reduceMotion,
+          inset: false,
+          placeholder: { index in
+            FeatureResourceCardFace(content: pagesResourceCardPlaceholder(index: index))
+              .dashBodyPlaceholder(true)
+              .dashItemBoundary(index > 0)
+          }
+        ) { project in
+          let displayedProject =
+            model.activeAccountID.flatMap {
+              PagesResourceCardCache.latestProject(
+                accountID: $0,
+                projectName: project.name,
+                fallback: project,
+                cache: model.featureCache)
+            } ?? project
+          let content = pagesResourceCardContent(displayedProject)
+          let hero = DashNavigationHero.featureResourceCard(
+            accountID: model.activeAccountID ?? "",
+            content: content)
+          DashListGroupLink(value: .pagesProject(project.name), hero: hero) {
+            FeatureResourceCardFace(content: content)
+          }
+          .accessibilityIdentifier("pages-project-\(project.name)")
+          .dashItemBoundary(project.id != filteredProjects.first?.id)
         }
-        .accessibilityIdentifier("pages-project-\(project.name)")
-        .dashItemBoundary(project.id != projects.first?.id)
       }
     }
     .refreshable { await load(force: true) }

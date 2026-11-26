@@ -35,6 +35,18 @@ struct TunnelsView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var loadedContext: AccountRequestContext?
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredTunnels: [CloudflareTunnel] {
+    guard isSearching else { return tunnels }
+    return tunnels.filter { tunnel in
+      DashSearchMatcher.matches(searchQuery, in: [tunnelDisplayName(tunnel), tunnel.id])
+    }
+  }
 
   var body: some View {
     DashFeatureList(
@@ -55,19 +67,34 @@ struct TunnelsView: View {
       ),
       retry: { Task { await load(force: true) } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: tunnels, reduceMotion: reduceMotion) { tunnel in
-          DashListGroupLink(value: .tunnel(tunnel.id)) {
-            DashListRow(
-              title: tunnelDisplayName(tunnel),
-              subtitle: tunnelListSubtitle(tunnel),
-              icon: SolarAsset.Content.routing
-            ) {
-              StatusBadge(StatusToken(tunnelStatus: tunnel.statusRaw))
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search tunnels"),
+          accessibilityIdentifier: "tunnels-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredTunnels.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(mode: mode, items: filteredTunnels, reduceMotion: reduceMotion) {
+            tunnel in
+            DashListGroupLink(value: .tunnel(tunnel.id)) {
+              DashListRow(
+                title: tunnelDisplayName(tunnel),
+                subtitle: tunnelListSubtitle(tunnel),
+                icon: SolarAsset.Content.routing
+              ) {
+                StatusBadge(StatusToken(tunnelStatus: tunnel.statusRaw))
+              }
+              .accessibilityLabel(tunnelRowAccessibilityLabel(tunnel))
             }
-            .accessibilityLabel(tunnelRowAccessibilityLabel(tunnel))
+            .accessibilityIdentifier("tunnel-\(tunnel.id)")
           }
-          .accessibilityIdentifier("tunnel-\(tunnel.id)")
         }
       }
     }

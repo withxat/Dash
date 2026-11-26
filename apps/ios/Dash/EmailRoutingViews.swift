@@ -24,6 +24,11 @@ struct EmailRoutingDomainsView: View {
   /// alone cannot stop an older settings fan-out from finishing after a pull
   /// refresh and replacing the fresher result.
   @State private var loadGeneration = 0
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
 
   /// Preserve Cloudflare's zone order, but omit only settings that definitively
   /// say Email Routing was never configured (or has since been turned off).
@@ -31,6 +36,14 @@ struct EmailRoutingDomainsView: View {
     zones.filter { zone in
       guard let settings = settingsByZoneID[zone.id] else { return false }
       return EmailRoutingStatusMapping.listCardToken(for: settings) != nil
+    }
+  }
+
+  private var filteredDisplayedZones: [CloudflareZone] {
+    guard isSearching else { return displayedZones }
+    return displayedZones.filter { zone in
+      let settings = settingsByZoneID[zone.id]
+      return DashSearchMatcher.matches(searchQuery, in: [zone.name, settings?.name ?? ""])
     }
   }
 
@@ -64,7 +77,21 @@ struct EmailRoutingDomainsView: View {
       empty: emptyState,
       retry: { Task { await load(force: true) } }
     ) { mode in
-      emailRoutingDomainGrid(mode: mode)
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search domains"),
+          accessibilityIdentifier: "email-routing-domains-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredDisplayedZones.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        emailRoutingDomainGrid(mode: mode)
+      }
     }
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) { await load() }
@@ -90,7 +117,7 @@ struct EmailRoutingDomainsView: View {
           .dashBodySlot(reduceMotion: reduceMotion)
         }
       } else {
-        ForEach(displayedZones, id: \.id) { zone in
+        ForEach(filteredDisplayedZones, id: \.id) { zone in
           emailRoutingDomainCard(zone)
             .dashBodySlot(reduceMotion: reduceMotion)
         }

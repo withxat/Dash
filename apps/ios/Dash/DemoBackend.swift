@@ -1459,11 +1459,30 @@ private enum DemoWorld {
     let key: String
     let contentType: String
     let body: Data
+    var cacheControl: String? = nil
+    var customMetadata: [String: String]? = nil
 
     var listJSON: String {
       // Stagger mtimes so the browser doesn't look like every object landed
       // in the same hour.
       let hoursAgo = 6 + Int(DemoWorld.seed(key) % 240)
+      var httpMeta: [String: String] = ["contentType": contentType]
+      if let cacheControl { httpMeta["cacheControl"] = cacheControl }
+      var payload: [String: Any] = [
+        "key": key,
+        "size": body.count,
+        "etag": "demo-\(DemoWorld.seed(key))",
+        "last_modified": DemoClock.iso(hoursAgo: hoursAgo),
+        "http_metadata": httpMeta,
+      ]
+      if let customMetadata, !customMetadata.isEmpty {
+        payload["custom_metadata"] = customMetadata
+      }
+      if let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
+        let text = String(data: data, encoding: .utf8)
+      {
+        return text
+      }
       return
         #"{"key":"\#(key)","size":\#(body.count),"etag":"demo-\#(DemoWorld.seed(key))","last_modified":"\#(DemoClock.iso(hoursAgo: hoursAgo))","http_metadata":{"contentType":"\#(contentType)"}}"#
     }
@@ -1542,7 +1561,9 @@ private enum DemoWorld {
             font-family: -apple-system, sans-serif;
             color: var(--ink);
           }
-          """.utf8)),
+          """.utf8),
+        cacheControl: "public, max-age=31536000, immutable",
+        customMetadata: ["env": "production", "pipeline": "web-assets"]),
       R2DemoObject(
         key: "notes.txt", contentType: "text/plain",
         body: Data(
