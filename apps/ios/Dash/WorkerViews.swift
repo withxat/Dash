@@ -638,6 +638,14 @@ struct WorkerDetailView: View {
     .dashBodySlot(reduceMotion: reduceMotion)
 
     DashTwoToneListGroup(title: "Script") {
+      DashListGroupLink(value: .workerConfiguration(name)) {
+        DashListRow(
+          title: DashL10n.string("Bindings & triggers"),
+          icon: SolarAsset.slider,
+          showsIconPlate: false
+        )
+        .accessibilityLabel(DashL10n.string("Script, Bindings & triggers"))
+      }
       DashListGroupLink(value: .workerSource(name)) {
         DashListRow(
           title: DashL10n.string("Script source"),

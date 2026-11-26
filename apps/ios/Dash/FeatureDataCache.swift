@@ -48,6 +48,9 @@ enum FeatureCacheKey {
   static func workerBuild(accountID: String, buildID: String) -> String {
     "workerBuild:\(accountID):\(buildID)"
   }
+  static func workerConfiguration(accountID: String, name: String) -> String {
+    "workerConfiguration:\(accountID):\(name)"
+  }
   static func pagesProjects(_ accountID: String) -> String { "pages:\(accountID)" }
   static func pagesProject(accountID: String, name: String) -> String {
     "pagesProject:\(accountID):\(name)"

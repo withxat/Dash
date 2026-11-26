@@ -991,3 +991,28 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(summary.contains("203.0.113.42"))
   #expect(summary.contains("8f9a1b2c3d4e5f01"))
 }
+
+@Test func workerConfigurationRulesValidateSecretsAndCrons() {
+  #expect(WorkerConfigurationRules.isValidSecretName("API_SIGNING_KEY"))
+  #expect(WorkerConfigurationRules.isValidSecretName("_internal2"))
+  #expect(!WorkerConfigurationRules.isValidSecretName(""))
+  #expect(!WorkerConfigurationRules.isValidSecretName("9INVALID"))
+  #expect(!WorkerConfigurationRules.isValidSecretName("BAD-NAME"))
+  #expect(!WorkerConfigurationRules.isValidSecretName("HAS SPACE"))
+  #expect(!WorkerConfigurationRules.isValidSecretName("BAD/SLASH"))
+
+  #expect(
+    WorkerConfigurationRules.normalizedCronExpression("  */15   *  * * *  ") == "*/15 * * * *")
+  #expect(WorkerConfigurationRules.isValidCronExpression("*/15 * * * *"))
+  #expect(WorkerConfigurationRules.isValidCronExpression("0 3 * * MON-FRI"))
+  #expect(!WorkerConfigurationRules.isValidCronExpression("* * * *"))
+  #expect(!WorkerConfigurationRules.isValidCronExpression("* * * * * *"))
+  #expect(!WorkerConfigurationRules.isValidCronExpression("*/5 * * * ?"))
+
+  let binding = WorkerBinding(name: "ASSETS", type: "r2_bucket", bucketName: "northwind-assets")
+  #expect(!binding.isSecret)
+  #expect(binding.kindTitle == "R2 bucket")
+  let fields = Dictionary(uniqueKeysWithValues: binding.detailFields.map { ($0.label, $0.value) })
+  #expect(fields["Name"] == "ASSETS")
+  #expect(fields["Bucket"] == "northwind-assets")
+}

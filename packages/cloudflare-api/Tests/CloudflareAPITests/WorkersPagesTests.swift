@@ -503,4 +503,138 @@ extension NetworkTests {
     #expect(routes.map(\.script) == ["api", nil])
     #expect(recorder.paths == ["GET /zones/zone-1/workers/routes"])
   }
+
+  @Test func workerSettingsSecretsAndSchedulesRoundTrip() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      recorder.record("\(method) \(path)")
+      if method == "GET", path.hasSuffix("/settings") {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{
+              "compatibility_date":"2026-03-01",
+              "compatibility_flags":["nodejs_compat"],
+              "placement":{"mode":"smart"},
+              "logpush":true,
+              "bindings":[
+                {"name":"API_BASE","type":"plain_text","text":"https://api.example.com"},
+                {"name":"ASSETS","type":"r2_bucket","bucket_name":"media-prod"},
+                {"name":"CACHE","type":"kv_namespace","namespace_id":"kv-123"},
+                {"name":"DB","type":"d1","id":"d1-456"},
+                {"name":"AUTH","type":"service","service":"auth-worker","environment":"production"},
+                {"name":"API_KEY","type":"secret_text"},
+                {"name":"CONFIG","type":"json","json":{"retries":3}}
+              ]
+            }}
+            """#.utf8)
+        )
+      }
+      if method == "GET", path.hasSuffix("/secrets") {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":[
+              {"name":"API_KEY","type":"secret_text"},
+              {"name":"SIGNING_KEY","type":"secret_key"}
+            ]}
+            """#.utf8)
+        )
+      }
+      if method == "PUT", path.hasSuffix("/secrets") {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["name"] as? String == "NEW_SECRET")
+        #expect(payload["text"] as? String == "s3cr3t")
+        #expect(payload["type"] as? String == "secret_text")
+        return (
+          200,
+          Data(#"{"success":true,"result":{"name":"NEW_SECRET","type":"secret_text"}}"#.utf8)
+        )
+      }
+      if method == "DELETE", path.hasSuffix("/secrets/API_KEY") {
+        return (200, Data(#"{"success":true,"result":null}"#.utf8))
+      }
+      if method == "GET", path.hasSuffix("/schedules") {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{"schedules":[
+              {"cron":"*/15 * * * *","created_on":"2026-01-01T00:00:00Z","modified_on":"2026-02-01T00:00:00Z"}
+            ]}}
+            """#.utf8)
+        )
+      }
+      if method == "PUT", path.hasSuffix("/schedules") {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [[String: Any]])
+        #expect(payload.map { $0["cron"] as? String } == ["*/15 * * * *", "0 3 * * *"])
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{"schedules":[
+              {"cron":"*/15 * * * *","created_on":"2026-01-01T00:00:00Z","modified_on":"2026-02-01T00:00:00Z"},
+              {"cron":"0 3 * * *","created_on":"2026-11-26T00:00:00Z","modified_on":"2026-11-26T00:00:00Z"}
+            ]}}
+            """#.utf8)
+        )
+      }
+      return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+    }
+
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let settings = try await client.getWorkerSettings(accountID: "acct", scriptName: "api-worker")
+    #expect(settings.compatibilityDate == "2026-03-01")
+    #expect(settings.compatibilityFlags == ["nodejs_compat"])
+    #expect(settings.placementMode == "smart")
+    #expect(settings.logpush == true)
+    #expect(settings.bindings.count == 7)
+    #expect(
+      settings.bindings.first { $0.name == "API_BASE" }?.summaryValue == "https://api.example.com")
+    #expect(settings.bindings.first { $0.name == "ASSETS" }?.summaryValue == "media-prod")
+    #expect(
+      settings.bindings.first { $0.name == "AUTH" }?.summaryValue == "auth-worker (production)")
+    #expect(settings.bindings.first { $0.name == "API_KEY" }?.isSecret == true)
+    #expect(settings.bindings.first { $0.name == "CONFIG" }?.summaryValue == #"{"retries":3}"#)
+
+    let secrets = try await client.listWorkerSecrets(accountID: "acct", scriptName: "api-worker")
+    #expect(secrets.map(\.name) == ["API_KEY", "SIGNING_KEY"])
+    #expect(secrets[0].isTextSecret)
+    #expect(!secrets[1].isTextSecret)
+
+    let added = try await client.putWorkerSecret(
+      accountID: "acct", scriptName: "api-worker", name: "NEW_SECRET", text: "s3cr3t")
+    #expect(added.name == "NEW_SECRET")
+
+    try await client.deleteWorkerSecret(
+      accountID: "acct", scriptName: "api-worker", secretName: "API_KEY")
+
+    let initialCrons = try await client.listWorkerSchedules(
+      accountID: "acct", scriptName: "api-worker")
+    #expect(initialCrons.map(\.cron) == ["*/15 * * * *"])
+
+    let updatedCrons = try await client.updateWorkerSchedules(
+      accountID: "acct", scriptName: "api-worker", crons: ["*/15 * * * *", "0 3 * * *"])
+    #expect(updatedCrons.map(\.cron) == ["*/15 * * * *", "0 3 * * *"])
+
+    #expect(
+      recorder.paths == [
+        "GET /accounts/acct/workers/scripts/api-worker/settings",
+        "GET /accounts/acct/workers/scripts/api-worker/secrets",
+        "PUT /accounts/acct/workers/scripts/api-worker/secrets",
+        "DELETE /accounts/acct/workers/scripts/api-worker/secrets/API_KEY",
+        "GET /accounts/acct/workers/scripts/api-worker/schedules",
+        "PUT /accounts/acct/workers/scripts/api-worker/schedules",
+      ])
+  }
 }

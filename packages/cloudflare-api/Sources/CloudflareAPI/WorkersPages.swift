@@ -946,6 +946,220 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
   }
 }
 
+public struct WorkerBinding: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { "\(type):\(name)" }
+  public let name: String
+  public let type: String
+  public let text: String?
+  public let json: JSONValue?
+  public let namespaceID: String?
+  public let bucketName: String?
+  public let databaseID: String?
+  public let service: String?
+  public let environment: String?
+  public let className: String?
+  public let scriptName: String?
+  public let queueName: String?
+  public let indexName: String?
+  public let dataset: String?
+  public let workflowName: String?
+  public let part: String?
+
+  enum CodingKeys: String, CodingKey {
+    case name, type, text, json, service, environment, dataset, part
+    case namespaceID = "namespace_id"
+    case bucketName = "bucket_name"
+    case databaseID = "id"
+    case className = "class_name"
+    case scriptName = "script_name"
+    case queueName = "queue_name"
+    case indexName = "index_name"
+    case workflowName = "workflow_name"
+  }
+
+  public init(
+    name: String,
+    type: String,
+    text: String? = nil,
+    json: JSONValue? = nil,
+    namespaceID: String? = nil,
+    bucketName: String? = nil,
+    databaseID: String? = nil,
+    service: String? = nil,
+    environment: String? = nil,
+    className: String? = nil,
+    scriptName: String? = nil,
+    queueName: String? = nil,
+    indexName: String? = nil,
+    dataset: String? = nil,
+    workflowName: String? = nil,
+    part: String? = nil
+  ) {
+    self.name = name
+    self.type = type
+    self.text = text
+    self.json = json
+    self.namespaceID = namespaceID
+    self.bucketName = bucketName
+    self.databaseID = databaseID
+    self.service = service
+    self.environment = environment
+    self.className = className
+    self.scriptName = scriptName
+    self.queueName = queueName
+    self.indexName = indexName
+    self.dataset = dataset
+    self.workflowName = workflowName
+    self.part = part
+  }
+
+  /// True for write-only secrets managed separately under `/secrets`.
+  public var isSecret: Bool {
+    type == "secret_text" || type == "secret_key"
+  }
+
+  /// The most descriptive value or resource identifier for display / copy.
+  public var summaryValue: String? {
+    if let text = text.nonEmpty { return text }
+    if let bucketName = bucketName.nonEmpty { return bucketName }
+    if let namespaceID = namespaceID.nonEmpty { return namespaceID }
+    if let databaseID = databaseID.nonEmpty { return databaseID }
+    if let service = service.nonEmpty {
+      if let environment = environment.nonEmpty {
+        return "\(service) (\(environment))"
+      }
+      return service
+    }
+    if let className = className.nonEmpty {
+      if let scriptName = scriptName.nonEmpty {
+        return "\(scriptName) · \(className)"
+      }
+      return className
+    }
+    if let queueName = queueName.nonEmpty { return queueName }
+    if let indexName = indexName.nonEmpty { return indexName }
+    if let dataset = dataset.nonEmpty { return dataset }
+    if let workflowName = workflowName.nonEmpty { return workflowName }
+    if let part = part.nonEmpty { return part }
+    if let json {
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      if let data = try? encoder.encode(json),
+        let rendered = String(data: data, encoding: .utf8), !rendered.isEmpty
+      {
+        return rendered
+      }
+    }
+    return nil
+  }
+}
+
+/// Runtime settings and bindings for a Worker script
+/// (`GET /accounts/{account_id}/workers/scripts/{script_name}/settings`).
+public struct WorkerSettings: Codable, Hashable, Sendable {
+  public let compatibilityDate: String?
+  public let compatibilityFlags: [String]
+  public let bindings: [WorkerBinding]
+  public let placementMode: String?
+  public let logpush: Bool?
+
+  private struct Placement: Codable, Hashable, Sendable {
+    let mode: String?
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case compatibilityDate = "compatibility_date"
+    case compatibilityFlags = "compatibility_flags"
+    case bindings
+    case placement
+    case logpush
+  }
+
+  public init(
+    compatibilityDate: String? = nil,
+    compatibilityFlags: [String] = [],
+    bindings: [WorkerBinding] = [],
+    placementMode: String? = nil,
+    logpush: Bool? = nil
+  ) {
+    self.compatibilityDate = compatibilityDate
+    self.compatibilityFlags = compatibilityFlags
+    self.bindings = bindings
+    self.placementMode = placementMode
+    self.logpush = logpush
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    compatibilityDate = (try c.decodeIfPresent(String.self, forKey: .compatibilityDate)).nonEmpty
+    compatibilityFlags = try c.decodeIfPresent([String].self, forKey: .compatibilityFlags) ?? []
+    bindings = try c.decodeIfPresent([WorkerBinding].self, forKey: .bindings) ?? []
+    placementMode = (try c.decodeIfPresent(Placement.self, forKey: .placement)?.mode).nonEmpty
+    logpush = try c.decodeIfPresent(Bool.self, forKey: .logpush)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var c = encoder.container(keyedBy: CodingKeys.self)
+    try c.encodeIfPresent(compatibilityDate, forKey: .compatibilityDate)
+    try c.encode(compatibilityFlags, forKey: .compatibilityFlags)
+    try c.encode(bindings, forKey: .bindings)
+    if let placementMode {
+      try c.encode(Placement(mode: placementMode), forKey: .placement)
+    }
+    try c.encodeIfPresent(logpush, forKey: .logpush)
+  }
+}
+
+/// One secret bound to a Worker script (`GET .../scripts/{name}/secrets`).
+/// Cloudflare never returns secret values after they are written.
+public struct WorkerSecret: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { name }
+  public let name: String
+  public let type: String
+
+  public init(name: String, type: String = "secret_text") {
+    self.name = name
+    self.type = type
+  }
+
+  public var isTextSecret: Bool { type == "secret_text" }
+}
+
+/// One Cron Trigger schedule attached to a Worker script
+/// (`GET/PUT .../scripts/{name}/schedules`).
+public struct WorkerCronTrigger: Codable, Hashable, Identifiable, Sendable {
+  public var id: String { cron }
+  public let cron: String
+  public let createdOn: String?
+  public let modifiedOn: String?
+
+  enum CodingKeys: String, CodingKey {
+    case cron
+    case createdOn = "created_on"
+    case modifiedOn = "modified_on"
+  }
+
+  public init(cron: String, createdOn: String? = nil, modifiedOn: String? = nil) {
+    self.cron = cron
+    self.createdOn = createdOn
+    self.modifiedOn = modifiedOn
+  }
+}
+
+private struct WorkerSchedulesEnvelope: Decodable, Sendable {
+  let schedules: [WorkerCronTrigger]
+}
+
+private struct WorkerScheduleInput: Encodable, Sendable {
+  let cron: String
+}
+
+private struct WorkerSecretPutBody: Encodable, Sendable {
+  let name: String
+  let text: String
+  let type: String
+}
+
 extension CloudflareClient {
   public func listWorkers(accountID: String) async throws -> [WorkerScript] {
     try await list("/accounts/\(accountID)/workers/scripts").items
@@ -1179,6 +1393,82 @@ extension CloudflareClient {
     try await request(
       "/accounts/\(accountID)/workers/scripts/\(name)/subdomain",
       method: "POST", body: ["enabled": enabled])
+  }
+
+  /// Runtime settings and bindings for a Worker script (`workers-scripts.read`).
+  public func getWorkerSettings(accountID: String, scriptName: String) async throws
+    -> WorkerSettings
+  {
+    let encodedName = Self.encodeWorkerPathSegment(scriptName)
+    return try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedName)/settings")
+  }
+
+  /// Lists secret names bound to a Worker script (`workers-scripts.read`).
+  public func listWorkerSecrets(accountID: String, scriptName: String) async throws
+    -> [WorkerSecret]
+  {
+    let encodedName = Self.encodeWorkerPathSegment(scriptName)
+    return try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedName)/secrets")
+  }
+
+  /// Adds or replaces a write-only text secret on a Worker script (`workers-scripts.write`).
+  public func putWorkerSecret(
+    accountID: String,
+    scriptName: String,
+    name: String,
+    text: String
+  ) async throws -> WorkerSecret {
+    let encodedName = Self.encodeWorkerPathSegment(scriptName)
+    return try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedName)/secrets",
+      method: "PUT",
+      body: WorkerSecretPutBody(name: name, text: text, type: "secret_text"))
+  }
+
+  /// Deletes a secret binding from a Worker script (`workers-scripts.write`).
+  public func deleteWorkerSecret(
+    accountID: String,
+    scriptName: String,
+    secretName: String
+  ) async throws {
+    let encodedScript = Self.encodeWorkerPathSegment(scriptName)
+    let encodedSecret = Self.encodeWorkerPathSegment(secretName)
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedScript)/secrets/\(encodedSecret)",
+      method: "DELETE")
+  }
+
+  /// Lists Cron Triggers attached to a Worker script (`workers-scripts.read`).
+  public func listWorkerSchedules(accountID: String, scriptName: String) async throws
+    -> [WorkerCronTrigger]
+  {
+    let encodedName = Self.encodeWorkerPathSegment(scriptName)
+    let envelope: WorkerSchedulesEnvelope = try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedName)/schedules")
+    return envelope.schedules
+  }
+
+  /// Replaces the full Cron Triggers list for a Worker script (`workers-scripts.write`).
+  public func updateWorkerSchedules(
+    accountID: String,
+    scriptName: String,
+    crons: [String]
+  ) async throws -> [WorkerCronTrigger] {
+    let encodedName = Self.encodeWorkerPathSegment(scriptName)
+    let body = crons.map(WorkerScheduleInput.init(cron:))
+    let envelope: WorkerSchedulesEnvelope = try await request(
+      "/accounts/\(accountID)/workers/scripts/\(encodedName)/schedules",
+      method: "PUT",
+      body: body)
+    return envelope.schedules
+  }
+
+  private static func encodeWorkerPathSegment(_ segment: String) -> String {
+    var allowed = CharacterSet.urlPathAllowed
+    allowed.remove(charactersIn: "/?#")
+    return segment.addingPercentEncoding(withAllowedCharacters: allowed) ?? segment
   }
   /// Pages returns 8000024 ("Invalid list options… Review the `page` or
   /// `per_page` parameter") for oversized pages. `50` fails on real accounts;

@@ -105,6 +105,8 @@ enum Destination: Hashable {
   case workerBuild(worker: String, buildID: String)
   /// Read-only viewer for a Worker's deployed main module / classic script.
   case workerSource(String)
+  /// Worker runtime settings, bindings, secrets, and Cron Triggers.
+  case workerConfiguration(String)
   /// One Cloudflare Tunnel, keyed on its immutable id.
   case tunnel(String)
   case pagesProject(String)

@@ -290,3 +290,73 @@ extension FirewallSecurityEvent {
       .joined(separator: "\n")
   }
 }
+
+extension WorkerBinding {
+  /// Human-readable binding kind key (localized via `DashL10n.ui`).
+  var kindTitle: String {
+    switch type {
+    case "plain_text": "Environment variable"
+    case "json": "JSON variable"
+    case "kv_namespace": "KV namespace"
+    case "r2_bucket": "R2 bucket"
+    case "d1": "D1 database"
+    case "service": "Service binding"
+    case "durable_object_namespace": "Durable Object"
+    case "queue": "Queue"
+    case "ai": "Workers AI"
+    case "hyperdrive": "Hyperdrive"
+    case "vectorize": "Vectorize"
+    case "assets": "Static assets"
+    case "analytics_engine": "Analytics Engine"
+    case "browser": "Browser Rendering"
+    case "workflows": "Workflow"
+    case "secret_text": "Secret"
+    case "secret_key": "Secret key"
+    case "mtls_certificate": "mTLS certificate"
+    case "version_metadata": "Version metadata"
+    default: type
+    }
+  }
+
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Name", value: name, mono: true),
+      DashDetailField(label: "Type", value: DashL10n.ui(kindTitle)),
+    ]
+    if let summaryValue {
+      let label: String
+      switch type {
+      case "plain_text", "json": label = "Value"
+      case "r2_bucket": label = "Bucket"
+      case "kv_namespace": label = "Namespace ID"
+      case "d1": label = "Database ID"
+      case "service": label = "Service"
+      case "queue": label = "Queue"
+      default: label = "Target"
+      }
+      fields.append(DashDetailField(label: label, value: summaryValue, mono: true))
+    }
+    return fields
+  }
+}
+
+extension WorkerCronTrigger {
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Expression", value: cron, mono: true)
+    ]
+    if let createdOn, DashDateFormatting.date(fromISO8601: createdOn) != nil {
+      fields.append(
+        DashDetailField(
+          label: "Created",
+          value: DashDateFormatting.dateAndTime(fromISO8601: createdOn)))
+    }
+    if let modifiedOn, DashDateFormatting.date(fromISO8601: modifiedOn) != nil {
+      fields.append(
+        DashDetailField(
+          label: "Updated",
+          value: DashDateFormatting.dateAndTime(fromISO8601: modifiedOn)))
+    }
+    return fields
+  }
+}

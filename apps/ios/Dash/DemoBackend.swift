@@ -544,6 +544,12 @@ final class DemoBackend: URLProtocol {
       return ok(DemoWorld.workerDeployments(name: name))
     case "subdomain"?:
       return ok(#"{"enabled":true,"previews_enabled":false}"#)
+    case "settings"?:
+      return ok(DemoWorld.workerSettings(name: name))
+    case "secrets"?:
+      return ok(DemoWorld.workerSecrets(name: name))
+    case "schedules"?:
+      return ok(DemoWorld.workerSchedules(name: name))
     case "content"?:
       return Reply(
         contentType: "application/javascript",
@@ -1173,6 +1179,80 @@ private enum DemoWorld {
         {"id":"deploy-prev","created_on":"\#(DemoClock.iso(hoursAgo: 74))","source":"wrangler","strategy":"percentage","versions":[{"version_id":"v-1994","percentage":100}],"author_email":"demo@example.com"}
       ]}
       """#
+  }
+
+  static func workerSettings(name: String) -> String {
+    switch name {
+    case "api-worker":
+      return #"""
+        {
+          "compatibility_date": "2026-03-01",
+          "compatibility_flags": ["nodejs_compat"],
+          "placement": {"mode": "smart"},
+          "logpush": true,
+          "bindings": [
+            {"name": "ENVIRONMENT", "type": "plain_text", "text": "production"},
+            {"name": "PUBLIC_ORIGIN", "type": "plain_text", "text": "https://api.northwind.example"},
+            {"name": "ASSETS", "type": "r2_bucket", "bucket_name": "northwind-assets"},
+            {"name": "SESSIONS", "type": "kv_namespace", "namespace_id": "kv-sessions-01"},
+            {"name": "AUTH_SERVICE", "type": "service", "service": "form-relay", "environment": "production"},
+            {"name": "API_SIGNING_KEY", "type": "secret_text"},
+            {"name": "WEBHOOK_SECRET", "type": "secret_text"}
+          ]
+        }
+        """#
+    case "image-resizer":
+      return #"""
+        {
+          "compatibility_date": "2026-02-15",
+          "compatibility_flags": [],
+          "bindings": [
+            {"name": "MEDIA_BUCKET", "type": "r2_bucket", "bucket_name": "northwind-assets"},
+            {"name": "DEFAULT_WIDTH", "type": "plain_text", "text": "1200"}
+          ]
+        }
+        """#
+    default:
+      return #"""
+        {
+          "compatibility_date": "2026-01-20",
+          "compatibility_flags": [],
+          "bindings": [
+            {"name": "ENVIRONMENT", "type": "plain_text", "text": "production"}
+          ]
+        }
+        """#
+    }
+  }
+
+  static func workerSecrets(name: String) -> String {
+    switch name {
+    case "api-worker":
+      return #"""
+        [
+          {"name": "API_SIGNING_KEY", "type": "secret_text"},
+          {"name": "WEBHOOK_SECRET", "type": "secret_text"}
+        ]
+        """#
+    case "form-relay":
+      return #"[{"name": "TURNSTILE_SECRET", "type": "secret_text"}]"#
+    default:
+      return "[]"
+    }
+  }
+
+  static func workerSchedules(name: String) -> String {
+    switch name {
+    case "api-worker":
+      return #"""
+        {"schedules":[
+          {"cron":"*/15 * * * *","created_on":"\#(DemoClock.iso(hoursAgo: 240))","modified_on":"\#(DemoClock.iso(hoursAgo: 48))"},
+          {"cron":"0 3 * * *","created_on":"\#(DemoClock.iso(hoursAgo: 720))","modified_on":"\#(DemoClock.iso(hoursAgo: 720))"}
+        ]}
+        """#
+    default:
+      return #"{"schedules":[]}"#
+    }
   }
 
   static func workerScript(name: String) -> String {

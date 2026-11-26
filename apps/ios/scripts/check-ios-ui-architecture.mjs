@@ -629,7 +629,7 @@ if (
   dashProductionSwift.includes("dashIdentifiedModeListRows") ||
   dashProductionSwift.includes("DashIdentifiedModeListSlot") ||
   dashProductionSwift.includes("DashListRowPlaceholders") ||
-  occurrences(dashProductionSwift, "DashSectionListRowPlaceholders(") !== 5 ||
+  occurrences(dashProductionSwift, "DashSectionListRowPlaceholders(") !== 6 ||
   !modeListRows?.includes("items.map { .live($0) }") ||
   !modeListRows?.includes("ForEach(slots)") ||
   !dashFeatureLoading.includes("@ViewBuilder placeholder:") ||

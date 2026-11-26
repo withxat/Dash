@@ -427,3 +427,12 @@ import UIKit
       grantedScopes: ["argotunnel.read", "access.read"]) == .readOnly)
   #expect(!FeatureID.tunnels.showsCatalogReadOnlyBanner)
 }
+
+@Test func workerConfigurationUsesExistingWorkersScopesOnly() {
+  let destination = Destination.workerConfiguration("api-worker")
+  #expect(featureID(for: destination) == .workers)
+  #expect(readScopes(for: destination) == ["workers-scripts.read"])
+  #expect(writeScopes(for: destination) == ["workers-scripts.write"])
+  #expect(readScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
+  #expect(writeScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
+}

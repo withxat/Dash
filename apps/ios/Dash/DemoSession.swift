@@ -640,6 +640,73 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
       documents[path] = value
       return ok(value)
     }
+    if tail.count == 4, tail[3] == "settings" {
+      guard method == "GET" else { return Self.unsupported }
+      return ok(document(path))
+    }
+    if tail.count >= 4, tail[3] == "secrets" {
+      let secretsPath = scriptPath + "/secrets"
+      var current = rows(secretsPath)
+      if tail.count == 4, method == "GET" {
+        return ok(current)
+      }
+      if tail.count == 4, method == "PUT" {
+        guard
+          let name = (input["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !name.isEmpty,
+          let text = input["text"] as? String, !text.isEmpty
+        else {
+          return Self.failure("Secret name and value are required.", status: 400)
+        }
+        let type = (input["type"] as? String) ?? "secret_text"
+        let item: [String: Any] = ["name": name, "type": type]
+        current.removeAll { ($0["name"] as? String) == name }
+        current.append(item)
+        current.sort { ($0["name"] as? String ?? "") < ($1["name"] as? String ?? "") }
+        collections[secretsPath] = current
+        return ok(item)
+      }
+      if tail.count == 5, method == "DELETE" {
+        let target = tail[4].removingPercentEncoding ?? tail[4]
+        current.removeAll { ($0["name"] as? String) == target }
+        collections[secretsPath] = current
+        return ok(NSNull())
+      }
+      return Self.unsupported
+    }
+    if tail.count == 4, tail[3] == "schedules" {
+      let schedulesPath = scriptPath + "/schedules"
+      _ = rows(schedulesPath, wrapper: "schedules")
+      if method == "GET" {
+        return ok(["schedules": rows(schedulesPath)])
+      }
+      if method == "PUT" {
+        guard let body,
+          let array = try? JSONSerialization.jsonObject(with: body) as? [[String: Any]]
+        else {
+          return Self.failure("Invalid cron schedule payload.", status: 400)
+        }
+        let existingByCron = Dictionary(
+          uniqueKeysWithValues: rows(schedulesPath).compactMap { row -> (String, [String: Any])? in
+            guard let cron = row["cron"] as? String else { return nil }
+            return (cron, row)
+          })
+        let next: [[String: Any]] = array.compactMap { entry in
+          guard
+            let cron = (entry["cron"] as? String)?
+              .trimmingCharacters(in: .whitespacesAndNewlines),
+            !cron.isEmpty
+          else { return nil }
+          if let existing = existingByCron[cron] {
+            return existing
+          }
+          return ["cron": cron, "created_on": now, "modified_on": now]
+        }
+        collections[schedulesPath] = next
+        return ok(["schedules": next])
+      }
+      return Self.unsupported
+    }
     if tail.count >= 4, tail[3] == "content" {
       let sourcePath = scriptPath + "/content/v2"
       if method == "GET" { return blobs[sourcePath] ?? seedReply(sourcePath) }

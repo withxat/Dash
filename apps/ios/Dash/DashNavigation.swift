@@ -261,6 +261,7 @@ extension Destination {
     case .workerBuild(let worker, let buildID):
       .init(namespace: "worker-build", value: "\(worker)/\(buildID)")
     case .workerSource(let name): .init(namespace: "worker-source", value: name)
+    case .workerConfiguration(let name): .init(namespace: "worker-configuration", value: name)
     case .tunnel(let id): .init(namespace: "tunnel", value: id)
     case .pagesProject(let name): .init(namespace: "pages-project", value: name)
     case .pagesDeployment(let project, let deploymentID):
