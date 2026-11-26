@@ -1986,7 +1986,7 @@ private enum DemoWorld {
   }
 
   /// WAF summary fixture: hourly ByTimeGroups totals plus Adaptive samples for
-  /// country / rule tops. Counts stay small so the demo payload stays light.
+  /// country / rule tops and recent security event details.
   static func firewallEvents(scale: Double) -> String {
     let us = max(scaled(8, scale), 1)
     let cn = max(scaled(5, scale), 1)
@@ -1999,6 +1999,12 @@ private enum DemoWorld {
     events += Array(
       repeating: #"{"clientCountryName":"RU","ruleId":"rate-limit-login"}"#, count: ru)
     events += Array(repeating: #"{"clientCountryName":"BR","ruleId":"block-bad-bots"}"#, count: br)
+    let recent: [String] = [
+      #"{"datetime":"\#(DemoClock.iso(hoursAgo: 0))","action":"block","source":"rateLimit","ruleId":"rate-limit-login","clientIP":"203.0.113.42","clientCountryName":"US","clientAsn":"14061","clientASNDescription":"DigitalOcean, LLC","clientRequestHTTPMethodName":"POST","clientRequestHTTPHost":"api.northwind.example","clientRequestPath":"/v1/auth/login","clientRequestQuery":"","userAgent":"python-requests/2.32.3","rayName":"8f9a1b2c3d4e5f01","edgeColoName":"SJC"}"#,
+      #"{"datetime":"\#(DemoClock.iso(hoursAgo: 1))","action":"block","source":"firewallCustom","ruleId":"block-bad-bots","clientIP":"198.51.100.88","clientCountryName":"CN","clientAsn":"45102","clientASNDescription":"Alibaba (US) Technology Co., Ltd.","clientRequestHTTPMethodName":"GET","clientRequestHTTPHost":"northwind.example","clientRequestPath":"/wp-login.php","clientRequestQuery":"","userAgent":"Mozilla/5.0 (compatible; ScannerBot/1.2)","rayName":"8f9a1b2c3d4e5f02","edgeColoName":"HKG"}"#,
+      #"{"datetime":"\#(DemoClock.iso(hoursAgo: 2))","action":"block","source":"rateLimit","ruleId":"rate-limit-login","clientIP":"192.0.2.17","clientCountryName":"RU","clientAsn":"24940","clientASNDescription":"Hetzner Online GmbH","clientRequestHTTPMethodName":"POST","clientRequestHTTPHost":"api.northwind.example","clientRequestPath":"/v1/token","clientRequestQuery":"?grant_type=password","userAgent":"curl/8.7.1","rayName":"8f9a1b2c3d4e5f03","edgeColoName":"FRA"}"#,
+      #"{"datetime":"\#(DemoClock.iso(hoursAgo: 4))","action":"block","source":"bic","ruleId":"block-bad-bots","clientIP":"203.0.113.109","clientCountryName":"BR","clientAsn":"26599","clientASNDescription":"Telefonica Brasil S.A.","clientRequestHTTPMethodName":"GET","clientRequestHTTPHost":"northwind.example","clientRequestPath":"/.env","clientRequestQuery":"","userAgent":"Go-http-client/1.1","rayName":"8f9a1b2c3d4e5f04","edgeColoName":"GRU"}"#,
+    ]
     let total = us + cn + ru + br
     let series = (0..<24).reversed().map { hour -> String in
       let count = hour == 0 ? total : max(total / 8, 1)
@@ -2008,7 +2014,8 @@ private enum DemoWorld {
     return #"""
       {"data":{"viewer":{"zones":[{
         "byTime":[\#(series.joined(separator: ","))],
-        "samples":[\#(events.joined(separator: ","))]
+        "samples":[\#(events.joined(separator: ","))],
+        "recent":[\#(recent.joined(separator: ","))]
       }]}},"errors":null}
       """#
   }

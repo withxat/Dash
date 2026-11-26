@@ -951,3 +951,43 @@ private actor ZoneSecurityLevelTestLatch {
   let sparse = AuditLogEntry(logID: nil, action: nil, actor: nil, resource: nil)
   #expect(sparse.detailFields.isEmpty)
 }
+
+@Test func firewallSecurityEventDetailFieldsAndCopyableSummary() {
+  let event = FirewallSecurityEvent(
+    id: "8f9a1b2c3d4e5f01",
+    datetime: "2026-11-26T04:55:10Z",
+    action: "block",
+    source: "rateLimit",
+    ruleID: "rate-limit-login",
+    clientIP: "203.0.113.42",
+    clientCountryName: "US",
+    clientASN: "14061",
+    clientASNDescription: "DigitalOcean, LLC",
+    method: "POST",
+    host: "api.example.com",
+    path: "/v1/login",
+    query: "retry=1",
+    userAgent: "curl/8.7.1",
+    rayName: "8f9a1b2c3d4e5f01",
+    edgeColoName: "SJC")
+
+  #expect(event.displayTitle == "POST /v1/login?retry=1")
+  #expect(event.formattedASN == "AS14061 · DigitalOcean, LLC")
+
+  let byLabel = Dictionary(uniqueKeysWithValues: event.detailFields.map { ($0.label, $0.value) })
+  #expect(byLabel["Action"] == "block")
+  #expect(byLabel["Client IP"] == "203.0.113.42")
+  #expect(byLabel["Country"] == "US")
+  #expect(byLabel["ASN"] == "AS14061 · DigitalOcean, LLC")
+  #expect(byLabel["Request"] == "POST api.example.com/v1/login?retry=1")
+  #expect(byLabel["Source"] == "rateLimit")
+  #expect(byLabel["Rule ID"] == "rate-limit-login")
+  #expect(byLabel["User-Agent"] == "curl/8.7.1")
+  #expect(byLabel["Datacenter"] == "SJC")
+  #expect(byLabel["Ray ID"] == "8f9a1b2c3d4e5f01")
+
+  let summary = event.copyableSummary
+  #expect(summary.hasPrefix("POST /v1/login?retry=1\n"))
+  #expect(summary.contains("203.0.113.42"))
+  #expect(summary.contains("8f9a1b2c3d4e5f01"))
+}

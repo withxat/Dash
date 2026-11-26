@@ -1508,6 +1508,7 @@ struct WAFEventsView: View {
   /// failure: the toggle hides rather than sitting disabled forever.
   @State private var securityAvailable = true
   @State private var securityUpdating = false
+  @State private var selectedEvent: FirewallSecurityEvent?
 
   private var requiredWriteScopes: Set<String> {
     writeScopes(for: .zoneWAF(zoneID))
@@ -1539,6 +1540,14 @@ struct WAFEventsView: View {
     .detailHeader(icon: .solar(SolarAsset.Content.shieldCheck), title: "WAF")
     .refreshable { await load(force: true) }
     .task(id: model.grantedScopes) { await load() }
+    .dashTray(
+      item: $selectedEvent,
+      title: { $0.displayTitle },
+      tone: FeatureVisualIdentity.tone(for: .zones),
+      content: { event in
+        FirewallEventDetailTray(event: event)
+      }
+    )
   }
 
   /// Fuller first-paint reserve: the blocked card, under-attack toggle, rules.
@@ -1612,6 +1621,9 @@ struct WAFEventsView: View {
         mode: mode,
         title: "Top rules",
         buckets: summary?.rules ?? [])
+      recentEventsGroup(
+        mode: mode,
+        events: summary?.recentEvents ?? [])
     }
   }
 
@@ -1735,6 +1747,53 @@ struct WAFEventsView: View {
     }
   }
 
+  @ViewBuilder
+  private func recentEventsGroup(
+    mode: DashBodyMode,
+    events: [FirewallSecurityEvent]
+  ) -> some View {
+    DashListGroupHeader(title: DashL10n.ui("Recent events"))
+      .dashTwoToneHeaderBand()
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    if mode.isPlaceholder || !events.isEmpty {
+      dashModeListRows(
+        mode: mode,
+        items: events,
+        placeholderRows: 3,
+        reduceMotion: reduceMotion,
+        frame: .twoTone
+      ) { event in
+        Button {
+          selectedEvent = event
+        } label: {
+          DashListRow(
+            title: event.displayTitle,
+            subtitle: Self.eventRowSubtitle(event),
+            icon: SolarAsset.Content.shieldCheck,
+            iconColor: DashTheme.danger,
+            showsChevron: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("waf-event-\(event.id)")
+      }
+    } else {
+      Text("No recent security events in this window.")
+        .dashTwoToneNote()
+        .dashTwoToneRowSlice()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    }
+  }
+
+  private static func eventRowSubtitle(_ event: FirewallSecurityEvent) -> String? {
+    var parts: [String] = []
+    if let ip = event.clientIP { parts.append(ip) }
+    if let country = event.clientCountryName { parts.append(country) }
+    parts.append(DashDateFormatting.dateAndTime(fromISO8601: event.datetime))
+    return parts.joined(separator: " · ")
+  }
+
   private func load(force: Bool = false) async {
     if summary == nil { loading = true }
     error = nil
@@ -1823,6 +1882,37 @@ struct WAFEventsView: View {
       underAttack = !enabled
       model.optimistic.finishFailure(op)
       model.toasts.error(error.dashActionableMessage)
+    }
+  }
+}
+
+private struct FirewallEventDetailTray: View {
+  @Environment(AppModel.self) private var model
+  let event: FirewallSecurityEvent
+
+  var body: some View {
+    DashDetailTray(fields: event.detailFields) {
+      VStack(spacing: 10) {
+        if let ip = event.clientIP {
+          DashTrayPillButton(title: "Copy IP") {
+            UIPasteboard.general.string = ip
+            DashDelight.lightImpact()
+            model.toasts.success(DashL10n.string("IP address copied"))
+          }
+        }
+        if let fullPath = event.fullPath {
+          DashTrayPillButton(title: "Copy path") {
+            UIPasteboard.general.string = fullPath
+            DashDelight.lightImpact()
+            model.toasts.success(DashL10n.string("Path copied"))
+          }
+        }
+        DashActionButton(title: "Copy details") {
+          UIPasteboard.general.string = event.copyableSummary
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Security event copied"))
+        }
+      }
     }
   }
 }

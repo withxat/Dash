@@ -208,28 +208,134 @@ public struct FirewallEventsSeriesPoint: Codable, Hashable, Identifiable, Sendab
   }
 }
 
+/// One individual firewall / WAF event from `firewallEventsAdaptive`.
+public struct FirewallSecurityEvent: Codable, Hashable, Identifiable, Sendable {
+  public let id: String
+  public let datetime: String
+  public let action: String
+  public let source: String?
+  public let ruleID: String?
+  public let clientIP: String?
+  public let clientCountryName: String?
+  public let clientASN: String?
+  public let clientASNDescription: String?
+  public let method: String?
+  public let host: String?
+  public let path: String?
+  public let query: String?
+  public let userAgent: String?
+  public let rayName: String?
+  public let edgeColoName: String?
+
+  public init(
+    id: String,
+    datetime: String,
+    action: String,
+    source: String? = nil,
+    ruleID: String? = nil,
+    clientIP: String? = nil,
+    clientCountryName: String? = nil,
+    clientASN: String? = nil,
+    clientASNDescription: String? = nil,
+    method: String? = nil,
+    host: String? = nil,
+    path: String? = nil,
+    query: String? = nil,
+    userAgent: String? = nil,
+    rayName: String? = nil,
+    edgeColoName: String? = nil
+  ) {
+    self.id = id
+    self.datetime = datetime
+    self.action = action
+    self.source = source
+    self.ruleID = ruleID
+    self.clientIP = clientIP
+    self.clientCountryName = clientCountryName
+    self.clientASN = clientASN
+    self.clientASNDescription = clientASNDescription
+    self.method = method
+    self.host = host
+    self.path = path
+    self.query = query
+    self.userAgent = userAgent
+    self.rayName = rayName
+    self.edgeColoName = edgeColoName
+  }
+
+  /// Request path with query string appended when present.
+  public var fullPath: String? {
+    guard let path, !path.isEmpty else { return nil }
+    guard let query, !query.isEmpty else { return path }
+    return query.hasPrefix("?") ? "\(path)\(query)" : "\(path)?\(query)"
+  }
+
+  /// Compact HTTP request summary such as `POST /api/login` or `GET https://example.com/path`.
+  public var requestLine: String? {
+    let target: String?
+    switch (host, fullPath) {
+    case (let host?, let fullPath?):
+      target = "\(host)\(fullPath)"
+    case (nil, let fullPath?):
+      target = fullPath
+    case (let host?, nil):
+      target = host
+    case (nil, nil):
+      target = nil
+    }
+    switch (method, target) {
+    case (let method?, let target?):
+      return "\(method) \(target)"
+    case (nil, let target?):
+      return target
+    case (let method?, nil):
+      return method
+    case (nil, nil):
+      return nil
+    }
+  }
+}
+
 /// Aggregated firewall / WAF activity for a zone over a short window.
 ///
 /// `blocked` and `series` come from Free-friendly
-/// `firewallEventsAdaptiveByTimeGroups`. Country / rule tops are rolled up from
-/// a bounded `firewallEventsAdaptive` sample (Groups stays plan-gated).
+/// `firewallEventsAdaptiveByTimeGroups`. Country / rule tops and recent event
+/// samples come from bounded `firewallEventsAdaptive` queries (Groups stays
+/// plan-gated).
 public struct FirewallEventsSummary: Codable, Hashable, Sendable {
   public let hours: Int
   public let blocked: Int
   public let series: [FirewallEventsSeriesPoint]
   public let countries: [FirewallEventsBucket]
   public let rules: [FirewallEventsBucket]
+  public let recentEvents: [FirewallSecurityEvent]
+
+  enum CodingKeys: String, CodingKey {
+    case hours, blocked, series, countries, rules, recentEvents
+  }
 
   public init(
     hours: Int, blocked: Int, series: [FirewallEventsSeriesPoint] = [],
     countries: [FirewallEventsBucket] = [],
-    rules: [FirewallEventsBucket] = []
+    rules: [FirewallEventsBucket] = [],
+    recentEvents: [FirewallSecurityEvent] = []
   ) {
     self.hours = hours
     self.blocked = blocked
     self.series = series
     self.countries = countries
     self.rules = rules
+    self.recentEvents = recentEvents
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    hours = try c.decode(Int.self, forKey: .hours)
+    blocked = try c.decode(Int.self, forKey: .blocked)
+    series = try c.decodeIfPresent([FirewallEventsSeriesPoint].self, forKey: .series) ?? []
+    countries = try c.decodeIfPresent([FirewallEventsBucket].self, forKey: .countries) ?? []
+    rules = try c.decodeIfPresent([FirewallEventsBucket].self, forKey: .rules) ?? []
+    recentEvents = try c.decodeIfPresent([FirewallSecurityEvent].self, forKey: .recentEvents) ?? []
   }
 }
 
@@ -333,6 +439,7 @@ private struct FirewallEventsSummaryData: Decodable, Sendable {
   struct Zone: Decodable, Sendable {
     let byTime: [ByTimeGroup]?
     let samples: [FirewallAdaptiveEvent]?
+    let recent: [FirewallAdaptiveRecentEvent]?
   }
   struct ByTimeGroup: Decodable, Sendable {
     let count: Int
@@ -349,6 +456,24 @@ struct FirewallAdaptiveEvent: Decodable, Hashable, Sendable {
     self.clientCountryName = clientCountryName
     self.ruleId = ruleId
   }
+}
+
+private struct FirewallAdaptiveRecentEvent: Decodable, Hashable, Sendable {
+  let datetime: String?
+  let action: String?
+  let source: String?
+  let ruleId: String?
+  let clientIP: String?
+  let clientCountryName: String?
+  let clientAsn: String?
+  let clientASNDescription: String?
+  let clientRequestHTTPMethodName: String?
+  let clientRequestHTTPHost: String?
+  let clientRequestPath: String?
+  let clientRequestQuery: String?
+  let userAgent: String?
+  let rayName: String?
+  let edgeColoName: String?
 }
 
 extension CloudflareClient {
@@ -623,8 +748,10 @@ extension CloudflareClient {
     let bounds = Self.firewallEventsTimeBounds(hours: window)
     // Security Events caps the page at 10_000; stay under that so the request
     // itself does not fail for page size while still covering a busy hour of
-    // Bot Fight Mode samples.
+    // Bot Fight Mode samples. Individual event details stay on a 50-row alias
+    // so full user-agent/path strings never inflate the 2,500-row rollup.
     let pageLimit = 2500
+    let recentLimit = 50
     let filter =
       "{datetime_geq: \"\(bounds.since)\", datetime_leq: \"\(bounds.until)\", action: \"block\"}"
     let query = """
@@ -634,7 +761,12 @@ extension CloudflareClient {
       count dimensions { datetimeHour } } \
       samples: firewallEventsAdaptive(limit: \(pageLimit), \
       filter: \(filter), orderBy: [datetime_DESC]) { \
-      clientCountryName ruleId } } } }
+      clientCountryName ruleId } \
+      recent: firewallEventsAdaptive(limit: \(recentLimit), \
+      filter: \(filter), orderBy: [datetime_DESC]) { \
+      action clientAsn clientASNDescription clientCountryName clientIP \
+      clientRequestHTTPHost clientRequestHTTPMethodName clientRequestPath \
+      clientRequestQuery datetime edgeColoName rayName ruleId source userAgent } } } }
       """
     let payload = try JSONEncoder().encode(["query": query])
     let response = try await graphQLRaw(payload)
@@ -651,12 +783,59 @@ extension CloudflareClient {
     }
     let blocked = series.reduce(0) { $0 + $1.count }
     let tops = Self.firewallAdaptiveTopBuckets(zone?.samples ?? [])
+    let recentEvents = Self.firewallSecurityEvents(from: zone?.recent ?? [])
     return FirewallEventsSummary(
       hours: window,
       blocked: blocked,
       series: series,
       countries: tops.countries,
-      rules: tops.rules)
+      rules: tops.rules,
+      recentEvents: recentEvents)
+  }
+
+  private static func firewallSecurityEvents(
+    from rawEvents: [FirewallAdaptiveRecentEvent]
+  ) -> [FirewallSecurityEvent] {
+    func cleaned(_ value: String?) -> String? {
+      guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+        !trimmed.isEmpty
+      else { return nil }
+      return trimmed
+    }
+
+    var seenIDs: [String: Int] = [:]
+    return rawEvents.compactMap { raw in
+      guard let datetime = cleaned(raw.datetime) else { return nil }
+      let action = cleaned(raw.action) ?? "block"
+      let rayName = cleaned(raw.rayName)
+      let clientIP = cleaned(raw.clientIP)
+      let path = cleaned(raw.clientRequestPath)
+      let ruleID = cleaned(raw.ruleId)
+      let baseID =
+        rayName
+        ?? [datetime, clientIP ?? "", path ?? "", ruleID ?? "", action].joined(separator: "|")
+      let count = seenIDs[baseID, default: 0]
+      seenIDs[baseID] = count + 1
+      let id = count == 0 ? baseID : "\(baseID)#\(count)"
+      return FirewallSecurityEvent(
+        id: id,
+        datetime: datetime,
+        action: action,
+        source: cleaned(raw.source),
+        ruleID: ruleID,
+        clientIP: clientIP,
+        clientCountryName: cleaned(raw.clientCountryName),
+        clientASN: cleaned(raw.clientAsn),
+        clientASNDescription: cleaned(raw.clientASNDescription),
+        method: cleaned(raw.clientRequestHTTPMethodName),
+        host: cleaned(raw.clientRequestHTTPHost),
+        path: path,
+        query: cleaned(raw.clientRequestQuery),
+        userAgent: cleaned(raw.userAgent),
+        rayName: rayName,
+        edgeColoName: cleaned(raw.edgeColoName)
+      )
+    }
   }
 
   static func firewallEventsTimeBounds(

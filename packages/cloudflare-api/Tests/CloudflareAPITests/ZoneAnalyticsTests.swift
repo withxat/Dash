@@ -465,4 +465,93 @@ extension NetworkTests {
     #expect(tops.rules.map(\.label) == ["a", "b"])
     #expect(tops.rules.map(\.count) == [2, 1])
   }
+
+  @Test func firewallEventsSummaryDecodesRecentSecurityEventsAndBackCompatCache() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let body = try #require(requestBodyData(request))
+      let object = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+      let query = try #require(object["query"] as? String)
+      #expect(query.contains("recent: firewallEventsAdaptive(limit: 50"))
+      #expect(query.contains("clientRequestHTTPMethodName"))
+      #expect(query.contains("clientASNDescription"))
+      #expect(query.contains("rayName"))
+      return (
+        200,
+        Data(
+          #"""
+          {"data":{"viewer":{"zones":[{
+            "byTime":[
+              {"count":3,"dimensions":{"datetimeHour":"2026-11-26T04:00:00Z"}}
+            ],
+            "samples":[
+              {"clientCountryName":"US","ruleId":"rate-limit-login"}
+            ],
+            "recent":[
+              {
+                "datetime":"2026-11-26T04:55:10Z",
+                "action":"block",
+                "source":"firewallCustom",
+                "ruleId":"rate-limit-login",
+                "clientIP":"203.0.113.42",
+                "clientCountryName":"US",
+                "clientAsn":"13335",
+                "clientASNDescription":"Cloudflare, Inc.",
+                "clientRequestHTTPMethodName":"POST",
+                "clientRequestHTTPHost":"api.example.com",
+                "clientRequestPath":"/v1/login",
+                "clientRequestQuery":"?retry=1",
+                "userAgent":"curl/8.7.1",
+                "rayName":"8f1a2b3c4d5e6f70",
+                "edgeColoName":"SJC"
+              },
+              {
+                "datetime":"2026-11-26T04:55:10Z",
+                "action":"block",
+                "source":"bic",
+                "ruleId":"",
+                "clientIP":"198.51.100.7",
+                "clientCountryName":"DE",
+                "clientRequestHTTPMethodName":"GET",
+                "clientRequestHTTPHost":"example.com",
+                "clientRequestPath":"/.env",
+                "clientRequestQuery":"",
+                "rayName":"8f1a2b3c4d5e6f70"
+              },
+              {
+                "datetime":"   ",
+                "action":"block"
+              }
+            ]
+          }]}},"errors":null}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let summary = try await client.firewallEventsSummary(zoneID: "zone", hours: 24)
+    #expect(summary.recentEvents.count == 2)
+
+    let first = summary.recentEvents[0]
+    #expect(first.id == "8f1a2b3c4d5e6f70")
+    #expect(first.fullPath == "/v1/login?retry=1")
+    #expect(first.requestLine == "POST api.example.com/v1/login?retry=1")
+    #expect(first.clientIP == "203.0.113.42")
+    #expect(first.clientASN == "13335")
+    #expect(first.clientASNDescription == "Cloudflare, Inc.")
+    #expect(first.edgeColoName == "SJC")
+
+    // Duplicate rayName gets a unique suffix and empty strings normalize to nil.
+    let second = summary.recentEvents[1]
+    #expect(second.id == "8f1a2b3c4d5e6f70#1")
+    #expect(second.ruleID == nil)
+    #expect(second.fullPath == "/.env")
+
+    // Legacy cached payload without `recentEvents` decodes with empty list.
+    let legacyJSON = Data(
+      #"{"hours":24,"blocked":5,"series":[],"countries":[],"rules":[]}"#.utf8)
+    let legacy = try JSONDecoder().decode(FirewallEventsSummary.self, from: legacyJSON)
+    #expect(legacy.recentEvents.isEmpty)
+  }
 }

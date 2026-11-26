@@ -221,3 +221,72 @@ extension AuditLogEntry {
       .joined(separator: "\n")
   }
 }
+
+extension FirewallSecurityEvent {
+  /// Compact headline for list rows and the detail tray title.
+  var displayTitle: String {
+    if let method, let fullPath {
+      return "\(method) \(fullPath)"
+    }
+    if let fullPath { return fullPath }
+    if let host { return host }
+    if let clientIP { return clientIP }
+    return ruleID ?? action
+  }
+
+  /// Formatted ASN value combining number and owner when available.
+  var formattedASN: String? {
+    switch (clientASN, clientASNDescription) {
+    case (let asn?, let desc?):
+      return "AS\(asn) · \(desc)"
+    case (let asn?, nil):
+      return "AS\(asn)"
+    case (nil, let desc?):
+      return desc
+    case (nil, nil):
+      return nil
+    }
+  }
+
+  var detailFields: [DashDetailField] {
+    var fields: [DashDetailField] = [
+      DashDetailField(label: "Action", value: action, mono: true),
+      DashDetailField(
+        label: "Time",
+        value: DashDateFormatting.dateAndTime(fromISO8601: datetime)),
+    ]
+    if let clientIP {
+      fields.append(DashDetailField(label: "Client IP", value: clientIP, mono: true))
+    }
+    if let clientCountryName {
+      fields.append(DashDetailField(label: "Country", value: clientCountryName))
+    }
+    if let formattedASN {
+      fields.append(DashDetailField(label: "ASN", value: formattedASN))
+    }
+    if let requestLine {
+      fields.append(DashDetailField(label: "Request", value: requestLine, mono: true))
+    }
+    if let source {
+      fields.append(DashDetailField(label: "Source", value: source, mono: true))
+    }
+    if let ruleID {
+      fields.append(DashDetailField(label: "Rule ID", value: ruleID, mono: true))
+    }
+    if let userAgent {
+      fields.append(DashDetailField(label: "User-Agent", value: userAgent, mono: true))
+    }
+    if let edgeColoName {
+      fields.append(DashDetailField(label: "Datacenter", value: edgeColoName, mono: true))
+    }
+    if let rayName {
+      fields.append(DashDetailField(label: "Ray ID", value: rayName, mono: true))
+    }
+    return fields
+  }
+
+  var copyableSummary: String {
+    ([displayTitle] + detailFields.map { "\(DashL10n.ui($0.label)): \($0.value)" })
+      .joined(separator: "\n")
+  }
+}

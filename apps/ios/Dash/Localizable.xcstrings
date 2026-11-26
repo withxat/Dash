@@ -1619,6 +1619,23 @@
         }
       }
     },
+    "ASN" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ASN"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ASN"
+          }
+        }
+      }
+    },
     "Asset URL" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2565,6 +2582,23 @@
         }
       }
     },
+    "Client IP" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Client IP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "客户端 IP"
+          }
+        }
+      }
+    },
     "Client Renew Prohibited" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3234,6 +3268,57 @@
         }
       }
     },
+    "Content-Type" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content-Type"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content-Type"
+          }
+        }
+      }
+    },
+    "Copy IP" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy IP"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制 IP"
+          }
+        }
+      }
+    },
+    "Copy path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy path"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制路径"
+          }
+        }
+      }
+    },
     "Create one in the dashboard or with Wrangler." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3350,6 +3435,23 @@
         }
       }
     },
+    "Datacenter" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Datacenter"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "数据中心"
+          }
+        }
+      }
+    },
     "Deploy one with Wrangler or the dashboard." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3451,6 +3553,39 @@
         }
       }
     },
+    "IP address copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP address copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制 IP 地址"
+          }
+        }
+      }
+    },
+    "key" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "key"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "个键"
+          }
+        }
+      }
+    },
     "MIT license, on GitHub." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3535,6 +3670,22 @@
         }
       }
     },
+    "No recent security events in this window." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recent security events in this window."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "该时间窗口内没有近期安全事件。"
+          }
+        }
+      }
+    },
     "OAuth with PKCE. Dash never sees your password." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3565,6 +3716,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 api.example.net"
+          }
+        }
+      }
+    },
+    "Path copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Path copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制路径"
           }
         }
       }
@@ -3665,6 +3832,22 @@
         }
       }
     },
+    "Recent events" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recent events"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "近期安全事件"
+          }
+        }
+      }
+    },
     "Registration lookup" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3726,6 +3909,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要触控 ID"
+          }
+        }
+      }
+    },
+    "Rule ID" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rule ID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "规则 ID"
+          }
+        }
+      }
+    },
+    "Security event copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Security event copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制安全事件"
           }
         }
       }
@@ -13339,6 +13555,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用户 ID"
+          }
+        }
+      }
+    },
+    "User-Agent" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "User-Agent"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "User-Agent"
           }
         }
       }
