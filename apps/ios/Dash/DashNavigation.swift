@@ -267,6 +267,7 @@ extension Destination {
     case .pagesDeployment(let project, let deploymentID):
       .init(namespace: "pages-deployment", value: "\(project)/\(deploymentID)")
     case .pagesDomains(let name): .init(namespace: "pages-domains", value: name)
+    case .pagesConfiguration(let name): .init(namespace: "pages-configuration", value: name)
     case .r2Bucket(let name, let prefix):
       .init(namespace: "r2", value: "\(name)/\(prefix)")
     case .r2BucketSettings(let name): .init(namespace: "r2-settings", value: name)

@@ -539,17 +539,124 @@ public struct WorkerDeploymentListResult: Decodable, Sendable {
   }
 }
 
+/// Pages deployment environment (`production` or `preview`).
+public enum PagesEnvironment: String, Codable, Hashable, CaseIterable, Sendable {
+  case production
+  case preview
+}
+
+/// One environment variable on a Pages project deployment config.
+/// Secret variables omit `value` when read back from Cloudflare.
+public struct PagesEnvVar: Codable, Hashable, Sendable {
+  public let type: String
+  public let value: String?
+
+  public init(type: String = "plain_text", value: String? = nil) {
+    self.type = type
+    self.value = value
+  }
+
+  public var isSecret: Bool { type == "secret_text" }
+}
+
+/// Environment-specific Pages project configuration (env vars + Functions runtime).
+public struct PagesDeploymentConfig: Codable, Hashable, Sendable {
+  public let envVars: [String: PagesEnvVar]
+  public let compatibilityDate: String?
+  public let compatibilityFlags: [String]
+
+  enum CodingKeys: String, CodingKey {
+    case envVars = "env_vars"
+    case compatibilityDate = "compatibility_date"
+    case compatibilityFlags = "compatibility_flags"
+  }
+
+  public init(
+    envVars: [String: PagesEnvVar] = [:],
+    compatibilityDate: String? = nil,
+    compatibilityFlags: [String] = []
+  ) {
+    self.envVars = envVars
+    self.compatibilityDate = compatibilityDate
+    self.compatibilityFlags = compatibilityFlags
+  }
+
+  public init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    if let rawMap = try c.decodeIfPresent([String: PagesEnvVar?].self, forKey: .envVars) {
+      envVars = rawMap.compactMapValues { $0 }
+    } else {
+      envVars = [:]
+    }
+    compatibilityDate = (try c.decodeIfPresent(String.self, forKey: .compatibilityDate)).nonEmpty
+    compatibilityFlags = try c.decodeIfPresent([String].self, forKey: .compatibilityFlags) ?? []
+  }
+}
+
+public struct PagesDeploymentConfigs: Codable, Hashable, Sendable {
+  public let production: PagesDeploymentConfig?
+  public let preview: PagesDeploymentConfig?
+
+  public init(
+    production: PagesDeploymentConfig? = nil,
+    preview: PagesDeploymentConfig? = nil
+  ) {
+    self.production = production
+    self.preview = preview
+  }
+
+  public func config(for environment: PagesEnvironment) -> PagesDeploymentConfig? {
+    switch environment {
+    case .production: production
+    case .preview: preview
+    }
+  }
+}
+
 public struct PagesProject: CloudflareResource, Hashable {
   public let id: String
   public let name: String
   public let subdomain: String?
   public let createdOn: String?
+  public let productionBranch: String?
+  public let source: PagesDeploymentSource?
+  public let buildConfig: PagesBuildConfig?
+  public let deploymentConfigs: PagesDeploymentConfigs?
+  public let canonicalDeployment: PagesDeploymentSummary?
   public let latestDeployment: PagesDeploymentSummary?
 
   enum CodingKeys: String, CodingKey {
-    case id, name, subdomain
+    case id, name, subdomain, source
     case createdOn = "created_on"
+    case productionBranch = "production_branch"
+    case buildConfig = "build_config"
+    case deploymentConfigs = "deployment_configs"
+    case canonicalDeployment = "canonical_deployment"
     case latestDeployment = "latest_deployment"
+  }
+
+  public init(
+    id: String,
+    name: String,
+    subdomain: String? = nil,
+    createdOn: String? = nil,
+    productionBranch: String? = nil,
+    source: PagesDeploymentSource? = nil,
+    buildConfig: PagesBuildConfig? = nil,
+    deploymentConfigs: PagesDeploymentConfigs? = nil,
+    canonicalDeployment: PagesDeploymentSummary? = nil,
+    latestDeployment: PagesDeploymentSummary? = nil
+  ) {
+    self.id = id
+    self.name = name
+    self.subdomain = subdomain
+    self.createdOn = createdOn
+    self.productionBranch = productionBranch
+    self.source = source
+    self.buildConfig = buildConfig
+    self.deploymentConfigs = deploymentConfigs
+    self.canonicalDeployment = canonicalDeployment
+    self.latestDeployment = latestDeployment
   }
 }
 
@@ -946,6 +1053,11 @@ private struct WorkerAnalyticsData: Decodable, Sendable {
   }
 }
 
+/// One binding attached to a Worker script (`GET .../scripts/{name}/settings`).
+///
+/// Cloudflare defines dozens of discriminated binding types; keeping common
+/// target fields optional guarantees unknown or future binding kinds still
+/// decode cleanly and render with their `type` and `name`.
 public struct WorkerBinding: Codable, Hashable, Identifiable, Sendable {
   public var id: String { "\(type):\(name)" }
   public let name: String
@@ -1158,6 +1270,41 @@ private struct WorkerSecretPutBody: Encodable, Sendable {
   let name: String
   let text: String
   let type: String
+}
+
+private enum PagesEnvVarPatchValue: Encodable, Sendable {
+  case set(type: String, value: String)
+  case remove
+
+  enum CodingKeys: String, CodingKey { case type, value }
+
+  func encode(to encoder: Encoder) throws {
+    switch self {
+    case .set(let type, let value):
+      var c = encoder.container(keyedBy: CodingKeys.self)
+      try c.encode(type, forKey: .type)
+      try c.encode(value, forKey: .value)
+    case .remove:
+      var c = encoder.singleValueContainer()
+      try c.encodeNil()
+    }
+  }
+}
+
+private struct PagesDeploymentConfigEnvPatch: Encodable, Sendable {
+  let envVars: [String: PagesEnvVarPatchValue]
+
+  enum CodingKeys: String, CodingKey {
+    case envVars = "env_vars"
+  }
+}
+
+private struct PagesProjectEnvPatchBody: Encodable, Sendable {
+  let deploymentConfigs: [String: PagesDeploymentConfigEnvPatch]
+
+  enum CodingKeys: String, CodingKey {
+    case deploymentConfigs = "deployment_configs"
+  }
 }
 
 extension CloudflareClient {
@@ -1521,6 +1668,66 @@ extension CloudflareClient {
     try await request(
       "/accounts/\(accountID)/pages/projects/\(projectName)/deployments/\(deploymentID)/rollback",
       method: "POST")
+  }
+
+  /// Deletes a Pages deployment (`page.write`). Pass `force: true` to delete a
+  /// deployment that still has branch/preview aliases attached.
+  public func deletePagesDeployment(
+    accountID: String,
+    projectName: String,
+    deploymentID: String,
+    force: Bool = false
+  ) async throws {
+    let encodedProject = Self.encodeWorkerPathSegment(projectName)
+    let encodedDeployment = Self.encodeWorkerPathSegment(deploymentID)
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/pages/projects/\(encodedProject)/deployments/\(encodedDeployment)",
+      method: "DELETE",
+      query: force ? ["force": "true"] : [:])
+  }
+
+  /// Adds or updates a single environment variable for one Pages environment
+  /// (`production` or `preview`), leaving all other variables untouched (`page.write`).
+  @discardableResult
+  public func updatePagesEnvironmentVariable(
+    accountID: String,
+    projectName: String,
+    environment: PagesEnvironment,
+    name: String,
+    value: String,
+    isSecret: Bool
+  ) async throws -> PagesProject {
+    let encodedProject = Self.encodeWorkerPathSegment(projectName)
+    let patch = PagesProjectEnvPatchBody(
+      deploymentConfigs: [
+        environment.rawValue: PagesDeploymentConfigEnvPatch(
+          envVars: [name: .set(type: isSecret ? "secret_text" : "plain_text", value: value)]
+        )
+      ])
+    return try await request(
+      "/accounts/\(accountID)/pages/projects/\(encodedProject)",
+      method: "PATCH",
+      body: patch)
+  }
+
+  /// Removes a single environment variable from one Pages environment by
+  /// sending an explicit JSON `null` in the PATCH payload (`page.write`).
+  @discardableResult
+  public func deletePagesEnvironmentVariable(
+    accountID: String,
+    projectName: String,
+    environment: PagesEnvironment,
+    name: String
+  ) async throws -> PagesProject {
+    let encodedProject = Self.encodeWorkerPathSegment(projectName)
+    let patch = PagesProjectEnvPatchBody(
+      deploymentConfigs: [
+        environment.rawValue: PagesDeploymentConfigEnvPatch(envVars: [name: .remove])
+      ])
+    return try await request(
+      "/accounts/\(accountID)/pages/projects/\(encodedProject)",
+      method: "PATCH",
+      body: patch)
   }
 
   public func listPagesDomains(accountID: String, projectName: String) async throws -> [PagesDomain]

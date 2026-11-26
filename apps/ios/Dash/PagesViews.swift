@@ -108,6 +108,7 @@ struct PagesProjectDetailView: View {
   @State private var error: String?
   @State private var deploymentsError: String?
   @State private var selectedSliceID: String?
+  @State private var environmentFilter: PagesDeploymentEnvironmentFilter = .all
   /// Exact project-list identity captured before the detail fetch. A card-led
   /// push can therefore hand off into the first destination frame without a
   /// placeholder or a second network request.
@@ -164,6 +165,20 @@ struct PagesProjectDetailView: View {
       .dashBodyPlaceholder(mode.isPlaceholder)
       .dashBodySlot(reduceMotion: reduceMotion)
 
+      DashTwoToneListGroup(title: "Configuration") {
+        DashListGroupLink(value: .pagesConfiguration(projectName)) {
+          DashListRow(
+            title: DashL10n.string("Settings & variables"),
+            icon: SolarAsset.slider,
+            showsIconPlate: false
+          )
+          .accessibilityLabel(
+            DashL10n.string("Configuration, Settings and environment variables"))
+        }
+      }
+      .dashBodyPlaceholder(mode.isPlaceholder)
+      .dashBodySlot(reduceMotion: reduceMotion)
+
       if mode.isPlaceholder {
         DashChartPanelPlaceholder(showsLegend: true)
           .dashBodySlot(reduceMotion: reduceMotion)
@@ -173,13 +188,23 @@ struct PagesProjectDetailView: View {
       }
     }
 
+    if !mode.isPlaceholder, hasMultipleEnvironments {
+      DashTextTabs(
+        items: PagesDeploymentEnvironmentFilter.allCases.map { ($0.title, $0) },
+        selection: $environmentFilter.animation(DashTheme.Motion.morph)
+      )
+      .dashSectionBoundary()
+      .padding(.bottom, DashTheme.Spacing.itemGap)
+      .dashBodySlot(reduceMotion: reduceMotion)
+    }
+
     // Keep the unbounded deployment ForEach as a direct child of
     // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
     // otherwise mount every deployment row at once.
     DashListGroupHeader(title: DashL10n.ui("Deployments"))
       .dashTwoToneHeaderBand()
-      .dashSectionBoundary()
-    if mode.isPlaceholder || !deployments.isEmpty {
+      .dashSectionBoundary(mode.isPlaceholder || !hasMultipleEnvironments)
+    if mode.isPlaceholder || !visibleDeployments.isEmpty {
       dashModeListRows(
         mode: mode,
         items: visibleDeployments,
@@ -246,6 +271,9 @@ struct PagesProjectDetailView: View {
             .dashSectionFailure(
               deploymentsError,
               retry: { Task { await load(force: true) } })
+        } else if !deployments.isEmpty {
+          Text("No deployments match this filter.")
+            .dashTwoToneNote()
         } else {
           Text("No deployments yet.")
             .dashTwoToneNote()
@@ -346,8 +374,14 @@ struct PagesProjectDetailView: View {
     }
   }
 
+  private var hasMultipleEnvironments: Bool {
+    let envs = Set(deployments.compactMap { $0.environment?.lowercased() })
+    return envs.contains("production") && envs.contains("preview")
+  }
+
   private var visibleDeployments: [PagesDeployment] {
-    PagesDeploymentChartModel.deployments(deployments, in: selectedSliceID)
+    let byOutcome = PagesDeploymentChartModel.deployments(deployments, in: selectedSliceID)
+    return environmentFilter.filter(byOutcome)
   }
 
   private var selectedBucket: PagesDeploymentChartModel.Bucket? {
@@ -504,8 +538,32 @@ struct PagesProjectDetailView: View {
   }
 }
 
+enum PagesDeploymentEnvironmentFilter: String, CaseIterable, Hashable, Sendable {
+  case all
+  case production
+  case preview
+
+  var title: String {
+    switch self {
+    case .all: DashL10n.string("All")
+    case .production: DashL10n.string("Production")
+    case .preview: DashL10n.string("Preview")
+    }
+  }
+
+  func filter(_ deployments: [PagesDeployment]) -> [PagesDeployment] {
+    switch self {
+    case .all: deployments
+    case .production: deployments.filter { $0.environment?.lowercased() == "production" }
+    case .preview: deployments.filter { $0.environment?.lowercased() == "preview" }
+    }
+  }
+}
+
 struct PagesDeploymentDetailView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.destinationNavigator) private var navigator
+  @Environment(\.dashNavigationEntryID) private var navigationEntryID
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let projectName: String
@@ -518,7 +576,9 @@ struct PagesDeploymentDetailView: View {
   @State private var actionError: String?
   @State private var retryPhase: DashActionPhase = .idle
   @State private var rollbackPhase: DashActionPhase = .idle
+  @State private var deletePhase: DashActionPhase = .idle
   @State private var confirmingRollback = false
+  @State private var confirmingDelete = false
   @State private var hasPresentedContent = false
   @State private var replacementDeploymentID: String?
   @State private var hasRequestedLogs = false
@@ -529,7 +589,7 @@ struct PagesDeploymentDetailView: View {
   }
 
   private var working: Bool {
-    retryPhase.isActive || rollbackPhase.isActive
+    retryPhase.isActive || rollbackPhase.isActive || deletePhase.isActive
   }
 
   private var monitorKey: PagesBuildMonitorKey? {
@@ -744,6 +804,15 @@ struct PagesDeploymentDetailView: View {
     }
   }
 
+  private func isActiveCanonicalDeployment(_ deployment: PagesDeployment) -> Bool {
+    guard let accountID = model.activeAccountID else { return false }
+    guard
+      let project: PagesProject = model.featureCache.get(
+        FeatureCacheKey.pagesProject(accountID: accountID, name: projectName))
+    else { return false }
+    return project.canonicalDeployment?.id == deployment.id
+  }
+
   @ViewBuilder
   private func actions(for deployment: PagesDeployment) -> some View {
     if featureAllowsWrites {
@@ -772,12 +841,35 @@ struct PagesDeploymentDetailView: View {
                 if confirmingRollback {
                   Task { await rollback() }
                 } else {
+                  confirmingDelete = false
                   confirmingRollback = true
                 }
               }
               .disabled(working)
               if confirmingRollback {
                 Button("Cancel") { confirmingRollback = false }
+                  .dashTextStyle(.buttonMedium)
+                  .foregroundStyle(DashTheme.subtle)
+              }
+            }
+
+            if !isActiveCanonicalDeployment(deployment) {
+              DashActionButton(
+                title: confirmingDelete ? "Confirm delete" : "Delete deployment",
+                role: .destructive,
+                phase: deletePhase,
+                onSuccessPresentationCompleted: completeDeletePresentation
+              ) {
+                if confirmingDelete {
+                  Task { await deleteDeployment() }
+                } else {
+                  confirmingRollback = false
+                  confirmingDelete = true
+                }
+              }
+              .disabled(working)
+              if confirmingDelete {
+                Button("Cancel") { confirmingDelete = false }
                   .dashTextStyle(.buttonMedium)
                   .foregroundStyle(DashTheme.subtle)
               }
@@ -1076,6 +1168,50 @@ struct PagesDeploymentDetailView: View {
     rollbackPhase = .idle
     confirmingRollback = false
     Task { await refreshManually() }
+  }
+
+  private func deleteDeployment() async {
+    guard let key = monitorKey else { return }
+    let context = AccountRequestContext(
+      accountID: key.accountID,
+      generation: key.accountGeneration)
+    deletePhase = .loading
+    actionError = nil
+    do {
+      try await model.client.deletePagesDeployment(
+        accountID: key.accountID,
+        projectName: key.projectName,
+        deploymentID: key.deploymentID,
+        force: true)
+      guard !Task.isCancelled, model.isCurrentAccount(context), monitorKey == key else {
+        deletePhase = .idle
+        return
+      }
+      model.featureCache.remove(
+        FeatureCacheKey.pagesDeployments(accountID: key.accountID, name: projectName))
+      model.featureCache.remove(
+        FeatureCacheKey.pagesProject(accountID: key.accountID, name: projectName))
+      model.toasts.success(DashL10n.string("Deployment deleted"))
+      deletePhase = .succeeded
+    } catch {
+      deletePhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context), monitorKey == key else {
+        return
+      }
+      actionError = error.dashActionableMessage
+      DashDelight.failError()
+    }
+  }
+
+  private func completeDeletePresentation() {
+    guard deletePhase == .succeeded else {
+      deletePhase = .idle
+      return
+    }
+    deletePhase = .idle
+    confirmingDelete = false
+    guard let navigationEntryID else { return }
+    navigator?.dismiss(entryID: navigationEntryID)
   }
 }
 

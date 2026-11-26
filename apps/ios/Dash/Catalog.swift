@@ -112,6 +112,8 @@ enum Destination: Hashable {
   case pagesProject(String)
   case pagesDeployment(project: String, deploymentID: String)
   case pagesDomains(String)
+  /// Pages project build configuration, source repo, and Production/Preview env vars.
+  case pagesConfiguration(String)
   /// `prefix` is the S3-style folder key (trailing `/`), or `""` at the bucket root.
   case r2Bucket(String, prefix: String)
   case r2BucketSettings(String)

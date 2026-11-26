@@ -204,6 +204,29 @@ private func demoClient() -> CloudflareClient {
   #expect(
     try await client.listPagesDomains(accountID: "demo-account", projectName: "marketing-site")
       .allSatisfy { $0.name != "review.example.com" })
+
+  // Environment variable updates and deletions persist per environment; secrets never echo values.
+  let withVar = try await client.updatePagesEnvironmentVariable(
+    accountID: "demo-account", projectName: "marketing-site", environment: .production,
+    name: "FEATURE_FLAG", value: "enabled", isSecret: false)
+  #expect(
+    withVar.deploymentConfigs?.production?.envVars["FEATURE_FLAG"]?.value == "enabled")
+  let withSecret = try await client.updatePagesEnvironmentVariable(
+    accountID: "demo-account", projectName: "marketing-site", environment: .preview,
+    name: "PREVIEW_TOKEN", value: "super-secret", isSecret: true)
+  #expect(withSecret.deploymentConfigs?.preview?.envVars["PREVIEW_TOKEN"]?.isSecret == true)
+  #expect(withSecret.deploymentConfigs?.preview?.envVars["PREVIEW_TOKEN"]?.value == nil)
+  let withoutVar = try await client.deletePagesEnvironmentVariable(
+    accountID: "demo-account", projectName: "marketing-site", environment: .production,
+    name: "FEATURE_FLAG")
+  #expect(withoutVar.deploymentConfigs?.production?.envVars["FEATURE_FLAG"] == nil)
+
+  // Deleting a non-canonical deployment removes it from the list.
+  try await client.deletePagesDeployment(
+    accountID: "demo-account", projectName: "marketing-site", deploymentID: "pd-2", force: true)
+  #expect(
+    try await client.listPagesDeployments(accountID: "demo-account", projectName: "marketing-site")
+      .items.allSatisfy { $0.id != "pd-2" })
 }
 
 @Test func demoRegistrarAndAccountChangesReadBack() async throws {

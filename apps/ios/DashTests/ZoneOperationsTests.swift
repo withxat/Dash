@@ -1016,3 +1016,43 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(fields["Name"] == "ASSETS")
   #expect(fields["Bucket"] == "northwind-assets")
 }
+
+@Test func pagesConfigurationRulesAndEnvironmentFilter() throws {
+  #expect(PagesConfigurationRules.isValidVariableName("PUBLIC_API_URL"))
+  #expect(PagesConfigurationRules.isValidVariableName("_flag2"))
+  #expect(!PagesConfigurationRules.isValidVariableName(""))
+  #expect(!PagesConfigurationRules.isValidVariableName("9BAD"))
+  #expect(!PagesConfigurationRules.isValidVariableName("BAD-KEY"))
+  #expect(!PagesConfigurationRules.isValidVariableName("BAD KEY"))
+
+  let project = PagesProject(
+    id: "pp-1",
+    name: "web",
+    deploymentConfigs: PagesDeploymentConfigs(
+      production: PagesDeploymentConfig(envVars: [
+        "Z_KEY": PagesEnvVar(type: "plain_text", value: "1"),
+        "A_SECRET": PagesEnvVar(type: "secret_text", value: nil),
+      ]),
+      preview: PagesDeploymentConfig(envVars: [
+        "PREVIEW_ONLY": PagesEnvVar(type: "plain_text", value: "true")
+      ])
+    )
+  )
+  #expect(
+    PagesConfigurationRules.sortedVariables(from: project, environment: .production).map(\.name)
+      == ["A_SECRET", "Z_KEY"])
+  #expect(
+    PagesConfigurationRules.sortedVariables(from: project, environment: .preview).map(\.name)
+      == ["PREVIEW_ONLY"])
+
+  let deploymentsJSON = #"""
+    [
+      {"id":"d-prod","short_id":"abc","environment":"production","is_skipped":false},
+      {"id":"d-prev","short_id":"def","environment":"preview","is_skipped":false}
+    ]
+    """#
+  let all = try JSONDecoder().decode([PagesDeployment].self, from: Data(deploymentsJSON.utf8))
+  #expect(PagesDeploymentEnvironmentFilter.all.filter(all).map(\.id) == ["d-prod", "d-prev"])
+  #expect(PagesDeploymentEnvironmentFilter.production.filter(all).map(\.id) == ["d-prod"])
+  #expect(PagesDeploymentEnvironmentFilter.preview.filter(all).map(\.id) == ["d-prev"])
+}

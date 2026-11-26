@@ -436,3 +436,12 @@ import UIKit
   #expect(readScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
   #expect(writeScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
 }
+
+@Test func pagesConfigurationUsesExistingPagesScopesOnly() {
+  let destination = Destination.pagesConfiguration("marketing-site")
+  #expect(featureID(for: destination) == .pages)
+  #expect(readScopes(for: destination) == ["page.read"])
+  #expect(writeScopes(for: destination) == ["page.write"])
+  #expect(readScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
+  #expect(writeScopes(for: destination).isSubset(of: DashAuthorizationScopes.core))
+}

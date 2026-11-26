@@ -637,4 +637,102 @@ extension NetworkTests {
         "PUT /accounts/acct/workers/scripts/api-worker/schedules",
       ])
   }
+
+  @Test func pagesProjectConfigEnvVarsPatchAndDeleteDeployment() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      let query = request.url?.query ?? ""
+      recorder.record("\(method) \(path)\(query.isEmpty ? "" : "?\(query)")")
+      if method == "GET", path.hasSuffix("/pages/projects/web") {
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{
+              "id":"pp-web","name":"web","subdomain":"web.pages.dev",
+              "production_branch":"main",
+              "source":{"type":"github","config":{"owner":"acme","repo_name":"web","production_branch":"main"}},
+              "build_config":{"build_command":"pnpm build","destination_dir":"dist","root_dir":"apps/web"},
+              "deployment_configs":{
+                "production":{
+                  "compatibility_date":"2026-03-01",
+                  "compatibility_flags":["nodejs_compat"],
+                  "env_vars":{
+                    "PUBLIC_API":{"type":"plain_text","value":"https://api.example.com"},
+                    "API_SECRET":{"type":"secret_text"},
+                    "REMOVED":null
+                  }
+                },
+                "preview":{
+                  "env_vars":{
+                    "PUBLIC_API":{"type":"plain_text","value":"https://staging.example.com"}
+                  }
+                }
+              }
+            }}
+            """#.utf8)
+        )
+      }
+      if method == "PATCH", path.hasSuffix("/pages/projects/web") {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let configs = try #require(payload["deployment_configs"] as? [String: Any])
+        if let prod = configs["production"] as? [String: Any],
+          let vars = prod["env_vars"] as? [String: Any]
+        {
+          if let entry = vars["NEW_FLAG"] as? [String: Any] {
+            #expect(entry["type"] as? String == "plain_text")
+            #expect(entry["value"] as? String == "true")
+          } else {
+            #expect(vars["PUBLIC_API"] is NSNull)
+          }
+        }
+        return (
+          200,
+          Data(
+            #"""
+            {"success":true,"result":{"id":"pp-web","name":"web","subdomain":"web.pages.dev"}}
+            """#.utf8)
+        )
+      }
+      if method == "DELETE", path.hasSuffix("/pages/projects/web/deployments/dep-old") {
+        return (200, Data(#"{"success":true,"result":null}"#.utf8))
+      }
+      return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+    }
+
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let project = try await client.getPagesProject(accountID: "acct", projectName: "web")
+    #expect(project.productionBranch == "main")
+    #expect(project.source?.config?.owner == "acme")
+    #expect(project.buildConfig?.buildCommand == "pnpm build")
+    let prodConfig = try #require(project.deploymentConfigs?.config(for: .production))
+    #expect(prodConfig.compatibilityDate == "2026-03-01")
+    #expect(prodConfig.compatibilityFlags == ["nodejs_compat"])
+    #expect(prodConfig.envVars["PUBLIC_API"]?.value == "https://api.example.com")
+    #expect(prodConfig.envVars["API_SECRET"]?.isSecret == true)
+    #expect(prodConfig.envVars["REMOVED"] == nil)
+
+    _ = try await client.updatePagesEnvironmentVariable(
+      accountID: "acct", projectName: "web", environment: .production,
+      name: "NEW_FLAG", value: "true", isSecret: false)
+    _ = try await client.deletePagesEnvironmentVariable(
+      accountID: "acct", projectName: "web", environment: .production, name: "PUBLIC_API")
+    try await client.deletePagesDeployment(
+      accountID: "acct", projectName: "web", deploymentID: "dep-old", force: true)
+
+    #expect(
+      recorder.paths == [
+        "GET /accounts/acct/pages/projects/web",
+        "PATCH /accounts/acct/pages/projects/web",
+        "PATCH /accounts/acct/pages/projects/web",
+        "DELETE /accounts/acct/pages/projects/web/deployments/dep-old?force=true",
+      ])
+  }
 }

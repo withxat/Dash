@@ -49,6 +49,7 @@ struct DestinationRoutedContent: View {
       case .pagesDeployment(let project, let deploymentID):
         PagesDeploymentDetailView(projectName: project, deploymentID: deploymentID)
       case .pagesDomains(let name): PagesDomainsView(projectName: name)
+      case .pagesConfiguration(let name): PagesConfigurationView(projectName: name)
       case .r2Bucket(let name, let prefix): R2BucketView(bucket: name, folderPrefix: prefix)
       case .r2BucketSettings(let name): R2BucketSettingsView(bucket: name)
       case .kvNamespace(let id): KVNamespaceView(namespaceID: id)

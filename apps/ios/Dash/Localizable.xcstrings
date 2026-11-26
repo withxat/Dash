@@ -824,6 +824,23 @@
         }
       }
     },
+    "Add variable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add variable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加变量"
+          }
+        }
+      }
+    },
     "Added Cron Trigger" : {
       "localizations" : {
         "en" : {
@@ -852,6 +869,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已添加密钥 %@"
+          }
+        }
+      }
+    },
+    "Added variable %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Added variable %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已添加变量 %@"
           }
         }
       }
@@ -2197,6 +2230,23 @@
         }
       }
     },
+    "Build & source" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build & source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "构建与源码"
+          }
+        }
+      }
+    },
     "Build cancelled" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2508,6 +2558,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更换头像"
+          }
+        }
+      }
+    },
+    "Changes apply to new %@ deployments." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Changes apply to new %@ deployments."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更改将应用于新的%@部署。"
           }
         }
       }
@@ -3396,6 +3462,39 @@
         }
       }
     },
+    "Configuration, Settings and environment variables" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuration, Settings and environment variables"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "配置、设置与环境变量"
+          }
+        }
+      }
+    },
+    "Confirm delete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm delete"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认删除"
+          }
+        }
+      }
+    },
     "Confirm it's you" : {
       "localizations" : {
         "en" : {
@@ -3769,6 +3868,23 @@
         }
       }
     },
+    "Delete deployment" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete deployment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除部署"
+          }
+        }
+      }
+    },
     "Deleted secret %@" : {
       "localizations" : {
         "en" : {
@@ -3781,6 +3897,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已删除密钥 %@"
+          }
+        }
+      }
+    },
+    "Deleted variable %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deleted variable %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已删除变量 %@"
           }
         }
       }
@@ -3798,6 +3930,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "可以用 Wrangler 或在控制台部署。"
+          }
+        }
+      }
+    },
+    "Deployment deleted" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deployment deleted"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "部署已删除"
           }
         }
       }
@@ -3836,6 +3984,23 @@
         }
       }
     },
+    "Encrypt value" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypt value"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加密值"
+          }
+        }
+      }
+    },
     "Encrypted secret" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3849,6 +4014,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加密密钥"
+          }
+        }
+      }
+    },
+    "Encrypted secrets cannot be viewed again after saving." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encrypted secrets cannot be viewed again after saving."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "加密后的密钥在保存后无法再次查看。"
           }
         }
       }
@@ -3876,6 +4058,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Environment variable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "环境变量"
+          }
+        }
+      }
+    },
+    "Environment variables" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Environment variables"
           }
         },
         "zh-Hans" : {
@@ -4254,6 +4452,22 @@
         }
       }
     },
+    "No deployments match this filter." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No deployments match this filter."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有符合筛选条件的部署。"
+          }
+        }
+      }
+    },
     "No email is sent in the demo." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4267,6 +4481,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "演示中不会发送邮件。"
+          }
+        }
+      }
+    },
+    "No environment variables configured." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No environment variables configured."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚未配置环境变量。"
           }
         }
       }
@@ -4402,6 +4632,23 @@
         }
       }
     },
+    "Production branch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Production branch"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "生产分支"
+          }
+        }
+      }
+    },
     "Purge by URL" : {
       "localizations" : {
         "en" : {
@@ -4515,6 +4762,23 @@
         }
       }
     },
+    "Read-only — grant Pages write access to edit environment variables." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read-only — grant Pages write access to edit environment variables."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "只读 — 授予 Pages 写权限以编辑环境变量。"
+          }
+        }
+      }
+    },
     "Read-only — grant Workers write access to edit secrets or Cron Triggers." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4561,6 +4825,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "注册信息查询"
+          }
+        }
+      }
+    },
+    "Remove %@ from %@ environment variables?" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove %1$@ from %2$@ environment variables?"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "要从%2$@环境变量中移除 %1$@ 吗？"
           }
         }
       }
@@ -4806,6 +5086,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "服务绑定"
+          }
+        }
+      }
+    },
+    "Settings & variables" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings & variables"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置与变量"
           }
         }
       }
@@ -14182,6 +14478,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "更新成功"
+          }
+        }
+      }
+    },
+    "Updated variable %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updated variable %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已更新变量 %@"
           }
         }
       }

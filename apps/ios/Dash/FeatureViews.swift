@@ -120,7 +120,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   case .registrarDomain: nil
   case .worker, .workerBuild, .workerSource, .workerConfiguration: .workers
   case .tunnel: .tunnels
-  case .pagesProject, .pagesDeployment, .pagesDomains: .pages
+  case .pagesProject, .pagesDeployment, .pagesDomains, .pagesConfiguration: .pages
   case .r2Bucket, .r2BucketSettings: .r2
   case .kvNamespace, .kvKey: .kv
   }
@@ -174,7 +174,7 @@ func readScopes(for destination: Destination) -> Set<String> {
   case .workerBuild:
     (featureID(for: destination)?.capability.read ?? []).union(WorkerBuildsAccess.read)
   case .feature, .zone, .worker, .workerSource, .workerConfiguration, .pagesProject,
-    .pagesDeployment, .pagesDomains,
+    .pagesDeployment, .pagesDomains, .pagesConfiguration,
     .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
   }
@@ -210,7 +210,7 @@ func writeScopes(for destination: Destination) -> Set<String> {
   case .zoneWAF:
     ["zone-settings.write"]
   case .feature, .zone, .worker, .workerConfiguration, .pagesProject, .pagesDeployment,
-    .pagesDomains, .r2Bucket,
+    .pagesDomains, .pagesConfiguration, .r2Bucket,
     .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.write ?? []
   }

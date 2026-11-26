@@ -760,6 +760,33 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
     else { return Self.failure("Project not found.") }
     let projectPath = projects + "/" + tail[2]
     if tail.count == 3, method == "GET" { return ok(project) }
+    if tail.count == 3, method == "PATCH" {
+      if let incomingConfigs = input["deployment_configs"] as? [String: Any] {
+        var configs = project["deployment_configs"] as? [String: Any] ?? [:]
+        for (envName, rawEnvPatch) in incomingConfigs {
+          guard let envPatch = rawEnvPatch as? [String: Any] else { continue }
+          var envConfig = configs[envName] as? [String: Any] ?? [:]
+          if let incomingVars = envPatch["env_vars"] as? [String: Any] {
+            var vars = envConfig["env_vars"] as? [String: Any] ?? [:]
+            for (varName, rawValue) in incomingVars {
+              if rawValue is NSNull {
+                vars.removeValue(forKey: varName)
+              } else if var entry = rawValue as? [String: Any] {
+                if entry["type"] as? String == "secret_text" {
+                  entry.removeValue(forKey: "value")
+                }
+                vars[varName] = entry
+              }
+            }
+            envConfig["env_vars"] = vars
+          }
+          configs[envName] = envConfig
+        }
+        project["deployment_configs"] = configs
+      }
+      replace(project, in: projects, id: "name")
+      return ok(project)
+    }
     if tail.count >= 4, tail[3] == "domains" {
       var value = input
       if method == "POST" {
@@ -779,6 +806,14 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
         var deployment = rows(deployments).first(where: { $0["id"] as? String == tail[4] })
       else { return Self.failure("Deployment not found.") }
       if tail.count == 5, method == "GET" { return ok(deployment) }
+      if tail.count == 5, method == "DELETE" {
+        let canonicalID = (project["canonical_deployment"] as? [String: Any])?["id"] as? String
+        if canonicalID == tail[4] {
+          return Self.failure("Cannot delete the active production deployment.", status: 400)
+        }
+        collections[deployments] = rows(deployments).filter { $0["id"] as? String != tail[4] }
+        return ok(NSNull())
+      }
       if tail.contains("logs"), method == "GET" { return seedReply(path) }
       if tail.count == 6, ["retry", "rollback"].contains(tail[5]), method == "POST" {
         deployment["id"] = newID
