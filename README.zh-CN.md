@@ -95,6 +95,9 @@ pnpm web:deploy   # versions upload → versions deploy
 
 部署后确认 `https://dash.xat.sh/oauth/callback` 仍 302 到 `dash://oauth/callback`，并在 Cloudflare OAuth 客户端与 `DASH_REDIRECT_URI` 中使用该 HTTPS 地址。
 
-## License
+## 作者
 
-[MIT](LICENSE)
+**Dash** © [Xat](https://github.com/withxat)，基于 [MIT](LICENSE) 许可证发布。<br>
+由 Xat 与贡献者共同维护（[贡献者列表](https://github.com/withxat/Dash/graphs/contributors)）。
+
+> [Blog](https://xat.sh) · GitHub [@withxat](https://github.com/withxat) · Telegram [@withxat](https://t.me/withxat) · X [@withxat](https://x.com/withxat) · Email [i@xat.sh](mailto:i@xat.sh)

@@ -128,6 +128,9 @@ in `DASH_REDIRECT_URI`.
 
 `pnpm typecheck` runs JavaScript type checking, Swift Package tests, and a signed simulator build. `pnpm ios:test` runs Dash unit and UI tests on an iPhone 17 Pro simulator. Lefthook formats and verifies staged Swift and TypeScript changes before commit.
 
-## License
+## Author
 
-[MIT](LICENSE)
+**Dash** © [Xat](https://github.com/withxat), released under the [MIT](LICENSE) License.<br>
+Authored and maintained by Xat with help from contributors ([list](https://github.com/withxat/Dash/graphs/contributors)).
+
+> [Blog](https://xat.sh) · GitHub [@withxat](https://github.com/withxat) · Telegram [@withxat](https://t.me/withxat) · X [@withxat](https://x.com/withxat) · Email [i@xat.sh](mailto:i@xat.sh)
