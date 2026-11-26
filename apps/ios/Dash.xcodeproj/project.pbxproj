@@ -199,6 +199,13 @@
 		D15A00000000000000000109 /* DeferredDeletionPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F00000000000000000109 /* DeferredDeletionPersistenceTests.swift */; };
 		D15A0000000000000000010A /* DeferredDeletionPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F0000000000000000010A /* DeferredDeletionPolicyTests.swift */; };
 		D15A0000000000000000010B /* DeferredDeletionTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15F0000000000000000010B /* DeferredDeletionTestSupport.swift */; };
+		B00000000000000000000310 /* SafariWebExtensionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000310 /* SafariWebExtensionHandler.swift */; };
+		B00000000000000000000311 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000312 /* PrivacyInfo.xcprivacy */; };
+		B00000000000000000000312 /* manifest.json in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000313 /* manifest.json */; };
+		B00000000000000000000313 /* content.js in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000314 /* content.js */; };
+		B00000000000000000000314 /* _locales in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000315 /* _locales */; };
+		B00000000000000000000315 /* images in Resources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000316 /* images */; };
+		B00000000000000000000316 /* DashSafari.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F00000000000000000000027 /* DashSafari.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -230,6 +237,13 @@
 			remoteGlobalIDString = A00000000000000000000008;
 			remoteInfo = DashFileProvider;
 		};
+		C00000000000000000000034 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000009;
+			remoteInfo = DashSafari;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -242,6 +256,7 @@
 				B0000000000000000000010B /* DashWidgets.appex in Embed Foundation Extensions */,
 				B0000000000000000000011E /* DashShare.appex in Embed Foundation Extensions */,
 				B000000000000000000001CA /* DashFileProvider.appex in Embed Foundation Extensions */,
+				B00000000000000000000316 /* DashSafari.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -416,6 +431,14 @@
 		F00000000000000000000303 /* DashAppLock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashAppLock.swift; sourceTree = "<group>"; };
 		F00000000000000000000304 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		F00000000000000000000302 /* DemoSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoSessionTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000027 /* DashSafari.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DashSafari.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000310 /* SafariWebExtensionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafariWebExtensionHandler.swift; sourceTree = "<group>"; };
+		F00000000000000000000311 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		F00000000000000000000312 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		F00000000000000000000313 /* manifest.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = manifest.json; sourceTree = "<group>"; };
+		F00000000000000000000314 /* content.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = content.js; sourceTree = "<group>"; };
+		F00000000000000000000315 /* _locales */ = {isa = PBXFileReference; lastKnownFileType = folder; path = _locales; sourceTree = "<group>"; };
+		F00000000000000000000316 /* images */ = {isa = PBXFileReference; lastKnownFileType = folder; path = images; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -471,6 +494,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000038 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -491,6 +521,7 @@
 				A00000000000000000000017 /* DashWidgets */,
 				A00000000000000000000019 /* DashShare */,
 				A00000000000000000000021 /* DashFileProvider */,
+				A00000000000000000000022 /* DashSafari */,
 				A00000000000000000000014 /* Products */,
 				A00000000000000000000015 /* Frameworks */,
 				5B23A8D52FFB6F8700D18CF0 /* Recovered References */,
@@ -665,6 +696,7 @@
 				F00000000000000000000023 /* DashWidgets.appex */,
 				F00000000000000000000024 /* DashShare.appex */,
 				F00000000000000000000026 /* DashFileProvider.appex */,
+				F00000000000000000000027 /* DashSafari.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -735,6 +767,28 @@
 			path = DashFileProvider;
 			sourceTree = "<group>";
 		};
+		A00000000000000000000022 /* DashSafari */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000310 /* SafariWebExtensionHandler.swift */,
+				A00000000000000000000023 /* Resources */,
+				F00000000000000000000311 /* Info.plist */,
+				F00000000000000000000312 /* PrivacyInfo.xcprivacy */,
+			);
+			path = DashSafari;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000023 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000315 /* _locales */,
+				F00000000000000000000316 /* images */,
+				F00000000000000000000313 /* manifest.json */,
+				F00000000000000000000314 /* content.js */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -754,6 +808,7 @@
 				C00000000000000000000014 /* PBXTargetDependency */,
 				C00000000000000000000016 /* PBXTargetDependency */,
 				C00000000000000000000033 /* PBXTargetDependency */,
+				C00000000000000000000035 /* PBXTargetDependency */,
 			);
 			name = Dash;
 			packageProductDependencies = (
@@ -865,6 +920,23 @@
 			productReference = F00000000000000000000026 /* DashFileProvider.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
+		A00000000000000000000009 /* DashSafari */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E00000000000000000000009 /* Build configuration list for PBXNativeTarget "DashSafari" */;
+			buildPhases = (
+				D00000000000000000000037 /* Sources */,
+				D00000000000000000000038 /* Frameworks */,
+				D00000000000000000000039 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DashSafari;
+			productName = DashSafari;
+			productReference = F00000000000000000000027 /* DashSafari.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -895,6 +967,9 @@
 					A00000000000000000000008 = {
 						CreatedOnToolsVersion = 26.4;
 					};
+					A00000000000000000000009 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = E00000000000000000000001 /* Build configuration list for PBXProject "Dash" */;
@@ -923,6 +998,7 @@
 				A00000000000000000000005 /* DashWidgets */,
 				A00000000000000000000006 /* DashShare */,
 				A00000000000000000000008 /* DashFileProvider */,
+				A00000000000000000000009 /* DashSafari */,
 				A00000000000000000000003 /* DashTests */,
 				A00000000000000000000004 /* DashUITests */,
 			);
@@ -983,6 +1059,18 @@
 			files = (
 				B000000000000000000001C7 /* Localizable.xcstrings in Resources */,
 				B000000000000000000001C8 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D00000000000000000000039 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000312 /* manifest.json in Resources */,
+				B00000000000000000000313 /* content.js in Resources */,
+				B00000000000000000000314 /* _locales in Resources */,
+				B00000000000000000000315 /* images in Resources */,
+				B00000000000000000000311 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1222,6 +1310,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D00000000000000000000037 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B00000000000000000000310 /* SafariWebExtensionHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1249,6 +1345,11 @@
 			isa = PBXTargetDependency;
 			target = A00000000000000000000008 /* DashFileProvider */;
 			targetProxy = C00000000000000000000032 /* PBXContainerItemProxy */;
+		};
+		C00000000000000000000035 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000009 /* DashSafari */;
+			targetProxy = C00000000000000000000034 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1617,6 +1718,56 @@
 			};
 			name = Release;
 		};
+		E00000000000000000000091 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LM_SKIP_METADATA_EXTRACTION = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.safari;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		E00000000000000000000092 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F00000000000000000000030 /* Base.xcconfig */;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = DashSafari/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Dash;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				LM_SKIP_METADATA_EXTRACTION = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.xat.dash.app.safari;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1679,6 +1830,15 @@
 			buildConfigurations = (
 				E00000000000000000000081 /* Debug */,
 				E00000000000000000000082 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E00000000000000000000009 /* Build configuration list for PBXNativeTarget "DashSafari" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E00000000000000000000091 /* Debug */,
+				E00000000000000000000092 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

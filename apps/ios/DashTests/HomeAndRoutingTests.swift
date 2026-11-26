@@ -368,3 +368,93 @@ import UIKit
   #expect(DashRoute.r2("assets").scoped(to: "  ") == nil)
   #expect(DashRoute.settings.scoped(to: "account-a") == nil)
 }
+
+@Test func dashRouteOpensCloudflareDashboardLinks() throws {
+  func parse(_ string: String) -> DashRoute? {
+    URL(string: string).flatMap(DashRoute.parse)
+  }
+  let account = "0123456789abcdef0123456789abcdef"
+  let deployment = "4fcdd3b4-e0a7-42df-b2d9-4a89a1981d9d"
+  let expected = DashRoute.pagesDeployment(project: "portal", deploymentID: deployment)
+
+  // The dashboard's own address: the account in the path scopes the route, so
+  // it goes through the same switch confirmation as any other bound link.
+  let bound = try #require(
+    parse("https://dash.cloudflare.com/\(account)/pages/view/portal/\(deployment)"))
+  #expect(bound == expected.scoped(to: account))
+  #expect(
+    bound.accountResolution(activeAccountID: "other", availableAccountIDs: [account, "other"])
+      == .confirmSwitch(accountID: account, route: expected))
+
+  // Wrapped for the custom scheme, percent-encoded.
+  var wrapped = URLComponents()
+  wrapped.scheme = "dash"
+  wrapped.host = "open"
+  wrapped.queryItems = [
+    URLQueryItem(
+      name: "url",
+      value: "https://dash.cloudflare.com/\(account)/pages/view/portal/\(deployment)")
+  ]
+  #expect(try DashRoute.parse(#require(wrapped.url)) == bound)
+
+  // The GitHub check's "View logs": no account in the link, so the active one.
+  let placeholder = try #require(
+    parse("https://dash.cloudflare.com/?to=/:account/pages/view/portal/\(deployment)"))
+  #expect(placeholder == .activeAccount(expected))
+  #expect(placeholder.accountID == nil)
+  #expect(placeholder.unscoped == expected)
+  #expect(placeholder.destination == .pagesDeployment(project: "portal", deploymentID: deployment))
+  #expect(
+    placeholder.accountResolution(activeAccountID: "other", availableAccountIDs: ["other"])
+      == .open(expected))
+  #expect(
+    placeholder.accountResolution(activeAccountID: nil, availableAccountIDs: [])
+      == .rejectMissingAccount)
+
+  // A build link opens that build, and Dash's own route for it round-trips to
+  // the same screen.
+  let buildID = "a398d794-7322-4c97-96d9-40b5140a8d9b"
+  let buildRoute = DashRoute.workerBuild(worker: "api", buildID: buildID)
+  #expect(
+    parse(
+      "https://dash.cloudflare.com/\(account)/workers/services/view/api/production/builds/\(buildID)"
+    ) == buildRoute.scoped(to: account))
+  #expect(
+    parse("dash://worker/api/builds/\(buildID)?account=\(account)")
+      == buildRoute.scoped(to: account))
+  #expect(buildRoute.destination == .workerBuild(worker: "api", buildID: buildID))
+  // Without a build id the same prefix is still the Worker.
+  #expect(
+    parse("dash://worker/api/builds?account=\(account)") == .worker("api").scoped(to: account))
+
+  // Expanded dashboard links: R2, KV, Audit Log, and domain sections.
+  #expect(
+    parse("https://dash.cloudflare.com/\(account)/r2/default/buckets/assets")
+      == DashRoute.r2("assets").scoped(to: account))
+  #expect(
+    parse("https://dash.cloudflare.com/\(account)/r2/default/buckets/assets/settings")
+      == DashRoute.r2Settings("assets").scoped(to: account))
+  #expect(DashRoute.r2Settings("assets").destination == .r2BucketSettings("assets"))
+  #expect(
+    parse(
+      "https://dash.cloudflare.com/\(account)/workers/kv/namespaces/0f2ac74b498b48028cb6838f7c0137e4"
+    )
+      == DashRoute.kv("0f2ac74b498b48028cb6838f7c0137e4").scoped(to: account))
+  #expect(
+    parse("https://dash.cloudflare.com/\(account)/audit-log")
+      == DashRoute.auditLogs.scoped(to: account))
+  #expect(DashRoute.auditLogs.destination == .auditLogs)
+  #expect(
+    parse("https://dash.cloudflare.com/\(account)/example.com/dns/records")
+      == DashRoute.zoneByName(name: "example.com", section: .dns).scoped(to: account))
+  #expect(
+    CloudflareDashboardLink.ZoneSection.dns.destination(forZoneID: "z1") == .dns("z1"))
+  #expect(
+    CloudflareDashboardLink.ZoneSection.emailRouting.destination(forZoneID: "z1")
+      == .zoneEmailRouting("z1"))
+
+  #expect(parse("https://dash.cloudflare.com/login") == nil)
+  #expect(parse("https://example.com/\(account)/pages/view/portal") == nil)
+  #expect(parse("dash://open") == nil)
+  #expect(parse("dash://open?url=dash%3A%2F%2Fsettings") == nil)  // not a dashboard link
+}

@@ -628,6 +628,7 @@ struct SettingsView: View {
   @State private var showsLanguagePicker = false
   @State private var showsWorkspaceGlowPicker = false
   @State private var showsChartStylePicker = false
+  @State private var showsSafariExtensionGuide = false
   @State private var showsSignOutConfirmation = false
   /// The switch's position while the device is asking; nil when settled.
   @State private var pendingAppLock: Bool?
@@ -757,6 +758,20 @@ struct SettingsView: View {
             )
             .accessibilityIdentifier("settings-app-lock")
           }
+
+          Button {
+            DashDelight.lightImpact()
+            showsSafariExtensionGuide = true
+          } label: {
+            SettingsPlainRow(
+              title: DashL10n.string("Safari extension"),
+              icon: SolarAsset.globe,
+              trailingIcon: SolarAsset.trayDots,
+              trailingIconRotation: .degrees(90)
+            )
+          }
+          .buttonStyle(DashSurfaceButtonStyle())
+          .accessibilityIdentifier("settings-safari-extension")
         }
         .onAppear { model.appLock.refreshMethod() }
 
@@ -847,6 +862,12 @@ struct SettingsView: View {
       title: DashL10n.string("Chart style")
     ) {
       ChartStylePickerTray(chartStyleRaw: $chartStyleRaw)
+    }
+    .dashTray(
+      isPresented: $showsSafariExtensionGuide,
+      title: DashL10n.string("Safari extension")
+    ) {
+      SafariExtensionGuideTray()
     }
     .dashTray(
       isPresented: $showsSignOutConfirmation,
@@ -971,6 +992,65 @@ enum SignOutTrayStep: Hashable, Sendable {
   static let initial = Self.confirm
 
   var trayRole: DashTrayStepRole { .destructive }
+}
+
+/// Step-by-step guide explaining how to enable the DashSafari extension in
+/// iOS Settings so `dash.cloudflare.com` links hand off to Dash.
+private struct SafariExtensionGuideTray: View {
+  @Environment(\.openURL) private var openURL
+  @Environment(\.dashTrayDismiss) private var dismiss
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text(
+        DashL10n.string(
+          "Open Cloudflare dashboard links straight in Dash instead of staying in Safari."
+        )
+      )
+      .dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .fixedSize(horizontal: false, vertical: true)
+
+      VStack(alignment: .leading, spacing: 12) {
+        step(
+          number: "1",
+          text: DashL10n.string(
+            "Open Settings → Apps → Safari → Extensions → Dash and turn it on."
+          )
+        )
+        step(
+          number: "2",
+          text: DashL10n.string(
+            "Allow access for dash.cloudflare.com so dashboard links hand off to Dash."
+          )
+        )
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+
+      DashActionButton(title: "Open Settings") {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+          openURL(url)
+        }
+        dismiss()
+      }
+      .accessibilityIdentifier("safari-extension-open-settings")
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  private func step(number: String, text: String) -> some View {
+    HStack(alignment: .top, spacing: 10) {
+      Text(number)
+        .dashTextStyle(.captionSemibold)
+        .foregroundStyle(DashTheme.brand)
+        .frame(width: 22, height: 22)
+        .background(DashTheme.brand.opacity(0.1), in: Circle())
+      Text(text)
+        .dashTextStyle(.supporting)
+        .foregroundStyle(DashTheme.text)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+  }
 }
 
 /// Settings' direct sign-out confirmation. It owns the confirm pill's phase

@@ -135,6 +135,9 @@ struct MainTabView: View {
   @State private var nestedTray = DashTrayPresentation()
   @State private var accountRouteConfirmation: AccountScopedRouteRequest?
   @State private var routeAfterAccountSwitch: DashRoute?
+  /// In-flight lookup turning a `dash.cloudflare.com/<account>/<domain>` link
+  /// into a zone id. Cancelled on a newer route or when the view disappears.
+  @State private var zoneRouteResolutionTask: Task<Void, Never>?
   @State private var pagePresentationStates: [AppTab: DashPagePresentationState] = [:]
   /// Dock / header displacement mirrors — written only inside an explicit
   /// `withAnimation`. The live `hidesDock` / `headerIsDisplaced` values arrive
@@ -254,6 +257,8 @@ struct MainTabView: View {
 
   /// Applies a route only after any account scope has been verified.
   private func openVerifiedRoute(_ route: DashRoute) {
+    zoneRouteResolutionTask?.cancel()
+    zoneRouteResolutionTask = nil
     synchronizeNavigatorAccountScopes()
     switch route {
     case .watchtower:
@@ -266,17 +271,65 @@ struct MainTabView: View {
       homeNavigator.reset()
       guard let context = model.accountRequestContext else { return }
       model.pendingHomeAction = PendingHomeAction(action: action, context: context)
+    case .zoneByName(let name, let section):
+      resolveAndOpenZone(name: name, section: section)
     default:
       guard let destination = route.destination else { break }
-      // A destination immediately starts its own page transition. Settle the
-      // owning tab first so two independent content handoffs never overlap.
-      selectTab(.home, animated: false)
-      if destination == .settings {
-        homeNavigator.reset(
-          to: destination,
-          presentation: .workspaceOverlay)
-      } else {
-        homeNavigator.reset(to: destination)
+      pushVerifiedDestination(destination)
+    }
+  }
+
+  private func pushVerifiedDestination(_ destination: Destination) {
+    // A destination immediately starts its own page transition. Settle the
+    // owning tab first so two independent content handoffs never overlap.
+    selectTab(.home, animated: false)
+    if destination == .settings {
+      homeNavigator.reset(
+        to: destination,
+        presentation: .workspaceOverlay)
+    } else {
+      homeNavigator.reset(to: destination)
+    }
+  }
+
+  /// Resolves a domain name from a `dash.cloudflare.com` link into its zone id.
+  /// Reads the account's cached zones first so already-seen domains open
+  /// immediately without a round trip; misses fall back to `listZones(name:)`.
+  private func resolveAndOpenZone(
+    name: String,
+    section: CloudflareDashboardLink.ZoneSection
+  ) {
+    guard let context = model.accountRequestContext else { return }
+    let cacheKey = FeatureCacheKey.zones(context.accountID)
+    let cachedZones: [CloudflareZone] =
+      model.featureCache.get(cacheKey)
+      ?? model.featureCache.getStale(cacheKey)
+      ?? []
+    if let match = cachedZones.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    ) {
+      pushVerifiedDestination(section.destination(forZoneID: match.id))
+      return
+    }
+    let client = model.client
+    zoneRouteResolutionTask = Task {
+      do {
+        let page = try await client.listZones(
+          accountID: context.accountID, page: 1, perPage: 10, name: name)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        guard
+          let match = page.items.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+          })
+        else {
+          model.toasts.error(DashL10n.string("Couldn't find \(name) in this account"))
+          return
+        }
+        pushVerifiedDestination(section.destination(forZoneID: match.id))
+      } catch {
+        guard !Task.isCancelled, !error.dashIsCancellation, model.isCurrentAccount(context) else {
+          return
+        }
+        model.toasts.error(error.dashActionableMessage)
       }
     }
   }
@@ -415,12 +468,16 @@ struct MainTabView: View {
         watchtowerCustomization.cancelEditing()
         showsProfile = false
         showsIgnoreAllAlerts = false
+        zoneRouteResolutionTask?.cancel()
+        zoneRouteResolutionTask = nil
         if let route = routeAfterAccountSwitch {
           routeAfterAccountSwitch = nil
           openVerifiedRoute(route)
         }
       }
       .onDisappear {
+        zoneRouteResolutionTask?.cancel()
+        zoneRouteResolutionTask = nil
         completeTabTransitionImmediately()
       }
       .dashTray(

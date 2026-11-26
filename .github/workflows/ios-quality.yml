@@ -70,6 +70,9 @@ jobs:
       - name: Test simulator preparation
         run: node --test apps/ios/scripts/prepare-ci-simulator.test.mjs
 
+      - name: Test Safari extension hand-off
+        run: node --test apps/ios/scripts/safari-handoff.test.mjs
+
       - name: Prepare iPhone simulator
         id: simulator
         run: node apps/ios/scripts/prepare-ci-simulator.mjs

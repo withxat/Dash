@@ -1,0 +1,226 @@
+[
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789ABCDEF/pages/view/portal/4fcdd3b4-e0a7-42df-b2d9-4a89a1981d9d",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/pages/view/portal/4fcdd3b4-e0a7-42df-b2d9-4a89a1981d9d",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com?to=%2F%3Aaccount%2Fpages%2Fview%2Fportal%2F4fcdd3b4-e0a7-42df-b2d9-4a89a1981d9d",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/0123456789abcdef0123456789abcdef/pages/view/portal",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/deployments/new",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/settings/builds-deployments",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/domains",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/4fcdd3b4",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/my%20site/4fcdd3b4",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal/4fcdd3b4?tab=logs#build",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/services/view/api",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/services/view/api/production/deployments",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/services/view/api/production/builds/a398d794-7322-4c97-96d9-40b5140a8d9b",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/kv/namespaces/0f2ac74b498b48028cb6838f7c0137e4",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/r2/default/buckets/assets",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/r2/default/buckets/assets/settings",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/audit-log",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/overview",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/dns/records",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/example.com/dns/records",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/caching/configuration",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/security/events",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/security/waf/custom-rules",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/security/settings",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/ssl-tls/edge-certificates",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/network",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/analytics/traffic",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/email/routing/routes",
+		"opens": true
+	},
+	{
+		"url": "https://dash.cloudflare.com.evil.test/0123456789abcdef0123456789abcdef/pages/view/portal",
+		"opens": false
+	},
+	{
+		"url": "https://developers.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view/portal",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/login",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/login?redirect_uri=%2F0123456789abcdef0123456789abcdef%2Fpages%2Fview%2Fportal",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/profile/pages/view/portal",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcde/pages/view/portal",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdeg/pages/view/portal",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/home/domains",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/zaraz",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/rules/redirect-rules",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/security/bots",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/example.com/analytics/logs",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/r2/eu/buckets/assets",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/r2/default/buckets",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/kv/namespaces",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/audit-log/export",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/pages/view",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers/services/view",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/0123456789abcdef0123456789abcdef/workers-and-pages",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/pages/view/:pages-project/domains",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/workers-and-pages",
+		"opens": false
+	},
+	{
+		"url": "https://dash.cloudflare.com/?to=/:account/pages/view/a&to=/:account/pages/view/b",
+		"opens": false
+	}
+]

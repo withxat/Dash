@@ -37,6 +37,7 @@ apps/
     DashShare/           分享扩展（上传到 R2）
     DashWidgets/         Account / Domain Metrics 小组件
     DashFileProvider/    Files 里的 R2 挂载
+    DashSafari/          Safari 扩展（在 Dash 中打开控制台链接）
     DashTests/           单元测试
     DashUITests/         UI 测试
   web/                   落地页 + Hono 边缘应用（`dash-relay`，dash.xat.sh）

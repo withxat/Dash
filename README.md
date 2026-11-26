@@ -37,6 +37,7 @@ apps/
     DashShare/           Share extension (upload to R2)
     DashWidgets/         Account / Domain Metrics widgets
     DashFileProvider/    Files app R2 mount
+    DashSafari/          Safari extension (open dashboard links in Dash)
     DashTests/           Unit tests
     DashUITests/         UI tests
   web/                   Landing + Hono edge app (`dash-relay` at dash.xat.sh)

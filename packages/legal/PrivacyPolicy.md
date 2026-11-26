@@ -1,6 +1,6 @@
 # Dash for Cloudflare — Privacy Policy
 
-Effective August 24, 2026.
+Effective November 25, 2026.
 
 Dash for Cloudflare ("Dash") is an unofficial native iOS client for managing
 Cloudflare accounts. Core account API requests go directly from your device to
@@ -46,6 +46,13 @@ advertising, or tracking.
   removed on completion, cancellation, or failure; abandoned staging
   directories older than one hour are removed the next time the share
   extension opens.
+- **Safari extension** is off until you turn it on in Safari's settings and
+  allow it on `dash.cloudflare.com`. While on, it reads the address of a
+  `dash.cloudflare.com` page as the page loads and, when that address names a
+  Pages project, a Pages deployment, or a Worker, asks Safari to open it in
+  Dash. It runs on no other website, does not read the page's content, and
+  sends nothing anywhere. It notes which links it has already offered in that
+  tab's session storage, which Safari discards with the tab.
 - **Preferences** are stored locally in the app's own settings storage on your
   device.
 

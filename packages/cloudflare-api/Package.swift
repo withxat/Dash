@@ -16,6 +16,10 @@ let package = Package(
       name: "CloudflareAPI",
       resources: [.process("Resources")]
     ),
-    .testTarget(name: "CloudflareAPITests", dependencies: ["CloudflareAPI"]),
+    .testTarget(
+      name: "CloudflareAPITests",
+      dependencies: ["CloudflareAPI"],
+      resources: [.copy("Fixtures")]
+    ),
   ]
 )

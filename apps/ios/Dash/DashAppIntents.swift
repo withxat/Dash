@@ -36,6 +36,11 @@ struct DashIntentError: Error, CustomLocalizedStringResourceConvertible {
     localizedStringResource:
       "Open Dash and connect your Cloudflare account, then run this shortcut again."
   )
+
+  static let unsupportedLink = DashIntentError(
+    localizedStringResource:
+      "Dash can't open this link. It opens Cloudflare dashboard links to a Pages project, a Pages deployment, or a Worker."
+  )
 }
 
 enum DashIntentAuthorization {
@@ -662,6 +667,30 @@ struct OpenWatchtowerIntent: AppIntent {
     guard let route = DashRoute.watchtower.scoped(to: accountID) else {
       throw DashIntentError.signedOut
     }
+    model.pendingRoute = route
+    return .result()
+  }
+}
+
+/// The bridge from a Cloudflare dashboard link to Dash. iOS hands an
+/// `https://dash.cloudflare.com` link to an app only through Universal Links,
+/// which need a file on Cloudflare's domain, so tapping one will always open
+/// the browser. A Shortcut can still pass the link here — from the share sheet,
+/// the clipboard, or an automation — and land on the native screen.
+struct OpenCloudflareLinkIntent: AppIntent {
+  static let title: LocalizedStringResource = "Open Cloudflare Link"
+  static let description = IntentDescription(
+    "Open a Cloudflare dashboard link, such as a Pages deployment, in Dash.")
+  static let openAppWhenRun = true
+
+  @Parameter(title: "Link") var link: URL
+
+  @Dependency private var model: AppModel
+
+  @MainActor
+  func perform() async throws -> some IntentResult {
+    guard model.activeAccountID != nil else { throw DashIntentError.signedOut }
+    guard let route = DashRoute.parse(link) else { throw DashIntentError.unsupportedLink }
     model.pendingRoute = route
     return .result()
   }

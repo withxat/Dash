@@ -1,0 +1,10 @@
+{
+	"extension_name": {
+		"message": "在 Dash 中打开",
+		"description": "The display name for the extension."
+	},
+	"extension_description": {
+		"message": "打开指向 Pages 项目、Pages 部署或 Worker 的 Cloudflare 控制台链接时，询问是否改用 Dash 打开。",
+		"description": "Description of what the extension does."
+	}
+}

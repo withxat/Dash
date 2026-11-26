@@ -14994,6 +14994,143 @@
           }
         }
       }
+    },
+    "Allow access for dash.cloudflare.com so dashboard links hand off to Dash." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow access for dash.cloudflare.com so dashboard links hand off to Dash."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "允许访问 dash.cloudflare.com，以便控制台链接自动跳转至 Dash。"
+          }
+        }
+      }
+    },
+    "Couldn't find %@ in this account" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't find %@ in this account"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此账户中未找到 %@"
+          }
+        }
+      }
+    },
+    "Dash can't open this link. It opens Cloudflare dashboard links to a Pages project, a Pages deployment, or a Worker." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dash 无法打开此链接。它支持指向 Pages 项目、Pages 部署或 Worker 的 Cloudflare 控制台链接。"
+          }
+        }
+      }
+    },
+    "Link" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "链接"
+          }
+        }
+      }
+    },
+    "Open Cloudflare Link" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Cloudflare 链接"
+          }
+        }
+      }
+    },
+    "Open Cloudflare dashboard links straight in Dash instead of staying in Safari." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Cloudflare dashboard links straight in Dash instead of staying in Safari."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Safari 中打开 Cloudflare 控制台链接时，直接跳转至 Dash 查看。"
+          }
+        }
+      }
+    },
+    "Open Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开设置"
+          }
+        }
+      }
+    },
+    "Open Settings → Apps → Safari → Extensions → Dash and turn it on." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings → Apps → Safari → Extensions → Dash and turn it on."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开“设置”→“App”→“Safari 浏览器”→“扩展”→“Dash”并启用。"
+          }
+        }
+      }
+    },
+    "Open a Cloudflare dashboard link, such as a Pages deployment, in Dash." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 Dash 中打开 Cloudflare 控制台链接，例如某次 Pages 部署。"
+          }
+        }
+      }
+    },
+    "Safari extension" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari extension"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safari 扩展"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"
