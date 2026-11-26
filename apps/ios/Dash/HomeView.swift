@@ -48,6 +48,7 @@ struct HomeView: View {
   @State private var showsEnableUnderAttackMode = false
   @State private var showsEditActions = false
   @State private var showsEditShortcuts = false
+  @State private var showsQuickJump = false
   @State private var showsDemoConnect = false
   @State private var demoConnectSharedAction: DashTraySharedAction?
 
@@ -100,12 +101,19 @@ struct HomeView: View {
         HomeGreetingHeader()
           .dashSectionReveal(0)
 
+        QuickJumpTriggerBar(
+          accessibilityIdentifier: "home-quick-jump-trigger"
+        ) {
+          showsQuickJump = true
+        }
+        .dashSectionReveal(1)
+
         if model.isDemoSession {
           HomeDemoExperienceSection(
             connect: presentDemoConnectFromSource,
             reset: { Task { await model.resetDemo() } }
           )
-          .dashSectionReveal(1)
+          .dashSectionReveal(2)
         }
 
         HomeQuickActionsSection(
@@ -114,7 +122,7 @@ struct HomeView: View {
           perform: perform,
           edit: { showsEditActions = true }
         )
-        .dashSectionReveal(1 + revealOffset)
+        .dashSectionReveal(2 + revealOffset)
 
         HomeDomainsSection(
           zones: displayedZones,
@@ -125,25 +133,25 @@ struct HomeView: View {
           showsAddDomain: $showsAddDomain,
           retry: { Task { await loadZones(force: true) } }
         )
-        .dashSectionReveal(2 + revealOffset)
+        .dashSectionReveal(3 + revealOffset)
 
         HomeShortcutsSection(features: shortcuts) {
           showsEditShortcuts = true
         }
-        .dashSectionReveal(3 + revealOffset)
+        .dashSectionReveal(4 + revealOffset)
 
         if let educationTip, let educationAccountID = model.activeAccountID {
           HomeEducationTipCard(tip: educationTip) {
             dismissEducationTip(educationTip, accountID: educationAccountID)
           }
-          .dashSectionReveal(4 + revealOffset)
+          .dashSectionReveal(5 + revealOffset)
         }
 
         if !recents.isEmpty {
           HomeRecentsSection(recents: recents) { resource in
             recentsRaw = RecentResources.recording(resource, in: recentsRaw)
           }
-          .dashSectionReveal(4 + revealOffset + (educationTip == nil ? 0 : 1))
+          .dashSectionReveal(5 + revealOffset + (educationTip == nil ? 0 : 1))
         }
       }
       .padding(.horizontal, DashTheme.Spacing.screen)
@@ -242,6 +250,9 @@ struct HomeView: View {
     }
     .dashTray(isPresented: $showsEditShortcuts, title: DashL10n.string("Edit shortcuts")) {
       EditShortcutsView(selectionRaw: $shortcutsRaw)
+    }
+    .dashTray(isPresented: $showsQuickJump, title: DashL10n.string("Quick jump")) {
+      QuickJumpTray()
     }
     .dashTray(
       isPresented: $showsDemoConnect,

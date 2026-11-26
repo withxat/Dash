@@ -1141,3 +1141,84 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(DashRoute.parse(detailURL)?.destination == .tunnel(tunnelID))
   #expect(DashRoute.parse(schemeURL)?.destination == .tunnel(tunnelID))
 }
+
+@Test @MainActor func quickJumpIndexReadsCacheRespectsAccessAndGroupsMatches() throws {
+  let cache = FeatureDataCache()
+  let accountID = "acct-1"
+  let zone = try JSONDecoder().decode(
+    CloudflareZone.self,
+    from: Data(#"{"id":"z-1","name":"northwind.example","status":"active"}"#.utf8))
+  let worker = try JSONDecoder().decode(
+    WorkerScript.self,
+    from: Data(#"{"id":"northwind-api"}"#.utf8))
+  let pages = PagesProject(
+    id: "pp-1",
+    name: "marketing-site",
+    subdomain: "northwind-docs.pages.dev")
+  let bucket = try JSONDecoder().decode(
+    R2Bucket.self,
+    from: Data(#"{"name":"northwind-assets"}"#.utf8))
+  let namespace = KVNamespace(id: "kv-1", title: "Northwind Sessions")
+  let tunnel = try JSONDecoder().decode(
+    CloudflareTunnel.self,
+    from: Data(#"{"id":"tun-1","name":"northwind-edge","status":"healthy"}"#.utf8))
+
+  cache.set(FeatureCacheKey.zones(accountID), [zone])
+  cache.set(FeatureCacheKey.workers(accountID), [worker])
+  cache.set(FeatureCacheKey.pagesProjects(accountID), [pages])
+  cache.set(FeatureCacheKey.r2Buckets(accountID), [bucket])
+  cache.set(FeatureCacheKey.kvNamespaces(accountID), [namespace])
+  cache.set(FeatureCacheKey.tunnels(accountID), [tunnel])
+
+  // Record one already-cached zone and one evicted worker as recents.
+  var recentsRaw = RecentResources.recording(
+    RecentResource(
+      accountID: accountID, kind: .zone, resourceID: "z-1", title: "northwind.example"),
+    in: "")
+  recentsRaw = RecentResources.recording(
+    RecentResource(
+      accountID: accountID, kind: .worker, resourceID: "legacy-edge", title: "legacy-edge"),
+    in: recentsRaw)
+
+  // Tunnels disabled experimentally: tunnels are excluded even if cached.
+  let withoutTunnels = QuickJumpIndex.snapshot(
+    accountID: accountID,
+    cache: cache,
+    recentsRaw: recentsRaw,
+    grantedScopes: DashAuthorizationScopes.core.union(["argotunnel.read"]),
+    tunnelsExperimentalEnabled: false)
+  #expect(withoutTunnels.items.allSatisfy { $0.kind != .tunnel })
+  // Cached zone is deduplicated against its recent entry, while evicted recent worker stays searchable.
+  #expect(withoutTunnels.items.filter { $0.kind == .zone && $0.resourceID == "z-1" }.count == 1)
+  #expect(withoutTunnels.items.contains { $0.kind == .worker && $0.resourceID == "legacy-edge" })
+  #expect(withoutTunnels.recents.map(\.resourceID) == ["legacy-edge", "z-1"])
+
+  // Tunnels enabled + granted: included and ordered last in grouped matches.
+  let full = QuickJumpIndex.snapshot(
+    accountID: accountID,
+    cache: cache,
+    recentsRaw: recentsRaw,
+    grantedScopes: DashAuthorizationScopes.core.union(["argotunnel.read"]),
+    tunnelsExperimentalEnabled: true)
+  let groups = QuickJumpIndex.groupedMatches(query: "northwind", in: full.items)
+  #expect(
+    groups.map(\.kind) == [.zone, .worker, .pagesProject, .r2Bucket, .kvNamespace, .tunnel])
+  #expect(groups.first?.items.first?.destination == .zone("z-1"))
+  #expect(groups.last?.items.first?.destination == .tunnel("tun-1"))
+
+  // Multi-token match hits secondary fields (subdomain) and empty query returns empty groups.
+  let pagesOnly = QuickJumpIndex.groupedMatches(query: "marketing pages.dev", in: full.items)
+  #expect(pagesOnly.map(\.kind) == [.pagesProject])
+  #expect(pagesOnly.first?.items.first?.destination == .pagesProject("marketing-site"))
+  #expect(QuickJumpIndex.groupedMatches(query: "   ", in: full.items).isEmpty)
+
+  // Missing scopes fail closed for that resource kind without affecting unlocked kinds.
+  let zonesOnly = QuickJumpIndex.snapshot(
+    accountID: accountID,
+    cache: cache,
+    recentsRaw: recentsRaw,
+    grantedScopes: ["zone.read"],
+    tunnelsExperimentalEnabled: true)
+  #expect(zonesOnly.items.map(\.kind) == [.zone])
+  #expect(zonesOnly.recents.map(\.kind) == [.zone])
+}

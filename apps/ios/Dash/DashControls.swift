@@ -1131,6 +1131,7 @@ struct DashSearchBar: View {
   @Binding var text: String
   let prompt: String
   var accessibilityIdentifier: String? = nil
+  var autoFocus = false
   @FocusState private var isFocused: Bool
 
   var body: some View {
@@ -1181,6 +1182,11 @@ struct DashSearchBar: View {
           isFocused ? DashTheme.brand.opacity(0.45) : DashTheme.separator,
           lineWidth: 1
         )
+    }
+    .onAppear {
+      if autoFocus {
+        isFocused = true
+      }
     }
   }
 }

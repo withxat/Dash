@@ -5056,6 +5056,22 @@
         }
       }
     },
+    "Nothing cached yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing cached yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "暂无缓存资源"
+          }
+        }
+      }
+    },
     "OAuth with PKCE. Dash never sees your password." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5102,6 +5118,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打开 api.example.net"
+          }
+        }
+      }
+    },
+    "Open Domains, Workers, Pages, R2, or KV to search them here." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Domains, Workers, Pages, R2, or KV to search them here."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "先打开域名、Workers、Pages、R2 或 KV 后，即可在这里快速搜索。"
           }
         }
       }
@@ -5398,6 +5430,22 @@
         }
       }
     },
+    "Quick jump" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Quick jump"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速跳转"
+          }
+        }
+      }
+    },
     "Read-only — grant Pages write access to edit environment variables." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5676,6 +5724,38 @@
         }
       }
     },
+    "Search cached domains, Workers, Pages, R2, KV, and tunnels." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search cached domains, Workers, Pages, R2, KV, and tunnels."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索当前账号已缓存的域名、Workers、Pages、R2、KV 和 Tunnel。"
+          }
+        }
+      }
+    },
+    "Search domains, Workers, R2…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search domains, Workers, R2…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索域名、Workers、R2…"
+          }
+        }
+      }
+    },
     "Search namespaces" : {
       "localizations" : {
         "en" : {
@@ -5704,6 +5784,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "搜索 Pages 项目"
+          }
+        }
+      }
+    },
+    "Search resources" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search resources"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索资源"
           }
         }
       }
@@ -12951,6 +13047,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "开启后会添加 Cloudflare 的 MX 和 SPF 记录。"
+          }
+        }
+      }
+    },
+    "Type to jump across %lld cached resources." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Type to jump across %lld cached resources."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入关键词，快速跳转 %lld 个已缓存资源。"
           }
         }
       }
