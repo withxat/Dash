@@ -720,6 +720,15 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
         deployment["latest_stage"] = [
           "name": "deploy", "status": "success", "started_on": now, "ended_on": now,
         ]
+        // The new run finished every stage: a retried failure must not keep
+        // showing the failed build stage under a successful status.
+        if let stages = deployment["stages"] as? [[String: Any]] {
+          deployment["stages"] = stages.map { stage in
+            stage.merging(
+              ["status": "success", "started_on": now, "ended_on": now],
+              uniquingKeysWith: { _, new in new })
+          }
+        }
         replace(deployment, in: deployments, id: "id")
         project["latest_deployment"] = deployment
         project["canonical_deployment"] = deployment

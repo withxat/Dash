@@ -325,6 +325,28 @@ public struct PagesDeploymentStage: Codable, Hashable, Sendable {
     default: false
     }
   }
+
+  public var startedDate: Date? { startedOn.flatMap(PagesTimestamp.date) }
+  public var endedDate: Date? { endedOn.flatMap(PagesTimestamp.date) }
+
+  /// How long the stage ran, or nil until it has both started and ended.
+  public var duration: TimeInterval? {
+    guard let start = startedDate, let end = endedDate, end >= start else { return nil }
+    return end.timeIntervalSince(start)
+  }
+}
+
+/// Pages timestamps arrive with microseconds (`2021-03-09T00:55:03.923456Z`)
+/// and, on older rows, without a fraction at all.
+enum PagesTimestamp {
+  static func date(_ value: String) -> Date? {
+    if let date = try? Date(
+      value, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+    {
+      return date
+    }
+    return try? Date(value, strategy: Date.ISO8601FormatStyle())
+  }
 }
 
 public struct PagesDeployment: Decodable, Hashable, Identifiable, Sendable {
@@ -340,9 +362,14 @@ public struct PagesDeployment: Decodable, Hashable, Identifiable, Sendable {
   public let stages: [PagesDeploymentStage]?
   public let deploymentTrigger: PagesDeploymentTrigger?
   public let aliases: [String]?
+  /// The build settings this deployment ran with. Absent on some responses,
+  /// and all-nil for a direct upload, which builds nothing.
+  public let buildConfig: PagesBuildConfig?
+  /// The repository the deployment was built from; nil for direct uploads.
+  public let source: PagesDeploymentSource?
 
   enum CodingKeys: String, CodingKey {
-    case id, url, environment, stages, aliases
+    case id, url, environment, stages, aliases, source
     case shortID = "short_id"
     case createdOn = "created_on"
     case modifiedOn = "modified_on"
@@ -350,6 +377,29 @@ public struct PagesDeployment: Decodable, Hashable, Identifiable, Sendable {
     case isSkipped = "is_skipped"
     case latestStage = "latest_stage"
     case deploymentTrigger = "deployment_trigger"
+    case buildConfig = "build_config"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    shortID = try container.decodeIfPresent(String.self, forKey: .shortID)
+    url = try container.decodeIfPresent(String.self, forKey: .url)
+    environment = try container.decodeIfPresent(String.self, forKey: .environment)
+    createdOn = try container.decodeIfPresent(String.self, forKey: .createdOn)
+    modifiedOn = try container.decodeIfPresent(String.self, forKey: .modifiedOn)
+    projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
+    isSkipped = try container.decodeIfPresent(Bool.self, forKey: .isSkipped)
+    latestStage = try container.decodeIfPresent(PagesDeploymentStage.self, forKey: .latestStage)
+    stages = try container.decodeIfPresent([PagesDeploymentStage].self, forKey: .stages)
+    deploymentTrigger = try container.decodeIfPresent(
+      PagesDeploymentTrigger.self, forKey: .deploymentTrigger)
+    aliases = try container.decodeIfPresent([String].self, forKey: .aliases)
+    // Descriptive extras, decoded leniently: a build setting or source block in
+    // a shape this client has not seen must cost that one section, never the
+    // deployment — the status, stages, and log above are what the screen is for.
+    buildConfig = try? container.decodeIfPresent(PagesBuildConfig.self, forKey: .buildConfig)
+    source = try? container.decodeIfPresent(PagesDeploymentSource.self, forKey: .source)
   }
 
   public var statusLabel: String {
@@ -358,24 +408,148 @@ public struct PagesDeployment: Decodable, Hashable, Identifiable, Sendable {
 
   public var branch: String? { deploymentTrigger?.metadata?.branch }
   public var commitMessage: String? { deploymentTrigger?.metadata?.commitMessage }
+  public var commitHash: String? { deploymentTrigger?.metadata?.commitHash }
+
+  /// Seven characters, the length every git UI settled on.
+  public var shortCommit: String? {
+    commitHash.flatMap { $0.isEmpty ? nil : String($0.prefix(7)) }
+  }
 
   public var isInProgress: Bool { latestStage?.isInProgress == true }
+
+  /// `owner/repo`, when the deployment came from a connected repository.
+  public var repository: String? {
+    guard
+      let owner = source?.config?.owner, !owner.isEmpty,
+      let repo = source?.config?.repoName, !repo.isEmpty
+    else { return nil }
+    return "\(owner)/\(repo)"
+  }
+
+  /// The commit on the Git provider's site. Nil unless the provider is one
+  /// whose commit URL shape is known and the owner, repository, and hash are
+  /// all present — a guessed link is worse than no link.
+  public var commitURL: URL? {
+    guard
+      let hash = commitHash, !hash.isEmpty,
+      let owner = source?.config?.owner, !owner.isEmpty,
+      let repo = source?.config?.repoName, !repo.isEmpty
+    else { return nil }
+    var components = URLComponents()
+    components.scheme = "https"
+    switch source?.type?.lowercased() {
+    case "github":
+      components.host = "github.com"
+      components.path = "/\(owner)/\(repo)/commit/\(hash)"
+    case "gitlab":
+      components.host = "gitlab.com"
+      components.path = "/\(owner)/\(repo)/-/commit/\(hash)"
+    default:
+      return nil
+    }
+    return components.url
+  }
+
+  /// Wall-clock seconds from the first stage starting to the last one ending.
+  /// Nil while the deployment is still running or when Cloudflare sent no
+  /// stage timestamps — `created_on` → `modified_on` is not a substitute, since
+  /// a later rollback or alias change also moves `modified_on`.
+  public var buildDuration: TimeInterval? {
+    guard !isInProgress, let stages else { return nil }
+    guard
+      let start = stages.lazy.compactMap(\.startedDate).first,
+      let end = stages.reversed().lazy.compactMap(\.endedDate).first,
+      end >= start
+    else { return nil }
+    return end.timeIntervalSince(start)
+  }
 }
 
 public struct PagesDeploymentTrigger: Codable, Hashable, Sendable {
+  /// `github:push`, `ad_hoc`, or `deploy_hook` today. Compare through
+  /// `PagesDeploymentTrigger.Kind`, never as a raw string at a call site.
   public let type: String?
   public let metadata: PagesDeploymentTriggerMetadata?
+
+  public enum Kind: Equatable, Sendable {
+    /// A push to the connected repository (`github:push`, `gitlab:push`).
+    case gitPush
+    /// Started by hand: a direct upload, a retry, or "Create deployment".
+    case manual
+    case deployHook
+    case other(String)
+  }
+
+  public var kind: Kind? {
+    guard let type = type?.lowercased(), !type.isEmpty else { return nil }
+    if type.hasSuffix(":push") { return .gitPush }
+    switch type {
+    case "ad_hoc": return .manual
+    case "deploy_hook": return .deployHook
+    default: return .other(type)
+    }
+  }
 }
 
 public struct PagesDeploymentTriggerMetadata: Codable, Hashable, Sendable {
   public let branch: String?
   public let commitHash: String?
   public let commitMessage: String?
+  /// True when the build ran with uncommitted changes (direct uploads from a
+  /// dirty working tree).
+  public let commitDirty: Bool?
 
   enum CodingKeys: String, CodingKey {
     case branch
     case commitHash = "commit_hash"
     case commitMessage = "commit_message"
+    case commitDirty = "commit_dirty"
+  }
+}
+
+/// Build settings a deployment ran with. Cloudflare sends empty strings, not
+/// nulls, for settings a project never set, so read these through the
+/// non-empty accessors.
+public struct PagesBuildConfig: Codable, Hashable, Sendable {
+  private let storedBuildCommand: String?
+  private let storedDestinationDirectory: String?
+  private let storedRootDirectory: String?
+  public let buildCaching: Bool?
+
+  public var buildCommand: String? { storedBuildCommand.nonEmpty }
+  public var destinationDirectory: String? { storedDestinationDirectory.nonEmpty }
+  public var rootDirectory: String? { storedRootDirectory.nonEmpty }
+
+  enum CodingKeys: String, CodingKey {
+    case storedBuildCommand = "build_command"
+    case storedDestinationDirectory = "destination_dir"
+    case storedRootDirectory = "root_dir"
+    case buildCaching = "build_caching"
+  }
+}
+
+public struct PagesDeploymentSource: Codable, Hashable, Sendable {
+  /// `github` or `gitlab`.
+  public let type: String?
+  public let config: PagesDeploymentSourceConfig?
+}
+
+public struct PagesDeploymentSourceConfig: Codable, Hashable, Sendable {
+  public let owner: String?
+  public let repoName: String?
+  public let productionBranch: String?
+
+  enum CodingKeys: String, CodingKey {
+    case owner
+    case repoName = "repo_name"
+    case productionBranch = "production_branch"
+  }
+}
+
+extension Optional where Wrapped == String {
+  fileprivate var nonEmpty: String? {
+    guard let self, !self.isEmpty else { return nil }
+    return self
   }
 }
 

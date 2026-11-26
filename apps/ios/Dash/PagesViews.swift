@@ -88,6 +88,8 @@ struct PagesProjectsView: View {
 }
 
 struct PagesProjectDetailView: View {
+  static let deploymentsPageSize = 25
+
   @Environment(AppModel.self) private var model
   @Environment(\.dashNavigationEntryHero) private var navigationEntryHero
   @Environment(\.dashPageTransitionActive) private var pageTransitionActive
@@ -99,6 +101,9 @@ struct PagesProjectDetailView: View {
   let projectName: String
   @State private var project: PagesProject?
   @State private var deployments: [PagesDeployment] = []
+  @State private var deploymentsPageState = DashPageState()
+  @State private var isLoadingMoreDeployments = false
+  @State private var deploymentsGeneration = 0
   @State private var loading = true
   @State private var error: String?
   @State private var deploymentsError: String?
@@ -143,16 +148,18 @@ struct PagesProjectDetailView: View {
     DashSurfaceStack {
       pagesProjectResourceCard(mode: mode)
 
-      dashListCard {
+      // Same frame as Email Routing's "Destination addresses → Manage
+      // addresses": the band names the subject, the row is the door. It was a
+      // bare row on the canvas — the one unframed thing on the screen.
+      DashTwoToneListGroup(title: "Domains") {
         DashListGroupLink(value: .pagesDomains(projectName)) {
           DashListRow(
-            title: DashL10n.string("Domains"),
+            title: DashL10n.string("Custom domains"),
             icon: SolarAsset.globe,
             showsIconPlate: false
           )
           .accessibilityLabel(DashL10n.string("Domains, Custom domains for this project"))
         }
-        .dashListCardInset()
       }
       .dashBodyPlaceholder(mode.isPlaceholder)
       .dashBodySlot(reduceMotion: reduceMotion)
@@ -170,18 +177,21 @@ struct PagesProjectDetailView: View {
     // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
     // otherwise mount every deployment row at once.
     DashListGroupHeader(title: DashL10n.ui("Deployments"))
-      .padding(.horizontal, 4)
+      .dashTwoToneHeaderBand()
       .dashSectionBoundary()
-      .padding(.bottom, 8)
     if mode.isPlaceholder || !deployments.isEmpty {
       dashModeListRows(
         mode: mode,
         items: visibleDeployments,
         placeholderRows: 3,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { deployment in
         let title = pagesDeploymentTitle(deployment)
         let subtitle = pagesDeploymentSubtitle(deployment)
+        let statusToken = StatusToken(
+          pagesStatus: deployment.latestStage?.status,
+          isSkipped: deployment.isSkipped == true)
         DashListGroupLink(
           value: .pagesDeployment(project: projectName, deploymentID: deployment.id)
         ) {
@@ -191,15 +201,43 @@ struct PagesProjectDetailView: View {
             icon: SolarAsset.Content.codeCircle,
             iconColor: pagesStatusColor(deployment.latestStage?.status),
             showsChevron: true
-          )
+          ) {
+            StatusBadge(statusToken)
+          }
           .accessibilityLabel(
-            pagesDeploymentAccessibilityLabel(title: title, subtitle: subtitle)
+            pagesDeploymentAccessibilityLabel(
+              title: title, status: statusToken.label, subtitle: subtitle)
           )
         }
         .transition(morphTransition)
       }
+      if !mode.isPlaceholder, deploymentsPageState.canLoadMore || isLoadingMoreDeployments {
+        if selectedSliceID != nil {
+          Group {
+            if isLoadingMoreDeployments {
+              DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+                .accessibilityLabel("Loading")
+            } else {
+              DashSecondaryPillButton(title: DashL10n.string("Load more")) {
+                Task { await loadMoreDeployments() }
+              }
+            }
+          }
+          .frame(maxWidth: .infinity)
+          .dashSectionBoundary()
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: deployments.count,
+            isLoading: isLoadingMoreDeployments
+          ) {
+            guard error == nil else { return }
+            Task { await loadMoreDeployments() }
+          }
+        }
+      }
     } else {
-      DashCard {
+      // The group's one slice: its settled-empty answer or its failure.
+      Group {
         if deploymentsError != nil {
           // A failed deployments fetch keeps the rows' shape on the ground
           // and veils the message over it — swapping in a bare notice was
@@ -210,13 +248,10 @@ struct PagesProjectDetailView: View {
               retry: { Task { await load(force: true) } })
         } else {
           Text("No deployments yet.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .dashTwoToneNote()
         }
       }
-      // Replaces DashListGroup's content inset for the empty state.
-      .dashListCardInset()
+      .dashTwoToneRowSlice()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
@@ -349,10 +384,11 @@ struct PagesProjectDetailView: View {
   }
 
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else {
+    guard let context = model.accountRequestContext else {
       loading = false
       return
     }
+    let accountID = context.accountID
     if !hasPresentedContent || force { loading = true }
     error = nil
     let projectKey = FeatureCacheKey.pagesProject(accountID: accountID, name: projectName)
@@ -362,12 +398,15 @@ struct PagesProjectDetailView: View {
       do {
         let fetched = try await model.client.getPagesProject(
           accountID: accountID, projectName: projectName)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
         project = fetched
         model.featureCache.set(projectKey, fetched)
       } catch {
         // Cold: the veil over the skeleton. Warm: the inline banner over the
         // kept project — a pull-to-refresh that fails must say so.
-        if !error.dashIsCancellation { self.error = error.dashActionableMessage }
+        if !error.dashIsCancellation, model.isCurrentAccount(context) {
+          self.error = error.dashActionableMessage
+        }
       }
     }
 
@@ -375,27 +414,92 @@ struct PagesProjectDetailView: View {
     if !force, let cached: [PagesDeployment] = model.featureCache.get(deployKey) {
       deployments = cached
       deploymentsError = nil
-    } else {
-      do {
-        let page = try await model.client.listPagesDeployments(
-          accountID: accountID, projectName: projectName)
-        deployments = page.items
-        deploymentsError = nil
-        model.featureCache.set(deployKey, deployments)
-      } catch {
-        if !error.dashIsCancellation {
-          deploymentsError = error.dashActionableMessage
-          // With rows on screen the section keeps them; the shared warm
-          // banner is the only surface that can carry the refresh failure.
-          if !deployments.isEmpty, self.error == nil {
-            self.error = error.dashActionableMessage
-          }
+      // Keep cached deployments painted while page one refreshes below so
+      // `deploymentsPageState` stays authoritative.
+    }
+    deploymentsGeneration += 1
+    let generation = deploymentsGeneration
+    isLoadingMoreDeployments = false
+    deploymentsPageState.reset()
+    do {
+      let page = try await model.client.listPagesDeployments(
+        accountID: accountID, projectName: projectName, page: 1,
+        perPage: Self.deploymentsPageSize)
+      guard !Task.isCancelled, generation == deploymentsGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      deployments = page.items
+      deploymentsPageState.absorb(
+        info: page.resultInfo,
+        requestedPage: 1,
+        received: page.items.count,
+        added: page.items.count,
+        loaded: deployments.count,
+        pageSize: Self.deploymentsPageSize)
+      deploymentsError = nil
+      model.featureCache.set(deployKey, deployments)
+    } catch {
+      if !error.dashIsCancellation, generation == deploymentsGeneration,
+        model.isCurrentAccount(context)
+      {
+        deploymentsError = error.dashActionableMessage
+        // With rows on screen the section keeps them; the shared warm
+        // banner is the only surface that can carry the refresh failure.
+        if !deployments.isEmpty, self.error == nil {
+          self.error = error.dashActionableMessage
         }
       }
     }
+    guard model.isCurrentAccount(context) else { return }
     loading = false
     if project != nil || error == nil {
       hasPresentedContent = true
+    }
+  }
+
+  private func loadMoreDeployments() async {
+    guard
+      let context = model.accountRequestContext,
+      !isLoadingMoreDeployments,
+      deploymentsPageState.canLoadMore
+    else { return }
+    let generation = deploymentsGeneration
+    let pageNumber = deploymentsPageState.nextPage
+    isLoadingMoreDeployments = true
+    defer {
+      if generation == deploymentsGeneration, model.isCurrentAccount(context) {
+        isLoadingMoreDeployments = false
+      }
+    }
+    do {
+      let page = try await model.client.listPagesDeployments(
+        accountID: context.accountID,
+        projectName: projectName,
+        page: pageNumber,
+        perPage: Self.deploymentsPageSize)
+      guard !Task.isCancelled, generation == deploymentsGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      var seenIDs = Set(deployments.map(\.id))
+      let unique = page.items.filter { seenIDs.insert($0.id).inserted }
+      deployments += unique
+      deploymentsPageState.absorb(
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: unique.count,
+        loaded: deployments.count,
+        pageSize: Self.deploymentsPageSize)
+      model.featureCache.set(
+        FeatureCacheKey.pagesDeployments(accountID: context.accountID, name: projectName),
+        deployments)
+      deploymentsError = nil
+      error = nil
+    } catch {
+      guard !error.dashIsCancellation, generation == deploymentsGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      self.error = error.dashActionableMessage
     }
   }
 }
@@ -460,14 +564,21 @@ struct PagesDeploymentDetailView: View {
     }
   }
 
-  /// Fuller first-paint reserve: Deployment + Stages. Actions and the build
+  /// Fuller first-paint reserve: Deployment + Source + Stages. Build
+  /// configuration is not reserved — a direct upload has none, and a section
+  /// that is taken back is worse than one that arrives. Actions and the build
   /// log stay live-only (log is section-cold after the deployment lands).
   @ViewBuilder
   private func pagesDeploymentDetailBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
-      DashInfoGroup(title: "Deployment", phase: .loading, placeholderRows: 4) {
+      DashInfoGroup(title: "Deployment", phase: .loading, placeholderRows: 6) {
         EmptyView()
       }
+      .dashBodySlot(reduceMotion: reduceMotion)
+      DashInfoGroup(title: "Source", phase: .loading, placeholderRows: 3) {
+        EmptyView()
+      }
+      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
       DashInfoGroup(title: "Stages", phase: .loading, placeholderRows: 3) {
         EmptyView()
@@ -477,7 +588,9 @@ struct PagesDeploymentDetailView: View {
     } else if let deployment {
       deploymentGroup(deployment)
         .dashBodySlot(reduceMotion: reduceMotion)
+      sourceGroup(deployment)
       stagesGroup(deployment)
+      buildConfigurationGroup(deployment)
       if let actionError {
         DashNotice(kind: .error, message: actionError)
           .dashItemBoundary()
@@ -507,18 +620,107 @@ struct PagesDeploymentDetailView: View {
             pagesStatus: deployment.latestStage?.status,
             isSkipped: deployment.isSkipped == true))
       }
+      // The exact time, not "2h ago": the deployments list already carries the
+      // relative one, and this is the screen a "when did this ship" question
+      // lands on.
       if let created = deployment.createdOn {
-        DashInfoRow("Created", value: pagesRelativeDate(created))
+        DashInfoRow("Created", value: DashDateFormatting.dateAndTime(fromISO8601: created))
+      }
+      if let duration = deployment.buildDuration.flatMap({ pagesDurationText($0) }) {
+        DashInfoRow("Duration", value: duration)
       }
       if let urlString = deployment.url, let link = URL(string: urlString) {
-        DashInfoRow("URL") {
-          Link(urlString, destination: link)
-            .dashTextStyle(.code)
-            .foregroundStyle(DashTheme.brand)
-            .multilineTextAlignment(.trailing)
-            .lineLimit(2)
+        DashInfoRow("URL") { pagesLinkValue(urlString, destination: link) }
+      }
+      // Branch and custom-domain aliases this deployment also answers on.
+      // Bounded: a deployment carries a branch alias and its custom domains.
+      ForEach(pagesAliases(deployment), id: \.self) { alias in
+        if let link = URL(string: alias) {
+          DashInfoRow("Alias") { pagesLinkValue(alias, destination: link) }
         }
       }
+      deploymentIDRow(deployment)
+    }
+  }
+
+  /// The id is what the API, Wrangler, and a support ticket all ask for, and a
+  /// 36-character UUID is not something to retype — the row copies it.
+  private func deploymentIDRow(_ deployment: PagesDeployment) -> some View {
+    Button {
+      copyDeploymentID(deployment.id)
+    } label: {
+      DashInfoRow("Deployment ID", value: deployment.id, mono: true)
+    }
+    .buttonStyle(DashSurfaceButtonStyle())
+    .accessibilityLabel(DashL10n.string("Deployment ID, \(deployment.id)"))
+    .accessibilityAction(named: DashL10n.string("Copy deployment ID")) {
+      copyDeploymentID(deployment.id)
+    }
+  }
+
+  private func copyDeploymentID(_ id: String) {
+    UIPasteboard.general.string = id
+    model.toasts.success(DashL10n.string("Deployment ID copied"))
+  }
+
+  /// What was deployed and what started it. Hidden when Cloudflare sent none of
+  /// it, rather than shown as a group of dashes.
+  @ViewBuilder
+  private func sourceGroup(_ deployment: PagesDeployment) -> some View {
+    let kind = deployment.deploymentTrigger?.kind
+    let branch = deployment.branch.flatMap { $0.isEmpty ? nil : $0 }
+    let commit = deployment.shortCommit
+    if kind != nil || deployment.repository != nil || branch != nil || commit != nil {
+      DashInfoGroup(title: "Source") {
+        if let kind {
+          DashInfoRow("Trigger", value: pagesTriggerLabel(kind))
+        }
+        if let repository = deployment.repository {
+          DashInfoRow("Repository", value: repository)
+        }
+        if let branch {
+          DashInfoRow("Branch", value: branch, mono: true)
+        }
+        if let commit {
+          if let link = deployment.commitURL {
+            DashInfoRow("Commit") { pagesLinkValue(commit, destination: link) }
+          } else {
+            DashInfoRow("Commit", value: commit, mono: true)
+          }
+        }
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    }
+  }
+
+  /// The settings this deployment was built with — which can differ from the
+  /// project's current ones, and is the first thing to check when a build that
+  /// used to pass stops. A direct upload builds nothing and has no group.
+  @ViewBuilder
+  private func buildConfigurationGroup(_ deployment: PagesDeployment) -> some View {
+    if let config = deployment.buildConfig,
+      config.buildCommand != nil || config.destinationDirectory != nil
+        || config.rootDirectory != nil
+    {
+      DashInfoGroup(title: "Build configuration") {
+        if let command = config.buildCommand {
+          DashInfoRow("Build command", value: command, mono: true)
+        }
+        if let directory = config.destinationDirectory {
+          DashInfoRow("Output directory", value: directory, mono: true)
+        }
+        if let directory = config.rootDirectory {
+          DashInfoRow("Root directory", value: directory, mono: true)
+        }
+        if let caching = config.buildCaching {
+          DashInfoRow(
+            "Build cache",
+            value: caching ? DashL10n.string("Enabled") : DashL10n.string("Disabled"))
+        }
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -532,11 +734,10 @@ struct PagesDeploymentDetailView: View {
   private func stagesGroup(_ deployment: PagesDeployment) -> some View {
     if let stages = deployment.stages, !stages.isEmpty {
       DashInfoGroup(title: "Stages") {
-        ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
-          DashInfoRow(
-            pagesStageLabel(stage.name),
-            value: pagesStageStatusLabel(stage.status))
-        }
+        DashTimelineRows(
+          steps: stages.enumerated().map { index, stage in
+            pagesTimelineStep(stage, index: index)
+          })
       }
       .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
@@ -546,8 +747,11 @@ struct PagesDeploymentDetailView: View {
   @ViewBuilder
   private func actions(for deployment: PagesDeployment) -> some View {
     if featureAllowsWrites {
-      DashListGroup(title: "Actions") {
-        DashCard {
+      DashTwoToneListGroup(title: "Actions") {
+        // Pills, not rows: retry and rollback are the screen's two commits,
+        // and a submit stays a pill wherever it sits. The group's inner card
+        // replaces the grey `DashCard` they used to sit in.
+        Group {
           VStack(spacing: 10) {
             DashActionButton(
               title: "Retry deployment",
@@ -580,16 +784,28 @@ struct PagesDeploymentDetailView: View {
             }
           }
         }
+        .padding(.vertical, DashTheme.Spacing.comfortable)
       }
     }
   }
 
+  /// Same two-tone frame as the fields above it and as the Worker build log,
+  /// with Copy on the header band. It used to be a recessed `DashCard` under a
+  /// bandless title — a third frame on a screen whose every other section is
+  /// an info group.
   @ViewBuilder private var logsSection: some View {
-    DashListGroup(title: "Build log") {
-      if let logs {
-        DashCard {
+    let hasLines = logs?.data.isEmpty == false
+    // One stack, so the call site's section boundary lands once — on the
+    // group — and not again on the notice under it.
+    VStack(alignment: .leading, spacing: 0) {
+      DashTwoToneListGroup(
+        title: "Build log",
+        actionTitle: hasLines ? "Copy" : nil,
+        action: hasLines ? { copyLogs() } : nil
+      ) {
+        if let logs {
           DashFadedScrollView(
-            surface: DashTheme.recessed,
+            surface: DashTheme.homeCardSurface,
             maxHeight: 360,
             bounceBasedOnSize: true
           ) {
@@ -601,39 +817,31 @@ struct PagesDeploymentDetailView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
               }
             }
+            .padding(.vertical, 12)
           }
-        }
-        .dashBodySlot(reduceMotion: reduceMotion)
-        if let logsError {
-          // Warm: the monitor's forced refresh failed mid-build — keep the
-          // visible log and say so beside it instead of tearing it down.
-          DashNotice(kind: .warning, message: logsError)
-            .dashItemBoundary()
-        }
-      } else {
-        // The log's own shape holds the section while it loads, and a failure
-        // veils over the same lines — the card never swaps to a bare notice.
-        DashCard {
-          logPlaceholder
+          .dashBodySlot(reduceMotion: reduceMotion)
+        } else {
+          // The log's own shape holds the section while it loads, and a
+          // failure veils over the same lines — never a bare notice.
+          DashLogPlaceholder()
+            .padding(.vertical, 14)
             .dashSectionFailure(logsError, retry: retryLogs)
+            .dashBodySlot(reduceMotion: reduceMotion)
         }
-        .dashBodySlot(reduceMotion: reduceMotion)
+      }
+      if logs != nil, let logsError {
+        // Warm: the monitor's forced refresh failed mid-build — keep the
+        // visible log and say so beside it instead of tearing it down.
+        DashNotice(kind: .warning, message: logsError)
+          .dashItemBoundary()
       }
     }
   }
 
-  private var logPlaceholder: some View {
-    let widths: [CGFloat] = [200, 148, 232, 120, 184, 96]
-    return VStack(alignment: .leading, spacing: 8) {
-      ForEach(0..<6, id: \.self) { index in
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-          .dashSkeletonFill(index.isMultiple(of: 2) ? 0.5 : 0.35)
-          .frame(width: widths[index], height: 10)
-      }
-    }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Loading")
+  private func copyLogs() {
+    guard let logs, !logs.data.isEmpty else { return }
+    UIPasteboard.general.string = logs.data.map(\.line).joined(separator: "\n")
+    model.toasts.success(DashL10n.string("Build log copied"))
   }
 
   private func retryLogs() {
@@ -873,10 +1081,12 @@ struct PagesDeploymentDetailView: View {
 
 struct PagesDomainsView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.openURL) private var openURL
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   let projectName: String
   @State private var domains: [PagesDomain] = []
+  @State private var zoneNamesByID: [String: String] = [:]
   @State private var loading = true
   @State private var error: String?
   @State private var addsDomain = false
@@ -957,11 +1167,7 @@ struct PagesDomainsView: View {
       tone: FeatureVisualIdentity.tone(for: .pages),
       content: { domain in
         DashDetailTray(
-          fields: [
-            DashDetailField(label: "Hostname", value: domain.name),
-            DashDetailField(label: "Status", value: (domain.status ?? "—").capitalized),
-            DashDetailField(label: "Zone", value: domain.zoneTag ?? "—", mono: true),
-          ],
+          fields: pagesDomainFields(domain),
           deleteMessage: featureAllowsWrites
             ? DashL10n.string("Detach \(domain.name) from \(projectName).")
             : nil,
@@ -969,30 +1175,103 @@ struct PagesDomainsView: View {
           onDeleteSuccessPresentationCompleted: completeDeletePresentation,
           deleteError: deleteError,
           onDelete: featureAllowsWrites ? { Task { await remove(domain) } } : nil
-        )
+        ) {
+          VStack(spacing: 10) {
+            if let url = URL(string: "https://\(domain.name)") {
+              DashTrayPillButton(title: "Open in Safari") {
+                openURL(url)
+              }
+            }
+            DashActionButton(title: "Copy hostname") {
+              UIPasteboard.general.string = domain.name
+              DashDelight.lightImpact()
+              model.toasts.success(DashL10n.string("Hostname copied"))
+            }
+          }
+        }
       }
     )
   }
 
+  private func pagesDomainFields(_ domain: PagesDomain) -> [DashDetailField] {
+    var fields = [
+      DashDetailField(label: "Hostname", value: domain.name),
+      DashDetailField(
+        label: "Status",
+        value: DashL10n.ui((domain.status ?? "unknown").capitalized)),
+    ]
+    if let zoneTag = domain.zoneTag, !zoneTag.isEmpty {
+      if let zoneName = zoneNamesByID[zoneTag] {
+        fields.append(DashDetailField(label: "Zone", value: zoneName))
+      } else {
+        fields.append(DashDetailField(label: "Zone", value: zoneTag, mono: true))
+      }
+    }
+    if let createdOn = domain.createdOn, !createdOn.isEmpty {
+      fields.append(
+        DashDetailField(
+          label: "Added",
+          value: DashDateFormatting.dateAndTime(fromISO8601: createdOn)))
+    }
+    return fields
+  }
+
   private func load(force: Bool = false) async {
-    guard let accountID = model.activeAccountID else { return }
+    guard let context = model.accountRequestContext else { return }
+    let accountID = context.accountID
+    seedZoneNamesFromCache(accountID: accountID)
     let key = FeatureCacheKey.pagesDomains(accountID: accountID, name: projectName)
     if !force, let cached: [PagesDomain] = model.featureCache.get(key) {
       domains = cached
       loading = false
       error = nil
+      await resolveMissingZoneNames(for: cached, context: context)
       return
     }
     if domains.isEmpty { loading = true }
     do {
       domains = try await model.client.listPagesDomains(
         accountID: accountID, projectName: projectName)
+      guard model.isCurrentAccount(context) else { return }
       model.featureCache.set(key, domains)
       error = nil
+      loading = false
+      await resolveMissingZoneNames(for: domains, context: context)
     } catch {
+      guard model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
+      loading = false
     }
-    loading = false
+  }
+
+  private func seedZoneNamesFromCache(accountID: String) {
+    let zonesKey = FeatureCacheKey.zones(accountID)
+    let cachedZones: [CloudflareZone] =
+      model.featureCache.get(zonesKey)
+      ?? model.featureCache.getStale(zonesKey)
+      ?? []
+    for zone in cachedZones {
+      zoneNamesByID[zone.id] = zone.name
+    }
+  }
+
+  /// Best-effort lookup turning raw 32-hex `zone_tag` values into readable
+  /// domain names. A missing `zone.read` scope never surfaces an error here.
+  private func resolveMissingZoneNames(
+    for domains: [PagesDomain],
+    context: AccountRequestContext
+  ) async {
+    let missingTags = Set(
+      domains.compactMap(\.zoneTag).filter { !$0.isEmpty && zoneNamesByID[$0] == nil })
+    guard !missingTags.isEmpty else { return }
+    guard
+      let page = try? await model.client.listZones(
+        accountID: context.accountID, page: 1, perPage: 50)
+    else { return }
+    guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+    for zone in page.items {
+      zoneNamesByID[zone.id] = zone.name
+    }
   }
 
   private func remove(_ domain: PagesDomain) async {
@@ -1158,8 +1437,10 @@ private func pagesResourceCardPlaceholder(index: Int) -> FeatureResourceCardCont
 
 /// Takes the row's already-computed strings: recomputing the subtitle here ran
 /// the deployment's date formatting a second time for every row.
-private func pagesDeploymentAccessibilityLabel(title: String, subtitle: String) -> String {
-  "\(title), \(subtitle)"
+private func pagesDeploymentAccessibilityLabel(
+  title: String, status: String, subtitle: String
+) -> String {
+  subtitle.isEmpty ? "\(title), \(status)" : "\(title), \(status), \(subtitle)"
 }
 
 private func pagesDeploymentTitle(_ deployment: PagesDeployment) -> String {
@@ -1187,19 +1468,77 @@ private func pagesStageStatusLabel(_ status: String?) -> String {
   return DashL10n.ui(status.replacingOccurrences(of: "_", with: " ").capitalized)
 }
 
+/// One stage as a rail step — the same component the Worker build screen draws
+/// its lifecycle with, so the two build screens read as one product.
+///
+/// The node carries the status and the trailing seat the duration. A status
+/// the rail has no node for keeps Cloudflare's own word in that seat instead:
+/// a hollow node alone would report "not started" about a stage whose state
+/// Dash simply does not model.
+@MainActor
+private func pagesTimelineStep(_ stage: PagesDeploymentStage, index: Int) -> DashTimelineStep {
+  let classification = PagesDeploymentStatusClassification.classify(stage.status)
+  let tone: DashTimelineStep.Tone =
+    switch classification {
+    case .success: .done
+    case .failure: .failed
+    case .cancelled: .stopped
+    case .active: .active
+    case .idle, .unknown: .pending
+    }
+  let statusLabel = pagesStageStatusLabel(stage.status)
+  let duration = stage.duration.flatMap { pagesDurationText($0) }
+  return DashTimelineStep(
+    id: "\(index)",
+    title: pagesStageLabel(stage.name),
+    caption: stage.startedDate.map { DashDateFormatting.timeWithSeconds($0) },
+    duration: duration ?? (classification == .unknown ? statusLabel : nil),
+    runningSince: tone == .active ? stage.startedDate : nil,
+    tone: tone,
+    stateLabel: statusLabel)
+}
+
+@MainActor
+private func pagesDurationText(_ seconds: TimeInterval) -> String? {
+  DashDateFormatting.durationText(seconds)
+}
+
+private func pagesTriggerLabel(_ kind: PagesDeploymentTrigger.Kind) -> String {
+  switch kind {
+  case .gitPush: DashL10n.string("Git push")
+  case .manual: DashL10n.string("Manual")
+  case .deployHook: DashL10n.string("Deploy hook")
+  // A trigger Cloudflare added after this build: show its own word rather than
+  // hide the row.
+  case .other(let raw): DashL10n.ui(raw.replacingOccurrences(of: "_", with: " ").capitalized)
+  }
+}
+
+/// Aliases other than the deployment's own URL, capped so the info group stays
+/// bounded.
+private func pagesAliases(_ deployment: PagesDeployment) -> [String] {
+  var seen: Set<String> = [deployment.url ?? ""]
+  return Array(
+    (deployment.aliases ?? []).filter { !$0.isEmpty && seen.insert($0).inserted }.prefix(3))
+}
+
+/// A tappable value in an info row's trailing slot — the deployment URL, an
+/// alias, the commit on its Git host.
+@MainActor
+private func pagesLinkValue(_ title: String, destination: URL) -> some View {
+  Link(title, destination: destination)
+    .dashTextStyle(.code)
+    .foregroundStyle(DashTheme.brand)
+    .multilineTextAlignment(.trailing)
+    .lineLimit(2)
+}
+
 @MainActor
 private func pagesDeploymentSubtitle(_ deployment: PagesDeployment) -> String {
   var parts: [String] = []
   if let environment = deployment.environment {
     parts.append(DashL10n.ui(environment.capitalized))
   }
-  // Same token the badge above this line renders, so the two never disagree —
-  // `statusLabel` is Cloudflare's raw wording and has no catalog entry.
-  parts.append(
-    StatusToken(
-      pagesStatus: deployment.latestStage?.status,
-      isSkipped: deployment.isSkipped == true
-    ).label)
   if let created = deployment.createdOn {
     parts.append(pagesRelativeDate(created))
   }

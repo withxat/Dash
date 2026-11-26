@@ -268,7 +268,11 @@ final class DemoBackend: URLProtocol {
     case "workers"?:
       return workers(account: account, rest: Array(rest.dropFirst()))
     case "pages"?:
-      return pages(account: account, rest: Array(rest.dropFirst()))
+      return pages(
+        account: account,
+        rest: Array(rest.dropFirst()),
+        page: max(Int(query("page") ?? "1") ?? 1, 1),
+        perPage: min(max(Int(query("per_page") ?? "25") ?? 25, 1), 25))
     case "r2"?:
       return r2(
         account: account, rest: Array(rest.dropFirst()), prefix: query("prefix"),
@@ -545,7 +549,9 @@ final class DemoBackend: URLProtocol {
 
   // MARK: Pages
 
-  private static func pages(account: DemoWorld.Account, rest: [String]) -> Reply {
+  private static func pages(
+    account: DemoWorld.Account, rest: [String], page: Int, perPage: Int
+  ) -> Reply {
     // pages/projects[/{name}[/deployments[/{id}[/history/logs]] | /domains]]
     guard rest.first == "projects" else { return ok("[]") }
     let projects = DemoWorld.pagesProjects(accountID: account.id)
@@ -569,9 +575,13 @@ final class DemoBackend: URLProtocol {
         guard let newest = deployments.first else { return ok("[]") }
         return ok(newest)
       }
+      let start = (page - 1) * perPage
+      let slice =
+        start < deployments.count
+        ? Array(deployments[start..<min(start + perPage, deployments.count)]) : []
       return ok(
-        "[\(deployments.joined(separator: ","))]",
-        info: #"{"page":1,"per_page":25,"total_count":\#(deployments.count)}"#)
+        "[\(slice.joined(separator: ","))]",
+        info: #"{"page":\#(page),"per_page":\#(perPage),"total_count":\#(deployments.count)}"#)
     case "domains"?:
       return ok("[\(DemoWorld.pagesDomains(project: name).joined(separator: ","))]")
     default:
@@ -1201,15 +1211,43 @@ private enum DemoWorld {
       }
     return [
       #"""
-      {"id":"pd-3","short_id":"\#(commits[0].hash)","url":"https://\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","modified_on":"\#(DemoClock.iso(hoursAgo: 2))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[0].hash)","commit_message":"\#(commits[0].message)"}},"aliases":\#(pagesAliases(project: project))}
+      {"id":"pd-3","short_id":"\#(commits[0].hash)","url":"https://\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 2))","modified_on":"\#(DemoClock.iso(hoursAgo: 2))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 2))","ended_on":"\#(DemoClock.iso(hoursAgo: 2))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[0].hash)","commit_message":"\#(commits[0].message)"}},"aliases":\#(pagesAliases(project: project)),\#(pagesDeploymentDetail(project: project, hoursAgo: 2, buildFailed: false))}
       """#,
       #"""
-      {"id":"pd-2","short_id":"\#(commits[1].hash)","url":"https://\#(commits[1].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 26))","modified_on":"\#(DemoClock.iso(hoursAgo: 26))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"build","status":"failure","started_on":"\#(DemoClock.iso(hoursAgo: 26))","ended_on":"\#(DemoClock.iso(hoursAgo: 26))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[1].hash)","commit_message":"\#(commits[1].message)"}},"aliases":null}
+      {"id":"pd-2","short_id":"\#(commits[1].hash)","url":"https://\#(commits[1].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 26))","modified_on":"\#(DemoClock.iso(hoursAgo: 26))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"build","status":"failure","started_on":"\#(DemoClock.iso(hoursAgo: 26))","ended_on":"\#(DemoClock.iso(hoursAgo: 26))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[1].hash)","commit_message":"\#(commits[1].message)"}},"aliases":null,\#(pagesDeploymentDetail(project: project, hoursAgo: 26, buildFailed: true))}
       """#,
       #"""
-      {"id":"pd-1","short_id":"\#(commits[2].hash)","url":"https://\#(commits[2].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 96))","modified_on":"\#(DemoClock.iso(hoursAgo: 96))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 96))","ended_on":"\#(DemoClock.iso(hoursAgo: 96))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[2].hash)","commit_message":"\#(commits[2].message)"}},"aliases":null}
+      {"id":"pd-1","short_id":"\#(commits[2].hash)","url":"https://\#(commits[2].hash).\#(subdomain).pages.dev","environment":"production","created_on":"\#(DemoClock.iso(hoursAgo: 96))","modified_on":"\#(DemoClock.iso(hoursAgo: 96))","project_name":"\#(project)","is_skipped":false,"latest_stage":{"name":"deploy","status":"success","started_on":"\#(DemoClock.iso(hoursAgo: 96))","ended_on":"\#(DemoClock.iso(hoursAgo: 96))"},"deployment_trigger":{"type":"github:push","metadata":{"branch":"main","commit_hash":"\#(commits[2].hash)","commit_message":"\#(commits[2].message)"}},"aliases":null,\#(pagesDeploymentDetail(project: project, hoursAgo: 96, buildFailed: false))}
       """#,
     ]
+  }
+
+  /// The part of a deployment only its detail screen reads: per-stage timings,
+  /// the build settings it ran with, and the repository it came from. A failed
+  /// build stops the pipeline, so its deploy stage never starts.
+  ///
+  /// `source` deliberately carries no `type`: with a provider the screen links
+  /// the commit to that provider's site, and a demo commit must not open a
+  /// real GitHub page.
+  private static func pagesDeploymentDetail(
+    project: String, hoursAgo: Int, buildFailed: Bool
+  ) -> String {
+    func stage(_ name: String, _ status: String, from start: Int, to end: Int) -> String {
+      #"{"name":"\#(name)","status":"\#(status)","started_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: start))","ended_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: end))"}"#
+    }
+    let buildEnd = buildFailed ? 33 : 51
+    let stages = [
+      stage("queued", "success", from: 0, to: 2),
+      stage("initialize", "success", from: 2, to: 5),
+      stage("clone_repo", "success", from: 5, to: 9),
+      stage("build", buildFailed ? "failure" : "success", from: 9, to: buildEnd),
+      buildFailed
+        ? #"{"name":"deploy","status":"idle","started_on":null,"ended_on":null}"#
+        : stage("deploy", "success", from: buildEnd, to: buildEnd + 7),
+    ]
+    return #"""
+      "stages":[\#(stages.joined(separator: ","))],"build_config":{"build_command":"pnpm build","destination_dir":"dist","root_dir":"","build_caching":true},"source":{"config":{"owner":"example","repo_name":"\#(project)","production_branch":"main"}}
+      """#
   }
 
   /// The newest production deployment answers on the project's custom domain
@@ -1901,6 +1939,12 @@ private enum DemoClock {
 
   static func iso(hoursAgo: Int) -> String {
     formatter.string(from: Date().addingTimeInterval(-TimeInterval(hoursAgo) * 3600))
+  }
+
+  /// A moment `seconds` after `hoursAgo` — stage boundaries inside one build.
+  static func iso(hoursAgo: Int, plusSeconds seconds: Int) -> String {
+    formatter.string(
+      from: Date().addingTimeInterval(-TimeInterval(hoursAgo) * 3600 + TimeInterval(seconds)))
   }
 
   static func isoHour(hoursAgo: Int) -> String {

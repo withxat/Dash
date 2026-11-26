@@ -298,6 +298,109 @@ extension NetworkTests {
     #expect(page.items[0].latestStage?.status == "success")
   }
 
+  @Test func getPagesDeploymentDecodesSourceBuildAndTimings() async throws {
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      #expect(request.url?.path.hasSuffix("/pages/projects/docs/deployments/dep-1") == true)
+      return (
+        200,
+        Data(
+          #"""
+          {"success":true,"result":{
+            "id":"dep-1","short_id":"dep1abcd","url":"https://dep1.docs.pages.dev",
+            "environment":"preview","created_on":"2021-03-09T00:55:00.000000Z",
+            "modified_on":"2021-03-09T09:00:00.000000Z",
+            "aliases":["https://feature.docs.pages.dev"],
+            "build_config":{"build_command":"npm run build","destination_dir":"dist",
+              "root_dir":"","build_caching":true,"web_analytics_tag":null},
+            "source":{"type":"github","config":{"owner":"acme","repo_name":"docs",
+              "production_branch":"main","pr_comments_enabled":true}},
+            "deployment_trigger":{"type":"github:push","metadata":{"branch":"feature",
+              "commit_hash":"ad9ccd918a81025731e10e40267e11273a263421",
+              "commit_message":"Update index.html","commit_dirty":false}},
+            "latest_stage":{"name":"deploy","status":"success",
+              "started_on":"2021-03-09T00:56:10.5Z","ended_on":"2021-03-09T00:56:15.923456Z"},
+            "stages":[
+              {"name":"queued","status":"success",
+               "started_on":"2021-03-09T00:55:03.923456Z","ended_on":"2021-03-09T00:55:04.923456Z"},
+              {"name":"build","status":"success",
+               "started_on":"2021-03-09T00:55:10Z","ended_on":"2021-03-09T00:56:10Z"},
+              {"name":"deploy","status":"success",
+               "started_on":"2021-03-09T00:56:10.5Z","ended_on":"2021-03-09T00:56:15.923456Z"}
+            ]
+          }}
+          """#.utf8)
+      )
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+    let deployment = try await client.getPagesDeployment(
+      accountID: "account", projectName: "docs", deploymentID: "dep-1")
+
+    #expect(deployment.shortCommit == "ad9ccd9")
+    #expect(deployment.deploymentTrigger?.kind == .gitPush)
+    #expect(deployment.deploymentTrigger?.metadata?.commitDirty == false)
+    #expect(deployment.repository == "acme/docs")
+    #expect(
+      deployment.commitURL?.absoluteString
+        == "https://github.com/acme/docs/commit/ad9ccd918a81025731e10e40267e11273a263421")
+    #expect(deployment.buildConfig?.buildCommand == "npm run build")
+    #expect(deployment.buildConfig?.destinationDirectory == "dist")
+    // An unset setting arrives as "", which is not a directory to display.
+    #expect(deployment.buildConfig?.rootDirectory == nil)
+    #expect(deployment.buildConfig?.buildCaching == true)
+    // Fractional and whole-second timestamps both parse.
+    #expect(deployment.stages?[1].duration == 60)
+    #expect(deployment.stages?[0].duration == 1)
+    // First stage start → last stage end (72s), not created → modified (8h).
+    #expect(deployment.buildDuration == 72)
+  }
+
+  @Test func pagesDeploymentSurvivesUnexpectedSourceAndRunningStages() throws {
+    // A direct upload: no repository, and `source` in a shape the typed model
+    // does not expect. The deployment must still decode.
+    let running = try JSONDecoder().decode(
+      PagesDeployment.self,
+      from: Data(
+        #"""
+        {"id":"dep-2","environment":"production",
+         "source":"none","build_config":{"build_command":"","destination_dir":""},
+         "deployment_trigger":{"type":"ad_hoc","metadata":{"branch":"main",
+           "commit_hash":"","commit_message":""}},
+         "latest_stage":{"name":"build","status":"active",
+           "started_on":"2021-03-09T00:55:10Z","ended_on":null},
+         "stages":[
+           {"name":"queued","status":"success",
+            "started_on":"2021-03-09T00:55:03Z","ended_on":"2021-03-09T00:55:04Z"},
+           {"name":"build","status":"active","started_on":"2021-03-09T00:55:10Z","ended_on":null},
+           {"name":"deploy","status":"idle","started_on":null,"ended_on":null}
+         ]}
+        """#.utf8))
+
+    #expect(running.source == nil)
+    #expect(running.repository == nil)
+    #expect(running.commitURL == nil)
+    #expect(running.shortCommit == nil)
+    #expect(running.deploymentTrigger?.kind == .manual)
+    #expect(running.buildConfig?.buildCommand == nil)
+    // Still building: a finished stage's end is not the deployment's duration.
+    #expect(running.buildDuration == nil)
+    #expect(running.stages?[1].duration == nil)
+
+    // A provider whose commit URL shape is unknown gets no link.
+    let other = try JSONDecoder().decode(
+      PagesDeployment.self,
+      from: Data(
+        #"""
+        {"id":"dep-3","source":{"type":"bitbucket","config":{"owner":"acme","repo_name":"docs"}},
+         "deployment_trigger":{"type":"deploy_hook","metadata":{"commit_hash":"abc1234def"}}}
+        """#.utf8))
+    #expect(other.repository == "acme/docs")
+    #expect(other.commitURL == nil)
+    #expect(other.deploymentTrigger?.kind == .deployHook)
+  }
+
   @Test func pagesDeploymentLogsDecodeLines() async throws {
     let store = MemoryTokenStore(access: "token", refresh: nil)
     let session = mockSession { _ in
