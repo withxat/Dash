@@ -41,14 +41,6 @@ struct ZoneCacheView: View {
     curatedCacheSettings.compactMap { id in settings.first { $0.id == id } }
   }
 
-  private var toggleSettings: [ZoneSetting] {
-    curated.filter { $0.id != "cache_level" }
-  }
-
-  private var cacheLevelSetting: ZoneSetting? {
-    curated.first { $0.id == "cache_level" }
-  }
-
   var body: some View {
     DashFeatureList(
       isLoading: loading,
@@ -57,14 +49,12 @@ struct ZoneCacheView: View {
       retry: { Task { await load() } }
     ) { mode in
       if mode.isPlaceholder {
-        DashSurfaceStack {
-          DashToggleRowPlaceholder()
-          DashToggleRowPlaceholder()
+        DashTwoToneListGroup(title: "Settings") {
+          ForEach(0..<curatedCacheSettings.count, id: \.self) { _ in
+            DashToggleRowPlaceholder()
+          }
         }
         .dashBodySlot(reduceMotion: reduceMotion)
-        DashToggleRowPlaceholder()
-          .dashSectionBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
       } else {
         if !allowsWrites {
           FeatureWriteAccessNotice(
@@ -73,17 +63,16 @@ struct ZoneCacheView: View {
           )
           .dashBodySlot(reduceMotion: reduceMotion)
         }
-        DashSurfaceStack {
-          ForEach(toggleSettings) { setting in
-            cacheSettingRow(setting)
+        // A plan that returns none of the curated settings gets no group: a
+        // header band with nothing under it has an open bottom edge.
+        if !curated.isEmpty {
+          DashTwoToneListGroup(title: "Settings") {
+            ForEach(curated) { setting in
+              cacheSettingRow(setting)
+            }
           }
-        }
-        .dashSectionBoundary(!allowsWrites)
-        .dashBodySlot(reduceMotion: reduceMotion)
-        if let cacheLevelSetting {
-          cacheSettingRow(cacheLevelSetting)
-            .dashSectionBoundary()
-            .dashBodySlot(reduceMotion: reduceMotion)
+          .dashSectionBoundary(!allowsWrites)
+          .dashBodySlot(reduceMotion: reduceMotion)
         }
         purgeSection
           .dashBodySlot(reduceMotion: reduceMotion)
@@ -137,7 +126,9 @@ struct ZoneCacheView: View {
       } else {
         FeatureWriteAccessNotice(
           message: "Read-only — grant cache purge access before removing cached assets.",
-          scopes: CachePurgeAccess.write)
+          scopes: CachePurgeAccess.write
+        )
+        .padding(.vertical, DashTheme.Spacing.comfortable)
       }
     }
     .dashSectionBoundary()
@@ -360,8 +351,17 @@ private let curatedCacheSettings: [String] = [
   "cache_level",
 ]
 
-/// Dashboard-style buckets for the flat zone-settings list.
-/// The settings this screen offers, in display order.
+/// One titled group on the zone Settings screen: the dashboard section the
+/// settings live under, and their ids in display order.
+private struct ZoneSettingGroup: Identifiable {
+  let title: String
+  let settingIDs: [String]
+
+  var id: String { title }
+}
+
+/// The settings this screen offers, bucketed the way Cloudflare's dashboard
+/// files them — Security, SSL/TLS, Network — and in display order.
 ///
 /// Cloudflare returns 50-60 settings per zone; all but these are decisions you
 /// make once, from a laptop, when you set the zone up. Development Mode and
@@ -370,13 +370,18 @@ private let curatedCacheSettings: [String] = [
 /// Values whose valid range depends on the zone's plan stay out: browser_cache_ttl
 /// rejects anything under two hours on Free, so a fixed menu would offer choices
 /// that can only fail.
-private let curatedZoneSettings: [String] = [
-  "security_level",
-  "ssl",
-  "always_use_https",
-  "min_tls_version",
-  "http3",
+///
+/// The groups are the only list: which settings the screen offers at all
+/// (`curatedZoneSettings`) is read off them, so a setting cannot be curated
+/// without a group to sit in.
+private let zoneSettingGroups: [ZoneSettingGroup] = [
+  ZoneSettingGroup(title: "Security", settingIDs: ["security_level"]),
+  ZoneSettingGroup(
+    title: "SSL/TLS", settingIDs: ["ssl", "always_use_https", "min_tls_version"]),
+  ZoneSettingGroup(title: "Network", settingIDs: ["http3"]),
 ]
+
+private let curatedZoneSettings: [String] = zoneSettingGroups.flatMap(\.settingIDs)
 
 /// Enum-valued settings the API accepts as plain strings; everything listed here
 /// renders as an editable menu instead of a read-only value row. Values come
@@ -446,17 +451,22 @@ struct ZoneSettingsView: View {
     .task { await load() }
   }
 
-  /// First-paint reserve for the curated setting rows. The write notice appears
-  /// only when live content warrants it.
+  /// First-paint reserve: the same three groups the live body draws, one
+  /// placeholder per curated setting, so the switches land in frames that are
+  /// already there. The write notice appears only when live content warrants
+  /// it.
   @ViewBuilder
   private func zoneSettingsBody(mode: DashBodyMode) -> some View {
     if mode.isPlaceholder {
-      DashSurfaceStack {
-        ForEach(0..<curatedZoneSettings.count, id: \.self) { _ in
-          DashToggleRowPlaceholder()
+      ForEach(Array(zoneSettingGroups.enumerated()), id: \.element.id) { index, group in
+        DashTwoToneListGroup(title: group.title) {
+          ForEach(group.settingIDs, id: \.self) { _ in
+            DashToggleRowPlaceholder()
+          }
         }
+        .dashSectionBoundary(index > 0)
+        .dashBodySlot(reduceMotion: reduceMotion)
       }
-      .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       if !allowsWrites {
         FeatureWriteAccessNotice(
@@ -465,20 +475,28 @@ struct ZoneSettingsView: View {
         )
         .dashBodySlot(reduceMotion: reduceMotion)
       }
-      DashSurfaceStack {
-        ForEach(curated) { setting in
-          settingRow(setting)
+      ForEach(Array(liveGroups.enumerated()), id: \.element.group.id) { index, entry in
+        DashTwoToneListGroup(title: entry.group.title) {
+          ForEach(entry.settings) { setting in
+            settingRow(setting)
+          }
         }
+        // The first group opens the screen unless the notice sits above it.
+        .dashSectionBoundary(index > 0 || !allowsWrites)
+        .dashBodySlot(reduceMotion: reduceMotion)
       }
-      .dashSectionBoundary(!allowsWrites)
-      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
-  /// `curatedZoneSettings` order, not response order, and silently short when a
-  /// plan omits one.
-  private var curated: [ZoneSetting] {
-    curatedZoneSettings.compactMap { id in settings.first { $0.id == id } }
+  /// Each group with the settings Cloudflare actually returned for it, in
+  /// `zoneSettingGroups` order rather than response order. A plan that omits a
+  /// setting shortens its group; a group left with none is dropped, because a
+  /// header band over nothing has an open bottom edge.
+  private var liveGroups: [(group: ZoneSettingGroup, settings: [ZoneSetting])] {
+    zoneSettingGroups.compactMap { group in
+      let present = group.settingIDs.compactMap { id in settings.first { $0.id == id } }
+      return present.isEmpty ? nil : (group, present)
+    }
   }
 
   @ViewBuilder
@@ -647,13 +665,52 @@ extension JSONValue {
 }
 
 struct AuditLogView: View {
+  static let pageSize = 50
+
   @Environment(AppModel.self) private var model
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var entries: [AuditLogEntry] = []
+  @State private var nextPage: AuditLogPageToken?
   @State private var loading = true
+  @State private var isLoadingMore = false
+  @State private var listGeneration = 0
+  @State private var loadedContext: AccountRequestContext?
   @State private var error: String?
+  @State private var searchQuery = ""
+  @State private var selectedEntry: AuditLogEntry?
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredEntries: [AuditLogEntry] {
+    guard isSearching else { return entries }
+    return entries.filter { entry in
+      DashSearchMatcher.matches(
+        searchQuery,
+        in: [
+          entry.title,
+          entry.action?.type,
+          entry.action?.description,
+          entry.action?.result,
+          entry.actor?.email,
+          entry.actor?.type,
+          entry.actor?.tokenName,
+          entry.actor?.ipAddress,
+          entry.resource?.product,
+          entry.resource?.type,
+          entry.resource?.id,
+          entry.zoneName,
+          entry.interfaceName,
+          entry.uri,
+          entry.rayID,
+          entry.logID,
+        ])
+    }
+  }
 
   var body: some View {
+    let displayed = filteredEntries
     DashFeatureList(
       isLoading: loading,
       error: error,
@@ -1224,9 +1281,11 @@ struct WAFEventsView: View {
         caption: "Last 24 hours"
       )
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
+      DashTwoToneListGroup(title: "Security") {
+        DashToggleRowPlaceholder()
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       let seriesData: [DitherDatum] = summary.map { WAFChartModel.seriesData($0.series) } ?? []
       if let summary {
@@ -1243,15 +1302,17 @@ struct WAFEventsView: View {
         }
       }
       if securityAvailable {
-        DashToggleRow(
-          title: "Under Attack mode",
-          subtitle: canToggleSecurity
-            ? "Challenges every visitor. Restores the previous security level when turned off."
-            : "Grant zone settings write access to change this.",
-          isOn: underAttackBinding,
-          isEnabled: securityLoaded && canToggleSecurity,
-          isLoading: securityUpdating
-        )
+        DashTwoToneListGroup(title: "Security") {
+          DashToggleRow(
+            title: "Under Attack mode",
+            subtitle: canToggleSecurity
+              ? "Challenges every visitor. Restores the previous security level when turned off."
+              : "Grant zone settings write access to change this.",
+            isOn: underAttackBinding,
+            isEnabled: securityLoaded && canToggleSecurity,
+            isLoading: securityUpdating
+          )
+        }
         .dashSectionBoundary(summary != nil)
         .dashBodySlot(reduceMotion: reduceMotion)
         if !canToggleSecurity {
@@ -1376,16 +1437,16 @@ struct WAFEventsView: View {
     buckets: [FirewallEventsBucket]
   ) -> some View {
     DashListGroupHeader(title: DashL10n.ui(title))
-      .padding(.horizontal, 4)
+      .dashTwoToneHeaderBand()
       .dashSectionBoundary()
-      .padding(.bottom, 8)
       .dashBodySlot(reduceMotion: reduceMotion)
     if mode.isPlaceholder || !buckets.isEmpty {
       dashModeListRows(
         mode: mode,
         items: buckets,
         placeholderRows: 3,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { bucket in
         DashListRow(
           title: bucket.label,
@@ -1395,14 +1456,10 @@ struct WAFEventsView: View {
         )
       }
     } else {
-      DashCard {
-        Text("No blocked events in this window.")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
-      .dashListCardInset()
-      .dashBodySlot(reduceMotion: reduceMotion)
+      Text("No blocked events in this window.")
+        .dashTwoToneNote()
+        .dashTwoToneRowSlice()
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 

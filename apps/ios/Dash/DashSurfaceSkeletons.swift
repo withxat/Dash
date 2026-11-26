@@ -29,6 +29,25 @@ struct DashInfoRowPlaceholders: View {
   }
 }
 
+/// A build log's shape while it loads: six uneven lines. Shared by the Pages
+/// deployment and Worker build screens so the two logs arrive the same way.
+struct DashLogPlaceholder: View {
+  private static let widths: [CGFloat] = [200, 148, 232, 120, 184, 96]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      ForEach(Array(Self.widths.enumerated()), id: \.offset) { index, width in
+        RoundedRectangle(cornerRadius: 3, style: .continuous)
+          .dashSkeletonFill(index.isMultiple(of: 2) ? 0.5 : 0.35)
+          .frame(width: width, height: 10)
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Loading")
+  }
+}
+
 // MARK: - Skeleton pulse
 
 /// Cold-load placeholders breathe (opacity dips, then restores) until a
@@ -142,6 +161,10 @@ private func dashSkeletonPulseFactor(at date: Date) -> Double {
 /// title/subtitle column as `DashListRow` / `CatalogFeatureIcon.list` /
 /// Resources and detail Actions rows.
 struct DashListRowPlaceholder: View {
+  /// Inside a two-tone group the placeholder takes the row seat the live row
+  /// will, so the cold → live handoff swaps content without resizing the card.
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
+
   var body: some View {
     HStack(spacing: 12) {
       Circle()
@@ -162,7 +185,9 @@ struct DashListRowPlaceholder: View {
     .padding(.vertical, DashTheme.Spacing.listRow)
     // Match subtitled `DashListRow` (Actions / catalog-like rows).
     .frame(
-      maxWidth: .infinity, minHeight: DashTheme.Layout.subtitledListRow,
+      maxWidth: .infinity,
+      minHeight: inTwoToneList
+        ? DashTheme.Layout.twoToneListRow : DashTheme.Layout.subtitledListRow,
       alignment: .leading
     )
     .accessibilityHidden(true)
@@ -316,10 +341,33 @@ struct DashChartPanelPlaceholder: View {
   }
 }
 
-/// Recessed control-card shape matching `DashToggleRow` (title bar + switch
-/// capsule) so a settings toggle does not pop in later.
+/// The shape of a `DashToggleRow` (title bar + switch capsule) in whichever
+/// pose the live row will take — a recessed control card standalone, a plain
+/// 60pt row inside a two-tone group — so a settings toggle does not pop in
+/// later or change frame when it lands.
 struct DashToggleRowPlaceholder: View {
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
+
   var body: some View {
+    Group {
+      if inTwoToneList {
+        bars
+          .frame(maxWidth: .infinity, minHeight: DashTheme.Layout.twoToneListRow)
+      } else {
+        bars
+          .padding(.horizontal, 16)
+          .padding(.vertical, DashTheme.Spacing.comfortable)
+          .frame(maxWidth: .infinity)
+          .background(
+            DashTheme.recessed,
+            in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
+          )
+      }
+    }
+    .accessibilityHidden(true)
+  }
+
+  private var bars: some View {
     HStack(spacing: 16) {
       RoundedRectangle(cornerRadius: 4, style: .continuous)
         .dashSkeletonFill(DashSkeletonStyle.strong)
@@ -330,14 +378,6 @@ struct DashToggleRowPlaceholder: View {
         .frame(width: 51, height: 31)
     }
     .frame(minHeight: 31)
-    .padding(.horizontal, 16)
-    .padding(.vertical, DashTheme.Spacing.comfortable)
-    .frame(maxWidth: .infinity)
-    .background(
-      DashTheme.recessed,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous)
-    )
-    .accessibilityHidden(true)
   }
 }
 

@@ -466,6 +466,13 @@ private func dashDefaultModeListPlaceholder(_: Int) -> DashListRowPlaceholder {
   DashListRowPlaceholder()
 }
 
+/// `frame: .twoTone` seats every slot — placeholder and live alike — in its
+/// slice of a two-tone group whose header band the caller emits just above
+/// (`dashTwoToneHeaderBand`). The slice is part of the slot, so the plate hands
+/// off with the row it sits behind and a shrinking list closes on its new last
+/// row; rows stay direct children of the lazy stack. Pass `closesGroup: false`
+/// when the caller appends one more slice of its own after the list — a control
+/// row that belongs to the same group — and let that slice carry `isLast`.
 @MainActor
 @ViewBuilder
 func dashModeListRows<Item: Identifiable, Placeholder: View, Row: View>(
@@ -474,6 +481,8 @@ func dashModeListRows<Item: Identifiable, Placeholder: View, Row: View>(
   placeholderRows: Int = DashBodyPlaceholderDepth.listRows,
   reduceMotion: Bool,
   inset: Bool = true,
+  frame: DashListFrame = .bare,
+  closesGroup: Bool = true,
   @ViewBuilder placeholder: @escaping @MainActor (Int) -> Placeholder =
     dashDefaultModeListPlaceholder,
   @ViewBuilder row: @escaping (Item) -> Row
@@ -482,7 +491,14 @@ func dashModeListRows<Item: Identifiable, Placeholder: View, Row: View>(
     mode.isPlaceholder
     ? (0..<max(placeholderRows, 1)).map { .placeholder($0) }
     : items.map { .live($0) }
+  // The slice supplies its own row padding; the bare-row inset would stack on it.
+  let inset = inset && frame == .bare
+  let firstID = slots.first?.id
+  let lastID = slots.last?.id
   ForEach(slots) { slot in
+    let slice = DashModeListSlice(
+      frame: frame, isFirst: slot.id == firstID,
+      isLast: closesGroup && slot.id == lastID)
     switch slot {
     case .placeholder(let index):
       let transition =
@@ -490,10 +506,34 @@ func dashModeListRows<Item: Identifiable, Placeholder: View, Row: View>(
         ? DashBodyTransition.content(reduceMotion) : AnyTransition.opacity
       placeholder(index)
         .modifier(DashListCardInsetModifier(enabled: inset))
+        .modifier(slice)
         .transition(transition)
     case .live(let item):
       row(item)
         .modifier(DashListCardInsetModifier(enabled: inset))
+        .modifier(slice)
+    }
+  }
+}
+
+/// Where a mode list's rows sit: bare on the canvas (catalogs and full-screen
+/// lists), or inside a two-tone group (a titled section on a detail screen).
+enum DashListFrame {
+  case bare
+  case twoTone
+}
+
+private struct DashModeListSlice: ViewModifier {
+  let frame: DashListFrame
+  let isFirst: Bool
+  let isLast: Bool
+
+  func body(content: Content) -> some View {
+    switch frame {
+    case .bare:
+      content
+    case .twoTone:
+      content.dashTwoToneRowSlice(isFirst: isFirst, isLast: isLast)
     }
   }
 }

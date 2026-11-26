@@ -1,6 +1,7 @@
 import CloudflareAPI
 import ImageIO
 import SwiftUI
+import UIKit
 
 // MARK: - Thumbnail store
 
@@ -485,6 +486,7 @@ struct R2BucketSettingsView: View {
   @Environment(\.destinationNavigator) private var navigator
   @Environment(\.dashNavigationCoordinator) private var navigationCoordinator
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.openURL) private var openURL
   let bucket: String
   @State private var managed: R2ManagedDomain?
   @State private var custom: [R2CustomDomain] = []
@@ -596,13 +598,16 @@ struct R2BucketSettingsView: View {
   /// live-only (write-gated).
   @ViewBuilder
   private func r2BucketSettingsBody(mode: DashBodyMode) -> some View {
-    if mode.isPlaceholder {
-      DashToggleRowPlaceholder()
-        .dashBodySlot(reduceMotion: reduceMotion)
-    } else {
-      managedCard
-        .dashBodySlot(reduceMotion: reduceMotion)
+    // One group in both modes, so the frame the switch lands in is already
+    // there while it loads.
+    DashTwoToneListGroup(title: "Public access") {
+      if mode.isPlaceholder {
+        DashToggleRowPlaceholder()
+      } else {
+        managedCard
+      }
     }
+    .dashBodySlot(reduceMotion: reduceMotion)
     customDomainsSection(mode: mode)
     if !mode.isPlaceholder, featureAllowsWrites {
       deleteBucketRow
@@ -619,6 +624,35 @@ struct R2BucketSettingsView: View {
         isOn: managedBinding,
         isEnabled: featureAllowsWrites,
         isLoading: togglingManaged)
+      if managed.enabled, let publicURL = managedPublicURL(managed) {
+        Button {
+          UIPasteboard.general.url = publicURL
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Public URL copied"))
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Copy public URL"),
+            subtitle: publicURL.absoluteString,
+            icon: SolarAsset.globe,
+            showsChevron: false,
+            showsIconPlate: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("r2-managed-copy-url")
+        Button {
+          openURL(publicURL)
+        } label: {
+          DashListRow(
+            title: DashL10n.string("Open in Safari"),
+            icon: SolarAsset.arrowRightUp,
+            showsChevron: false,
+            showsIconPlate: false
+          )
+        }
+        .buttonStyle(DashSurfaceButtonStyle())
+        .accessibilityIdentifier("r2-managed-open-url")
+      }
     } else {
       // A settled managed lookup always carries the domain record, so an
       // empty slot here means the fetch failed: hold the row's shape and
@@ -627,6 +661,13 @@ struct R2BucketSettingsView: View {
       // answer.
       DashToggleRowPlaceholder()
     }
+  }
+
+  private func managedPublicURL(_ managed: R2ManagedDomain) -> URL? {
+    let trimmed = managed.domain.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    let raw = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+    return URL(string: raw)
   }
 
   private var managedBinding: Binding<Bool> {
@@ -656,16 +697,16 @@ struct R2BucketSettingsView: View {
       actionIcon: showsAction ? SolarAsset.plus : nil,
       action: showsAction ? { addsDomain = true } : nil
     )
-    .padding(.horizontal, 4)
+    .dashTwoToneHeaderBand()
     .dashSectionBoundary()
-    .padding(.bottom, 8)
 
     if mode.isPlaceholder || !custom.isEmpty {
       dashModeListRows(
         mode: mode,
         items: custom,
         placeholderRows: 2,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { domain in
         Button {
           deleteError = nil
@@ -684,13 +725,12 @@ struct R2BucketSettingsView: View {
         .accessibilityLabel("\(domain.domain), \(domain.statusLabel)")
       }
     } else {
-      DashCard {
+      // The group's one slice: its settled-empty answer or its failure.
+      Group {
         switch customPhase {
         case .content:
           Text("No custom domains")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .dashTwoToneNote()
         case .loading, .failed:
           // A section failure keeps its own backing shape; it is not a second
           // primary handoff path.
@@ -700,7 +740,7 @@ struct R2BucketSettingsView: View {
               retry: retryCustomDomains)
         }
       }
-      .dashListCardInset()
+      .dashTwoToneRowSlice()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
   }

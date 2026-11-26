@@ -316,15 +316,15 @@ struct TunnelDetailView: View {
     let shown = Array(connectors.prefix(Self.sectionRowCap))
     if mode.isPlaceholder || !shown.isEmpty {
       DashListGroupHeader(title: DashL10n.ui("Connectors"))
-        .padding(.horizontal, 4)
+        .dashTwoToneHeaderBand()
         .dashSectionBoundary()
-        .padding(.bottom, 8)
         .dashBodySlot(reduceMotion: reduceMotion)
       dashModeListRows(
         mode: mode,
         items: shown,
         placeholderRows: 2,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { connector in
         DashListRow(
           title: connectorTitle(connector),
@@ -338,7 +338,6 @@ struct TunnelDetailView: View {
       }
       if !mode.isPlaceholder, connectors.count > shown.count {
         overflowRow(shown: shown.count, total: connectors.count)
-          .dashListCardInset()
           .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
@@ -387,15 +386,15 @@ struct TunnelDetailView: View {
     let shown = Array(rows.prefix(Self.sectionRowCap))
     if mode.isPlaceholder || !shown.isEmpty {
       DashListGroupHeader(title: DashL10n.ui("Public hostnames"))
-        .padding(.horizontal, 4)
+        .dashTwoToneHeaderBand()
         .dashSectionBoundary()
-        .padding(.bottom, 8)
         .dashBodySlot(reduceMotion: reduceMotion)
       dashModeListRows(
         mode: mode,
         items: shown,
         placeholderRows: 3,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { row in
         // The catch-all is a fallback, not a destination: it takes the muted
         // glyph while a real hostname keeps the feature accent.
@@ -418,7 +417,6 @@ struct TunnelDetailView: View {
       }
       if !mode.isPlaceholder, rows.count > shown.count {
         overflowRow(shown: shown.count, total: rows.count)
-          .dashListCardInset()
           .dashBodySlot(reduceMotion: reduceMotion)
       }
     }
@@ -554,12 +552,15 @@ struct TunnelDetailView: View {
 
   // MARK: Shared row chrome
 
+  /// A caption under the closed group, aligned with its header title — the
+  /// cap is a fact about the list, not one more row in it.
   private func overflowRow(shown: Int, total: Int) -> some View {
     Text(DashL10n.string("Showing \(shown) of \(total)."))
       .dashTextStyle(.footnote)
       .foregroundStyle(DashTheme.subtle)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .frame(minHeight: DashTheme.Layout.minimumHitTarget)
+      .padding(.horizontal, 16)
+      .dashItemBoundary()
   }
 
   private func connectorTitle(_ connector: TunnelConnector) -> String {

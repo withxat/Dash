@@ -688,21 +688,11 @@ func dashListCardRows<Item: Identifiable, Row: View>(
 @ViewBuilder
 func dashTwoToneGroupHeader(title: String) -> some View {
   DashListGroupHeader(title: DashL10n.ui(title))
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .background(DashTheme.listGroupHeaderSurface)
-    .clipShape(
-      .rect(
-        topLeadingRadius: DashTheme.Radius.card,
-        topTrailingRadius: DashTheme.Radius.card,
-        style: .continuous))
+    .dashTwoToneHeaderBand()
 }
 
-/// Rows for `dashTwoToneGroupHeader`. Insets and radii mirror
-/// `DashTwoToneListGroup` exactly — 14pt of row padding over the 2pt plate
-/// margin lands rows on the header title's 16, and the inner card's radius is
-/// one step per point of inset so the two shapes stay concentric.
+/// Rows for `dashTwoToneGroupHeader`: each paints its own slice of the plate
+/// (`DashTwoToneRowSlice`).
 @MainActor
 @ViewBuilder
 func dashTwoToneCardRows<Item: Identifiable, Row: View>(
@@ -711,19 +701,41 @@ func dashTwoToneCardRows<Item: Identifiable, Row: View>(
 ) -> some View {
   let lastIndex = items.count - 1
   ForEach(Array(items.enumerated()), id: \.element.id) { entry in
-    let isFirst = entry.offset == 0
-    let isLast = entry.offset == lastIndex
     row(entry.element)
+      .dashTwoToneRowSlice(isFirst: entry.offset == 0, isLast: entry.offset == lastIndex)
+  }
+}
+
+/// One row's slice of a lazily emitted two-tone group: the inner card behind
+/// the row, and the 2pt of plate around it that is the group's border.
+///
+/// Insets and radii mirror `DashTwoToneListGroup` exactly — 14pt of row padding
+/// over the 2pt plate margin lands rows on the header title's 16, and the inner
+/// card's radius is one step per point of inset so the two shapes stay
+/// concentric. The first slice rounds the top of the inner card under the
+/// header band; the last rounds the bottom of both and closes the plate.
+///
+/// A group must end on a slice with `isLast`: the header band alone has an open
+/// bottom edge. A section with nothing to list shows its empty or failed answer
+/// *as* that one slice (`dashTwoToneNote`, a failure veil) rather than as a
+/// separate card under the band.
+struct DashTwoToneRowSlice: ViewModifier {
+  var isFirst: Bool
+  var isLast: Bool
+
+  func body(content: Content) -> some View {
+    let inner = DashTheme.Radius.card - 2
+    content
       .environment(\.dashTwoToneListRows, true)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 14)
       .background(DashTheme.homeCardSurface)
       .clipShape(
         .rect(
-          topLeadingRadius: isFirst ? DashTheme.Radius.card - 2 : 0,
-          bottomLeadingRadius: isLast ? DashTheme.Radius.card - 2 : 0,
-          bottomTrailingRadius: isLast ? DashTheme.Radius.card - 2 : 0,
-          topTrailingRadius: isFirst ? DashTheme.Radius.card - 2 : 0,
+          topLeadingRadius: isFirst ? inner : 0,
+          bottomLeadingRadius: isLast ? inner : 0,
+          bottomTrailingRadius: isLast ? inner : 0,
+          topTrailingRadius: isFirst ? inner : 0,
           style: .continuous)
       )
       .padding(.horizontal, 2)
@@ -734,6 +746,39 @@ func dashTwoToneCardRows<Item: Identifiable, Row: View>(
           bottomLeadingRadius: isLast ? DashTheme.Radius.card : 0,
           bottomTrailingRadius: isLast ? DashTheme.Radius.card : 0,
           style: .continuous))
+  }
+}
+
+extension View {
+  /// The header band of a lazily emitted two-tone group. Apply to a
+  /// `DashListGroupHeader`, then emit the rows as its siblings — through
+  /// `dashModeListRows(frame: .twoTone)` or `dashTwoToneRowSlice` — so an
+  /// unbounded list stays lazy inside `DashFeatureList`.
+  func dashTwoToneHeaderBand() -> some View {
+    padding(.horizontal, 16)
+      .padding(.vertical, 12)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(DashTheme.listGroupHeaderSurface)
+      .clipShape(
+        .rect(
+          topLeadingRadius: DashTheme.Radius.card,
+          topTrailingRadius: DashTheme.Radius.card,
+          style: .continuous))
+  }
+
+  /// A slice of a lazily emitted two-tone group. The defaults make a view the
+  /// group's only content — an empty answer, a failure veil, a notice.
+  func dashTwoToneRowSlice(isFirst: Bool = true, isLast: Bool = true) -> some View {
+    modifier(DashTwoToneRowSlice(isFirst: isFirst, isLast: isLast))
+  }
+
+  /// A settled one-line answer inside a two-tone group — "No custom domains" —
+  /// on the same seat a row would take. Style only; the caller slices it.
+  func dashTwoToneNote() -> some View {
+    dashTextStyle(.supporting)
+      .foregroundStyle(DashTheme.subtle)
+      .frame(
+        maxWidth: .infinity, minHeight: DashTheme.Layout.twoToneListRow, alignment: .leading)
   }
 }
 
@@ -824,8 +869,11 @@ struct DashListGroupHeader: View {
 /// the group. Fill does the work a `strokeBorder` used to: light gets a tint
 /// band around a white card, dark a lighter band around the tint card.
 ///
-/// Home's Shortcuts and Recently used cards and every pushed screen's info
-/// group (`DashInfoGroup`); plain `DashListGroup` stays bandless.
+/// Home's Shortcuts and Recently used cards, every pushed screen's info group
+/// (`DashInfoGroup`), and bounded titled lists on detail screens. An unbounded
+/// list takes the same frame lazily (`dashTwoToneHeaderBand` +
+/// `dashModeListRows(frame: .twoTone)`); catalogs and full-screen lists stay
+/// bare.
 ///
 /// Everything in the inner card is a list at the `twoToneListRow` seat — one
 /// row or many. `\.dashTwoToneListRows` publishes that so `DashListRow` /
@@ -1072,6 +1120,10 @@ struct DashInfoRow<Accessory: View>: View {
       .dashTextStyle(.supporting)
       .foregroundStyle(DashTheme.subtle)
       .lineLimit(isAccessibilitySize ? nil : 1)
+      // The label names the row, so it is never the side that gives way: a
+      // value one line long but wider than what the label leaves — a build
+      // UUID — used to squeeze it to "B…". Now the value wraps instead.
+      .fixedSize(horizontal: !isAccessibilitySize, vertical: false)
       .layoutPriority(0)
   }
 
@@ -1094,6 +1146,164 @@ struct DashInfoRow<Accessory: View>: View {
 extension DashInfoRow where Accessory == EmptyView {
   init(_ label: String? = nil, value: String, mono: Bool = false) {
     self.init(label, value: value, mono: mono, accessory: { EmptyView() })
+  }
+}
+
+// MARK: - Timeline rail
+
+/// One step of a pipeline drawn by `DashTimelineRows`.
+///
+/// Every string arrives already localized and formatted: the step names are the
+/// call site's vocabulary (a build's Queued / Initializing / Building), and the
+/// rail only decides how a state *looks*.
+struct DashTimelineStep: Identifiable, Hashable {
+  enum Tone: Hashable {
+    /// Ran and finished cleanly.
+    case done
+    /// Running now.
+    case active
+    /// Where the pipeline failed.
+    case failed
+    /// Where it was stopped on purpose, or ended without saying how.
+    case stopped
+    /// Not reached — still ahead of a running pipeline, or never run.
+    case pending
+  }
+
+  let id: String
+  let title: String
+  /// When the step began, already formatted. Nil for a step that never ran.
+  var caption: String?
+  /// The trailing seat, already formatted: how long the step took — or, for a
+  /// state the rail has no node for, that state's own word.
+  var duration: String?
+  /// Start of a step that is still running. Drawn as a live counter in the
+  /// duration seat, so a watched build shows time passing between polls.
+  var runningSince: Date?
+  let tone: Tone
+  /// The state in words, for VoiceOver — the node says it with a glyph only.
+  let stateLabel: String
+}
+
+/// A pipeline as a rail: one node per step, joined by a line, each with its
+/// start time under the name and its duration trailing.
+///
+/// Lives inside a `DashInfoGroup` in place of `DashInfoRow`s when the rows are
+/// *ordered stages of one run*. A column of label/value rows states each
+/// stage's status as a word among words; the rail shows where a run stopped —
+/// or is now — before any of them is read. Rows keep the `twoToneListRow` seat,
+/// so the group is the same height either way.
+///
+/// Bounded like every info group: a pipeline has a fixed handful of steps.
+struct DashTimelineRows: View {
+  let steps: [DashTimelineStep]
+
+  private static let nodeSize: CGFloat = 22
+  /// Clear band the connector leaves around a node, so the line reads as
+  /// joining the nodes rather than running through them.
+  private static let nodeGap: CGFloat = 4
+
+  var body: some View {
+    VStack(spacing: 0) {
+      ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
+        row(step, isFirst: index == 0, isLast: index == steps.count - 1)
+      }
+    }
+  }
+
+  private func row(_ step: DashTimelineStep, isFirst: Bool, isLast: Bool) -> some View {
+    HStack(spacing: 12) {
+      node(step.tone)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(step.title)
+          .dashTextStyle(.supporting)
+          .foregroundStyle(step.tone == .pending ? DashTheme.subtle : DashTheme.text)
+        if let caption = step.caption {
+          Text(caption)
+            .dashTextStyle(.caption)
+            .monospacedDigit()
+            .foregroundStyle(DashTheme.subtle)
+        }
+      }
+      Spacer(minLength: 0)
+      trailing(step)
+    }
+    .frame(minHeight: DashTheme.Layout.twoToneListRow)
+    // The connector is a background so it takes the row's *final* height —
+    // a row that grows at a large type size keeps an unbroken line. Two
+    // flexible halves around a node-sized gap: adjacent rows' halves meet at
+    // the row edge, and the first and last rows leave their outer half clear.
+    .background(alignment: .leading) {
+      VStack(spacing: 0) {
+        connector(visible: !isFirst)
+        Color.clear.frame(height: Self.nodeSize + Self.nodeGap * 2)
+        connector(visible: !isLast)
+      }
+      .frame(width: 2)
+      .padding(.leading, (Self.nodeSize - 2) / 2)
+      .accessibilityHidden(true)
+    }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(accessibilityLabel(step))
+  }
+
+  private func connector(visible: Bool) -> some View {
+    Capsule()
+      .fill(visible ? DashTheme.fill : .clear)
+      .frame(maxHeight: .infinity)
+  }
+
+  @ViewBuilder
+  private func node(_ tone: DashTimelineStep.Tone) -> some View {
+    switch tone {
+    case .done:
+      nodeGlyph("checkmark", foreground: DashTheme.success, background: DashTheme.successTint)
+    case .failed:
+      nodeGlyph("xmark", foreground: DashTheme.danger, background: DashTheme.dangerTint)
+    case .stopped:
+      nodeGlyph("minus", foreground: DashTheme.subtle, background: DashTheme.recessed)
+    case .active:
+      DashLoadingRing(color: DashTheme.brand, size: 12, lineWidth: 2)
+        .frame(width: Self.nodeSize, height: Self.nodeSize)
+        .background(DashTheme.infoTint, in: Circle())
+    case .pending:
+      Circle()
+        .strokeBorder(DashTheme.fill, lineWidth: 1.5)
+        .frame(width: Self.nodeSize, height: Self.nodeSize)
+    }
+  }
+
+  private func nodeGlyph(_ symbol: String, foreground: Color, background: Color) -> some View {
+    Image(systemName: symbol)
+      .font(.system(size: 10, weight: .bold))
+      .foregroundStyle(foreground)
+      .frame(width: Self.nodeSize, height: Self.nodeSize)
+      .background(background, in: Circle())
+  }
+
+  @ViewBuilder
+  private func trailing(_ step: DashTimelineStep) -> some View {
+    if let duration = step.duration {
+      Text(duration)
+        .dashTextStyle(.supporting)
+        .monospacedDigit()
+        .foregroundStyle(DashTheme.subtle)
+    } else if let since = step.runningSince {
+      // Same wording a finished step uses ("38s"), re-read once a second — a
+      // `Text(timerInterval:)` would count "0:38" beside "9s" one row up.
+      TimelineView(.periodic(from: since, by: 1)) { context in
+        Text(DashDateFormatting.durationText(context.date.timeIntervalSince(since)) ?? "")
+          .dashTextStyle(.supporting)
+          .monospacedDigit()
+          .foregroundStyle(DashTheme.subtle)
+      }
+    }
+  }
+
+  private func accessibilityLabel(_ step: DashTimelineStep) -> String {
+    [step.title, step.stateLabel, step.duration, step.caption]
+      .compactMap { $0 }
+      .joined(separator: ", ")
   }
 }
 

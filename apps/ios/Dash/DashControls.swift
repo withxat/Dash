@@ -283,14 +283,50 @@ struct DashSelectionMark: View {
 
 // MARK: - Control cards
 
-/// The face of one setting control: its own recessed rounded card with a bold
-/// title on the left and the control on the right. Captions render below the
-/// card (see `dashControlCaption`), never inside it.
+/// The face of one setting control: a bold title on the left and the control
+/// on the right. It has two poses, picked by where it sits and never by the
+/// call site:
+///
+///   * **Standalone** — a tray form: its own recessed rounded card, caption
+///     below the card (`dashControlCaption`), never inside it.
+///   * **In a two-tone group** (`\.dashTwoToneListRows`) — a row among rows: no
+///     plate of its own, the group's inner card is the surface, and the caption
+///     shares the row's slice directly under the title line.
+///
+/// A control on a detail screen belongs in a group. The recessed card beside a
+/// two-tone list was a second frame for the same job — one titled block of
+/// section content — and the screen read as two design systems.
 private struct DashControlSurface<Trailing: View>: View {
   let title: String
+  /// A caption follows (`dashControlCaption`). Only the two-tone pose cares:
+  /// there the caption sits inside the row, so the surface hands it the bottom
+  /// of the seat instead of padding twice.
+  var hasCaption = false
   @ViewBuilder let trailing: () -> Trailing
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
 
   var body: some View {
+    if inTwoToneList {
+      face
+        .padding(.top, DashControlRowMetrics.inset)
+        .padding(
+          .bottom, hasCaption ? DashControlRowMetrics.captionGap : DashControlRowMetrics.inset
+        )
+        .frame(
+          maxWidth: .infinity,
+          minHeight: hasCaption ? nil : DashTheme.Layout.twoToneListRow)
+    } else {
+      face
+        .padding(.horizontal, 16)
+        .padding(.vertical, DashTheme.Spacing.comfortable)
+        .frame(maxWidth: .infinity)
+        .background(
+          DashTheme.recessed,
+          in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
+    }
+  }
+
+  private var face: some View {
     HStack(spacing: 16) {
       Text(DashL10n.ui(title))
         .dashTextStyle(.bodySemibold)
@@ -302,30 +338,47 @@ private struct DashControlSurface<Trailing: View>: View {
     // DashSwitch stands 31pt; every card matches it so toggle, menu, and value
     // rows share one height.
     .frame(minHeight: 31)
-    .padding(.horizontal, 16)
-    .padding(.vertical, DashTheme.Spacing.comfortable)
-    .frame(maxWidth: .infinity)
-    .background(
-      DashTheme.recessed,
-      in: RoundedRectangle(cornerRadius: DashTheme.Radius.card, style: .continuous))
   }
 }
 
-extension View {
-  /// Lays the supporting text of a control card beneath it, aligned with the
-  /// card's inner content.
-  fileprivate func dashControlCaption(_ caption: String?) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      self
+/// A control row's seat inside a two-tone group: 14 above and below the 31pt
+/// control lands on the group's 60pt row.
+private enum DashControlRowMetrics {
+  static let inset: CGFloat = 14
+  /// Title line to caption, when the caption shares the row.
+  static let captionGap: CGFloat = 4
+}
+
+/// Lays the supporting text of a control beneath it: under the recessed card
+/// and aligned with its inner content when standalone, inside the row's own
+/// slice when the control sits in a two-tone group.
+///
+/// The caption stays a sibling of the control rather than moving into its
+/// label, so a switch still announces as its title alone and the caption is
+/// still read as text after it.
+private struct DashControlCaption: ViewModifier {
+  let caption: String?
+  @Environment(\.dashTwoToneListRows) private var inTwoToneList
+
+  func body(content: Content) -> some View {
+    VStack(alignment: .leading, spacing: inTwoToneList ? 0 : 8) {
+      content
       if let caption {
         Text(DashL10n.ui(caption))
           .dashTextStyle(.supporting)
           .foregroundStyle(DashTheme.subtle)
           .fixedSize(horizontal: false, vertical: true)
-          .padding(.horizontal, 16)
+          .padding(.horizontal, inTwoToneList ? 0 : 16)
+          .padding(.bottom, inTwoToneList ? DashControlRowMetrics.inset : 0)
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+extension View {
+  fileprivate func dashControlCaption(_ caption: String?) -> some View {
+    modifier(DashControlCaption(caption: caption))
   }
 }
 
@@ -364,9 +417,10 @@ struct DashSwitch: View {
   }
 }
 
-/// A switch in a control card. The whole card is the toggle target — a full
-/// card is the friendlier hit target — so the switch is display-only and the
-/// card button flips the binding.
+/// A switch in a control card, or a switch row in a two-tone group
+/// (`DashControlSurface` picks the pose). The whole surface is the toggle
+/// target — a full row is the friendlier hit target — so the switch is
+/// display-only and the surface button flips the binding.
 ///
 /// Optimistic: callers flip `isOn` immediately. `isLoading` means in-flight —
 /// keep the switch visible and disable interaction; never replace it with a
@@ -384,7 +438,7 @@ struct DashToggleRow: View {
     Button {
       isOn.toggle()
     } label: {
-      DashControlSurface(title: title) {
+      DashControlSurface(title: title, hasCaption: subtitle != nil) {
         DashSwitch(isOn: isOn)
           .opacity(isLoading ? 0.72 : 1)
       }
@@ -423,7 +477,7 @@ struct DashMenuRow: View {
   @State private var selection = ""
 
   var body: some View {
-    DashControlSurface(title: title) {
+    DashControlSurface(title: title, hasCaption: caption != nil) {
       Menu {
         Picker(title, selection: $selection) {
           ForEach(options, id: \.self) {
@@ -471,7 +525,7 @@ struct DashValueCard: View {
   var caption: String?
 
   var body: some View {
-    DashControlSurface(title: title) {
+    DashControlSurface(title: title, hasCaption: caption != nil) {
       Text(value)
         .dashTextStyle(.bodyMedium)
         .foregroundStyle(DashTheme.subtle)

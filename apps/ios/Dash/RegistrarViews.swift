@@ -345,13 +345,10 @@ struct RegistrarDomainDetailView: View {
         EmptyView()
       }
       .dashBodySlot(reduceMotion: reduceMotion)
-      DashListGroupHeader(title: DashL10n.string("Settings"))
-        .padding(.horizontal, 4)
-        .padding(.bottom, 8)
-        .dashSectionBoundary()
-      DashSurfaceStack {
+      DashTwoToneListGroup(title: "Settings") {
         DashToggleRowPlaceholder()
       }
+      .dashSectionBoundary()
       .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       registrationGroup
@@ -383,18 +380,16 @@ struct RegistrarDomainDetailView: View {
     // switch that starts on a guess.
     if let autoRenew = autoRenewValue {
       Group {
-        DashListGroupHeader(title: DashL10n.string("Settings"))
-          .padding(.horizontal, 4)
-          .padding(.bottom, 8)
-          .dashSectionBoundary()
+        // The notice explains the group it sits over, so it leads the section
+        // and the group follows at item distance.
         if !allowsWrites {
           FeatureWriteAccessNotice(
             message: "Read-only — grant Registrar access to change these settings.",
             scopes: RegistrarAccess.write
           )
-          .padding(.bottom, DashTheme.Spacing.itemGap)
+          .dashSectionBoundary()
         }
-        DashSurfaceStack {
+        DashTwoToneListGroup(title: "Settings") {
           DashToggleRow(
             title: "Auto-renew",
             subtitle: autoRenew
@@ -404,6 +399,8 @@ struct RegistrarDomainDetailView: View {
             isEnabled: allowsWrites && !isSavingAutoRenew,
             isLoading: isSavingAutoRenew)
         }
+        .dashSectionBoundary(allowsWrites)
+        .dashItemBoundary(!allowsWrites)
         Text(
           DashL10n.string(
             "Renewals, transfers, the transfer lock, and contacts are managed on the Cloudflare dashboard."

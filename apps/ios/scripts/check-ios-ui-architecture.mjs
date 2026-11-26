@@ -784,19 +784,22 @@ if (
     emailConfiguredContent ?? "",
     "actionsSection(mode: mode, settings: settings)",
   ) !== 1 ||
+  // The controls are rows of one two-tone group — no item gaps between
+  // them — and the destructive row is its own section outside it, so the
+  // body carries exactly two section boundaries and no item boundary.
   occurrences(
     emailActionsSection ?? "",
-    'DashListGroupHeader(title: DashL10n.ui("Actions"))',
+    'DashTwoToneListGroup(title: "Actions")',
   ) !== 1 ||
   emailNotSetUpState?.includes("actionsSection(") ||
-  emailNotSetUpState?.includes(
-    'DashListGroupHeader(title: DashL10n.ui("Actions"))',
-  ) ||
-  !emailActionsSection?.includes(".dashSectionBoundary()") ||
-  occurrences(emailActionsSection ?? "", ".dashItemBoundary(") !== 2 ||
-  !emailActionsSection?.includes(
-    ".dashSectionBoundary(showsCatchAll || showsSubaddressing)",
-  ) ||
+  emailNotSetUpState?.includes('DashTwoToneListGroup(title: "Actions")') ||
+  occurrences(emailActionsSection ?? "", ".dashSectionBoundary()") !== 2 ||
+  occurrences(emailActionsSection ?? "", ".dashItemBoundary(") !== 0 ||
+  !orderedTokens(emailActionsSection ?? "", [
+    'DashTwoToneListGroup(title: "Actions")',
+    "subaddressingSection",
+    "turnOffRow",
+  ]) ||
   occurrences(
     emailRoutingHeroLanding ?? "",
     "textureAsset: SolarAsset.Content.letter",

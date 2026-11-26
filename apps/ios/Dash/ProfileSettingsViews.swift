@@ -2356,15 +2356,9 @@ struct ProfileView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
 
-        DashCard {
-          VStack(alignment: .leading, spacing: 0) {
-            profileField(
-              label: DashL10n.string("User ID"), value: model.user?.id ?? "—", mono: true)
-            DashListGroupDivider()
-            profileField(
-              label: DashL10n.string("Registered"),
-              value: formattedDate(model.user?.createdOn) ?? "—")
-          }
+        DashInfoGroup(title: "User") {
+          DashInfoRow("User ID", value: model.user?.id ?? "—", mono: true)
+          DashInfoRow("Registered", value: formattedDate(model.user?.createdOn) ?? "—")
         }
 
         if let account = model.activeAccount {
@@ -2372,12 +2366,14 @@ struct ProfileView: View {
             if !canRenameAccount {
               DashAuthorizationDisclosure()
             }
-            HStack(spacing: 12) {
-              Text(DashL10n.string("Active account"))
-                .dashTextStyle(.footnoteSemibold)
-                .foregroundStyle(DashTheme.subtle)
-              Spacer(minLength: 0)
-              Button {
+            // Rename rides the header band — the same seat Home's Shortcuts
+            // gives Edit — instead of a pen floating beside a hand-set title.
+            DashInfoGroup(
+              title: "Active account",
+              actionTitle: canRenameAccount ? "Rename account" : "Grant access to rename account",
+              actionIcon: SolarAsset.pen,
+              action: {
+                guard !model.isAuthenticating else { return }
                 guard canRenameAccount else {
                   model.requestAccess(to: ProfileAccountRenameAccess.requiredScopes)
                   return
@@ -2385,27 +2381,12 @@ struct ProfileView: View {
                 renameError = nil
                 renameText = account.name
                 showsRename = true
-              } label: {
-                SolarIcon(asset: SolarAsset.pen, size: 18, color: DashTheme.brand)
-                  .dashCompactHitTarget()
               }
-              .buttonStyle(DashPressButtonStyle())
-              .disabled(model.isAuthenticating)
-              .accessibilityLabel(
-                canRenameAccount
-                  ? DashL10n.string("Rename account")
-                  : DashL10n.string("Grant access to rename account")
-              )
-            }
-            DashCard {
-              VStack(alignment: .leading, spacing: 0) {
-                profileField(label: DashL10n.string("Name"), value: account.name)
-                DashListGroupDivider()
-                profileField(label: DashL10n.string("Account ID"), value: account.id, mono: true)
-                if let created = formattedDate(account.createdOn) {
-                  DashListGroupDivider()
-                  profileField(label: DashL10n.string("Created"), value: created)
-                }
+            ) {
+              DashInfoRow("Name", value: account.name)
+              DashInfoRow("Account ID", value: account.id, mono: true)
+              if let created = formattedDate(account.createdOn) {
+                DashInfoRow("Created", value: created)
               }
             }
           }
@@ -2415,17 +2396,14 @@ struct ProfileView: View {
         // Registrations used to sit here, and then briefly in Resources. A
         // registration is now one card on the zone that owns the name, so this
         // group carries the audit log alone.
-        DashListGroup(title: "Account") {
-          dashListCard {
-            DashListGroupLink(value: .auditLogs) {
-              DashListRow(
-                title: DashL10n.string("Audit log"),
-                icon: SolarAsset.Content.shieldCheck
-              )
-            }
-            .accessibilityIdentifier("profile-audit-log-row")
-            .dashListCardInset()
+        DashTwoToneListGroup(title: "Account") {
+          DashListGroupLink(value: .auditLogs) {
+            DashListRow(
+              title: DashL10n.string("Audit log"),
+              icon: SolarAsset.Content.shieldCheck
+            )
           }
+          .accessibilityIdentifier("profile-audit-log-row")
         }
 
       }
@@ -2601,22 +2579,6 @@ struct ProfileView: View {
     guard renameActionPhase == .succeeded else { return }
     showsRename = false
     renameActionPhase = .idle
-  }
-
-  private func profileField(label: String, value: String, mono: Bool = false) -> some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(label)
-        .dashTextStyle(.footnoteSemibold)
-        .foregroundStyle(DashTheme.subtle)
-      Text(value)
-        .dashTextStyle(mono ? .codeBody : .supporting)
-        .foregroundStyle(DashTheme.text)
-        .textSelection(.enabled)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .fixedSize(horizontal: false, vertical: true)
-    }
-    .padding(.vertical, 12)
-    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// Cloudflare timestamps arrive as ISO 8601, with or without fractional

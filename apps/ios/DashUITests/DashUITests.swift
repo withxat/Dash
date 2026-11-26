@@ -765,8 +765,13 @@ final class DashUITests: XCTestCase {
 
     let back = app.buttons["dash.navigation.back"].firstMatch
     XCTAssertTrue(back.waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["User ID"].waitForExistence(timeout: 5))
-    XCTAssertTrue(app.staticTexts["Registered"].waitForExistence(timeout: 5))
+    // Info rows combine label and value into one element ("User ID, …").
+    func infoRow(_ label: String) -> XCUIElement {
+      app.descendants(matching: .any)
+        .matching(NSPredicate(format: "label BEGINSWITH %@", label)).firstMatch
+    }
+    XCTAssertTrue(infoRow("User ID").waitForExistence(timeout: 5))
+    XCTAssertTrue(infoRow("Registered").waitForExistence(timeout: 5))
 
     // The custom container retains this exact Profile host while its child is
     // visible. Returning must restore Profile's live scroll state, not rebuild

@@ -57,6 +57,32 @@ enum DashDateFormatting {
     ).string(from: date)
   }
 
+  /// “1m 12s”. Nil under a second: a stage Cloudflare cleared in a few hundred
+  /// milliseconds has no duration worth a number, and “0s” reads as broken.
+  static func durationText(
+    _ seconds: TimeInterval,
+    locale: Locale = DashL10n.activeLocale
+  ) -> String? {
+    let rounded = seconds.rounded()
+    guard rounded >= 1 else { return nil }
+    return Duration.seconds(rounded).formatted(
+      .units(allowed: [.hours, .minutes, .seconds], width: .narrow)
+        .locale(locale))
+  }
+
+  /// Wall-clock time to the second (“14:02:13”), for events inside one run —
+  /// build steps and log lines — where the date is already on screen.
+  static func timeWithSeconds(
+    _ date: Date,
+    locale: Locale = DashL10n.activeLocale,
+    timeZone: TimeZone = .current
+  ) -> String {
+    var style = Date.FormatStyle(date: .omitted, time: .standard)
+    style.locale = locale
+    style.timeZone = timeZone
+    return date.formatted(style)
+  }
+
   /// Parses Cloudflare and RDAP internet timestamps with or without fractional
   /// seconds, plus exact bare calendar days in the current time zone.
   ///

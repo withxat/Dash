@@ -718,9 +718,8 @@ struct EmailRoutingView: View {
       actionIcon: showsAction ? SolarAsset.plus : nil,
       action: showsAction ? { createsRule = true } : nil
     )
-    .padding(.horizontal, 4)
+    .dashTwoToneHeaderBand()
     .dashSectionBoundary()
-    .padding(.bottom, 8)
     .dashBodySlot(reduceMotion: reduceMotion)
 
     if mode.isPlaceholder || !rules.isEmpty {
@@ -728,7 +727,8 @@ struct EmailRoutingView: View {
         mode: mode,
         items: rules,
         placeholderRows: 3,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { rule in
         Button {
           editedRule = rule
@@ -760,7 +760,8 @@ struct EmailRoutingView: View {
     } else if let rulesError {
       // Failed, not empty: the list stays silent about how many routes exist.
       DashNotice(kind: .warning, message: rulesError)
-        .dashListCardInset()
+        .padding(.vertical, DashTheme.Spacing.comfortable)
+        .dashTwoToneRowSlice()
         .dashBodySlot(reduceMotion: reduceMotion)
     } else {
       DashEmptyState(
@@ -768,6 +769,7 @@ struct EmailRoutingView: View {
         title: "No routes",
         message: "Add a custom address to start forwarding mail."
       )
+      .dashTwoToneRowSlice()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
@@ -834,15 +836,15 @@ struct EmailRoutingView: View {
   private func addressesSection(mode: DashBodyMode) -> some View {
     let destinationRows = [EmailRoutingDestinationRow.manageAddresses]
     DashListGroupHeader(title: DashL10n.ui("Destination addresses"))
-      .padding(.horizontal, 4)
+      .dashTwoToneHeaderBand()
       .dashSectionBoundary()
-      .padding(.bottom, 8)
       .dashBodySlot(reduceMotion: reduceMotion)
     dashModeListRows(
       mode: mode,
       items: destinationRows,
       placeholderRows: 1,
-      reduceMotion: reduceMotion
+      reduceMotion: reduceMotion,
+      frame: .twoTone
     ) { _ in
       DashListGroupLink(value: .emailAddresses) {
         DashListRow(
@@ -883,33 +885,33 @@ struct EmailRoutingView: View {
   ) -> some View {
     let showsCatchAll = catchAll != nil || catchAllError != nil
     let showsSubaddressing = settings?.supportSubaddress != nil
-    let showsTurnOff = settings != nil && featureAllowsWrites
-    if mode.isPlaceholder || showsCatchAll || showsSubaddressing || showsTurnOff {
-      DashListGroupHeader(title: DashL10n.ui("Actions"))
-        .padding(.horizontal, 4)
-        .dashSectionBoundary()
-        .padding(.bottom, 8)
-        .dashBodySlot(reduceMotion: reduceMotion)
-
-      if mode.isPlaceholder {
-        DashToggleRowPlaceholder()
-          .dashBodySlot(reduceMotion: reduceMotion)
-        DashToggleRowPlaceholder()
-          .dashItemBoundary()
-          .dashBodySlot(reduceMotion: reduceMotion)
-      } else if let settings {
-        catchAllSection
-        if settings.supportSubaddress != nil {
-          subaddressingSection
-            .dashItemBoundary(showsCatchAll)
-            .dashBodySlot(reduceMotion: reduceMotion)
-        }
-        if featureAllowsWrites {
-          turnOffRow
-            .dashSectionBoundary(showsCatchAll || showsSubaddressing)
-            .dashBodySlot(reduceMotion: reduceMotion)
+    let showsControls = settings != nil && (showsCatchAll || showsSubaddressing)
+    // One group in both modes: the controls land in the frame their
+    // placeholders already drew. Bounded — catch-all, its delivery, plus
+    // addressing — so the eager group costs nothing. A zone with neither
+    // control gets no group at all rather than a band over nothing.
+    if mode.isPlaceholder || showsControls {
+      DashTwoToneListGroup(title: "Actions") {
+        if mode.isPlaceholder {
+          DashToggleRowPlaceholder()
+          DashToggleRowPlaceholder()
+        } else if let settings {
+          catchAllSection
+          if settings.supportSubaddress != nil {
+            subaddressingSection
+          }
         }
       }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    }
+    // Destructive, so it keeps its own danger plate and its own section: a
+    // row among the switches would put "turn the product off" one slip away
+    // from "turn plus addressing off".
+    if !mode.isPlaceholder, settings != nil, featureAllowsWrites {
+      turnOffRow
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -920,16 +922,14 @@ struct EmailRoutingView: View {
     // Nothing at all until the lookup has settled one way or the other — an
     // empty section boundary is a gap the user has to interpret.
     if catchAll != nil || catchAllError != nil {
-      DashSurfaceStack {
-        if let catchAllError, catchAll == nil {
-          // The catch-all lookup failed. It says so — it does not quietly
-          // render as "there is no catch-all", a different answer entirely.
-          DashNotice(kind: .warning, message: catchAllError)
-        } else if let catchAll {
-          catchAllContent(catchAll)
-        }
+      if let catchAllError, catchAll == nil {
+        // The catch-all lookup failed. It says so — it does not quietly
+        // render as "there is no catch-all", a different answer entirely.
+        DashNotice(kind: .warning, message: catchAllError)
+          .padding(.vertical, DashTheme.Spacing.comfortable)
+      } else if let catchAll {
+        catchAllContent(catchAll)
       }
-      .dashBodySlot(reduceMotion: reduceMotion)
     }
   }
 
@@ -1056,15 +1056,13 @@ struct EmailRoutingView: View {
   // MARK: §5.2 Plus addressing
 
   private var subaddressingSection: some View {
-    DashSurfaceStack {
-      DashToggleRow(
-        title: "Plus addressing",
-        subtitle:
-          "Deliver mail sent to user+tag@example.com through the route for user@example.com.",
-        isOn: subaddressingBinding,
-        isEnabled: featureAllowsWrites,
-        isLoading: subaddressingUpdating)
-    }
+    DashToggleRow(
+      title: "Plus addressing",
+      subtitle:
+        "Deliver mail sent to user+tag@example.com through the route for user@example.com.",
+      isOn: subaddressingBinding,
+      isEnabled: featureAllowsWrites,
+      isLoading: subaddressingUpdating)
   }
 
   private var subaddressingBinding: Binding<Bool> {

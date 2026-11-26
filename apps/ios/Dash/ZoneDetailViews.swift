@@ -580,22 +580,28 @@ struct ZoneDetailView: View {
   @ViewBuilder
   private func primaryActions(mode: DashBodyMode) -> some View {
     DashListGroupHeader(title: DashL10n.ui("Actions"))
-      .padding(.horizontal, 4)
+      .dashTwoToneHeaderBand()
       .dashSectionBoundary()
-      .padding(.bottom, 8)
       .dashBodySlot(reduceMotion: reduceMotion)
-    dashModeListRows(
-      mode: mode,
-      items: tools,
-      placeholderRows: Self.allTools.count,
-      reduceMotion: reduceMotion
-    ) { tool in
-      let destination = tool.route(zoneID)
-      DashListGroupLink(value: destination) {
-        DashListRow(
-          title: DashL10n.ui(tool.title),
-          icon: tool.icon,
-          showsIconPlate: false)
+    // One container, so the notice is one veil over the whole group: a
+    // modifier on the bare `ForEach` is applied to every row, which repeated
+    // the clock and its copy once per action. The list is bounded
+    // (`allTools`), so an eager stack costs nothing here.
+    VStack(spacing: 0) {
+      dashModeListRows(
+        mode: mode,
+        items: tools,
+        placeholderRows: Self.allTools.count,
+        reduceMotion: reduceMotion,
+        frame: .twoTone
+      ) { tool in
+        let destination = tool.route(zoneID)
+        DashListGroupLink(value: destination) {
+          DashListRow(
+            title: DashL10n.ui(tool.title),
+            icon: tool.icon,
+            showsIconPlate: false)
+        }
       }
     }
     // Non-active zones keep these exact live rows as the stable ground that
@@ -603,7 +609,14 @@ struct ZoneDetailView: View {
     // VoiceOver while reusing the cold empty/error wash above the rows.
     .dashSectionNotice(
       actionsActivationNotice(mode: mode),
-      icon: SolarAsset.Content.clock)
+      icon: SolarAsset.Content.clock
+    )
+    // The veil is a rectangle; trim it to the plate it covers.
+    .clipShape(
+      .rect(
+        bottomLeadingRadius: DashTheme.Radius.card,
+        bottomTrailingRadius: DashTheme.Radius.card,
+        style: .continuous))
   }
 
   private func isActive(_ zone: CloudflareZone) -> Bool {
