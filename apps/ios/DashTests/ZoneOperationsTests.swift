@@ -835,3 +835,19 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(
     defaults.string(forKey: ZoneSecurityLevelOperation.key(for: zoneID)) == "high")
 }
+
+@Test func dashSearchMatcherRequiresEveryTokenAcrossFields() {
+  #expect(!DashSearchMatcher.isActive("   \n\t "))
+  #expect(DashSearchMatcher.matches("   ", in: [nil, ""]))
+
+  #expect(DashSearchMatcher.isActive("A café"))
+  #expect(
+    DashSearchMatcher.matches(
+      "cname cafe",
+      in: ["Café.example.com", "CNAME", "origin.example.net"]))
+  #expect(
+    !DashSearchMatcher.matches(
+      "cname missing",
+      in: ["Café.example.com", "CNAME", "origin.example.net"]))
+  #expect(!DashSearchMatcher.matches("example", in: [nil, ""]))
+}

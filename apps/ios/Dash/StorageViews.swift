@@ -212,7 +212,26 @@ struct R2BucketView: View {
   /// Once a two-finger pan starts, keep adding or removing based on the first
   /// row under the fingers (UITableView multiselect behavior).
   @State private var paintAdds: Bool?
+  @State private var searchQuery = ""
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredFolders: [String] {
+    guard isSearching else { return folders }
+    return folders.filter { folder in
+      DashSearchMatcher.matches(searchQuery, in: [folderName(folder), folder])
+    }
+  }
+
+  private var filteredObjects: [R2Object] {
+    guard isSearching else { return objects }
+    return objects.filter { object in
+      DashSearchMatcher.matches(searchQuery, in: [objectName(object.key), object.key])
+    }
+  }
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
   /// Deleting a folder here removes exactly one zero-byte marker, so it is
@@ -313,59 +332,74 @@ struct R2BucketView: View {
         }
         .padding(.bottom, DashTheme.Spacing.itemGap)
       }
-      // Folders and objects are sibling LazyVStack children — never one
-      // dashListCard wrapping both. A shared card would make Content a
-      // TupleView, and `.dashListCardInset()` on that tuple re-eagerizes
-      // every object row (thumbnail stampede).
-      if !mode.isPlaceholder {
-        ForEach(folders, id: \.self) { folder in
-          DashListGroupLink(value: .r2Bucket(bucket, prefix: folder)) {
-            DashListRow(
-              title: folderName(folder),
-              icon: SolarAsset.Content.folder
-            )
-          }
-          .dashListCardInset()
-          .dashBodySlot(reduceMotion: reduceMotion)
-        }
+      if !mode.isPlaceholder, !objects.isEmpty || !folders.isEmpty {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search objects"),
+          accessibilityIdentifier: "r2-objects-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
       }
-      if mode.isPlaceholder || !objects.isEmpty {
-        dashListCard {
-          dashModeListRows(mode: mode, items: objects, reduceMotion: reduceMotion) { object in
-            R2ObjectRow(
-              bucket: bucket,
-              object: object,
-              title: objectName(object.key),
-              selecting: selecting,
-              selected: selectedKeys.contains(object.key),
-              publicURL: domains?.publicURL(forKey: object.key),
-              allowsWrites: featureAllowsWrites,
-              onRequestDelete: featureAllowsWrites
-                ? {
-                  objectPendingDelete = object
-                  confirmsObjectDelete = true
-                } : nil,
-              onBeginSelect: featureAllowsWrites
-                ? {
-                  withAnimation(DashTheme.Motion.morph) {
-                    selecting = true
-                    selectedKeys = [object.key]
-                  }
-                } : nil
-            ) {
-              if selecting {
-                toggleSelection(object)
-              } else {
-                selectedObject = object
-              }
+      if !mode.isPlaceholder, isSearching, filteredFolders.isEmpty, filteredObjects.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        // Folders and objects are sibling LazyVStack children — never one
+        // dashListCard wrapping both. A shared card would make Content a
+        // TupleView, and `.dashListCardInset()` on that tuple re-eagerizes
+        // every object row (thumbnail stampede).
+        if !mode.isPlaceholder {
+          ForEach(filteredFolders, id: \.self) { folder in
+            DashListGroupLink(value: .r2Bucket(bucket, prefix: folder)) {
+              DashListRow(
+                title: folderName(folder),
+                icon: SolarAsset.Content.folder
+              )
             }
-            .background {
-              if tracksObjectFrames {
-                GeometryReader { geo in
-                  Color.clear.preference(
-                    key: R2ObjectFrameKey.self,
-                    value: [object.key: geo.frame(in: .global)]
-                  )
+            .dashListCardInset()
+            .dashBodySlot(reduceMotion: reduceMotion)
+          }
+        }
+        if mode.isPlaceholder || !filteredObjects.isEmpty {
+          dashListCard {
+            dashModeListRows(mode: mode, items: filteredObjects, reduceMotion: reduceMotion) {
+              object in
+              R2ObjectRow(
+                bucket: bucket,
+                object: object,
+                title: objectName(object.key),
+                selecting: selecting,
+                selected: selectedKeys.contains(object.key),
+                publicURL: domains?.publicURL(forKey: object.key),
+                allowsWrites: featureAllowsWrites,
+                onRequestDelete: featureAllowsWrites
+                  ? {
+                    objectPendingDelete = object
+                    confirmsObjectDelete = true
+                  } : nil,
+                onBeginSelect: featureAllowsWrites
+                  ? {
+                    withAnimation(DashTheme.Motion.morph) {
+                      selecting = true
+                      selectedKeys = [object.key]
+                    }
+                  } : nil
+              ) {
+                if selecting {
+                  toggleSelection(object)
+                } else {
+                  selectedObject = object
+                }
+              }
+              .background {
+                if tracksObjectFrames {
+                  GeometryReader { geo in
+                    Color.clear.preference(
+                      key: R2ObjectFrameKey.self,
+                      value: [object.key: geo.frame(in: .global)]
+                    )
+                  }
                 }
               }
             }
@@ -373,12 +407,21 @@ struct R2BucketView: View {
         }
       }
       if !mode.isPlaceholder, canLoadMore || isLoadingMore {
-        DashInfiniteScrollFooter(
-          loaded: folders.count + objects.count,
-          isLoading: isLoadingMore
-        ) {
-          guard error == nil else { return }
-          Task { await loadMore() }
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: folders.count + objects.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: folders.count + objects.count,
+            isLoading: isLoadingMore
+          ) {
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
@@ -571,6 +614,7 @@ struct R2BucketView: View {
     domains = nil
     objectFrameStore.clear()
     paintAdds = nil
+    searchQuery = ""
     displayedRequestIdentity = request
   }
 

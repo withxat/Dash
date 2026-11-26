@@ -51,6 +51,11 @@ struct DNSRecordsView: View {
   @State private var pageState = DashPageState()
   @State private var error: String?
   @State private var selectedSliceID: String?
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
 
   private var deferredDeletionRefreshGeneration: UInt64 {
     guard let accountID = model.activeAccountID else { return 0 }
@@ -92,42 +97,63 @@ struct DNSRecordsView: View {
         // precedent).
         .padding(.bottom, DashTheme.Spacing.itemGap)
         .dashBodySlot(reduceMotion: reduceMotion)
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search DNS records"),
+          accessibilityIdentifier: "dns-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
       }
-      dashListCard {
-        dashModeListRows(
-          mode: mode, items: visibleRecords, reduceMotion: reduceMotion
-        ) { record in
-          Button {
-            if emailRoutingGuard.isLocked(record) {
-              lockedRecord = record
-            } else {
-              selected = record
+      if !mode.isPlaceholder, isSearching, visibleRecords.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(
+            mode: mode, items: visibleRecords, reduceMotion: reduceMotion
+          ) { record in
+            Button {
+              if emailRoutingGuard.isLocked(record) {
+                lockedRecord = record
+              } else {
+                selected = record
+              }
+            } label: {
+              DashListRow(
+                title: record.name,
+                subtitle: dnsRecordSubtitle(record),
+                icon: record.proxied == true
+                  ? SolarAsset.Content.cloud : SolarAsset.Content.globus,
+                // Proxied keeps the orange cloud; unproxied inherits the
+                // zones catalog green.
+                iconColor: record.proxied == true ? DashTheme.accent : nil
+              ) {
+                if emailRoutingGuard.isManaged(record) { StatusBadge(.managed) }
+              }
             }
-          } label: {
-            DashListRow(
-              title: record.name,
-              subtitle: dnsRecordSubtitle(record),
-              icon: record.proxied == true
-                ? SolarAsset.Content.cloud : SolarAsset.Content.globus,
-              // Proxied keeps the orange cloud; unproxied inherits the
-              // zones catalog green.
-              iconColor: record.proxied == true ? DashTheme.accent : nil
-            ) {
-              if emailRoutingGuard.isManaged(record) { StatusBadge(.managed) }
-            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityIdentifier("dns-record-\(record.id)")
+            .transition(morphTransition)
           }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityIdentifier("dns-record-\(record.id)")
-          .transition(morphTransition)
         }
       }
       if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
-        DashInfiniteScrollFooter(
-          loaded: displayedRecords.count,
-          isLoading: isLoadingMore
-        ) {
-          guard error == nil else { return }
-          Task { await loadMore() }
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: displayedRecords.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: displayedRecords.count,
+            isLoading: isLoadingMore
+          ) {
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
@@ -322,7 +348,13 @@ struct DNSRecordsView: View {
     in displayedRecords: [DNSRecord],
     buckets: [DNSChartModel.Bucket]
   ) -> [DNSRecord] {
-    DNSChartModel.records(displayedRecords, in: selectedSliceID, buckets: buckets)
+    let byType = DNSChartModel.records(displayedRecords, in: selectedSliceID, buckets: buckets)
+    guard isSearching else { return byType }
+    return byType.filter { record in
+      DashSearchMatcher.matches(
+        searchQuery,
+        in: [record.name, record.type, record.content, record.comment])
+    }
   }
 
   /// Filtered-out rows dissolve with the same blur the tray morph uses, so the

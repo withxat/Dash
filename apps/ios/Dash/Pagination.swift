@@ -237,3 +237,28 @@ struct DashInfiniteScrollFooter: View {
     }
   }
 }
+
+/// Explicit pagination footer shown while a client-side search filter is active
+/// on a paginated list. Avoids runaway background page fetches when a query has
+/// zero matches in a large catalog while letting the user load more on demand.
+struct DashSearchLoadMoreFooter: View {
+  let loaded: Int
+  var isLoading: Bool
+  let onLoadMore: () -> Void
+
+  var body: some View {
+    VStack(spacing: DashTheme.Spacing.compact) {
+      Text(DashL10n.string("Searching \(loaded.formatted()) loaded items"))
+        .dashTextStyle(.caption)
+        .foregroundStyle(DashTheme.subtle)
+      if isLoading {
+        DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+          .accessibilityLabel("Loading")
+      } else {
+        DashSecondaryPillButton(title: DashL10n.string("Load more"), action: onLoadMore)
+      }
+    }
+    .frame(maxWidth: .infinity)
+    .dashSectionBoundary()
+  }
+}

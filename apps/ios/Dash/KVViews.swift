@@ -208,6 +208,18 @@ struct KVNamespaceView: View {
   @State private var loading = true
   @State private var isLoadingMore = false
   @State private var loadedContext: AccountRequestContext?
+  @State private var searchQuery = ""
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredKeys: [KVKey] {
+    guard isSearching else { return keys }
+    return keys.filter { key in
+      DashSearchMatcher.matches(searchQuery, in: [key.name])
+    }
+  }
   @State private var resolvedNamespace: KVNamespace?
 
   private var canLoadMore: Bool { cursor?.isEmpty == false }
@@ -257,28 +269,51 @@ struct KVNamespaceView: View {
       ),
       retry: { Task { await load() } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: keys, reduceMotion: reduceMotion) { key in
-          Button {
-            selectedKey = key
-          } label: {
-            DashListRow(
-              title: key.name,
-              icon: SolarAsset.Content.key,
-              showsChevron: false
-            )
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search keys"),
+          accessibilityIdentifier: "kv-keys-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredKeys.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(mode: mode, items: filteredKeys, reduceMotion: reduceMotion) { key in
+            Button {
+              selectedKey = key
+            } label: {
+              DashListRow(
+                title: key.name,
+                icon: SolarAsset.Content.key,
+                showsChevron: false
+              )
+            }
+            .buttonStyle(DashSurfaceButtonStyle())
+            .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
           }
-          .buttonStyle(DashSurfaceButtonStyle())
-          .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
         }
       }
       if !mode.isPlaceholder, canLoadMore || isLoadingMore {
-        DashInfiniteScrollFooter(
-          loaded: keys.count,
-          isLoading: isLoadingMore
-        ) {
-          guard error == nil else { return }
-          Task { await loadMore() }
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: keys.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: keys.count,
+            isLoading: isLoadingMore
+          ) {
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
@@ -448,6 +483,7 @@ struct KVNamespaceView: View {
     showsCreateKey = false
     selectedKey = nil
     resolvedNamespace = nil
+    searchQuery = ""
   }
 }
 

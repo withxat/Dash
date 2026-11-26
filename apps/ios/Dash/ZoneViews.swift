@@ -30,6 +30,7 @@ struct ZonesView: View {
   @State private var listGeneration = 0
   @State private var showsAddDomain = false
   @State private var pageState = DashPageState()
+  @State private var searchQuery = ""
   @Namespace private var domainGridNamespace
 
   /// Pin-first paint order. `zones` / cache stay in fetch order so pagination
@@ -38,6 +39,19 @@ struct ZonesView: View {
     guard let accountID = model.activeAccountID else { return zones }
     return PinnedZones.prioritized(
       zones, pinsRaw: pinnedZoneData, accountID: accountID, id: \.id)
+  }
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredZones: [CloudflareZone] {
+    guard isSearching else { return displayedZones }
+    return displayedZones.filter { zone in
+      DashSearchMatcher.matches(
+        searchQuery,
+        in: [zone.name, zone.status, zone.plan?.name])
+    }
   }
 
   private var gridColumns: [GridItem] {
@@ -63,16 +77,39 @@ struct ZonesView: View {
       ),
       retry: { Task { await load() } }
     ) { mode in
-      domainCardGrid(mode: mode)
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search domains"),
+          accessibilityIdentifier: "zones-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredZones.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        domainCardGrid(mode: mode)
+      }
       if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
-        DashInfiniteScrollFooter(
-          loaded: zones.count,
-          isLoading: isLoadingMore
-        ) {
-          // A failed page leaves the list banner up; don't spin the same
-          // request until the user retries (pull-to-refresh / Try again).
-          guard error == nil else { return }
-          Task { await loadMore() }
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: zones.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: zones.count,
+            isLoading: isLoadingMore
+          ) {
+            // A failed page leaves the list banner up; don't spin the same
+            // request until the user retries (pull-to-refresh / Try again).
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
@@ -165,9 +202,9 @@ struct ZonesView: View {
     if mode.isPlaceholder {
       placeholderDomainGrid
     } else if displayedGroupsByStatus ?? groupsByStatus {
-      groupedDomainGrid(displayedZones)
+      groupedDomainGrid(filteredZones)
     } else {
-      flatDomainGrid(displayedZones)
+      flatDomainGrid(filteredZones)
     }
   }
 

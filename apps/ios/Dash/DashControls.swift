@@ -1091,3 +1091,119 @@ struct DashMorphingLabel: View {
     }
   }
 }
+
+// MARK: - Search
+
+/// Tokenized, case- and diacritic-insensitive search matching shared by every
+/// list filter. Every whitespace-separated token must match at least one field.
+enum DashSearchMatcher {
+  static func isActive(_ query: String) -> Bool {
+    !normalizedTokens(from: query).isEmpty
+  }
+
+  static func normalizedTokens(from query: String) -> [String] {
+    query
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .split(whereSeparator: \.isWhitespace)
+      .map(String.init)
+  }
+
+  static func matches(_ query: String, in fields: [String?]) -> Bool {
+    let tokens = normalizedTokens(from: query)
+    guard !tokens.isEmpty else { return true }
+    let nonEmptyFields = fields.compactMap { field -> String? in
+      guard let field, !field.isEmpty else { return nil }
+      return field
+    }
+    guard !nonEmptyFields.isEmpty else { return false }
+    return tokens.allSatisfy { token in
+      nonEmptyFields.contains { field in
+        field.range(of: token, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+      }
+    }
+  }
+}
+
+/// Inline search field styled on the recessed Kumo surface. Lives inside the
+/// scroll content rather than the navigation toolbar so trailing toolbar slots
+/// never crowd the page title.
+struct DashSearchBar: View {
+  @Binding var text: String
+  let prompt: String
+  var accessibilityIdentifier: String? = nil
+  @FocusState private var isFocused: Bool
+
+  var body: some View {
+    HStack(spacing: DashTheme.Spacing.compact) {
+      SolarIcon(
+        asset: SolarAsset.search,
+        size: 17,
+        color: isFocused ? DashTheme.brand : DashTheme.placeholder
+      )
+      TextField(
+        prompt,
+        text: $text,
+        prompt: Text(prompt).foregroundStyle(DashTheme.placeholder)
+      )
+      .dashTextStyle(.body)
+      .foregroundStyle(DashTheme.text)
+      .textInputAutocapitalization(.never)
+      .autocorrectionDisabled()
+      .submitLabel(.search)
+      .focused($isFocused)
+      .accessibilityIdentifier(accessibilityIdentifier ?? "dash-search-field")
+
+      if !text.isEmpty {
+        Button {
+          text = ""
+          DashDelight.selectionChanged()
+        } label: {
+          SolarIcon(
+            asset: SolarAsset.editClose,
+            size: 14,
+            color: DashTheme.subtle
+          )
+          .frame(width: 28, height: 28)
+          .contentShape(Circle())
+        }
+        .buttonStyle(DashPressButtonStyle())
+        .accessibilityLabel(DashL10n.string("Clear search"))
+        .accessibilityIdentifier("dash-search-clear")
+      }
+    }
+    .padding(.horizontal, 12)
+    .frame(minHeight: 42)
+    .background(DashTheme.recessed)
+    .clipShape(RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous)
+        .strokeBorder(
+          isFocused ? DashTheme.brand.opacity(0.45) : DashTheme.separator,
+          lineWidth: 1
+        )
+    }
+  }
+}
+
+/// Inline no-matches state for a filtered list. Leaves the search bar mounted
+/// above so the user can edit or clear their query without triggering the
+/// empty-account placeholder veil.
+struct DashSearchEmptyState: View {
+  let query: String
+  let clear: () -> Void
+
+  private var trimmedQuery: String {
+    query.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  var body: some View {
+    DashEmptyState(
+      icon: SolarAsset.Content.search,
+      title: DashL10n.string("No matches"),
+      message: DashL10n.string("Nothing matched “\(trimmedQuery)”."),
+      actionTitle: DashL10n.string("Clear search"),
+      action: clear
+    )
+    .padding(.top, DashTheme.Spacing.section)
+  }
+}
