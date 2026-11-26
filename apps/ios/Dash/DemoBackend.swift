@@ -1802,9 +1802,10 @@ private enum DemoWorld {
       #"{"id":"dns-aaaa","zone_id":"zone-example","type":"AAAA","name":"example.com","content":"2001:db8::10","proxied":true,"ttl":1}"#,
       #"{"id":"dns-cname-docs","zone_id":"zone-example","type":"CNAME","name":"docs.example.com","content":"example.com","proxied":false,"ttl":300}"#,
       #"{"id":"dns-mx","zone_id":"zone-example","type":"MX","name":"example.com","content":"route1.mx.cloudflare.net","proxied":false,"ttl":300,"priority":5}"#,
-      #"{"id":"dns-txt-spf","zone_id":"zone-example","type":"TXT","name":"example.com","content":"v=spf1 include:_spf.mx.cloudflare.net ~all","proxied":false,"ttl":300}"#,
+      #"{"id":"dns-txt-spf","zone_id":"zone-example","type":"TXT","name":"example.com","content":"v=spf1 include:_spf.mx.cloudflare.net ~all","proxied":false,"ttl":300,"comment":"Email Routing SPF"}"#,
       #"{"id":"dns-srv","zone_id":"zone-example","type":"SRV","name":"_sip._tcp.example.com","content":"10 5 5060 sip.example.com","proxied":false,"ttl":300,"data":{"priority":10,"weight":5,"port":5060,"target":"sip.example.com"}}"#,
       #"{"id":"dns-caa","zone_id":"zone-example","type":"CAA","name":"example.com","content":"0 issue \"letsencrypt.org\"","proxied":false,"ttl":300,"data":{"flags":0,"tag":"issue","value":"letsencrypt.org"}}"#,
+      #"{"id":"dns-https","zone_id":"zone-example","type":"HTTPS","name":"example.com","content":"1 . alpn=\"h3,h2\"","proxied":false,"ttl":300,"data":{"priority":1,"target":".","value":"alpn=\"h3,h2\""},"comment":"HTTP/3 service binding"}"#,
     ]
   }
 

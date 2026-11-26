@@ -3385,6 +3385,23 @@
         }
       }
     },
+    "Comment" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comment"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备注"
+          }
+        }
+      }
+    },
     "Compatibility date" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3566,6 +3583,22 @@
         }
       }
     },
+    "Content copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Content copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制内容"
+          }
+        }
+      }
+    },
     "Content-Type" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3579,6 +3612,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Content-Type"
+          }
+        }
+      }
+    },
+    "Copy content" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy content"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制内容"
           }
         }
       }
@@ -3613,6 +3662,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "复制 IP"
+          }
+        }
+      }
+    },
+    "Copy name" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "复制名称"
           }
         }
       }
@@ -3950,6 +4015,22 @@
         }
       }
     },
+    "Disable proxy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disable proxy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭代理"
+          }
+        }
+      }
+    },
     "Durable Object" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3980,6 +4061,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "编辑 DNS 记录"
+          }
+        }
+      }
+    },
+    "Enable proxy" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enable proxy"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "开启代理"
           }
         }
       }
@@ -4353,6 +4450,22 @@
         }
       }
     },
+    "Name copied" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name copied"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已复制名称"
+          }
+        }
+      }
+    },
     "Namespace ID" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4567,6 +4680,23 @@
         }
       }
     },
+    "Parameters" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parameters"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "参数"
+          }
+        }
+      }
+    },
     "Path copied" : {
       "localizations" : {
         "en" : {
@@ -4632,6 +4762,22 @@
         }
       }
     },
+    "Priority must be a number between 0 and 65535." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Priority must be a number between 0 and 65535."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先级必须是 0 到 65535 之间的数字。"
+          }
+        }
+      }
+    },
     "Production branch" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4645,6 +4791,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "生产分支"
+          }
+        }
+      }
+    },
+    "Proxy disabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proxy disabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已关闭代理"
+          }
+        }
+      }
+    },
+    "Proxy enabled" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Proxy enabled"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已开启代理"
           }
         }
       }

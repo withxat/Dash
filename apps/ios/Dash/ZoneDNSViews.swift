@@ -57,6 +57,10 @@ struct DNSRecordsView: View {
     DashSearchMatcher.isActive(searchQuery)
   }
 
+  private var allowsWrites: Bool {
+    featureAllowsWrites && model.hasScopes(writeScopes(for: .dns(zoneID)))
+  }
+
   private var deferredDeletionRefreshGeneration: UInt64 {
     guard let accountID = model.activeAccountID else { return 0 }
     return model.deferredDeletions.refreshGeneration(
@@ -134,6 +138,9 @@ struct DNSRecordsView: View {
             }
             .buttonStyle(DashSurfaceButtonStyle())
             .accessibilityIdentifier("dns-record-\(record.id)")
+            .contextMenu {
+              dnsRecordContextMenu(record)
+            }
             .transition(morphTransition)
           }
         }
@@ -355,6 +362,101 @@ struct DNSRecordsView: View {
         searchQuery,
         in: [record.name, record.type, record.content, record.comment])
     }
+  }
+
+  @ViewBuilder
+  private func dnsRecordContextMenu(_ record: DNSRecord) -> some View {
+    Button {
+      UIPasteboard.general.string = dnsRecordCopyableContent(record)
+      DashDelight.lightImpact()
+      model.toasts.success(DashL10n.string("Content copied"))
+    } label: {
+      Label(DashL10n.string("Copy content"), systemImage: "doc.on.doc")
+    }
+    Button {
+      UIPasteboard.general.string = record.name
+      DashDelight.lightImpact()
+      model.toasts.success(DashL10n.string("Name copied"))
+    } label: {
+      Label(DashL10n.string("Copy name"), systemImage: "textformat")
+    }
+    if allowsWrites, !emailRoutingGuard.isLocked(record) {
+      if ["A", "AAAA", "CNAME"].contains(record.type) {
+        let nextProxied = !(record.proxied ?? false)
+        Button {
+          Task { await toggleProxy(for: record, enabled: nextProxied) }
+        } label: {
+          Label(
+            nextProxied
+              ? DashL10n.string("Enable proxy")
+              : DashL10n.string("Disable proxy"),
+            systemImage: nextProxied ? "cloud.fill" : "cloud")
+        }
+      }
+      Button(role: .destructive) {
+        scheduleQuickDelete(record)
+      } label: {
+        Label(DashL10n.string("Delete"), systemImage: "trash")
+      }
+    }
+  }
+
+  private func toggleProxy(for record: DNSRecord, enabled: Bool) async {
+    guard allowsWrites, let context = model.accountRequestContext else { return }
+    let previous = records
+    if let index = records.firstIndex(where: { $0.id == record.id }) {
+      records[index] = DNSRecord(
+        id: record.id,
+        zoneID: record.zoneID,
+        type: record.type,
+        name: record.name,
+        content: record.content,
+        proxied: enabled,
+        ttl: record.ttl,
+        priority: record.priority,
+        data: record.data,
+        comment: record.comment)
+    }
+    let input = DNSRecordInput(
+      type: record.type,
+      name: record.name,
+      content: record.content,
+      proxied: enabled,
+      ttl: record.ttl,
+      priority: record.priority,
+      data: record.data,
+      comment: record.comment)
+    do {
+      let updated = try await model.client.updateDNSRecord(
+        zoneID: zoneID, recordID: record.id, input: input)
+      guard model.isCurrentAccount(context), !Task.isCancelled else { return }
+      if let index = records.firstIndex(where: { $0.id == record.id }) {
+        records[index] = updated
+      }
+      model.featureCache.remove(FeatureCacheKey.dnsRecords(zoneID))
+      DashDelight.lightImpact()
+      model.toasts.success(
+        enabled
+          ? DashL10n.string("Proxy enabled")
+          : DashL10n.string("Proxy disabled"))
+    } catch {
+      guard model.isCurrentAccount(context), !Task.isCancelled, !error.dashIsCancellation else {
+        return
+      }
+      records = previous
+      model.toasts.error(error.dashActionableMessage)
+    }
+  }
+
+  private func scheduleQuickDelete(_ record: DNSRecord) {
+    guard allowsWrites, let accountID = model.activeAccountID else { return }
+    _ = model.deferredDeletions.schedule(
+      .dnsRecord(
+        accountID: accountID,
+        zoneID: zoneID,
+        recordID: record.id,
+        recordType: record.type,
+        displayName: record.name))
   }
 
   /// Filtered-out rows dissolve with the same blur the tray morph uses, so the
@@ -632,11 +734,34 @@ enum DNSChartModel {
   }
 }
 
-private func dnsRecordSubtitle(_ record: DNSRecord) -> String {
-  if record.type == "MX", let priority = record.priority {
-    return "MX  ·  \(priority)  ·  \(record.content)"
-  }
+func dnsRecordCopyableContent(_ record: DNSRecord) -> String {
+  if !record.content.isEmpty { return record.content }
   if record.type == "SRV" {
+    let priority = record.data?.priority ?? record.priority ?? 0
+    let weight = record.data?.weight ?? 0
+    let port = record.data?.port ?? 0
+    let target = record.data?.target ?? ""
+    return "\(priority) \(weight) \(port) \(target)".trimmingCharacters(in: .whitespaces)
+  }
+  if record.type == "CAA", let data = record.data {
+    return "\(data.flags ?? 0) \(data.tag ?? "issue") \"\(data.value ?? "")\""
+  }
+  if ["HTTPS", "SVCB"].contains(record.type), let data = record.data {
+    let priority = data.priority ?? 1
+    let target = data.target ?? "."
+    if let value = data.value, !value.isEmpty {
+      return "\(priority) \(target) \(value)"
+    }
+    return "\(priority) \(target)"
+  }
+  return record.content
+}
+
+func dnsRecordSubtitle(_ record: DNSRecord) -> String {
+  let base: String
+  if record.type == "MX", let priority = record.priority {
+    base = "MX  ·  \(priority)  ·  \(record.content)"
+  } else if record.type == "SRV" {
     let priority = record.data?.priority ?? record.priority
     let weight = record.data?.weight
     let port = record.data?.port
@@ -646,9 +771,28 @@ private func dnsRecordSubtitle(_ record: DNSRecord) -> String {
     if let weight { parts.append("\(weight)") }
     if let port { parts.append(":\(port)") }
     parts.append(target)
-    return parts.joined(separator: "  ·  ")
+    base = parts.joined(separator: "  ·  ")
+  } else if ["HTTPS", "SVCB"].contains(record.type) {
+    let priority = record.data?.priority ?? record.priority
+    let target = record.data?.target
+    let value = record.data?.value
+    var parts = [record.type]
+    if let priority { parts.append("\(priority)") }
+    if let target, !target.isEmpty { parts.append(target) }
+    if let value, !value.isEmpty {
+      parts.append(value)
+    } else if !record.content.isEmpty, target == nil {
+      parts.append(record.content)
+    }
+    base = parts.joined(separator: "  ·  ")
+  } else {
+    base = "\(record.type)  ·  \(record.content)"
   }
-  return "\(record.type)  ·  \(record.content)"
+  if let comment = record.comment?.trimmingCharacters(in: .whitespacesAndNewlines), !comment.isEmpty
+  {
+    return "\(base)  ·  \(comment)"
+  }
+  return base
 }
 
 struct DNSRecordEditor: View {
@@ -667,6 +811,8 @@ struct DNSRecordEditor: View {
   @State private var caaFlagsText: String
   @State private var caaTag: String
   @State private var caaValue: String
+  @State private var svcValue: String
+  @State private var comment: String
   @State private var proxied: Bool
   @State private var ttl: Int
   @State private var error: String?
@@ -683,6 +829,7 @@ struct DNSRecordEditor: View {
   private var isSRV: Bool { type == "SRV" }
   private var isMX: Bool { type == "MX" }
   private var isCAA: Bool { type == "CAA" }
+  private var isServiceBinding: Bool { type == "HTTPS" || type == "SVCB" }
   private var supportsProxy: Bool { ["A", "AAAA", "CNAME"].contains(type) }
 
   private var canSave: Bool {
@@ -701,6 +848,10 @@ struct DNSRecordEditor: View {
       return Int(caaFlagsText).map { (0...255).contains($0) } == true
         && !caaValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+    if isServiceBinding {
+      return Int(priorityText).map { (0...65535).contains($0) } == true
+        && !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     return !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
   }
 
@@ -709,17 +860,23 @@ struct DNSRecordEditor: View {
     self.record = record
     self.saved = saved
     let initialType = record?.type ?? "A"
+    let defaultPriority = (initialType == "HTTPS" || initialType == "SVCB") ? "1" : "10"
     _type = State(initialValue: initialType)
     _name = State(initialValue: record?.name ?? "")
     _content = State(initialValue: record?.content ?? "")
     _priorityText = State(
-      initialValue: record.flatMap { $0.data?.priority ?? $0.priority }.map(String.init) ?? "10")
+      initialValue: record.flatMap { $0.data?.priority ?? $0.priority }.map(String.init)
+        ?? defaultPriority)
     _weightText = State(initialValue: record?.data?.weight.map(String.init) ?? "0")
     _portText = State(initialValue: record?.data?.port.map(String.init) ?? "")
-    _target = State(initialValue: record?.data?.target ?? "")
+    _target = State(
+      initialValue: record?.data?.target
+        ?? ((initialType == "HTTPS" || initialType == "SVCB") ? "." : ""))
     _caaFlagsText = State(initialValue: record?.data?.flags.map(String.init) ?? "0")
     _caaTag = State(initialValue: record?.data?.tag ?? "issue")
     _caaValue = State(initialValue: record?.data?.value ?? "")
+    _svcValue = State(initialValue: record?.data?.value ?? "")
+    _comment = State(initialValue: record?.comment ?? "")
     _proxied = State(initialValue: record?.proxied ?? false)
     _ttl = State(initialValue: record?.ttl ?? 1)
   }
@@ -738,6 +895,14 @@ struct DNSRecordEditor: View {
       deleteError: error,
       onDelete: allowsWrites ? record.map { rec in { delete(rec) } } : nil,
       deletionPresentation: .deferToGlobalUndo,
+      secondaryActionTitle: record != nil ? "Copy content" : nil,
+      onSecondaryAction: record.map { rec in
+        {
+          UIPasteboard.general.string = dnsRecordCopyableContent(rec)
+          DashDelight.lightImpact()
+          model.toasts.success(DashL10n.string("Content copied"))
+        }
+      },
       onSave: {
         if allowsWrites {
           Task { await save() }
@@ -764,9 +929,22 @@ struct DNSRecordEditor: View {
             DashFormMenuField(
               label: "Type", selection: $type,
               options: record.map { [$0.type] }
-                ?? ["A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "PTR"]
+                ?? [
+                  "A", "AAAA", "CNAME", "TXT", "MX", "NS", "SRV", "CAA", "HTTPS", "SVCB", "PTR",
+                ]
             )
             .disabled(record != nil)
+            .onChange(of: type) { _, next in
+              guard record == nil else { return }
+              if next == "HTTPS" || next == "SVCB" {
+                if target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  target = "."
+                }
+                if priorityText == "10" {
+                  priorityText = "1"
+                }
+              }
+            }
             if record != nil {
               Text(
                 DashL10n.string(
@@ -789,6 +967,10 @@ struct DNSRecordEditor: View {
               DashFormField(label: "Flags", text: $caaFlagsText, keyboard: .numberPad)
               DashFormMenuField(label: "Tag", selection: $caaTag, options: caaTagOptions)
               DashFormField(label: "Value", text: $caaValue)
+            } else if isServiceBinding {
+              DashFormField(label: "Priority", text: $priorityText, keyboard: .numberPad)
+              DashFormField(label: "Target", text: $target)
+              DashFormField(label: "Parameters", text: $svcValue)
             } else {
               if isMX {
                 DashFormField(label: "Priority", text: $priorityText, keyboard: .numberPad)
@@ -809,6 +991,8 @@ struct DNSRecordEditor: View {
 
             DashFormMenuField(
               label: "TTL", selection: ttlSelection, options: ttlOptions.map(\.label))
+
+            DashFormField(label: "Comment", text: $comment)
           }
           .disabled(!allowsWrites)
 
@@ -860,6 +1044,17 @@ struct DNSRecordEditor: View {
       return
     }
     error = nil
+    let trimmedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedComment: String? =
+      if !trimmedComment.isEmpty {
+        trimmedComment
+      } else if let existing = record?.comment,
+        !existing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      {
+        ""
+      } else {
+        nil
+      }
     let input: DNSRecordInput
     if isSRV {
       guard let priority = Int(priorityText), let weight = Int(weightText),
@@ -872,14 +1067,16 @@ struct DNSRecordEditor: View {
         type: type, name: name, proxied: false, ttl: ttl, priority: priority,
         data: DNSRecordData(
           priority: priority, weight: weight, port: port,
-          target: target.trimmingCharacters(in: .whitespacesAndNewlines)))
+          target: target.trimmingCharacters(in: .whitespacesAndNewlines)),
+        comment: normalizedComment)
     } else if isMX {
       guard let priority = Int(priorityText) else {
         error = DashL10n.string("Priority must be a number.")
         return
       }
       input = DNSRecordInput(
-        type: type, name: name, content: content, proxied: false, ttl: ttl, priority: priority)
+        type: type, name: name, content: content, proxied: false, ttl: ttl, priority: priority,
+        comment: normalizedComment)
     } else if isCAA {
       guard let flags = Int(caaFlagsText), (0...255).contains(flags) else {
         error = DashL10n.string("Flags must be a number between 0 and 255.")
@@ -889,11 +1086,24 @@ struct DNSRecordEditor: View {
         type: type, name: name, proxied: false, ttl: ttl,
         data: DNSRecordData(
           flags: flags, tag: caaTag,
-          value: caaValue.trimmingCharacters(in: .whitespacesAndNewlines)))
+          value: caaValue.trimmingCharacters(in: .whitespacesAndNewlines)),
+        comment: normalizedComment)
+    } else if isServiceBinding {
+      guard let priority = Int(priorityText), (0...65535).contains(priority) else {
+        error = DashL10n.string("Priority must be a number between 0 and 65535.")
+        return
+      }
+      let trimmedTarget = target.trimmingCharacters(in: .whitespacesAndNewlines)
+      let trimmedValue = svcValue.trimmingCharacters(in: .whitespacesAndNewlines)
+      input = DNSRecordInput(
+        type: type, name: name, proxied: false, ttl: ttl,
+        data: DNSRecordData(priority: priority, target: trimmedTarget, value: trimmedValue),
+        comment: normalizedComment)
     } else {
       input = DNSRecordInput(
         type: type, name: name, content: content,
-        proxied: supportsProxy ? proxied : false, ttl: ttl)
+        proxied: supportsProxy ? proxied : false, ttl: ttl,
+        comment: normalizedComment)
     }
     guard let context = model.accountRequestContext else { return }
     savePhase = .loading

@@ -31,6 +31,14 @@ private func demoClient() -> CloudflareClient {
   await #expect(throws: (any Error).self) {
     try await client.deleteDNSRecord(zoneID: "zone-example", recordID: record.id)
   }
+  let https = try await client.createDNSRecord(
+    zoneID: "zone-example",
+    input: DNSRecordInput(
+      type: "HTTPS", name: "app.example.com", proxied: false, ttl: 300,
+      data: DNSRecordData(priority: 1, target: ".", value: #"alpn="h3,h2""#),
+      comment: "HTTP/3 endpoint"))
+  #expect(https.content == #"1 . alpn="h3,h2""#)
+  #expect(https.comment == "HTTP/3 endpoint")
 }
 
 @Test func demoZoneCreationActivationSettingsAndDeletion() async throws {

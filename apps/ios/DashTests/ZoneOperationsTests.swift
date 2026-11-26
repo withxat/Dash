@@ -1056,3 +1056,28 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(PagesDeploymentEnvironmentFilter.production.filter(all).map(\.id) == ["d-prod"])
   #expect(PagesDeploymentEnvironmentFilter.preview.filter(all).map(\.id) == ["d-prev"])
 }
+
+@Test func dnsRecordSubtitleAndCopyableContentSupportCommentsAndServiceBindings() {
+  let https = DNSRecord(
+    id: "r-https", zoneID: "z1", type: "HTTPS", name: "example.com", content: "",
+    proxied: false, ttl: 300, priority: nil,
+    data: DNSRecordData(priority: 1, target: ".", value: #"alpn="h3,h2""#),
+    comment: "HTTP/3 hint")
+  #expect(dnsRecordCopyableContent(https) == #"1 . alpn="h3,h2""#)
+  #expect(dnsRecordSubtitle(https) == #"HTTPS  ·  1  ·  .  ·  alpn="h3,h2"  ·  HTTP/3 hint"#)
+
+  let svcbAlias = DNSRecord(
+    id: "r-svcb", zoneID: "z1", type: "SVCB", name: "_dns.example.com", content: "",
+    proxied: false, ttl: 300, priority: nil,
+    data: DNSRecordData(priority: 0, target: "resolver.example.com", value: ""),
+    comment: nil)
+  #expect(dnsRecordCopyableContent(svcbAlias) == "0 resolver.example.com")
+  #expect(dnsRecordSubtitle(svcbAlias) == "SVCB  ·  0  ·  resolver.example.com")
+
+  let txtWithComment = DNSRecord(
+    id: "r-txt", zoneID: "z1", type: "TXT", name: "example.com",
+    content: "v=spf1 ~all", proxied: false, ttl: 300, priority: nil, data: nil,
+    comment: "  Mail SPF  ")
+  #expect(dnsRecordCopyableContent(txtWithComment) == "v=spf1 ~all")
+  #expect(dnsRecordSubtitle(txtWithComment) == "TXT  ·  v=spf1 ~all  ·  Mail SPF")
+}

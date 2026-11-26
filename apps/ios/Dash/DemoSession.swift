@@ -200,9 +200,13 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
         return ok(["id": parts[1]])
       }
       if parts.count >= 3, parts[2] == "dns_records" {
+        var recordInput = input.merging(["zone_id": parts[1]], uniquingKeysWith: { _, new in new })
+        if ["POST", "PUT", "PATCH"].contains(method), recordInput["content"] == nil {
+          recordInput["content"] = Self.synthesizedDNSContent(for: recordInput)
+        }
         return records(
           base + "/dns_records", tail: Array(parts.dropFirst(3)), method: method,
-          input: input.merging(["zone_id": parts[1]], uniquingKeysWith: { _, new in new }),
+          input: recordInput,
           query: query)
       }
       if parts.count >= 3, parts[2] == "settings" {
@@ -864,5 +868,30 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
     return records(
       registrations, tail: Array(tail.dropFirst(2)), method: method, input: input, query: query,
       id: "domain_name")
+  }
+
+  private static func synthesizedDNSContent(for input: [String: Any]) -> String {
+    let type = (input["type"] as? String)?.uppercased() ?? ""
+    guard let data = input["data"] as? [String: Any] else { return "" }
+    switch type {
+    case "HTTPS", "SVCB":
+      let priority = data["priority"] as? Int ?? 1
+      let target = (data["target"] as? String) ?? "."
+      let value = (data["value"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+      return value.isEmpty ? "\(priority) \(target)" : "\(priority) \(target) \(value)"
+    case "SRV":
+      let priority = data["priority"] as? Int ?? 0
+      let weight = data["weight"] as? Int ?? 0
+      let port = data["port"] as? Int ?? 0
+      let target = (data["target"] as? String) ?? ""
+      return "\(priority) \(weight) \(port) \(target)".trimmingCharacters(in: .whitespaces)
+    case "CAA":
+      let flags = data["flags"] as? Int ?? 0
+      let tag = (data["tag"] as? String) ?? "issue"
+      let value = (data["value"] as? String) ?? ""
+      return "\(flags) \(tag) \"\(value)\""
+    default:
+      return ""
+    }
   }
 }

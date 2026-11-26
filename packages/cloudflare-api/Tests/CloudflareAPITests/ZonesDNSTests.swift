@@ -252,4 +252,19 @@ extension NetworkTests {
     #expect(payload["priority"] == nil)
     #expect(payload["target"] == nil)
   }
+
+  @Test func dnsRecordInputEncodesHTTPSAndSVCBDataAndComment() throws {
+    let https = DNSRecordInput(
+      type: "HTTPS", name: "example.com", proxied: false, ttl: 300,
+      data: DNSRecordData(priority: 1, target: ".", value: #"alpn="h3,h2""#),
+      comment: "HTTP/3 hint")
+    let data = try JSONEncoder().encode(https)
+    let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    #expect(object["content"] == nil)
+    #expect(object["comment"] as? String == "HTTP/3 hint")
+    let payload = object["data"] as! [String: Any]
+    #expect(payload["priority"] as? Int == 1)
+    #expect(payload["target"] as? String == ".")
+    #expect(payload["value"] as? String == #"alpn="h3,h2""#)
+  }
 }

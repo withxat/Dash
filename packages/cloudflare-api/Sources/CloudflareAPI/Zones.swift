@@ -71,6 +71,30 @@ public struct DNSRecord: CloudflareResource, Hashable {
     case id, type, name, content, proxied, ttl, priority, data, comment
     case zoneID = "zone_id"
   }
+
+  public init(
+    id: String,
+    zoneID: String? = nil,
+    type: String,
+    name: String,
+    content: String,
+    proxied: Bool? = nil,
+    ttl: Int = 1,
+    priority: Int? = nil,
+    data: DNSRecordData? = nil,
+    comment: String? = nil
+  ) {
+    self.id = id
+    self.zoneID = zoneID
+    self.type = type
+    self.name = name
+    self.content = content
+    self.proxied = proxied
+    self.ttl = ttl
+    self.priority = priority
+    self.data = data
+    self.comment = comment
+  }
 }
 
 public struct DNSRecordInput: Codable, Hashable, Sendable {
