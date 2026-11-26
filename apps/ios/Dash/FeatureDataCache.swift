@@ -45,6 +45,9 @@ enum FeatureCacheKey {
   /// read time, so the per-zone fan-out happens once per session, not once per
   /// worker screen.
   static func workerRoutes(_ accountID: String) -> String { "workerRoutes:\(accountID)" }
+  static func workerBuild(accountID: String, buildID: String) -> String {
+    "workerBuild:\(accountID):\(buildID)"
+  }
   static func pagesProjects(_ accountID: String) -> String { "pages:\(accountID)" }
   static func pagesProject(accountID: String, name: String) -> String {
     "pagesProject:\(accountID):\(name)"

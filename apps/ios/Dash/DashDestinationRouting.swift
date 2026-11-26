@@ -40,6 +40,9 @@ struct DestinationRoutedContent: View {
       case .registrarDomain(let domain): RegistrarDomainDetailView(domain: domain)
       case .chartDetail(let detail): DashChartDetailView(detail: detail)
       case .worker(let name): WorkerDetailView(name: name)
+      case .workerBuild(let worker, let buildID):
+        WorkerBuildDetailView(workerName: worker, buildID: buildID)
+      case .workerSource(let name): WorkerSourceView(name: name)
       case .tunnel(let id): TunnelDetailView(tunnelID: id)
       case .pagesProject(let name): PagesProjectDetailView(projectName: name)
       case .pagesDeployment(let project, let deploymentID):

@@ -45,6 +45,14 @@ enum DashAuthorizationScopes {
   /// lives only in a feature's capability disappears from the OAuth request
   /// when that feature leaves the catalog. Anything a surviving read surface
   /// calls belongs here instead.
+  ///
+  /// `workers-ci.read` is Workers Builds — the Worker screen's Builds section
+  /// and the build screen. Every `/accounts/{id}/builds/…` endpoint answers
+  /// under Workers CI and not under `workers-scripts.read`, so without it the
+  /// section 403s and (by design) hides itself: the feature shipped invisible.
+  /// It lives here rather than on the Workers capability because a Worker that
+  /// deploys with Wrangler never calls it, and a grant that predates it must
+  /// not lock the whole Workers feature.
   private static let coreReadOperations: Set<String> = [
     "zone-settings.read",
     "dns.read",
@@ -55,6 +63,7 @@ enum DashAuthorizationScopes {
     "email-routing-rule.read",
     "email-routing-address.read",
     "registrar-domains.read",
+    "workers-ci.read",
   ]
 
   /// Scopes requested when unlocking an experimental (or otherwise locked)
@@ -83,12 +92,15 @@ enum DashAuthorizationScopes {
   /// the Cache screen, the Home quick action, and the Purge Cache intent are
   /// emergency tools, so it ships with sign-in and is gated on its own
   /// (`CachePurgeAccess`) rather than through the Cache screen's settings scope.
+  /// `workers-ci.write` is Cancel build, on the Worker screen's in-progress
+  /// card and on the build screen (`WorkerBuildsAccess`).
   private static let coreWriteOperations: Set<String> = [
     "account-settings.write",
     "zone-settings.write",
     "dns.write",
     "registrar-domains.admin",
     "cache.purge",
+    "workers-ci.write",
   ]
 
   /// Legacy read-only profile retained for capability-gating tests.

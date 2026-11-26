@@ -1,6 +1,7 @@
 import CloudflareAPI
 import SwiftDitherKit
 import SwiftUI
+import UIKit
 
 struct WorkersView: View {
   @Environment(AppModel.self) private var model
@@ -353,19 +354,13 @@ struct WorkerDetailView: View {
   private func domainRouteRow(_ item: WorkerDomainRouteItem) -> some View {
     switch item {
     case .domainsFailure(let message):
-      DashCard {
-        DashSectionListRowPlaceholders(rows: 2)
-          .dashSectionFailure(
-            message,
-            retry: { Task { await loadDomains(force: true) } })
-      }
+      DashSectionListRowPlaceholders(rows: 2)
+        .dashSectionFailure(
+          message,
+          retry: { Task { await loadDomains(force: true) } })
     case .empty:
-      DashCard {
-        Text("No custom domains")
-          .dashTextStyle(.footnote)
-          .foregroundStyle(DashTheme.subtle)
-          .frame(maxWidth: .infinity, alignment: .leading)
-      }
+      Text("No custom domains")
+        .dashTwoToneNote()
     case .domain(let domain):
       Button {
         deleteDomainError = nil
@@ -382,14 +377,10 @@ struct WorkerDetailView: View {
       .buttonStyle(DashSurfaceButtonStyle())
       .accessibilityLabel("\(domain.hostname), \(workerDomainSubtitle(domain))")
     case .routesLoading:
-      DashCard {
-        HStack(spacing: 10) {
-          DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
-          Text("Loading routes…")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+      HStack(spacing: 10) {
+        DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
+        Text("Loading routes…")
+          .dashTwoToneNote()
       }
     case .route(let route):
       Button {
@@ -408,14 +399,13 @@ struct WorkerDetailView: View {
       .buttonStyle(DashSurfaceButtonStyle())
       .accessibilityLabel("\(route.pattern), \(route.zoneName), Route")
     case .routesFailure(let message):
-      DashCard {
-        DashSectionListRowPlaceholders(rows: 2)
-          .dashSectionFailure(
-            message,
-            retry: { Task { await load(force: true) } })
-      }
+      DashSectionListRowPlaceholders(rows: 2)
+        .dashSectionFailure(
+          message,
+          retry: { Task { await load(force: true) } })
     case .routesNotice(let message):
       DashNotice(kind: .warning, message: message)
+        .padding(.vertical, DashTheme.Spacing.compact)
     }
   }
 
@@ -424,6 +414,14 @@ struct WorkerDetailView: View {
     let isActive = deployment.id == deployments.first?.id
     let versionID = workerPrimaryVersionID(deployment)
     let canActivate = featureAllowsWrites && !isActive && versionID != nil
+    let copyValue = versionID ?? deployment.id
+    let copyTitle = versionID != nil ? "Copy version ID" : "Copy deployment ID"
+    let copyToast =
+      versionID != nil
+      ? DashL10n.string("Version ID copied")
+      : DashL10n.string("Deployment ID copied")
+    let fields = workerDeploymentFields(deployment, isActive: isActive, versionID: versionID)
+
     DashConfirmMorph(
       confirming: $confirmingActivation,
       message: versionID.map {
@@ -443,31 +441,58 @@ struct WorkerDetailView: View {
           confirmingActivation = true
         }
       },
+      accessory: {
+        if canActivate {
+          DashTrayPillButton(title: copyTitle) {
+            UIPasteboard.general.string = copyValue
+            DashDelight.lightImpact()
+            model.toasts.success(copyToast)
+          }
+        } else {
+          DashActionButton(title: copyTitle) {
+            UIPasteboard.general.string = copyValue
+            DashDelight.lightImpact()
+            model.toasts.success(copyToast)
+          }
+        }
+      },
       content: {
         VStack(alignment: .leading, spacing: 12) {
-          Text(workerDeploymentTitle(deployment))
-            .dashTextStyle(.bodySemibold)
-            .foregroundStyle(DashTheme.text)
-          Text(workerDeploymentAgeText(deployment.createdOn))
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.subtle)
-          Text(workerDeploymentTrafficText(deployment))
-            .dashTextStyle(.caption)
-            .foregroundStyle(DashTheme.rowSubtitle)
-          if let author = deployment.authorEmail {
-            Text(author)
-              .dashTextStyle(.caption)
-              .foregroundStyle(DashTheme.placeholder)
-          }
-          if isActive {
-            StatusBadge(.current)
-          } else if !featureAllowsWrites {
+          DashDetailFieldList(fields: fields)
+          if !isActive && !featureAllowsWrites {
             DashNotice(kind: .warning, message: "Grant Workers write access to switch deployments.")
           }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
       }
     )
+  }
+
+  private func workerDeploymentFields(
+    _ deployment: WorkerDeploymentSummary,
+    isActive: Bool,
+    versionID: String?
+  ) -> [DashDetailField] {
+    var fields: [DashDetailField] = []
+    if isActive {
+      fields.append(DashDetailField(label: "Status", value: StatusToken.current.label))
+    }
+    fields.append(
+      DashDetailField(
+        label: "Created",
+        value: DashDateFormatting.dateAndTime(fromISO8601: deployment.createdOn)))
+    fields.append(
+      DashDetailField(label: "Traffic", value: workerDeploymentTrafficText(deployment)))
+    fields.append(
+      DashDetailField(label: "Source", value: DashL10n.ui(deployment.source.capitalized)))
+    if let author = deployment.authorEmail, !author.isEmpty {
+      fields.append(DashDetailField(label: "Author", value: author))
+    }
+    if let versionID {
+      fields.append(DashDetailField(label: "Version ID", value: versionID, mono: true))
+    }
+    fields.append(DashDetailField(label: "Deployment ID", value: deployment.id, mono: true))
+    return fields
   }
 
   /// Fuller first-paint reserve: metrics + charts, deployments, Domains &
@@ -502,24 +527,26 @@ struct WorkerDetailView: View {
     if !mode.isPlaceholder {
       // Builds sit above deployments: a build is what *produces* a deployment,
       // and it renders nothing at all unless this Worker is repo-connected.
-      WorkerBuildsSection(scriptName: name, refreshID: buildsRefreshID)
-        .dashSectionBoundary(analytics != nil || analyticsError != nil)
-        .dashBodySlot(reduceMotion: reduceMotion)
+      WorkerBuildsSection(
+        scriptName: name, refreshID: buildsRefreshID,
+        leadsWithBoundary: analytics != nil || analyticsError != nil
+      )
+      .dashBodySlot(reduceMotion: reduceMotion)
     }
 
     // Keep the unbounded deployment ForEach as a direct child of
     // DashFeatureList's LazyVStack. DashListGroup's eager inner VStack would
     // otherwise mount every deployment row at once.
     DashListGroupHeader(title: DashL10n.ui("Deployments"))
-      .padding(.horizontal, 4)
+      .dashTwoToneHeaderBand()
       .dashSectionBoundary()
-      .padding(.bottom, 8)
     if mode.isPlaceholder || !deployments.isEmpty {
       dashModeListRows(
         mode: mode,
         items: deployments,
         placeholderRows: 3,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone
       ) { deployment in
         let isActive = deployment.id == deployments.first?.id
         let title = workerDeploymentTitle(deployment)
@@ -546,7 +573,8 @@ struct WorkerDetailView: View {
         )
       }
     } else {
-      DashCard {
+      // The group's one slice: its settled-empty answer or its failure.
+      Group {
         if deploymentError != nil {
           // Failed is not empty: the rows' shape stays and the message
           // veils over it. "No deployments yet." is reserved for the
@@ -557,13 +585,10 @@ struct WorkerDetailView: View {
               retry: { Task { await load(force: true) } })
         } else {
           Text("No deployments yet.")
-            .dashTextStyle(.footnote)
-            .foregroundStyle(DashTheme.subtle)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .dashTwoToneNote()
         }
       }
-      // Replaces DashListGroup's content inset for the empty state.
-      .dashListCardInset()
+      .dashTwoToneRowSlice()
       .dashBodySlot(reduceMotion: reduceMotion)
     }
 
@@ -575,34 +600,56 @@ struct WorkerDetailView: View {
       actionIcon: !mode.isPlaceholder && featureAllowsWrites ? SolarAsset.plus : nil,
       action: !mode.isPlaceholder && featureAllowsWrites ? { addsDomain = true } : nil
     )
-    .padding(.horizontal, 4)
+    .dashTwoToneHeaderBand()
     .dashSectionBoundary()
-    .padding(.bottom, 8)
+    // The list never closes the group: workers.dev is the last hostname this
+    // Worker answers on, so its switch is the group's closing row — the same
+    // place Cloudflare's own Domains & Routes lists it — instead of a control
+    // card floating under the list it belongs to.
     if mode.isPlaceholder || !domainRouteRows.isEmpty {
       dashModeListRows(
         mode: mode,
         items: domainRouteRows,
         placeholderRows: 2,
-        reduceMotion: reduceMotion
+        reduceMotion: reduceMotion,
+        frame: .twoTone,
+        closesGroup: false
       ) { item in
         domainRouteRow(item)
       }
     }
-    if mode.isPlaceholder {
-      DashToggleRowPlaceholder()
-        .dashSectionBoundary()
-        .dashBodySlot(reduceMotion: reduceMotion)
-    } else {
-      DashToggleRow(
-        title: "workers.dev",
-        subtitle: workersDevSubtitle,
-        isOn: subdomainBinding,
-        isEnabled: loadedSubdomain && featureAllowsWrites,
-        isLoading: subdomainUpdating
-      )
-      .dashSectionBoundary()
-      .dashBodySlot(reduceMotion: reduceMotion)
+    Group {
+      if mode.isPlaceholder {
+        DashToggleRowPlaceholder()
+      } else {
+        DashToggleRow(
+          title: "workers.dev",
+          subtitle: workersDevSubtitle,
+          isOn: subdomainBinding,
+          isEnabled: loadedSubdomain && featureAllowsWrites,
+          isLoading: subdomainUpdating
+        )
+      }
     }
+    // First as well as last only when the list above emitted nothing.
+    .dashTwoToneRowSlice(
+      isFirst: !mode.isPlaceholder && domainRouteRows.isEmpty, isLast: true
+    )
+    .dashBodySlot(reduceMotion: reduceMotion)
+
+    DashTwoToneListGroup(title: "Script") {
+      DashListGroupLink(value: .workerSource(name)) {
+        DashListRow(
+          title: DashL10n.string("Script source"),
+          icon: SolarAsset.code,
+          showsIconPlate: false
+        )
+        .accessibilityLabel(DashL10n.string("Script, Script source"))
+      }
+    }
+    .dashBodyPlaceholder(mode.isPlaceholder)
+    .dashSectionBoundary()
+    .dashBodySlot(reduceMotion: reduceMotion)
   }
 
   private func workerResourceCard(mode: DashBodyMode) -> some View {
@@ -1543,4 +1590,183 @@ private func workerDeploymentTrafficText(_ deployment: WorkerDeploymentSummary) 
 private enum FeatureExternalURL {
   static let workersGuide = URL(
     string: "https://developers.cloudflare.com/workers/get-started/guide/")!
+}
+
+/// Read-only view of a Worker's deployed JavaScript source (`getWorkerSource`).
+/// Loads on demand rather than during `WorkerDetailView`'s fan-out so large
+/// bundled scripts never slow down opening a Worker.
+struct WorkerSourceView: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  let name: String
+  @State private var source: WorkerSource?
+  @State private var loading = true
+  @State private var error: String?
+
+  private static let previewCharacterLimit = 120_000
+  private static let previewLineLimit = 2_000
+
+  var body: some View {
+    DashFeatureList(
+      isLoading: loading,
+      error: error,
+      hasContent: source != nil,
+      retry: { Task { await load() } }
+    ) { mode in
+      workerSourceBody(mode: mode)
+    }
+    .detailHeader(
+      icon: .solar(SolarAsset.Content.code),
+      title: "Script source",
+      tint: FeatureVisualIdentity.heroColor(for: .workers)
+    )
+    .task(id: model.accountRequestContext) { await load() }
+    .refreshable { await load() }
+  }
+
+  @ViewBuilder
+  private func workerSourceBody(mode: DashBodyMode) -> some View {
+    if mode.isPlaceholder {
+      DashInfoGroup(title: "Script") {
+        DashInfoRow("Worker", value: name, mono: true)
+        DashInfoRow("Format", value: DashL10n.string("ES module"))
+        DashInfoRow("Size", value: "12 KB")
+      }
+      .dashBodyPlaceholder(true)
+      .dashBodySlot(reduceMotion: reduceMotion)
+
+      DashTwoToneListGroup(title: "Source") {
+        DashLogPlaceholder()
+          .padding(.vertical, 14)
+      }
+      .dashSectionBoundary()
+      .dashBodySlot(reduceMotion: reduceMotion)
+    } else if let source {
+      DashInfoGroup(title: "Script") {
+        DashInfoRow("Worker", value: name, mono: true)
+        DashInfoRow(
+          "Format",
+          value: source.mainModule != nil
+            ? DashL10n.string("ES module") : DashL10n.string("Classic script"))
+        if let mainModule = source.mainModule, !mainModule.isEmpty {
+          DashInfoRow("Entry point", value: mainModule, mono: true)
+        }
+        if source.moduleCount > 1 {
+          DashInfoRow("Modules", value: source.moduleCount.formatted())
+        }
+        DashInfoRow(
+          "Size",
+          value: ByteCountFormatter.string(
+            fromByteCount: Int64(source.content.utf8.count), countStyle: .file))
+      }
+      .dashBodySlot(reduceMotion: reduceMotion)
+
+      sourceGroup(source)
+        .dashSectionBoundary()
+        .dashBodySlot(reduceMotion: reduceMotion)
+    }
+  }
+
+  private func sourceGroup(_ source: WorkerSource) -> some View {
+    let hasCode = !source.content.isEmpty
+    let preview = previewLines(for: source.content)
+    return VStack(alignment: .leading, spacing: 0) {
+      DashTwoToneListGroup(
+        title: "Source",
+        actionTitle: hasCode ? "Copy" : nil,
+        action: hasCode ? { copySource(source.content) } : nil
+      ) {
+        if hasCode {
+          DashFadedScrollView(
+            surface: DashTheme.homeCardSurface,
+            maxHeight: 460,
+            bounceBasedOnSize: true
+          ) {
+            ScrollView(.horizontal, showsIndicators: true) {
+              LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(Array(preview.lines.enumerated()), id: \.offset) { _, line in
+                  Text(line.isEmpty ? " " : line)
+                    .dashTextStyle(.code)
+                    .foregroundStyle(DashTheme.text)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .textSelection(.enabled)
+                }
+              }
+              .padding(.vertical, 12)
+            }
+          }
+        } else {
+          Text("No source code returned.")
+            .dashTwoToneNote()
+        }
+      }
+
+      if source.moduleCount > 1 {
+        DashNotice(
+          kind: .info,
+          message: DashL10n.string(
+            "Showing the main module only. This Worker includes \(source.moduleCount) modules."
+          )
+        )
+        .dashItemBoundary()
+      }
+
+      if preview.truncated {
+        DashNotice(
+          kind: .info,
+          message: DashL10n.string(
+            "Preview truncated for readability. Use Copy to copy the full script."
+          )
+        )
+        .dashItemBoundary()
+      }
+    }
+  }
+
+  private func previewLines(for content: String) -> (lines: [String], truncated: Bool) {
+    var truncated = false
+    let slice: Substring
+    if content.count > Self.previewCharacterLimit {
+      slice = content.prefix(Self.previewCharacterLimit)
+      truncated = true
+    } else {
+      slice = content[...]
+    }
+    var lines = slice.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+    if lines.count > Self.previewLineLimit {
+      lines = Array(lines.prefix(Self.previewLineLimit))
+      truncated = true
+    }
+    return (lines, truncated)
+  }
+
+  private func copySource(_ content: String) {
+    UIPasteboard.general.string = content
+    DashDelight.lightImpact()
+    model.toasts.success(DashL10n.string("Source copied"))
+  }
+
+  private func load() async {
+    guard let context = model.accountRequestContext else {
+      loading = false
+      return
+    }
+    if source == nil { loading = true }
+    error = nil
+    do {
+      let fetched = try await model.client.getWorkerSource(
+        accountID: context.accountID, name: name)
+      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      source = fetched
+      loading = false
+    } catch is CancellationError {
+      return
+    } catch let loadError as URLError where loadError.code == .cancelled {
+      return
+    } catch {
+      guard model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+      loading = false
+    }
+  }
 }

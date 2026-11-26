@@ -6,16 +6,23 @@ import SwiftUI
 ///
 /// Three answers, same contract as Tunnel private routes:
 ///
-///   * Empty builds, a Builds 403/404, no script tag, or Demo → hide the
+///   * Empty builds, a Builds 403/404, or no script tag → hide the
 ///     section. Most Workers ship via `wrangler deploy` and are not
 ///     repo-connected, so an empty "No builds yet" card would be permanent
 ///     furniture; an account without the feature must not make the rest of
 ///     the screen look broken either.
+///   * The one 403 that is *not* an answer: the grant has no Workers CI read
+///     (`WorkerBuildsAccess`). Cloudflare refused to say whether this Worker
+///     has builds, so hiding would be reporting "none" on no evidence — the
+///     section says what is missing and offers Grant access instead. Grants
+///     issued before Dash requested the scope are all in this state.
 ///   * Any other cold failure (5xx, timeout, decode, offline) → keep the
 ///     Builds group mounted and veil Try again over placeholders.
 ///   * Warm reload failures with history already on screen → inline
 ///     `actionError` notice; content never vanishes over a polling error.
 struct WorkerBuildsSection: View {
+  static let pageSize = 10
+
   @Environment(AppModel.self) private var model
   @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   let scriptName: String
@@ -23,14 +30,25 @@ struct WorkerBuildsSection: View {
   /// task, so without this the parent's refresh would reload every other
   /// section and silently skip this one.
   var refreshID: UUID
+  /// Whether a section boundary opens the group once it has something to show.
+  /// The section spaces itself: its host below is always mounted, so a
+  /// caller's boundary would pad a Worker that has no builds at all.
+  var leadsWithBoundary = true
 
   @State private var scriptTag: String?
   @State private var builds: [WorkerBuild] = []
   @State private var latest: WorkerBuild?
+  @State private var pageState = DashPageState()
+  @State private var isLoadingMore = false
+  @State private var historyGeneration = 0
   @State private var unavailable = false
+  /// A 403 under a grant known to lack Workers CI read. Never set from a 404,
+  /// and never while the grant is unknown.
+  @State private var needsAccess = false
   @State private var loaded = false
   @State private var loadError: String?
   @State private var cancelPhase: DashActionPhase = .idle
+  @State private var confirmingCancel = false
   @State private var actionError: String?
 
   private var monitorKey: WorkerBuildMonitorKey? {
@@ -43,91 +61,155 @@ struct WorkerBuildsSection: View {
   }
 
   var body: some View {
-    Group {
+    // Always one view, empty or not. The load below needs a host that exists
+    // *before* there is anything to show: on a `Group` whose branches all start
+    // false there is no view for `.task` to attach to, so the history was never
+    // requested and the section could never leave its empty state.
+    VStack(alignment: .leading, spacing: 0) {
       if !unavailable, loaded, !builds.isEmpty {
-        DashListGroup(title: "Builds") {
-          DashSurfaceStack {
+        VStack(alignment: .leading, spacing: 0) {
+          // Bounded per request (`pageSize`), with explicit Load more below so
+          // scrolling past Builds toward Deployments does not auto-fetch pages.
+          DashTwoToneListGroup(title: "Builds") {
             if let latest, latest.isInProgress {
-              inProgressCard(latest)
+              inProgressBlock(latest)
             }
-            historyCard
+            dashListCardRows(items: builds, inset: false) { build in
+              // A build Cloudflare sent without a UUID has no screen to open —
+              // the row stays, as plain text.
+              if let buildUUID = build.buildUUID {
+                DashListGroupLink(value: .workerBuild(worker: scriptName, buildID: buildUUID)) {
+                  historyRow(build, showsChevron: true)
+                }
+              } else {
+                historyRow(build, showsChevron: false)
+              }
+            }
+          }
+          if pageState.canLoadMore || isLoadingMore {
+            Group {
+              if isLoadingMore {
+                DashLoadingRing(color: DashTheme.brand, size: 16, lineWidth: 2.5)
+                  .accessibilityLabel("Loading")
+              } else {
+                DashSecondaryPillButton(title: DashL10n.string("Load more")) {
+                  Task { await loadMore() }
+                }
+                .accessibilityIdentifier("worker-builds-load-more")
+              }
+            }
+            .frame(maxWidth: .infinity)
+            .dashItemBoundary()
           }
           if let actionError {
             DashNotice(kind: .warning, message: actionError)
               .dashItemBoundary()
           }
         }
+        .dashSectionBoundary(leadsWithBoundary)
       } else if !unavailable, loaded, loadError != nil {
-        DashListGroup(title: "Builds") {
-          DashCard {
-            DashSectionListRowPlaceholders(rows: 3)
-              .dashSectionFailure(
-                loadError,
-                retry: { Task { await resolveTagAndLoad() } })
-          }
+        DashTwoToneListGroup(title: "Builds") {
+          DashSectionListRowPlaceholders(rows: 3)
+            .dashSectionFailure(
+              loadError,
+              retry: { Task { await resolveTagAndLoad() } })
         }
+        .dashSectionBoundary(leadsWithBoundary)
+      } else if loaded, needsAccess {
+        DashTwoToneListGroup(title: "Builds") {
+          FeatureWriteAccessNotice(
+            message: "Dash needs Workers Builds access to show this Worker’s builds.",
+            scopes: WorkerBuildsAccess.read.union(WorkerBuildsAccess.write)
+          )
+          .padding(.vertical, DashTheme.Spacing.comfortable)
+        }
+        .dashSectionBoundary(leadsWithBoundary)
       }
     }
-    .task(id: LoadKey(context: model.accountRequestContext, refreshID: refreshID)) {
+    .task(
+      id: LoadKey(
+        context: model.accountRequestContext,
+        refreshID: refreshID,
+        hasBuildsAccess: model.hasScopes(WorkerBuildsAccess.read))
+    ) {
       await resolveTagAndLoad()
     }
     .task(id: monitorKey) { await monitor() }
   }
 
-  /// Re-runs the history load on an account switch *or* a pull-to-refresh.
+  /// Re-runs the history load on an account switch, a pull-to-refresh, *or*
+  /// the grant gaining Workers CI read — the moment Grant access succeeds is
+  /// the moment the section it was offered from should fill in.
   private struct LoadKey: Hashable {
     let context: AccountRequestContext?
     let refreshID: UUID
+    let hasBuildsAccess: Bool
   }
 
-  @ViewBuilder private func inProgressCard(_ build: WorkerBuild) -> some View {
-    DashCard {
-      VStack(alignment: .leading, spacing: 10) {
-        HStack(spacing: 10) {
-          DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
-          Text(WorkerBuildActivityControllerBox.phaseLabel(build.phase))
-            .dashTextStyle(.bodyMedium)
-            .foregroundStyle(DashTheme.text)
-          Spacer(minLength: 0)
-        }
-        if let subtitle = triggerSubtitle(build) {
-          Text(subtitle)
+  /// The build in flight, as the group's first block: phase, what triggered
+  /// it, and Cancel. Its history row follows like any other build's.
+  private func inProgressBlock(_ build: WorkerBuild) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 10) {
+        DashLoadingRing(color: DashTheme.brand, size: 18, lineWidth: 2.5)
+        Text(WorkerBuildActivityControllerBox.phaseLabel(build.phase))
+          .dashTextStyle(.bodyMedium)
+          .foregroundStyle(DashTheme.text)
+        Spacer(minLength: 0)
+      }
+      if let subtitle = triggerSubtitle(build) {
+        Text(subtitle)
+          .dashTextStyle(.footnote)
+          .foregroundStyle(DashTheme.subtle)
+          .lineLimit(1)
+      }
+      // Cancel is a Workers CI write; the Worker screen's own write scope
+      // (`workers-scripts.write`) neither grants it nor implies it.
+      if featureAllowsWrites, model.hasScopes(WorkerBuildsAccess.write),
+        let buildUUID = build.buildUUID
+      {
+        if confirmingCancel {
+          Text(DashL10n.string("Stops this build immediately. It cannot be resumed."))
             .dashTextStyle(.footnote)
             .foregroundStyle(DashTheme.subtle)
-            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        if featureAllowsWrites, let buildUUID = build.buildUUID {
-          DashActionButton(
-            title: "Cancel build",
-            role: .destructive,
-            phase: cancelPhase,
-            onSuccessPresentationCompleted: completeCancelPresentation
-          ) {
+        DashActionButton(
+          title: confirmingCancel ? "Stop build" : "Cancel build",
+          role: .destructive,
+          phase: cancelPhase,
+          onSuccessPresentationCompleted: completeCancelPresentation
+        ) {
+          if confirmingCancel {
             Task { await cancel(buildUUID: buildUUID) }
+          } else {
+            withAnimation(DashTheme.Motion.morph) { confirmingCancel = true }
           }
         }
-      }
-    }
-  }
-
-  @ViewBuilder private var historyCard: some View {
-    dashListCard {
-      dashListCardRows(items: builds) { build in
-        DashListRow(
-          title: buildTitle(build),
-          subtitle: triggerSubtitle(build),
-          icon: SolarAsset.Content.bolt,
-          showsChevron: false
-        ) {
-          StatusBadge(statusToken(build))
+        if confirmingCancel {
+          Button(DashL10n.string("Keep running")) {
+            withAnimation(DashTheme.Motion.morph) { confirmingCancel = false }
+          }
+          .dashTextStyle(.buttonMedium)
+          .foregroundStyle(DashTheme.subtle)
+          .frame(maxWidth: .infinity)
+          .disabled(cancelPhase.isActive)
         }
       }
     }
+    .padding(.vertical, DashTheme.Spacing.comfortable)
   }
 
-  private func buildTitle(_ build: WorkerBuild) -> String {
-    build.buildTriggerMetadata?.commitMessage?.split(separator: "\n").first.map(String.init)
-      ?? DashL10n.string("Build \(build.shortID)")
+  private func historyRow(_ build: WorkerBuild, showsChevron: Bool) -> some View {
+    DashListRow(
+      title: workerBuildTitle(build),
+      subtitle: triggerSubtitle(build),
+      icon: SolarAsset.Content.bolt,
+      showsChevron: showsChevron
+    ) {
+      StatusBadge(StatusToken(workerBuild: build))
+    }
   }
 
   private func triggerSubtitle(_ build: WorkerBuild) -> String? {
@@ -140,30 +222,17 @@ struct WorkerBuildsSection: View {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  /// Mapped through `StatusToken`, never a raw Cloudflare string — shape, tone,
-  /// and localized label all come from the token's own exhaustive switches.
-  ///
-  /// A finished build with no `build_outcome` is `.unknown`, not `.success`:
-  /// Cloudflare did not say how it ended, and guessing green is the failure
-  /// direction that matters.
-  private func statusToken(_ build: WorkerBuild) -> StatusToken {
-    guard build.phase == .finished else { return .inProgress }
-    switch build.buildOutcome?.lowercased() {
-    case "success": return .success
-    case "canceled", "cancelled": return .canceled
-    case "skipped": return .skipped
-    case .some: return .failed
-    case nil: return .unknown
-    }
-  }
-
   /// The Builds API keys on the script's immutable tag, which the detail
   /// screen's route (a name) does not carry. The workers list already decodes
   /// it, so this reads the cache first and only fetches when it has to.
   private func resolveTagAndLoad() async {
-    guard let context = model.accountRequestContext, !model.isDemoSession else {
+    // Demo runs the same path: `DemoBackend` serves a finished build history
+    // for its one repo-connected Worker and an empty one for the rest, so no
+    // demo build is ever in flight and the monitor below never starts.
+    guard let context = model.accountRequestContext else {
       loaded = true
       unavailable = true
+      needsAccess = false
       loadError = nil
       return
     }
@@ -184,6 +253,7 @@ struct WorkerBuildsSection: View {
     guard let tag, !tag.isEmpty else {
       // No tag means no Workers Builds for this Worker. Not an error.
       unavailable = true
+      needsAccess = false
       loadError = nil
       loaded = true
       return
@@ -197,22 +267,44 @@ struct WorkerBuildsSection: View {
   }
 
   private func loadHistory(context: AccountRequestContext, tag: String) async {
+    historyGeneration += 1
+    let generation = historyGeneration
+    isLoadingMore = false
+    pageState.reset()
     do {
       let page = try await model.client.listWorkerBuilds(
-        accountID: context.accountID, scriptTag: tag, perPage: 10)
-      guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+        accountID: context.accountID, scriptTag: tag, page: 1, perPage: Self.pageSize)
+      guard !Task.isCancelled, generation == historyGeneration, model.isCurrentAccount(context)
+      else { return }
       builds = page.items
       latest = page.items.first
+      pageState.absorb(
+        info: page.resultInfo,
+        requestedPage: 1,
+        received: page.items.count,
+        added: page.items.count,
+        loaded: builds.count,
+        pageSize: Self.pageSize)
       loadError = nil
+      needsAccess = false
       unavailable = page.items.isEmpty
     } catch {
-      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      guard !error.dashIsCancellation, generation == historyGeneration,
+        model.isCurrentAccount(context)
+      else { return }
       if error.dashIsResourceAbsent {
         if builds.isEmpty {
           // An account without Workers Builds answers 403/404 here. Staying
           // silent is the whole point — the Worker's own screen is unaffected.
           unavailable = true
           loadError = nil
+          // Unless the 403 is Dash's own doing: the request went out without
+          // the scope the endpoint answers under. Decided from the grant, and
+          // only when the grant is known — an unknown grant stays silent.
+          needsAccess =
+            (error as? CloudflareAPIError)?.isForbidden == true
+            && model.grantedScopes != nil
+            && !model.hasScopes(WorkerBuildsAccess.read)
         } else {
           actionError = error.dashActionableMessage
         }
@@ -220,6 +312,7 @@ struct WorkerBuildsSection: View {
         // Cold transport/server failure: keep the section and offer retry.
         // Vanishing here used to swallow 5xx/timeout as "no Builds feature".
         unavailable = false
+        needsAccess = false
         loadError = error.dashActionableMessage
       } else {
         // Warm re-load (a watched build finished, or pull-to-refresh): the
@@ -230,6 +323,48 @@ struct WorkerBuildsSection: View {
       }
     }
     loaded = true
+  }
+
+  private func loadMore() async {
+    guard
+      let context = model.accountRequestContext,
+      let tag = scriptTag,
+      !isLoadingMore,
+      pageState.canLoadMore
+    else { return }
+    let generation = historyGeneration
+    let pageNumber = pageState.nextPage
+    isLoadingMore = true
+    defer {
+      if generation == historyGeneration, model.isCurrentAccount(context) {
+        isLoadingMore = false
+      }
+    }
+    do {
+      let page = try await model.client.listWorkerBuilds(
+        accountID: context.accountID,
+        scriptTag: tag,
+        page: pageNumber,
+        perPage: Self.pageSize)
+      guard !Task.isCancelled, generation == historyGeneration, model.isCurrentAccount(context)
+      else { return }
+      var seenIDs = Set(builds.map(\.id))
+      let unique = page.items.filter { seenIDs.insert($0.id).inserted }
+      builds += unique
+      pageState.absorb(
+        info: page.resultInfo,
+        requestedPage: pageNumber,
+        received: page.items.count,
+        added: unique.count,
+        loaded: builds.count,
+        pageSize: Self.pageSize)
+      actionError = nil
+    } catch {
+      guard !error.dashIsCancellation, generation == historyGeneration,
+        model.isCurrentAccount(context)
+      else { return }
+      actionError = error.dashActionableMessage
+    }
   }
 
   /// Subscribes to the shared monitor so the Live Activity and this card move
@@ -302,6 +437,7 @@ struct WorkerBuildsSection: View {
   }
 
   private func completeCancelPresentation() {
+    confirmingCancel = false
     guard cancelPhase == .succeeded, let key = monitorKey else {
       cancelPhase = .idle
       return

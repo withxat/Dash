@@ -118,7 +118,7 @@ func featureID(for destination: Destination) -> FeatureID? {
   // capability — `zone.write` it must never imply, and not the
   // `registrar-domains.*` it actually needs.
   case .registrarDomain: nil
-  case .worker: .workers
+  case .worker, .workerBuild, .workerSource: .workers
   case .tunnel: .tunnels
   case .pagesProject, .pagesDeployment, .pagesDomains: .pages
   case .r2Bucket, .r2BucketSettings: .r2
@@ -170,7 +170,10 @@ func readScopes(for destination: Destination) -> Set<String> {
     DashAuthorizationScopes.webAnalytics
   case .chartDetail(let detail):
     detail.readScopes
-  case .feature, .zone, .worker, .pagesProject, .pagesDeployment, .pagesDomains,
+  // Workers Builds answers under Workers CI, on top of the feature's own read.
+  case .workerBuild:
+    (featureID(for: destination)?.capability.read ?? []).union(WorkerBuildsAccess.read)
+  case .feature, .zone, .worker, .workerSource, .pagesProject, .pagesDeployment, .pagesDomains,
     .r2Bucket, .r2BucketSettings, .kvNamespace, .kvKey:
     featureID(for: destination)?.capability.read ?? []
   }
@@ -197,7 +200,11 @@ func writeScopes(for destination: Destination) -> Set<String> {
     ["email-routing-address.write"]
   case .registrarDomain:
     RegistrarAccess.write
-  case .tunnel:
+  // Cancel build is the screen's only write, and it is a Workers CI one —
+  // `workers-scripts.write` neither grants it nor is needed for it.
+  case .workerBuild:
+    WorkerBuildsAccess.write
+  case .tunnel, .workerSource:
     []
   case .zoneWAF:
     ["zone-settings.write"]

@@ -67,15 +67,25 @@ struct DashDetailTray<Accessory: View>: View {
       accessory: { accessory },
       content: {
         // No inner ScrollView — DashConfirmMorph's scroll boundary owns it.
-        VStack(alignment: .leading, spacing: 0) {
-          ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
-            fieldRow(field)
-            if index < fields.count - 1 { DashListGroupDivider() }
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        DashDetailFieldList(fields: fields)
       }
     )
+  }
+}
+
+/// Shared label/value rows used by `DashDetailTray` and custom confirm trays
+/// such as `WorkerDetailView`'s deployment switcher.
+struct DashDetailFieldList: View {
+  let fields: [DashDetailField]
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(fields.enumerated()), id: \.offset) { index, field in
+        fieldRow(field)
+        if index < fields.count - 1 { DashListGroupDivider() }
+      }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   private func fieldRow(_ field: DashDetailField) -> some View {

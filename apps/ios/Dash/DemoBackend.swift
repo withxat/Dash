@@ -267,6 +267,12 @@ final class DemoBackend: URLProtocol {
       return ok(account.json)
     case "workers"?:
       return workers(account: account, rest: Array(rest.dropFirst()))
+    case "builds"?:
+      return workerBuilds(
+        account: account,
+        rest: Array(rest.dropFirst()),
+        page: max(Int(query("page") ?? "1") ?? 1, 1),
+        perPage: min(max(Int(query("per_page") ?? "20") ?? 20, 1), 50))
     case "pages"?:
       return pages(
         account: account,
@@ -548,6 +554,35 @@ final class DemoBackend: URLProtocol {
   }
 
   // MARK: Pages
+
+  /// Workers Builds live beside `workers`, not under it, and key on the
+  /// script's tag: builds/workers/{tag}/builds | builds/builds/latest |
+  /// builds/builds/{uuid}[/logs].
+  private static func workerBuilds(
+    account: DemoWorld.Account, rest: [String], page: Int, perPage: Int
+  ) -> Reply {
+    if rest.first == "workers", rest.count == 3, rest[2] == "builds" {
+      let builds = DemoWorld.workerBuilds(accountID: account.id, scriptTag: rest[1])
+      let start = (page - 1) * perPage
+      let slice =
+        start < builds.count ? Array(builds[start..<min(start + perPage, builds.count)]) : []
+      return ok(
+        "[\(slice.map(\.json).joined(separator: ","))]",
+        info: #"{"page":\#(page),"per_page":\#(perPage),"total_count":\#(builds.count)}"#)
+    }
+    guard rest.first == "builds", rest.count >= 2 else { return ok("[]") }
+    // Every demo build has finished, so there is never a newest in-flight one.
+    if rest[1] == "latest" { return ok(#"{"builds":{}}"#) }
+    guard let build = DemoWorld.workerBuild(accountID: account.id, uuid: rest[1]) else {
+      return Reply(
+        status: 404,
+        json:
+          #"{"success":false,"errors":[{"code":7003,"message":"Build not found."}],"messages":[],"result":null}"#
+      )
+    }
+    if rest.count == 3, rest[2] == "logs" { return ok(build.logs) }
+    return ok(build.json)
+  }
 
   private static func pages(
     account: DemoWorld.Account, rest: [String], page: Int, perPage: Int
@@ -1029,6 +1064,69 @@ private enum DemoWorld {
     default:
       return []
     }
+  }
+
+  struct WorkerBuildFixture {
+    let uuid: String
+    let json: String
+    let logs: String
+  }
+
+  /// Only the repo-connected flagship Worker has builds. Every other Worker
+  /// answers with an empty history — most ship through `wrangler deploy` — so
+  /// its Builds section stays hidden, exactly as it does for a real account.
+  ///
+  /// Both builds have finished: a running one would raise a Live Activity for
+  /// a build nothing will ever complete. `provider_type` is left out for the
+  /// reason the Pages fixture leaves out its source type — with a provider the
+  /// screen links the commit to that provider's site, and a demo commit must
+  /// not open a real GitHub page.
+  static func workerBuilds(accountID: String, scriptTag: String) -> [WorkerBuildFixture] {
+    guard accountID == "demo-account", scriptTag == "w-api-1" else { return [] }
+    func build(
+      uuid: String, hoursAgo: Int, outcome: String, runSeconds: Int, commit: String,
+      message: String, lines: [String]
+    ) -> WorkerBuildFixture {
+      let start = Date().addingTimeInterval(-TimeInterval(hoursAgo) * 3600).timeIntervalSince1970
+      let stamped = lines.enumerated().map { index, line in
+        let at = Int((start + 12 + Double(index) * Double(runSeconds) / Double(lines.count)) * 1000)
+        return #"[\#(at),"\#(line)"]"#
+      }
+      return WorkerBuildFixture(
+        uuid: uuid,
+        json: #"""
+          {"build_uuid":"\#(uuid)","status":"stopped","build_outcome":"\#(outcome)","created_on":"\#(DemoClock.iso(hoursAgo: hoursAgo))","initializing_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: 3))","running_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: 12))","stopped_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: 12 + runSeconds))","modified_on":"\#(DemoClock.iso(hoursAgo: hoursAgo, plusSeconds: 12 + runSeconds))","build_trigger_metadata":{"branch":"main","commit_hash":"\#(commit)","commit_message":"\#(message)","author":"demo@example.com","build_command":"pnpm build","deploy_command":"npx wrangler deploy","build_trigger_source":"push","repo_name":"api-worker","provider_account_name":"example","root_directory":"/"}}
+          """#,
+        logs: #"{"lines":[\#(stamped.joined(separator: ","))],"cursor":null,"truncated":false}"#)
+    }
+    return [
+      build(
+        uuid: "7c1e5f20-demo-4b1a-9d2e-api0worker01", hoursAgo: 2, outcome: "success",
+        runSeconds: 41, commit: "9f3c2ab41d07e6c5b8a1f0e2d3c4b5a697887766",
+        message: "Ship the new rate limiter",
+        lines: [
+          "Cloning repository...", "Installing dependencies with pnpm",
+          "Executing user build command: pnpm build", "Build completed in 18.2s",
+          "Executing user deploy command: npx wrangler deploy",
+          "Uploaded api-worker (2.41 sec)", "Deployed api-worker triggers (0.63 sec)",
+          "Success: Build command completed",
+        ]),
+      build(
+        uuid: "3a90d4c8-demo-4f6e-8c11-api0worker02", hoursAgo: 27, outcome: "fail",
+        runSeconds: 23, commit: "1d8ab90c77e2f4a6b3c5d1e0f9a8b7c6d5e4f3a2",
+        message: "Bump dependencies",
+        lines: [
+          "Cloning repository...", "Installing dependencies with pnpm",
+          "Executing user build command: pnpm build",
+          "src/limiter.ts(42,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+          "ELIFECYCLE Command failed with exit code 2.",
+          "Failed: error occurred while running build command",
+        ]),
+    ]
+  }
+
+  static func workerBuild(accountID: String, uuid: String) -> WorkerBuildFixture? {
+    workerBuilds(accountID: accountID, scriptTag: "w-api-1").first { $0.uuid == uuid }
   }
 
   static func workerDomains(accountID: String) -> [String] {

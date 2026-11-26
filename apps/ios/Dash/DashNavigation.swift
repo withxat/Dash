@@ -258,6 +258,9 @@ extension Destination {
     case .registrarDomain(let domain): .init(namespace: "registration", value: domain)
     case .chartDetail(let detail): .init(namespace: "chart", value: detail.title)
     case .worker(let name): .init(namespace: "worker", value: name)
+    case .workerBuild(let worker, let buildID):
+      .init(namespace: "worker-build", value: "\(worker)/\(buildID)")
+    case .workerSource(let name): .init(namespace: "worker-source", value: name)
     case .tunnel(let id): .init(namespace: "tunnel", value: id)
     case .pagesProject(let name): .init(namespace: "pages-project", value: name)
     case .pagesDeployment(let project, let deploymentID):

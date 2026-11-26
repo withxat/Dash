@@ -78,8 +78,8 @@ import UIKit
 @Test @MainActor func appModelDefaultsToFullAccountPermissions() {
   let model = AppModel(configuration: AppConfiguration(clientID: "", redirectURI: ""))
   #expect(model.selectedScopes == DashAuthorizationScopes.core)
-  #expect(DashAuthorizationScopes.initialReadOnly.count == 18)
-  #expect(DashAuthorizationScopes.core.count == 31)
+  #expect(DashAuthorizationScopes.initialReadOnly.count == 19)
+  #expect(DashAuthorizationScopes.core.count == 33)
   #expect(DashAuthorizationScopes.initialReadOnly.isStrictSubset(of: DashAuthorizationScopes.core))
   #expect(
     DashAuthorizationScopes.initialReadOnly.allSatisfy {
@@ -189,6 +189,7 @@ import UIKit
     "analytics.read",  // Zone HTTP Traffic Analytics, including Watchtower charts
     "zone-settings.read", "zone-settings.write",  // SetUnderAttack, ToggleDevelopmentMode
     "cache.purge",  // Cache screen, Home quick action, PurgeCacheIntent
+    "workers-ci.read", "workers-ci.write",  // Worker Builds section, build screen, Cancel build
   ]
   let readOnlyOperational = operational.filter {
     !$0.hasSuffix(".write") && !CachePurgeAccess.write.contains($0)
@@ -323,6 +324,14 @@ import UIKit
   #expect(readScopes(for: .emailAddresses) == ["email-routing-address.read"])
   #expect(writeScopes(for: .emailAddresses) == ["email-routing-address.write"])
   #expect(readScopes(for: .registrarDomain("example.com")) == ["registrar-domains.read"])
+  // Workers Builds is Workers CI, not workers-scripts: the build screen must
+  // ask for the scope its endpoints answer under, and Cancel build must not
+  // light up on a script-write grant that cannot perform it.
+  let build = Destination.workerBuild(worker: "api", buildID: "b-1")
+  #expect(featureID(for: build) == .workers)
+  #expect(readScopes(for: build) == ["workers-scripts.read", "workers-ci.read"])
+  #expect(writeScopes(for: build) == ["workers-ci.write"])
+  #expect(requiredScopes(for: build).isSubset(of: DashAuthorizationScopes.core))
   #expect(
     FeatureID.emailRouting.capability.write
       == ["email-routing-rule.write", "email-routing-address.write"])

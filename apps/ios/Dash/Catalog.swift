@@ -99,6 +99,12 @@ enum Destination: Hashable {
   /// Render-ready snapshot of the chart the user tapped; never refetches.
   case chartDetail(DashChartDetail)
   case worker(String)
+  /// One Workers Builds run. `worker` is the script name the build belongs to
+  /// (for the route and the stack identity); the screen itself reads the build
+  /// by `buildID` alone.
+  case workerBuild(worker: String, buildID: String)
+  /// Read-only viewer for a Worker's deployed main module / classic script.
+  case workerSource(String)
   /// One Cloudflare Tunnel, keyed on its immutable id.
   case tunnel(String)
   case pagesProject(String)

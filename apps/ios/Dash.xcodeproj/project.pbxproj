@@ -106,6 +106,7 @@
 		B000000000000000000001A5 /* MetricsWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000166 /* MetricsWidgetSnapshotTests.swift */; };
 		B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B0 /* WorkerBuildActivityController.swift */; };
 		B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B1 /* WorkerBuildsSection.swift */; };
+		B00000000000000000000317 /* WorkerBuildDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000317 /* WorkerBuildDetailView.swift */; };
 		B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B000000000000000000001B3 /* WorkerBuildActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B2 /* WorkerBuildActivity.swift */; };
 		B000000000000000000001B4 /* WorkerBuildActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F000000000000000000001B4 /* WorkerBuildActivityTests.swift */; };
@@ -352,6 +353,7 @@
 		F00000000000000000000190 /* DeferredDeletion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletion.swift; sourceTree = "<group>"; };
 		F000000000000000000001B0 /* WorkerBuildActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityController.swift; sourceTree = "<group>"; };
 		F000000000000000000001B1 /* WorkerBuildsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildsSection.swift; sourceTree = "<group>"; };
+		F00000000000000000000317 /* WorkerBuildDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildDetailView.swift; sourceTree = "<group>"; };
 		F000000000000000000001B2 /* WorkerBuildActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivity.swift; sourceTree = "<group>"; };
 		F000000000000000000001B4 /* WorkerBuildActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkerBuildActivityTests.swift; sourceTree = "<group>"; };
 		F000000000000000000001B5 /* DeferredDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeferredDeletionTests.swift; sourceTree = "<group>"; };
@@ -571,6 +573,7 @@
 				F00000000000000000000107 /* WatchtowerWidgetSnapshot.swift */,
 				F000000000000000000001B2 /* WorkerBuildActivity.swift */,
 				F000000000000000000001B1 /* WorkerBuildsSection.swift */,
+				F00000000000000000000317 /* WorkerBuildDetailView.swift */,
 				F000000000000000000001B0 /* WorkerBuildActivityController.swift */,
 				F00000000000000000000175 /* DashDateFormatting.swift */,
 				F00000000000000000000126 /* Localizable.xcstrings */,
@@ -1083,6 +1086,7 @@
 				B00000000000000000000107 /* WatchtowerWidgetSnapshot.swift in Sources */,
 				B000000000000000000001B2 /* WorkerBuildActivity.swift in Sources */,
 				B000000000000000000001B1 /* WorkerBuildsSection.swift in Sources */,
+				B00000000000000000000317 /* WorkerBuildDetailView.swift in Sources */,
 				B000000000000000000001B0 /* WorkerBuildActivityController.swift in Sources */,
 				B00000000000000000000175 /* DashDateFormatting.swift in Sources */,
 				B0000000000000000000010D /* LegalDocumentView.swift in Sources */,

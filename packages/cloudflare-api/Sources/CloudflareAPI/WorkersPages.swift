@@ -75,10 +75,72 @@ public struct WorkerBuildTriggerMetadata: Codable, Hashable, Sendable {
   public let buildCommand: String?
   public let deployCommand: String?
   public let buildTriggerSource: String?
+  /// The repository's own name, without its owner.
+  public let repoName: String?
+  /// The Git account or organisation that owns the repository.
+  public let providerAccountName: String?
+  /// `github`, `gitlab`, `gitlab_internal`, or `origin`.
+  public let providerType: String?
+  public let rootDirectory: String?
 
   /// Seven characters, the length every git UI settled on.
   public var shortCommit: String? {
-    commitHash.map { String($0.prefix(7)) }
+    commitHash.flatMap { $0.isEmpty ? nil : String($0.prefix(7)) }
+  }
+
+  /// `owner/name`, or nil unless Cloudflare sent both halves.
+  public var repository: String? {
+    guard
+      let owner = providerAccountName, !owner.isEmpty,
+      let repo = repoName, !repo.isEmpty
+    else { return nil }
+    return "\(owner)/\(repo)"
+  }
+
+  /// The commit on the Git provider's site. Nil unless the provider is one
+  /// whose commit URL shape is known and the owner, repository, and hash are
+  /// all present — a guessed link is worse than no link. `gitlab_internal` is
+  /// a self-managed host this client cannot name, so it gets none.
+  public var commitURL: URL? {
+    guard
+      let hash = commitHash, !hash.isEmpty,
+      let owner = providerAccountName, !owner.isEmpty,
+      let repo = repoName, !repo.isEmpty
+    else { return nil }
+    var components = URLComponents()
+    components.scheme = "https"
+    switch providerType?.lowercased() {
+    case "github":
+      components.host = "github.com"
+      components.path = "/\(owner)/\(repo)/commit/\(hash)"
+    case "gitlab":
+      components.host = "gitlab.com"
+      components.path = "/\(owner)/\(repo)/-/commit/\(hash)"
+    default:
+      return nil
+    }
+    return components.url
+  }
+
+  /// What started the build. Compare through this, never the raw string:
+  /// Cloudflare documents `push`, `pull_request`, `manual`, and `api` today.
+  public enum Source: Hashable, Sendable {
+    case push
+    case pullRequest
+    case manual
+    case api
+    case other(String)
+  }
+
+  public var source: Source? {
+    guard let raw = buildTriggerSource?.lowercased(), !raw.isEmpty else { return nil }
+    switch raw {
+    case "push": return .push
+    case "pull_request": return .pullRequest
+    case "manual": return .manual
+    case "api": return .api
+    default: return .other(raw)
+    }
   }
 
   enum CodingKeys: String, CodingKey {
@@ -88,6 +150,29 @@ public struct WorkerBuildTriggerMetadata: Codable, Hashable, Sendable {
     case buildCommand = "build_command"
     case deployCommand = "deploy_command"
     case buildTriggerSource = "build_trigger_source"
+    case repoName = "repo_name"
+    case providerAccountName = "provider_account_name"
+    case providerType = "provider_type"
+    case rootDirectory = "root_directory"
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    branch = try container.decodeIfPresent(String.self, forKey: .branch)
+    commitHash = try container.decodeIfPresent(String.self, forKey: .commitHash)
+    commitMessage = try container.decodeIfPresent(String.self, forKey: .commitMessage)
+    author = try container.decodeIfPresent(String.self, forKey: .author)
+    buildCommand = try container.decodeIfPresent(String.self, forKey: .buildCommand)
+    deployCommand = try container.decodeIfPresent(String.self, forKey: .deployCommand)
+    buildTriggerSource = try container.decodeIfPresent(String.self, forKey: .buildTriggerSource)
+    // Descriptive extras, decoded leniently: a field in a shape this client
+    // has not seen must cost its one row on the build screen, never the build —
+    // and never the whole history list this metadata is nested in.
+    repoName = try? container.decodeIfPresent(String.self, forKey: .repoName)
+    providerAccountName = try? container.decodeIfPresent(
+      String.self, forKey: .providerAccountName)
+    providerType = try? container.decodeIfPresent(String.self, forKey: .providerType)
+    rootDirectory = try? container.decodeIfPresent(String.self, forKey: .rootDirectory)
   }
 }
 
@@ -162,6 +247,193 @@ extension WorkerBuild {
   public var didFail: Bool {
     guard let outcome = buildOutcome?.lowercased() else { return false }
     return outcome != "success"
+  }
+
+  /// How a finished build ended.
+  public enum Outcome: Equatable, Sendable {
+    case success
+    case failed
+    case canceled
+    case skipped
+  }
+
+  /// Nil while the build is in flight **and** when it stopped without
+  /// Cloudflare saying how — that second case is unknown, never success.
+  /// Cloudflare documents `success`, `fail`, and `skipped` plus values it does
+  /// not list, so anything unrecognised reads as a failure rather than green.
+  public var outcome: Outcome? {
+    guard phase == .finished, let raw = buildOutcome?.lowercased() else { return nil }
+    switch raw {
+    case "success": return .success
+    case "canceled", "cancelled": return .canceled
+    case "skipped": return .skipped
+    default: return .failed
+    }
+  }
+
+  public var createdDate: Date? { createdOn.flatMap(PagesTimestamp.date) }
+  public var stoppedDate: Date? { stoppedOn.flatMap(PagesTimestamp.date) }
+
+  /// Queue to stop, or nil until the build has both ends.
+  public var duration: TimeInterval? {
+    guard let start = createdDate, let end = stoppedDate, end >= start else { return nil }
+    return end.timeIntervalSince(start)
+  }
+
+  /// One stretch of a build's life, in the order Cloudflare runs them.
+  public struct Step: Hashable, Identifiable, Sendable {
+    public enum Kind: Hashable, Sendable {
+      case queued
+      case initializing
+      case building
+    }
+
+    public enum State: Hashable, Sendable {
+      /// Ran, and the build moved on (or finished cleanly here).
+      case done
+      /// Where an in-flight build is right now.
+      case active
+      /// Where a failed build stopped.
+      case failed
+      /// Where a cancelled or skipped build stopped.
+      case stopped
+      /// Where a build stopped without Cloudflare reporting an outcome.
+      case ended
+      /// An in-flight build has not reached it yet.
+      case pending
+      /// The build finished before reaching it.
+      case notReached
+    }
+
+    public let kind: Kind
+    public let state: State
+    public let startedOn: Date?
+    /// Nil while the step is still running, and when either end is missing.
+    public let duration: TimeInterval?
+
+    public var id: Kind { kind }
+  }
+
+  /// The three lifecycle steps with where the build is — or stopped — among
+  /// them. Read from the timestamps for the same reason `phase` is: they are
+  /// unambiguous and `status` is not documented.
+  ///
+  /// The step a finished build stopped in is the last one it *reached*, and it
+  /// alone carries the outcome: a build that failed while initializing never
+  /// built, so Building is `notReached`, not failed.
+  public var timeline: [Step] {
+    let starts: [(Step.Kind, Date?)] = [
+      (.queued, createdDate),
+      (.initializing, initializingOn.flatMap(PagesTimestamp.date)),
+      (.building, runningOn.flatMap(PagesTimestamp.date)),
+    ]
+    let finished = phase == .finished
+    let lastReached = starts.lastIndex { $0.1 != nil }
+    let terminal: Step.State =
+      switch outcome {
+      case .success: .done
+      case .failed: .failed
+      case .canceled, .skipped: .stopped
+      case nil: .ended
+      }
+
+    return starts.enumerated().map { index, entry in
+      let (kind, start) = entry
+      guard let start else {
+        return Step(
+          kind: kind, state: finished ? .notReached : .pending, startedOn: nil, duration: nil)
+      }
+      let isLast = index == lastReached
+      // A step ends where the next one that was reached begins; the last
+      // reached one ends when the build stops.
+      let end =
+        isLast
+        ? stoppedDate
+        : starts[(index + 1)...].lazy.compactMap { $0.1 }.first
+      let state: Step.State = isLast ? (finished ? terminal : .active) : .done
+      let duration = end.flatMap { $0 >= start ? $0.timeIntervalSince(start) : nil }
+      return Step(kind: kind, state: state, startedOn: start, duration: duration)
+    }
+  }
+}
+
+/// One line of a Workers Builds log. Cloudflare sends each as a two-element
+/// tuple, `[timestamp, text]`, not an object.
+public struct WorkerBuildLogLine: Decodable, Hashable, Sendable {
+  public let timestamp: Date?
+  public let text: String
+
+  public init(timestamp: Date?, text: String) {
+    self.timestamp = timestamp
+    self.text = text
+  }
+
+  /// Never throws on a shape it has not seen: one odd line must not cost the
+  /// whole log. A bare string is taken as the text; anything else is skipped
+  /// over and the line reads empty.
+  public init(from decoder: any Decoder) throws {
+    guard var tuple = try? decoder.unkeyedContainer() else {
+      let single = try? decoder.singleValueContainer()
+      timestamp = nil
+      text = (try? single?.decode(String.self)) ?? ""
+      return
+    }
+    var stamp: Date?
+    var message: String?
+    while !tuple.isAtEnd {
+      if let number = try? tuple.decode(Double.self) {
+        if stamp == nil { stamp = Self.date(fromEpoch: number) }
+      } else if let string = try? tuple.decode(String.self) {
+        if message == nil { message = string }
+      } else if (try? tuple.decode(JSONValue.self)) == nil {
+        // Could not even step over the element; stop rather than spin.
+        break
+      }
+    }
+    timestamp = stamp
+    text = message ?? ""
+  }
+
+  /// Cloudflare documents the timestamp as a number without naming its unit.
+  /// Epoch seconds, milliseconds, microseconds, and nanoseconds for any date
+  /// this century sit three orders of magnitude apart, so the magnitude names
+  /// the unit unambiguously.
+  static func date(fromEpoch value: Double) -> Date? {
+    guard value.isFinite, value > 0 else { return nil }
+    let seconds: Double =
+      switch value {
+      case 1e17...: value / 1e9
+      case 1e14...: value / 1e6
+      case 1e11...: value / 1e3
+      default: value
+      }
+    return Date(timeIntervalSince1970: seconds)
+  }
+}
+
+/// One page of `GET /accounts/{id}/builds/builds/{build_uuid}/logs`.
+public struct WorkerBuildLogs: Decodable, Hashable, Sendable {
+  public let lines: [WorkerBuildLogLine]
+  /// Pass back as `cursor` to read the lines after these.
+  public let cursor: String?
+  /// True when this page stopped short of the end of the log.
+  public let truncated: Bool
+
+  public init(lines: [WorkerBuildLogLine], cursor: String?, truncated: Bool) {
+    self.lines = lines
+    self.cursor = cursor
+    self.truncated = truncated
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case lines, cursor, truncated
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    lines = try container.decodeIfPresent([WorkerBuildLogLine].self, forKey: .lines) ?? []
+    cursor = try? container.decodeIfPresent(String.self, forKey: .cursor)
+    truncated = (try? container.decodeIfPresent(Bool.self, forKey: .truncated)) ?? false
   }
 }
 
@@ -748,6 +1020,47 @@ extension CloudflareClient {
       "/accounts/\(accountID)/builds/builds/latest",
       query: ["external_script_ids": tags.joined(separator: ",")])
     return result.builds ?? [:]
+  }
+
+  /// One build by its UUID. Unlike the history list this needs no script tag,
+  /// which is what lets a dashboard build link open without resolving one.
+  public func getWorkerBuild(accountID: String, buildUUID: String) async throws -> WorkerBuild {
+    try await request("/accounts/\(accountID)/builds/builds/\(buildUUID)")
+  }
+
+  /// One page of a build's log. Pass the previous page's `cursor` to continue.
+  public func getWorkerBuildLogs(
+    accountID: String, buildUUID: String, cursor: String? = nil
+  ) async throws -> WorkerBuildLogs {
+    try await request(
+      "/accounts/\(accountID)/builds/builds/\(buildUUID)/logs",
+      query: ["cursor": cursor.flatMap { $0.isEmpty ? nil : $0 }])
+  }
+
+  /// The whole log, following `cursor` while Cloudflare says a page was
+  /// truncated. Bounded on purpose: `truncated` and `cursor` are the only
+  /// stop signals the API gives, and a server that never clears them must not
+  /// turn one screen into an unbounded download. Reports `truncated` when the
+  /// bound, not the log, ended the read.
+  public func getWorkerBuildLog(
+    accountID: String, buildUUID: String, maxPages: Int = 10
+  ) async throws -> WorkerBuildLogs {
+    var lines: [WorkerBuildLogLine] = []
+    var cursor: String?
+    var truncated = false
+    for _ in 0..<max(maxPages, 1) {
+      let page = try await getWorkerBuildLogs(
+        accountID: accountID, buildUUID: buildUUID, cursor: cursor)
+      lines.append(contentsOf: page.lines)
+      truncated = page.truncated
+      // A cursor that does not move, or a page with nothing in it, would
+      // re-request the same lines forever.
+      guard page.truncated, let next = page.cursor, !next.isEmpty, next != cursor,
+        !page.lines.isEmpty
+      else { break }
+      cursor = next
+    }
+    return WorkerBuildLogs(lines: lines, cursor: cursor, truncated: truncated)
   }
 
   /// Stops an in-flight build. The response body is intentionally discarded and
