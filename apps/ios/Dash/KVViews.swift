@@ -5,10 +5,76 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// Pure TTL preset & validation helpers shared by KV creation and editing.
+enum KVTTLPreset: String, CaseIterable, Hashable, Sendable {
+  case never
+  case oneHour
+  case oneDay
+  case sevenDays
+  case custom
+
+  static let minimumTTLSeconds = 60
+
+  var title: String {
+    switch self {
+    case .never: DashL10n.string("Never")
+    case .oneHour: DashL10n.string("1 hour")
+    case .oneDay: DashL10n.string("1 day")
+    case .sevenDays: DashL10n.string("7 days")
+    case .custom: DashL10n.string("Custom")
+    }
+  }
+
+  func resolvedSeconds(customText: String) -> Int? {
+    switch self {
+    case .never: return nil
+    case .oneHour: return 3_600
+    case .oneDay: return 86_400
+    case .sevenDays: return 604_800
+    case .custom:
+      let trimmed = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let seconds = Int(trimmed), seconds >= Self.minimumTTLSeconds else { return nil }
+      return seconds
+    }
+  }
+
+  func isValid(customText: String) -> Bool {
+    switch self {
+    case .custom: resolvedSeconds(customText: customText) != nil
+    default: true
+    }
+  }
+}
+
+/// Pure formatting helpers for KV key expiration timestamps and JSON metadata.
+enum KVKeyMetadataFormatting {
+  static func expirationSubtitle(for expiration: Int?, now: Date = Date()) -> String? {
+    guard let expiration else { return nil }
+    let date = Date(timeIntervalSince1970: TimeInterval(expiration))
+    if date <= now {
+      return DashL10n.string("Expired")
+    }
+    let formatted = date.formatted(
+      .dateTime.month(.abbreviated).day().hour().minute().locale(DashL10n.activeLocale))
+    return DashL10n.string("Expires \(formatted)")
+  }
+
+  static func prettyMetadata(_ metadata: JSONValue?) -> String? {
+    guard let metadata, metadata != .null else { return nil }
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    guard let data = try? encoder.encode(metadata),
+      let text = String(data: data, encoding: .utf8)
+    else { return nil }
+    return text
+  }
+}
+
 struct KVNamespacesView: View {
   static let pageSize = 100
 
   @Environment(AppModel.self) private var model
+  @Environment(\.featureAllowsWrites) private var featureAllowsWrites
   @Environment(\.openURL) private var openURL
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @AppStorage(RecentResources.key) private var recentsRaw = ""
@@ -16,11 +82,40 @@ struct KVNamespacesView: View {
   @State private var error: String?
   @State private var loading = true
   @State private var isLoadingMore = false
+  @State private var searchQuery = ""
+  @State private var showsCreateNamespace = false
+  @State private var renamingNamespace: KVNamespace?
+  @State private var namespacePendingDelete: KVNamespace?
+  @State private var confirmsNamespaceDelete = false
   /// Bumped on every fresh `load` so an in-flight `loadMore` cannot append
   /// onto a list that was just reset / replaced.
   @State private var listGeneration = 0
   @State private var pageState = DashPageState()
   @State private var loadedContext: AccountRequestContext?
+
+  private var isSearching: Bool {
+    DashSearchMatcher.isActive(searchQuery)
+  }
+
+  private var filteredNamespaces: [KVNamespace] {
+    guard isSearching else { return namespaces }
+    return namespaces.filter { namespace in
+      DashSearchMatcher.matches(searchQuery, in: [namespace.title, namespace.id])
+    }
+  }
+
+  private var pageActions: [DashPageActionDescriptor] {
+    guard featureAllowsWrites else { return [] }
+    return [
+      .icon(
+        id: "kv-namespaces-create",
+        asset: SolarAsset.plus,
+        accessibilityLabel: DashL10n.string("Create namespace")
+      ) {
+        showsCreateNamespace = true
+      }
+    ]
+  }
 
   var body: some View {
     DashFeatureList(
@@ -30,46 +125,146 @@ struct KVNamespacesView: View {
       empty: DashFeatureEmpty(
         icon: SolarAsset.Content.pinList,
         title: DashL10n.string("No namespaces"),
-        message: DashL10n.string(
-          "Create one in the dashboard or with Wrangler."
-        ),
-        actionTitle: "Open KV docs",
-        action: { openURL(StorageExternalURL.kvGuide) }
+        message: featureAllowsWrites
+          ? DashL10n.string("Create a KV namespace to store key-value data at the edge.")
+          : DashL10n.string("Create one in the dashboard or with Wrangler."),
+        actionTitle: featureAllowsWrites ? "Create namespace" : "Open KV docs",
+        action: featureAllowsWrites
+          ? { showsCreateNamespace = true } : { openURL(StorageExternalURL.kvGuide) }
       ),
       retry: { Task { await load() } }
     ) { mode in
-      dashListCard {
-        dashModeListRows(mode: mode, items: namespaces, reduceMotion: reduceMotion) {
-          namespace in
-          // The namespace screen only ever sees the id, so the human title
-          // has to enter the recents here, at the navigation boundary.
-          DashListGroupLink(
-            value: .kvNamespace(namespace.id),
-            onNavigate: { recordRecent(namespace) }
-          ) {
-            DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
-              .accessibilityLabel(DashL10n.string("\(namespace.title), KV namespace"))
+      if !mode.isPlaceholder {
+        DashSearchBar(
+          text: $searchQuery,
+          prompt: DashL10n.string("Search namespaces"),
+          accessibilityIdentifier: "kv-namespaces-search-field"
+        )
+        .padding(.bottom, DashTheme.Spacing.itemGap)
+      }
+      if !mode.isPlaceholder, isSearching, filteredNamespaces.isEmpty {
+        DashSearchEmptyState(query: searchQuery) {
+          searchQuery = ""
+        }
+      } else {
+        dashListCard {
+          dashModeListRows(mode: mode, items: filteredNamespaces, reduceMotion: reduceMotion) {
+            namespace in
+            // The namespace screen only ever sees the id, so the human title
+            // has to enter the recents here, at the navigation boundary.
+            DashListGroupLink(
+              value: .kvNamespace(namespace.id),
+              onNavigate: { recordRecent(namespace) }
+            ) {
+              DashListRow(title: namespace.title, icon: SolarAsset.Content.pinList)
+                .accessibilityLabel(DashL10n.string("\(namespace.title), KV namespace"))
+            }
+            .contextMenu {
+              if featureAllowsWrites {
+                Button {
+                  renamingNamespace = namespace
+                } label: {
+                  Label(DashL10n.string("Rename"), systemImage: "pencil")
+                }
+                Button(role: .destructive) {
+                  namespacePendingDelete = namespace
+                  confirmsNamespaceDelete = true
+                } label: {
+                  Label(DashL10n.string("Delete"), systemImage: "trash")
+                }
+              }
+            }
           }
         }
       }
       if !mode.isPlaceholder, pageState.canLoadMore || isLoadingMore {
-        DashInfiniteScrollFooter(
-          loaded: namespaces.count,
-          isLoading: isLoadingMore
-        ) {
-          // A failed page leaves the list banner up; don't spin the same
-          // request until the user retries (pull-to-refresh / Try again).
-          guard error == nil else { return }
-          Task { await loadMore() }
+        if isSearching {
+          DashSearchLoadMoreFooter(
+            loaded: namespaces.count,
+            isLoading: isLoadingMore
+          ) {
+            Task { await loadMore() }
+          }
+        } else {
+          DashInfiniteScrollFooter(
+            loaded: namespaces.count,
+            isLoading: isLoadingMore
+          ) {
+            // A failed page leaves the list banner up; don't spin the same
+            // request until the user retries (pull-to-refresh / Try again).
+            guard error == nil else { return }
+            Task { await loadMore() }
+          }
         }
       }
     }
+    .dashPageActions(trailing: pageActions)
     .refreshable { await load(force: true) }
     .task(id: model.accountRequestContext) {
       prepareForCurrentAccount()
       await load()
     }
     .onAppear { reloadIfInvalidated() }
+    .dashTray(
+      isPresented: $showsCreateNamespace,
+      title: "Create namespace"
+    ) {
+      KVNamespaceFormSheet(existing: nil) {
+        invalidateAndReload()
+      }
+    }
+    .dashTray(
+      item: $renamingNamespace,
+      title: { _ in "Rename namespace" }
+    ) { namespace in
+      KVNamespaceFormSheet(existing: namespace) {
+        invalidateAndReload()
+      }
+    }
+    .dashMoreMenu(
+      isPresented: $confirmsNamespaceDelete,
+      title: "Delete namespace",
+      actions: namespacePendingDelete.map { [namespaceDeleteAction(for: $0)] } ?? []
+    )
+    .onChange(of: confirmsNamespaceDelete) { _, presented in
+      guard !presented else { return }
+      namespacePendingDelete = nil
+    }
+  }
+
+  private func invalidateAndReload() {
+    if let accountID = model.activeAccountID {
+      model.featureCache.remove(FeatureCacheKey.kvNamespaces(accountID))
+    }
+    Task { await load(force: true) }
+  }
+
+  private func namespaceDeleteAction(for namespace: KVNamespace) -> DashDangerAction {
+    DashDangerAction(
+      id: "kv-namespace-delete-\(namespace.id)",
+      title: DashL10n.string("Delete namespace"),
+      message: DashL10n.string(
+        "Permanently deletes \(namespace.title) and all of its keys. This can't be undone."),
+      onSuccessPresentationCompleted: {
+        namespacePendingDelete = nil
+      },
+      perform: { try await deleteNamespace(namespace) }
+    )
+  }
+
+  private func deleteNamespace(_ namespace: KVNamespace) async throws {
+    guard featureAllowsWrites, let context = model.accountRequestContext else {
+      throw CancellationError()
+    }
+    try await model.client.deleteKVNamespace(
+      accountID: context.accountID, namespaceID: namespace.id)
+    guard !Task.isCancelled, model.isCurrentAccount(context) else { throw CancellationError() }
+    model.featureCache.remove(FeatureCacheKey.kvNamespaces(context.accountID))
+    model.featureCache.remove(
+      FeatureCacheKey.kvNamespace(accountID: context.accountID, namespaceID: namespace.id))
+    model.featureCache.remove(prefix: "kvKeys:\(context.accountID):\(namespace.id):")
+    model.toasts.success(DashL10n.string("Deleted \(namespace.title)"))
+    await load(force: true)
   }
 
   /// The cache drops under this list on memory pressure while it stays alive
@@ -189,8 +384,97 @@ struct KVNamespacesView: View {
     error = nil
     loading = context != nil
     isLoadingMore = false
+    searchQuery = ""
+    showsCreateNamespace = false
+    renamingNamespace = nil
+    namespacePendingDelete = nil
+    confirmsNamespaceDelete = false
     pageState.reset()
     listGeneration += 1
+  }
+}
+
+private struct KVNamespaceFormSheet: View {
+  @Environment(AppModel.self) private var model
+  @Environment(\.dashTrayDismissAfter) private var dismissAfter
+  let existing: KVNamespace?
+  let onSaved: () -> Void
+  @State private var title: String
+  @State private var actionPhase: DashActionPhase = .idle
+  @State private var error: String?
+
+  init(existing: KVNamespace?, onSaved: @escaping () -> Void) {
+    self.existing = existing
+    self.onSaved = onSaved
+    _title = State(initialValue: existing?.title ?? "")
+  }
+
+  private var trimmedTitle: String {
+    title.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private var canSave: Bool {
+    !trimmedTitle.isEmpty && trimmedTitle != existing?.title && !actionPhase.isActive
+  }
+
+  var body: some View {
+    DashFormSheet(
+      saveTitle: existing == nil ? "Create namespace" : "Save",
+      actionPhase: actionPhase,
+      onSuccessPresentationCompleted: completePresentation,
+      canSave: canSave,
+      onSave: { Task { await save() } },
+      content: {
+        VStack(alignment: .leading, spacing: 14) {
+          if let error {
+            DashNotice(kind: .error, message: error)
+          }
+          DashFormField(label: "Title", text: $title)
+        }
+        .disabled(actionPhase.isActive)
+      }
+    )
+  }
+
+  private func save() async {
+    guard canSave, let context = model.accountRequestContext else { return }
+    let nextTitle = trimmedTitle
+    actionPhase = .loading
+    error = nil
+    do {
+      if let existing {
+        try await model.client.renameKVNamespace(
+          accountID: context.accountID, namespaceID: existing.id, title: nextTitle)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          actionPhase = .idle
+          return
+        }
+        model.featureCache.remove(
+          FeatureCacheKey.kvNamespace(accountID: context.accountID, namespaceID: existing.id))
+        model.toasts.success(DashL10n.string("Renamed namespace"))
+      } else {
+        _ = try await model.client.createKVNamespace(
+          accountID: context.accountID, title: nextTitle)
+        guard !Task.isCancelled, model.isCurrentAccount(context) else {
+          actionPhase = .idle
+          return
+        }
+        model.toasts.success(DashL10n.string("Created namespace"))
+      }
+      actionPhase = .succeeded
+    } catch {
+      actionPhase = .idle
+      guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
+      self.error = error.dashActionableMessage
+    }
+  }
+
+  private func completePresentation() {
+    guard actionPhase == .succeeded else {
+      actionPhase = .idle
+      return
+    }
+    dismissAfter(onSaved)
   }
 }
 
@@ -209,6 +493,9 @@ struct KVNamespaceView: View {
   @State private var isLoadingMore = false
   @State private var loadedContext: AccountRequestContext?
   @State private var searchQuery = ""
+  @State private var selecting = false
+  @State private var selectedKeyNames: Set<String> = []
+  @State private var confirmsBatchDelete = false
 
   private var isSearching: Bool {
     DashSearchMatcher.isActive(searchQuery)
@@ -225,14 +512,40 @@ struct KVNamespaceView: View {
   private var canLoadMore: Bool { cursor?.isEmpty == false }
   private var pageActions: [DashPageActionDescriptor] {
     guard featureAllowsWrites else { return [] }
+    if selecting {
+      return [
+        .icon(
+          id: "kv-namespace-done-selecting",
+          asset: SolarAsset.editClose,
+          accessibilityLabel: DashL10n.string("Done selecting")
+        ) {
+          withAnimation(DashTheme.Motion.morph) {
+            selecting = false
+            selectedKeyNames = []
+          }
+        }
+      ]
+    }
     return [
+      .icon(
+        id: "kv-namespace-select",
+        asset: SolarAsset.listCheckMinimalistic,
+        accessibilityLabel: DashL10n.string("Select keys"),
+        isEnabled: !keys.isEmpty,
+        disabledOpacity: 0.45
+      ) {
+        withAnimation(DashTheme.Motion.morph) {
+          selecting = true
+          selectedKeyNames = []
+        }
+      },
       .icon(
         id: "kv-namespace-create-key",
         asset: SolarAsset.plus,
         accessibilityLabel: DashL10n.string("Create key")
       ) {
         showsCreateKey = true
-      }
+      },
     ]
   }
 
@@ -284,17 +597,46 @@ struct KVNamespaceView: View {
       } else {
         dashListCard {
           dashModeListRows(mode: mode, items: filteredKeys, reduceMotion: reduceMotion) { key in
+            let isSelected = selectedKeyNames.contains(key.name)
             Button {
-              selectedKey = key
+              if selecting {
+                toggleSelection(key.name)
+              } else {
+                selectedKey = key
+              }
             } label: {
               DashListRow(
                 title: key.name,
+                subtitle: KVKeyMetadataFormatting.expirationSubtitle(for: key.expiration),
                 icon: SolarAsset.Content.key,
                 showsChevron: false
-              )
+              ) {
+                if selecting {
+                  DashSelectionMark(isSelected: isSelected)
+                }
+              }
             }
             .buttonStyle(DashSurfaceButtonStyle())
             .accessibilityLabel(DashL10n.string("\(key.name), KV key"))
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .contextMenu {
+              if !selecting, featureAllowsWrites {
+                Button {
+                  withAnimation(DashTheme.Motion.morph) {
+                    selecting = true
+                    selectedKeyNames = [key.name]
+                  }
+                } label: {
+                  Label(DashL10n.string("Select"), systemImage: "checkmark.circle")
+                }
+                Button(role: .destructive) {
+                  selectedKeyNames = [key.name]
+                  confirmsBatchDelete = true
+                } label: {
+                  Label(DashL10n.string("Delete"), systemImage: "trash")
+                }
+              }
+            }
           }
         }
       }
@@ -323,6 +665,11 @@ struct KVNamespaceView: View {
       tint: FeatureVisualIdentity.heroColor(for: .kv)
     )
     .dashPageActions(trailing: pageActions)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      if selecting {
+        selectionBar
+      }
+    }
     .task(id: model.accountRequestContext) {
       prepareForCurrentAccount()
       await load()
@@ -340,7 +687,7 @@ struct KVNamespaceView: View {
       item: $selectedKey,
       title: { $0.name }
     ) { key in
-      KVKeyDetailTray(namespaceID: namespaceID, key: key.name) {
+      KVKeyDetailTray(namespaceID: namespaceID, kvKey: key) {
         invalidateKeys()
         Task { await load(force: true) }
       }
@@ -354,6 +701,78 @@ struct KVNamespaceView: View {
         Task { await load(force: true) }
       }
     }
+    .dashMoreMenu(
+      isPresented: $confirmsBatchDelete,
+      title: "Delete keys",
+      actions: [batchDeleteAction]
+    )
+    .onChange(of: confirmsBatchDelete) { _, presented in
+      guard !presented, !selecting else { return }
+      selectedKeyNames = []
+    }
+  }
+
+  private var selectionBar: some View {
+    Button {
+      confirmsBatchDelete = true
+    } label: {
+      DashMorphingLabel(
+        text: selectedKeyNames.isEmpty
+          ? DashL10n.string("Delete") : DashL10n.string("Delete \(selectedKeyNames.count)")
+      )
+      .dashTextStyle(.button)
+      .foregroundStyle(DashTheme.inverse)
+      .frame(maxWidth: .infinity)
+      .frame(height: DashTheme.Layout.actionPillHeight)
+      .background(DashTheme.danger, in: DashTheme.pillShape)
+    }
+    .buttonStyle(DashPressButtonStyle())
+    .disabled(selectedKeyNames.isEmpty)
+    .opacity(selectedKeyNames.isEmpty ? 0.45 : 1)
+    .padding(.horizontal, DashTheme.Spacing.screen)
+    .padding(.vertical, 10)
+    .background(DashTheme.canvas)
+  }
+
+  private func toggleSelection(_ keyName: String) {
+    if selectedKeyNames.contains(keyName) {
+      selectedKeyNames.remove(keyName)
+    } else {
+      selectedKeyNames.insert(keyName)
+    }
+    DashDelight.selectionChanged()
+  }
+
+  private var batchDeleteAction: DashDangerAction {
+    let count = selectedKeyNames.count
+    let noun = DashL10n.string(count == 1 ? "key" : "keys")
+    return DashDangerAction(
+      id: "kv-batch-delete",
+      title: DashL10n.string("Delete \(count) \(noun)"),
+      message: DashL10n.string(
+        "Permanently deletes \(count) \(noun) from \(namespaceTitle). This can't be undone."),
+      perform: { try await batchDelete() }
+    )
+  }
+
+  private func batchDelete() async throws {
+    guard featureAllowsWrites, let context = model.accountRequestContext else {
+      throw CancellationError()
+    }
+    let targetKeys = Array(selectedKeyNames).sorted()
+    guard !targetKeys.isEmpty else { return }
+    try await model.client.deleteKVValues(
+      accountID: context.accountID, namespaceID: namespaceID, keys: targetKeys)
+    guard !Task.isCancelled, model.isCurrentAccount(context) else { throw CancellationError() }
+    let removed = Set(targetKeys)
+    keys.removeAll { removed.contains($0.name) }
+    invalidateKeys(context: context)
+    withAnimation(DashTheme.Motion.morph) {
+      selecting = false
+      selectedKeyNames = []
+    }
+    let noun = DashL10n.string(targetKeys.count == 1 ? "key" : "keys")
+    model.toasts.success(DashL10n.string("Deleted \(targetKeys.count) \(noun)"))
   }
 
   /// The header title normally rides in on the namespaces list cache; a cold
@@ -484,6 +903,9 @@ struct KVNamespaceView: View {
     selectedKey = nil
     resolvedNamespace = nil
     searchQuery = ""
+    selecting = false
+    selectedKeyNames = []
+    confirmsBatchDelete = false
   }
 }
 
@@ -575,9 +997,20 @@ struct KVCreateKeySheet: View {
   let onCreated: () -> Void
   @State private var keyName = ""
   @State private var value = ""
+  @State private var ttlPreset: KVTTLPreset = .never
+  @State private var customTTLText = ""
   @State private var actionPhase: DashActionPhase = .idle
   @State private var error: String?
   @State private var jsonValidity = KVJSONValidityController()
+
+  private var ttlSelection: Binding<String> {
+    Binding(
+      get: { ttlPreset.title },
+      set: { label in
+        ttlPreset = KVTTLPreset.allCases.first { $0.title == label } ?? .never
+      }
+    )
+  }
 
   var body: some View {
     DashFormSheet(
@@ -585,7 +1018,8 @@ struct KVCreateKeySheet: View {
       actionPhase: actionPhase,
       onSuccessPresentationCompleted: completeCreatePresentation,
       canSave: !keyName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        && jsonValidity.valueFitsWriteLimit,
+        && jsonValidity.valueFitsWriteLimit
+        && ttlPreset.isValid(customText: customTTLText),
       onSave: { Task { await create() } },
       content: {
         VStack(alignment: .leading, spacing: 14) {
@@ -593,6 +1027,25 @@ struct KVCreateKeySheet: View {
             DashNotice(kind: .error, message: error)
           }
           DashFormField(label: DashL10n.string("Key name"), text: $keyName)
+          DashFormMenuField(
+            label: "Expiration",
+            selection: ttlSelection,
+            options: KVTTLPreset.allCases.map(\.title)
+          )
+          if ttlPreset == .custom {
+            DashFormField(
+              label: "TTL (seconds, min 60)",
+              text: $customTTLText,
+              keyboard: .numberPad
+            )
+            if !customTTLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !ttlPreset.isValid(customText: customTTLText)
+            {
+              Text(DashL10n.string("Expiration TTL must be at least 60 seconds."))
+                .dashTextStyle(.caption)
+                .foregroundStyle(DashTheme.danger)
+            }
+          }
           VStack(alignment: .leading, spacing: 8) {
             Text(DashL10n.string("Value"))
               .dashTextStyle(.footnoteSemibold)
@@ -642,14 +1095,19 @@ struct KVCreateKeySheet: View {
       error = DashL10n.string("KV values can be up to 25 MiB.")
       return
     }
+    guard ttlPreset.isValid(customText: customTTLText) else {
+      error = DashL10n.string("Expiration TTL must be at least 60 seconds.")
+      return
+    }
     let client = model.client
     let submittedData = Data(value.utf8)
+    let ttlSeconds = ttlPreset.resolvedSeconds(customText: customTTLText)
     actionPhase = .loading
     error = nil
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: trimmed,
-        data: submittedData)
+        data: submittedData, expirationTTL: ttlSeconds)
       guard !Task.isCancelled, model.isCurrentAccount(context) else {
         actionPhase = .idle
         return
@@ -708,11 +1166,14 @@ private struct KVKeyDetailTray: View {
   @Environment(\.dashTrayDismiss) private var dismiss
   @Environment(\.dashTrayDismissAfter) private var dismissAfter
   let namespaceID: String
-  let key: String
+  let kvKey: KVKey
   var onDeleted: () -> Void
+
+  private var key: String { kvKey.name }
 
   @State private var value = ""
   @State private var rawValueData: Data?
+  @State private var valueByteCount: Int?
   @State private var displayIssue: KVJSONFormatting.DisplayValue?
   @State private var loaded = false
   @State private var loadError: String?
@@ -722,6 +1183,19 @@ private struct KVKeyDetailTray: View {
 
   private var fields: [DashDetailField] {
     var rows = [DashDetailField(label: "Key", value: key, mono: true)]
+    if let valueByteCount {
+      rows.append(
+        DashDetailField(
+          label: "Size",
+          value: ByteCountFormatter.string(
+            fromByteCount: Int64(valueByteCount), countStyle: .file)))
+    }
+    if let expiration = KVKeyMetadataFormatting.expirationSubtitle(for: kvKey.expiration) {
+      rows.append(DashDetailField(label: "Expiration", value: expiration))
+    }
+    if let prettyMeta = KVKeyMetadataFormatting.prettyMetadata(kvKey.metadata) {
+      rows.append(DashDetailField(label: "Metadata", value: prettyMeta, mono: true))
+    }
     if let displayIssue {
       rows.append(DashDetailField(label: "Value", value: kvDisplayIssueMessage(displayIssue)))
     } else if loaded {
@@ -790,6 +1264,7 @@ private struct KVKeyDetailTray: View {
     loadedContext = context
     value = ""
     rawValueData = nil
+    valueByteCount = nil
     displayIssue = nil
     loaded = false
     loadError = nil
@@ -805,6 +1280,7 @@ private struct KVKeyDetailTray: View {
       let data = try await client.getKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      valueByteCount = data.count
       switch KVJSONFormatting.displayValue(for: data) {
       case .text(let prepared):
         value = prepared
@@ -888,6 +1364,20 @@ struct KVKeyDetailView: View {
   @State private var jsonValidity = KVJSONValidityController()
   @State private var displayIssue: KVJSONFormatting.DisplayValue?
   @State private var rawValueData: Data?
+  @State private var valueByteCount: Int?
+  @State private var metadata: JSONValue?
+  @State private var expiration: Int?
+  @State private var ttlPreset: KVTTLPreset = .never
+  @State private var customTTLText = ""
+
+  private var ttlSelection: Binding<String> {
+    Binding(
+      get: { ttlPreset.title },
+      set: { label in
+        ttlPreset = KVTTLPreset.allCases.first { $0.title == label } ?? .never
+      }
+    )
+  }
 
   private var pageActions: [DashPageActionDescriptor] {
     guard featureAllowsWrites, mode == .viewing, loaded, ownsCurrentAccount,
@@ -928,12 +1418,34 @@ struct KVKeyDetailView: View {
                   message: kvDisplayIssueMessage(displayIssue)
                 )
               } else if loaded {
+                if mode == .viewing {
+                  keyInfoSummary
+                }
                 DashKVCodeEditor(text: $value, editable: mode == .editing && !saving)
                   .frame(maxWidth: .infinity)
                   .frame(height: editorHeight(in: geo))
                   .clipShape(
                     RoundedRectangle(cornerRadius: DashTheme.Radius.medium, style: .continuous))
                 if mode == .editing {
+                  DashFormMenuField(
+                    label: "Expiration",
+                    selection: ttlSelection,
+                    options: KVTTLPreset.allCases.map(\.title)
+                  )
+                  if ttlPreset == .custom {
+                    DashFormField(
+                      label: "TTL (seconds, min 60)",
+                      text: $customTTLText,
+                      keyboard: .numberPad
+                    )
+                    if !customTTLText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      !ttlPreset.isValid(customText: customTTLText)
+                    {
+                      Text(DashL10n.string("Expiration TTL must be at least 60 seconds."))
+                        .dashTextStyle(.caption)
+                        .foregroundStyle(DashTheme.danger)
+                    }
+                  }
                   if !jsonValidity.valueFitsWriteLimit {
                     DashNotice(
                       kind: .error,
@@ -1069,7 +1581,39 @@ struct KVKeyDetailView: View {
     case .viewing:
       return featureAllowsWrites && loaded && displayIssue == nil && ownsCurrentAccount
     case .editing:
-      return loaded && jsonValidity.valueFitsWriteLimit && ownsCurrentAccount
+      return loaded && jsonValidity.valueFitsWriteLimit
+        && ttlPreset.isValid(customText: customTTLText) && ownsCurrentAccount
+    }
+  }
+
+  @ViewBuilder private var keyInfoSummary: some View {
+    let expirationText = KVKeyMetadataFormatting.expirationSubtitle(for: expiration)
+    let prettyMeta = KVKeyMetadataFormatting.prettyMetadata(metadata)
+    if valueByteCount != nil || expirationText != nil || prettyMeta != nil {
+      VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
+          if let valueByteCount {
+            DashMetaBadge(
+              ByteCountFormatter.string(
+                fromByteCount: Int64(valueByteCount), countStyle: .file))
+          }
+          if let expirationText {
+            DashMetaBadge(expirationText)
+          }
+        }
+        if let prettyMeta {
+          Text(prettyMeta)
+            .dashTextStyle(.code)
+            .foregroundStyle(DashTheme.subtle)
+            .lineLimit(3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+              DashTheme.recessed,
+              in: RoundedRectangle(cornerRadius: DashTheme.Radius.small, style: .continuous))
+        }
+      }
     }
   }
 
@@ -1137,11 +1681,19 @@ struct KVKeyDetailView: View {
 
   private func load() async {
     guard let context = model.accountRequestContext else { return }
+    if let cached: CursorPageSnapshot<KVKey> = model.featureCache.get(
+      FeatureCacheKey.kvKeys(accountID: context.accountID, namespaceID: namespaceID, prefix: "")),
+      let match = cached.items.first(where: { $0.name == key })
+    {
+      expiration = match.expiration
+      metadata = match.metadata
+    }
     let client = model.client
     do {
       let data = try await client.getKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key)
       guard !Task.isCancelled, model.isCurrentAccount(context) else { return }
+      valueByteCount = data.count
       switch KVJSONFormatting.displayValue(for: data) {
       case .text(let prepared):
         value = prepared
@@ -1161,6 +1713,13 @@ struct KVKeyDetailView: View {
       }
       loaded = true
       error = nil
+      if metadata == nil,
+        let fetchedMeta = try? await client.getKVMetadata(
+          accountID: context.accountID, namespaceID: namespaceID, key: key),
+        !Task.isCancelled, model.isCurrentAccount(context)
+      {
+        metadata = fetchedMeta
+      }
     } catch {
       guard !error.dashIsCancellation, model.isCurrentAccount(context) else { return }
       self.error = error.dashActionableMessage
@@ -1175,20 +1734,31 @@ struct KVKeyDetailView: View {
       error = DashL10n.string("KV values can be up to 25 MiB.")
       return
     }
+    guard ttlPreset.isValid(customText: customTTLText) else {
+      error = DashL10n.string("Expiration TTL must be at least 60 seconds.")
+      return
+    }
     let client = model.client
     let submittedValue = value
     let submittedData = Data(submittedValue.utf8)
+    let ttlSeconds = ttlPreset.resolvedSeconds(customText: customTTLText)
     saving = true
     actionPhase = .loading
     error = nil
     do {
       try await client.putKVValue(
         accountID: context.accountID, namespaceID: namespaceID, key: key,
-        data: submittedData)
+        data: submittedData, expirationTTL: ttlSeconds)
       guard !Task.isCancelled, model.isCurrentAccount(context) else {
         saving = false
         actionPhase = .idle
         return
+      }
+      valueByteCount = submittedData.count
+      if let ttlSeconds {
+        expiration = Int(Date().timeIntervalSince1970) + ttlSeconds
+      } else {
+        expiration = nil
       }
       if KVJSONFormatting.isWithinDisplayLimit(byteCount: submittedData.count) {
         committedValue = submittedValue
@@ -1263,6 +1833,11 @@ struct KVKeyDetailView: View {
     guard loadedContext != context else { return }
     loadedContext = context
     mode = .viewing
+    valueByteCount = nil
+    metadata = nil
+    expiration = nil
+    ttlPreset = .never
+    customTTLText = ""
     value = ""
     committedValue = ""
     error = nil

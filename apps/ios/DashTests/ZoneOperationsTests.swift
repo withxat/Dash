@@ -1081,3 +1081,24 @@ private actor ZoneSecurityLevelTestLatch {
   #expect(dnsRecordCopyableContent(txtWithComment) == "v=spf1 ~all")
   #expect(dnsRecordSubtitle(txtWithComment) == "TXT  ·  v=spf1 ~all  ·  Mail SPF")
 }
+
+@Test func kvTTLPresetValidationAndMetadataFormatting() {
+  #expect(KVTTLPreset.never.resolvedSeconds(customText: "") == nil)
+  #expect(KVTTLPreset.oneHour.resolvedSeconds(customText: "") == 3_600)
+  #expect(KVTTLPreset.oneDay.resolvedSeconds(customText: "") == 86_400)
+  #expect(KVTTLPreset.sevenDays.resolvedSeconds(customText: "") == 604_800)
+  #expect(KVTTLPreset.custom.resolvedSeconds(customText: "60") == 60)
+  #expect(KVTTLPreset.custom.resolvedSeconds(customText: "59") == nil)
+  #expect(!KVTTLPreset.custom.isValid(customText: "59"))
+  #expect(KVTTLPreset.custom.isValid(customText: "120"))
+
+  let now = Date(timeIntervalSince1970: 1_800_000_000)
+  #expect(KVKeyMetadataFormatting.expirationSubtitle(for: nil, now: now) == nil)
+  #expect(KVKeyMetadataFormatting.expirationSubtitle(for: 1_799_999_999, now: now) != nil)
+  #expect(KVKeyMetadataFormatting.expirationSubtitle(for: 1_800_003_600, now: now) != nil)
+  #expect(KVKeyMetadataFormatting.prettyMetadata(nil) == nil)
+  #expect(KVKeyMetadataFormatting.prettyMetadata(.null) == nil)
+  let pretty = KVKeyMetadataFormatting.prettyMetadata(.object(["env": .string("prod")]))
+  #expect(pretty?.contains("\"env\"") == true)
+  #expect(pretty?.contains("\"prod\"") == true)
+}

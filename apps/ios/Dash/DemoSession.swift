@@ -448,11 +448,58 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
   ) -> DemoBackend.Reply {
     let namespaces = base + "/storage/kv/namespaces"
     guard tail.prefix(3) == ["storage", "kv", "namespaces"] else { return Self.unsupported }
-    if tail.count == 3, method == "GET" { return listing(rows(namespaces), query: query) }
+    if tail.count == 3 {
+      if method == "GET" { return listing(rows(namespaces), query: query) }
+      if method == "POST" {
+        let payload =
+          body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        guard
+          let title = (payload["title"] as? String)?.trimmingCharacters(
+            in: .whitespacesAndNewlines),
+          !title.isEmpty
+        else {
+          return Self.failure("Namespace title is required.", status: 400)
+        }
+        var current = rows(namespaces)
+        if current.contains(where: {
+          ($0["title"] as? String)?.lowercased() == title.lowercased()
+        }) {
+          return Self.failure("A namespace with this title already exists.", status: 409)
+        }
+        let created: [String: Any] = ["id": newID, "title": title]
+        current.insert(created, at: 0)
+        collections[namespaces] = current
+        return ok(created)
+      }
+      return Self.unsupported
+    }
     guard tail.count >= 4,
-      let namespace = rows(namespaces).first(where: { $0["id"] as? String == tail[3] })
+      var namespace = rows(namespaces).first(where: { $0["id"] as? String == tail[3] })
     else { return Self.failure("Namespace not found.") }
-    if tail.count == 4, method == "GET" { return ok(namespace) }
+    if tail.count == 4 {
+      if method == "GET" { return ok(namespace) }
+      if method == "PUT" {
+        let payload =
+          body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        guard
+          let title = (payload["title"] as? String)?.trimmingCharacters(
+            in: .whitespacesAndNewlines),
+          !title.isEmpty
+        else {
+          return Self.failure("Namespace title is required.", status: 400)
+        }
+        namespace["title"] = title
+        replace(namespace, in: namespaces, id: "id")
+        return ok(NSNull())
+      }
+      if method == "DELETE" {
+        let namespacePrefix = namespaces + "/" + tail[3]
+        collections[namespaces] = rows(namespaces).filter { $0["id"] as? String != tail[3] }
+        removeResources(under: namespacePrefix)
+        return ok(NSNull())
+      }
+      return Self.unsupported
+    }
     let keysPath = namespaces + "/" + tail[3] + "/keys"
     if tail.count == 5, tail[4] == "keys", method == "GET" {
       let keys = rows(keysPath).filter {
@@ -460,11 +507,46 @@ final class DemoSession: NSObject, URLSessionDelegate, @unchecked Sendable {
       }
       return ok(keys, info: ["count": keys.count])
     }
+    if tail.count == 6, tail[4] == "bulk", tail[5] == "delete", method == "POST" {
+      guard let body,
+        let keyNames = try? JSONSerialization.jsonObject(with: body) as? [String]
+      else {
+        return Self.failure("Expected an array of key names.", status: 400)
+      }
+      let targetSet = Set(keyNames)
+      let before = rows(keysPath)
+      let remaining = before.filter { row in
+        guard let name = row["name"] as? String else { return true }
+        return !targetSet.contains(name)
+      }
+      collections[keysPath] = remaining
+      let valuesPrefix = namespaces + "/" + tail[3] + "/values/"
+      for name in keyNames {
+        blobs[valuesPrefix + name] = nil
+      }
+      return ok(["successful_key_count": before.count - remaining.count, "unsuccessful_keys": []])
+    }
+    if tail.count >= 6, tail[4] == "metadata", method == "GET" {
+      let key = String(path.dropFirst((namespaces + "/" + tail[3] + "/metadata/").count))
+      guard let row = rows(keysPath).first(where: { $0["name"] as? String == key }) else {
+        return Self.failure("Key not found.")
+      }
+      return ok(row["metadata"] ?? NSNull())
+    }
     guard tail.count >= 6, tail[4] == "values" else { return Self.unsupported }
     let key = String(path.dropFirst((namespaces + "/" + tail[3] + "/values/").count))
     if method == "PUT" {
       blobs[path] = DemoBackend.Reply(contentType: "application/octet-stream", data: body ?? Data())
-      replace(["name": key], in: keysPath, id: "name")
+      var entry = rows(keysPath).first(where: { $0["name"] as? String == key }) ?? ["name": key]
+      if let ttlString = query["expiration_ttl"], let ttl = Int(ttlString) {
+        guard ttl >= 60 else {
+          return Self.failure("expiration_ttl must be at least 60 seconds.", status: 400)
+        }
+        entry["expiration"] = Int(Date().timeIntervalSince1970) + ttl
+      } else {
+        entry.removeValue(forKey: "expiration")
+      }
+      replace(entry, in: keysPath, id: "name")
       return ok([:])
     }
     guard rows(keysPath).contains(where: { $0["name"] as? String == key }) else {

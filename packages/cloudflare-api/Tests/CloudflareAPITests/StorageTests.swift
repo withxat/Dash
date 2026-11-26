@@ -375,4 +375,75 @@ extension NetworkTests {
     try await client.deleteR2CustomDomain(
       accountID: "account", bucket: "assets", domain: "img.example.com")
   }
+
+  @Test func kvNamespacesTTLMetadataAndBulkDeleteRoundTrip() async throws {
+    let recorder = RequestRecorder()
+    let store = MemoryTokenStore(access: "token", refresh: nil)
+    let session = mockSession { request in
+      let method = request.httpMethod ?? "?"
+      let path = request.url?.path ?? ""
+      let query = request.url?.query.flatMap { $0.isEmpty ? nil : "?\($0)" } ?? ""
+      recorder.record("\(method) \(path)\(query)")
+      if method == "POST", path.hasSuffix("/storage/kv/namespaces") {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["title"] as? String == "app-cache")
+        return (
+          200, Data(#"{"success":true,"result":{"id":"ns-1","title":"app-cache"}}"#.utf8)
+        )
+      }
+      if method == "PUT", path.hasSuffix("/storage/kv/namespaces/ns-1") {
+        let body = try #require(requestBodyData(request))
+        let payload = try #require(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        #expect(payload["title"] as? String == "app-cache-v2")
+        return (200, Data(#"{"success":true,"result":null}"#.utf8))
+      }
+      if method == "PUT", path.hasSuffix("/storage/kv/namespaces/ns-1/values/session") {
+        return (200, Data(#"{"success":true,"result":{}}"#.utf8))
+      }
+      if method == "GET", path.hasSuffix("/storage/kv/namespaces/ns-1/metadata/session") {
+        return (200, Data(#"{"success":true,"result":{"owner":"auth"}}"#.utf8))
+      }
+      if method == "POST", path.hasSuffix("/storage/kv/namespaces/ns-1/bulk/delete") {
+        let body = try #require(requestBodyData(request))
+        let keys = try #require(JSONSerialization.jsonObject(with: body) as? [String])
+        #expect(keys == ["k1", "k2"])
+        return (
+          200,
+          Data(
+            #"{"success":true,"result":{"successful_key_count":2,"unsuccessful_keys":[]}}"#.utf8)
+        )
+      }
+      if method == "DELETE", path.hasSuffix("/storage/kv/namespaces/ns-1") {
+        return (200, Data(#"{"success":true,"result":null}"#.utf8))
+      }
+      return (404, Data(#"{"success":false,"errors":[{"code":404,"message":"not found"}]}"#.utf8))
+    }
+    let client = CloudflareClient(
+      clientID: "client", tokenStore: store, apiBase: URL(string: "https://api.example.test")!,
+      session: session)
+
+    let created = try await client.createKVNamespace(accountID: "acct", title: "app-cache")
+    #expect(created.id == "ns-1")
+    try await client.renameKVNamespace(
+      accountID: "acct", namespaceID: "ns-1", title: "app-cache-v2")
+    try await client.putKVValue(
+      accountID: "acct", namespaceID: "ns-1", key: "session", data: Data("ok".utf8),
+      expirationTTL: 3600)
+    let meta = try await client.getKVMetadata(
+      accountID: "acct", namespaceID: "ns-1", key: "session")
+    #expect(meta == .object(["owner": .string("auth")]))
+    try await client.deleteKVValues(accountID: "acct", namespaceID: "ns-1", keys: ["k1", "k2"])
+    try await client.deleteKVNamespace(accountID: "acct", namespaceID: "ns-1")
+
+    #expect(
+      recorder.paths == [
+        "POST /accounts/acct/storage/kv/namespaces",
+        "PUT /accounts/acct/storage/kv/namespaces/ns-1",
+        "PUT /accounts/acct/storage/kv/namespaces/ns-1/values/session?expiration_ttl=3600",
+        "GET /accounts/acct/storage/kv/namespaces/ns-1/metadata/session",
+        "POST /accounts/acct/storage/kv/namespaces/ns-1/bulk/delete",
+        "DELETE /accounts/acct/storage/kv/namespaces/ns-1",
+      ])
+  }
 }

@@ -87,6 +87,37 @@ private func demoClient() -> CloudflareClient {
   await #expect(throws: (any Error).self) {
     try await client.getKVValue(accountID: "demo-account", namespaceID: "kv-prod", key: key)
   }
+
+  // Namespace CRUD, TTL, metadata, and bulk key deletion work in-session.
+  let createdNS = try await client.createKVNamespace(
+    accountID: "demo-account", title: "ephemeral-ns")
+  try await client.renameKVNamespace(
+    accountID: "demo-account", namespaceID: createdNS.id, title: "renamed-ns")
+  #expect(
+    try await client.getKVNamespace(accountID: "demo-account", namespaceID: createdNS.id).title
+      == "renamed-ns")
+  try await client.putKVValue(
+    accountID: "demo-account", namespaceID: createdNS.id, key: "ttl-key",
+    data: Data("v".utf8), expirationTTL: 3600)
+  try await client.putKVValue(
+    accountID: "demo-account", namespaceID: createdNS.id, key: "other-key",
+    data: Data("v2".utf8))
+  let listed = try await client.listKVKeys(accountID: "demo-account", namespaceID: createdNS.id)
+  #expect(listed.items.first(where: { $0.name == "ttl-key" })?.expiration != nil)
+  try await client.deleteKVValues(
+    accountID: "demo-account", namespaceID: createdNS.id, keys: ["ttl-key", "other-key"])
+  #expect(
+    try await client.listKVKeys(accountID: "demo-account", namespaceID: createdNS.id).items.isEmpty)
+  try await client.deleteKVNamespace(accountID: "demo-account", namespaceID: createdNS.id)
+  #expect(
+    try await client.listKVNamespaces(accountID: "demo-account").items.allSatisfy {
+      $0.id != createdNS.id
+    })
+
+  // Metadata lookup returns seeded metadata for kv-prod keys.
+  let meta = try await client.getKVMetadata(
+    accountID: "demo-account", namespaceID: "kv-prod", key: "config:homepage")
+  #expect(meta != nil)
 }
 
 @Test func demoR2FileUploadDownloadAndBucketLifecycle() async throws {

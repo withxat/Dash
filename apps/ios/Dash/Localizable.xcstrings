@@ -582,6 +582,22 @@
         }
       }
     },
+    "7 days" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 days"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "7 天"
+          }
+        }
+      }
+    },
     "7d" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3716,6 +3732,38 @@
         }
       }
     },
+    "Create a KV namespace to store key-value data at the edge." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create a KV namespace to store key-value data at the edge."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建一个 KV 命名空间以在边缘存储键值数据。"
+          }
+        }
+      }
+    },
+    "Create namespace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create namespace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "创建命名空间"
+          }
+        }
+      }
+    },
     "Create one in the dashboard or with Wrangler." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3750,6 +3798,22 @@
         }
       }
     },
+    "Created namespace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Created namespace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已创建命名空间"
+          }
+        }
+      }
+    },
     "Cron expression" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3779,6 +3843,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Cron 触发器"
+          }
+        }
+      }
+    },
+    "Custom" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Custom"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "自定义"
           }
         }
       }
@@ -3946,6 +4026,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "删除部署"
+          }
+        }
+      }
+    },
+    "Delete keys" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete keys"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除键"
+          }
+        }
+      }
+    },
+    "Delete namespace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete namespace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除命名空间"
           }
         }
       }
@@ -4198,6 +4311,55 @@
         }
       }
     },
+    "Expiration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiration"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过期时间"
+          }
+        }
+      }
+    },
+    "Expiration TTL must be at least 60 seconds." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expiration TTL must be at least 60 seconds."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "过期时间 TTL 至少为 60 秒。"
+          }
+        }
+      }
+    },
+    "Expires %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Expires %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 过期"
+          }
+        }
+      }
+    },
     "Expression" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4416,6 +4578,23 @@
         }
       }
     },
+    "Metadata" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Metadata"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元数据"
+          }
+        }
+      }
+    },
     "MIT license, on GitHub." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4479,6 +4658,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "命名空间 ID"
+          }
+        }
+      }
+    },
+    "Never" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Never"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "永不过期"
           }
         }
       }
@@ -4709,6 +4904,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已复制路径"
+          }
+        }
+      }
+    },
+    "Permanently deletes %@ and all of its keys. This can't be undone." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permanently deletes %@ and all of its keys. This can't be undone."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将永久删除 %@ 及其所有键。此操作无法撤销。"
           }
         }
       }
@@ -5055,6 +5266,55 @@
         }
       }
     },
+    "Rename" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名"
+          }
+        }
+      }
+    },
+    "Rename namespace" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename namespace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名命名空间"
+          }
+        }
+      }
+    },
+    "Renamed namespace" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Renamed namespace"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已重命名命名空间"
+          }
+        }
+      }
+    },
     "Require Face ID" : {
       "localizations" : {
         "en" : {
@@ -5153,6 +5413,22 @@
         }
       }
     },
+    "Search namespaces" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search namespaces"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索命名空间"
+          }
+        }
+      }
+    },
     "Secret" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5247,6 +5523,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已复制安全事件"
+          }
+        }
+      }
+    },
+    "Select" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择"
+          }
+        }
+      }
+    },
+    "Select keys" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select keys"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择键"
           }
         }
       }
@@ -12264,6 +12572,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "添加演示地址"
+          }
+        }
+      }
+    },
+    "Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Title"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "名称"
+          }
+        }
+      }
+    },
+    "TTL (seconds, min 60)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TTL (seconds, min 60)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TTL（秒，至少 60）"
           }
         }
       }

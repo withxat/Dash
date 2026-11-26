@@ -1658,10 +1658,11 @@ private enum DemoWorld {
   static func kvKeys(in namespace: String) -> [String] {
     switch namespace {
     case "kv-prod":
+      let sessionExpiry = Int(Date().timeIntervalSince1970) + 86_400 * 3
       var keys = [
-        #"{"name":"config:homepage"}"#,
-        #"{"name":"feature-flags"}"#,
-        #"{"name":"session:8f3a2c","expiration":1795000000}"#,
+        #"{"name":"config:homepage","metadata":{"env":"production","owner":"web"}}"#,
+        #"{"name":"feature-flags","metadata":{"managedBy":"dash"}}"#,
+        #"{"name":"session:8f3a2c","expiration":\#(sessionExpiry),"metadata":{"source":"auth-worker"}}"#,
       ]
       // After \#(...), keep a content quote before } — otherwise `"#` steals it
       // and the JSON string never closes (`{"name":"bulk:item-001}`).

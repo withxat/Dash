@@ -84,6 +84,11 @@ public struct KVNamespace: CloudflareResource, Hashable {
   public let id: String
   public let title: String
   public var name: String { title }
+
+  public init(id: String, title: String) {
+    self.id = id
+    self.title = title
+  }
 }
 
 public struct KVKey: Codable, Hashable, Identifiable, Sendable {
@@ -91,6 +96,12 @@ public struct KVKey: Codable, Hashable, Identifiable, Sendable {
   public let name: String
   public let expiration: Int?
   public let metadata: JSONValue?
+
+  public init(name: String, expiration: Int? = nil, metadata: JSONValue? = nil) {
+    self.name = name
+    self.expiration = expiration
+    self.metadata = metadata
+  }
 }
 
 private struct R2BucketResult: Decodable, Sendable {
@@ -258,6 +269,24 @@ extension CloudflareClient {
   public func getKVNamespace(accountID: String, namespaceID: String) async throws -> KVNamespace {
     try await request("/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)")
   }
+  public func createKVNamespace(accountID: String, title: String) async throws -> KVNamespace {
+    try await request(
+      "/accounts/\(accountID)/storage/kv/namespaces",
+      method: "POST",
+      body: ["title": title])
+  }
+  public func renameKVNamespace(accountID: String, namespaceID: String, title: String) async throws
+  {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)",
+      method: "PUT",
+      body: ["title": title])
+  }
+  public func deleteKVNamespace(accountID: String, namespaceID: String) async throws {
+    let _: JSONValue = try await request(
+      "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)",
+      method: "DELETE")
+  }
   public func listKVKeys(
     accountID: String, namespaceID: String, cursor: String? = nil, prefix: String? = nil
   ) async throws -> CursorPage<KVKey> {
@@ -269,15 +298,40 @@ extension CloudflareClient {
   public func getKVValue(accountID: String, namespaceID: String, key: String) async throws -> Data {
     try await raw("/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/values/\(key)")
   }
-  public func putKVValue(accountID: String, namespaceID: String, key: String, data: Data)
-    async throws
+  public func getKVMetadata(accountID: String, namespaceID: String, key: String) async throws
+    -> JSONValue?
   {
+    let value: JSONValue = try await request(
+      "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/metadata/\(key)")
+    return value == .null ? nil : value
+  }
+  public func putKVValue(
+    accountID: String, namespaceID: String, key: String, data: Data,
+    expirationTTL: Int? = nil
+  ) async throws {
+    let query: [String: String?] = expirationTTL.map { ["expiration_ttl": String($0)] } ?? [:]
     let _: Data = try await raw(
       "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/values/\(key)", method: "PUT",
-      data: data, contentType: "application/octet-stream")
+      query: query, data: data, contentType: "application/octet-stream")
   }
   public func deleteKVValue(accountID: String, namespaceID: String, key: String) async throws {
     let _: Data = try await raw(
       "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/values/\(key)", method: "DELETE")
+  }
+  /// Deletes up to 10,000 keys per request via KV's bulk delete endpoint
+  /// (`workers-kv-storage.write`).
+  public func deleteKVValues(accountID: String, namespaceID: String, keys: [String]) async throws {
+    guard !keys.isEmpty else { return }
+    let chunkSize = 10_000
+    var start = 0
+    while start < keys.count {
+      let end = min(start + chunkSize, keys.count)
+      let batch = Array(keys[start..<end])
+      let _: JSONValue = try await request(
+        "/accounts/\(accountID)/storage/kv/namespaces/\(namespaceID)/bulk/delete",
+        method: "POST",
+        body: batch)
+      start = end
+    }
   }
 }
